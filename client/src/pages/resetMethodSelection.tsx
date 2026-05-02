@@ -7,13 +7,48 @@ import { Loader2, ArrowLeft } from 'lucide-react';
 import logo from '@/assets/Blackcoders-Black.png';
 import { api } from '@/lib/api';
 import { toast } from 'sonner';
+import { motion } from 'framer-motion';
 
 type ResetChannel = 'email' | 'sms';
+
+const AUTH_TRANSITION_MS = 350;
+
+const LOGIN_BACKDROP = {
+  red: 'M760 -120 C620 130 555 315 720 455 C900 608 610 715 510 900 L1440 900 L1440 -120 Z',
+  white:
+    'M835 -120 C700 128 640 318 805 455 C980 600 705 720 610 900 L1440 900 L1440 -120 Z',
+};
+
+function AuthBackdrop() {
+  return (
+    <svg
+      className="absolute inset-0 h-full w-full"
+      viewBox="0 0 1440 900"
+      preserveAspectRatio="none"
+      xmlns="http://www.w3.org/2000/svg"
+      aria-hidden="true"
+    >
+      <motion.path
+        fill="#EE1D25"
+        initial={false}
+        animate={{ d: LOGIN_BACKDROP.red }}
+        transition={{ duration: AUTH_TRANSITION_MS / 1000, ease: 'easeInOut' }}
+      />
+      <motion.path
+        fill="#ffffff"
+        initial={false}
+        animate={{ d: LOGIN_BACKDROP.white }}
+        transition={{ duration: AUTH_TRANSITION_MS / 1000, ease: 'easeInOut' }}
+      />
+    </svg>
+  );
+}
 
 export default function ResetMethodSelectionPage() {
   const navigate = useNavigate();
   const [channel, setChannel] = useState<ResetChannel>('email');
   const [loading, setLoading] = useState(false);
+  const [isLeaving, setIsLeaving] = useState(false);
 
   const email = useMemo(() => localStorage.getItem('resetEmail') || '', []);
 
@@ -61,7 +96,10 @@ export default function ResetMethodSelectionPage() {
       } else {
         toast.success(message);
       }
-      navigate('/verify-reset-otp');
+      setIsLeaving(true);
+      setTimeout(() => {
+        navigate('/verify-reset-otp');
+      }, AUTH_TRANSITION_MS);
     } catch (err: any) {
       toast.error(err.message || 'Failed to send OTP');
     } finally {
@@ -70,33 +108,26 @@ export default function ResetMethodSelectionPage() {
   };
 
   return (
-    <div className="min-h-screen relative overflow-hidden bg-black flex items-center justify-center p-4">
-      <div className="absolute inset-0">
-        <svg
-          className="w-full h-full"
-          viewBox="0 0 320 1440"
-          preserveAspectRatio="none"
-          xmlns="http://www.w3.org/2000/svg"
-        >
-          <path
-            fill="#EE1D25"
-            d="M115,1750 C-60,1000 400,-390 100,-50 L320,0 L320,1440 Z"
-          />
-          <path
-            fill="#ffffff"
-            d="M86,1590 C-10,760 500,-210 20,-370 L553380,0 L280,1440 Z"
-          />
-        </svg>
-      </div>
+    <div className="relative min-h-screen overflow-hidden bg-black">
+      <AuthBackdrop />
 
-      <div className="absolute inset-0 flex items-center justify-center p-4 lg:left-[77%] lg:top-1/2 lg:-translate-y-1/2 lg:-translate-x-1/2 lg:w-full lg:max-w-xl lg:p-0 lg:ml-8 lg:mt-12 z-10">
-        <div className="w-full max-w-lg">
-          <div className="bg-white/95 backdrop-blur-sm rounded-lg p-6 shadow-xl lg:bg-transparent lg:backdrop-blur-none lg:rounded-none lg:p-0 lg:shadow-none flex flex-col items-center">
-            <div className="w-40 h-auto mb-4 drop-shadow-md sm:w-48 md:w-56 lg:absolute lg:right-1/2 lg:-top-20 lg:translate-x-1/2 lg:w-[600px] lg:mb-0 lg:drop-shadow-lg lg:pointer-events-none">
+      <div className="relative z-20 flex min-h-screen w-full items-center justify-center px-4 py-8 lg:justify-end lg:pl-[38vw] lg:pr-[8vw]">
+        <motion.div
+          className="w-full max-w-md"
+          initial={{ opacity: 0, x: 72, scale: 0.96 }}
+          animate={{
+            opacity: isLeaving ? 0 : 1,
+            x: isLeaving ? -72 : 0,
+            scale: isLeaving ? 0.96 : 1,
+          }}
+          transition={{ duration: AUTH_TRANSITION_MS / 1000, ease: 'easeInOut' }}
+        >
+          <div className="flex flex-col items-center rounded-lg bg-white/95 p-6 shadow-xl backdrop-blur-sm lg:bg-transparent lg:p-0 lg:shadow-none lg:backdrop-blur-none">
+            <div className="mb-6 w-52 drop-shadow-md sm:w-64 lg:w-[29rem] lg:drop-shadow-lg">
               <img src={logo} alt="Blackcoders" className="w-full h-auto" />
             </div>
 
-            <div className="w-full space-y-4 lg:pt-20">
+            <div className="w-full space-y-4">
               <div className="space-y-1">
                 <p className="text-2xl font-semibold text-black">Choose Verification Method</p>
                 <p className="text-sm text-gray-700">
@@ -149,7 +180,12 @@ export default function ResetMethodSelectionPage() {
                 <Button
                   type="button"
                   variant="ghost"
-                  onClick={() => navigate('/forgot-password')}
+                  onClick={() => {
+                    if (isLeaving) return;
+                    setIsLeaving(true);
+                    setTimeout(() => navigate('/forgot-password'), AUTH_TRANSITION_MS);
+                  }}
+                  disabled={isLeaving}
                   className="text-sm"
                 >
                   <ArrowLeft className="w-4 h-4 mr-2" />
@@ -158,7 +194,7 @@ export default function ResetMethodSelectionPage() {
               </div>
             </div>
           </div>
-        </div>
+        </motion.div>
       </div>
     </div>
   );

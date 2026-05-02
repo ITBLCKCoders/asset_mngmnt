@@ -1641,3 +1641,65 @@ export async function assignAssetHandler(req: AuthRequest, res: Response) {
     return res.status(500).json({ error: 'Failed to assign asset' });
   }
 }
+
+export async function getAllFormsByAssetIdHandler(
+  req: AuthRequest,
+  res: Response
+) {
+  try {
+    const { assetId } = req.params;
+    if (!assetId) {
+      return res.status(400).json({ error: 'Asset ID is required' });
+    }
+
+    // Import repository functions
+    const accountabilityFormsRepo = await import('../repositories/accountabilityForm.repository.js');
+    const returnFormsRepo = await import('../repositories/assetReturn.repository.js');
+    const transferFormsRepo = await import('../repositories/assetTransferForm.repository.js');
+    const borrowFormsRepo = await import('../repositories/assetBorrowRequests.repository.js');
+
+    // Fetch accountability forms with proper mapping
+    const accountabilityRows = await accountabilityFormsRepo.findFormsByAssetId(assetId);
+    
+    // Map accountability forms to match frontend expectations
+    const accountabilityForms = accountabilityRows.map((row: any) => {
+      return {
+        id: row.formID,
+        formNumber: row.form_number,
+        status: row.status,
+        created_at: row.created_at,
+        signed_at: row.signed_at,
+        user: {
+          id: row.user_id,
+          first_name: row.first_name || '',
+          last_name: row.last_name || '',
+          email: row.email || '',
+        },
+        department: row.user_department_name ? {
+          id: row.user_department_id,
+          name: row.user_department_name,
+        } : null,
+        location: row.location_name ? {
+          id: row.location_id,
+          name: row.location_name,
+        } : null,
+        received_copy_wet_pdf_url: row.received_copy_wet_pdf_url || null,
+      };
+    });
+
+    // Fetch other form types (return empty arrays for now due to schema limitations)
+    const returnForms = await returnFormsRepo.getReturnFormsByAssetId(assetId);
+    const transferForms = await transferFormsRepo.getTransferFormsByAssetId(assetId);
+    const borrowForms = await borrowFormsRepo.getBorrowFormsByAssetId(pool, assetId);
+
+    return res.json({
+      accountabilityForms,
+      returnForms,
+      transferForms,
+      borrowForms,
+    });
+  } catch (error: any) {
+    logger.error('Get all forms by asset ID failed:', error);
+    return res.status(500).json({ error: 'Failed to fetch forms' });
+  }
+}

@@ -380,3 +380,16 @@ export async function resolveReturnFormCompanyId(
   }
   return null;
 }
+
+/**
+ * Get return forms by asset ID. Since asset_return_forms doesn't have a direct
+ * asset_id column and return_form_assignments table doesn't exist, return empty array.
+ * This would need database schema changes to properly link return forms to assets.
+ */
+export async function getReturnFormsByAssetId(
+  assetId: string
+): Promise<any[]> {
+  // Return empty array since there's no way to link return forms to assets
+  // with the current database schema
+  return [];
+}

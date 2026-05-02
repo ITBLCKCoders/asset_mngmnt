@@ -25,14 +25,43 @@ let failedQueue: QueueItem<any>[] = [];
 // that was redundant (the cookie is the source of truth) and exposed the
 // token to any XSS payload. Callers keep the same getToken/setToken API, but
 // nothing is written to localStorage anymore.
+//
+// We now persist a simple auth flag in sessionStorage (not the actual token)
+// so that route guards can detect authentication state across page refreshes.
+// sessionStorage is cleared when the tab is closed, providing a good balance.
+
+const SESSION_STORAGE_KEY = 'auth_flag';
+
+// Initialize from sessionStorage on module load
 let inMemoryAuthFlag: string | null = null;
+if (typeof window !== 'undefined') {
+  try {
+    inMemoryAuthFlag = sessionStorage.getItem(SESSION_STORAGE_KEY);
+  } catch (e) {
+    // sessionStorage might be disabled in some contexts
+  }
+}
 
 export const getToken = (): string | null => inMemoryAuthFlag;
 
 export const setToken = (_token: string | null) => {
+  const previousToken = inMemoryAuthFlag;
   inMemoryAuthFlag = _token ?? null;
   if (typeof window !== 'undefined') {
-    window.dispatchEvent(new CustomEvent('tokenChanged', { detail: _token }));
+    try {
+      if (_token) {
+        sessionStorage.setItem(SESSION_STORAGE_KEY, _token);
+      } else {
+        sessionStorage.removeItem(SESSION_STORAGE_KEY);
+      }
+    } catch (e) {
+      // sessionStorage might be disabled
+    }
+    if (previousToken !== inMemoryAuthFlag) {
+      window.dispatchEvent(
+        new CustomEvent('tokenChanged', { detail: inMemoryAuthFlag })
+      );
+    }
   }
 };
 

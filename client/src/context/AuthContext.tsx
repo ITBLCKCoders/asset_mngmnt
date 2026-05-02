@@ -1,6 +1,13 @@
 'use client';
 
-import { createContext, useContext, useEffect, useState, ReactNode } from 'react';
+import {
+  createContext,
+  useCallback,
+  useContext,
+  useEffect,
+  useState,
+  ReactNode,
+} from 'react';
 import { api, setToken } from '@/lib/api';
 import { Loader2 } from 'lucide-react';
 
@@ -17,26 +24,48 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [isLoading, setIsLoading] = useState(true);
   const [user, setUser] = useState<any>(null);
 
+  const validateSession = useCallback(async () => {
+    setIsLoading(true);
+    try {
+      const response = await api.get('/auth/me');
+      // If successful, session is valid
+      setToken('authenticated'); // Set the in-memory flag
+      setIsAuthenticated(true);
+      setUser(response);
+    } catch (err) {
+      // Session is invalid or expired
+      setToken(null);
+      setIsAuthenticated(false);
+      setUser(null);
+    } finally {
+      setIsLoading(false);
+    }
+  }, []);
+
   useEffect(() => {
-    const validateSession = async () => {
-      try {
-        const response = await api.get('/auth/me');
-        // If successful, session is valid
-        setToken('authenticated'); // Set the in-memory flag
-        setIsAuthenticated(true);
-        setUser(response);
-      } catch (err) {
-        // Session is invalid or expired
-        setToken(null);
-        setIsAuthenticated(false);
-        setUser(null);
-      } finally {
-        setIsLoading(false);
+    validateSession();
+  }, [validateSession]);
+
+  useEffect(() => {
+    const handleTokenChanged = (event: Event) => {
+      const token = (event as CustomEvent<string | null>).detail;
+
+      if (token) {
+        void validateSession();
+        return;
       }
+
+      setIsLoading(false);
+      setIsAuthenticated(false);
+      setUser(null);
     };
 
-    validateSession();
-  }, []);
+    window.addEventListener('tokenChanged', handleTokenChanged);
+
+    return () => {
+      window.removeEventListener('tokenChanged', handleTokenChanged);
+    };
+  }, [validateSession]);
 
   return (
     <AuthContext.Provider value={{ isAuthenticated, isLoading, user }}>

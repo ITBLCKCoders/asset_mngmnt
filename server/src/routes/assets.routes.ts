@@ -7,6 +7,7 @@ import {
   updateAssetHandler,
   assignAssetHandler,
   getMyAssetsHandler,
+  getAllFormsByAssetIdHandler,
 } from '../controllers/assets.controller.js';
 import { authenticate } from '../middleware/authenticate.js';
 import { validateDto } from '../utils/validation.js';
@@ -171,5 +172,23 @@ router.put('/:assetId', updateAssetHandler);
  *       404: { description: Asset not found }
  */
 router.post('/:assetId/assign', assignAssetHandler);
+
+/**
+ * @swagger
+ * /api/assets/{assetId}/forms:
+ *   get:
+ *     tags: [Assets]
+ *     summary: Get all forms (accountability, return, transfer, borrow) for an asset
+ *     parameters:
+ *       - in: path
+ *         name: assetId
+ *         required: true
+ *         schema: { type: string }
+ *     responses:
+ *       200: { description: List of all forms for the asset }
+ *       401: { description: Unauthorized }
+ *       404: { description: Asset not found }
+ */
+router.get('/:assetId/forms', getAllFormsByAssetIdHandler);
 
 export default router;

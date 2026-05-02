@@ -1,12 +1,13 @@
 'use client';
 
 import { useState } from 'react';
-import { Package, X, Clock, CheckCircle2 } from 'lucide-react';
+import { Package, X, Clock, CheckCircle2, FileText } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader } from '@/components/ui/card';
 
 import { Step4Review } from './modalSteps/step4AssetsReview';
 import { AssetTimeline } from './assetTimeline';
+import { AssetFormsTab } from '../../components/AssetFormsTab';
 
 import {
   AssetFormData,
@@ -36,6 +37,12 @@ const viewTabs = [
     icon: Clock,
     value: 'timeline',
     description: 'Asset History & Events',
+  },
+  {
+    title: 'Forms',
+    icon: FileText,
+    value: 'forms',
+    description: 'Accountability & Transaction Forms',
   },
 ] as const;
 
@@ -230,6 +237,8 @@ export function AssetViewModal({
             )}
 
             {activeTab === 'timeline' && <AssetTimeline asset={asset} showFieldChanges={false} />}
+
+            {activeTab === 'forms' && <AssetFormsTab assetId={asset.id} />}
           </CardContent>
 
           <div className="flex flex-col sm:flex-row justify-between gap-3 sm:gap-4 px-4 sm:px-6 py-4 sm:py-5 bg-gray-50 border-t">

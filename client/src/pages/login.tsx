@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useState } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -20,28 +20,15 @@ const AUTH_TRANSITION_MS = 900;
 
 const AUTH_BACKDROP: Record<AuthScene, { red: string; white: string }> = {
   login: {
-    red: 'M780 -120 C660 120 600 275 760 365 C925 455 610 560 440 700 C335 785 310 880 305 1020 L1440 1020 L1440 -120 Z',
+    red: 'M760 -120 C620 130 555 315 720 455 C900 608 610 715 510 900 L1440 900 L1440 -120 Z',
     white:
-      'M845 -120 C720 125 650 280 815 375 C980 470 665 575 500 715 C395 805 375 890 365 1020 L1440 1020 L1440 -120 Z',
+      'M835 -120 C700 128 640 318 805 455 C980 600 705 720 610 900 L1440 900 L1440 -120 Z',
   },
   register: {
-    red: 'M0 -120 C300 -120 700 -120 860 -120 C990 90 520 230 735 470 C965 720 940 850 1040 1020 L0 1020 L0 -120 Z',
+    red: 'M680 -120 C820 130 885 315 720 455 C540 608 830 715 930 900 L0 900 L0 -120 Z',
     white:
-      'M0 -120 C300 -120 675 -120 815 -120 C945 90 480 230 695 470 C920 720 895 850 995 1020 L0 1020 L0 -120 Z',
+      'M605 -120 C740 128 800 318 635 455 C460 600 735 720 830 900 L0 900 L0 -120 Z',
   },
-};
-
-const getInitialAuthScene = (state: unknown): AuthScene => {
-  if (
-    state &&
-    typeof state === 'object' &&
-    'fromAuth' in state &&
-    (state as { fromAuth?: unknown }).fromAuth === 'register'
-  ) {
-    return 'register';
-  }
-
-  return 'login';
 };
 
 function AuthBackdrop({ scene }: { scene: AuthScene }) {
@@ -72,36 +59,27 @@ function AuthBackdrop({ scene }: { scene: AuthScene }) {
 function GhostRegisterPanel({ scene }: { scene: AuthScene }) {
   return (
     <motion.div
-      className="pointer-events-none absolute left-[4vw] top-1/2 z-10 hidden w-[30rem] -translate-y-1/2 lg:block"
+      className="pointer-events-none absolute left-[5vw] top-1/2 z-10 hidden w-[31rem] -translate-y-1/2 lg:block"
       initial={false}
       animate={{
-        opacity: scene === 'login' ? 0.18 : 0.08,
-        x: scene === 'login' ? 0 : -96,
+        opacity: scene === 'login' ? 0.08 : 0.03,
+        x: scene === 'login' ? 0 : -120,
         scale: scene === 'login' ? 1 : 0.96,
       }}
       transition={{ duration: AUTH_TRANSITION_MS / 1000, ease: 'easeInOut' }}
       aria-hidden="true"
     >
-      <div className="mx-auto mb-16 h-px w-full bg-red-600/35">
-        <div className="mx-auto h-24 w-14 -translate-y-12 border-l-4 border-red-600/35" />
-      </div>
+      <div className="mx-auto mb-8 h-16 w-64 rounded-sm border border-red-600/20" />
       <div className="grid grid-cols-2 gap-4">
-        <div className="h-9 rounded-sm border border-white/10 bg-white/25" />
-        <div className="h-9 rounded-sm border border-white/10 bg-white/25" />
-        <div className="h-9 rounded-sm border border-white/10 bg-white/25" />
-        <div className="h-9 rounded-sm border border-white/10 bg-white/25" />
+        {Array.from({ length: 8 }).map((_, index) => (
+          <div
+            key={index}
+            className="h-9 rounded-sm border border-red-500/10 bg-white/[0.12]"
+          />
+        ))}
       </div>
-      <div className="mt-4 h-9 rounded-sm border border-white/10 bg-white/25" />
-      <div className="mt-4 grid grid-cols-2 gap-4">
-        <div className="h-9 rounded-sm border border-white/10 bg-white/25" />
-        <div className="h-9 rounded-sm border border-white/10 bg-white/25" />
-        <div className="h-9 rounded-sm border border-white/10 bg-white/25" />
-        <div className="h-9 rounded-sm border border-white/10 bg-white/25" />
-      </div>
-      <div className="mx-auto mt-5 h-9 w-40 rounded-sm bg-red-600/55" />
-      <div className="mx-auto mt-3 h-9 w-40 rounded-sm bg-white/25" />
-      <div className="mx-auto mt-8 h-9 w-[26rem] rounded-sm bg-white/25" />
-      <div className="mx-auto mt-3 h-9 w-[26rem] rounded-sm bg-white/25" />
+      <div className="mx-auto mt-5 h-9 w-40 rounded-sm bg-red-700/35" />
+      <div className="mx-auto mt-4 h-8 w-80 rounded-sm bg-white/[0.12]" />
     </motion.div>
   );
 }
@@ -121,15 +99,8 @@ export default function LoginPage() {
   const [forceChangeReason, setForceChangeReason] =
     useState<'mustChangePassword' | 'passwordExpired'>('mustChangePassword');
   const [forceChangeMessage, setForceChangeMessage] = useState<string>('');
-  const [scene, setScene] = useState<AuthScene>(() =>
-    getInitialAuthScene(location.state)
-  );
+  const [scene, setScene] = useState<AuthScene>('login');
   const [isRouting, setIsRouting] = useState(false);
-
-  useEffect(() => {
-    const frame = window.requestAnimationFrame(() => setScene('login'));
-    return () => window.cancelAnimationFrame(frame);
-  }, []);
 
   const navigateToDashboard = () => {
     const from = (
@@ -250,50 +221,47 @@ export default function LoginPage() {
     setIsRouting(true);
     setScene('register');
     setTimeout(() => {
-      navigate('/register', { state: { fromAuth: 'login' } });
+      navigate('/register');
     }, AUTH_TRANSITION_MS);
   };
 
+  const goToForgotPassword = () => {
+    if (isRouting) return;
+    setIsRouting(true);
+    setTimeout(() => {
+      navigate('/forgot-password');
+    }, 350);
+  };
+
   return (
-    <div className="min-h-screen relative overflow-hidden bg-black flex items-center justify-center p-4">
-      <div className="absolute inset-0">
-        <svg
-          className="w-full h-full"
-          viewBox="0 0 320 1440"
-          preserveAspectRatio="none"
-          xmlns="http://www.w3.org/2000/svg"
-        >
-          <motion.path
-            fill="#EE1D25"
-            d="M115,1750 C-60,1000 400,-390 100,-50 L320,0 L320,1440 Z"
-            animate={isAnimating ? { d: "M215,1750 C40,1000 500,-390 200,-50 L420,0 L420,1440 Z" } : { d: "M115,1750 C-60,1000 400,-390 100,-50 L320,0 L320,1440 Z" }}
-            transition={{ duration: 1, ease: "easeInOut" }}
-          />
-          <motion.path
-            fill="#ffffff"
-            d="M86,1590 C-10,760 500,-210 20,-370 L553380,0 L280,1440 Z"
-            animate={isAnimating ? { d: "M186,1590 C90,760 600,-210 120,-370 L553480,0 L380,1440 Z" } : { d: "M86,1590 C-10,760 500,-210 20,-370 L553380,0 L280,1440 Z" }}
-            transition={{ duration: 1, ease: "easeInOut" }}
-          />
-        </svg>
-      </div>
+    <div className="relative min-h-screen overflow-hidden bg-black">
+      <AuthBackdrop scene={scene} />
+      <GhostRegisterPanel scene={scene} />
 
       <form
         onSubmit={handleLogin}
-        className="absolute inset-0 flex items-center justify-center p-4 lg:left-[77%] lg:top-1/2 lg:-translate-y-1/2 lg:-translate-x-1/2 lg:w-full lg:max-w-xl lg:p-0 lg:ml-8 lg:mt-12 z-10"
+        className="relative z-20 flex min-h-screen w-full items-center justify-center px-4 py-8 lg:justify-end lg:pl-[38vw] lg:pr-[8vw]"
       >
         <motion.div
-          className="w-full max-w-lg"
-          initial={{ opacity: 1, scale: 1 }}
-          animate={isAnimating ? { opacity: 0, scale: 0.95 } : { opacity: 1, scale: 1 }}
-          transition={{ duration: 0.3, ease: 'easeInOut' }}
+          className="w-full max-w-md"
+          initial={false}
+          animate={{
+            opacity: scene === 'login' && !isRouting ? 1 : 0,
+            x: scene === 'login' ? (isRouting ? -72 : 0) : -180,
+            scale: scene === 'login' && !isRouting ? 1 : 0.96,
+          }}
+          transition={{
+            duration:
+              scene === 'login' && isRouting ? 0.35 : AUTH_TRANSITION_MS / 1000,
+            ease: 'easeInOut',
+          }}
         >
-          <div className="bg-white/95 backdrop-blur-sm rounded-lg p-6 shadow-xl lg:bg-transparent lg:backdrop-blur-none lg:rounded-none lg:p-0 lg:shadow-none flex flex-col items-center">
-            <div className="w-40 h-auto mb-4 drop-shadow-md sm:w-48 md:w-56 lg:absolute lg:right-1/2 lg:-top-20 lg:translate-x-1/2 lg:w-[600px] lg:mb-0 lg:drop-shadow-lg lg:pointer-events-none">
+          <div className="flex flex-col items-center rounded-lg bg-white/95 p-6 shadow-xl backdrop-blur-sm lg:bg-transparent lg:p-0 lg:shadow-none lg:backdrop-blur-none">
+            <div className="mb-6 w-52 drop-shadow-md sm:w-64 lg:w-[29rem] lg:drop-shadow-lg">
               <img src={logo} alt="Blackcoders" className="w-full h-auto" />
             </div>
 
-            <div className="w-full space-y-4 lg:pt-20">
+            <div className="w-full space-y-4">
               <div className="space-y-1">
                 <Label htmlFor="email" className="text-black text-sm">
                   Email
@@ -316,7 +284,7 @@ export default function LoginPage() {
                   <Input
                     id="pwd"
                     type={showPassword ? 'text' : 'password'}
-                    placeholder="••••••••"
+                    placeholder="********"
                     value={password}
                     onChange={e => setPassword(e.target.value)}
                     required
@@ -338,7 +306,8 @@ export default function LoginPage() {
                   <button
                     type="button"
                     className="text-xs text-red-500 hover:text-red-700 underline bg-white px-3 py-1 rounded-md shadow-sm"
-                    onClick={() => navigate('/forgot-password')}
+                    onClick={goToForgotPassword}
+                    disabled={isRouting}
                   >
                     Forgot password?
                   </button>
@@ -354,7 +323,7 @@ export default function LoginPage() {
                   {loading ? (
                     <>
                       <Loader2 className="w-3 h-3 animate-spin mr-1" />
-                      Logging in…
+                      Logging in...
                     </>
                   ) : (
                     'Log in'
@@ -363,6 +332,7 @@ export default function LoginPage() {
                 <Button
                   type="button"
                   onClick={goToRegister}
+                  disabled={isRouting}
                   className="w-full max-w-xs text-red-600 hover:bg-red-600 hover:text-white text-sm py-2 shadow-none"
                 >
                   Create an account

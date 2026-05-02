@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from 'react';
 import { useParams } from 'react-router-dom';
-import { Package, Clock, RefreshCw } from 'lucide-react';
+import { Package, Clock, RefreshCw, FileText } from 'lucide-react';
 import { Card, CardContent } from '@/components/ui/card';
 import { PageHeader } from '@/components/common/PageHeader';
 import { Button } from '@/components/ui/button';
@@ -13,6 +13,7 @@ import { AssetTimeline } from './assets-list/assetsComponents/assetTimeline';
 import { Step4Review } from './assets-list/assetsComponents/modalSteps/step4AssetsReview';
 import { Asset } from './assets-list/assetsComponents/assetTable/assetData';
 import { mapApiMaintenanceScheduleToForm } from './assets-list/assetsComponents/assetTypes/assetFormTypes';
+import { AssetFormsTab } from './components/AssetFormsTab';
 import { api } from '@/lib/api';
 import { toast } from 'sonner';
 
@@ -358,7 +359,7 @@ export default function AssetDetails() {
         <Card className="border-0 shadow-sm w-full min-w-0 overflow-hidden">
           <CardContent className="p-0 w-full min-w-0">
             <Tabs defaultValue="details" className="w-full min-w-0">
-              <TabsList className="grid w-full min-w-0 grid-cols-2 bg-red-50 h-auto p-1 gap-1">
+              <TabsList className="grid w-full min-w-0 grid-cols-3 bg-red-50 h-auto p-1 gap-1">
                 <TabsTrigger
                   value="details"
                   className="flex items-center justify-center gap-1 sm:gap-2 px-2 py-2.5 sm:px-4 sm:py-3 text-xs sm:text-sm data-[state=active]:bg-red-600 data-[state=active]:text-white data-[state=active]:shadow-md transition-all min-w-0"
@@ -375,6 +376,14 @@ export default function AssetDetails() {
                   <span className="hidden sm:inline truncate">Timeline</span>
                   <span className="sm:hidden truncate">History</span>
                 </TabsTrigger>
+                <TabsTrigger
+                  value="forms"
+                  className="flex items-center justify-center gap-1 sm:gap-2 px-2 py-2.5 sm:px-4 sm:py-3 text-xs sm:text-sm data-[state=active]:bg-red-600 data-[state=active]:text-white data-[state=active]:shadow-md transition-all min-w-0"
+                >
+                  <FileText className="h-3.5 w-3.5 sm:h-4 sm:w-4 shrink-0" />
+                  <span className="hidden sm:inline truncate">Forms</span>
+                  <span className="sm:hidden truncate">Forms</span>
+                </TabsTrigger>
               </TabsList>
 
               <TabsContent value="details" className="p-2 sm:p-4 md:p-6 mt-3 sm:mt-4 min-w-0">
@@ -389,6 +398,10 @@ export default function AssetDetails() {
 
               <TabsContent value="timeline" className="p-2 sm:p-4 md:p-6 mt-3 sm:mt-4 min-w-0">
                 <AssetTimeline asset={asset} />
+              </TabsContent>
+
+              <TabsContent value="forms" className="p-2 sm:p-4 md:p-6 mt-3 sm:mt-4 min-w-0">
+                <AssetFormsTab assetId={assetId || ''} />
               </TabsContent>
             </Tabs>
           </CardContent>

@@ -159,6 +159,94 @@ export interface AccountabilityFormDto {
   signed_at: string | null;
 }
 
+export interface AssetFormsResponseDto {
+  accountabilityForms: AccountabilityFormDetailDto[];
+  returnForms: ReturnFormDto[];
+  transferForms: TransferFormDto[];
+  borrowForms: BorrowFormDto[];
+}
+
+export interface AccountabilityFormDetailDto {
+  id: string;
+  formNumber: string;
+  status: AccountabilityFormStatus;
+  created_at: string;
+  signed_at: string | null;
+  user: {
+    id: string;
+    first_name: string;
+    last_name: string;
+    email: string;
+  };
+  department?: {
+    id: string;
+    name: string;
+  } | null;
+  location?: {
+    id: string;
+    name: string;
+  } | null;
+  received_copy_wet_pdf_url?: string | null;
+}
+
+export interface ReturnFormDto {
+  id: string;
+  formNumber: string;
+  status: string;
+  created_at: string;
+  signed_at: string | null;
+  return_type: string;
+  received_by: string;
+  user: {
+    id: string;
+    first_name: string;
+    last_name: string;
+    email: string;
+  };
+  department_name?: string;
+  location_name?: string;
+  processor_wet_pdf_url?: string | null;
+}
+
+export interface TransferFormDto {
+  id: string;
+  formNumber: string;
+  status: string;
+  created_at: string;
+  signed_at: string | null;
+  user: {
+    id: string;
+    first_name: string;
+    last_name: string;
+    email: string;
+  };
+  new_user?: {
+    first_name: string;
+    last_name: string;
+  };
+  department_name?: string;
+  location_name?: string;
+  processor_wet_pdf_url?: string | null;
+}
+
+export interface BorrowFormDto {
+  id: string;
+  formNumber: string;
+  status: string;
+  created_at: string;
+  approved_at?: string | null;
+  returned_at?: string | null;
+  user: {
+    first_name: string;
+    last_name: string;
+    email: string;
+  };
+  department_name?: string;
+  asset_code?: string;
+  asset_name?: string;
+  processor_wet_borrow_pdf_url?: string | null;
+}
+
 // Location DTOs
 export interface CreateLocationDto {
   name: string;

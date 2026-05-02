@@ -629,3 +629,66 @@ export async function getAvailableAssetByCodeForBorrowStaffPool(
   )) as [{ assetID: string; asset_code: string; name: string | null; serial: string | null }[], unknown];
   return rows?.[0] ?? null;
 }
+
+/**
+ * Get borrow forms by asset ID. Queries asset_borrow_requests table
+ * to find forms that include the specified asset.
+ */
+export async function getBorrowFormsByAssetId(
+  pool: Pool,
+  assetId: string
+): Promise<AssetBorrowRequestRow[]> {
+  const [rows] = await pool.execute<AssetBorrowRequestRow[]>(
+    `SELECT
+      br.borrow_request_id,
+      br.company_id,
+      br.user_id,
+      br.borrow_scope,
+      br.category_id,
+      br.type_id,
+      br.form_number,
+      br.expected_return_at,
+      br.purpose,
+      br.status,
+      DATE_FORMAT(br.dept_head_signed_at, '%Y-%m-%d %H:%i:%s') AS dept_head_signed_at,
+      br.dept_head_signed_by,
+      DATE_FORMAT(br.approved_at, '%Y-%m-%d %H:%i:%s') AS approved_at,
+      br.approved_by,
+      br.pre_usage_condition,
+      br.processor_remarks,
+      br.pre_usage_condition_images,
+      DATE_FORMAT(br.processor_declined_at, '%Y-%m-%d %H:%i:%s') AS processor_declined_at,
+      br.processor_decline_reason,
+      DATE_FORMAT(br.returned_at, '%Y-%m-%d %H:%i:%s') AS returned_at,
+      br.return_condition,
+      br.return_remarks,
+      br.return_condition_images,
+      br.processor_wet_borrow_pdf_url,
+      DATE_FORMAT(br.declined_at, '%Y-%m-%d %H:%i:%s') AS declined_at,
+      br.created_at,
+      br.updated_at,
+      c.name AS category_name,
+      t.name AS type_name,
+      u.first_name AS requester_first_name,
+      u.last_name AS requester_last_name,
+      u.username AS requester_username,
+      u.email AS requester_email,
+      d.name AS requester_department_name,
+      a.asset_code AS asset_code,
+      a.assetID AS asset_id,
+      a.name AS asset_name,
+      a.serial AS asset_serial,
+      CONCAT(ap.first_name, ' ', ap.last_name) AS approved_by_name
+    FROM asset_borrow_requests br
+    INNER JOIN asset_categories c ON br.category_id = c.categoryID AND c.deleted_at IS NULL
+    INNER JOIN asset_types t ON br.type_id = t.typeID AND t.deleted_at IS NULL
+    INNER JOIN users u ON br.user_id = u.userID
+    LEFT JOIN asset_mngmnt_departments d ON u.department_id = d.departmentID AND d.deleted_at IS NULL
+    LEFT JOIN assets a ON br.asset_id = a.assetID AND a.deleted_at IS NULL
+    LEFT JOIN users ap ON br.approved_by = ap.userID
+    WHERE br.asset_id = ?
+    ORDER BY br.created_at DESC`,
+    [assetId]
+  );
+  return rows;
+}
