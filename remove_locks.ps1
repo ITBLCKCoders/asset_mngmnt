@@ -1,0 +1,35 @@
+$content = Get-Content "asset_data_import.sql" -Raw
+
+# Remove LOCK TABLES and UNLOCK TABLES statements using simple string replacement
+$content = $content -replace "LOCK TABLES `companies` WRITE;", ""
+$content = $content -replace "LOCK TABLES `asset_mngmnt_locations` WRITE;", ""
+$content = $content -replace "LOCK TABLES `asset_mngmnt_location_rooms` WRITE;", ""
+$content = $content -replace "LOCK TABLES `asset_mngmnt_departments` WRITE;", ""
+$content = $content -replace "LOCK TABLES `asset_categories` WRITE;", ""
+$content = $content -replace "LOCK TABLES `asset_types` WRITE;", ""
+$content = $content -replace "LOCK TABLES `asset_brands` WRITE;", ""
+$content = $content -replace "LOCK TABLES `suppliers` WRITE;", ""
+$content = $content -replace "LOCK TABLES `assets` WRITE;", ""
+$content = $content -replace "UNLOCK TABLES;", ""
+$content = $content -replace "/\*!40000 ALTER TABLE `companies` DISABLE KEYS \*/;", ""
+$content = $content -replace "/\*!40000 ALTER TABLE `asset_mngmnt_locations` DISABLE KEYS \*/;", ""
+$content = $content -replace "/\*!40000 ALTER TABLE `asset_mngmnt_location_rooms` DISABLE KEYS \*/;", ""
+$content = $content -replace "/\*!40000 ALTER TABLE `asset_mngmnt_departments` DISABLE KEYS \*/;", ""
+$content = $content -replace "/\*!40000 ALTER TABLE `asset_categories` DISABLE KEYS \*/;", ""
+$content = $content -replace "/\*!40000 ALTER TABLE `asset_types` DISABLE KEYS \*/;", ""
+$content = $content -replace "/\*!40000 ALTER TABLE `asset_brands` DISABLE KEYS \*/;", ""
+$content = $content -replace "/\*!40000 ALTER TABLE `suppliers` DISABLE KEYS \*/;", ""
+$content = $content -replace "/\*!40000 ALTER TABLE `assets` DISABLE KEYS \*/;", ""
+$content = $content -replace "/\*!40000 ALTER TABLE `companies` ENABLE KEYS \*/;", ""
+$content = $content -replace "/\*!40000 ALTER TABLE `asset_mngmnt_locations` ENABLE KEYS \*/;", ""
+$content = $content -replace "/\*!40000 ALTER TABLE `asset_mngmnt_location_rooms` ENABLE KEYS \*/;", ""
+$content = $content -replace "/\*!40000 ALTER TABLE `asset_mngmnt_departments` ENABLE KEYS \*/;", ""
+$content = $content -replace "/\*!40000 ALTER TABLE `asset_categories` ENABLE KEYS \*/;", ""
+$content = $content -replace "/\*!40000 ALTER TABLE `asset_types` ENABLE KEYS \*/;", ""
+$content = $content -replace "/\*!40000 ALTER TABLE `asset_brands` ENABLE KEYS \*/;", ""
+$content = $content -replace "/\*!40000 ALTER TABLE `suppliers` ENABLE KEYS \*/;", ""
+$content = $content -replace "/\*!40000 ALTER TABLE `assets` ENABLE KEYS \*/;", ""
+
+Set-Content "asset_data_import.sql" -Value $content
+
+Write-Host "Removed LOCK TABLES statements"

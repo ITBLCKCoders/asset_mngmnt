@@ -1,0 +1,8 @@
+# Build output
+dist/
+*.tsbuildinfo
+
+# Local env / dev artefacts
+.env
+.env.local
+*.log

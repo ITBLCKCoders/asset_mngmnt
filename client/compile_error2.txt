@@ -1,0 +1,1 @@
+src/pages/assets/assets-list/AssetsPage.tsx(962,14): error TS1381: Unexpected token. Did you mean `{'}'}` or `&rbrace;`?

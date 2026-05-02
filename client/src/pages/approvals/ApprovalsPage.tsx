@@ -1,0 +1,1063 @@
+'use client';
+
+import { useState, useEffect, useMemo } from 'react';
+import { Button } from '@/components/ui/button';
+import { PageHeader } from '@/components/common/PageHeader';
+import {
+  CheckSquare,
+  Search,
+  Download,
+  CheckCircle2,
+  PackageCheck,
+  ClipboardCheck,
+  RefreshCw,
+} from 'lucide-react';
+import { api } from '@/lib/api';
+import { toast } from 'sonner';
+import { Dialog } from '@/components/ui/dialog';
+import {
+  AppDialogFrame,
+  AppDialogGradientHeader,
+  AppDialogChromeFooter,
+} from '@/components/common/appDialogChrome';
+import {
+  ReturnFormCard,
+  ReturnFormDetail,
+  TransferFormCard,
+  TransferFormDetail,
+  BorrowFormCard,
+  BorrowFormDetail,
+  buildReturnDataForPDFFromBatch,
+  buildTransferDataForPDFFromBatch,
+  buildBorrowDataForPDFFromBatch,
+  type AssetReturnFormBatch,
+  type AssetTransferFormBatch,
+  type AssetBorrowFormBatch,
+} from '@/pages/profile/profileComponents/tabs/documentsTab';
+import {
+  generateAssetReturnPDF,
+  generateAssetTransferPDF,
+  generateAssetBorrowingPDF,
+  downloadPDF,
+} from '@/lib/pdfGenerator';
+import { useCurrentUser } from '@/hooks/useCurrentUser';
+import { useUserPermissions } from '@/hooks/useUserPermissions';
+import { useDelayedLoading } from '@/hooks/useDelayedLoading';
+import { Shimmer } from '@/components/ui/shimmer';
+import { Input } from '@/components/ui/input';
+import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs';
+import SmsOtpDialog from '@/components/auth/SmsOtpDialog';
+import { useRef } from 'react';
+
+/** Borrow request pending department head (Manager Approver 1), same department as requester. */
+export type BorrowApprovalBatch = {
+  formType: 'borrow';
+  formID: string;
+  borrow_request_id: string;
+  created_at: string;
+  form_number?: string;
+  borrow_scope: 'it' | 'admin';
+  category_name?: string;
+  type_name?: string;
+  purpose: string;
+  expected_return_at: string;
+  requester_first_name?: string | null;
+  requester_last_name?: string | null;
+  requester_email?: string | null;
+  requester_department_name?: string | null;
+  dept_head_signed_at?: string | null;
+  approved_at?: string | null;
+  pre_usage_condition?: string | null;
+  asset_name?: string | null;
+  asset_serial?: string | null;
+  approved_by_name?: string | null;
+};
+
+type FormApprovalBatch = (AssetReturnFormBatch | AssetTransferFormBatch) & {
+  formType?: 'return' | 'transfer';
+};
+
+type ApprovalBatch = FormApprovalBatch | BorrowApprovalBatch;
+
+function toAssetBorrowFormBatch(b: BorrowApprovalBatch): AssetBorrowFormBatch {
+  return {
+    borrow_request_id: b.borrow_request_id,
+    form_number: b.form_number ?? null,
+    created_at: b.created_at,
+    borrow_scope: b.borrow_scope,
+    category_name: b.category_name ?? null,
+    type_name: b.type_name ?? null,
+    purpose: b.purpose,
+    expected_return_at: b.expected_return_at,
+    requester_first_name: b.requester_first_name ?? null,
+    requester_last_name: b.requester_last_name ?? null,
+    requester_email: b.requester_email ?? null,
+    requester_department_name: b.requester_department_name ?? null,
+    dept_head_signed_at: b.dept_head_signed_at ?? null,
+    approved_at: b.approved_at ?? null,
+    pre_usage_condition: b.pre_usage_condition ?? null,
+    asset_name: b.asset_name ?? null,
+    asset_serial: b.asset_serial ?? null,
+    approved_by_name: b.approved_by_name ?? null,
+  };
+}
+
+function unwrapBorrowRequests(res: unknown): unknown[] {
+  if (
+    res &&
+    typeof res === 'object' &&
+    'success' in res &&
+    (res as { success?: boolean }).success === true &&
+    'data' in res
+  ) {
+    const d = (res as { data?: { borrowRequests?: unknown[] } }).data;
+    return d?.borrowRequests ?? [];
+  }
+  return (res as { borrowRequests?: unknown[] })?.borrowRequests ?? [];
+}
+
+function mapBorrowRowsToBatches(
+  rows: unknown[],
+  options: { withDeptHeadSigned?: boolean } = {}
+): BorrowApprovalBatch[] {
+  return (rows as Record<string, unknown>[]).map(r => {
+    const id = String(r.borrow_request_id ?? '');
+    const fn = r.form_number != null && String(r.form_number).trim()
+      ? String(r.form_number).trim()
+      : `Borrow ${id.slice(0, 8)}`;
+    return {
+      formType: 'borrow' as const,
+      formID: id,
+      borrow_request_id: id,
+      form_number: fn,
+      created_at: String(r.created_at ?? ''),
+      borrow_scope: r.borrow_scope as 'it' | 'admin',
+      category_name: r.category_name as string | undefined,
+      type_name: r.type_name as string | undefined,
+      purpose: String(r.purpose ?? ''),
+      expected_return_at: String(r.expected_return_at ?? ''),
+      requester_first_name: r.requester_first_name as string | null | undefined,
+      requester_last_name: r.requester_last_name as string | null | undefined,
+      requester_email: r.requester_email as string | null | undefined,
+      requester_department_name:
+        (r.requester_department_name as string | null | undefined) ?? null,
+      dept_head_signed_at: options.withDeptHeadSigned
+        ? ((r.dept_head_signed_at as string | null | undefined) ?? null)
+        : null,
+      approved_at: (r.approved_at as string | null | undefined) ?? null,
+      pre_usage_condition:
+        (r.pre_usage_condition as string | null | undefined) ?? null,
+      asset_name: (r.asset_name as string | null | undefined) ?? null,
+      asset_serial: (r.asset_serial as string | null | undefined) ?? null,
+      approved_by_name:
+        (r.approved_by_name as string | null | undefined) ?? null,
+    };
+  });
+}
+
+export default function ApprovalsPage() {
+  const { user: currentUser } = useCurrentUser();
+  const { hasPermission, roleCustodian } = useUserPermissions();
+
+  const [batches, setBatches] = useState<ApprovalBatch[]>([]);
+  const [approvedBatches, setApprovedBatches] = useState<ApprovalBatch[]>([]);
+  const [receiveBatches, setReceiveBatches] = useState<ApprovalBatch[]>([]);
+
+  const [loading, setLoading] = useState(true);
+  const [approvedLoading, setApprovedLoading] = useState(true);
+  const [receiveLoading, setReceiveLoading] = useState(true);
+
+  const displayLoading = useDelayedLoading(loading, 1500);
+  const displayApprovedLoading = useDelayedLoading(approvedLoading, 1500);
+  const displayReceiveLoading = useDelayedLoading(receiveLoading, 1500);
+
+  // ---------- Tabs ----------
+  const [activeTab, setActiveTab] = useState('for-approval');
+
+  // ---------- Search (per-tab) ----------
+  const [searchQuery, setSearchQuery] = useState('');
+  const [receiveSearchQuery, setReceiveSearchQuery] = useState('');
+  const [approvedSearchQuery, setApprovedSearchQuery] = useState('');
+
+  // ---------- Detail dialog ----------
+  const [selectedBatch, setSelectedBatch] = useState<ApprovalBatch | null>(
+    null
+  );
+  const [showDetail, setShowDetail] = useState(false);
+  const [approving, setApproving] = useState(false);
+  const [declining, setDeclining] = useState(false);
+  const [receiving, setReceiving] = useState(false);
+
+  // ---------- SMS OTP Dialog ----------
+  const [showOtpDialog, setShowOtpDialog] = useState(false);
+  const pendingActionRef = useRef<(() => Promise<void>) | null>(null);
+
+  // ---------- Decline Reason Dialog ----------
+  const [showDeclineReasonDialog, setShowDeclineReasonDialog] = useState(false);
+  const [declineReason, setDeclineReason] = useState('');
+
+  // ---------- Permissions ----------
+  const canApprove =
+    (hasPermission('Approvals', 'create') &&
+      hasPermission('Approvals', 'edit')) ||
+    roleCustodian?.managerApprover1 === true;
+
+  const canReceive = roleCustodian?.managerApprover2 === true;
+
+  // ---------- Fetch ----------
+  const fetchPendingApprovals = async () => {
+    try {
+      setLoading(true);
+      const [returnRes, transferRes, borrowRes] = await Promise.all([
+        api.get<{ assetReturnForms?: AssetReturnFormBatch[] }>(
+          '/asset-returns/forms/pending-approvals'
+        ),
+        api.get<{ assetTransferForms?: AssetTransferFormBatch[] }>(
+          '/asset-transfers/forms/pending-approvals'
+        ),
+        api.get<unknown>('/asset-borrow-requests/pending-dept-approvals'),
+      ]);
+      const returns = (returnRes.assetReturnForms ?? []).map(b => ({
+        ...b,
+        formType: 'return' as const,
+      })) as FormApprovalBatch[];
+      const transfers = (transferRes.assetTransferForms ?? []).map(b => ({
+        ...b,
+        formType: 'transfer' as const,
+      })) as FormApprovalBatch[];
+      const borrows = mapBorrowRowsToBatches(unwrapBorrowRequests(borrowRes));
+      setBatches(
+        ([...returns, ...transfers, ...borrows] as ApprovalBatch[]).sort(
+          (a, b) =>
+            new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
+        )
+      );
+    } catch (error) {
+      console.error('Failed to fetch pending approvals:', error);
+      toast.error('Failed to load pending approvals');
+      setBatches([]);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const fetchApprovedByMe = async () => {
+    try {
+      setApprovedLoading(true);
+      const [returnRes, transferRes, borrowRes] = await Promise.all([
+        api.get<{ assetReturnForms?: AssetReturnFormBatch[] }>(
+          '/asset-returns/forms/approved-by-me'
+        ),
+        api.get<{ assetTransferForms?: AssetTransferFormBatch[] }>(
+          '/asset-transfers/forms/approved-by-me'
+        ),
+        api.get<unknown>('/asset-borrow-requests/approved-by-dept-head-me'),
+      ]);
+      const returns = (returnRes.assetReturnForms ?? []).map(b => ({
+        ...b,
+        formType: 'return' as const,
+      })) as FormApprovalBatch[];
+      const transfers = (transferRes.assetTransferForms ?? []).map(b => ({
+        ...b,
+        formType: 'transfer' as const,
+      })) as FormApprovalBatch[];
+      const borrows = mapBorrowRowsToBatches(unwrapBorrowRequests(borrowRes), {
+        withDeptHeadSigned: true,
+      });
+      setApprovedBatches(
+        ([...returns, ...transfers, ...borrows] as ApprovalBatch[]).sort(
+          (a, b) =>
+            new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
+        )
+      );
+    } catch (error) {
+      console.error('Failed to fetch approved forms:', error);
+      toast.error('Failed to load approved forms');
+      setApprovedBatches([]);
+    } finally {
+      setApprovedLoading(false);
+    }
+  };
+
+  const fetchReceivePendingApprovals = async () => {
+    if (!canReceive) return;
+    try {
+      setReceiveLoading(true);
+      const [returnRes, transferRes] = await Promise.all([
+        api.get<{ assetReturnForms?: AssetReturnFormBatch[] }>(
+          '/asset-returns/forms/receive-pending-approvals'
+        ),
+        api.get<{ assetTransferForms?: AssetTransferFormBatch[] }>(
+          '/asset-transfers/forms/receive-pending-approvals'
+        ),
+      ]);
+      const returns = (returnRes.assetReturnForms ?? []).map(b => ({
+        ...b,
+        formType: 'return' as const,
+      })) as FormApprovalBatch[];
+      const transfers = (transferRes.assetTransferForms ?? []).map(b => ({
+        ...b,
+        formType: 'transfer' as const,
+      })) as FormApprovalBatch[];
+      setReceiveBatches(
+        ([...returns, ...transfers] as ApprovalBatch[]).sort(
+          (a, b) =>
+            new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
+        )
+      );
+    } catch (error) {
+      console.error('Failed to fetch receive-pending approvals:', error);
+      toast.error('Failed to load receive approvals');
+      setReceiveBatches([]);
+    } finally {
+      setReceiveLoading(false);
+    }
+  };
+
+  const refreshAll = async () => {
+    const promises: Promise<void>[] = [
+      fetchPendingApprovals(),
+      fetchApprovedByMe(),
+    ];
+    if (canReceive) promises.push(fetchReceivePendingApprovals());
+    await Promise.all(promises);
+  };
+
+  useEffect(() => {
+    fetchPendingApprovals();
+    fetchApprovedByMe();
+  }, []);
+
+  useEffect(() => {
+    if (canReceive) fetchReceivePendingApprovals();
+  }, [canReceive]);
+
+  // ---------- Filtering ----------
+  const searchFilter = (batch: ApprovalBatch, q: string) => {
+    if (batch.formType === 'borrow') {
+      const b = batch as BorrowApprovalBatch;
+      const name =
+        `${b.requester_first_name || ''} ${b.requester_last_name || ''}`
+          .trim()
+          .toLowerCase();
+      return (
+        name.includes(q) ||
+        (b.purpose || '').toLowerCase().includes(q) ||
+        (b.category_name || '').toLowerCase().includes(q) ||
+        (b.type_name || '').toLowerCase().includes(q) ||
+        (b.form_number || '').toLowerCase().includes(q) ||
+        (b.borrow_scope || '').toLowerCase().includes(q)
+      );
+    }
+    const base =
+      batch.returns?.some(
+        r =>
+          r.assignment?.asset?.name?.toLowerCase().includes(q) ||
+          r.assignment?.asset?.code?.toLowerCase().includes(q) ||
+          (r.assignment?.user?.first_name || '').toLowerCase().includes(q) ||
+          (r.assignment?.user?.last_name || '').toLowerCase().includes(q) ||
+          (batch.form_number || '').toLowerCase().includes(q)
+      ) ?? false;
+    if (base) return true;
+    const tb = batch as AssetTransferFormBatch;
+    if (tb.new_assigned_user) {
+      const name =
+        `${tb.new_assigned_user.first_name || ''} ${tb.new_assigned_user.last_name || ''}`
+          .trim()
+          .toLowerCase();
+      if (name && name.includes(q)) return true;
+    }
+    return false;
+  };
+
+  const filteredBatches = useMemo(() => {
+    if (!searchQuery.trim()) return batches;
+    const q = searchQuery.toLowerCase();
+    return batches.filter(b => searchFilter(b, q));
+  }, [batches, searchQuery]);
+
+  const filteredReceiveBatches = useMemo(() => {
+    if (!receiveSearchQuery.trim()) return receiveBatches;
+    const q = receiveSearchQuery.toLowerCase();
+    return receiveBatches.filter(b => searchFilter(b, q));
+  }, [receiveBatches, receiveSearchQuery]);
+
+  const filteredApprovedBatches = useMemo(() => {
+    if (!approvedSearchQuery.trim()) return approvedBatches;
+    const q = approvedSearchQuery.toLowerCase();
+    return approvedBatches.filter(b => searchFilter(b, q));
+  }, [approvedBatches, approvedSearchQuery]);
+
+  // ---------- Actions ----------
+  const handleDownload = async (batch: ApprovalBatch) => {
+    try {
+      if (batch.formType === 'borrow') {
+        const data = buildBorrowDataForPDFFromBatch(
+          toAssetBorrowFormBatch(batch as BorrowApprovalBatch)
+        );
+        if (!data) {
+          toast.error('Cannot generate PDF for this borrow request');
+          return;
+        }
+        const blob = await generateAssetBorrowingPDF(data);
+        const b = batch as BorrowApprovalBatch;
+        const fileName = b.form_number
+          ? `Equipment_Borrowing_${b.form_number}_${Date.now()}.pdf`
+          : `Equipment_Borrowing_${Date.now()}.pdf`;
+        downloadPDF(blob, fileName);
+        toast.success('Download started');
+        return;
+      }
+      if (batch.formType === 'transfer') {
+        const data = buildTransferDataForPDFFromBatch(
+          batch as AssetTransferFormBatch
+        );
+        if (!data) {
+          toast.error('Cannot generate PDF for this form');
+          return;
+        }
+        const blob = await generateAssetTransferPDF(data);
+        const fileName = batch.form_number
+          ? `Asset_Transfer_Form_${batch.form_number}_${Date.now()}.pdf`
+          : `Asset_Transfer_Form_${Date.now()}.pdf`;
+        downloadPDF(blob, fileName);
+      } else {
+        const data = buildReturnDataForPDFFromBatch(
+          batch as AssetReturnFormBatch
+        );
+        if (!data) {
+          toast.error('Cannot generate PDF for this form');
+          return;
+        }
+        const blob = await generateAssetReturnPDF(data);
+        const fileName = batch.form_number
+          ? `Asset_Return_Form_${batch.form_number}_${Date.now()}.pdf`
+          : `Asset_Return_Form_${Date.now()}.pdf`;
+        downloadPDF(blob, fileName);
+      }
+      toast.success('Download started');
+    } catch (e) {
+      console.error(e);
+      toast.error('Failed to download PDF');
+    }
+  };
+
+  const handleApprove = async () => {
+    if (!selectedBatch) return;
+    
+    // Get approver's digital signature from current user
+    const digitalSignature = (currentUser as any)?.digitalSignature || '';
+    
+    // Set up the actual approval action as a pending action
+    pendingActionRef.current = async () => {
+      if (!selectedBatch) return;
+      if (selectedBatch.formType === 'borrow') {
+        if (!(selectedBatch as BorrowApprovalBatch).borrow_request_id) return;
+        try {
+          setApproving(true);
+          await api.post(
+            `/asset-borrow-requests/${selectedBatch.borrow_request_id}/dept-head-approve`,
+            {}
+          );
+          toast.success('Borrow request approved — forwarded to IT/Admin');
+          setShowDetail(false);
+          setSelectedBatch(null);
+          await refreshAll();
+        } catch (error: unknown) {
+          const msg =
+            (error as { data?: { error?: string } })?.data?.error ||
+            (error as Error)?.message ||
+            'Failed to approve';
+          toast.error(msg);
+        } finally {
+          setApproving(false);
+        }
+        return;
+      }
+      if (!selectedBatch.formID) return;
+      const base =
+        selectedBatch.formType === 'transfer'
+          ? '/asset-transfers'
+          : '/asset-returns';
+      const successMsg =
+        selectedBatch.formType === 'transfer'
+          ? 'Transfer form approved successfully'
+          : 'Return form approved successfully';
+      try {
+        setApproving(true);
+        await api.post(`${base}/forms/${selectedBatch.formID}/approve`, { digitalSignature });
+        toast.success(successMsg);
+        setShowDetail(false);
+        setSelectedBatch(null);
+        await refreshAll();
+      } catch (error: any) {
+        const msg =
+          error?.response?.data?.error || error?.message || 'Failed to approve';
+        const isMigrationError =
+          typeof msg === 'string' &&
+          (msg.includes('database schema may be outdated') ||
+            msg.includes('migration_add_dept_head_signature_asset_return_forms'));
+        if (isMigrationError) {
+          toast.error('Database update required', {
+            description:
+              'Run db/migration_add_dept_head_signature_asset_return_forms.sql on your MySQL database, then try again.',
+            duration: 10000,
+          });
+        } else {
+          toast.error(msg);
+        }
+      } finally {
+        setApproving(false);
+      }
+    };
+    
+    // Show OTP dialog
+    setShowOtpDialog(true);
+  };
+
+  const handleDecline = async () => {
+    if (!selectedBatch) return;
+    // Show decline reason dialog first
+    setDeclineReason('');
+    setShowDeclineReasonDialog(true);
+  };
+
+  const handleDeclineWithReason = async () => {
+    if (!selectedBatch) return;
+    if (!declineReason.trim()) {
+      toast.error('Please provide a reason for declining');
+      return;
+    }
+    
+    // Close decline reason dialog
+    setShowDeclineReasonDialog(false);
+    
+    // Set up the actual decline action as a pending action
+    pendingActionRef.current = async () => {
+      if (!selectedBatch) return;
+      if (selectedBatch.formType === 'borrow') {
+        if (!(selectedBatch as BorrowApprovalBatch).borrow_request_id) return;
+        try {
+          setDeclining(true);
+          await api.post(
+            `/asset-borrow-requests/${selectedBatch.borrow_request_id}/dept-head-decline`,
+            { reason: declineReason }
+          );
+          toast.success('Borrow request declined');
+          setShowDetail(false);
+          setSelectedBatch(null);
+          await refreshAll();
+        } catch (error: unknown) {
+          const msg =
+            (error as { data?: { error?: string } })?.data?.error ||
+            (error as Error)?.message ||
+            'Failed to decline';
+          toast.error(msg);
+        } finally {
+          setDeclining(false);
+        }
+        return;
+      }
+      if (!selectedBatch.formID) return;
+      const base =
+        selectedBatch.formType === 'transfer'
+          ? '/asset-transfers'
+          : '/asset-returns';
+      const successMsg =
+        selectedBatch.formType === 'transfer'
+          ? 'Transfer declined'
+          : 'Return declined. No asset will be transferred to the processor and no new accountability will be issued.';
+      try {
+        setDeclining(true);
+        await api.post(`${base}/forms/${selectedBatch.formID}/decline`, { reason: declineReason });
+        toast.success(successMsg);
+        setShowDetail(false);
+        setSelectedBatch(null);
+        await refreshAll();
+      } catch (error: any) {
+        const msg =
+          error?.response?.data?.error || error?.message || 'Failed to decline';
+        toast.error(msg);
+      } finally {
+        setDeclining(false);
+      }
+    };
+    
+    // Show OTP dialog
+    setShowOtpDialog(true);
+  };
+
+  const handleReceive = async () => {
+    if (!selectedBatch?.formID) return;
+    const base =
+      selectedBatch.formType === 'transfer'
+        ? '/asset-transfers'
+        : '/asset-returns';
+    const successMsg =
+      selectedBatch.formType === 'transfer'
+        ? 'Transfer form received successfully'
+        : 'Return form received successfully';
+    try {
+      setReceiving(true);
+      await api.post(`${base}/forms/${selectedBatch.formID}/receive`, {});
+      toast.success(successMsg);
+      setShowDetail(false);
+      setSelectedBatch(null);
+      await refreshAll();
+    } catch (error: any) {
+      const msg =
+        error?.response?.data?.error || error?.message || 'Failed to receive';
+      toast.error(msg);
+    } finally {
+      setReceiving(false);
+    }
+  };
+
+  const showReceiveButton =
+    canReceive &&
+    selectedBatch != null &&
+    selectedBatch.formType !== 'borrow' &&
+    !!selectedBatch.dept_head_signed_at &&
+    !!selectedBatch.process_signed_at &&
+    !selectedBatch.it_manager_signed_at;
+
+  const handleDownloadCurrent = async () => {
+    if (!selectedBatch) return;
+    await handleDownload(selectedBatch);
+  };
+
+  const isAnyLoading =
+    loading || approvedLoading || (canReceive && receiveLoading);
+
+  // ---------- Shimmer card skeleton ----------
+  const shimmerGrid = (
+    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+      {[1, 2, 3, 4, 5, 6].map(i => (
+        <div key={i} className="rounded-lg border p-4 space-y-3">
+          <Shimmer className="h-5 w-48 rounded bg-red-100/80" />
+          <Shimmer className="h-4 w-20 rounded" />
+          <Shimmer className="h-4 w-32 rounded" />
+          <Shimmer className="h-4 w-28 rounded" />
+          <div className="flex gap-2 pt-2">
+            <Shimmer className="h-9 flex-1 rounded-lg" />
+            <Shimmer className="h-9 w-20 rounded-lg" />
+          </div>
+        </div>
+      ))}
+    </div>
+  );
+
+  // ---------- Reusable card grid renderer ----------
+  const renderCardGrid = (list: ApprovalBatch[]) => (
+    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+      {list.map(batch => {
+        const key =
+          batch.formType === 'borrow'
+            ? (batch as BorrowApprovalBatch).borrow_request_id
+            : batch.formID ??
+              batch.return_batch_id ??
+              batch.returns?.[0]?.return_id ??
+              '';
+        if (batch.formType === 'borrow') {
+          const b = batch as BorrowApprovalBatch;
+          return (
+            <BorrowFormCard
+              key={b.borrow_request_id}
+              batch={toAssetBorrowFormBatch(b)}
+              onView={() => {
+                setSelectedBatch(batch);
+                setShowDetail(true);
+              }}
+              onDownload={() => handleDownload(batch)}
+            />
+          );
+        }
+        if (batch.formType === 'transfer') {
+          return (
+            <TransferFormCard
+              key={key}
+              batch={batch as AssetTransferFormBatch}
+              onView={() => {
+                setSelectedBatch(batch);
+                setShowDetail(true);
+              }}
+              onDownload={() => handleDownload(batch)}
+              viewOnly
+            />
+          );
+        }
+        return (
+          <ReturnFormCard
+            key={key}
+            batch={batch as AssetReturnFormBatch}
+            onView={() => {
+              setSelectedBatch(batch);
+              setShowDetail(true);
+            }}
+            onDownload={() => handleDownload(batch)}
+            viewOnly
+          />
+        );
+      })}
+    </div>
+  );
+
+  const renderEmpty = (
+    icon: React.ReactNode,
+    title: string,
+    subtitle: string,
+    query: string
+  ) => (
+    <div className="text-center py-12">
+      {icon}
+      {query.trim() ? (
+        <>
+          <p className="text-gray-500 text-lg">No forms match your search</p>
+          <p className="text-gray-400 text-sm mt-1">
+            Try a different search term.
+          </p>
+        </>
+      ) : (
+        <>
+          <p className="text-gray-500 text-lg">{title}</p>
+          <p className="text-gray-400 text-sm mt-1">{subtitle}</p>
+        </>
+      )}
+    </div>
+  );
+
+  const tabTriggerClass =
+    'data-[state=active]:bg-red-600 data-[state=active]:text-white hover:bg-gray-200 hover:text-gray-900 rounded-lg font-medium';
+
+  // ---------- Render ----------
+  return (
+    <div className="flex flex-col min-h-screen">
+      <main className="flex-1 p-4 sm:p-6 space-y-6">
+        {/* ───── Header ───── */}
+        <PageHeader
+          icon={CheckSquare}
+          title="Approvals"
+          description="Manage return and transfer form approvals and signatures"
+        >
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={refreshAll}
+            disabled={isAnyLoading}
+            className="flex items-center gap-2"
+          >
+            <RefreshCw
+              className={`h-4 w-4 ${isAnyLoading ? 'animate-spin' : ''}`}
+            />
+            Refresh
+          </Button>
+        </PageHeader>
+
+        {/* ───── Tabs ───── */}
+        <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
+          <TabsList
+            className={`grid ${canReceive ? 'grid-cols-3' : 'grid-cols-2'} w-full h-14 rounded-xl bg-white shadow-sm border`}
+          >
+            <TabsTrigger value="for-approval" className={tabTriggerClass}>
+              <ClipboardCheck className="w-4 h-4 mr-2" />
+              For Approval
+              <span className="ml-2 inline-flex items-center justify-center min-w-[22px] h-[22px] px-1.5 rounded-full text-xs font-bold bg-white/20">
+                {batches.length}
+              </span>
+            </TabsTrigger>
+            {canReceive && (
+              <TabsTrigger value="receive" className={tabTriggerClass}>
+                <PackageCheck className="w-4 h-4 mr-2" />
+                Receive Approve
+                <span className="ml-2 inline-flex items-center justify-center min-w-[22px] h-[22px] px-1.5 rounded-full text-xs font-bold bg-white/20">
+                  {receiveBatches.length}
+                </span>
+              </TabsTrigger>
+            )}
+            <TabsTrigger value="approved" className={tabTriggerClass}>
+              <CheckCircle2 className="w-4 h-4 mr-2" />
+              Approved
+              <span className="ml-2 inline-flex items-center justify-center min-w-[22px] h-[22px] px-1.5 rounded-full text-xs font-bold bg-white/20">
+                {approvedBatches.length}
+              </span>
+            </TabsTrigger>
+          </TabsList>
+
+          {/* ──── For Approval Tab ──── */}
+          <TabsContent value="for-approval" className="mt-8">
+            <div className="relative max-w-md mb-6">
+              <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 w-4 h-4" />
+              <Input
+                type="text"
+                placeholder="Search by form number, asset, or returner..."
+                value={searchQuery}
+                onChange={e => setSearchQuery(e.target.value)}
+                className="pl-10"
+              />
+            </div>
+
+            {displayLoading
+              ? shimmerGrid
+              : filteredBatches.length === 0
+                ? renderEmpty(
+                    <CheckSquare className="w-16 h-16 text-gray-300 mx-auto mb-4" />,
+                    'No pending approvals',
+                    'Return forms that need Department Head signature will appear here.',
+                    searchQuery
+                  )
+                : renderCardGrid(filteredBatches)}
+          </TabsContent>
+
+          {/* ──── Receive Approve Tab ──── */}
+          {canReceive && (
+            <TabsContent value="receive" className="mt-8">
+              <div className="relative max-w-md mb-6">
+                <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 w-4 h-4" />
+                <Input
+                  type="text"
+                  placeholder="Search by form number, asset, or returner..."
+                  value={receiveSearchQuery}
+                  onChange={e => setReceiveSearchQuery(e.target.value)}
+                  className="pl-10"
+                />
+              </div>
+
+              {displayReceiveLoading
+                ? shimmerGrid
+                : filteredReceiveBatches.length === 0
+                  ? renderEmpty(
+                      <PackageCheck className="w-16 h-16 text-gray-300 mx-auto mb-4" />,
+                      'No forms pending receive',
+                      'Forms that need Department Head (IT/Admin Manager) signature will appear here.',
+                      receiveSearchQuery
+                    )
+                  : renderCardGrid(filteredReceiveBatches)}
+            </TabsContent>
+          )}
+
+          {/* ──── Approved Tab ──── */}
+          <TabsContent value="approved" className="mt-8">
+            <div className="relative max-w-md mb-6">
+              <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 w-4 h-4" />
+              <Input
+                type="text"
+                placeholder="Search by form number, asset, or returner..."
+                value={approvedSearchQuery}
+                onChange={e => setApprovedSearchQuery(e.target.value)}
+                className="pl-10"
+              />
+            </div>
+
+            {displayApprovedLoading
+              ? shimmerGrid
+              : filteredApprovedBatches.length === 0
+                ? renderEmpty(
+                    <CheckCircle2 className="w-16 h-16 text-gray-300 mx-auto mb-4" />,
+                    'No approved forms yet',
+                    'Forms you approve will appear here.',
+                    approvedSearchQuery
+                  )
+                : renderCardGrid(filteredApprovedBatches)}
+          </TabsContent>
+        </Tabs>
+
+        {/* ───── Detail Dialog ───── */}
+        {showDetail && selectedBatch && (
+          <Dialog open={showDetail} onOpenChange={setShowDetail}>
+            <AppDialogFrame className="max-w-3xl h-[90vh] max-h-[90vh] overflow-hidden !flex !flex-col">
+              <AppDialogGradientHeader
+                title={
+                  <>
+                    {selectedBatch.formType === 'borrow'
+                      ? `${`${(selectedBatch as BorrowApprovalBatch).requester_first_name || ''} ${(selectedBatch as BorrowApprovalBatch).requester_last_name || ''}`.trim() || 'Employee'} — Borrow request`
+                      : selectedBatch.returns?.[0]?.assignment?.user
+                        ? `${selectedBatch.returns[0].assignment.user.first_name || ''} ${selectedBatch.returns[0].assignment.user.last_name || ''}`.trim() ||
+                          (selectedBatch.formType === 'transfer'
+                            ? 'Transfer'
+                            : 'Return')
+                        : selectedBatch.formType === 'transfer'
+                          ? 'Transfer'
+                          : 'Return'}{' '}
+                    {selectedBatch.formType !== 'borrow' && (
+                      <>
+                        -{' '}
+                        {selectedBatch.form_number ??
+                          `${selectedBatch.formType === 'transfer' ? 'Transfer' : 'Return'} of ${selectedBatch.returns?.length ?? 0} assets`}
+                      </>
+                    )}
+                  </>
+                }
+                description={
+                  selectedBatch.formType === 'borrow'
+                    ? 'Equipment Borrowing Form Preview'
+                    : selectedBatch.formType === 'transfer'
+                      ? 'Asset Transfer Form Preview'
+                      : 'Asset Return Form Preview'
+                }
+              />
+              <div className="min-h-0 flex-1 flex flex-col overflow-hidden bg-white px-4 sm:px-6">
+              {selectedBatch.formType === 'borrow' ? (
+                <BorrowFormDetail
+                  key={(selectedBatch as BorrowApprovalBatch).borrow_request_id}
+                  borrowFormBatch={toAssetBorrowFormBatch(
+                    selectedBatch as BorrowApprovalBatch
+                  )}
+                  onClose={() => {
+                    setShowDetail(false);
+                    setSelectedBatch(null);
+                  }}
+                  onDownload={handleDownloadCurrent}
+                  contentOnly
+                />
+              ) : selectedBatch.formType === 'transfer' ? (
+                <TransferFormDetail
+                  key={
+                    selectedBatch.formID ??
+                    selectedBatch.return_batch_id ??
+                    selectedBatch.returns?.[0]?.return_id ??
+                    'transfer-form'
+                  }
+                  transferFormBatch={selectedBatch as AssetTransferFormBatch}
+                  onClose={() => {
+                    setShowDetail(false);
+                    setSelectedBatch(null);
+                  }}
+                  onDownload={handleDownloadCurrent}
+                  contentOnly
+                />
+              ) : (
+                <ReturnFormDetail
+                  key={
+                    selectedBatch.formID ??
+                    selectedBatch.return_batch_id ??
+                    selectedBatch.returns?.[0]?.return_id ??
+                    'return-form'
+                  }
+                  returnFormBatch={selectedBatch as AssetReturnFormBatch}
+                  onClose={() => {
+                    setShowDetail(false);
+                    setSelectedBatch(null);
+                  }}
+                  onDownload={handleDownloadCurrent}
+                  onApprove={handleApprove}
+                  showApproveButton={
+                    canApprove && !selectedBatch.dept_head_signed_at
+                  }
+                  isApproving={approving}
+                  contentOnly
+                />
+              )}
+              </div>
+              <AppDialogChromeFooter className="flex-shrink-0 flex-row flex-wrap justify-end gap-3 sm:gap-3">
+                <Button
+                  variant="outline"
+                  onClick={() => {
+                    setShowDetail(false);
+                    setSelectedBatch(null);
+                  }}
+                >
+                  Close
+                </Button>
+                {canApprove &&
+                  !(
+                    selectedBatch as { dept_head_signed_at?: string | null }
+                  ).dept_head_signed_at && (
+                    <>
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        onClick={handleDecline}
+                        disabled={declining || approving}
+                        className="border-red-500 text-red-600 hover:bg-red-50"
+                      >
+                        {declining ? 'Declining...' : 'Decline'}
+                      </Button>
+                      <Button
+                        size="sm"
+                        onClick={handleApprove}
+                        disabled={approving || declining}
+                        className="bg-blue-600 hover:bg-blue-700 text-white"
+                      >
+                        {approving ? 'Approving...' : 'Approve'}
+                      </Button>
+                    </>
+                  )}
+                {showReceiveButton && (
+                  <Button
+                    size="sm"
+                    onClick={handleReceive}
+                    disabled={receiving}
+                    className="bg-blue-600 hover:bg-blue-700 text-white"
+                  >
+                    {receiving ? 'Receiving...' : 'Receive'}
+                  </Button>
+                )}
+                <Button
+                  size="sm"
+                  onClick={handleDownloadCurrent}
+                  className="bg-green-600 hover:bg-green-700 text-white"
+                >
+                  <Download className="h-4 w-4 mr-2" />
+                  Download PDF
+                </Button>
+              </AppDialogChromeFooter>
+            </AppDialogFrame>
+          </Dialog>
+        )}
+
+        {/* Decline Reason Dialog */}
+        <Dialog open={showDeclineReasonDialog} onOpenChange={setShowDeclineReasonDialog}>
+          <AppDialogFrame className="max-w-md">
+            <AppDialogGradientHeader title="Decline Request" />
+            <div className="p-6">
+              <p className="text-sm text-gray-600 mb-4">
+                Please provide a reason for declining this request.
+              </p>
+              <textarea
+                value={declineReason}
+                onChange={(e) => setDeclineReason(e.target.value)}
+                placeholder="Enter reason for declining..."
+                className="w-full min-h-[100px] p-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                rows={4}
+              />
+            </div>
+            <AppDialogChromeFooter className="flex-row justify-end gap-3">
+              <Button
+                variant="outline"
+                onClick={() => setShowDeclineReasonDialog(false)}
+              >
+                Cancel
+              </Button>
+              <Button
+                onClick={handleDeclineWithReason}
+                className="bg-red-600 hover:bg-red-700 text-white"
+              >
+                Confirm Decline
+              </Button>
+            </AppDialogChromeFooter>
+          </AppDialogFrame>
+        </Dialog>
+
+        {/* SMS OTP Dialog */}
+        <SmsOtpDialog
+          isOpen={showOtpDialog}
+          onOpenChange={setShowOtpDialog}
+          sendOtpEndpoint="/auth/initials/send-otp"
+          verifyOtpEndpoint="/auth/initials/verify-otp"
+          onVerified={() => {
+            setShowOtpDialog(false);
+            pendingActionRef.current = null;
+          }}
+          onCancel={() => {
+            pendingActionRef.current = null;
+            setShowOtpDialog(false);
+          }}
+          pendingActionRef={pendingActionRef}
+          title="OTP SMS Verification"
+          description="OTP SMS Verification has been sent to your registered mobile number for approval confirmation."
+          verifyButtonLabel="Verify & Confirm"
+        />
+      </main>
+    </div>
+  );
+}

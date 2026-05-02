@@ -1,0 +1,41 @@
+/** Human-readable labels for audit log JSON keys (asset and common FK fields). */
+export const AUDIT_FIELD_LABELS: Record<string, string> = {
+  name: 'Name',
+  description: 'Description',
+  category_id: 'Category',
+  type_id: 'Type',
+  supplier: 'Supplier',
+  brand: 'Brand',
+  model: 'Model',
+  serial: 'Serial',
+  image_url: 'Image',
+  purchase_date: 'Purchase date',
+  asset_value: 'Asset value',
+  salvage_value: 'Salvage value',
+  depreciation_method: 'Depreciation method',
+  useful_life_years: 'Useful life (years)',
+  annual_depreciation: 'Annual depreciation',
+  depreciation_start_date: 'Depreciation start date',
+  company_id: 'Company',
+  location_id: 'Location',
+  location_room_id: 'Room',
+  department_id: 'Department',
+  location_notes: 'Location notes',
+  warranty_months: 'Warranty (months)',
+  condition: 'Condition',
+  maintenance_schedule: 'Maintenance schedule',
+  status: 'Status',
+  is_old_unit: 'Old unit',
+  assigned_to: 'Assigned to',
+  user_id: 'User',
+  builder_ids: 'Asset builders',
+  brand_id: 'Brand',
+  supplier_id: 'Supplier',
+  builder_id: 'Asset builder',
+  asset_codes: 'Asset codes',
+  returned_asset_codes: 'Returned assets',
+};
+
+export function auditFieldLabel(key: string): string {
+  return AUDIT_FIELD_LABELS[key] ?? key.replace(/_/g, ' ');
+}

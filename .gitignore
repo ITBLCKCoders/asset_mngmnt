@@ -1,0 +1,22 @@
+node_modules
+
+# Root env
+.env
+.env.*
+
+# Client env
+client/.env
+client/.env.*
+
+# Server env
+server/.env
+server/.env.*
+
+# Logs
+server/logs/
+logs/
+*.log
+.cursor
+
+# Local HR wet-signed accountability PDFs (see ACCOUNTABILITY_WET_PDF_DIR)
+uploads/accountability-wet-pdfs/*.pdf

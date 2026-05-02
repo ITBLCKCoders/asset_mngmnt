@@ -1,0 +1,2 @@
+# Relaxed: no automatic checks on commit (avoids blocking and long full-repo Prettier runs).
+# Before pushing or in CI, run: npm run format:check  and  npx prettier --write .  if needed.

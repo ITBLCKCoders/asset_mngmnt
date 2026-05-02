@@ -1,0 +1,417 @@
+'use client';
+
+import { useState, useEffect, useMemo } from 'react';
+import { useSearchParams } from 'react-router-dom';
+import { Input } from '@/components/ui/input';
+import { Button } from '@/components/ui/button';
+import { PageHeader } from '@/components/common/PageHeader';
+import { Search, FileDown, Download, RefreshCw } from 'lucide-react';
+import { api } from '@/lib/api';
+import { toast } from 'sonner';
+import { useCurrentUser } from '@/hooks/useCurrentUser';
+import {
+  ReturnFormCard,
+  ReturnFormDetail,
+  buildReturnDataForPDFFromBatch,
+  type AssetReturnFormBatch,
+} from '@/pages/profile/profileComponents/tabs/documentsTab';
+import { generateAssetReturnPDF, downloadPDF } from '@/lib/pdfGenerator';
+import { Dialog } from '@/components/ui/dialog';
+import {
+  AppDialogFrame,
+  AppDialogGradientHeader,
+  AppDialogChromeFooter,
+} from '@/components/common/appDialogChrome';
+import { useDelayedLoading } from '@/hooks/useDelayedLoading';
+import { Shimmer } from '@/components/ui/shimmer';
+import { matchesFormListSearch } from '@/utils/formListSearch';
+import { Label } from '@/components/ui/label';
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select';
+import {
+  collectCompanyOptionsFromReturnBatches,
+  collectDepartmentOptionsFromReturnBatches,
+  returnBatchMatchesOrgFilters,
+} from '@/utils/formBatchOrgFilters';
+
+export default function AssetReturnFormsPage() {
+  const [searchParams, setSearchParams] = useSearchParams();
+  const { user: currentUser } = useCurrentUser();
+  const [batches, setBatches] = useState<AssetReturnFormBatch[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [searchQuery, setSearchQuery] = useState('');
+  const [companyFilterId, setCompanyFilterId] = useState('');
+  const [departmentFilterId, setDepartmentFilterId] = useState('');
+  
+  // Auto-set company filter to user's company if they have one
+  const userCompanyScope = currentUser?.company_id || '';
+  const userRoleName = currentUser?.role?.name?.toLowerCase() || '';
+  const isSuperAdminOrAdmin = userRoleName === 'super admin' || userRoleName === 'admin';
+  const hasHrAccountabilityReceiver = currentUser?.role?.hr_accountability_receiver === true;
+  const showCompanyFilter = !userCompanyScope || isSuperAdminOrAdmin || hasHrAccountabilityReceiver;
+  
+  useEffect(() => {
+    if (userCompanyScope && !isSuperAdminOrAdmin && !hasHrAccountabilityReceiver && companyFilterId !== userCompanyScope) {
+      setCompanyFilterId(userCompanyScope);
+    }
+  }, [userCompanyScope, isSuperAdminOrAdmin, hasHrAccountabilityReceiver]);
+  const [selectedBatch, setSelectedBatch] =
+    useState<AssetReturnFormBatch | null>(null);
+  const [showDetail, setShowDetail] = useState(false);
+  const displayLoading = useDelayedLoading(loading, 2000);
+
+  const fetchReturnForms = async () => {
+    try {
+      setLoading(true);
+      const response = await api.get('/asset-returns');
+      let list: AssetReturnFormBatch[] = response.assetReturnForms || [];
+      if (list.length === 0 && Array.isArray(response.assetReturns)) {
+        const byBatch = new Map<string, any[]>();
+        for (const r of response.assetReturns) {
+          const key = r.return_batch_id ?? r.return_id;
+          if (!byBatch.has(key)) byBatch.set(key, []);
+          byBatch.get(key)!.push(r);
+        }
+        list = Array.from(byBatch.entries()).map(([, returns]) => {
+          const first = returns[0];
+          return {
+            return_batch_id: first.return_batch_id ?? null,
+            created_at: first.created_at,
+            user_id: first.user_id,
+            processed_by: first.processed_by,
+            returns,
+          } as AssetReturnFormBatch;
+        });
+        list.sort(
+          (a, b) =>
+            new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
+        );
+      }
+      setBatches(list);
+    } catch (error) {
+      console.error('Failed to fetch asset return forms:', error);
+      toast.error('Failed to load asset return forms');
+      setBatches([]);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    fetchReturnForms();
+  }, []);
+
+  // If user arrived from a notification, auto-open the preview (and optionally upload) for that form.
+  useEffect(() => {
+    const openFormId = searchParams.get('openFormId');
+    const openUpload = searchParams.get('openUpload') === '1';
+    if (!openFormId) return;
+    if (loading) return;
+
+    const batch =
+      Array.isArray(batches) && batches.length > 0
+        ? batches.find(b => String(b.formID || '') === String(openFormId))
+        : null;
+    if (!batch) return;
+
+    setSelectedBatch(batch);
+    setShowDetail(true);
+
+    // Clear the query params so refresh doesn't re-open repeatedly.
+    const next = new URLSearchParams(searchParams);
+    next.delete('openFormId');
+    next.delete('openUpload');
+    setSearchParams(next, { replace: true });
+  }, [searchParams, setSearchParams, batches, loading]);
+
+  useEffect(() => {
+    setDepartmentFilterId('');
+  }, [companyFilterId]);
+
+  const companyOptions = useMemo(
+    () => collectCompanyOptionsFromReturnBatches(batches),
+    [batches]
+  );
+  const departmentOptions = useMemo(
+    () =>
+      collectDepartmentOptionsFromReturnBatches(batches, companyFilterId),
+    [batches, companyFilterId]
+  );
+
+  const orgFilteredBatches = useMemo(
+    () =>
+      batches.filter(b =>
+        returnBatchMatchesOrgFilters(b, companyFilterId, departmentFilterId)
+      ),
+    [batches, companyFilterId, departmentFilterId]
+  );
+
+  const filteredBatches = useMemo(() => {
+    if (!searchQuery.trim()) return orgFilteredBatches;
+    return orgFilteredBatches.filter(b =>
+      matchesFormListSearch(b, searchQuery)
+    );
+  }, [orgFilteredBatches, searchQuery]);
+
+  const hasActiveOrgFilters = Boolean(companyFilterId || departmentFilterId);
+
+  const handleDownloadCurrent = async () => {
+    if (!selectedBatch) return;
+    try {
+      const data = buildReturnDataForPDFFromBatch(selectedBatch);
+      if (!data) {
+        toast.error('Cannot generate PDF for this form');
+        return;
+      }
+      const blob = await generateAssetReturnPDF(data);
+      const fileName = selectedBatch.form_number
+        ? `Asset_Return_Form_${selectedBatch.form_number}_${Date.now()}.pdf`
+        : `Asset_Return_Form_${Date.now()}.pdf`;
+      downloadPDF(blob, fileName);
+      toast.success('Return form downloaded successfully');
+    } catch (e) {
+      console.error(e);
+      toast.error('Failed to download PDF');
+    }
+  };
+
+  return (
+    <div className="flex flex-col min-h-screen">
+      <main className="flex-1 p-4 sm:p-6 space-y-6">
+        <PageHeader
+          icon={FileDown}
+          title="Asset Return Forms"
+          description="View and manage all asset return forms"
+          loading={displayLoading}
+        >
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={fetchReturnForms}
+            disabled={loading}
+            className="flex items-center gap-2"
+          >
+            <RefreshCw className={`h-4 w-4 ${loading ? 'animate-spin' : ''}`} />
+            Refresh
+          </Button>
+        </PageHeader>
+
+        <div>
+          <div className="flex flex-col gap-4 mb-6">
+            <div className="flex flex-col lg:flex-row gap-4 lg:items-end">
+              <div className="relative flex-1 min-w-0">
+                <Label className="text-sm font-medium text-muted-foreground mb-1.5 block">
+                  Search
+                </Label>
+                <div className="relative max-w-md">
+                  <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 w-4 h-4" />
+                  <Input
+                    type="text"
+                    placeholder="Search form number, assets, returner, department, notes..."
+                    value={searchQuery}
+                    onChange={e => setSearchQuery(e.target.value)}
+                    className="pl-10"
+                  />
+                </div>
+              </div>
+              <div className="flex flex-col sm:flex-row gap-4 sm:items-end flex-wrap">
+                {showCompanyFilter && (
+                  <div className="space-y-1.5 w-full sm:w-[220px]">
+                    <Label className="text-sm font-medium text-muted-foreground">
+                      Company
+                    </Label>
+                  <Select
+                    value={companyFilterId || 'all'}
+                    onValueChange={v =>
+                      setCompanyFilterId(v === 'all' ? '' : v)
+                    }
+                  >
+                    <SelectTrigger className="w-full">
+                      <SelectValue placeholder="All companies" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="all">All companies</SelectItem>
+                      {companyOptions.map(c => (
+                        <SelectItem key={c.id} value={c.id}>
+                          {c.name}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+                  )}
+                <div className="space-y-1.5 w-full sm:w-[220px]">
+                  <Label className="text-sm font-medium text-muted-foreground">
+                    Department
+                  </Label>
+                  <Select
+                    value={departmentFilterId || 'all'}
+                    onValueChange={v =>
+                      setDepartmentFilterId(v === 'all' ? '' : v)
+                    }
+                  >
+                    <SelectTrigger className="w-full">
+                      <SelectValue placeholder="All departments" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="all">All departments</SelectItem>
+                      {departmentOptions.map(d => (
+                        <SelectItem key={d.id} value={d.id}>
+                          {d.name}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <div className="flex items-center gap-2 mb-4">
+            <span className="text-sm text-muted-foreground">
+              {filteredBatches.length} form(s)
+            </span>
+          </div>
+
+          {displayLoading ? (
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+              {[1, 2, 3, 4, 5, 6].map(i => (
+                <div key={i} className="rounded-lg border p-4 space-y-3">
+                  <Shimmer className="h-5 w-48 rounded bg-red-100/80" />
+                  <Shimmer className="h-4 w-20 rounded" />
+                  <Shimmer className="h-4 w-32 rounded" />
+                  <Shimmer className="h-4 w-28 rounded" />
+                  <div className="flex gap-2 pt-2">
+                    <Shimmer className="h-9 flex-1 rounded-lg" />
+                    <Shimmer className="h-9 w-20 rounded-lg" />
+                  </div>
+                </div>
+              ))}
+            </div>
+          ) : filteredBatches.length === 0 ? (
+            <div className="text-center py-12 rounded-lg">
+              <FileDown className="w-16 h-16 text-gray-300 mx-auto mb-4" />
+              {searchQuery ? (
+                <>
+                  <p className="text-gray-500 text-lg">No return forms found</p>
+                  <p className="text-gray-400 text-sm mt-1">
+                    No forms match &quot;{searchQuery}&quot;.
+                  </p>
+                </>
+              ) : hasActiveOrgFilters ? (
+                <>
+                  <p className="text-gray-500 text-lg">No forms match filters</p>
+                  <p className="text-gray-400 text-sm mt-1">
+                    Try clearing company or department filters.
+                  </p>
+                </>
+              ) : (
+                <>
+                  <p className="text-gray-500 text-lg">No asset return forms</p>
+                  <p className="text-gray-400 text-sm mt-1">
+                    Return forms will appear here when available.
+                  </p>
+                </>
+              )}
+            </div>
+          ) : (
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+              {filteredBatches.map(batch => (
+                <ReturnFormCard
+                  key={
+                    batch.formID ??
+                    batch.return_batch_id ??
+                    batch.returns[0]?.return_id ??
+                    ''
+                  }
+                  batch={batch}
+                  onView={() => {
+                    setSelectedBatch(batch);
+                    setShowDetail(true);
+                  }}
+                  onDownload={async () => {
+                    try {
+                      const data = buildReturnDataForPDFFromBatch(batch);
+                      if (!data) return;
+                      const blob = await generateAssetReturnPDF(data);
+                      const url = URL.createObjectURL(blob);
+                      const a = document.createElement('a');
+                      a.href = url;
+                      a.download = `return-form-${batch.form_number ?? 'export'}.pdf`;
+                      a.click();
+                      URL.revokeObjectURL(url);
+                      toast.success('Download started');
+                    } catch (e) {
+                      toast.error('Failed to download PDF');
+                    }
+                  }}
+                  viewOnly
+                />
+              ))}
+            </div>
+          )}
+        </div>
+
+        {showDetail && selectedBatch && (
+          <Dialog open={showDetail} onOpenChange={setShowDetail}>
+            <AppDialogFrame className="max-w-3xl h-[min(90dvh,920px)] max-h-[calc(100dvh-1rem)] min-h-0 overflow-hidden !flex !flex-col">
+              <AppDialogGradientHeader
+                title={`${
+                  selectedBatch.returns[0]?.assignment?.user
+                    ? `${selectedBatch.returns[0].assignment.user.first_name || ''} ${selectedBatch.returns[0].assignment.user.last_name || ''}`.trim() ||
+                      'Return'
+                    : 'Return'
+                } - ${
+                  selectedBatch.form_number ??
+                  `Return of ${selectedBatch.returns.length} assets`
+                }`}
+                description="Asset Return Form Preview"
+              />
+              <div className="min-h-0 flex-1 flex flex-col overflow-hidden bg-white px-4 sm:px-6">
+                <ReturnFormDetail
+                  key={
+                    selectedBatch.formID ??
+                    selectedBatch.return_batch_id ??
+                    selectedBatch.returns[0]?.return_id ??
+                    'return-form'
+                  }
+                  returnFormBatch={selectedBatch}
+                  onClose={() => {
+                    setShowDetail(false);
+                    setSelectedBatch(null);
+                  }}
+                  onDownload={handleDownloadCurrent}
+                  contentOnly
+                />
+              </div>
+              <AppDialogChromeFooter className="flex-shrink-0 flex-row justify-end gap-3 sm:gap-3">
+                <Button
+                  variant="outline"
+                  onClick={() => {
+                    setShowDetail(false);
+                    setSelectedBatch(null);
+                  }}
+                >
+                  Close
+                </Button>
+                <Button
+                  size="sm"
+                  onClick={handleDownloadCurrent}
+                  className="bg-green-600 hover:bg-green-700 text-white"
+                >
+                  <Download className="h-4 w-4 mr-2" />
+                  Download PDF
+                </Button>
+              </AppDialogChromeFooter>
+            </AppDialogFrame>
+          </Dialog>
+        )}
+      </main>
+    </div>
+  );
+}

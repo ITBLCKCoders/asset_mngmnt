@@ -1,0 +1,78 @@
+CREATE DATABASE  IF NOT EXISTS `asset_mngmnt` /*!40100 DEFAULT CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci */ /*!80016 DEFAULT ENCRYPTION='N' */;
+USE `asset_mngmnt`;
+-- MySQL dump 10.13  Distrib 8.0.44, for Win64 (x86_64)
+--
+-- Host: localhost    Database: asset_mngmnt
+-- ------------------------------------------------------
+-- Server version	8.0.44
+
+/*!40101 SET @OLD_CHARACTER_SET_CLIENT=@@CHARACTER_SET_CLIENT */;
+/*!40101 SET @OLD_CHARACTER_SET_RESULTS=@@CHARACTER_SET_RESULTS */;
+/*!40101 SET @OLD_COLLATION_CONNECTION=@@COLLATION_CONNECTION */;
+/*!50503 SET NAMES utf8 */;
+/*!40103 SET @OLD_TIME_ZONE=@@TIME_ZONE */;
+/*!40103 SET TIME_ZONE='+00:00' */;
+/*!40014 SET @OLD_UNIQUE_CHECKS=@@UNIQUE_CHECKS, UNIQUE_CHECKS=0 */;
+/*!40014 SET @OLD_FOREIGN_KEY_CHECKS=@@FOREIGN_KEY_CHECKS, FOREIGN_KEY_CHECKS=0 */;
+/*!40101 SET @OLD_SQL_MODE=@@SQL_MODE, SQL_MODE='NO_AUTO_VALUE_ON_ZERO' */;
+/*!40111 SET @OLD_SQL_NOTES=@@SQL_NOTES, SQL_NOTES=0 */;
+
+--
+-- Table structure for table `asset_assignments`
+--
+
+DROP TABLE IF EXISTS `asset_assignments`;
+/*!40101 SET @saved_cs_client     = @@character_set_client */;
+/*!50503 SET character_set_client = utf8mb4 */;
+CREATE TABLE `asset_assignments` (
+  `assignmentID` char(36) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci NOT NULL DEFAULT (uuid()),
+  `asset_id` char(36) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci NOT NULL,
+  `user_id` char(36) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci NOT NULL,
+  `department_id` char(36) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+  `location_id` char(36) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+  `location_room_id` char(36) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+  `assigned_date` datetime DEFAULT CURRENT_TIMESTAMP,
+  `expected_return_date` datetime DEFAULT NULL,
+  `actual_return_date` datetime DEFAULT NULL,
+  `assignment_notes` text CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci,
+  `status` enum('Active','Inactive','Returned','Lost','Damaged') CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci DEFAULT 'Active',
+  `assigned_by` char(36) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+  `created_at` datetime DEFAULT CURRENT_TIMESTAMP,
+  `updated_at` datetime DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  `deleted_at` datetime DEFAULT NULL,
+  PRIMARY KEY (`assignmentID`),
+  KEY `asset_id` (`asset_id`),
+  KEY `user_id` (`user_id`),
+  KEY `department_id` (`department_id`),
+  KEY `location_id` (`location_id`),
+  KEY `location_room_id` (`location_room_id`),
+  KEY `assigned_by` (`assigned_by`),
+  CONSTRAINT `asset_assignments_ibfk_1` FOREIGN KEY (`asset_id`) REFERENCES `assets` (`assetID`) ON DELETE CASCADE,
+  CONSTRAINT `asset_assignments_ibfk_2` FOREIGN KEY (`user_id`) REFERENCES `users` (`userID`) ON DELETE CASCADE,
+  CONSTRAINT `asset_assignments_ibfk_3` FOREIGN KEY (`department_id`) REFERENCES `asset_mngmnt_departments` (`departmentID`) ON DELETE SET NULL,
+  CONSTRAINT `asset_assignments_ibfk_4` FOREIGN KEY (`location_id`) REFERENCES `asset_mngmnt_locations` (`locationID`) ON DELETE SET NULL,
+  CONSTRAINT `asset_assignments_ibfk_5` FOREIGN KEY (`location_room_id`) REFERENCES `asset_mngmnt_location_rooms` (`roomID`) ON DELETE SET NULL,
+  CONSTRAINT `asset_assignments_ibfk_6` FOREIGN KEY (`assigned_by`) REFERENCES `users` (`userID`) ON DELETE SET NULL
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+/*!40101 SET character_set_client = @saved_cs_client */;
+
+--
+-- Dumping data for table `asset_assignments`
+--
+
+LOCK TABLES `asset_assignments` WRITE;
+/*!40000 ALTER TABLE `asset_assignments` DISABLE KEYS */;
+INSERT INTO `asset_assignments` VALUES ('168631dd-6be4-474b-a2a4-98efc0a2b79a','a1700015-00af-11f1-a629-b8cb29c59adf','3196d5d4-9966-410d-bb80-76a582659c45','ec1eb111-cfd6-11f0-9d93-18c04d003e97','e7eb915f-00ad-11f1-a629-b8cb29c59adf','729bf057-0d39-11f1-97a8-b8cb29c59adf','2026-02-20 13:12:57',NULL,NULL,'Assigned via asset issuance','Active','7fa0df8c-3861-4f63-ba16-1806425afea0','2026-02-20 13:12:57','2026-02-20 13:12:57',NULL),('1abcf8a6-bafc-486f-a25d-e4b7e83ec5af','5b919901-018e-11f1-a629-b8cb29c59adf','7eb89d79-88fd-44ce-9991-d9bcb3635d77','f7a164ee-cfd7-11f0-9d93-18c04d003e97','807229fe-f4df-11f0-9f53-18c04d003e97','5b14f3a7-0d39-11f1-97a8-b8cb29c59adf','2026-02-20 12:50:08',NULL,NULL,'Assigned via asset issuance','Active','7fa0df8c-3861-4f63-ba16-1806425afea0','2026-02-20 12:50:08','2026-02-20 12:50:08',NULL),('2ea59cf2-ff52-476c-b207-9b312523c4c1','65891ddc-016f-11f1-a629-b8cb29c59adf','7fa0df8c-3861-4f63-ba16-1806425afea0','430a3a44-cfd8-11f0-9d93-18c04d003e97','87736191-cfde-11f0-9d93-18c04d003e97','3e147580-f4df-11f0-9f53-18c04d003e97','2026-02-04 11:11:36',NULL,NULL,'Assigned via asset issuance','Active','7fa0df8c-3861-4f63-ba16-1806425afea0','2026-02-04 11:11:36','2026-02-04 11:11:36',NULL),('305b11bb-26da-4bda-b12b-5a2e0804dd3c','6c3e0ded-022e-11f1-a629-b8cb29c59adf','73f0e245-8a82-4554-8283-2e50731b0bab','e744c671-cfd6-11f0-9d93-18c04d003e97','b0dc182c-022b-11f1-a629-b8cb29c59adf','7af64cf8-0d39-11f1-97a8-b8cb29c59adf','2026-02-20 14:22:15',NULL,NULL,'Assigned via asset issuance','Active','7fa0df8c-3861-4f63-ba16-1806425afea0','2026-02-20 14:22:15','2026-02-20 14:22:15',NULL),('446d72ae-87a1-4a17-b6a2-42ad9073139c','2416947c-00a4-11f1-a629-b8cb29c59adf','6e08d3c5-ec05-4bf1-a843-880f20af1ead','12507366-cfd8-11f0-9d93-18c04d003e97','70cbcf39-f4df-11f0-9f53-18c04d003e97','65a66301-0d39-11f1-97a8-b8cb29c59adf','2026-02-20 12:41:32',NULL,NULL,'Assigned via asset issuance','Active','7fa0df8c-3861-4f63-ba16-1806425afea0','2026-02-20 12:41:32','2026-02-20 12:41:32',NULL),('4a15fad8-ceea-4c46-9ae6-607bfde2d444','f2e4dbf3-022b-11f1-a629-b8cb29c59adf','63136f4e-44a7-45c7-8eab-3f2185315dc8','e744c671-cfd6-11f0-9d93-18c04d003e97','b0dc182c-022b-11f1-a629-b8cb29c59adf','7af64cf8-0d39-11f1-97a8-b8cb29c59adf','2026-02-20 12:55:48',NULL,NULL,'Assigned via asset issuance','Active','7fa0df8c-3861-4f63-ba16-1806425afea0','2026-02-20 12:55:48','2026-02-20 12:55:48',NULL),('533a5363-a609-4566-87f1-b9d62a7167b1','888c2801-00c8-11f1-a629-b8cb29c59adf','7eb89d79-88fd-44ce-9991-d9bcb3635d77','f7a164ee-cfd7-11f0-9d93-18c04d003e97','807229fe-f4df-11f0-9f53-18c04d003e97','5b14f3a7-0d39-11f1-97a8-b8cb29c59adf','2026-02-20 12:50:08',NULL,NULL,'Assigned via asset issuance','Active','7fa0df8c-3861-4f63-ba16-1806425afea0','2026-02-20 12:50:08','2026-02-20 12:50:08',NULL),('571d00da-efe4-4813-99f9-a3d73da18b37','b61304c1-022c-11f1-a629-b8cb29c59adf','63136f4e-44a7-45c7-8eab-3f2185315dc8','e744c671-cfd6-11f0-9d93-18c04d003e97','b0dc182c-022b-11f1-a629-b8cb29c59adf','7af64cf8-0d39-11f1-97a8-b8cb29c59adf','2026-02-20 12:55:48',NULL,NULL,'Assigned via asset issuance','Active','7fa0df8c-3861-4f63-ba16-1806425afea0','2026-02-20 12:55:48','2026-02-20 12:55:48',NULL),('5ba0bd29-5aab-4a20-8d6d-c8e668b54326','9059e873-00a2-11f1-a629-b8cb29c59adf','aa408add-17c2-46c1-b9b6-e3a369e0f726','f7a164ee-cfd7-11f0-9d93-18c04d003e97','807229fe-f4df-11f0-9f53-18c04d003e97','5b14f3a7-0d39-11f1-97a8-b8cb29c59adf','2026-02-20 15:19:44',NULL,NULL,'Assigned via asset issuance','Active','7fa0df8c-3861-4f63-ba16-1806425afea0','2026-02-20 15:19:44','2026-02-20 15:19:44',NULL),('6477f682-e9de-4205-a5c5-d229441c1db1','cd6dc12d-00af-11f1-a629-b8cb29c59adf','3196d5d4-9966-410d-bb80-76a582659c45','ec1eb111-cfd6-11f0-9d93-18c04d003e97','e7eb915f-00ad-11f1-a629-b8cb29c59adf','729bf057-0d39-11f1-97a8-b8cb29c59adf','2026-02-20 13:12:57',NULL,NULL,'Assigned via asset issuance','Active','7fa0df8c-3861-4f63-ba16-1806425afea0','2026-02-20 13:12:57','2026-02-20 13:12:57',NULL),('723af2ca-14fa-4d17-9dcd-75f09f7ac6bd','989e4493-022d-11f1-a629-b8cb29c59adf','73f0e245-8a82-4554-8283-2e50731b0bab','e744c671-cfd6-11f0-9d93-18c04d003e97','b0dc182c-022b-11f1-a629-b8cb29c59adf','7af64cf8-0d39-11f1-97a8-b8cb29c59adf','2026-02-20 14:22:15',NULL,NULL,'Assigned via asset issuance','Active','7fa0df8c-3861-4f63-ba16-1806425afea0','2026-02-20 14:22:15','2026-02-20 14:22:15',NULL),('80769d72-9a81-40f6-be43-95b2ee97a44a','011d70b8-00ca-11f1-a629-b8cb29c59adf','0d600feb-1e6e-4579-b7f0-4df0d30dcb0a','12507366-cfd8-11f0-9d93-18c04d003e97','70cbcf39-f4df-11f0-9f53-18c04d003e97','65a66301-0d39-11f1-97a8-b8cb29c59adf','2026-02-20 12:51:59',NULL,NULL,'Assigned via asset issuance','Active','7fa0df8c-3861-4f63-ba16-1806425afea0','2026-02-20 12:51:59','2026-02-20 12:51:59',NULL),('80e1d4a7-94f6-4cda-91d2-c67a38d68181','7e358923-00c7-11f1-a629-b8cb29c59adf','88fd2aec-2c25-476a-a41f-0d4c0a457c38','f7a164ee-cfd7-11f0-9d93-18c04d003e97','807229fe-f4df-11f0-9f53-18c04d003e97','5b14f3a7-0d39-11f1-97a8-b8cb29c59adf','2026-02-20 12:53:49',NULL,NULL,'Assigned via asset issuance','Active','7fa0df8c-3861-4f63-ba16-1806425afea0','2026-02-20 12:53:49','2026-02-20 12:53:49',NULL),('83cb84b7-620a-49d8-8e8b-10f5b5103612','3e3306a8-00c9-11f1-a629-b8cb29c59adf','0d600feb-1e6e-4579-b7f0-4df0d30dcb0a','12507366-cfd8-11f0-9d93-18c04d003e97','70cbcf39-f4df-11f0-9f53-18c04d003e97','65a66301-0d39-11f1-97a8-b8cb29c59adf','2026-02-20 12:51:59',NULL,NULL,'Assigned via asset issuance','Active','7fa0df8c-3861-4f63-ba16-1806425afea0','2026-02-20 12:51:59','2026-02-20 12:51:59',NULL),('8c0057c7-f421-4526-af50-4abba06cd63d','711c0f92-00c9-11f1-a629-b8cb29c59adf','0d600feb-1e6e-4579-b7f0-4df0d30dcb0a','12507366-cfd8-11f0-9d93-18c04d003e97','70cbcf39-f4df-11f0-9f53-18c04d003e97','65a66301-0d39-11f1-97a8-b8cb29c59adf','2026-02-20 12:51:59',NULL,NULL,'Assigned via asset issuance','Active','7fa0df8c-3861-4f63-ba16-1806425afea0','2026-02-20 12:51:59','2026-02-20 12:51:59',NULL),('8d595c5b-39ce-43e5-9f6c-42b683be56bf','4fec4d37-00af-11f1-a629-b8cb29c59adf','3196d5d4-9966-410d-bb80-76a582659c45','ec1eb111-cfd6-11f0-9d93-18c04d003e97','e7eb915f-00ad-11f1-a629-b8cb29c59adf','729bf057-0d39-11f1-97a8-b8cb29c59adf','2026-02-20 13:12:57',NULL,NULL,'Assigned via asset issuance','Active','7fa0df8c-3861-4f63-ba16-1806425afea0','2026-02-20 13:12:57','2026-02-20 13:12:57',NULL),('a0504ed6-270d-41c0-902d-3ae69f61dbc1','e296aed1-00ae-11f1-a629-b8cb29c59adf','3196d5d4-9966-410d-bb80-76a582659c45','ec1eb111-cfd6-11f0-9d93-18c04d003e97','e7eb915f-00ad-11f1-a629-b8cb29c59adf','729bf057-0d39-11f1-97a8-b8cb29c59adf','2026-02-20 13:12:57',NULL,NULL,'Assigned via asset issuance','Active','7fa0df8c-3861-4f63-ba16-1806425afea0','2026-02-20 13:12:57','2026-02-20 13:12:57',NULL),('a30a1621-e3ed-4027-b0f5-4cd17e395dcb','fe664c87-018e-11f1-a629-b8cb29c59adf','7eb89d79-88fd-44ce-9991-d9bcb3635d77','f7a164ee-cfd7-11f0-9d93-18c04d003e97','807229fe-f4df-11f0-9f53-18c04d003e97','5b14f3a7-0d39-11f1-97a8-b8cb29c59adf','2026-02-20 12:50:08',NULL,NULL,'Assigned via asset issuance','Active','7fa0df8c-3861-4f63-ba16-1806425afea0','2026-02-20 12:50:08','2026-02-20 12:50:08',NULL),('b12687e9-aefe-4965-b552-0aaec7d9cc9c','561121b3-022d-11f1-a629-b8cb29c59adf','63136f4e-44a7-45c7-8eab-3f2185315dc8','e744c671-cfd6-11f0-9d93-18c04d003e97','b0dc182c-022b-11f1-a629-b8cb29c59adf','7af64cf8-0d39-11f1-97a8-b8cb29c59adf','2026-02-20 12:55:48',NULL,NULL,'Assigned via asset issuance','Active','7fa0df8c-3861-4f63-ba16-1806425afea0','2026-02-20 12:55:48','2026-02-20 12:55:48',NULL),('b18ce71e-b8c6-4bfc-9bae-b2ade9171acc','b4f98333-022e-11f1-a629-b8cb29c59adf','73f0e245-8a82-4554-8283-2e50731b0bab','e744c671-cfd6-11f0-9d93-18c04d003e97','b0dc182c-022b-11f1-a629-b8cb29c59adf','7af64cf8-0d39-11f1-97a8-b8cb29c59adf','2026-02-20 14:22:15',NULL,NULL,'Assigned via asset issuance','Active','7fa0df8c-3861-4f63-ba16-1806425afea0','2026-02-20 14:22:15','2026-02-20 14:22:15',NULL),('c344c3b7-02c8-4edf-af98-f95c3637f89d','f12e7a49-0171-11f1-a629-b8cb29c59adf','7fa0df8c-3861-4f63-ba16-1806425afea0','430a3a44-cfd8-11f0-9d93-18c04d003e97','87736191-cfde-11f0-9d93-18c04d003e97','3e147580-f4df-11f0-9f53-18c04d003e97','2026-02-04 11:11:36',NULL,NULL,'Assigned via asset issuance','Active','7fa0df8c-3861-4f63-ba16-1806425afea0','2026-02-04 11:11:36','2026-02-04 11:11:36',NULL),('d4584b1b-4510-4958-a9b2-1c1bd8d859c2','f2cff046-00c7-11f1-a629-b8cb29c59adf','88fd2aec-2c25-476a-a41f-0d4c0a457c38','f7a164ee-cfd7-11f0-9d93-18c04d003e97','807229fe-f4df-11f0-9f53-18c04d003e97','5b14f3a7-0d39-11f1-97a8-b8cb29c59adf','2026-02-20 12:53:49',NULL,NULL,'Assigned via asset issuance','Active','7fa0df8c-3861-4f63-ba16-1806425afea0','2026-02-20 12:53:49','2026-02-20 12:53:49',NULL),('d7751d68-9c8e-48a9-b646-56a8fc9b91a9','5cd6951d-00c9-11f1-a629-b8cb29c59adf','7eb89d79-88fd-44ce-9991-d9bcb3635d77','f7a164ee-cfd7-11f0-9d93-18c04d003e97','807229fe-f4df-11f0-9f53-18c04d003e97','5b14f3a7-0d39-11f1-97a8-b8cb29c59adf','2026-02-20 12:50:08',NULL,NULL,'Assigned via asset issuance','Active','7fa0df8c-3861-4f63-ba16-1806425afea0','2026-02-20 12:50:08','2026-02-20 12:50:08',NULL),('d8c6a578-3bfb-4d4b-a1a3-26812bcd5ecf','6d9eed71-00a4-11f1-a629-b8cb29c59adf','aa408add-17c2-46c1-b9b6-e3a369e0f726','f7a164ee-cfd7-11f0-9d93-18c04d003e97','807229fe-f4df-11f0-9f53-18c04d003e97','5b14f3a7-0d39-11f1-97a8-b8cb29c59adf','2026-02-20 15:19:44',NULL,NULL,'Assigned via asset issuance','Active','7fa0df8c-3861-4f63-ba16-1806425afea0','2026-02-20 15:19:44','2026-02-20 15:19:44',NULL),('e9da8f43-d39b-4770-924a-611dcbadf3a6','1c539ec9-00a2-11f1-a629-b8cb29c59adf','6e08d3c5-ec05-4bf1-a843-880f20af1ead','12507366-cfd8-11f0-9d93-18c04d003e97','70cbcf39-f4df-11f0-9f53-18c04d003e97','65a66301-0d39-11f1-97a8-b8cb29c59adf','2026-02-20 12:41:32',NULL,NULL,'Assigned via asset issuance','Active','7fa0df8c-3861-4f63-ba16-1806425afea0','2026-02-20 12:41:32','2026-02-20 12:41:32',NULL),('eb160622-7f0e-4d97-bba1-00e92c923ba1','c807de9b-022d-11f1-a629-b8cb29c59adf','73f0e245-8a82-4554-8283-2e50731b0bab','e744c671-cfd6-11f0-9d93-18c04d003e97','b0dc182c-022b-11f1-a629-b8cb29c59adf','7af64cf8-0d39-11f1-97a8-b8cb29c59adf','2026-02-20 14:22:15',NULL,NULL,'Assigned via asset issuance','Active','7fa0df8c-3861-4f63-ba16-1806425afea0','2026-02-20 14:22:15','2026-02-20 14:22:15',NULL),('eb85c238-1d28-41dc-a65f-5503accbdfa9','e2d2b4f8-022c-11f1-a629-b8cb29c59adf','63136f4e-44a7-45c7-8eab-3f2185315dc8','e744c671-cfd6-11f0-9d93-18c04d003e97','b0dc182c-022b-11f1-a629-b8cb29c59adf','7af64cf8-0d39-11f1-97a8-b8cb29c59adf','2026-02-20 12:55:48',NULL,NULL,'Assigned via asset issuance','Active','7fa0df8c-3861-4f63-ba16-1806425afea0','2026-02-20 12:55:48','2026-02-20 12:55:48',NULL),('ee41109f-b34b-4bb8-b2c2-9d8c98346b36','2751c603-00af-11f1-a629-b8cb29c59adf','3196d5d4-9966-410d-bb80-76a582659c45','ec1eb111-cfd6-11f0-9d93-18c04d003e97','e7eb915f-00ad-11f1-a629-b8cb29c59adf','729bf057-0d39-11f1-97a8-b8cb29c59adf','2026-02-20 13:12:57',NULL,NULL,'Assigned via asset issuance','Active','7fa0df8c-3861-4f63-ba16-1806425afea0','2026-02-20 13:12:57','2026-02-20 13:12:57',NULL),('f88d179c-92e6-4042-8a89-7ec41759a44d','5de1cd8a-00c7-11f1-a629-b8cb29c59adf','88fd2aec-2c25-476a-a41f-0d4c0a457c38','f7a164ee-cfd7-11f0-9d93-18c04d003e97','807229fe-f4df-11f0-9f53-18c04d003e97','5b14f3a7-0d39-11f1-97a8-b8cb29c59adf','2026-02-20 12:53:49',NULL,NULL,'Assigned via asset issuance','Active','7fa0df8c-3861-4f63-ba16-1806425afea0','2026-02-20 12:53:49','2026-02-20 12:53:49',NULL);
+/*!40000 ALTER TABLE `asset_assignments` ENABLE KEYS */;
+UNLOCK TABLES;
+/*!40103 SET TIME_ZONE=@OLD_TIME_ZONE */;
+
+/*!40101 SET SQL_MODE=@OLD_SQL_MODE */;
+/*!40014 SET FOREIGN_KEY_CHECKS=@OLD_FOREIGN_KEY_CHECKS */;
+/*!40014 SET UNIQUE_CHECKS=@OLD_UNIQUE_CHECKS */;
+/*!40101 SET CHARACTER_SET_CLIENT=@OLD_CHARACTER_SET_CLIENT */;
+/*!40101 SET CHARACTER_SET_RESULTS=@OLD_CHARACTER_SET_RESULTS */;
+/*!40101 SET COLLATION_CONNECTION=@OLD_COLLATION_CONNECTION */;
+/*!40111 SET SQL_NOTES=@OLD_SQL_NOTES */;
+
+-- Dump completed on 2026-02-23  7:53:05

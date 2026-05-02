@@ -1,0 +1,61 @@
+CREATE DATABASE  IF NOT EXISTS `asset_mngmnt` /*!40100 DEFAULT CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci */ /*!80016 DEFAULT ENCRYPTION='N' */;
+USE `asset_mngmnt`;
+-- MySQL dump 10.13  Distrib 8.0.44, for Win64 (x86_64)
+--
+-- Host: localhost    Database: asset_mngmnt
+-- ------------------------------------------------------
+-- Server version	8.0.44
+
+/*!40101 SET @OLD_CHARACTER_SET_CLIENT=@@CHARACTER_SET_CLIENT */;
+/*!40101 SET @OLD_CHARACTER_SET_RESULTS=@@CHARACTER_SET_RESULTS */;
+/*!40101 SET @OLD_COLLATION_CONNECTION=@@COLLATION_CONNECTION */;
+/*!50503 SET NAMES utf8 */;
+/*!40103 SET @OLD_TIME_ZONE=@@TIME_ZONE */;
+/*!40103 SET TIME_ZONE='+00:00' */;
+/*!40014 SET @OLD_UNIQUE_CHECKS=@@UNIQUE_CHECKS, UNIQUE_CHECKS=0 */;
+/*!40014 SET @OLD_FOREIGN_KEY_CHECKS=@@FOREIGN_KEY_CHECKS, FOREIGN_KEY_CHECKS=0 */;
+/*!40101 SET @OLD_SQL_MODE=@@SQL_MODE, SQL_MODE='NO_AUTO_VALUE_ON_ZERO' */;
+/*!40111 SET @OLD_SQL_NOTES=@@SQL_NOTES, SQL_NOTES=0 */;
+
+--
+-- Table structure for table `transfer_form_assignments`
+--
+
+DROP TABLE IF EXISTS `transfer_form_assignments`;
+/*!40101 SET @saved_cs_client     = @@character_set_client */;
+/*!50503 SET character_set_client = utf8mb4 */;
+CREATE TABLE `transfer_form_assignments` (
+  `form_id` char(36) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci NOT NULL,
+  `assignment_id` char(36) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci NOT NULL,
+  `created_at` datetime DEFAULT CURRENT_TIMESTAMP,
+  `transfer_condition` varchar(50) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+  `transfer_notes` text CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci,
+  `condition_images` json DEFAULT NULL,
+  PRIMARY KEY (`form_id`,`assignment_id`),
+  KEY `idx_tfa_form_id` (`form_id`),
+  KEY `idx_tfa_assignment_id` (`assignment_id`),
+  CONSTRAINT `fk_tfa_assignment_id` FOREIGN KEY (`assignment_id`) REFERENCES `asset_assignments` (`assignmentID`) ON DELETE CASCADE,
+  CONSTRAINT `fk_tfa_form_id` FOREIGN KEY (`form_id`) REFERENCES `asset_transfer_forms` (`formID`) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+/*!40101 SET character_set_client = @saved_cs_client */;
+
+--
+-- Dumping data for table `transfer_form_assignments`
+--
+
+LOCK TABLES `transfer_form_assignments` WRITE;
+/*!40000 ALTER TABLE `transfer_form_assignments` DISABLE KEYS */;
+INSERT INTO `transfer_form_assignments` VALUES ('02171fb8-a313-47c0-9225-bb2f87989c82','0736d480-b15f-4d62-8bb5-d2171ad56fba','2026-03-03 08:16:07','Good','',NULL),('02171fb8-a313-47c0-9225-bb2f87989c82','185b2943-bde5-4207-ab5c-6dbc37fde799','2026-03-03 08:16:07','Good','',NULL),('02171fb8-a313-47c0-9225-bb2f87989c82','29d58c58-add6-4702-814d-ca474f57aae3','2026-03-03 08:16:07','Good','',NULL),('02171fb8-a313-47c0-9225-bb2f87989c82','3686ce78-d17c-4f4f-a1c9-4cbc6585a255','2026-03-03 08:16:07','Good','',NULL),('02171fb8-a313-47c0-9225-bb2f87989c82','68cc5987-3ee9-43dc-a614-62bebcf81d0f','2026-03-03 08:16:07','Good','',NULL),('02171fb8-a313-47c0-9225-bb2f87989c82','cb457a0f-b8d5-4fd8-b9d6-32db8d0cfc6f','2026-03-03 08:16:07','Good','',NULL),('1fd4883e-95b2-4e55-acc5-3aec2489f37b','51f94e67-de70-4d6d-9dee-47fac04a257e','2026-03-01 20:14:09',NULL,NULL,NULL),('1fd4883e-95b2-4e55-acc5-3aec2489f37b','5b6cfa96-720b-4774-a0d8-baa08ee58075','2026-03-01 20:14:09',NULL,NULL,NULL),('1fd4883e-95b2-4e55-acc5-3aec2489f37b','6200db68-82cd-4c88-a18b-49f8e8c9acef','2026-03-01 20:14:09',NULL,NULL,NULL),('2b71bd27-20ab-47e4-bc89-ebf10f6e409f','51f94e67-de70-4d6d-9dee-47fac04a257e','2026-03-01 21:32:04','Good','',NULL),('2b71bd27-20ab-47e4-bc89-ebf10f6e409f','5b6cfa96-720b-4774-a0d8-baa08ee58075','2026-03-01 21:32:04','Good','',NULL),('361707ea-4a2e-4d12-a79e-b9b9be0257b3','51f94e67-de70-4d6d-9dee-47fac04a257e','2026-03-01 20:27:50',NULL,NULL,NULL),('361707ea-4a2e-4d12-a79e-b9b9be0257b3','5b6cfa96-720b-4774-a0d8-baa08ee58075','2026-03-01 20:27:50',NULL,NULL,NULL),('361707ea-4a2e-4d12-a79e-b9b9be0257b3','6200db68-82cd-4c88-a18b-49f8e8c9acef','2026-03-01 20:27:50',NULL,NULL,NULL),('4081c72d-2946-4859-abed-aa248e4403ae','51f94e67-de70-4d6d-9dee-47fac04a257e','2026-03-01 21:58:32','Good','',NULL),('4081c72d-2946-4859-abed-aa248e4403ae','5b6cfa96-720b-4774-a0d8-baa08ee58075','2026-03-01 21:58:32','Good','',NULL),('4f88456b-5d20-4996-9bb0-7b6f299f1b64','1ca9d19b-aaa9-43f7-a602-3f183ec3b33a','2026-03-03 08:28:00',NULL,NULL,NULL),('54403cc8-97b1-490d-bcea-54175c05df02','3af7fd68-d997-4f4a-8aa5-f50e1a64a86a','2026-03-01 22:49:13','Good','',NULL),('54403cc8-97b1-490d-bcea-54175c05df02','857d6788-a902-45b4-9023-d9efbde93062','2026-03-01 22:49:13','Good','',NULL),('54403cc8-97b1-490d-bcea-54175c05df02','ed6e1469-00be-40e2-b32f-27a9ba34d0d7','2026-03-01 22:49:13','Good','',NULL),('54f58718-4e8e-4433-aea3-228ca899baee','430bd098-1e3e-4fb7-8151-bcb0d7f0c8a6','2026-03-03 07:46:19','Good','',NULL),('5585e7fa-2837-4663-bb53-ecb0c0f1481a','51f94e67-de70-4d6d-9dee-47fac04a257e','2026-03-01 21:41:21','Good','',NULL),('5585e7fa-2837-4663-bb53-ecb0c0f1481a','5b6cfa96-720b-4774-a0d8-baa08ee58075','2026-03-01 21:41:21','Good','',NULL),('5585e7fa-2837-4663-bb53-ecb0c0f1481a','6200db68-82cd-4c88-a18b-49f8e8c9acef','2026-03-01 21:41:21','Good','',NULL),('5b14500d-a3a0-42f3-aa74-7b46ee2d2820','70a65cf4-7b33-45f5-8c2c-0f7128c81374','2026-02-28 23:04:00',NULL,NULL,NULL),('5b14500d-a3a0-42f3-aa74-7b46ee2d2820','75d71451-2219-4f96-9dce-053e0653988d','2026-02-28 23:04:00',NULL,NULL,NULL),('6b4043e1-e460-4166-8fe4-3384c0fa8151','70a65cf4-7b33-45f5-8c2c-0f7128c81374','2026-03-03 08:46:47',NULL,NULL,NULL),('6dbb5d27-a5eb-45fc-8f13-ac4c38936262','32be7ebe-0a95-47be-8f9b-cf5606e46424','2026-03-03 10:01:44',NULL,NULL,NULL),('7505bd49-7d97-4112-b6d3-909231f71b9b','683b6ea0-8052-4787-8c96-2746f6830d45','2026-03-03 08:01:40','Good','',NULL),('7505bd49-7d97-4112-b6d3-909231f71b9b','a15bf758-0bab-4e19-a5db-032d62f6ba22','2026-03-03 08:01:40','Good','',NULL),('7505bd49-7d97-4112-b6d3-909231f71b9b','adddd02f-82d8-4320-b029-b3cbbca8fe7d','2026-03-03 08:01:40','Good','',NULL),('7505bd49-7d97-4112-b6d3-909231f71b9b','bd9b3b84-b868-42f0-9b68-e522108dc8e8','2026-03-03 08:01:40','Good','',NULL),('7505bd49-7d97-4112-b6d3-909231f71b9b','e08da0ca-6ebb-43cb-bc69-67982ee269b3','2026-03-03 08:01:40','Good','',NULL),('7505bd49-7d97-4112-b6d3-909231f71b9b','ef803f15-0abb-4692-b3bb-c7d88553a368','2026-03-03 08:01:40','Good','',NULL),('7efb50aa-d585-477b-a9b8-cc1d21948a4c','51f94e67-de70-4d6d-9dee-47fac04a257e','2026-03-01 20:47:17','Good','',NULL),('7efb50aa-d585-477b-a9b8-cc1d21948a4c','5b6cfa96-720b-4774-a0d8-baa08ee58075','2026-03-01 20:47:17','Good','',NULL),('7efb50aa-d585-477b-a9b8-cc1d21948a4c','6200db68-82cd-4c88-a18b-49f8e8c9acef','2026-03-01 20:47:17','Good','',NULL),('7f633463-1c8c-4bbf-962b-b591237b1bf5','51f94e67-de70-4d6d-9dee-47fac04a257e','2026-03-01 21:29:34','Good','',NULL),('7f633463-1c8c-4bbf-962b-b591237b1bf5','5b6cfa96-720b-4774-a0d8-baa08ee58075','2026-03-01 21:29:34','Good','',NULL),('7f633463-1c8c-4bbf-962b-b591237b1bf5','6200db68-82cd-4c88-a18b-49f8e8c9acef','2026-03-01 21:29:34','Good','',NULL),('8a6e5abc-104f-484b-8b4b-87e1b97d3d61','c9d04675-1f15-46d8-9355-4191cc0ee9e8','2026-03-02 14:26:05','Good','',NULL),('920e279b-50fd-4a7c-9b65-0ec9a891c7ca','51f94e67-de70-4d6d-9dee-47fac04a257e','2026-03-01 20:39:22','Good','',NULL),('920e279b-50fd-4a7c-9b65-0ec9a891c7ca','5b6cfa96-720b-4774-a0d8-baa08ee58075','2026-03-01 20:39:22','Good','',NULL),('920e279b-50fd-4a7c-9b65-0ec9a891c7ca','6200db68-82cd-4c88-a18b-49f8e8c9acef','2026-03-01 20:39:22','Good','',NULL),('9549e6f2-57a7-4c2f-b66d-c2a7a7f38b58','51f94e67-de70-4d6d-9dee-47fac04a257e','2026-03-01 20:54:20','Good','',NULL),('9549e6f2-57a7-4c2f-b66d-c2a7a7f38b58','5b6cfa96-720b-4774-a0d8-baa08ee58075','2026-03-01 20:54:20','Good','',NULL),('9549e6f2-57a7-4c2f-b66d-c2a7a7f38b58','6200db68-82cd-4c88-a18b-49f8e8c9acef','2026-03-01 20:54:20','Good','',NULL),('a01d2dc3-6648-4827-a045-5c9814da09e5','51f94e67-de70-4d6d-9dee-47fac04a257e','2026-03-01 21:11:07','Good','',NULL),('a01d2dc3-6648-4827-a045-5c9814da09e5','5b6cfa96-720b-4774-a0d8-baa08ee58075','2026-03-01 21:11:07','Good','',NULL),('a01d2dc3-6648-4827-a045-5c9814da09e5','6200db68-82cd-4c88-a18b-49f8e8c9acef','2026-03-01 21:11:07','Good','',NULL),('a81e9b21-4316-4a59-8ab8-92d31e2fc927','4a44cd7a-1e21-4158-be90-2eed95835d44','2026-03-03 08:22:08','Good','',NULL),('a81e9b21-4316-4a59-8ab8-92d31e2fc927','60db773d-b003-47db-89fd-63c42cb82f50','2026-03-03 08:22:08','Good','',NULL),('a8fbc82b-62b2-46f1-9f00-5c55383f3c26','51f94e67-de70-4d6d-9dee-47fac04a257e','2026-03-01 22:08:42','Good','',NULL),('a8fbc82b-62b2-46f1-9f00-5c55383f3c26','5b6cfa96-720b-4774-a0d8-baa08ee58075','2026-03-01 22:08:42','Good','',NULL),('c4997ecd-116a-4909-a8bf-76b0e7577973','51f94e67-de70-4d6d-9dee-47fac04a257e','2026-03-01 20:34:11','Good','',NULL),('c4997ecd-116a-4909-a8bf-76b0e7577973','5b6cfa96-720b-4774-a0d8-baa08ee58075','2026-03-01 20:34:11','Good','',NULL),('c4997ecd-116a-4909-a8bf-76b0e7577973','6200db68-82cd-4c88-a18b-49f8e8c9acef','2026-03-01 20:34:11','Good','',NULL),('c5ce4241-13e7-4178-a3a0-b86fdb987a55','51f94e67-de70-4d6d-9dee-47fac04a257e','2026-03-01 21:37:06','Good','',NULL),('c5ce4241-13e7-4178-a3a0-b86fdb987a55','5b6cfa96-720b-4774-a0d8-baa08ee58075','2026-03-01 21:37:06','Good','',NULL),('c5ce4241-13e7-4178-a3a0-b86fdb987a55','6200db68-82cd-4c88-a18b-49f8e8c9acef','2026-03-01 21:37:06','Good','',NULL),('cbe7b55f-3246-41d8-b474-18f0f8d5f987','5b6cfa96-720b-4774-a0d8-baa08ee58075','2026-03-03 09:32:10','Good','',NULL),('cbe7b55f-3246-41d8-b474-18f0f8d5f987','6200db68-82cd-4c88-a18b-49f8e8c9acef','2026-03-03 09:32:10','Good','',NULL),('cbe7b55f-3246-41d8-b474-18f0f8d5f987','63877e92-5625-458e-bc13-8168445e25da','2026-03-03 09:32:10','Good','',NULL),('d62a2467-6f04-404a-a878-524fac3a31f4','51f94e67-de70-4d6d-9dee-47fac04a257e','2026-03-03 07:49:56','Good','',NULL),('d8bc58eb-eec9-4c7f-a53d-b6697599f96a','70a65cf4-7b33-45f5-8c2c-0f7128c81374','2026-02-28 22:53:12',NULL,NULL,NULL),('d8bc58eb-eec9-4c7f-a53d-b6697599f96a','75d71451-2219-4f96-9dce-053e0653988d','2026-02-28 22:53:12',NULL,NULL,NULL),('d8bc58eb-eec9-4c7f-a53d-b6697599f96a','aa84c4e8-f528-4d73-9369-926683f7b870','2026-02-28 22:53:12',NULL,NULL,NULL),('d8f5a2be-790c-441a-ade9-284c5796fd1c','107ff39c-96fe-4b1a-9850-78aa8670e38a','2026-02-28 22:34:42',NULL,NULL,NULL),('d8f5a2be-790c-441a-ade9-284c5796fd1c','2d0e2fb8-7e60-4e34-b075-7a32c9a790fe','2026-02-28 22:34:42',NULL,NULL,NULL),('da0aced3-acfe-4461-926a-17ea9b9d4912','51f94e67-de70-4d6d-9dee-47fac04a257e','2026-03-01 21:15:25','Good','',NULL),('da0aced3-acfe-4461-926a-17ea9b9d4912','5b6cfa96-720b-4774-a0d8-baa08ee58075','2026-03-01 21:15:25','Good','',NULL),('da0aced3-acfe-4461-926a-17ea9b9d4912','6200db68-82cd-4c88-a18b-49f8e8c9acef','2026-03-01 21:15:25','Good','',NULL),('effd3dee-0cf0-40f0-b757-8d9e3ddffb88','51f94e67-de70-4d6d-9dee-47fac04a257e','2026-03-01 21:52:40','Good','',NULL),('effd3dee-0cf0-40f0-b757-8d9e3ddffb88','5b6cfa96-720b-4774-a0d8-baa08ee58075','2026-03-01 21:52:40','Good','',NULL),('f18984a3-d002-4426-8071-2941f7f031bd','51f94e67-de70-4d6d-9dee-47fac04a257e','2026-03-01 22:02:05','Good','',NULL),('f18984a3-d002-4426-8071-2941f7f031bd','5b6cfa96-720b-4774-a0d8-baa08ee58075','2026-03-01 22:02:05','Good','',NULL),('f18984a3-d002-4426-8071-2941f7f031bd','6200db68-82cd-4c88-a18b-49f8e8c9acef','2026-03-01 22:02:05','Good','',NULL);
+/*!40000 ALTER TABLE `transfer_form_assignments` ENABLE KEYS */;
+UNLOCK TABLES;
+/*!40103 SET TIME_ZONE=@OLD_TIME_ZONE */;
+
+/*!40101 SET SQL_MODE=@OLD_SQL_MODE */;
+/*!40014 SET FOREIGN_KEY_CHECKS=@OLD_FOREIGN_KEY_CHECKS */;
+/*!40014 SET UNIQUE_CHECKS=@OLD_UNIQUE_CHECKS */;
+/*!40101 SET CHARACTER_SET_CLIENT=@OLD_CHARACTER_SET_CLIENT */;
+/*!40101 SET CHARACTER_SET_RESULTS=@OLD_CHARACTER_SET_RESULTS */;
+/*!40101 SET COLLATION_CONNECTION=@OLD_COLLATION_CONNECTION */;
+/*!40111 SET SQL_NOTES=@OLD_SQL_NOTES */;
+
+-- Dump completed on 2026-03-14 11:57:23

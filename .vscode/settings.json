@@ -1,0 +1,17 @@
+{
+  "//": "Disable remote JSON-schema fetching for these files. json.schemastore.org has been intermittently returning 503, which spams package.json / nodemon.json / jscpd.json errors in the Problems pane. Empty inline schemas effectively turn validation into a no-op while keeping the JSON language service active for syntax highlighting and IntelliSense.",
+  "json.schemas": [
+    {
+      "fileMatch": ["package.json", "**/package.json"],
+      "schema": {}
+    },
+    {
+      "fileMatch": ["nodemon.json", "**/nodemon.json"],
+      "schema": {}
+    },
+    {
+      "fileMatch": ["jscpd.json", "**/jscpd.json"],
+      "schema": {}
+    }
+  ]
+}
