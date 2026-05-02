@@ -108,7 +108,7 @@ export function SettingsTabs({ children }: SettingsTabsProps) {
           <TabsTrigger
             key={value}
             value={value}
-            className="flex items-center justify-center gap-2 rounded-lg px-3 py-2 font-medium data-[state=active]:bg-red-600 data-[state=active]:text-white hover:bg-gray-100 data-[state=active]:hover:bg-red-700 transition-all whitespace-nowrap min-w-fit"
+            className="flex items-center justify-center gap-2 rounded-lg px-3 py-2 font-medium data-[state=active]:bg-red-600 data-[state=active]:text-white hover:bg-gray-100 data-[state=active]:hover:bg-red-700 transition-all whitespace-nowrap flex-1"
           >
             <Icon className="w-4 h-4" />
             <span className="text-xs font-normal sm:text-sm">{label}</span>

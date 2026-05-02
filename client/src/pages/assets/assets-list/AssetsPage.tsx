@@ -63,11 +63,7 @@ import {
   handleAssetUpdateError,
   handleAssetValidationError,
 } from '@/utils/assetErrorHandling';
-import {
-  AuditFieldChanges,
-  formatAuditPlainText,
-  hasAuditFieldChanges,
-} from '@/components/common/AuditFieldChanges';
+import { formatAuditPlainText } from '@/components/common/AuditFieldChanges';
 import { useAuditFieldLookups } from '@/hooks/useAuditFieldLookups';
 
 const logger = createLogger('AssetsPage');
@@ -1554,17 +1550,6 @@ export function AssetsPage() {
                                       })()
                                     )}
                                   </p>
-                                  {hasAuditFieldChanges(
-                                    log.oldValues,
-                                    log.newValues
-                                  ) ? (
-                                    <AuditFieldChanges
-                                      className="mt-2"
-                                      oldValues={log.oldValues}
-                                      newValues={log.newValues}
-                                      lookups={builderAuditLookups}
-                                    />
-                                  ) : null}
                                 </div>
                                 <span className="text-xs text-gray-500 whitespace-nowrap flex-shrink-0">
                                   {new Date(log.timestamp).toLocaleDateString(

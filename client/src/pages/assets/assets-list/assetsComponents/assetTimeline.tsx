@@ -46,6 +46,7 @@ interface TimelineEvent {
 
 interface AssetTimelineProps {
   asset: Asset;
+  showFieldChanges?: boolean;
 }
 
 const getEventIcon = (type: TimelineEvent['type']) => {
@@ -102,7 +103,7 @@ const getEventColor = (type: TimelineEvent['type']) => {
   }
 };
 
-export function AssetTimeline({ asset }: AssetTimelineProps) {
+export function AssetTimeline({ asset, showFieldChanges = true }: AssetTimelineProps) {
   const [auditLogs, setAuditLogs] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const { lookups: auditLookups, mergedIdLabels } = useAuditFieldLookups();
@@ -469,7 +470,7 @@ export function AssetTimeline({ asset }: AssetTimelineProps) {
                       <p className="text-xs sm:text-sm text-gray-600 mt-1 break-words">
                         {event.description}
                       </p>
-                      {event.fieldAudit ? (
+                      {showFieldChanges && event.fieldAudit ? (
                         <AuditFieldChanges
                           className="mt-2"
                           oldValues={event.fieldAudit.oldValues}

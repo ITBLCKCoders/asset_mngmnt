@@ -70,11 +70,7 @@ export default function MFAVerificationModal({
       setRefreshToken(response.refreshToken);
 
       toast.success('Login successful!');
-
-      // Small delay to ensure cookies are properly set before navigation
-      setTimeout(() => {
-        onVerified();
-      }, 100);
+      onVerified();
     } catch (err: any) {
       const errorMsg = err.message || 'Invalid code. Please try again.';
       setError(errorMsg);

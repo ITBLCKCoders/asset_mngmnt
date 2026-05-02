@@ -16,53 +16,26 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [isAuthenticated, setIsAuthenticated] = useState(false);
   const [isLoading, setIsLoading] = useState(true);
   const [user, setUser] = useState<any>(null);
-  const [isInitialLoad, setIsInitialLoad] = useState(true);
-
-  const validateSession = async (retryCount = 0) => {
-    const maxRetries = 3;
-    const retryDelay = 500; // 500ms between retries
-
-    try {
-      const response = await api.get('/auth/me');
-      // If successful, session is valid
-      setToken('authenticated'); // Set the in-memory flag
-      setIsAuthenticated(true);
-      setUser(response);
-    } catch (err) {
-      // On initial load, retry if we get a 401 - this handles the race condition
-      // where cookies might not be fully available yet after login
-      if (isInitialLoad && retryCount < maxRetries) {
-        console.log(`[AuthContext] Initial validation failed (attempt ${retryCount + 1}/${maxRetries}), retrying...`);
-        await new Promise(resolve => setTimeout(resolve, retryDelay));
-        return validateSession(retryCount + 1);
-      }
-
-      // Session is invalid or expired
-      setToken(null);
-      setIsAuthenticated(false);
-      setUser(null);
-    } finally {
-      if (isInitialLoad) {
-        setIsInitialLoad(false);
-      }
-      setIsLoading(false);
-    }
-  };
 
   useEffect(() => {
-    validateSession();
-  }, []);
-
-  // Re-validate session when token changes (e.g., after login)
-  useEffect(() => {
-    const handleTokenChange = () => {
-      console.log('[AuthContext] Token changed, re-validating session...');
-      setIsLoading(true);
-      validateSession();
+    const validateSession = async () => {
+      try {
+        const response = await api.get('/auth/me');
+        // If successful, session is valid
+        setToken('authenticated'); // Set the in-memory flag
+        setIsAuthenticated(true);
+        setUser(response);
+      } catch (err) {
+        // Session is invalid or expired
+        setToken(null);
+        setIsAuthenticated(false);
+        setUser(null);
+      } finally {
+        setIsLoading(false);
+      }
     };
 
-    window.addEventListener('tokenChanged', handleTokenChange);
-    return () => window.removeEventListener('tokenChanged', handleTokenChange);
+    validateSession();
   }, []);
 
   return (
