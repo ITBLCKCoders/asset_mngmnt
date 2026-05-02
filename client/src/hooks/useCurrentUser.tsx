@@ -21,6 +21,7 @@ export interface CurrentUser {
   role?: Role;
   avatarUrl?: string;
   digitalSignature?: string | null;
+  mfaEnabled?: boolean;
   verified: boolean;
   createdAt: string;
   hr_accountability_receiver?: boolean;
@@ -99,6 +100,7 @@ export function useCurrentUser() {
       createdAt: data.createdAt,
       avatarUrl: finalAvatarUrl,
       digitalSignature: data.digitalSignature || null,
+      mfaEnabled: data.mfaEnabled || false,
       hr_accountability_receiver: data.hr_accountability_receiver,
       address: data.address || {
         unitNo: '',

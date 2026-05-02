@@ -136,7 +136,12 @@ export default function LoginPage() {
           );
         }
 
-        navigateToDashboard();
+        // Small delay to ensure cookies are properly set before navigation
+        // This prevents race condition where AuthContext tries to validate
+        // session before cookies are available
+        setTimeout(() => {
+          navigateToDashboard();
+        }, 100);
       }
     } catch (err: any) {
       toast.error(err.message);

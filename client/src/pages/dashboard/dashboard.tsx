@@ -17,6 +17,8 @@ import { toast } from 'sonner';
 import { useCurrentUser } from '@/hooks/useCurrentUser';
 import { useUserPermissions } from '@/hooks/useUserPermissions';
 import { useAuditFieldLookups } from '@/hooks/useAuditFieldLookups';
+import DigitalInitialsRequiredDialog from '@/components/auth/DigitalInitialsRequiredDialog';
+import MFARequiredDialog from '@/components/auth/MFARequiredDialog';
 import {
   Package,
   CheckCircle,
@@ -305,6 +307,9 @@ export default function Dashboard() {
   const [selectedCompanyId, setSelectedCompanyId] = useState<string>('');
   const { lookups: auditFieldLookups, mergedIdLabels: auditMergedIdLabels } =
     useAuditFieldLookups();
+  const [showDigitalInitialsDialog, setShowDigitalInitialsDialog] = useState(false);
+  const [showMFADialog, setShowMFADialog] = useState(false);
+  const [securityCheckDone, setSecurityCheckDone] = useState(false);
 
   const normalizedRoleName = (user?.role?.name ?? '').trim().toLowerCase();
   const isSuperAdmin = normalizedRoleName === 'super admin';
@@ -561,6 +566,43 @@ export default function Dashboard() {
       fetchDashboardData();
     }
   }, [userLoading, user?.role?.name, fetchDashboardData]);
+
+  // Check for missing digital initials and MFA after user is loaded
+  useEffect(() => {
+    if (!userLoading && user && !securityCheckDone) {
+      setSecurityCheckDone(true);
+
+      // Check if digital initials are missing
+      if (!user.digitalSignature) {
+        setShowDigitalInitialsDialog(true);
+      } else if (!user.mfaEnabled) {
+        // If initials are set but MFA is missing, show MFA dialog
+        setShowMFADialog(true);
+      }
+    }
+  }, [user, userLoading, securityCheckDone]);
+
+  const handleDigitalInitialsSkip = () => {
+    setShowDigitalInitialsDialog(false);
+    // Check if MFA is also missing
+    if (user && !user.mfaEnabled) {
+      setShowMFADialog(true);
+    }
+  };
+
+  const handleDigitalInitialsGoToProfile = () => {
+    setShowDigitalInitialsDialog(false);
+    navigate('/profile?tab=basic');
+  };
+
+  const handleMFASkip = () => {
+    setShowMFADialog(false);
+  };
+
+  const handleMFAGoToProfile = () => {
+    setShowMFADialog(false);
+    navigate('/profile?tab=account');
+  };
 
 
   const handleRefresh = () => {
@@ -936,6 +978,20 @@ export default function Dashboard() {
           </Card>
         )}
       </main>
+
+      <DigitalInitialsRequiredDialog
+        isOpen={showDigitalInitialsDialog}
+        onOpenChange={setShowDigitalInitialsDialog}
+        onGoToProfile={handleDigitalInitialsGoToProfile}
+        onSkip={handleDigitalInitialsSkip}
+      />
+
+      <MFARequiredDialog
+        isOpen={showMFADialog}
+        onOpenChange={setShowMFADialog}
+        onGoToProfile={handleMFAGoToProfile}
+        onSkip={handleMFASkip}
+      />
     </div>
   );
 }

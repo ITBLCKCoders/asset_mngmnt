@@ -114,7 +114,11 @@ export default function ForcePasswordChangeDialog({
       setRefreshToken(response.refreshToken);
 
       toast.success('Password changed successfully');
-      onChanged();
+
+      // Small delay to ensure cookies are properly set before navigation
+      setTimeout(() => {
+        onChanged();
+      }, 100);
     } catch (err: any) {
       const errorMsg =
         err.response?.data?.error || err.message || 'Failed to change password';
