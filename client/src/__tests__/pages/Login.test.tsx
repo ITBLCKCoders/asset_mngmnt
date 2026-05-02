@@ -4,6 +4,7 @@ import LoginPage from '@/pages/login';
 
 vi.mock('react-router-dom', () => ({
   useNavigate: () => vi.fn(),
+  useLocation: () => ({ state: null }),
 }));
 
 vi.mock('@/lib/api', () => ({

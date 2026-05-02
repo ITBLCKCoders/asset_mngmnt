@@ -1,10 +1,9 @@
 'use client';
 
 import { useEffect, useState, useRef } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useLocation, useNavigate } from 'react-router-dom';
 import { useForm, Controller } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
-import * as z from 'zod';
 import PhoneInput from 'react-phone-number-input/react-hook-form';
 import 'react-phone-number-input/style.css';
 
@@ -18,14 +17,6 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select';
-import {
-  Card,
-  CardContent,
-  CardDescription,
-  CardHeader,
-  CardTitle,
-} from '@/components/ui/card';
-import { Alert, AlertDescription } from '@/components/ui/alert';
 import { RotateCw } from 'lucide-react';
 import { Loader2, CheckCircle2, Eye, EyeOff } from 'lucide-react';
 import { motion } from 'framer-motion';
@@ -39,14 +30,94 @@ import {
   registerSchema,
   type RegisterForm,
 } from '@/pages/registration/registerSchema';
-import {
-  RequiredLabel,
-  GoogleIcon,
-  MicrosoftIcon,
-} from '@/pages/registration/registerHelpers';
+import { RequiredLabel } from '@/pages/registration/registerHelpers';
+
+type AuthScene = 'login' | 'register';
+
+const AUTH_TRANSITION_MS = 900;
+
+const AUTH_BACKDROP: Record<AuthScene, { red: string; white: string }> = {
+  login: {
+    red: 'M640 -120 C570 20 520 125 690 245 C920 405 720 520 640 665 C560 805 560 905 520 1020 L1440 1020 L1440 -120 Z',
+    white:
+      'M695 -120 C625 25 575 130 745 250 C970 410 775 525 695 668 C615 810 615 905 575 1020 L1440 1020 L1440 -120 Z',
+  },
+  register: {
+    red: 'M0 -120 C300 -120 700 -120 860 -120 C990 90 520 230 735 470 C965 720 940 850 1040 1020 L0 1020 L0 -120 Z',
+    white:
+      'M0 -120 C300 -120 675 -120 815 -120 C945 90 480 230 695 470 C920 720 895 850 995 1020 L0 1020 L0 -120 Z',
+  },
+};
+
+const getInitialAuthScene = (
+  state: unknown,
+  fallback: AuthScene
+): AuthScene => {
+  if (
+    state &&
+    typeof state === 'object' &&
+    'fromAuth' in state &&
+    (state as { fromAuth?: unknown }).fromAuth === 'login'
+  ) {
+    return 'login';
+  }
+
+  return fallback;
+};
+
+function AuthBackdrop({ scene }: { scene: AuthScene }) {
+  return (
+    <svg
+      className="absolute inset-0 h-full w-full"
+      viewBox="0 0 1440 900"
+      preserveAspectRatio="none"
+      xmlns="http://www.w3.org/2000/svg"
+      aria-hidden="true"
+    >
+      <motion.path
+        fill="#EE1D25"
+        initial={false}
+        animate={{ d: AUTH_BACKDROP[scene].red }}
+        transition={{ duration: AUTH_TRANSITION_MS / 1000, ease: 'easeInOut' }}
+      />
+      <motion.path
+        fill="#ffffff"
+        initial={false}
+        animate={{ d: AUTH_BACKDROP[scene].white }}
+        transition={{ duration: AUTH_TRANSITION_MS / 1000, ease: 'easeInOut' }}
+      />
+    </svg>
+  );
+}
+
+function GhostLoginPanel({ scene }: { scene: AuthScene }) {
+  return (
+    <motion.div
+      className="pointer-events-none absolute right-[6vw] top-1/2 z-10 hidden w-[27rem] -translate-y-1/2 lg:block"
+      initial={false}
+      animate={{
+        opacity: scene === 'register' ? 0.16 : 0.08,
+        x: scene === 'register' ? 0 : 96,
+        scale: scene === 'register' ? 1 : 0.96,
+      }}
+      transition={{ duration: AUTH_TRANSITION_MS / 1000, ease: 'easeInOut' }}
+      aria-hidden="true"
+    >
+      <div className="mx-auto mb-8 h-16 w-56 rounded-sm border border-red-500/30" />
+      <div className="space-y-4">
+        <div className="h-9 rounded-sm border border-white/10 bg-white/20" />
+        <div className="h-9 rounded-sm border border-white/10 bg-white/20" />
+      </div>
+      <div className="mx-auto mt-5 h-9 w-36 rounded-sm bg-red-600/50" />
+      <div className="mx-auto mt-5 h-8 w-72 rounded-sm bg-white/20" />
+      <div className="mx-auto mt-3 h-8 w-72 rounded-sm bg-white/20" />
+    </motion.div>
+  );
+}
 
 export default function RegisterPage() {
   const navigate = useNavigate();
+  const location = useLocation();
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [showOtpModal, setShowOtpModal] = useState(false);
   const [selectedOtpChannel, setSelectedOtpChannel] = useState<'email' | 'sms'>('email');
@@ -66,7 +137,15 @@ export default function RegisterPage() {
   const [loadingPositions, setLoadingPositions] = useState(false);
   const [showPassword, setShowPassword] = useState(false);
   const [showConfirmPassword, setShowConfirmPassword] = useState(false);
-  const [isAnimating, setIsAnimating] = useState(false);
+  const [scene, setScene] = useState<AuthScene>(() =>
+    getInitialAuthScene(location.state, 'register')
+  );
+  const [isRouting, setIsRouting] = useState(false);
+
+  useEffect(() => {
+    const frame = window.requestAnimationFrame(() => setScene('register'));
+    return () => window.cancelAnimationFrame(frame);
+  }, []);
 
   const {
     register,
@@ -342,56 +421,39 @@ export default function RegisterPage() {
   }, [resendCooldown]);
 
   const goBack = () => {
-    setIsAnimating(true);
+    if (isRouting) return;
+    setIsRouting(true);
+    setScene('login');
     setTimeout(() => {
-      navigate(-1);
-    }, 1000);
+      navigate('/login', { state: { fromAuth: 'register' } });
+    }, AUTH_TRANSITION_MS);
   };
 
   return (
-    <div className="min-h-screen relative overflow-hidden bg-black flex items-center justify-center p-4 md:overflow-y-auto">
-      <div className="absolute inset-0">
-        <svg
-          className="w-full h-full"
-          viewBox="0 0 320 1440"
-          preserveAspectRatio="none"
-          xmlns="http://www.w3.org/2000/svg"
-        >
-          <motion.path
-            fill="#EE1D25"
-            d="M90,1550 C-50,850 380,-390 70,0 L320,0 L320,1440 Z"
-            transform="translate(320,1440) scale(-1,-1)"
-            initial={{ d: "M90,1550 C-50,850 380,-390 70,0 L320,0 L320,1440 Z" }}
-            animate={isAnimating ? { d: "M-10,1550 C-150,850 280,-390 -30,0 L220,0 L220,1440 Z" } : { d: "M90,1550 C-50,850 380,-390 70,0 L320,0 L320,1440 Z" }}
-            transition={{ duration: 1, ease: "easeInOut" }}
-          />
-          <motion.path
-            fill="#ffffff"
-            d="M75,1490 C-20,690 480,-430 10,0 L31220,0 L2280,1420 Z"
-            transform="translate(320,1440) scale(-1,-1)"
-            initial={{ d: "M75,1490 C-20,690 480,-430 10,0 L31220,0 L2280,1420 Z" }}
-            animate={isAnimating ? { d: "M-25,1490 C-120,690 380,-430 -90,0 L31100,0 L2160,1420 Z" } : { d: "M75,1490 C-20,690 480,-430 10,0 L31220,0 L2280,1420 Z" }}
-            transition={{ duration: 1, ease: "easeInOut" }}
-          />
-        </svg>
-      </div>
+    <div className="relative min-h-screen overflow-hidden bg-black md:overflow-y-auto">
+      <AuthBackdrop scene={scene} />
+      <GhostLoginPanel scene={scene} />
       <form
         onSubmit={onSubmit}
-        className="absolute inset-0 flex items-center justify-center p-4 lg:left-[-2%] lg:top-1/3 lg:-translate-y-1/2 lg:translate-x-1/4 lg:w-full lg:max-w-xl lg:p-0 lg:mr-8 lg:mt-24 z-10"
+        className="relative z-20 flex min-h-screen w-full items-center justify-center px-4 py-8 lg:justify-start lg:pl-[6vw] lg:pr-[32vw]"
       >
         <motion.div
-          className="w-full max-w-lg"
-          initial={{ opacity: 1, scale: 1 }}
-          animate={isAnimating ? { opacity: 0, scale: 0.95 } : { opacity: 1, scale: 1 }}
-          transition={{ duration: 0.3, ease: 'easeInOut' }}
+          className="w-full max-w-2xl"
+          initial={false}
+          animate={{
+            opacity: scene === 'register' ? 1 : 0,
+            x: scene === 'register' ? 0 : 180,
+            scale: scene === 'register' ? 1 : 0.96,
+          }}
+          transition={{ duration: AUTH_TRANSITION_MS / 1000, ease: 'easeInOut' }}
         >
-          <div className="bg-white/95 backdrop-blur-sm rounded-lg p-6 shadow-xl lg:bg-transparent lg:backdrop-blur-none lg:rounded-none lg:p-0 lg:shadow-none flex flex-col items-center max-h-[90vh] overflow-y-auto md:max-h-none md:overflow-visible">
-            <div className="w-40 h-auto mb-4 drop-shadow-md sm:w-48 md:w-56 lg:absolute lg:right-1/2 lg:-top-20 lg:translate-x-1/2 lg:w-[500px] lg:mb-0 lg:drop-shadow-lg lg:pointer-events-none">
-              <img src={logo} alt="Blackcoders" className="w-full h-auto" />
+          <div className="flex max-h-[92vh] flex-col items-center overflow-y-auto rounded-lg bg-white/95 p-6 shadow-xl backdrop-blur-sm lg:bg-transparent lg:p-0 lg:shadow-none lg:backdrop-blur-none">
+            <div className="mb-7 w-52 drop-shadow-md sm:w-64 lg:w-[25rem] lg:drop-shadow-lg">
+              <img src={logo} alt="Blackcoders" className="h-auto w-full" />
             </div>
 
             {showVerification ? (
-              <div className="w-full space-y-4 lg:pt-60">
+              <div className="w-full space-y-4">
                 <h2 className="text-2xl font-bold text-black text-center">
                   Verify {selectedOtpChannel === 'sms' ? 'Phone Number' : 'Email'}
                 </h2>
@@ -480,7 +542,7 @@ export default function RegisterPage() {
                 </div>
               </div>
             ) : (
-              <div className="w-full space-y-3 lg:pt-60">
+              <div className="w-full space-y-3">
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 <div className="space-y-1">
                   <Label htmlFor="firstName" className="text-black text-sm">
@@ -846,6 +908,8 @@ export default function RegisterPage() {
                 <Button
                   type="button"
                   onClick={goBack}
+                  disabled={isRouting}
+                  variant="ghost"
                   className="w-full max-w-xs text-red-600 hover:bg-red-600 hover:text-white text-sm py-2 shadow-none"
                 >
                   Already have an account?
@@ -951,5 +1015,4 @@ export default function RegisterPage() {
   );
 }
 
-// GoogleIcon, MicrosoftIcon, RequiredLabel are imported from
-// `./registration/registerHelpers`.
+// RequiredLabel is imported from `./registration/registerHelpers`.
