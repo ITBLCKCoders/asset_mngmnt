@@ -81,17 +81,23 @@ function SettingsSectionShell({
 export function SettingsGeneralTabSkeleton() {
   return (
     <TabsContent value="general" className="mt-8 space-y-8">
+      {/* Active Company Card Skeleton */}
       <Card className="relative overflow-hidden border-2 border-red-500/30 bg-gradient-to-br from-red-50 to-white shadow-lg">
-        <div className="absolute top-0 right-0 bg-red-600 text-white px-8 py-3 rounded-bl-2xl">
-          <Shimmer className="h-6 w-32 rounded bg-white/20" />
+        <div className="absolute top-0 right-0 flex flex-col gap-1">
+          <div className="bg-red-600 text-white px-8 py-3 rounded-bl-2xl">
+            <Shimmer className="h-6 w-48 rounded bg-white/20" />
+          </div>
+          <div className="bg-red-600 text-white px-8 py-3 rounded-bl-2xl">
+            <Shimmer className="h-6 w-40 rounded bg-white/20" />
+          </div>
         </div>
 
         <CardHeader className="pb-4">
           <div className="flex items-start gap-6">
-            <Shimmer className="h-28 w-28 rounded-full" />
-            <div>
+            <Shimmer className="h-28 w-28 rounded-lg" />
+            <div className="flex-1">
               <Shimmer className="h-9 w-64 rounded-lg" />
-              <Shimmer className="h-5 w-80 rounded mt-2" />
+              <Shimmer className="h-5 w-96 rounded mt-2" />
             </div>
           </div>
         </CardHeader>
@@ -110,11 +116,20 @@ export function SettingsGeneralTabSkeleton() {
               <Shimmer className="h-4 w-16 rounded" />
               <Shimmer className="h-5 w-40 rounded" />
             </div>
+            <div>
+              <Shimmer className="h-4 w-16 rounded" />
+              <Shimmer className="h-5 w-36 rounded" />
+            </div>
+            <div>
+              <Shimmer className="h-4 w-16 rounded" />
+              <Shimmer className="h-5 w-44 rounded" />
+            </div>
           </div>
           <div className="space-y-6">
             <div>
-              <Shimmer className="h-4 w-32 rounded" />
-              <Shimmer className="h-5 w-64 rounded" />
+              <Shimmer className="h-4 w-40 rounded" />
+              <Shimmer className="h-5 w-full rounded mt-2" />
+              <Shimmer className="h-5 w-5/6 rounded" />
             </div>
             <div className="grid grid-cols-2 gap-6 pt-4">
               <div>
@@ -129,32 +144,52 @@ export function SettingsGeneralTabSkeleton() {
                 <Shimmer className="h-4 w-24 rounded" />
                 <Shimmer className="h-5 w-28 rounded" />
               </div>
+              <div>
+                <Shimmer className="h-4 w-28 rounded" />
+                <Shimmer className="h-5 w-32 rounded" />
+              </div>
             </div>
           </div>
         </CardContent>
       </Card>
 
+      {/* All Companies List Card Skeleton */}
       <Card>
         <CardHeader className="bg-red-600 rounded-t-2xl">
           <div className="flex items-center justify-between">
-            <Shimmer className="h-8 w-64 rounded bg-white/20" />
-            <Shimmer className="h-12 w-48 rounded-xl bg-white/20" />
+            <Shimmer className="h-8 w-72 rounded bg-white/20" />
+            <Shimmer className="h-12 w-52 rounded-xl bg-white/20" />
           </div>
         </CardHeader>
         <CardContent className="p-6">
           <div className="space-y-6">
             {Array.from({ length: 3 }).map((_, index) => (
               <div key={index} className="rounded-2xl border-2 p-8">
-                <div className="flex items-center gap-6">
-                  <Shimmer className="h-20 w-20 rounded-full" />
-                  <div>
-                    <div className="flex items-center gap-4">
-                      <Shimmer className="h-8 w-48 rounded" />
-                      <Shimmer className="h-8 w-24 rounded-lg" />
-                      <Shimmer className="h-8 w-32 rounded" />
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-6">
+                    <Shimmer className="h-20 w-20 rounded-lg" />
+                    <div className="space-y-2">
+                      <div className="flex items-center gap-4">
+                        <Shimmer className="h-8 w-48 rounded" />
+                        <Shimmer className="h-8 w-24 rounded-lg" />
+                        <Shimmer className="h-8 w-16 rounded" />
+                      </div>
+                      <Shimmer className="h-4 w-64 rounded" />
+                      <div className="flex gap-6">
+                        <Shimmer className="h-4 w-32 rounded" />
+                        <Shimmer className="h-4 w-28 rounded" />
+                      </div>
+                      <Shimmer className="h-4 w-48 rounded" />
+                      <div className="flex gap-6">
+                        <Shimmer className="h-4 w-24 rounded" />
+                        <Shimmer className="h-4 w-32 rounded" />
+                      </div>
                     </div>
-                    <Shimmer className="h-4 w-64 rounded mt-1" />
-                    <Shimmer className="h-4 w-48 rounded mt-2" />
+                  </div>
+                  <div className="flex gap-3">
+                    <Shimmer className="h-12 w-32 rounded-lg" />
+                    <Shimmer className="h-12 w-28 rounded-lg" />
+                    <Shimmer className="h-12 w-12 rounded-lg" />
                   </div>
                 </div>
               </div>
@@ -443,26 +478,78 @@ export function AssetDetailsPageSkeleton() {
           loading
         />
 
+        {/* Status Badge Skeleton */}
         <div className="flex justify-center">
-          <Skeleton className="h-10 w-28 rounded-full" />
+          <Skeleton className="h-10 w-32 rounded-full" />
         </div>
 
+        {/* Tabs Card */}
         <Card className="border-0 shadow-sm w-full min-w-0 overflow-hidden">
           <CardContent className="p-0 w-full min-w-0">
-            <div className="grid w-full min-w-0 grid-cols-2 bg-red-50 h-auto p-1 gap-1">
+            {/* Tabs List Skeleton */}
+            <div className="grid w-full min-w-0 grid-cols-3 bg-red-50 h-auto p-1 gap-1">
+              <Skeleton className="h-12 rounded-md" />
               <Skeleton className="h-12 rounded-md" />
               <Skeleton className="h-12 rounded-md" />
             </div>
-            <div className="p-4 sm:p-6 space-y-4">
-              <Skeleton className="h-8 w-64" />
-              <Skeleton className="h-4 w-full" />
-              <Skeleton className="h-4 w-full" />
-              <Skeleton className="h-4 w-5/6" />
+
+            {/* Tab Content Skeleton */}
+            <div className="p-2 sm:p-4 md:p-6 mt-3 sm:mt-4 min-w-0 space-y-6">
+              {/* Image Skeleton */}
+              <div className="flex justify-center">
+                <Skeleton className="h-64 w-full max-w-lg rounded-xl" />
+              </div>
+
+              {/* Info Grid Skeleton - 2x2 grid */}
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4 pt-4">
-                <Skeleton className="h-28 rounded-xl" />
-                <Skeleton className="h-28 rounded-xl" />
-                <Skeleton className="h-28 rounded-xl" />
-                <Skeleton className="h-28 rounded-xl" />
+                <div className="space-y-3">
+                  <Skeleton className="h-4 w-24" />
+                  <Skeleton className="h-5 w-full" />
+                </div>
+                <div className="space-y-3">
+                  <Skeleton className="h-4 w-24" />
+                  <Skeleton className="h-5 w-full" />
+                </div>
+                <div className="space-y-3">
+                  <Skeleton className="h-4 w-24" />
+                  <Skeleton className="h-5 w-full" />
+                </div>
+                <div className="space-y-3">
+                  <Skeleton className="h-4 w-24" />
+                  <Skeleton className="h-5 w-full" />
+                </div>
+              </div>
+
+              {/* Additional Info Sections */}
+              <div className="space-y-4 pt-4">
+                <Skeleton className="h-4 w-32" />
+                <Skeleton className="h-5 w-3/4" />
+              </div>
+
+              <div className="space-y-4">
+                <Skeleton className="h-4 w-32" />
+                <Skeleton className="h-5 w-2/3" />
+              </div>
+
+              <div className="space-y-4">
+                <Skeleton className="h-4 w-32" />
+                <Skeleton className="h-5 w-1/2" />
+              </div>
+
+              {/* Financial Info Section */}
+              <div className="space-y-4 pt-4">
+                <div className="space-y-3">
+                  <Skeleton className="h-4 w-24" />
+                  <Skeleton className="h-5 w-32" />
+                </div>
+                <div className="space-y-3">
+                  <Skeleton className="h-4 w-24" />
+                  <Skeleton className="h-5 w-32" />
+                </div>
+                <div className="space-y-3">
+                  <Skeleton className="h-4 w-24" />
+                  <Skeleton className="h-5 w-32" />
+                </div>
               </div>
             </div>
           </CardContent>

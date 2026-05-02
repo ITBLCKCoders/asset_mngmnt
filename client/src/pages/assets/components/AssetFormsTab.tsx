@@ -5,8 +5,8 @@ import { FileText, ChevronDown, ChevronUp, Eye } from 'lucide-react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
-import { PdfPreviewModal } from '@/components/common/PdfPreviewModal';
 import { api } from '@/lib/api';
+import { generateAccountabilityFormPDF } from '@/pages/assets/accountability/accountabilityForm';
 import { toast } from 'sonner';
 
 interface AccountabilityForm {
@@ -92,18 +92,17 @@ interface BorrowForm {
 
 interface AssetFormsTabProps {
   assetId: string;
+  onPdfModalOpen?: () => void;
+  onPdfModalClose?: () => void;
 }
 
-export function AssetFormsTab({ assetId }: AssetFormsTabProps) {
+export function AssetFormsTab({ assetId, onPdfModalOpen, onPdfModalClose }: AssetFormsTabProps) {
   const [loading, setLoading] = useState(true);
   const [accountabilityForms, setAccountabilityForms] = useState<AccountabilityForm[]>([]);
   const [returnForms, setReturnForms] = useState<ReturnForm[]>([]);
   const [transferForms, setTransferForms] = useState<TransferForm[]>([]);
   const [borrowForms, setBorrowForms] = useState<BorrowForm[]>([]);
   const [showAllAccountability, setShowAllAccountability] = useState(false);
-  const [pdfModalOpen, setPdfModalOpen] = useState(false);
-  const [currentPdfUrl, setCurrentPdfUrl] = useState<string | null>(null);
-  const [currentPdfTitle, setCurrentPdfTitle] = useState<string>('');
 
   useEffect(() => {
     fetchForms();
@@ -119,15 +118,11 @@ export function AssetFormsTab({ assetId }: AssetFormsTabProps) {
         borrowForms: BorrowForm[];
       }>(`/assets/${assetId}/forms`);
 
-      console.log('Forms response:', response);
-      console.log('Accountability forms:', response.accountabilityForms);
-
       setAccountabilityForms(response.accountabilityForms || []);
       setReturnForms(response.returnForms || []);
       setTransferForms(response.transferForms || []);
       setBorrowForms(response.borrowForms || []);
     } catch (error) {
-      console.error('Failed to fetch forms:', error);
       toast.error('Failed to load forms');
     } finally {
       setLoading(false);
@@ -136,11 +131,39 @@ export function AssetFormsTab({ assetId }: AssetFormsTabProps) {
 
   const handleViewPdf = (pdfUrl: string | null | undefined, title: string) => {
     if (pdfUrl) {
-      setCurrentPdfUrl(pdfUrl);
-      setCurrentPdfTitle(title);
-      setPdfModalOpen(true);
+      // Dispatch event to open PDF preview at parent level
+      window.dispatchEvent(
+        new CustomEvent('openPdfPreview', {
+          detail: { pdfUrl, title },
+        })
+      );
+      // Close the asset details modal
+      onPdfModalOpen?.();
     } else {
       toast.error('PDF not available for this form');
+    }
+  };
+
+  const handleViewAccountabilityFormPdf = async (formId: string, formNumber: string) => {
+    try {
+      // Fetch the full accountability form data to get issuer and other fields
+      const fullFormResponse = await api.get(`/accountability-forms/${formId}`);
+      const fullForm = fullFormResponse.form;
+      
+      const pdfBlob = await generateAccountabilityFormPDF(fullForm);
+      const pdfUrl = URL.createObjectURL(pdfBlob);
+      
+      // Dispatch event to open PDF preview at parent level
+      window.dispatchEvent(
+        new CustomEvent('openPdfPreview', {
+          detail: { pdfUrl, title: `Accountability Form ${formNumber}` },
+        })
+      );
+      
+      // Close the asset details modal
+      onPdfModalOpen?.();
+    } catch (error) {
+      toast.error('Failed to generate PDF for this accountability form');
     }
   };
 
@@ -222,17 +245,15 @@ export function AssetFormsTab({ assetId }: AssetFormsTabProps) {
                 </div>
                 <div className="flex flex-col items-end gap-2">
                   {getStatusBadge(currentAccountability.status)}
-                  {currentAccountability.received_copy_wet_pdf_url && (
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      onClick={() => handleViewPdf(currentAccountability.received_copy_wet_pdf_url, `Accountability Form ${currentAccountability.formNumber}`)}
-                      className="flex items-center gap-2"
-                    >
-                      <Eye className="h-4 w-4" />
-                      View PDF
-                    </Button>
-                  )}
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => handleViewAccountabilityFormPdf(currentAccountability.id, currentAccountability.formNumber)}
+                    className="flex items-center gap-2"
+                  >
+                    <Eye className="h-4 w-4" />
+                    View PDF
+                  </Button>
                 </div>
               </div>
               {otherAccountabilityForms.length > 0 && (
@@ -283,15 +304,13 @@ export function AssetFormsTab({ assetId }: AssetFormsTabProps) {
                   </div>
                   <div className="flex items-center gap-2">
                     {getStatusBadge(form.status)}
-                    {form.received_copy_wet_pdf_url && (
-                      <Button
-                        variant="ghost"
-                        size="sm"
-                        onClick={() => handleViewPdf(form.received_copy_wet_pdf_url, `Accountability Form ${form.formNumber}`)}
-                      >
-                        <Eye className="h-4 w-4" />
-                      </Button>
-                    )}
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      onClick={() => handleViewAccountabilityFormPdf(form.id, form.formNumber)}
+                    >
+                      <Eye className="h-4 w-4" />
+                    </Button>
                   </div>
                 </div>
               ))}
@@ -443,14 +462,6 @@ export function AssetFormsTab({ assetId }: AssetFormsTabProps) {
           )}
         </CardContent>
       </Card>
-
-      {/* PDF Preview Modal */}
-      <PdfPreviewModal
-        isOpen={pdfModalOpen}
-        onClose={() => setPdfModalOpen(false)}
-        pdfUrl={currentPdfUrl}
-        title={currentPdfTitle}
-      />
     </div>
   );
 }

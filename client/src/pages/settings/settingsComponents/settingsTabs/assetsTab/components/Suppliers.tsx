@@ -32,7 +32,6 @@ import {
   Trash2,
   Package,
   AlertTriangle,
-  Loader2,
 } from 'lucide-react';
 import { Shimmer } from '@/components/ui/shimmer';
 import { useSuppliers } from '../hooks/useSuppliers';
@@ -290,8 +289,7 @@ export function Suppliers({ categories, categoriesLoading }: SuppliersProps) {
                     <SelectContent className="bg-white">
                       {categoriesLoading ? (
                         <SelectItem value="" disabled>
-                          <Loader2 className="animate-spin h-4 w-4 mr-2" />{' '}
-                          Loading categories...
+                          <span className="inline-block h-4 w-36 animate-shimmer rounded bg-gray-200" />
                         </SelectItem>
                       ) : categories.length === 0 ? (
                         <div className="p-4 text-center space-y-2">

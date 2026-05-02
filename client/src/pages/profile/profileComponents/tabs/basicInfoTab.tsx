@@ -948,6 +948,7 @@ const BasicInfoTab = forwardRef<BasicInfoTabHandle, BasicInfoTabProps>(
                     <SignatureCanvas
                       ref={sigCanvas}
                       penColor="black"
+                      penWidth={4}
                       canvasProps={{ className: 'w-full h-[500px] bg-gray-50' }}
                     />
                     <div className="flex flex-col gap-3 border-t bg-gray-100 p-4 sm:flex-row sm:items-center sm:justify-between">

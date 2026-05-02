@@ -404,7 +404,7 @@ export default function AssetRequestAdmin() {
             <CardContent>
               {loading ? (
                 <div className="flex items-center justify-center py-12">
-                  <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600"></div>
+                  <div className="h-8 w-32 animate-pulse rounded bg-blue-100"></div>
                   <span className="ml-3 text-gray-600">
                     Loading requests...
                   </span>
@@ -516,7 +516,7 @@ export default function AssetRequestAdmin() {
                     >
                       {processing ? (
                         <div className="flex items-center gap-2">
-                          <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white"></div>
+                          <div className="h-4 w-16 animate-pulse rounded bg-white/40"></div>
                           Processing...
                         </div>
                       ) : (

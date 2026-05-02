@@ -1669,6 +1669,7 @@ export async function getAllFormsByAssetIdHandler(
         status: row.status,
         created_at: row.created_at,
         signed_at: row.signed_at,
+        assets_data: row.assets_data,
         user: {
           id: row.user_id,
           first_name: row.first_name || '',

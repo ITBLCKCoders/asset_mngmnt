@@ -9,7 +9,6 @@ import {
   X,
   ChevronLeft,
   ChevronRight,
-  Loader2,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader } from '@/components/ui/card';
@@ -821,10 +820,7 @@ export function AddAssetModal({
               } text-white shadow-lg`}
             >
               {isSubmitting ? (
-                <>
-                  <Loader2 className="mr-2 h-5 w-5 animate-spin" />
-                  Adding Asset...
-                </>
+                <span className="inline-block h-4 w-28 animate-pulse rounded bg-white/40" />
               ) : currentStep === steps.length - 1 ? (
                 <>
                   Complete & Add Asset <CheckCircle2 className="ml-2 h-5 w-5" />

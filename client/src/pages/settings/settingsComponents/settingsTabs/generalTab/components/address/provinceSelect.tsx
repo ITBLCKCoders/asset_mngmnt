@@ -14,7 +14,7 @@ import {
   CommandGroup,
   CommandItem,
 } from '@/components/ui/command';
-import { ChevronDown, Check, Loader2 } from 'lucide-react';
+import { ChevronDown, Check } from 'lucide-react';
 import { Label } from '@/components/ui/label';
 
 interface ProvinceSelectProps {
@@ -106,7 +106,7 @@ export function ProvinceSelect({
             disabled={!regionCode || isLoading}
           >
             {isLoading ? (
-              <Loader2 className="h-4 w-4 animate-spin" />
+              <span className="inline-block h-4 w-28 animate-pulse rounded bg-gray-200" />
             ) : (
               selected?.name ||
               (isEdit && !selectedName ? 'N/A' : 'Select province')

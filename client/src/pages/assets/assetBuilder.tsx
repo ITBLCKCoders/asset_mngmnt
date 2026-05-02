@@ -10,6 +10,7 @@ import {
   CardHeader,
   CardTitle,
 } from '@/components/ui/card';
+import { PageHeader } from '@/components/common/PageHeader';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -345,42 +346,30 @@ export default function AssetBuilderPage() {
   return (
     <div className="flex flex-col min-h-screen">
       <main className="flex-1 p-4 sm:p-6 space-y-6">
-        <Card className="border-0 shadow-md bg-gradient-to-br from-white to-gray-50/50">
-          <CardContent className="p-6">
-            <div className="flex justify-between items-center">
-              <div className="flex items-center gap-3">
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  onClick={handleCancel}
-                  className="p-1 h-8 w-8 rounded-full"
-                >
-                  <ArrowLeft className="h-4 w-4" />
-                </Button>
-                <div className="p-2 bg-red-600 rounded-lg">
-                  <Package className="h-6 w-6 text-white" />
-                </div>
-                <div>
-                  <h1 className="text-xl font-bold text-gray-900">
-                    Asset Builder
-                  </h1>
-                  <p className="text-xs text-gray-500">
-                    Create a grouped asset from multiple individual assets
-                  </p>
-                </div>
-              </div>
-              <Button
-                variant="ghost"
-                size="sm"
-                onClick={() => window.location.reload()}
-                className="flex items-center gap-2"
-              >
-                <RefreshCw className="h-4 w-4" />
-                Refresh
-              </Button>
-            </div>
-          </CardContent>
-        </Card>
+        <PageHeader
+          icon={Package}
+          title="Asset Builder"
+          description="Create a grouped asset from multiple individual assets"
+        >
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={handleCancel}
+            className="flex items-center gap-2"
+          >
+            <ArrowLeft className="h-4 w-4" />
+            Back
+          </Button>
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={() => window.location.reload()}
+            className="flex items-center gap-2"
+          >
+            <RefreshCw className="h-4 w-4" />
+            Refresh
+          </Button>
+        </PageHeader>
 
         {builders.length > 0 && (
           <div className="space-y-4">

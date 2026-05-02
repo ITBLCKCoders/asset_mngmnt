@@ -428,8 +428,8 @@ export function AssetTimeline({ asset, showFieldChanges = true }: AssetTimelineP
     return (
       <div className="space-y-6 w-full">
         <div className="text-center py-8 text-gray-500">
-          <Clock className="h-12 w-12 mx-auto mb-4 text-gray-300 animate-spin" />
-          <p>Loading timeline...</p>
+          <div className="mx-auto mb-4 h-12 w-56 animate-pulse rounded bg-gray-200" />
+          <div className="mx-auto h-4 w-32 animate-pulse rounded bg-gray-200" />
         </div>
       </div>
     );

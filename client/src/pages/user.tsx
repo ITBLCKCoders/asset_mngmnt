@@ -691,7 +691,7 @@ function UserPermissions() {
                                 </Label>
                                 {rolesLoading ? (
                                   <div className="flex items-center gap-2 rounded-lg border border-gray-200 bg-gray-50 px-4 py-3 text-sm text-gray-500">
-                                    <div className="h-4 w-4 animate-spin rounded-full border-2 border-red-500 border-t-transparent" />
+                                    <div className="h-4 w-16 animate-pulse rounded bg-red-200" />
                                     Loading roles...
                                   </div>
                                 ) : (

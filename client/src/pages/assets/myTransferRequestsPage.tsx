@@ -154,14 +154,14 @@ export default function MyTransferRequestsPage() {
             disabled={loading}
             className="flex items-center gap-2"
           >
-            <RefreshCw className={`h-4 w-4 ${loading ? 'animate-spin' : ''}`} />
+            <RefreshCw className="h-4 w-4" />
             Refresh
           </Button>
         </PageHeader>
 
         {loading ? (
           <div className="flex justify-center py-12">
-            <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600" />
+            <div className="h-8 w-32 animate-pulse rounded bg-blue-100" />
             <span className="ml-3 text-gray-600">Loading your requests...</span>
           </div>
         ) : requests.length === 0 ? (

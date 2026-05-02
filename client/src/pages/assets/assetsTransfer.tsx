@@ -1136,7 +1136,7 @@ export default function AssetsTransfer() {
                     <div className="space-y-3 max-h-96 overflow-y-auto scrollbar-thin scrollbar-thumb-gray-300 scrollbar-track-gray-100 -mr-6 pr-6">
                       {loading ? (
                         <div className="flex items-center justify-center py-12">
-                          <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-red-600"></div>
+                          <div className="h-8 w-32 animate-pulse rounded bg-red-100"></div>
                           <span className="ml-3 text-gray-600">
                             Loading assignments...
                           </span>
@@ -1357,7 +1357,7 @@ export default function AssetsTransfer() {
                   <CardContent className="pt-0">
                     {buildersLoading ? (
                       <div className="flex items-center justify-center py-12">
-                        <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-red-600" />
+                        <div className="h-8 w-32 animate-pulse rounded bg-red-100" />
                         <span className="ml-3 text-gray-600">
                           Loading builders...
                         </span>
@@ -1650,7 +1650,7 @@ export default function AssetsTransfer() {
           <CardContent>
             {transferHistoryLoading ? (
               <div className="text-center py-12">
-                <div className="animate-spin h-10 w-10 border-2 border-purple-500 border-t-transparent rounded-full mx-auto mb-4" />
+                <div className="mx-auto mb-4 h-10 w-40 animate-pulse rounded bg-purple-100" />
                 <p className="text-gray-500 text-lg">
                   Loading transfer history...
                 </p>
@@ -2137,7 +2137,7 @@ export default function AssetsTransfer() {
               >
                 {transferring ? (
                   <div className="flex items-center gap-2">
-                    <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white" />
+                    <div className="h-4 w-16 animate-pulse rounded bg-white/40" />
                     Transferring...
                   </div>
                 ) : (

@@ -1,5 +1,7 @@
 // src/data/mockAssets.ts
 
+import { type AccountabilityForm } from '@/pages/assets/accountability/accountabilityForm';
+
 export type AssetStatus = 'Assigned' | 'Available' | 'In Maintenance';
 export type AssetCondition =
   | 'Excellent'
@@ -49,14 +51,6 @@ export interface AssetBuilderHistory {
   addedBy: string;
 }
 
-export interface AccountabilityForm {
-  id: string;
-  formNumber: string;
-  status: 'Pending' | 'Signed' | 'Completed';
-  created_at: string;
-  signed_at?: string;
-}
-
 export interface Asset {
   id: string;
   assetID?: string; // Database ID for matching with builders
@@ -98,7 +92,7 @@ export interface Asset {
   currentAssignment?: AssetAssignment;
   assignmentHistory?: AssetAssignment[];
   builderHistory?: AssetBuilderHistory[];
-  accountabilityForms?: AccountabilityForm[];
+  accountabilityForm?: AccountabilityForm | null;
   isAssetBuilder?: boolean;
   builderStatus?: string;
   children?: Asset[];

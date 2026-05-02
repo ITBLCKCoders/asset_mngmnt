@@ -102,7 +102,7 @@ export default function VerifyOTP() {
 
   const verify = async (code: string) => {
     setStatus('loading');
-    const loadingToast = toast.loading('Verifying OTP...');
+    const loadingToast = toast('Verifying OTP...', { duration: Infinity });
     try {
       await api.post('/auth/verify-otp', {
         channel,
@@ -153,7 +153,7 @@ export default function VerifyOTP() {
     );
     setOtpExpiry(600);
 
-    const loadingToast = toast.loading('Sending new OTP...');
+    const loadingToast = toast('Sending new OTP...', { duration: Infinity });
     try {
       await api.post('/auth/resend-otp', {
         channel,

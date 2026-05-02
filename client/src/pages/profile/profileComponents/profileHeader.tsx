@@ -12,7 +12,6 @@ import {
   Camera,
   Save,
   X,
-  Loader2,
 } from 'lucide-react';
 import { useRef, useEffect, useState } from 'react';
 import { cn } from '@/lib/utils';
@@ -225,10 +224,7 @@ export default function ProfileHeader({
                     className="w-full bg-red-600 text-white shadow-lg hover:bg-red-700 sm:w-auto"
                   >
                     {isSaving ? (
-                      <>
-                        <Loader2 className="w-5 h-5 mr-2 animate-spin" />
-                        Saving...
-                      </>
+                      <span className="inline-block h-4 w-20 animate-shimmer rounded bg-white/40" />
                     ) : (
                       <>
                         <Save className="w-5 h-5 mr-2" />

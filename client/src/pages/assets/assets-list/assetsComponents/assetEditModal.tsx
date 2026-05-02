@@ -9,7 +9,6 @@ import {
   X,
   ChevronLeft,
   ChevronRight,
-  Loader2,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader } from '@/components/ui/card';
@@ -1123,10 +1122,7 @@ export function EditAssetModal({
                 } text-white shadow-lg`}
               >
                 {isSubmitting ? (
-                  <>
-                    <Loader2 className="mr-2 h-5 w-5 animate-spin" />
-                    Updating Asset...
-                  </>
+                  <span className="inline-block h-4 w-32 animate-pulse rounded bg-white/40" />
                 ) : currentStep === steps.length - 1 ? (
                   <>
                     Complete & Update Asset{' '}

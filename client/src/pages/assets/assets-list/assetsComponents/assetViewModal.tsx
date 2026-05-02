@@ -57,6 +57,21 @@ export function AssetViewModal({
 }: AssetViewModalProps) {
   const [activeTab, setActiveTab] = useState('details');
 
+  const handlePdfModalOpen = () => {
+    // Set a flag before closing so we know to reopen later
+    window.dispatchEvent(new CustomEvent('assetDetailsModalClosing'));
+    onClose();
+  };
+
+  const handlePdfModalClose = () => {
+    // Reopen the asset details modal after a short delay
+    setTimeout(() => {
+      // The parent component needs to handle reopening
+      // For now, we'll dispatch a custom event
+      window.dispatchEvent(new CustomEvent('reopenAssetDetailsModal'));
+    }, 100);
+  };
+
   // Convert Asset to AssetFormData format
   const convertAssetToFormData = (asset: Asset): AssetFormData => {
     // Map status from Asset to AssetFormData
@@ -238,7 +253,13 @@ export function AssetViewModal({
 
             {activeTab === 'timeline' && <AssetTimeline asset={asset} showFieldChanges={false} />}
 
-            {activeTab === 'forms' && <AssetFormsTab assetId={asset.id} />}
+            {activeTab === 'forms' && (
+              <AssetFormsTab
+                assetId={asset.id}
+                onPdfModalOpen={handlePdfModalOpen}
+                onPdfModalClose={handlePdfModalClose}
+              />
+            )}
           </CardContent>
 
           <div className="flex flex-col sm:flex-row justify-between gap-3 sm:gap-4 px-4 sm:px-6 py-4 sm:py-5 bg-gray-50 border-t">

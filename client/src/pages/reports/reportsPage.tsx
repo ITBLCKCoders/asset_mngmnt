@@ -10,7 +10,6 @@ import {
   CalendarRange,
   Download,
   FileStack,
-  Loader2,
   RefreshCw,
 } from 'lucide-react';
 import { toast } from 'sonner';
@@ -979,7 +978,7 @@ export default function ReportsPage() {
               disabled={loading || userLoading}
             >
               {loading || userLoading ? (
-                <Loader2 className="mr-1 h-4 w-4 animate-spin" />
+                <span className="mr-1 inline-block h-4 w-16 animate-pulse rounded bg-red-200" />
               ) : (
                 <RefreshCw className="mr-1 h-4 w-4" />
               )}

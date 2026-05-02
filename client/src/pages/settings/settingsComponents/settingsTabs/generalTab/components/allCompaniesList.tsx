@@ -8,7 +8,6 @@ import {
   Edit,
   CheckCircle2,
   Trash2,
-  Loader2,
   MapPin,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
@@ -191,12 +190,9 @@ export function AllCompaniesList({
                           disabled={isSettingMain}
                           className="font-medium bg-blue-600 hover:bg-blue-700 text-white"
                         >
-                          {isSettingMain ? (
-                            <>
-                              <Loader2 className="mr-2 h-5 w-5 animate-spin" />
-                              Setting...
-                            </>
-                          ) : (
+              {isSettingMain ? (
+                <span className="inline-block h-4 w-20 animate-pulse rounded bg-white/40" />
+              ) : (
                             <>
                               <Building2 className="mr-2 h-5 w-5" />
                               Set as Main
@@ -211,12 +207,9 @@ export function AllCompaniesList({
                           disabled={isActivating}
                           className="font-medium"
                         >
-                          {isActivating ? (
-                            <>
-                              <Loader2 className="mr-2 h-5 w-5 animate-spin" />
-                              Switching...
-                            </>
-                          ) : (
+              {isActivating ? (
+                <span className="inline-block h-4 w-24 animate-pulse rounded bg-white/40" />
+              ) : (
                             <>
                               <CheckCircle2 className="mr-2 h-5 w-5" />
                               Set as Active

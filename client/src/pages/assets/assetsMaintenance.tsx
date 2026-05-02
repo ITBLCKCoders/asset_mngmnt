@@ -552,7 +552,7 @@ export default function AssetsMaintenance() {
                     <div className="min-h-0 flex-1 space-y-2 overflow-y-auto pr-1 scrollbar-thin scrollbar-thumb-gray-300 scrollbar-track-gray-100">
                       {loading ? (
                         <div className="flex items-center justify-center py-10">
-                          <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-teal-600" />
+                          <div className="h-8 w-32 animate-pulse rounded bg-teal-100" />
                           <span className="ml-3 text-gray-600 text-sm">
                             Loading…
                           </span>
@@ -685,7 +685,7 @@ export default function AssetsMaintenance() {
                     <div className="min-h-0 flex-1 space-y-2 overflow-y-auto pr-1 scrollbar-thin scrollbar-thumb-gray-300 scrollbar-track-gray-100">
                       {loading ? (
                         <div className="flex items-center justify-center py-10">
-                          <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-teal-600" />
+                          <div className="h-8 w-32 animate-pulse rounded bg-teal-100" />
                           <span className="ml-3 text-gray-600 text-sm">
                             Loading assets…
                           </span>
@@ -1089,7 +1089,7 @@ export default function AssetsMaintenance() {
                 >
                   {scheduling ? (
                     <div className="flex items-center gap-2">
-                      <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white"></div>
+                      <div className="h-4 w-16 animate-pulse rounded bg-white/40"></div>
                       Scheduling Maintenance...
                     </div>
                   ) : (

@@ -106,7 +106,7 @@ export default function ProfilePage() {
     if (!result.isConfirmed) return;
 
     setIsSaving(true);
-    toast.loading('Saving profile...', { id: 'save-profile' });
+    toast('Saving profile...', { id: 'save-profile', duration: Infinity });
 
     try {
       if (basicInfoTabRef.current) {

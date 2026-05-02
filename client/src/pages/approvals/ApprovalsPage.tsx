@@ -747,7 +747,7 @@ export default function ApprovalsPage() {
             className="flex items-center gap-2"
           >
             <RefreshCw
-              className={`h-4 w-4 ${isAnyLoading ? 'animate-spin' : ''}`}
+              className="h-4 w-4"
             />
             Refresh
           </Button>

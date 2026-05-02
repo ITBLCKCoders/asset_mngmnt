@@ -1360,7 +1360,7 @@ export default function AssetsReturn() {
                   <CardContent className="pt-0">
                     {buildersLoading ? (
                       <div className="flex items-center justify-center py-12">
-                        <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-red-600" />
+                        <div className="h-8 w-32 animate-pulse rounded bg-red-100" />
                         <span className="ml-3 text-gray-600">
                           Loading builders...
                         </span>
@@ -1615,7 +1615,7 @@ export default function AssetsReturn() {
                 >
                   {returning ? (
                     <div className="flex items-center gap-2">
-                      <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white"></div>
+                      <div className="h-4 w-16 animate-pulse rounded bg-white/40"></div>
                       Processing Return...
                     </div>
                   ) : (
@@ -1654,7 +1654,7 @@ export default function AssetsReturn() {
           <CardContent>
             {returnHistoryLoading ? (
               <div className="flex items-center justify-center py-12">
-                <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-red-600"></div>
+                <div className="h-8 w-32 animate-pulse rounded bg-red-100"></div>
                 <span className="ml-3 text-gray-600">
                   Loading return history...
                 </span>
@@ -2217,7 +2217,7 @@ export default function AssetsReturn() {
               >
                 {returning ? (
                   <div className="flex items-center gap-2">
-                    <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white"></div>
+                    <div className="h-4 w-16 animate-pulse rounded bg-white/40"></div>
                     Processing...
                   </div>
                 ) : (

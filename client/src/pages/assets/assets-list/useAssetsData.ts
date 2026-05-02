@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from 'react';
 import { api } from '@/lib/api';
+import { generateAccountabilityFormPDF, type AccountabilityForm } from '@/pages/assets/accountability/accountabilityForm';
 import { toast } from 'sonner';
 import { computeNextMaintenanceDate } from '@/utils/computeNextMaintenanceDate';
 import { Asset } from './assetsComponents/assetTable/assetData';
@@ -243,7 +244,46 @@ export const useAssetsData = (companyFilter?: string | null) => {
           updatedBy: asset.updated_by_name || asset.updated_by || '',
         };
       });
-      setAssets(transformedAssets);
+      
+      // Batch fetch accountability forms for all assets
+      const assetsWithForms = await Promise.all(
+        transformedAssets.map(async (asset) => {
+          try {
+            const formsResponse = await api.get<{
+              accountabilityForms: any[];
+            }>(`/assets/${asset.id}/forms`);
+            
+            const currentAccountabilityForm = formsResponse.accountabilityForms?.[0];
+            if (currentAccountabilityForm) {
+              // Extract the assets array from the assets_data object
+              const assetsArray = currentAccountabilityForm.assets_data?.assets || [{
+                id: asset.assetID || asset.id,
+                code: asset.id,
+                name: asset.name,
+                category: asset.category,
+                categoryDepartment: asset.department,
+                type: asset.type,
+                serialNo: asset.serialNo,
+                modelNo: asset.modelNo,
+                brand: asset.brand,
+              }];
+              const formWithAssets = {
+                ...currentAccountabilityForm,
+                assets: assetsArray,
+              };
+              return {
+                ...asset,
+                accountabilityForm: formWithAssets,
+              };
+            }
+          } catch (error) {
+            // Failed to fetch accountability forms for asset
+          }
+          return asset;
+        })
+      );
+      
+      setAssets(assetsWithForms);
       setMeta(prev => ({
         ...prev,
         total: response.assets?.length ?? 0,

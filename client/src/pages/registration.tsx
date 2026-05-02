@@ -18,7 +18,7 @@ import {
   SelectValue,
 } from '@/components/ui/select';
 import { RotateCw } from 'lucide-react';
-import { Loader2, CheckCircle2, Eye, EyeOff } from 'lucide-react';
+import { CheckCircle2, Eye, EyeOff } from 'lucide-react';
 import { AnimatePresence, motion } from 'framer-motion';
 import logo from '@/assets/Blackcoders-Black.png';
 import { api } from '@/lib/api';
@@ -247,8 +247,8 @@ export default function RegisterPage() {
     if (!pendingFormData) return;
 
     setIsSubmitting(true);
-    const loadingToast = toast.loading('Creating your account...', {
-      icon: <Loader2 className="w-5 h-5 animate-spin" />,
+    const loadingToast = toast('Creating your account...', {
+      duration: Infinity,
     });
     try {
       await api.post('/auth/register', {
@@ -293,7 +293,7 @@ export default function RegisterPage() {
     if (!pendingFormData) return;
 
     setStatus('loading');
-    const loadingToast = toast.loading('Verifying OTP...');
+    const loadingToast = toast('Verifying OTP...', { duration: Infinity });
     try {
       await api.post('/auth/verify-otp', {
         channel: selectedOtpChannel,
@@ -337,7 +337,7 @@ export default function RegisterPage() {
     localStorage.setItem('otpExpiryTime', (Date.now() + 10 * 60 * 1000).toString());
     setOtpExpiry(600);
 
-    const loadingToast = toast.loading('Sending new OTP...');
+    const loadingToast = toast('Sending new OTP...', { duration: Infinity });
     try {
       await api.post('/auth/resend-otp', {
         channel: selectedOtpChannel,
@@ -506,10 +506,7 @@ export default function RegisterPage() {
                     className="w-full max-w-xs bg-red-600 hover:bg-red-700 text-white font-medium text-sm py-2"
                   >
                     {status === 'loading' ? (
-                      <>
-                        <Loader2 className="w-3 h-3 animate-spin mr-1" />
-                        Verifying...
-                      </>
+                      <span className="inline-block h-4 w-20 animate-pulse rounded bg-white/40" />
                     ) : (
                       'Verify'
                     )}
@@ -624,10 +621,7 @@ export default function RegisterPage() {
                     className="w-full max-w-xs bg-red-600 hover:bg-red-700 text-white font-medium text-sm py-2"
                   >
                     {isSubmitting ? (
-                      <>
-                        <Loader2 className="w-3 h-3 animate-spin mr-1" />
-                        Creating...
-                      </>
+                      <span className="inline-block h-4 w-20 animate-pulse rounded bg-white/40" />
                     ) : (
                       'Continue'
                     )}
@@ -1006,10 +1000,7 @@ export default function RegisterPage() {
                   className="w-full max-w-xs bg-red-600 hover:bg-red-700 text-white font-medium text-sm py-2"
                 >
                   {isSubmitting ? (
-                    <>
-                      <Loader2 className="w-3 h-3 animate-spin mr-1" />
-                      Creating...
-                    </>
+                    <span className="inline-block h-4 w-20 animate-pulse rounded bg-white/40" />
                   ) : (
                     'Create Account'
                   )}

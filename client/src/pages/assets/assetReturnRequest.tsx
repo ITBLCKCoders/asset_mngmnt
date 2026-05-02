@@ -748,7 +748,7 @@ export default function AssetReturnRequest() {
             disabled={loading}
             className="flex items-center gap-2"
           >
-            <RefreshCw className={`h-4 w-4 ${loading ? 'animate-spin' : ''}`} />
+            <RefreshCw className="h-4 w-4" />
             Refresh
           </Button>
         </PageHeader>
@@ -874,7 +874,7 @@ export default function AssetReturnRequest() {
                       <div className="space-y-3 max-h-96 overflow-y-auto scrollbar-thin scrollbar-thumb-gray-300 scrollbar-track-gray-100">
                         {loading ? (
                           <div className="flex items-center justify-center py-12">
-                            <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-red-600"></div>
+                            <div className="h-8 w-32 animate-pulse rounded bg-red-100"></div>
                             <span className="ml-3 text-gray-600">
                               Loading assignments...
                             </span>
@@ -1025,7 +1025,7 @@ export default function AssetReturnRequest() {
                       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 max-h-96 overflow-y-auto scrollbar-thin scrollbar-thumb-gray-300 scrollbar-track-gray-100">
                         {loading ? (
                           <div className="col-span-full flex items-center justify-center py-12">
-                            <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-red-600"></div>
+                            <div className="h-8 w-32 animate-pulse rounded bg-red-100"></div>
                             <span className="ml-3 text-gray-600">
                               Loading assignments...
                             </span>
@@ -1233,7 +1233,7 @@ export default function AssetReturnRequest() {
                   <CardContent className="pt-0">
                     {buildersLoading ? (
                       <div className="flex items-center justify-center py-12">
-                        <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-red-600" />
+                        <div className="h-8 w-32 animate-pulse rounded bg-red-100" />
                         <span className="ml-3 text-gray-600">
                           Loading builders...
                         </span>
@@ -1584,7 +1584,7 @@ export default function AssetReturnRequest() {
                 >
                   {submitting ? (
                     <div className="flex items-center gap-2">
-                      <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white"></div>
+                      <div className="h-4 w-16 animate-pulse rounded bg-white/40"></div>
                       Submitting Request...
                     </div>
                   ) : (
@@ -1707,7 +1707,7 @@ export default function AssetReturnRequest() {
                       >
                         {submitting ? (
                           <div className="flex items-center gap-2">
-                            <div className="animate-spin rounded-full h-4 w-4 border-2 border-white border-t-transparent" />
+                            <div className="h-4 w-16 animate-pulse rounded bg-white/40" />
                             Submitting...
                           </div>
                         ) : (
@@ -1767,7 +1767,7 @@ export default function AssetReturnRequest() {
             <CardContent>
               {loading ? (
                 <div className="flex items-center justify-center py-12">
-                  <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-red-600"></div>
+                  <div className="h-8 w-32 animate-pulse rounded bg-red-100"></div>
                   <span className="ml-3 text-gray-600">
                     Loading requests...
                   </span>

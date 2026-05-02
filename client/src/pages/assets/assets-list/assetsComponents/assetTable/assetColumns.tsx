@@ -5,7 +5,9 @@ import {
   ChevronDown,
   Package,
   Edit,
+  Eye,
 } from 'lucide-react';
+import { generateAccountabilityFormPDF, type AccountabilityForm } from '@/pages/assets/accountability/accountabilityForm';
 import { Badge } from '@/components/ui/badge';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { Button } from '@/components/ui/button';
@@ -135,6 +137,54 @@ export const assetColumns = [
         );
       }
       return <span className="text-gray-400">Not assigned</span>;
+    },
+  },
+
+  // 12. Accountability Form #
+  {
+    id: 'accountabilityForm',
+    header: 'Accountability Form #',
+    accessorFn: (row: any) => row.accountabilityForm?.formNumber ?? '',
+    size: 220,
+    cell: ({ row }: any) => {
+      const accountabilityForm = row.original.accountabilityForm;
+      
+      if (accountabilityForm) {
+        return (
+          <Button
+            variant="ghost"
+            size="sm"
+            className="font-mono text-xs h-auto py-1 px-2 hover:bg-blue-50 hover:text-blue-700"
+            onClick={async (e) => {
+              e.stopPropagation();
+              try {
+                // Fetch the full accountability form data to get issuer and other fields
+                const { api } = await import('@/lib/api');
+                const fullFormResponse = await api.get(`/accountability-forms/${accountabilityForm.id}`);
+                const fullForm = fullFormResponse.form;
+                
+                const pdfBlob = await generateAccountabilityFormPDF(fullForm);
+                const pdfUrl = URL.createObjectURL(pdfBlob);
+                window.dispatchEvent(
+                  new CustomEvent('openPdfPreview', {
+                    detail: { pdfUrl, title: `Accountability Form ${accountabilityForm.formNumber}` },
+                  })
+                );
+              } catch (error) {
+                window.dispatchEvent(
+                  new CustomEvent('showPdfNotAvailable', {
+                    detail: { message: 'Failed to generate PDF for this accountability form' },
+                  })
+                );
+              }
+            }}
+          >
+            <Eye className="h-3 w-3 mr-1" />
+            {accountabilityForm.formNumber}
+          </Button>
+        );
+      }
+      return <span className="text-gray-400 text-xs">—</span>;
     },
   },
 

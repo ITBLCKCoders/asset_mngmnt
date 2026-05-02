@@ -9,7 +9,7 @@ import {
   ReactNode,
 } from 'react';
 import { api, setToken } from '@/lib/api';
-import { Loader2 } from 'lucide-react';
+import { Skeleton } from '@/components/ui/skeleton';
 
 interface AuthContextType {
   isAuthenticated: boolean;
@@ -82,12 +82,22 @@ export function useAuth() {
   return context;
 }
 
-export function AuthLoadingSpinner() {
+export function AuthLoadingSkeleton() {
   return (
-    <div className="min-h-screen flex items-center justify-center bg-black">
-      <div className="text-center">
-        <Loader2 className="w-12 h-12 animate-spin text-red-600 mx-auto mb-4" />
-        <p className="text-white text-lg">Validating session...</p>
+    <div className="min-h-screen flex items-center justify-center bg-black px-4">
+      <div className="w-full max-w-md space-y-6 rounded-lg bg-white/5 p-6">
+        <Skeleton className="mx-auto h-16 w-64 bg-white/15" />
+        <div className="space-y-3">
+          <Skeleton className="h-4 w-24 bg-white/15" />
+          <Skeleton className="h-10 w-full bg-white/15" />
+          <Skeleton className="h-4 w-28 bg-white/15" />
+          <Skeleton className="h-10 w-full bg-white/15" />
+        </div>
+        <Skeleton className="mx-auto h-10 w-44 bg-red-500/25" />
+        <div className="space-y-2">
+          <Skeleton className="mx-auto h-4 w-40 bg-white/15" />
+          <Skeleton className="mx-auto h-4 w-56 bg-white/15" />
+        </div>
       </div>
     </div>
   );

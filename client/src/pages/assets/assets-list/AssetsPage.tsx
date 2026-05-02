@@ -19,6 +19,7 @@ import {
   Building,
 } from 'lucide-react';
 import { Card, CardContent, CardHeader } from '@/components/ui/card';
+import { PageHeader } from '@/components/common/PageHeader';
 import { Button } from '@/components/ui/button';
 import { DataTable } from '@/components/ui/dataTable';
 import { Dialog } from '@/components/ui/dialog';
@@ -65,6 +66,7 @@ import {
 } from '@/utils/assetErrorHandling';
 import { formatAuditPlainText } from '@/components/common/AuditFieldChanges';
 import { useAuditFieldLookups } from '@/hooks/useAuditFieldLookups';
+import { PDFViewer } from '@/components/PDFViewer';
 
 const logger = createLogger('AssetsPage');
 
@@ -78,10 +80,41 @@ export function AssetsPage() {
   const [isViewModalOpen, setIsViewModalOpen] = useState(false);
   const [isEditModalOpen, setIsEditModalOpen] = useState(false);
   const [selectedAsset, setSelectedAsset] = useState<Asset | null>(null);
-  const [selectedAssetForEdit, setSelectedAssetForEdit] =
-    useState<Asset | null>(null);
-  const [isAccessDeniedDialogOpen, setIsAccessDeniedDialogOpen] =
-    useState(false);
+  const [selectedAssetForEdit, setSelectedAssetForEdit] = useState<Asset | null>(null);
+  const [isAccessDeniedDialogOpen, setIsAccessDeniedDialogOpen] = useState(false);
+  const [pdfModalOpen, setPdfModalOpen] = useState(false);
+  const [currentPdfUrl, setCurrentPdfUrl] = useState<string | null>(null);
+  const [currentPdfTitle, setCurrentPdfTitle] = useState<string>('');
+  const [wasViewModalOpenBeforePdf, setWasViewModalOpenBeforePdf] = useState(false);
+
+  const handleOpenPdfPreview = (pdfUrl: string, title: string) => {
+    setCurrentPdfUrl(pdfUrl);
+    setCurrentPdfTitle(title);
+    setPdfModalOpen(true);
+    setWasViewModalOpenBeforePdf(isViewModalOpen);
+    setIsViewModalOpen(false);
+  };
+
+  const handleClosePdfPreview = () => {
+    setPdfModalOpen(false);
+    if (wasViewModalOpenBeforePdf) {
+      setIsViewModalOpen(true);
+      setWasViewModalOpenBeforePdf(false);
+    }
+  };
+
+  // Listen for PDF preview events from child components
+  useEffect(() => {
+    const handleOpenPdfPreviewEvent = (event: CustomEvent) => {
+      const { pdfUrl, title } = event.detail;
+      handleOpenPdfPreview(pdfUrl, title);
+    };
+
+    window.addEventListener('openPdfPreview', handleOpenPdfPreviewEvent as EventListener);
+    return () => {
+      window.removeEventListener('openPdfPreview', handleOpenPdfPreviewEvent as EventListener);
+    };
+  }, [isViewModalOpen]);
 
   // Check if user is Super Admin or Admin (can select any company)
   const isSuperAdminOrAdmin = Boolean(
@@ -92,7 +125,6 @@ export function AssetsPage() {
   const { assets, loading, fetchAssets, meta } = useAssetsData(
     activeCompany?.id || null
   );
-  const displayLoading = useDelayedLoading(loading, 500);
   const isInitialLoading = useDelayedLoading(
     loading && assets.length === 0,
     500
@@ -187,6 +219,29 @@ export function AssetsPage() {
       hasDeletePermission &&
       hasViewPermission
     );
+  };
+
+  // Custom filter function that searches accountability form number as well
+  const customFilterFn: any = (row: any, globalFilter: string) => {
+    if (!globalFilter) return true;
+    
+    const filterValue = globalFilter.toLowerCase();
+    
+    // Search all standard columns
+    const standardColumns = ['id', 'name', 'description', 'category', 'type', 'serialNo', 'modelNo', 'brand', 'status', 'assignedTo', 'department', 'location'];
+    for (const col of standardColumns) {
+      if (row.original[col] && String(row.original[col]).toLowerCase().includes(filterValue)) {
+        return true;
+      }
+    }
+    
+    // Search accountability form number
+    if (row.original.accountabilityForm?.formNumber && 
+        String(row.original.accountabilityForm.formNumber).toLowerCase().includes(filterValue)) {
+      return true;
+    }
+    
+    return false;
   };
 
   // Check if user has permission to edit a specific asset
@@ -397,6 +452,30 @@ export function AssetsPage() {
 
     fetchAuditLogs();
   }, [selectedBuilder?.builderID]);
+
+  // Handle PDF preview modal from custom event
+  useEffect(() => {
+    const handleOpenPdfPreview = (event: CustomEvent) => {
+      const { pdfUrl, title } = event.detail;
+      setCurrentPdfUrl(pdfUrl);
+      setCurrentPdfTitle(title);
+      setPdfModalOpen(true);
+    };
+
+    // Handle PDF not available error
+    const handleShowPdfNotAvailable = (event: CustomEvent) => {
+      const { message } = event.detail;
+      toast.error(message);
+    };
+
+    window.addEventListener('openPdfPreview', handleOpenPdfPreview as EventListener);
+    window.addEventListener('showPdfNotAvailable', handleShowPdfNotAvailable as EventListener);
+
+    return () => {
+      window.removeEventListener('openPdfPreview', handleOpenPdfPreview as EventListener);
+      window.removeEventListener('showPdfNotAvailable', handleShowPdfNotAvailable as EventListener);
+    };
+  }, []);
 
   const handleAddAsset = async (data: AssetFormData) => {
     try {
@@ -647,85 +726,49 @@ export function AssetsPage() {
     <div className="flex flex-col min-h-screen">
       <AccessDeniedDialog />
       <main className="flex-1 p-4 sm:p-6 space-y-6">
-        <Card className="border-0 shadow-md bg-gradient-to-br from-white to-gray-50/50">
-          <CardContent className="p-6">
-            <div className="flex w-full flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
-              {isInitialLoading ? (
-                <>
-                  <div className="flex items-center gap-3">
-                    <Shimmer className="h-10 w-10 rounded-lg" />
-                    <div className="space-y-2">
-                      <Shimmer className="h-6 w-48" />
-                      <Shimmer className="h-3 w-64" />
-                    </div>
-                  </div>
-                  <div className="hidden items-center gap-3 sm:flex sm:flex-wrap lg:w-auto">
-                    <Shimmer className="h-9 w-24 rounded-md" />
-                    <Shimmer className="h-9 w-32 rounded-md" />
-                    <Shimmer className="h-9 w-32 rounded-md" />
-                  </div>
-                </>
-              ) : (
-                <>
-                  <div className="flex items-center gap-3">
-                    <div className="p-2 bg-red-600 rounded-lg">
-                      <Package className="h-6 w-6 text-white" />
-                    </div>
-                    <div>
-                      <h1 className="text-xl font-bold text-gray-900">
-                        Assets Management
-                      </h1>
-                      <p className="text-xs text-gray-500">
-                        Track and manage company assets
-                      </p>
-                    </div>
-                  </div>
-
-                  <div className="flex w-full flex-col gap-2 sm:flex-row sm:flex-wrap lg:w-auto lg:justify-end">
-                    <Button
-                      variant="ghost"
-                      size="sm"
-                      onClick={() => fetchAssets()}
-                      disabled={loading}
-                      className="w-full justify-center gap-2 sm:w-auto"
-                    >
-                      <RefreshCw
-                        className={`h-4 w-4 ${loading ? 'animate-spin' : ''}`}
-                      />
-                      Refresh
-                    </Button>
-                    <Button
-                      size="sm"
-                      onClick={handleAddAssetClick}
-                      disabled={!hasPermission('Asset List', 'create')}
-                      className="w-full bg-red-600 text-white hover:bg-red-700 sm:w-auto"
-                    >
-                      <Plus className="mr-2 h-4 w-4" />
-                      Add New Asset
-                    </Button>
-                    <Button
-                      size="sm"
-                      variant="outline"
-                      onClick={() => {
-                        if (!hasAssetManagementAccess()) {
-                          setIsAccessDeniedDialogOpen(true);
-                        } else {
-                          navigate('/assets/builder');
-                        }
-                      }}
-                      disabled={!hasPermission('Asset List', 'create')}
-                      className="w-full border-red-200 text-red-600 hover:bg-red-50 sm:w-auto"
-                      aria-label="Create Asset Builder"
-                    >
-                      <Package className="mr-2 h-4 w-4" />
-                      Asset Builder
-                    </Button>
-                  </div>
-                </>
-              )}
-            </div>
-          </CardContent>
-        </Card>
+        <PageHeader
+          icon={Package}
+          title="Assets Management"
+          description="Track and manage company assets"
+          loading={isInitialLoading}
+        >
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={() => fetchAssets()}
+            disabled={loading}
+            className="flex items-center gap-2"
+          >
+            <RefreshCw className="h-4 w-4" />
+            Refresh
+          </Button>
+          <Button
+            size="sm"
+            onClick={handleAddAssetClick}
+            disabled={!hasPermission('Asset List', 'create')}
+            className="bg-white text-red-600 hover:bg-white/90"
+          >
+            <Plus className="mr-2 h-4 w-4" />
+            Add New Asset
+          </Button>
+          <Button
+            size="sm"
+            variant="outline"
+            onClick={() => {
+              if (!hasAssetManagementAccess()) {
+                setIsAccessDeniedDialogOpen(true);
+              } else {
+                navigate('/assets/builder');
+              }
+            }}
+            disabled={!hasPermission('Asset List', 'create')}
+            className="border-white/30 text-white hover:bg-white/20"
+            aria-label="Create Asset Builder"
+          >
+            <Package className="mr-2 h-4 w-4" />
+            Asset Builder
+          </Button>
+        </PageHeader>
 
         <AssetStats
           assets={assets}
@@ -754,7 +797,7 @@ export function AssetsPage() {
               <CardContent className="p-0">
                 <DataTable<Asset>
                   tableId="asset-list"
-                  data={loading ? [] : displayAssets}
+                  data={isInitialLoading ? [] : displayAssets}
                   columns={assetColumns}
                   searchPlaceholder="Search all columns..."
                   title="Asset List"
@@ -767,7 +810,8 @@ export function AssetsPage() {
                       : undefined
                   }
                   onRowClick={handleRowClick}
-                  isLoading={displayLoading}
+                  isLoading={isInitialLoading}
+                  globalFilterFn={customFilterFn}
                   mobileCardClassName="overflow-hidden rounded-2xl border border-red-100 bg-gradient-to-br from-white via-white to-red-50/40 p-4 shadow-sm shadow-red-100/40"
                   mobileCardFields={[
                     {
@@ -1080,6 +1124,40 @@ export function AssetsPage() {
         onSubmit={handleUpdateAsset}
         asset={selectedAssetForEdit}
       />
+
+      {/* PDF Preview Modal */}
+      <Dialog open={pdfModalOpen} onOpenChange={(open) => {
+        if (!open) {
+          handleClosePdfPreview();
+        }
+      }}>
+        <AppDialogFrame className="max-w-4xl max-h-[90vh] overflow-hidden !flex !flex-col !gap-0 !border-0 !p-0">
+          <AppDialogGradientHeader
+            title={currentPdfTitle}
+            description="Asset Accountability Form Preview"
+          />
+          <AppDialogBody className="min-h-0 flex-1 overflow-auto !p-0">
+            <div className="mx-4 my-4 h-[620px] overflow-hidden rounded-lg border border-slate-200 bg-slate-50 sm:mx-6">
+              {currentPdfUrl ? (
+                <PDFViewer pdfUrl={currentPdfUrl} className="h-full w-full" />
+              ) : (
+                <div className="flex h-full w-full items-center justify-center text-gray-500">
+                  Loading form preview...
+                </div>
+              )}
+            </div>
+          </AppDialogBody>
+          <AppDialogChromeFooter className="justify-end gap-3">
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={handleClosePdfPreview}
+            >
+              Close
+            </Button>
+          </AppDialogChromeFooter>
+        </AppDialogFrame>
+      </Dialog>
 
       <Dialog open={isExportDialogOpen} onOpenChange={setIsExportDialogOpen}>
         <AppDialogFrame className="max-w-2xl max-h-[80vh] overflow-hidden !flex !flex-col">
