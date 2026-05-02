@@ -4,6 +4,7 @@ import type { AuthRequest } from '../middleware/authenticate.js';
 import logger from '../logger.js';
 import { getScopedActiveCompany } from '../utils/activeCompany.js';
 import { SettingModel } from '../models/setting.model.js';
+import { createAuditLog } from '../utils/audit.js';
 
 export async function getAssetIdFormatSettingsHandler(
   req: AuthRequest,
@@ -142,6 +143,16 @@ export async function updateAssetIdFormatSettingsHandler(
     `,
       [company_id]
     )) as any[];
+
+    await createAuditLog({
+      userId,
+      action: 'update_asset_id_format_settings',
+      resourceType: 'settings',
+      resourceId: String(company_id),
+      details: `Updated asset ID format settings for company: ${company_id}`,
+      ipAddress: req.ip,
+      userAgent: req.get('User-Agent'),
+    });
 
     return res.json({
       message: 'Asset ID format settings updated successfully',
@@ -338,6 +349,16 @@ export async function copyMainCompanyAssetSettings(
 
       await connection.query('COMMIT');
 
+      await createAuditLog({
+        userId,
+        action: 'copy_main_company_asset_settings',
+        resourceType: 'settings',
+        resourceId: String(currentCompany.id),
+        details: `Copied asset settings from ${mainCompany.name} to ${currentCompany.name || currentCompany.code}`,
+        ipAddress: req.ip,
+        userAgent: req.get('User-Agent'),
+      });
+
       return res.json({
         message: `Successfully copied asset settings from ${mainCompany.name} to ${currentCompany.name || currentCompany.code}`,
       });
@@ -431,6 +452,16 @@ export async function copyMainCompanyLocationSettings(
 
       await connection.query('COMMIT');
 
+      await createAuditLog({
+        userId,
+        action: 'copy_main_company_location_settings',
+        resourceType: 'settings',
+        resourceId: String(currentCompany.id),
+        details: `Copied location settings from ${mainCompany.name} to ${currentCompany.name || currentCompany.code}`,
+        ipAddress: req.ip,
+        userAgent: req.get('User-Agent'),
+      });
+
       return res.json({
         message: `Successfully copied location settings from ${mainCompany.name} to ${currentCompany.name || currentCompany.code}`,
       });
@@ -504,6 +535,16 @@ export async function copyMainCompanyDepartmentSettings(
       );
 
       await connection.query('COMMIT');
+
+      await createAuditLog({
+        userId,
+        action: 'copy_main_company_department_settings',
+        resourceType: 'settings',
+        resourceId: String(currentCompany.id),
+        details: `Copied department settings from ${mainCompany.name} to ${currentCompany.name || currentCompany.code}`,
+        ipAddress: req.ip,
+        userAgent: req.get('User-Agent'),
+      });
 
       return res.json({
         message: `Successfully copied department settings from ${mainCompany.name} to ${currentCompany.name || currentCompany.code}`,
@@ -667,6 +708,16 @@ export async function updateAccountabilityFormSettingsHandler(
       [company_id]
     )) as any[];
 
+    await createAuditLog({
+      userId,
+      action: 'update_accountability_form_settings',
+      resourceType: 'settings',
+      resourceId: String(company_id),
+      details: `Updated accountability form settings for company: ${company_id}`,
+      ipAddress: req.ip,
+      userAgent: req.get('User-Agent'),
+    });
+
     return res.json({
       message: 'Accountability form settings updated successfully',
       settings: rows[0],
@@ -820,6 +871,16 @@ export async function updateAssetReturnFormSettingsHandler(
       [company_id]
     )) as any[];
 
+    await createAuditLog({
+      userId,
+      action: 'update_asset_return_form_settings',
+      resourceType: 'settings',
+      resourceId: String(company_id),
+      details: `Updated asset return form settings for company: ${company_id}`,
+      ipAddress: req.ip,
+      userAgent: req.get('User-Agent'),
+    });
+
     return res.json({
       message: 'Asset return form settings updated successfully',
       settings: rows[0],
@@ -923,6 +984,16 @@ export async function updateAssetTransferFormSettingsHandler(
       WHERE company_id = ? AND deleted_at IS NULL`,
       [company_id]
     )) as any[];
+
+    await createAuditLog({
+      userId,
+      action: 'update_asset_transfer_form_settings',
+      resourceType: 'settings',
+      resourceId: String(company_id),
+      details: `Updated asset transfer form settings for company: ${company_id}`,
+      ipAddress: req.ip,
+      userAgent: req.get('User-Agent'),
+    });
 
     return res.json({
       message: 'Asset transfer form settings updated successfully',
@@ -1075,6 +1146,16 @@ export async function updateAssetBorrowFormSettingsHandler(
       WHERE company_id = ? AND deleted_at IS NULL`,
       [company_id]
     )) as any[];
+
+    await createAuditLog({
+      userId,
+      action: 'update_asset_borrow_form_settings',
+      resourceType: 'settings',
+      resourceId: String(company_id),
+      details: `Updated asset borrow form settings for company: ${company_id}`,
+      ipAddress: req.ip,
+      userAgent: req.get('User-Agent'),
+    });
 
     return res.json({
       message: 'Asset borrow form settings updated successfully',

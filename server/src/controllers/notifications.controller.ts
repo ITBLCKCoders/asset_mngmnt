@@ -2,6 +2,7 @@ import type { Response } from 'express';
 import { pool } from '../db.js';
 import type { AuthRequest } from '../middleware/authenticate.js';
 import logger from '../logger.js';
+import { createAuditLog } from '../utils/audit.js';
 
 const NOTIFICATIONS_FETCH_LIMIT = 10000;
 
@@ -182,6 +183,16 @@ export async function markAsReadHandler(req: AuthRequest, res: Response) {
       return res.status(404).json({ error: 'Notification not found' });
     }
 
+    await createAuditLog({
+      userId,
+      action: 'mark_notification_as_read',
+      resourceType: 'notification',
+      resourceId: String(id),
+      details: `Marked notification as read: ${id}`,
+      ipAddress: req.ip,
+      userAgent: req.get('User-Agent'),
+    });
+
     return res.json({ message: 'Notification marked as read' });
   } catch (error: any) {
     logger.error('Mark as read failed:', error);
@@ -194,13 +205,24 @@ export async function markAsReadHandler(req: AuthRequest, res: Response) {
 export async function markAllAsReadHandler(req: AuthRequest, res: Response) {
   try {
     const userId = req.user!.userID;
+    const { notificationId } = req.params;
 
     await pool.execute(
-      'UPDATE notifications SET status = "read", updated_at = NOW() WHERE user_id = ? AND status = "unread"',
-      [userId]
+      'UPDATE notifications SET read_at = NOW() WHERE notification_id = ? AND user_id = ?',
+      [notificationId, userId]
     );
 
-    return res.json({ message: 'All notifications marked as read' });
+    await createAuditLog({
+      userId,
+      action: 'mark_notification_as_read',
+      resourceType: 'notification',
+      resourceId: String(notificationId),
+      details: `Marked notification as read: ${notificationId}`,
+      ipAddress: req.ip,
+      userAgent: req.get('User-Agent'),
+    });
+
+    return res.json({ message: 'Notification marked as read' });
   } catch (error: any) {
     logger.error('Mark all as read failed:', error);
     return res
@@ -242,6 +264,16 @@ export async function clearNotificationHandler(
       return res.status(404).json({ error: 'Notification not found' });
     }
 
+    await createAuditLog({
+      userId,
+      action: 'clear_notification',
+      resourceType: 'notification',
+      resourceId: String(id),
+      details: `Cleared notification with ID: ${id}`,
+      ipAddress: req.ip,
+      userAgent: req.get('User-Agent'),
+    });
+
     return res.json({ message: 'Notification cleared' });
   } catch (error: any) {
     logger.error('Clear notification failed:', error);
@@ -260,6 +292,15 @@ export async function clearAllNotificationsHandler(
       'DELETE FROM notifications WHERE user_id = ?',
       [userId]
     );
+
+    await createAuditLog({
+      userId,
+      action: 'clear_all_notifications',
+      resourceType: 'notification',
+      details: 'Cleared all notifications for user',
+      ipAddress: req.ip,
+      userAgent: req.get('User-Agent'),
+    });
 
     return res.json({ message: 'All notifications cleared' });
   } catch (error: any) {
@@ -326,6 +367,16 @@ export async function sendUnsignedAccountabilityNotificationHandler(
     } catch (socketError) {
       logger.warn('Failed to send socket notification:', socketError);
     }
+
+    await createAuditLog({
+      userId: req.user!.userID,
+      action: 'send_unsigned_accountability_notification',
+      resourceType: 'notification',
+      resourceId: String((result as any).insertId),
+      details: `Sent unsigned accountability notification to user ${userId} for ${formCount} form(s)`,
+      ipAddress: req.ip,
+      userAgent: req.get('User-Agent'),
+    });
 
     return res.json({ 
       message: 'Notification sent successfully',

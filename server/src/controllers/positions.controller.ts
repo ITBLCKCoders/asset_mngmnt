@@ -3,6 +3,7 @@ import { pool } from '../db.js';
 import type { AuthRequest } from '../middleware/authenticate.js';
 import logger from '../logger.js';
 import { getScopedActiveCompany } from '../utils/activeCompany.js';
+import { createAuditLog } from '../utils/audit.js';
 
 export async function getPositionsHandler(req: AuthRequest, res: Response) {
   try {
@@ -89,6 +90,17 @@ export async function createPositionHandler(req: AuthRequest, res: Response) {
 
     const positionId = rows[0][0].positionID;
 
+    await createAuditLog({
+      userId,
+      action: 'create_position',
+      resourceType: 'position',
+      resourceId: String(positionId),
+      resourceName: name.trim(),
+      details: `Created position: ${name.trim()}`,
+      ipAddress: req.ip,
+      userAgent: req.get('User-Agent'),
+    });
+
     return res.status(201).json({
       message: 'Position created successfully',
       position: {
@@ -131,6 +143,17 @@ export async function updatePositionHandler(req: AuthRequest, res: Response) {
     if (rows[0][0].affected_rows === 0) {
       return res.status(404).json({ error: 'Position not found' });
     }
+
+    await createAuditLog({
+      userId,
+      action: 'update_position',
+      resourceType: 'position',
+      resourceId: String(id),
+      resourceName: name.trim(),
+      details: `Updated position: ${name.trim()}`,
+      ipAddress: req.ip,
+      userAgent: req.get('User-Agent'),
+    });
 
     return res.json({
       message: 'Position updated successfully',
@@ -179,6 +202,16 @@ export async function deletePositionHandler(req: AuthRequest, res: Response) {
     if (rows[0][0].affected_rows === 0) {
       return res.status(404).json({ error: 'Position not found' });
     }
+
+    await createAuditLog({
+      userId,
+      action: 'delete_position',
+      resourceType: 'position',
+      resourceId: String(id),
+      details: `Deleted position with ID: ${id}`,
+      ipAddress: req.ip,
+      userAgent: req.get('User-Agent'),
+    });
 
     return res.json({ message: 'Position deleted successfully' });
   } catch (error: any) {

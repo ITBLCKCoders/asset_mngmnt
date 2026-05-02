@@ -6,6 +6,7 @@ import {
   createInternalErrorResponse,
 } from '../utils/responseWrapper.js';
 import logger from '../logger.js';
+import { createAuditLog } from '../utils/audit.js';
 
 const migrationManager = new MigrationManager();
 
@@ -28,6 +29,15 @@ export const runMigrations = async (req: Request, res: Response) => {
     const result = await migrationManager.runMigrations();
 
     if (result.success) {
+      await createAuditLog({
+        userId: 'system',
+        action: 'run_migrations',
+        resourceType: 'migration',
+        details: `Executed ${result.migrationsRun} migrations successfully`,
+        ipAddress: req.ip,
+        userAgent: req.get('User-Agent'),
+      });
+
       if (result.migrationsRun === 0) {
         return createSuccessResponse(
           res,
@@ -61,6 +71,17 @@ export const rollbackLastMigration = async (req: Request, res: Response) => {
     const result = await migrationManager.rollbackLastMigration();
 
     if (result.success) {
+      await createAuditLog({
+        userId: 'system',
+        action: 'rollback_migration',
+        resourceType: 'migration',
+        resourceId: result.migration?.id ? String(result.migration.id) : 'unknown',
+        resourceName: result.migration?.name || 'unknown',
+        details: `Rolled back migration: ${result.migration?.name || 'unknown'}`,
+        ipAddress: req.ip,
+        userAgent: req.get('User-Agent'),
+      });
+
       return createSuccessResponse(
         res,
         result,
@@ -105,6 +126,17 @@ export const createMigration = async (req: Request, res: Response) => {
       sqlContent,
       version || '1.0.0'
     );
+
+    await createAuditLog({
+      userId: 'system',
+      action: 'create_migration',
+      resourceType: 'migration',
+      resourceId: migrationPath,
+      resourceName: name,
+      details: `Created migration file: ${name}`,
+      ipAddress: req.ip,
+      userAgent: req.get('User-Agent'),
+    });
 
     return createSuccessResponse(
       res,

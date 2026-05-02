@@ -4,6 +4,7 @@ import { AuditRetentionService } from '../services/auditRetention.service.js';
 import { createSuccessResponse, createErrorResponse } from '../utils/responseWrapper.js';
 import { pool } from '../db.js';
 import { getScopedActiveCompany } from '../utils/activeCompany.js';
+import { createAuditLog } from '../utils/audit.js';
 
 export async function getRetentionSettingsHandler(req: AuthRequest, res: Response) {
   try {
@@ -48,6 +49,16 @@ export async function upsertRetentionSettingsHandler(req: AuthRequest, res: Resp
       { company_id: company.id, retention_months, is_active },
       userId
     );
+
+    await createAuditLog({
+      userId,
+      action: 'update_retention_settings',
+      resourceType: 'audit_retention_settings',
+      resourceId: String(company.id),
+      details: `Updated retention settings to ${retention_months} months, active: ${is_active}`,
+      ipAddress: req.ip,
+      userAgent: req.get('User-Agent'),
+    });
 
     return createSuccessResponse(res, setting);
   } catch (error: any) {
@@ -104,6 +115,15 @@ export async function updateSystemDefaultsHandler(req: AuthRequest, res: Respons
 
     await AuditRetentionService.updateSystemDefaults(default_months, minimum_months, userId);
 
+    await createAuditLog({
+      userId,
+      action: 'update_system_defaults',
+      resourceType: 'audit_retention_defaults',
+      details: `Updated system defaults to ${default_months} months default, ${minimum_months} months minimum`,
+      ipAddress: req.ip,
+      userAgent: req.get('User-Agent'),
+    });
+
     return createSuccessResponse(res, { success: true });
   } catch (error: any) {
     console.error('Failed to update system defaults:', error);
@@ -124,6 +144,17 @@ export async function triggerArchiveHandler(req: AuthRequest, res: Response) {
     }
 
     const result = await AuditRetentionService.archiveOldLogs(company.id, userId);
+
+    await createAuditLog({
+      userId,
+      action: 'trigger_audit_archive',
+      resourceType: 'audit_log',
+      resourceId: String(company.id),
+      details: `Triggered audit log archive for company: ${company.id}`,
+      ipAddress: req.ip,
+      userAgent: req.get('User-Agent'),
+    });
+
     return createSuccessResponse(res, result);
   } catch (error: any) {
     console.error('Failed to trigger archive:', error);

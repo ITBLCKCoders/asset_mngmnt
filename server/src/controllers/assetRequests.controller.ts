@@ -2,6 +2,7 @@ import { Request, Response } from 'express';
 import AssetRequestService from '../services/assetRequest.service.js';
 import logger from '../logger.js';
 import type { AuthRequest } from '../middleware/authenticate.js';
+import { createAuditLog } from '../utils/audit.js';
 
 class AssetRequestsController {
   /**
@@ -100,6 +101,16 @@ class AssetRequestsController {
         admin_notes: admin_notes || '',
       });
 
+      await createAuditLog({
+        userId,
+        action: 'create_asset_request',
+        resourceType: 'asset_request',
+        resourceId: String(requestId),
+        details: `Created asset request with quantity: ${quantity}`,
+        ipAddress: req.ip,
+        userAgent: req.get('User-Agent'),
+      });
+
       res.status(201).json({
         message: 'Asset request created successfully',
         requestId,
@@ -132,6 +143,16 @@ class AssetRequestsController {
           .json({ error: 'Asset request not found or already processed' });
       }
 
+      await createAuditLog({
+        userId: 'system', // Admin action
+        action: 'approve_asset_request',
+        resourceType: 'asset_request',
+        resourceId: String(requestId),
+        details: `Approved asset request with ID: ${requestId}`,
+        ipAddress: req.ip,
+        userAgent: req.get('User-Agent'),
+      });
+
       res.json({ message: 'Asset request approved successfully' });
     } catch (error) {
       logger.error(
@@ -161,6 +182,16 @@ class AssetRequestsController {
           .json({ error: 'Asset request not found or already processed' });
       }
 
+      await createAuditLog({
+        userId: 'system', // Admin action
+        action: 'reject_asset_request',
+        resourceType: 'asset_request',
+        resourceId: String(requestId),
+        details: `Rejected asset request with ID: ${requestId}`,
+        ipAddress: req.ip,
+        userAgent: req.get('User-Agent'),
+      });
+
       res.json({ message: 'Asset request rejected successfully' });
     } catch (error) {
       logger.error(
@@ -186,6 +217,16 @@ class AssetRequestsController {
       if (!success) {
         return res.status(404).json({ error: 'Asset request not found' });
       }
+
+      await createAuditLog({
+        userId: 'system', // Admin action
+        action: 'delete_asset_request',
+        resourceType: 'asset_request',
+        resourceId: String(requestId),
+        details: `Deleted asset request with ID: ${requestId}`,
+        ipAddress: req.ip,
+        userAgent: req.get('User-Agent'),
+      });
 
       res.json({ message: 'Asset request deleted successfully' });
     } catch (error) {

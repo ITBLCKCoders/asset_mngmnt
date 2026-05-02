@@ -2374,13 +2374,12 @@ export async function signAssetReturnFormHandler(
     }
 
     const formRow = await getReturnFormById(formId);
-    const formRows = formRow ? [formRow] : [];
 
-    if (formRows.length === 0) {
+    if (!formRow) {
       return res.status(404).json({ error: 'Asset return form not found' });
     }
 
-    const form = formRows[0];
+    const form = formRow;
 
     if (form.user_id !== userId) {
       return res
@@ -3201,11 +3200,10 @@ export async function receiveReturnFormHandler(
     }
 
     const formRow = await getReturnFormById(formId);
-    const formRows = formRow ? [formRow] : [];
-    if (formRows.length === 0) {
+    if (!formRow) {
       return res.status(404).json({ error: 'Asset return form not found' });
     }
-    const form = formRows[0];
+    const form = formRow;
 
     const receiveOwnerAbsent = Number((form as { owner_absent?: number }).owner_absent) === 1;
     if (!form.signed_at && !receiveOwnerAbsent) {
@@ -3967,12 +3965,11 @@ export async function approveReturnFormHandler(
     }
 
     const formRow = await getReturnFormById(formId);
-    const formRows = formRow ? [formRow] : [];
-    if (formRows.length === 0) {
+    if (!formRow) {
       return res.status(404).json({ error: 'Asset return form not found' });
     }
-    const form = formRows[0];
-    
+    const form = formRow;
+
     // Get company_id from form or user if not available
     let companyId = form.company_id;
     if (!companyId) {
@@ -4135,7 +4132,7 @@ export async function approveReturnFormHandler(
     // Processor-initiated hold: form had process signature and received_by before manager approved; execute return now. Skip when this return form is linked to a transfer form (transfer execution already handled asset movement).
     if (!hadLinkedTransfer && form.process_signed_at && form.received_by) {
       try {
-        await executeReturnFormAfterApproval(formId, form, req);
+        await executeReturnFormAfterApproval(formId, form as { user_id: string; form_number: string; process_signed_at?: string | null; process_digital_signature?: string | null; received_by?: string | null }, req);
       } catch (execErr) {
         logger.error('Execute return after manager approve failed', execErr);
         return res.status(500).json({
@@ -4384,11 +4381,10 @@ export async function declineReturnFormHandler(
     }
 
     const formRow = await getReturnFormById(formId);
-    const formRows = formRow ? [formRow] : [];
-    if (formRows.length === 0) {
+    if (!formRow) {
       return res.status(404).json({ error: 'Asset return form not found' });
     }
-    const form = formRows[0];
+    const form = formRow;
 
     if (form.declined_at) {
       return res.status(400).json({

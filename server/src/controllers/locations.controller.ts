@@ -3,6 +3,7 @@ import { pool } from '../db.js';
 import type { AuthRequest } from '../middleware/authenticate.js';
 import logger from '../logger.js';
 import { getScopedActiveCompany } from '../utils/activeCompany.js';
+import { createAuditLog } from '../utils/audit.js';
 
 export async function getLocationsHandler(req: AuthRequest, res: Response) {
   try {
@@ -102,6 +103,17 @@ export async function createLocationHandler(req: AuthRequest, res: Response) {
 
     const locationId = rows[0][0].locationID;
 
+    await createAuditLog({
+      userId,
+      action: 'create_location',
+      resourceType: 'location',
+      resourceId: String(locationId),
+      resourceName: name.trim(),
+      details: `Created location: ${name.trim()} (${floor_unit.trim()})`,
+      ipAddress: req.ip,
+      userAgent: req.get('User-Agent'),
+    });
+
     return res.status(201).json({
       message: 'Location created successfully',
       location: {
@@ -172,6 +184,17 @@ export async function updateLocationHandler(req: AuthRequest, res: Response) {
       return res.status(404).json({ error: 'Location not found' });
     }
 
+    await createAuditLog({
+      userId,
+      action: 'update_location',
+      resourceType: 'location',
+      resourceId: String(id),
+      resourceName: name.trim(),
+      details: `Updated location: ${name.trim()} (${floor_unit.trim()})`,
+      ipAddress: req.ip,
+      userAgent: req.get('User-Agent'),
+    });
+
     return res.json({
       message: 'Location updated successfully',
       location: {
@@ -211,6 +234,16 @@ export async function deleteLocationHandler(req: AuthRequest, res: Response) {
     if (rows[0][0].affected_rows === 0) {
       return res.status(404).json({ error: 'Location not found' });
     }
+
+    await createAuditLog({
+      userId,
+      action: 'delete_location',
+      resourceType: 'location',
+      resourceId: String(id),
+      details: `Deleted location with ID: ${id}`,
+      ipAddress: req.ip,
+      userAgent: req.get('User-Agent'),
+    });
 
     return res.json({ message: 'Location deleted successfully' });
   } catch (error: any) {

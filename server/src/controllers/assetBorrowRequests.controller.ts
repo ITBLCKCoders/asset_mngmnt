@@ -12,6 +12,7 @@ import type { DeptHeadApproveBorrowRequestDto } from '../dtos/assetBorrowRequest
 import type { StaffApproveBorrowRequestDto } from '../dtos/assetBorrowRequests/StaffApproveBorrowRequestDto.js';
 import type { StaffDeclineBorrowRequestDto } from '../dtos/assetBorrowRequests/StaffDeclineBorrowRequestDto.js';
 import type { ProcessBorrowReturnDto } from '../dtos/assetBorrowRequests/ProcessBorrowReturnDto.js';
+import { createAuditLog } from '../utils/audit.js';
 
 export async function createAssetBorrowRequest(
   req: AuthRequest,
@@ -29,6 +30,16 @@ export async function createAssetBorrowRequest(
     if ('error' in result) {
       return createErrorResponse(res, result.error, [], result.status);
     }
+
+    await createAuditLog({
+      userId,
+      action: 'create_borrow_request',
+      resourceType: 'borrow_request',
+      resourceId: result.id,
+      details: `Created borrow request with ID: ${result.id}`,
+      ipAddress: req.ip,
+      userAgent: req.get('User-Agent'),
+    });
 
     return createSuccessResponse(res, { id: result.id }, 'Borrow request created', undefined, 201);
   } catch (err) {
@@ -159,6 +170,16 @@ export async function approveDeptHeadBorrowRequest(
       return createErrorResponse(res, result.error, [], result.status);
     }
 
+    await createAuditLog({
+      userId,
+      action: 'approve_borrow_request_dept_head',
+      resourceType: 'borrow_request',
+      resourceId: borrowRequestId,
+      details: `Department head approved borrow request with ID: ${borrowRequestId}`,
+      ipAddress: req.ip,
+      userAgent: req.get('User-Agent'),
+    });
+
     return createSuccessResponse(res, { ok: true }, 'Borrow request approved');
   } catch (err) {
     logger.error('[assetBorrowRequests] dept head approve failed', err);
@@ -200,6 +221,16 @@ export async function declineDeptHeadBorrowRequest(
     if ('error' in result) {
       return createErrorResponse(res, result.error, [], result.status);
     }
+
+    await createAuditLog({
+      userId,
+      action: 'decline_borrow_request_dept_head',
+      resourceType: 'borrow_request',
+      resourceId: borrowRequestId,
+      details: `Department head declined borrow request with ID: ${borrowRequestId}`,
+      ipAddress: req.ip,
+      userAgent: req.get('User-Agent'),
+    });
 
     return createSuccessResponse(res, { ok: true }, 'Borrow request declined');
   } catch (err) {
@@ -318,6 +349,17 @@ export async function staffApproveBorrowRequest(
     if ('error' in result) {
       return createErrorResponse(res, result.error, [], result.status);
     }
+
+    await createAuditLog({
+      userId,
+      action: 'approve_borrow_request_staff',
+      resourceType: 'borrow_request',
+      resourceId: borrowRequestId,
+      details: `Staff approved borrow request with ID: ${borrowRequestId}`,
+      ipAddress: req.ip,
+      userAgent: req.get('User-Agent'),
+    });
+
     return createSuccessResponse(res, { ok: true }, 'Borrow request processed');
   } catch (err) {
     logger.error('[assetBorrowRequests] staff approve failed', err);
@@ -345,6 +387,17 @@ export async function staffDeclineBorrowRequest(
       reason: body.reason.trim(),
     });
     if ('error' in result) return createErrorResponse(res, result.error, [], result.status);
+
+    await createAuditLog({
+      userId,
+      action: 'decline_borrow_request_staff',
+      resourceType: 'borrow_request',
+      resourceId: borrowRequestId,
+      details: `Staff declined borrow request with ID: ${borrowRequestId}`,
+      ipAddress: req.ip,
+      userAgent: req.get('User-Agent'),
+    });
+
     return createSuccessResponse(res, { ok: true }, 'Borrow request declined');
   } catch (err) {
     logger.error('[assetBorrowRequests] staff decline failed', err);
@@ -380,6 +433,17 @@ export async function processBorrowReturn(
     }
     const result = await AssetBorrowRequestsService.processBorrowReturn(pool, userId, params);
     if ('error' in result) return createErrorResponse(res, result.error, [], result.status);
+
+    await createAuditLog({
+      userId,
+      action: 'process_borrow_return',
+      resourceType: 'borrow_request',
+      resourceId: borrowRequestId,
+      details: `Processed borrow return with ID: ${borrowRequestId}`,
+      ipAddress: req.ip,
+      userAgent: req.get('User-Agent'),
+    });
+
     return createSuccessResponse(res, { ok: true }, 'Borrow return processed');
   } catch (err) {
     logger.error('[assetBorrowRequests] process return failed', err);

@@ -3,6 +3,7 @@ import { pool } from '../db.js';
 import type { AuthRequest } from '../middleware/authenticate.js';
 import logger from '../logger.js';
 import { getScopedActiveCompany } from '../utils/activeCompany.js';
+import { createAuditLog } from '../utils/audit.js';
 
 export async function getDepartmentsHandler(req: AuthRequest, res: Response) {
   try {
@@ -65,6 +66,17 @@ export async function createDepartmentHandler(req: AuthRequest, res: Response) {
 
     const departmentId = rows[0][0].departmentID;
 
+    await createAuditLog({
+      userId,
+      action: 'create_department',
+      resourceType: 'department',
+      resourceId: String(departmentId),
+      resourceName: name.trim(),
+      details: `Created department: ${name.trim()} (${code.trim()})`,
+      ipAddress: req.ip,
+      userAgent: req.get('User-Agent'),
+    });
+
     return res.status(201).json({
       message: 'Department created successfully',
       department: {
@@ -120,6 +132,17 @@ export async function updateDepartmentHandler(req: AuthRequest, res: Response) {
       return res.status(404).json({ error: 'Department not found' });
     }
 
+    await createAuditLog({
+      userId,
+      action: 'update_department',
+      resourceType: 'department',
+      resourceId: String(id),
+      resourceName: name.trim(),
+      details: `Updated department: ${name.trim()} (${code.trim()})`,
+      ipAddress: req.ip,
+      userAgent: req.get('User-Agent'),
+    });
+
     return res.json({
       message: 'Department updated successfully',
       department: {
@@ -160,6 +183,16 @@ export async function deleteDepartmentHandler(req: AuthRequest, res: Response) {
     if (rows[0][0].affected_rows === 0) {
       return res.status(404).json({ error: 'Department not found' });
     }
+
+    await createAuditLog({
+      userId,
+      action: 'delete_department',
+      resourceType: 'department',
+      resourceId: String(id),
+      details: `Deleted department with ID: ${id}`,
+      ipAddress: req.ip,
+      userAgent: req.get('User-Agent'),
+    });
 
     return res.json({ message: 'Department deleted successfully' });
   } catch (error: any) {

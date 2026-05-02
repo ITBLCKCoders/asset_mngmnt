@@ -2,6 +2,7 @@ import type { Response } from 'express';
 import { pool } from '../db.js';
 import type { AuthRequest } from '../middleware/authenticate.js';
 import logger from '../logger.js';
+import { createAuditLog } from '../utils/audit.js';
 
 const ROLE_COLUMNS =
   'roleID, name, description, created_at, created_by, updated_at, updated_by, deleted_at, deleted_by, asset_type, manager_role, hr_accountability_receiver, manager_approver_1, manager_approver_2, manager_approver_3';
@@ -109,6 +110,17 @@ export async function createRoleHandler(req: AuthRequest, res: Response) {
 
     const role = rows[0] ? mapRoleRow(rows[0]) : null;
 
+    await createAuditLog({
+      userId,
+      action: 'create_role',
+      resourceType: 'role',
+      resourceId: String(roleID),
+      resourceName: name.trim(),
+      details: `Created role: ${name.trim()}`,
+      ipAddress: req.ip,
+      userAgent: req.get('User-Agent'),
+    });
+
     return res.status(201).json({
       message: 'Role created successfully',
       role: role ?? {
@@ -184,6 +196,17 @@ export async function updateRoleHandler(req: AuthRequest, res: Response) {
     )) as any[];
     const role = rows[0] ? mapRoleRow(rows[0]) : null;
 
+    await createAuditLog({
+      userId,
+      action: 'update_role',
+      resourceType: 'role',
+      resourceId: String(roleID),
+      resourceName: name.trim(),
+      details: `Updated role: ${name.trim()}`,
+      ipAddress: req.ip,
+      userAgent: req.get('User-Agent'),
+    });
+
     return res.json({
       message: 'Role updated successfully',
       role: role ?? {
@@ -219,6 +242,16 @@ export async function deleteRoleHandler(req: AuthRequest, res: Response) {
     if (rows[0][0].affected_rows === 0) {
       return res.status(404).json({ error: 'Role not found' });
     }
+
+    await createAuditLog({
+      userId,
+      action: 'delete_role',
+      resourceType: 'role',
+      resourceId: String(roleID),
+      details: `Deleted role with ID: ${roleID}`,
+      ipAddress: req.ip,
+      userAgent: req.get('User-Agent'),
+    });
 
     return res.json({ message: 'Role deleted successfully' });
   } catch (error: any) {

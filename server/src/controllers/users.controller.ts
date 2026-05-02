@@ -5,6 +5,7 @@ import logger from '../logger.js';
 import bcrypt from 'bcryptjs';
 import { BCRYPT_COST } from '../auth/passwordPolicy.js';
 import { validatePassword } from '../auth/password.js';
+import { createAuditLog, buildAuditContext } from '../utils/audit.js';
 
 export async function getUsersHandler(req: AuthRequest, res: Response) {
   try {
@@ -142,6 +143,17 @@ export async function createUserHandler(req: AuthRequest, res: Response) {
 
     const newUserId = rows[0][0].id;
 
+    await createAuditLog({
+      userId,
+      action: 'create_user',
+      resourceType: 'user',
+      resourceId: String(newUserId),
+      resourceName: `${first_name} ${last_name} (${email})`,
+      details: `Created user with email: ${email}`,
+      ipAddress: req.ip,
+      userAgent: req.get('User-Agent'),
+    });
+
     return res.status(201).json({
       message: 'User created successfully',
       user: {
@@ -236,6 +248,17 @@ export async function updateUserHandler(req: AuthRequest, res: Response) {
       );
     }
 
+    await createAuditLog({
+      userId,
+      action: 'update_user',
+      resourceType: 'user',
+      resourceId: String(id),
+      resourceName: `${first_name} ${last_name} (${email})`,
+      details: `Updated user with email: ${email}`,
+      ipAddress: req.ip,
+      userAgent: req.get('User-Agent'),
+    });
+
     return res.json({
       message: 'User updated successfully',
       user: {
@@ -262,6 +285,7 @@ export async function updateUserHandler(req: AuthRequest, res: Response) {
 
 export async function deleteUserHandler(req: AuthRequest, res: Response) {
   const { id } = req.params;
+  const userId = req.user!.userID;
 
   try {
     const [rows] = (await pool.execute('CALL sp_delete_user(?)', [
@@ -271,6 +295,16 @@ export async function deleteUserHandler(req: AuthRequest, res: Response) {
     if (rows[0][0].affected_rows === 0) {
       return res.status(404).json({ error: 'User not found' });
     }
+
+    await createAuditLog({
+      userId,
+      action: 'delete_user',
+      resourceType: 'user',
+      resourceId: String(id),
+      details: `Deleted user with ID: ${id}`,
+      ipAddress: req.ip,
+      userAgent: req.get('User-Agent'),
+    });
 
     return res.json({ message: 'User deleted successfully' });
   } catch (error: any) {
@@ -297,6 +331,16 @@ export async function removeUserLockoutHandler(
     }
 
     logger.info(`[USER] Lockout removed for user ${id} by ${userId}`);
+
+    await createAuditLog({
+      userId,
+      action: 'remove_user_lockout',
+      resourceType: 'user',
+      resourceId: String(id),
+      details: `Removed lockout for user with ID: ${id}`,
+      ipAddress: req.ip,
+      userAgent: req.get('User-Agent'),
+    });
 
     return res.json({ message: 'User lockout removed successfully' });
   } catch (error: any) {
@@ -343,6 +387,16 @@ export async function changeUserPasswordHandler(
     );
 
     logger.info(`[USER] Password changed for user ${id} by ${userId} (user will be forced to change on next login)`);
+
+    await createAuditLog({
+      userId,
+      action: 'change_user_password',
+      resourceType: 'user',
+      resourceId: String(id),
+      details: `Changed password for user with ID: ${id}`,
+      ipAddress: req.ip,
+      userAgent: req.get('User-Agent'),
+    });
 
     return res.json({
       message: 'User password changed successfully. User will be required to change password on next login.',
