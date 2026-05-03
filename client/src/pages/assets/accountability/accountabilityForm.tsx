@@ -1187,9 +1187,14 @@ export function AccountabilityFormCard({
   const [showChecklistDialog, setShowChecklistDialog] = useState(false);
   const [hasChecklist, setHasChecklist] = useState(false);
   const [checklistPdfUrl, setChecklistPdfUrl] = useState<string>('');
-  const checklistAssetLabel = form.assets
-    .map(asset => `${asset.name || 'Asset'} (${asset.code})`)
-    .join(', ');
+  const checklistAsset = checklistData?.asset;
+  const fallbackChecklistAsset =
+    form.assets.find(asset => asset.id === checklistAsset?.id) ?? form.assets[0];
+  const checklistAssetName =
+    checklistAsset?.name || fallbackChecklistAsset?.name || 'Asset';
+  const checklistAssetCode =
+    checklistAsset?.code || fallbackChecklistAsset?.code || '—';
+  const checklistAssetLabel = `${checklistAssetName} (${checklistAssetCode})`;
 
   // OTP verification state
   const [showOtpDialog, setShowOtpDialog] = useState(false);
@@ -1440,9 +1445,19 @@ export function AccountabilityFormCard({
       <CardContent className="space-y-4 flex-1">
         {hasChecklist ? (
           <Tabs value={activeCardTab} onValueChange={(v) => setActiveCardTab(v as 'accountability' | 'checklist')} className="w-full">
-            <TabsList className="grid w-full grid-cols-2 mb-4">
-              <TabsTrigger value="accountability">Accountability</TabsTrigger>
-              <TabsTrigger value="checklist">Checklist</TabsTrigger>
+            <TabsList className="grid w-full grid-cols-2 mb-4 rounded-xl border bg-white p-1 shadow-sm">
+              <TabsTrigger
+                value="accountability"
+                className="rounded-lg transition-all duration-200 hover:bg-red-50 hover:text-red-700 data-[state=active]:bg-red-600 data-[state=active]:text-white data-[state=active]:shadow"
+              >
+                Accountability
+              </TabsTrigger>
+              <TabsTrigger
+                value="checklist"
+                className="rounded-lg transition-all duration-200 hover:bg-red-50 hover:text-red-700 data-[state=active]:bg-red-600 data-[state=active]:text-white data-[state=active]:shadow"
+              >
+                Checklist
+              </TabsTrigger>
             </TabsList>
             
             <TabsContent value="accountability" className="space-y-4">
@@ -2105,37 +2120,20 @@ export function AccountabilityFormCard({
 
       {/* Checklist Dialog */}
       <Dialog open={showChecklistDialog} onOpenChange={setShowChecklistDialog}>
-        <AppDialogFrame
-          showCloseButton={false}
-          className="max-w-4xl max-h-[90vh] overflow-hidden !flex !flex-col !gap-0 !rounded-lg !p-0 !shadow-md"
-        >
+        <AppDialogFrame className="max-w-4xl max-h-[90vh] overflow-hidden !flex !flex-col !gap-0 !border-0 !p-0">
           <AppDialogGradientHeader
-            showCloseButton={false}
-            className="!px-4 !pb-4 !pt-4 sm:!px-5 sm:!pb-5 sm:!pt-5"
-            title="Asset Checklist"
-            description="View asset checklist form"
+            title={`${checklistData?.employee_name || form.user.first_name + ' ' + form.user.last_name} - Asset Checklist`}
+            description="Asset Checklist Form Preview"
           />
-          <AppDialogBody className="flex min-h-[60vh] flex-1 flex-col overflow-hidden p-0 sm:p-0">
-            <div className="flex-1 min-h-0 flex flex-col py-2 overflow-hidden">
-              <div className="w-full flex-1 min-h-0 border rounded-lg overflow-hidden bg-gray-50">
-                {checklistPdfUrl ? (
-                  <iframe
-                    src={checklistPdfUrl}
-                    className="w-full h-full min-h-0"
-                    title="Checklist PDF Preview"
-                    style={{
-                      width: '100%',
-                      height: '100%',
-                      border: 'none',
-                      display: 'block',
-                    }}
-                  />
-                ) : (
-                  <div className="w-full h-full min-h-[200px] flex items-center justify-center text-gray-500">
-                    Generating checklist PDF preview...
-                  </div>
-                )}
-              </div>
+          <AppDialogBody className="min-h-0 flex-1 overflow-auto !p-0">
+            <div className="mx-4 my-4 h-[620px] overflow-hidden rounded-lg border border-slate-200 bg-slate-50 sm:mx-6">
+              {checklistPdfUrl ? (
+                <PDFViewer pdfUrl={checklistPdfUrl} className="h-full w-full" />
+              ) : (
+                <div className="flex h-full w-full items-center justify-center text-gray-500">
+                  Generating checklist PDF preview...
+                </div>
+              )}
             </div>
           </AppDialogBody>
           <AppDialogChromeFooter className="justify-end gap-3">

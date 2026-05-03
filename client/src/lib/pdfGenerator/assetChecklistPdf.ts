@@ -7,6 +7,7 @@ import {
 
 export interface AssetChecklistData {
   id: string;
+  form_number?: string | null;
   assignment_id: string;
   employee_id: string;
   employee_name: string;
@@ -102,7 +103,8 @@ export const generateAssetChecklistPDF = async (
   doc.setTextColor(255, 0, 0);
   doc.setFontSize(10);
   doc.setFont('helvetica', 'bold');
-  doc.text(`CHK-${checklistData.assignment_id}`, internalBoxX + internalBoxW / 2, headerBoxY + 19, { align: 'center' });
+  const formNumber = checklistData.form_number || `CHK-${checklistData.assignment_id}`;
+  doc.text(formNumber, internalBoxX + internalBoxW / 2, headerBoxY + 19, { align: 'center' });
   doc.setTextColor(0, 0, 0);
   doc.setDrawColor(0, 0, 0);
 
@@ -145,15 +147,12 @@ export const generateAssetChecklistPDF = async (
 
   // Table 2: Employee information
   const sectionAStartY = (doc as any).lastAutoTable.finalY;
-  const labelColWidth = 38;
-  const labelTableCol1Width = (tableWidth - labelColWidth) / 2;
+  const employeeInfoColWidth = tableWidth / 2;
 
   const tableBodyLabels = [
-    [{ content: 'Employee: ' + checklistData.employee_name, colSpan: 3 }],
-    [{ content: 'Name: ' + checklistData.employee_name, colSpan: 3 }],
-    [{ content: 'Designation: ' + (checklistData.employee_designation || '—'), colSpan: 3 }],
-    [{ content: 'Department / Company: ' + (checklistData.employee_department || '—'), colSpan: 3 }],
-    [{ content: 'Received by: ' + (checklistData.received_by || '—'), colSpan: 3 }],
+    ['Employee: ' + checklistData.employee_name, 'Designation: ' + (checklistData.employee_designation || '—')],
+    [{ content: 'Department / Company: ' + (checklistData.employee_department || '—'), colSpan: 2 }],
+    [{ content: 'Received by: ' + (checklistData.received_by || '—'), colSpan: 2 }],
   ];
 
   doc.setDrawColor(0, 0, 0);
@@ -165,9 +164,8 @@ export const generateAssetChecklistPDF = async (
     theme: 'grid',
     styles: { fontSize: 9, cellPadding: 3 },
     columnStyles: {
-      0: { cellWidth: labelColWidth },
-      1: { cellWidth: labelTableCol1Width },
-      2: { cellWidth: labelTableCol1Width },
+      0: { cellWidth: employeeInfoColWidth },
+      1: { cellWidth: employeeInfoColWidth },
     },
     willDrawCell: () => {
       doc.setDrawColor(0, 0, 0);
@@ -347,12 +345,13 @@ export const generateAssetChecklistPDF = async (
 
   // Table 5: Approvals (Section C)
   const approvalsStartY = (doc as any).lastAutoTable.finalY;
+  const approvalHalfWidth = tableWidth / 2;
   const approvalRows = [
     [{ content: 'Section C: Approvals', colSpan: 2 }],
     ['', ''],
     ['IT Manager / IT Department Head', 'IT Staff / IT Inventory Manager'],
     ['', ''],
-    ['', ''],
+    ["Employee's Department Head", 'Employee'],
   ];
 
   doc.setDrawColor(0, 0, 0);
@@ -364,8 +363,8 @@ export const generateAssetChecklistPDF = async (
     theme: 'grid',
     styles: { fontSize: 9, cellPadding: 3 },
     columnStyles: {
-      0: { cellWidth: tableWidth / 2 },
-      1: { cellWidth: tableWidth / 2 },
+      0: { cellWidth: approvalHalfWidth },
+      1: { cellWidth: approvalHalfWidth },
     },
     didParseCell: data => {
       if (data.row.index === 0) {
@@ -374,7 +373,7 @@ export const generateAssetChecklistPDF = async (
         data.cell.styles.fontStyle = 'bold';
         data.cell.styles.halign = 'center';
       }
-      if (data.row.index === 2) {
+      if (data.row.index === 1 || data.row.index === 3) {
         data.cell.styles.minCellHeight = 32;
       }
     },
@@ -386,7 +385,7 @@ export const generateAssetChecklistPDF = async (
 
   // Document No
   const docNoY = (doc as any).lastAutoTable.finalY + 8;
-  const docNoText = `Document No: CHK-${checklistData.assignment_id} ver1 01Jan2026`;
+  const docNoText = `Document No: ${formNumber} ver1 01Jan2026`;
   doc.setFontSize(10);
   doc.setFont('helvetica', 'normal');
   doc.setTextColor(0, 0, 0);

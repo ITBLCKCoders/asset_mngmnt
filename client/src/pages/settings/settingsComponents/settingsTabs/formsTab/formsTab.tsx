@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { TabsContent } from '@/components/ui/tabs';
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import {
   Card,
   CardContent,
@@ -49,6 +49,17 @@ export function FormsTab({ isActive }: { isActive?: boolean }) {
   });
   const [hasUnsavedReturnChanges, setHasUnsavedReturnChanges] = useState(false);
 
+  const [checklistFormSettings, setChecklistFormSettings] = useState({
+    companyCode: 'code' as 'code' | 'prefix' | 'none',
+    department: 'none' as 'code' | 'prefix' | 'none',
+    itAssetChecklistCode: '',
+    adminAssetChecklistCode: '',
+    includeDate: true,
+    dateFormat: 'MMYYYY',
+  });
+  const [hasUnsavedChecklistChanges, setHasUnsavedChecklistChanges] =
+    useState(false);
+
   // Asset transfer form number settings
   const [transferFormSettings, setTransferFormSettings] = useState({
     companyCode: 'code' as 'code' | 'prefix' | 'none',
@@ -92,6 +103,7 @@ export function FormsTab({ isActive }: { isActive?: boolean }) {
     if (isActive && activeCompany) {
       fetchFormSettings();
       fetchReturnFormSettings();
+      fetchChecklistFormSettings();
       fetchTransferFormSettings();
       fetchBorrowFormSettings();
     }
@@ -247,6 +259,74 @@ export function FormsTab({ isActive }: { isActive?: boolean }) {
   ) => {
     setReturnFormSettings(prev => ({ ...prev, ...updates }));
     setHasUnsavedReturnChanges(true);
+  };
+
+  const fetchChecklistFormSettings = async () => {
+    if (!activeCompany) return;
+    try {
+      const data = await api.get('/settings/asset-checklist-form');
+      const settings = data?.settings?.find(
+        (s: any) => s.company_id === activeCompany.id
+      );
+      if (settings) {
+        setChecklistFormSettings({
+          companyCode: settings.company_format || 'code',
+          department: settings.department_format || 'none',
+          itAssetChecklistCode: settings.it_asset_checklist_code || '',
+          adminAssetChecklistCode: settings.admin_asset_checklist_code || '',
+          includeDate: settings.include_date,
+          dateFormat: settings.date_format,
+        });
+      }
+    } catch (error) {
+      console.error('Failed to fetch checklist form settings:', error);
+    }
+  };
+
+  const handleSaveChecklistFormSettings = async () => {
+    if (!activeCompany) {
+      toast.error('No active company found');
+      return;
+    }
+    try {
+      setSettingsLoading(true);
+      await api.put('/settings/asset-checklist-form', {
+        company_id: activeCompany.id,
+        company_format: checklistFormSettings.companyCode,
+        department_format: checklistFormSettings.department,
+        it_asset_checklist_code: checklistFormSettings.itAssetChecklistCode,
+        admin_asset_checklist_code:
+          checklistFormSettings.adminAssetChecklistCode,
+        include_date: checklistFormSettings.includeDate,
+        date_format: checklistFormSettings.dateFormat,
+      });
+      toast.success('Asset checklist form settings saved successfully');
+      setHasUnsavedChecklistChanges(false);
+    } catch (error: any) {
+      console.error('Failed to save checklist form settings:', error);
+      toast.error(error.message || 'Failed to save settings');
+    } finally {
+      setSettingsLoading(false);
+    }
+  };
+
+  const handleCancelChecklistFormSettings = () => {
+    setChecklistFormSettings({
+      companyCode: 'code',
+      department: 'none',
+      itAssetChecklistCode: '',
+      adminAssetChecklistCode: '',
+      includeDate: true,
+      dateFormat: 'MMYYYY',
+    });
+    setHasUnsavedChecklistChanges(false);
+  };
+
+  const updateChecklistFormSettings = (
+    updates: Partial<typeof checklistFormSettings>
+  ) => {
+    setChecklistFormSettings(prev => ({ ...prev, ...updates }));
+    setHasUnsavedChecklistChanges(true);
   };
 
   const fetchTransferFormSettings = async () => {
@@ -492,7 +572,40 @@ export function FormsTab({ isActive }: { isActive?: boolean }) {
 
   return (
     <TabsContent value="forms" className="mt-0">
-      <div className="grid grid-cols-1 gap-8 mb-10">
+      <Tabs defaultValue="accountability" className="space-y-6">
+        <TabsList className="flex h-auto w-full gap-2 overflow-x-auto rounded-xl border bg-white p-2 shadow-sm scrollbar-hide">
+          <TabsTrigger
+            value="accountability"
+            className="flex-1 whitespace-nowrap rounded-lg px-3 py-2 font-medium data-[state=active]:bg-red-600 data-[state=active]:text-white hover:bg-gray-100 data-[state=active]:hover:bg-red-700"
+          >
+            Asset Accountability
+          </TabsTrigger>
+          <TabsTrigger
+            value="return"
+            className="flex-1 whitespace-nowrap rounded-lg px-3 py-2 font-medium data-[state=active]:bg-red-600 data-[state=active]:text-white hover:bg-gray-100 data-[state=active]:hover:bg-red-700"
+          >
+            Asset Return
+          </TabsTrigger>
+          <TabsTrigger
+            value="checklist"
+            className="flex-1 whitespace-nowrap rounded-lg px-3 py-2 font-medium data-[state=active]:bg-red-600 data-[state=active]:text-white hover:bg-gray-100 data-[state=active]:hover:bg-red-700"
+          >
+            Asset Checklist
+          </TabsTrigger>
+          <TabsTrigger
+            value="transfer"
+            className="flex-1 whitespace-nowrap rounded-lg px-3 py-2 font-medium data-[state=active]:bg-red-600 data-[state=active]:text-white hover:bg-gray-100 data-[state=active]:hover:bg-red-700"
+          >
+            Asset Transfer
+          </TabsTrigger>
+          <TabsTrigger
+            value="borrow"
+            className="flex-1 whitespace-nowrap rounded-lg px-3 py-2 font-medium data-[state=active]:bg-red-600 data-[state=active]:text-white hover:bg-gray-100 data-[state=active]:hover:bg-red-700"
+          >
+            Asset Borrow
+          </TabsTrigger>
+        </TabsList>
+        <TabsContent value="accountability" className="mt-0">
         {/* Asset Accountability Number Settings Card */}
         <Card className="shadow-lg border-0 rounded-2xl overflow-hidden bg-card/95 backdrop-blur flex flex-col">
           <CardHeader className="bg-red-600 rounded-t-2xl flex-shrink-0">
@@ -619,7 +732,7 @@ export function FormsTab({ isActive }: { isActive?: boolean }) {
                 />
               </div>
 
-              <div className="space-y-4">
+              <div className="grid gap-4 md:grid-cols-2">
                 <div className="p-6 bg-card border rounded-2xl shadow-inner">
                   <div className="text-sm font-medium text-muted-foreground mb-2">
                     IT Asset Form Preview:
@@ -774,6 +887,9 @@ export function FormsTab({ isActive }: { isActive?: boolean }) {
           )}
         </Card>
 
+        </TabsContent>
+
+        <TabsContent value="return" className="mt-0">
         {/* Asset Return Form Number Settings Card */}
         <Card className="shadow-lg border-0 rounded-2xl overflow-hidden bg-card/95 backdrop-blur flex flex-col">
           <CardHeader className="bg-red-600 rounded-t-2xl flex-shrink-0">
@@ -904,7 +1020,7 @@ export function FormsTab({ isActive }: { isActive?: boolean }) {
                 />
               </div>
 
-              <div className="space-y-4">
+              <div className="grid gap-4 md:grid-cols-2">
                 <div className="p-6 bg-card border rounded-2xl shadow-inner">
                   <div className="text-sm font-medium text-muted-foreground mb-2">
                     IT Asset Return Form Preview:
@@ -1062,6 +1178,232 @@ export function FormsTab({ isActive }: { isActive?: boolean }) {
           )}
         </Card>
 
+        </TabsContent>
+
+        <TabsContent value="checklist" className="mt-0">
+        {/* Asset Checklist Form Number Settings Card */}
+        <Card className="shadow-lg border-0 rounded-2xl overflow-hidden bg-card/95 backdrop-blur flex flex-col">
+          <CardHeader className="bg-red-600 rounded-t-2xl flex-shrink-0">
+            <div>
+              <h3 className="text-xl font-semibold text-white">
+                Asset Checklist Form Number Settings
+              </h3>
+              <p className="text-red-100 text-sm">
+                Configure checklist form numbering format and settings
+              </p>
+            </div>
+          </CardHeader>
+          <CardContent className="p-5 flex-1">
+            <div className="space-y-6">
+              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+                <div className="space-y-2">
+                  <Label className="text-sm font-medium">Company Code</Label>
+                  <Select
+                    value={checklistFormSettings.companyCode}
+                    onValueChange={(value: 'code' | 'prefix' | 'none') =>
+                      updateChecklistFormSettings({ companyCode: value })
+                    }
+                    disabled={settingsLoading}
+                  >
+                    <SelectTrigger>
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent className="bg-white">
+                      <SelectItem value="code">Code</SelectItem>
+                      <SelectItem value="prefix">Prefix</SelectItem>
+                      <SelectItem value="none">None</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+
+                <div className="space-y-2">
+                  <Label className="text-sm font-medium">Department</Label>
+                  <Select
+                    value={checklistFormSettings.department}
+                    onValueChange={(value: 'code' | 'prefix' | 'none') =>
+                      updateChecklistFormSettings({ department: value })
+                    }
+                    disabled={settingsLoading}
+                  >
+                    <SelectTrigger>
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent className="bg-white">
+                      <SelectItem value="code">Code</SelectItem>
+                      <SelectItem value="prefix">Prefix</SelectItem>
+                      <SelectItem value="none">None</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+
+                <div className="space-y-2">
+                  <Label className="text-sm font-medium">
+                    IT Asset Checklist Form Code
+                  </Label>
+                  <Input
+                    value={checklistFormSettings.itAssetChecklistCode}
+                    onChange={e =>
+                      updateChecklistFormSettings({
+                        itAssetChecklistCode: e.target.value,
+                      })
+                    }
+                    placeholder="e.g., ITCHK"
+                    disabled={settingsLoading}
+                  />
+                </div>
+
+                <div className="space-y-2">
+                  <Label className="text-sm font-medium">
+                    Admin Asset Checklist Form Code
+                  </Label>
+                  <Input
+                    value={checklistFormSettings.adminAssetChecklistCode}
+                    onChange={e =>
+                      updateChecklistFormSettings({
+                        adminAssetChecklistCode: e.target.value,
+                      })
+                    }
+                    placeholder="e.g., ADMCHK"
+                    disabled={settingsLoading}
+                  />
+                </div>
+              </div>
+
+              <div className="flex items-center justify-between p-4 bg-muted/30 rounded-xl">
+                <div>
+                  <Label className="font-medium">Include Date (MMYYYY)</Label>
+                  <p className="text-xs text-muted-foreground">
+                    Add date in MMYYYY format
+                  </p>
+                </div>
+                <Switch
+                  checked={checklistFormSettings.includeDate}
+                  onCheckedChange={checked =>
+                    updateChecklistFormSettings({ includeDate: checked })
+                  }
+                  disabled={settingsLoading}
+                />
+              </div>
+
+              <div className="grid gap-4 md:grid-cols-2">
+                {[
+                  {
+                    label: 'IT Asset Checklist Form Preview:',
+                    code: checklistFormSettings.itAssetChecklistCode,
+                    deptMatch: 'it',
+                    fallbackDeptCode: 'IT',
+                    fallbackDeptPrefix: '100',
+                    className: 'text-green-600',
+                  },
+                  {
+                    label: 'Admin Asset Checklist Form Preview:',
+                    code: checklistFormSettings.adminAssetChecklistCode,
+                    deptMatch: 'admin',
+                    fallbackDeptCode: 'ADMIN',
+                    fallbackDeptPrefix: '200',
+                    className: 'text-orange-600',
+                  },
+                ].map(preview => (
+                  <div
+                    key={preview.label}
+                    className="p-6 bg-card border rounded-2xl shadow-inner"
+                  >
+                    <div className="text-sm font-medium text-muted-foreground mb-2">
+                      {preview.label}
+                    </div>
+                    <div className="font-mono text-lg tracking-wider text-center">
+                      {(() => {
+                        const parts = [];
+                        if (
+                          checklistFormSettings.companyCode !== 'none' &&
+                          activeCompany
+                        ) {
+                          parts.push(
+                            <span key="company" className="text-blue-600">
+                              {checklistFormSettings.companyCode === 'code'
+                                ? activeCompany.code || 'COM'
+                                : activeCompany.prefix || 'COMP'}
+                            </span>
+                          );
+                        }
+                        if (
+                          checklistFormSettings.department !== 'none' &&
+                          departments.length > 0
+                        ) {
+                          const dept =
+                            departments.find(d =>
+                              d.name
+                                ?.toLowerCase()
+                                .includes(preview.deptMatch)
+                            ) || departments[0];
+                          parts.push(
+                            <span key="department" className="text-purple-600">
+                              {checklistFormSettings.department === 'code'
+                                ? dept.code || preview.fallbackDeptCode
+                                : dept.prefix || preview.fallbackDeptPrefix}
+                            </span>
+                          );
+                        }
+                        if (preview.code) {
+                          parts.push(
+                            <span key="checklist-code" className={preview.className}>
+                              {preview.code}
+                            </span>
+                          );
+                        }
+                        if (checklistFormSettings.includeDate) {
+                          parts.push(
+                            <span key="date" className="text-red-600">
+                              011999
+                            </span>
+                          );
+                        }
+                        parts.push(
+                          <span key="sequential" className="text-indigo-600">
+                            0001
+                          </span>
+                        );
+                        return parts.map((part, index) => (
+                          <span key={part.key}>
+                            {part}
+                            {index < parts.length - 1 ? '-' : ''}
+                          </span>
+                        ));
+                      })()}
+                    </div>
+                  </div>
+                ))}
+              </div>
+
+              <div className="pt-4 border-t">
+                <p className="text-sm text-muted-foreground">
+                  All new asset checklist forms will use this numbering format
+                </p>
+              </div>
+            </div>
+          </CardContent>
+          {hasUnsavedChecklistChanges && (
+            <CardFooter className="flex justify-end gap-2">
+              <Button
+                variant="outline"
+                onClick={handleCancelChecklistFormSettings}
+                disabled={settingsLoading}
+              >
+                Cancel
+              </Button>
+              <Button
+                onClick={handleSaveChecklistFormSettings}
+                disabled={settingsLoading}
+              >
+                {settingsLoading ? 'Saving...' : 'Save Changes'}
+              </Button>
+            </CardFooter>
+          )}
+        </Card>
+
+        </TabsContent>
+
+        <TabsContent value="transfer" className="mt-0">
         {/* Asset Transfer Form Number Settings Card */}
         <Card className="shadow-lg border-0 rounded-2xl overflow-hidden bg-card/95 backdrop-blur flex flex-col">
           <CardHeader className="bg-red-600 rounded-t-2xl flex-shrink-0">
@@ -1192,7 +1534,7 @@ export function FormsTab({ isActive }: { isActive?: boolean }) {
                 />
               </div>
 
-              <div className="space-y-4">
+              <div className="grid gap-4 md:grid-cols-2">
                 <div className="p-6 bg-card border rounded-2xl shadow-inner">
                   <div className="text-sm font-medium text-muted-foreground mb-2">
                     IT Asset Transfer Form Preview:
@@ -1350,6 +1692,9 @@ export function FormsTab({ isActive }: { isActive?: boolean }) {
           )}
         </Card>
 
+        </TabsContent>
+
+        <TabsContent value="borrow" className="mt-0">
         {/* Asset Borrowing Form Number Settings Card */}
         <Card className="shadow-lg border-0 rounded-2xl overflow-hidden bg-card/95 backdrop-blur flex flex-col">
           <CardHeader className="bg-red-600 rounded-t-2xl flex-shrink-0">
@@ -1480,7 +1825,7 @@ export function FormsTab({ isActive }: { isActive?: boolean }) {
                 />
               </div>
 
-              <div className="space-y-4">
+              <div className="grid gap-4 md:grid-cols-2">
                 <div className="p-6 bg-card border rounded-2xl shadow-inner">
                   <div className="text-sm font-medium text-muted-foreground mb-2">
                     IT Equipment Borrowing Preview:
@@ -1631,7 +1976,8 @@ export function FormsTab({ isActive }: { isActive?: boolean }) {
             </CardFooter>
           )}
         </Card>
-      </div>
+        </TabsContent>
+      </Tabs>
     </TabsContent>
   );
 }

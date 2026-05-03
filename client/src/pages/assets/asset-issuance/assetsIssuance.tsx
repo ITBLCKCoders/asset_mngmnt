@@ -36,7 +36,7 @@ import {
 } from './components/AssignedAssetsTable';
 import { ConfirmationModal } from './components/ConfirmationModal';
 import { AssetChecklistDialog } from './components/AssetChecklistDialog';
-import { hasComputerTypeAssets } from '@/utils/assetTypeDetection';
+import { hasComputerTypeAssets, isComputerTypeAsset } from '@/utils/assetTypeDetection';
 
 const logger = createLogger('AssetsIssuance');
 
@@ -422,7 +422,16 @@ export default function AssetsAssignment() {
 
       // Save checklist data if it exists (for computer-type assets)
       if (pendingAssignmentData && assignmentResponse.assignments && assignmentResponse.assignments.length > 0) {
-        const assignmentId = assignmentResponse.assignments[0]?.assignmentID;
+        const checklistAsset = assets.find(
+          asset => selectedAssets.includes(asset.id) && isComputerTypeAsset(asset)
+        );
+        const checklistAssignment =
+          assignmentResponse.assignments.find(
+            (assignment: any) =>
+              assignment.asset_code === checklistAsset?.id ||
+              assignment.asset_id === checklistAsset?.id
+          ) || assignmentResponse.assignments[0];
+        const assignmentId = checklistAssignment?.assignmentID;
         if (assignmentId) {
           try {
             const assigneeUser = users.find(u => u.userID === selectedUser);

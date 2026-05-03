@@ -9,6 +9,8 @@ import {
   updateAccountabilityFormSettingsHandler,
   getAssetReturnFormSettingsHandler,
   updateAssetReturnFormSettingsHandler,
+  getAssetChecklistFormSettingsHandler,
+  updateAssetChecklistFormSettingsHandler,
   getAssetTransferFormSettingsHandler,
   updateAssetTransferFormSettingsHandler,
   getAssetBorrowFormSettingsHandler,
@@ -153,6 +155,9 @@ router.get('/asset-return-form', getAssetReturnFormSettingsHandler);
  *       401: { description: Unauthorized }
  */
 router.put('/asset-return-form', updateAssetReturnFormSettingsHandler);
+
+router.get('/asset-checklist-form', getAssetChecklistFormSettingsHandler);
+router.put('/asset-checklist-form', updateAssetChecklistFormSettingsHandler);
 
 router.get('/asset-transfer-form', getAssetTransferFormSettingsHandler);
 router.put('/asset-transfer-form', updateAssetTransferFormSettingsHandler);

@@ -893,6 +893,169 @@ export async function updateAssetReturnFormSettingsHandler(
   }
 }
 
+export async function getAssetChecklistFormSettingsHandler(
+  req: AuthRequest,
+  res: Response
+) {
+  try {
+    const currentCompany = await getScopedActiveCompany(pool, req.user?.userID);
+    if (!currentCompany) {
+      return res.status(400).json({ error: 'No active company found' });
+    }
+
+    const [rows] = (await pool.execute(`
+      SELECT
+        id,
+        company_id,
+        company_format,
+        department_format,
+        it_asset_checklist_code,
+        admin_asset_checklist_code,
+        include_date,
+        date_format,
+        created_at,
+        created_by,
+        updated_at,
+        updated_by
+      FROM asset_checklist_form_settings
+      WHERE company_id = ? AND deleted_at IS NULL
+      ORDER BY created_at DESC
+    `, [currentCompany.id])) as any[];
+
+    return res.json({ settings: rows });
+  } catch (error: any) {
+    logger.error('Get asset checklist form settings failed:', error);
+    return res
+      .status(500)
+      .json({ error: 'Failed to fetch asset checklist form settings' });
+  }
+}
+
+export async function updateAssetChecklistFormSettingsHandler(
+  req: AuthRequest,
+  res: Response
+) {
+  const {
+    company_id,
+    company_format,
+    department_format,
+    it_asset_checklist_code,
+    admin_asset_checklist_code,
+    include_date,
+    date_format,
+  } = req.body;
+  const userId = req.user!.userID;
+
+  if (!company_id) {
+    return res.status(400).json({ error: 'Company ID is required' });
+  }
+
+  try {
+    const [existing] = (await pool.execute(
+      `
+      SELECT id FROM asset_checklist_form_settings
+      WHERE company_id = ? AND deleted_at IS NULL
+    `,
+      [company_id]
+    )) as any[];
+
+    if (existing.length > 0) {
+      await pool.execute(
+        `
+        UPDATE asset_checklist_form_settings SET
+          company_format = ?,
+          department_format = ?,
+          it_asset_checklist_code = ?,
+          admin_asset_checklist_code = ?,
+          include_date = ?,
+          date_format = ?,
+          updated_by = ?,
+          updated_at = NOW()
+        WHERE company_id = ? AND deleted_at IS NULL
+      `,
+        [
+          company_format || 'code',
+          department_format || 'none',
+          it_asset_checklist_code || null,
+          admin_asset_checklist_code || null,
+          include_date !== undefined ? include_date : true,
+          date_format || 'MMYYYY',
+          userId,
+          company_id,
+        ]
+      );
+    } else {
+      await pool.execute(
+        `
+        INSERT INTO asset_checklist_form_settings (
+          company_id,
+          company_format,
+          department_format,
+          it_asset_checklist_code,
+          admin_asset_checklist_code,
+          include_date,
+          date_format,
+          created_by,
+          updated_by
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+      `,
+        [
+          company_id,
+          company_format || 'code',
+          department_format || 'none',
+          it_asset_checklist_code || null,
+          admin_asset_checklist_code || null,
+          include_date !== undefined ? include_date : true,
+          date_format || 'MMYYYY',
+          userId,
+          userId,
+        ]
+      );
+    }
+
+    const [rows] = (await pool.execute(
+      `
+      SELECT
+        id,
+        company_id,
+        company_format,
+        department_format,
+        it_asset_checklist_code,
+        admin_asset_checklist_code,
+        include_date,
+        date_format,
+        created_at,
+        created_by,
+        updated_at,
+        updated_by
+      FROM asset_checklist_form_settings
+      WHERE company_id = ? AND deleted_at IS NULL
+    `,
+      [company_id]
+    )) as any[];
+
+    await createAuditLog({
+      userId,
+      action: 'update_asset_checklist_form_settings',
+      resourceType: 'settings',
+      resourceId: String(company_id),
+      details: `Updated asset checklist form settings for company: ${company_id}`,
+      ipAddress: req.ip,
+      userAgent: req.get('User-Agent'),
+    });
+
+    return res.json({
+      message: 'Asset checklist form settings updated successfully',
+      settings: rows[0],
+    });
+  } catch (error: any) {
+    logger.error('Update asset checklist form settings failed:', error);
+    return res
+      .status(500)
+      .json({ error: 'Failed to update asset checklist form settings' });
+  }
+}
+
 export async function getAssetTransferFormSettingsHandler(
   req: AuthRequest,
   res: Response

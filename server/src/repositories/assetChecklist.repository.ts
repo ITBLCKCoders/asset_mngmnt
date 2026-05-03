@@ -3,6 +3,7 @@ import logger from '../logger.js';
 
 export async function createAssetChecklist(data: {
   id: string;
+  formNumber: string;
   assignmentId: string;
   employeeId: string;
   employeeName: string;
@@ -18,6 +19,7 @@ export async function createAssetChecklist(data: {
 }) {
   const {
     id,
+    formNumber,
     assignmentId,
     employeeId,
     employeeName,
@@ -35,6 +37,7 @@ export async function createAssetChecklist(data: {
   const query = `
     INSERT INTO asset_checklists (
       id,
+      form_number,
       assignment_id,
       employee_id,
       employee_name,
@@ -47,11 +50,12 @@ export async function createAssetChecklist(data: {
       checklist_data,
       remarks,
       created_by
-    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
   `;
 
   const values = [
     id,
+    formNumber,
     assignmentId,
     employeeId,
     employeeName,
@@ -80,6 +84,7 @@ export async function getChecklistByAssignmentId(assignmentId: string) {
   const query = `
     SELECT 
       id,
+      form_number,
       assignment_id,
       employee_id,
       employee_name,

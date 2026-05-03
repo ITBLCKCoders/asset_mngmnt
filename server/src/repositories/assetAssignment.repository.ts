@@ -78,6 +78,7 @@ export interface RoomNameRow extends RowDataPacket {
 }
 
 export interface AssetDetailsForFormRow extends RowDataPacket {
+  asset_code: string | null;
   name: string | null;
   serial: string | null;
   model: string | null;
@@ -420,7 +421,7 @@ export async function getAssetDetailsForForm(
   assetId: string
 ): Promise<AssetDetailsForFormRow | null> {
   const [rows] = await pool.execute<AssetDetailsForFormRow[]>(
-    `SELECT a.name, a.serial, a.model, a.brand, a.category_id, a.type_id,
+    `SELECT a.asset_code, a.name, a.serial, a.model, a.brand, a.category_id, a.type_id,
             ac.name as category_name, at.name as type_name
      FROM assets a
      LEFT JOIN asset_categories ac ON a.category_id = ac.categoryID

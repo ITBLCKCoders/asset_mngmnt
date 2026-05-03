@@ -19,6 +19,11 @@ import {
   loadUserModulePermissions,
 } from '../services/assetAssignment.service.js';
 import * as checklistRepo from '../repositories/assetChecklist.repository.js';
+import { getCategoryDepartmentForAssetIds } from '../repositories/assetReturn.repository.js';
+import {
+  generateChecklistFormNumber,
+  generateChecklistFormNumberFallback,
+} from '../utils/checklistFormNumber.js';
 
 // ---------------------------------------------------------------------------
 // Internal helpers — controller-local. Pure HTTP / logging concerns only.
@@ -773,8 +778,23 @@ export async function createAssetChecklistHandler(
     }
 
     const checklistId = randomUUID();
+    let formNumber = await generateChecklistFormNumberFallback();
+    const departmentIdForNumber = assignment.asset_id
+      ? await getCategoryDepartmentForAssetIds([assignment.asset_id])
+      : null;
+    const companyIdForNumber = departmentIdForNumber
+      ? await repo.getCompanyIdByDepartment(departmentIdForNumber)
+      : null;
+    if (companyIdForNumber) {
+      formNumber = await generateChecklistFormNumber(
+        companyIdForNumber,
+        departmentIdForNumber
+      );
+    }
+
     await checklistRepo.createAssetChecklist({
       id: checklistId,
+      formNumber,
       assignmentId,
       employeeId,
       employeeName,
@@ -801,6 +821,7 @@ export async function createAssetChecklistHandler(
     return res.status(201).json({
       message: 'Asset checklist created successfully',
       checklistId,
+      formNumber,
     });
   } catch (error) {
     logger.error('Create asset checklist failed:', error);
@@ -828,7 +849,21 @@ export async function getChecklistByAssignmentIdHandler(
       return res.status(404).json({ error: 'Checklist not found' });
     }
 
-    return res.status(200).json(checklist);
+    const assignment = await repo.getAssignmentById(assignmentId);
+    const assetDetails = assignment?.asset_id
+      ? await repo.getAssetDetailsForForm(assignment.asset_id)
+      : null;
+
+    return res.status(200).json({
+      ...checklist,
+      asset: assignment?.asset_id
+        ? {
+            id: assignment.asset_id,
+            code: assetDetails?.asset_code ?? null,
+            name: assetDetails?.name ?? null,
+          }
+        : null,
+    });
   } catch (error) {
     logger.error('Get checklist by assignment ID failed:', error);
     return res.status(500).json({ error: 'Failed to get checklist' });
