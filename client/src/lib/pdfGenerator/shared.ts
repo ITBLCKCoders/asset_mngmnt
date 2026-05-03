@@ -7,6 +7,135 @@ export const pdfLogger = createLogger('PDFGenerator');
 
 export { autoTable };
 
+export interface PdfCompanyBranding {
+  name?: string | null;
+  logo_url?: string | null;
+}
+
+export interface PdfRgbColor {
+  r: number;
+  g: number;
+  b: number;
+}
+
+const DEFAULT_ACCENT_COLOR: PdfRgbColor = { r: 198, g: 163, b: 100 };
+
+const COMPANY_ACCENT_COLORS: Record<string, string> = {
+  'acquatro suites': '#49726B',
+  'black coders group inc.': '#000000',
+  cmtbuilders: '#ED1C24',
+  cmtland: '#005B38',
+  gtcnow: '#001F60',
+  'royal oak hospitality and leisure corporation': '#6B4D3B',
+  cmtholdings: '#C6A364',
+};
+
+const normalizeCompanyName = (companyName?: string | null) =>
+  companyName?.trim().toLowerCase() ?? '';
+
+const hexToRgb = (hex: string): PdfRgbColor => {
+  const value = hex.replace('#', '');
+  return {
+    r: parseInt(value.slice(0, 2), 16),
+    g: parseInt(value.slice(2, 4), 16),
+    b: parseInt(value.slice(4, 6), 16),
+  };
+};
+
+export const getCompanyAccentColor = (
+  companyName?: string | null
+): PdfRgbColor => {
+  const hex = COMPANY_ACCENT_COLORS[normalizeCompanyName(companyName)];
+  return hex ? hexToRgb(hex) : DEFAULT_ACCENT_COLOR;
+};
+
+export const getCompanyAccentHex = (companyName?: string | null): string =>
+  COMPANY_ACCENT_COLORS[normalizeCompanyName(companyName)] ?? '#C6A364';
+
+export const isBlackCoders = (companyName?: string | null): boolean =>
+  normalizeCompanyName(companyName) === 'black coders group inc.';
+
+export const getBlackCodersFooterGradient = (): { start: string; end: string } => ({
+  start: '#DC2626', // red-600
+  end: '#000000', // black
+});
+
+export const fetchCompanyBrandingByName = async (
+  companyName?: string | null
+): Promise<PdfCompanyBranding | null> => {
+  const normalizedName = normalizeCompanyName(companyName);
+  if (!normalizedName) return null;
+
+  try {
+    const data = await api.get<{ data?: PdfCompanyBranding[] }>(
+      '/companies/public'
+    );
+    return (
+      data?.data?.find(
+        company => normalizeCompanyName(company.name) === normalizedName
+      ) ?? null
+    );
+  } catch (error) {
+    pdfLogger.warn('Failed to fetch company branding by name');
+    return null;
+  }
+};
+
+export const resolveCompanyBranding = async (
+  branding?: PdfCompanyBranding | null
+): Promise<PdfCompanyBranding | null> => {
+  if (!branding) return null;
+  if (branding.logo_url || !branding.name) return branding;
+
+  const matchedBranding = await fetchCompanyBrandingByName(branding.name);
+  return matchedBranding ?? branding;
+};
+
+export const addCompanyLogoToPDF = async (
+  doc: jsPDF,
+  logoUrl?: string | null,
+  x: number = 15,
+  y: number = 10,
+  maxWidth: number = 50,
+  maxHeight: number = 25
+): Promise<void> => {
+  if (!logoUrl) return;
+
+  try {
+    const resolvedLogoUrl =
+      logoUrl.startsWith('/') && typeof window !== 'undefined'
+        ? `${window.location.origin}${logoUrl}`
+        : logoUrl;
+    const response = await fetch(resolvedLogoUrl);
+    if (!response.ok) return;
+
+    const blob = await response.blob();
+    const format =
+      blob.type?.includes('jpeg') || blob.type?.includes('jpg')
+        ? 'JPEG'
+        : 'PNG';
+    const dataUrl = await new Promise<string>((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onload = () => resolve(reader.result as string);
+      reader.onerror = reject;
+      reader.readAsDataURL(blob);
+    });
+
+    await new Promise<void>(resolve => {
+      const img = new Image();
+      img.onload = () => {
+        // Force exact dimensions for uniformity across all forms
+        doc.addImage(dataUrl, format, x, y, maxWidth, maxHeight);
+        resolve();
+      };
+      img.onerror = () => resolve();
+      img.src = dataUrl;
+    });
+  } catch (error) {
+    pdfLogger.debug('Company logo not found, continuing without it');
+  }
+};
+
 /**
  * Add a signature to the PDF. Signature can be either plain text initials
  * (rendered as bold helvetica) or a base64/HTTP image (rendered after

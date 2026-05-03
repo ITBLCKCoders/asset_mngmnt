@@ -110,6 +110,10 @@ export function buildReturnDataForPDFFromBatch(
       email: first.assignment?.user?.email || '',
       employeeNumber: first.assignment?.user?.employeeNumber || '',
       position: first.assignment?.user?.position || '',
+      companyName: first.assignment?.user?.company?.name ?? null,
+      companyLogoUrl:
+        (first.assignment?.user as { companyLogoUrl?: string | null })
+          ?.companyLogoUrl ?? null,
     },
     department: batch.form_department ?? first.assignment?.department ?? null,
     requestorDepartment: first.assignment?.user?.department ?? null,
@@ -214,6 +218,10 @@ export function buildTransferDataForPDFFromBatch(
       email: first.assignment?.user?.email || '',
       employeeNumber: first.assignment?.user?.employeeNumber,
       position: first.assignment?.user?.position,
+      companyName: first.assignment?.user?.company?.name ?? null,
+      companyLogoUrl:
+        (first.assignment?.user as { companyLogoUrl?: string | null })
+          ?.companyLogoUrl ?? null,
     },
     assets,
     department: first.assignment?.department
@@ -1441,6 +1449,8 @@ export interface AssetBorrowFormBatch {
   requester_last_name?: string | null;
   requester_email?: string | null;
   requester_department_name?: string | null;
+  requester_company_name?: string | null;
+  requester_company_logo_url?: string | null;
   dept_head_signed_at?: string | null;
   approved_at?: string | null;
   pre_usage_condition?: string | null;
@@ -1528,6 +1538,8 @@ export function buildBorrowDataForPDFFromBatch(
     itReceivedBy: batch.approved_by_name?.trim() || '—',
     itApprovedBy: batch.approved_by_name?.trim() || '—',
     postUsageCondition: post,
+    borrowerCompanyName: batch.requester_company_name ?? null,
+    borrowerCompanyLogoUrl: batch.requester_company_logo_url ?? null,
   };
 }
 
@@ -2067,6 +2079,7 @@ interface AssetReturnForm {
       employeeNumber?: string;
       position?: string;
       company?: { id: string; name: string };
+      companyLogoUrl?: string | null;
       department?: { id: string; name: string };
     };
     department: {

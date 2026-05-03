@@ -83,24 +83,29 @@ export async function createAssetChecklist(data: {
 export async function getChecklistByAssignmentId(assignmentId: string) {
   const query = `
     SELECT 
-      id,
-      form_number,
-      assignment_id,
-      employee_id,
-      employee_name,
-      employee_designation,
-      employee_department,
-      employee_company,
-      type_onboarding,
-      type_offboarding,
-      received_by,
-      checklist_data,
-      remarks,
-      created_at,
-      created_by
-    FROM asset_checklists
-    WHERE assignment_id = ?
-    ORDER BY created_at DESC
+      ac.id,
+      ac.form_number,
+      ac.assignment_id,
+      ac.employee_id,
+      ac.employee_name,
+      ac.employee_designation,
+      ac.employee_department,
+      ac.employee_company,
+      ac.type_onboarding,
+      ac.type_offboarding,
+      ac.received_by,
+      ac.checklist_data,
+      ac.remarks,
+      ac.created_at,
+      ac.created_by,
+      u.name AS creator_name,
+      u.digital_signature AS creator_digital_signature,
+      c.logo_url AS employee_company_logo_url
+    FROM asset_checklists ac
+    LEFT JOIN users u ON ac.created_by = u.userID
+    LEFT JOIN companies c ON ac.employee_company = c.name AND c.deleted_at IS NULL
+    WHERE ac.assignment_id = ?
+    ORDER BY ac.created_at DESC
     LIMIT 1
   `;
 

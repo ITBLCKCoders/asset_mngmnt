@@ -19,12 +19,17 @@ export async function getAssetChecklists() {
       ac.remarks,
       ac.created_at,
       ac.created_by,
+      u.name AS creator_name,
+      u.digital_signature AS creator_digital_signature,
       aa.asset_id,
       a.asset_code,
-      a.name AS asset_name
+      a.name AS asset_name,
+      c.logo_url AS employee_company_logo_url
     FROM asset_checklists ac
     LEFT JOIN asset_assignments aa ON ac.assignment_id = aa.assignmentID
     LEFT JOIN assets a ON aa.asset_id = a.assetID
+    LEFT JOIN users u ON ac.created_by = u.userID
+    LEFT JOIN companies c ON ac.employee_company = c.name AND c.deleted_at IS NULL
     ORDER BY ac.created_at DESC
   `;
 

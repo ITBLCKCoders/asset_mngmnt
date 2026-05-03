@@ -21,6 +21,8 @@ export interface AssetBorrowRequestRow extends RowDataPacket {
   requester_username?: string | null;
   requester_email?: string | null;
   dept_head_signed_at?: Date | string | null;
+  requester_company_name?: string | null;
+  requester_company_logo_url?: string | null;
   dept_head_signed_by?: string | null;
   approved_at?: Date | string | null;
   approved_by?: string | null;
@@ -117,6 +119,8 @@ export async function findBorrowRequestsForList(
       u.last_name AS requester_last_name,
       u.username AS requester_username,
       u.email AS requester_email,
+      co.name AS requester_company_name,
+      co.logo_url AS requester_company_logo_url,
       d.name AS requester_department_name,
       a.asset_code AS asset_code,
       a.assetID AS asset_id,
@@ -127,6 +131,7 @@ export async function findBorrowRequestsForList(
     INNER JOIN asset_categories c ON br.category_id = c.categoryID AND c.deleted_at IS NULL
     INNER JOIN asset_types t ON br.type_id = t.typeID AND t.deleted_at IS NULL
     INNER JOIN users u ON br.user_id = u.userID
+    LEFT JOIN companies co ON u.company_id = co.companyID AND co.deleted_at IS NULL
     LEFT JOIN asset_mngmnt_departments d ON u.department_id = d.departmentID AND d.deleted_at IS NULL
     LEFT JOIN assets a ON br.asset_id = a.assetID AND a.deleted_at IS NULL
     LEFT JOIN users ap ON br.approved_by = ap.userID
@@ -186,6 +191,8 @@ export async function findBorrowRequestsForUser(
       u.last_name AS requester_last_name,
       u.username AS requester_username,
       u.email AS requester_email,
+      co.name AS requester_company_name,
+      co.logo_url AS requester_company_logo_url,
       d.name AS requester_department_name,
       a.asset_code AS asset_code,
       a.assetID AS asset_id,
@@ -196,6 +203,7 @@ export async function findBorrowRequestsForUser(
     INNER JOIN asset_categories c ON br.category_id = c.categoryID AND c.deleted_at IS NULL
     INNER JOIN asset_types t ON br.type_id = t.typeID AND t.deleted_at IS NULL
     INNER JOIN users u ON br.user_id = u.userID
+    LEFT JOIN companies co ON u.company_id = co.companyID AND co.deleted_at IS NULL
     LEFT JOIN asset_mngmnt_departments d ON u.department_id = d.departmentID AND d.deleted_at IS NULL
     LEFT JOIN assets a ON br.asset_id = a.assetID AND a.deleted_at IS NULL
     LEFT JOIN users ap ON br.approved_by = ap.userID
@@ -673,6 +681,8 @@ export async function getBorrowFormsByAssetId(
       u.last_name AS requester_last_name,
       u.username AS requester_username,
       u.email AS requester_email,
+      co.name AS requester_company_name,
+      co.logo_url AS requester_company_logo_url,
       d.name AS requester_department_name,
       a.asset_code AS asset_code,
       a.assetID AS asset_id,
@@ -683,6 +693,7 @@ export async function getBorrowFormsByAssetId(
     INNER JOIN asset_categories c ON br.category_id = c.categoryID AND c.deleted_at IS NULL
     INNER JOIN asset_types t ON br.type_id = t.typeID AND t.deleted_at IS NULL
     INNER JOIN users u ON br.user_id = u.userID
+    LEFT JOIN companies co ON u.company_id = co.companyID AND co.deleted_at IS NULL
     LEFT JOIN asset_mngmnt_departments d ON u.department_id = d.departmentID AND d.deleted_at IS NULL
     LEFT JOIN assets a ON br.asset_id = a.assetID AND a.deleted_at IS NULL
     LEFT JOIN users ap ON br.approved_by = ap.userID

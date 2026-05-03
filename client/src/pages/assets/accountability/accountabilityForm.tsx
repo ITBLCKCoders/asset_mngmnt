@@ -66,6 +66,12 @@ import {
   DialogFooter,
 } from '@/components/ui/dialog';
 import { Input } from '@/components/ui/input';
+import {
+  addCompanyLogoToPDF,
+  getCompanyAccentColor,
+  getBlackCodersFooterGradient,
+  isBlackCoders,
+} from '@/lib/pdfGenerator/shared';
 
 const logger = createLogger('AccountabilityForm');
 
@@ -102,108 +108,6 @@ const generateCacheKey = (form: AccountabilityForm, currentUser?: any): string =
     currentUser: currentUser?.id,
   };
   return JSON.stringify(keyData);
-};
-
-// Helper function to add logo to PDF
-const addLogoToPDF = async (doc: jsPDF, logoUrl?: string) => {
-  try {
-    if (!logoUrl) {
-      logger.debug('No company logo available');
-      return;
-    }
-
-    // Check image cache first
-    if (imageCache.has(logoUrl)) {
-      logger.debug('Using cached logo image');
-      const cachedImgData = imageCache.get(logoUrl);
-      if (cachedImgData) {
-        // Create a new image to get dimensions
-        const img = new Image();
-        return new Promise<string>(resolve => {
-          img.onload = function () {
-            // Use full size but convert pixels to mm (assuming 96 DPI)
-            const pixelsToMm = 0.264583; // 1 pixel = 0.264583 mm at 96 DPI
-            const fullWidth = img.width * pixelsToMm;
-            const fullHeight = img.height * pixelsToMm;
-
-            // If logo is too large, scale down proportionally to fit in available space
-            const maxWidth = 80; // Maximum width in mm
-            const maxHeight = 40; // Maximum height in mm
-
-            let finalWidth = fullWidth;
-            let finalHeight = fullHeight;
-
-            if (fullWidth > maxWidth) {
-              const scale = maxWidth / fullWidth;
-              finalWidth = maxWidth;
-              finalHeight = fullHeight * scale;
-            }
-
-            if (finalHeight > maxHeight) {
-              const scale = maxHeight / finalHeight;
-              finalHeight = maxHeight;
-              finalWidth = finalWidth * scale;
-            }
-
-            // Add logo with calculated dimensions
-            doc.addImage(cachedImgData, 'PNG', 15, 8, finalWidth, finalHeight);
-            resolve(cachedImgData);
-          };
-          img.src = cachedImgData;
-        });
-      }
-    }
-
-    const response = await fetch(logoUrl);
-    if (response.ok) {
-      const blob = await response.blob();
-      const reader = new FileReader();
-      return new Promise<string>(resolve => {
-        reader.onload = e => {
-          const imgData = e.target?.result as string;
-          // Cache the image data
-          imageCache.set(logoUrl, imgData);
-          
-          // Create a new image to get dimensions
-          const img = new Image();
-          img.onload = function () {
-            // Use full size but convert pixels to mm (assuming 96 DPI)
-            const pixelsToMm = 0.264583; // 1 pixel = 0.264583 mm at 96 DPI
-            const fullWidth = img.width * pixelsToMm;
-            const fullHeight = img.height * pixelsToMm;
-
-            // If logo is too large, scale down proportionally to fit in available space
-            const maxWidth = 80; // Maximum width in mm
-            const maxHeight = 40; // Maximum height in mm
-
-            let finalWidth = fullWidth;
-            let finalHeight = fullHeight;
-
-            if (fullWidth > maxWidth) {
-              const scale = maxWidth / fullWidth;
-              finalWidth = maxWidth;
-              finalHeight = fullHeight * scale;
-            }
-
-            if (finalHeight > maxHeight) {
-              const scale = maxHeight / finalHeight;
-              finalHeight = maxHeight;
-              finalWidth = finalWidth * scale;
-            }
-
-            // Add logo with calculated dimensions
-            doc.addImage(imgData, 'PNG', 15, 8, finalWidth, finalHeight);
-            resolve(imgData);
-          };
-          img.src = imgData;
-        };
-        reader.readAsDataURL(blob);
-      });
-    }
-  } catch (error) {
-    logger.debug('Logo not found, continuing without it');
-  }
-  return null;
 };
 
 // Helper function to add signature to PDF (handles both text and base64 images)
@@ -497,9 +401,13 @@ export const generateAccountabilityFormPDF = async (
   });
 
   const companyLogoUrl = form.user.companyLogoUrl ?? undefined;
+  const companyAccentColor = getCompanyAccentColor(form.user.company?.name);
+  const isBlackCodersCompany = isBlackCoders(form.user.company?.name);
+  const headerFillColor: [number, number, number] = isBlackCodersCompany ? [0, 0, 0] : [companyAccentColor.r, companyAccentColor.g, companyAccentColor.b];
+  const headerTextColor: [number, number, number] = [255, 255, 255];
 
   // Add logo first
-  await addLogoToPDF(doc, companyLogoUrl);
+  await addCompanyLogoToPDF(doc, companyLogoUrl, 15, 8);
 
   // Header with logo and FOR INTERNAL USE ONLY (moved slightly left)
   doc.setDrawColor(0, 0, 0);
@@ -566,7 +474,7 @@ export const generateAccountabilityFormPDF = async (
       lineWidth: 0.1,
       lineColor: [0, 0, 0],
     },
-    headStyles: { fillColor: [199, 164, 100], textColor: [0, 0, 0] },
+    headStyles: { fillColor: headerFillColor, textColor: headerTextColor },
   });
   y = (doc as any).lastAutoTable.finalY + 15; // Increased from 6 to 15 to add more space
 
@@ -595,26 +503,9 @@ export const generateAccountabilityFormPDF = async (
   }
 
   // Acknowledgment content - font size 12 normal (not bold)
-  doc.setFontSize(12);
-  doc.setFont('helvetica', 'normal');
-  const employeeName = `${form.user.first_name} ${form.user.last_name}`;
 
-  // Create acknowledgment text with underlined employee name
-  const acknowledgmentText = `I, ${employeeName}, acknowledge the receipt of the company properties listed below from ${issuingDepartment}, and agree to maintain them in good condition and to return them upon termination of my employment, for whatever reason, or when requested by Management. In case the said properties are no longer needed for the performance of my job, I will notify the Admin or IT Department through my superior to arrange for their surrender. Any damage incurred to the property, whether due to wear and tear or an incident or accident beyond my control, shall be reported immediately within twenty-four (24) hours to the Admin Department, with a copy furnished to the HR Department, using the Incident Report.
-
-I agree that if any of the items are damaged or lost due to my negligence, I shall be held accountable. I hereby authorize the Company to deduct the cost from my salary, final pay, or any monetary claims, equivalent to the amount of the damage or the value of the lost company property.`;
-
-  const splitAcknowledgment = doc.splitTextToSize(acknowledgmentText, 170);
-  doc.text(splitAcknowledgment, 20, y, { align: 'justify', maxWidth: 170 });
-
-  y += splitAcknowledgment.length * 5 + 5;
-
-  // Preload company logo for continuation page headers
-  let cachedContinuationLogo: {
-    imgData: string;
-    width: number;
-    height: number;
-  } | null = null;
+  // Logo caching for continuation pages with fixed dimensions (50x25) for uniformity
+  let cachedContinuationLogo: { imgData: string; width: number; height: number } | null = null;
   if (companyLogoUrl) {
     try {
       const response = await fetch(companyLogoUrl);
@@ -626,35 +517,10 @@ I agree that if any of the items are damaged or lost due to my negligence, I sha
           reader.onerror = () => reject(new Error('Failed to read logo'));
           reader.readAsDataURL(blob);
         });
-        const dimensions = await new Promise<{ w: number; h: number }>(
-          resolve => {
-            const img = new Image();
-            img.onload = () => {
-              const pixelsToMm = 0.264583;
-              let w = img.width * pixelsToMm;
-              let h = img.height * pixelsToMm;
-              const maxWidth = 80;
-              const maxHeight = 40;
-              if (w > maxWidth) {
-                const s = maxWidth / w;
-                w = maxWidth;
-                h *= s;
-              }
-              if (h > maxHeight) {
-                const s = maxHeight / h;
-                h = maxHeight;
-                w *= s;
-              }
-              resolve({ w, h });
-            };
-            img.onerror = () => resolve({ w: 0, h: 0 });
-            img.src = imgData;
-          }
-        );
         cachedContinuationLogo = {
           imgData,
-          width: dimensions.w,
-          height: dimensions.h,
+          width: 50, // Fixed width for uniformity
+          height: 25, // Fixed height for uniformity
         };
       }
     } catch (err) {
@@ -669,10 +535,10 @@ I agree that if any of the items are damaged or lost due to my negligence, I sha
       doc.addImage(
         cachedContinuationLogo.imgData,
         'PNG',
-        125,
+        15,
         8,
-        cachedContinuationLogo.width,
-        cachedContinuationLogo.height
+        50, // Fixed width for uniformity
+        25  // Fixed height for uniformity
       );
     }
     const continuationPageBoxWidth = 55;
@@ -766,7 +632,7 @@ I agree that if any of the items are damaged or lost due to my negligence, I sha
           lineWidth: 0.1,
           lineColor: [0, 0, 0],
         },
-        headStyles: { fillColor: [199, 164, 100], textColor: [0, 0, 0] },
+        headStyles: { fillColor: headerFillColor, textColor: headerTextColor },
         columnStyles: assetTableColumnStyles,
         didDrawPage: data => {
           if (
@@ -853,7 +719,7 @@ I agree that if any of the items are damaged or lost due to my negligence, I sha
           lineWidth: 0.1,
           lineColor: [0, 0, 0],
         },
-        headStyles: { fillColor: [199, 164, 100], textColor: [0, 0, 0] },
+        headStyles: { fillColor: headerFillColor, textColor: headerTextColor },
         columnStyles: assetTableColumnStyles,
         didDrawPage: data => {
           if (
@@ -895,10 +761,29 @@ I agree that if any of the items are damaged or lost due to my negligence, I sha
   doc.setPage(1);
   const footerGoldY = 320; // Near bottom of first page
   const footerLineY = 324;
-  doc.setDrawColor(199, 164, 100); // Same color as table header background
-  doc.setFillColor(199, 164, 100);
-  doc.setLineWidth(0.1); // Thin line for the colored block border
-  doc.rect(10, footerGoldY, 195, 1, 'FD'); // Gold bar in footer
+
+  if (isBlackCodersCompany) {
+    // Solid red bar for Black Coders
+    doc.setDrawColor(220, 38, 38);
+    doc.setFillColor(220, 38, 38);
+    doc.setLineWidth(0.1);
+    doc.rect(10, footerGoldY, 195, 1, 'FD');
+  } else {
+    // Solid color bar for other companies
+    doc.setDrawColor(
+      companyAccentColor.r,
+      companyAccentColor.g,
+      companyAccentColor.b
+    ); // Same color as table header background
+    doc.setFillColor(
+      companyAccentColor.r,
+      companyAccentColor.g,
+      companyAccentColor.b
+    );
+    doc.setLineWidth(0.1); // Thin line for the colored block border
+    doc.rect(10, footerGoldY, 195, 1, 'FD'); // Gold bar in footer
+  }
+
   doc.setDrawColor(0, 0, 0);
   doc.setLineWidth(6); // Thick line for the black line
   doc.line(10, footerLineY, 205, footerLineY); // Black line in footer
@@ -1315,6 +1200,7 @@ export function AccountabilityFormCard({
         const pdfBlob = await generateAssetChecklistPDF({
           ...checklistData,
           asset_label: checklistAssetLabel,
+          employee_company_logo_url: checklistData.employee_company_logo_url ?? null,
         });
         const fileName = `Asset_Checklist_${checklistData.employee_name.replace(/\s+/g, '_')}_${Date.now()}.pdf`;
         downloadPDF(pdfBlob, fileName);

@@ -18,8 +18,9 @@ import { useDelayedLoading } from '@/hooks/useDelayedLoading';
 import { api } from '@/lib/api';
 import { downloadPDF } from '@/lib/pdfGenerator';
 import { generateAssetChecklistPDF } from '@/lib/pdfGenerator/assetChecklistPdf';
-import { Download, Eye, FileText, RefreshCw, Search } from 'lucide-react';
+import { Download, Eye, FileText, RefreshCw, Search, Package, User, Calendar } from 'lucide-react';
 import { toast } from 'sonner';
+import { Card, CardHeader, CardTitle, CardContent } from '@/components/ui/card';
 
 type ChecklistRow = {
   id: string;
@@ -30,6 +31,7 @@ type ChecklistRow = {
   employee_designation?: string | null;
   employee_department?: string | null;
   employee_company?: string | null;
+  employee_company_logo_url?: string | null;
   type_onboarding: boolean;
   type_offboarding: boolean;
   received_by?: string | null;
@@ -215,44 +217,78 @@ export default function AssetChecklistFormsPage() {
         ) : (
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
             {filteredChecklists.map(row => (
-              <div
+              <Card
                 key={row.id}
-                className="rounded-xl border border-slate-200 bg-white shadow-sm transition-all hover:-translate-y-0.5 hover:shadow-md"
+                className="hover:shadow-md transition-shadow flex flex-col"
               >
-                <div className="border-b border-slate-100 bg-gradient-to-r from-red-50 to-white p-4">
-                  <div className="flex items-start justify-between gap-3">
-                    <div>
-                      <p className="font-mono text-sm font-semibold text-slate-900">
-                        {checklistFormNumber(row)}
-                      </p>
-                      <p className="mt-1 text-sm font-medium text-slate-700">
-                        {row.employee_name}
-                      </p>
+                <CardHeader className="pb-3">
+                  <div className="flex items-start justify-between">
+                    <div className="flex items-center gap-3">
+                      <div className="p-2 bg-red-100 rounded-lg">
+                        <FileText className="h-5 w-5 text-red-600" />
+                      </div>
+                      <div>
+                        <CardTitle className="text-lg">{checklistFormNumber(row)}</CardTitle>
+                        <p className="text-sm text-gray-500">
+                          Created {new Date(row.created_at).toLocaleDateString()}
+                        </p>
+                      </div>
                     </div>
                     <Badge className="bg-red-100 text-red-800 hover:bg-red-100">
                       {checklistTypeLabel(row)}
                     </Badge>
                   </div>
-                </div>
+                </CardHeader>
 
-                <div className="space-y-2 p-4 text-sm text-slate-600">
-                  <p>
-                    <span className="font-medium text-slate-800">Asset:</span>{' '}
-                    {checklistAssetLabel(row)}
-                  </p>
-                  <p>
-                    <span className="font-medium text-slate-800">Department:</span>{' '}
-                    {row.employee_department || '—'}
-                  </p>
-                  <p>
-                    <span className="font-medium text-slate-800">Received by:</span>{' '}
-                    {row.received_by || '—'}
-                  </p>
-                  <p>
-                    <span className="font-medium text-slate-800">Date:</span>{' '}
-                    {new Date(row.created_at).toLocaleDateString()}
-                  </p>
-                </div>
+                <CardContent className="flex-1 flex flex-col gap-4">
+                  <div className="flex items-start gap-3">
+                    <User className="h-4 w-4 text-gray-400 mt-0.5 flex-shrink-0" />
+                    <div className="flex-1 min-w-0">
+                      <p className="font-medium text-sm">{row.employee_name}</p>
+                    </div>
+                  </div>
+
+                  <div className="flex items-start gap-3">
+                    <Package className="h-4 w-4 text-gray-400 mt-0.5 flex-shrink-0" />
+                    <div className="flex-1 min-w-0">
+                      <p className="text-sm text-gray-600">
+                        {checklistAssetLabel(row)}
+                      </p>
+                    </div>
+                  </div>
+
+                  {row.employee_department && (
+                    <div className="flex items-start gap-3">
+                      <User className="h-4 w-4 text-gray-400 mt-0.5 flex-shrink-0" />
+                      <div className="flex-1 min-w-0">
+                        <p className="text-sm text-gray-600">
+                          Department: {row.employee_department}
+                        </p>
+                      </div>
+                    </div>
+                  )}
+
+                  {row.received_by && (
+                    <div className="flex items-start gap-3">
+                      <User className="h-4 w-4 text-gray-400 mt-0.5 flex-shrink-0" />
+                      <div className="flex-1 min-w-0">
+                        <p className="text-sm text-gray-600">
+                          Received by: {row.received_by}
+                        </p>
+                      </div>
+                    </div>
+                  )}
+
+                  <div className="flex items-start gap-3">
+                    <Calendar className="h-4 w-4 text-gray-400 mt-0.5 flex-shrink-0" />
+                    <div className="flex-1 min-w-0">
+                      <p className="text-sm text-gray-600">
+                        {new Date(row.created_at).toLocaleDateString()}{' '}
+                        {new Date(row.created_at).toLocaleTimeString()}
+                      </p>
+                    </div>
+                  </div>
+                </CardContent>
 
                 <div className="flex gap-2 border-t border-slate-100 p-4">
                   <Button
@@ -277,7 +313,7 @@ export default function AssetChecklistFormsPage() {
                     Download
                   </Button>
                 </div>
-              </div>
+              </Card>
             ))}
           </div>
         )}

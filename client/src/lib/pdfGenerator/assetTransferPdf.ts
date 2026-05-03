@@ -4,9 +4,12 @@ import {
   type ClientAssetScopeType,
 } from '@/lib/assetScope';
 import {
+  addCompanyLogoToPDF,
   autoTable,
-  fetchActiveCompanyForAssetReturnForm,
-  pdfLogger as logger,
+  getCompanyAccentColor,
+  getBlackCodersFooterGradient,
+  isBlackCoders,
+  resolveCompanyBranding,
 } from './shared';
 
 export interface AssetTransferData {
@@ -18,6 +21,8 @@ export interface AssetTransferData {
     email: string;
     employeeNumber?: string;
     position?: string;
+    companyName?: string | null;
+    companyLogoUrl?: string | null;
   };
   assets: Array<{
     id: string;
@@ -81,7 +86,14 @@ export const generateAssetTransferPDF = async (
     creator: 'Asset Management System',
   });
 
-  const activeCompany = await fetchActiveCompanyForAssetReturnForm();
+  const companyBranding = await resolveCompanyBranding({
+    name: transferData.user.companyName,
+    logo_url: transferData.user.companyLogoUrl,
+  });
+  const accentColor = getCompanyAccentColor(companyBranding?.name);
+  const isBlackCodersCompany = isBlackCoders(companyBranding?.name);
+  const headerFillColor: [number, number, number] = isBlackCodersCompany ? [0, 0, 0] : [accentColor.r, accentColor.g, accentColor.b];
+  const headerTextColor: [number, number, number] = [255, 255, 255];
   const formNumber = transferData.form_number || 'Transfer Form';
   const pageMargin = 15;
   const tableWidth = 215.9 - pageMargin * 2;
@@ -94,54 +106,12 @@ export const generateAssetTransferPDF = async (
   doc.setFillColor(255, 255, 255);
   doc.rect(pageMargin, headerBoxY, tableWidth, headerBoxHeight, 'FD');
 
-  if (activeCompany?.logo_url) {
-    try {
-      const logoUrl =
-        activeCompany.logo_url.startsWith('/') && typeof window !== 'undefined'
-          ? `${window.location.origin}${activeCompany.logo_url}`
-          : activeCompany.logo_url;
-      const response = await fetch(logoUrl);
-      if (response.ok) {
-        const blob = await response.blob();
-        const format =
-          blob.type?.includes('jpeg') || blob.type?.includes('jpg')
-            ? 'JPEG'
-            : 'PNG';
-        const dataUrl = await new Promise<string>((resolve, reject) => {
-          const reader = new FileReader();
-          reader.onload = () => resolve(reader.result as string);
-          reader.onerror = reject;
-          reader.readAsDataURL(blob);
-        });
-        await new Promise<void>(resolve => {
-          const img = new Image();
-          img.onload = () => {
-            const pixelsToMm = 0.264583;
-            let w = img.width * pixelsToMm;
-            let h = img.height * pixelsToMm;
-            const maxW = 72;
-            const maxH = 38;
-            if (w > maxW) {
-              const s = maxW / w;
-              w = maxW;
-              h *= s;
-            }
-            if (h > maxH) {
-              const s = maxH / h;
-              h = maxH;
-              w *= s;
-            }
-            doc.addImage(dataUrl, format, pageMargin, headerBoxY + 2, w, h);
-            resolve();
-          };
-          img.onerror = () => resolve();
-          img.src = dataUrl;
-        });
-      }
-    } catch (e) {
-      logger.debug('Logo not found on transfer form, continuing without it');
-    }
-  }
+  await addCompanyLogoToPDF(
+    doc,
+    companyBranding?.logo_url,
+    pageMargin,
+    headerBoxY + 2
+  );
 
   const internalBoxW = 55;
   const internalBoxGapFromRight = 2;
@@ -161,9 +131,8 @@ export const generateAssetTransferPDF = async (
     { align: 'center' }
   );
   doc.setDrawColor(255, 0, 0);
-  doc.setLineWidth(tableLineWidth);
   doc.setFillColor(255, 255, 255);
-  doc.rect(internalBoxX, headerBoxY + 12, internalBoxW, 10, 'FD');
+  doc.rect(145, 20, 55, 8, 'FD');
   doc.setTextColor(255, 0, 0);
   doc.setFontSize(10);
   doc.setFont('helvetica', 'bold');
@@ -342,8 +311,8 @@ export const generateAssetTransferPDF = async (
     },
     didParseCell: data => {
       if (data.row.index === 0) {
-        data.cell.styles.fillColor = [199, 164, 100];
-        data.cell.styles.textColor = [0, 0, 0];
+        data.cell.styles.fillColor = headerFillColor;
+        data.cell.styles.textColor = headerTextColor;
       }
     },
     willDrawCell: () => {
@@ -389,8 +358,8 @@ export const generateAssetTransferPDF = async (
     },
     didParseCell: data => {
       if (data.row.index === 0) {
-        data.cell.styles.fillColor = [199, 164, 100];
-        data.cell.styles.textColor = [0, 0, 0];
+        data.cell.styles.fillColor = headerFillColor;
+        data.cell.styles.textColor = headerTextColor;
         data.cell.styles.fontStyle = 'bold';
         data.cell.styles.halign = 'center';
       }
@@ -629,6 +598,16 @@ export const generateAssetTransferPDF = async (
   doc.setFont('helvetica', 'normal');
   doc.setTextColor(0, 0, 0);
   doc.text(docNoText, 215.9 - 15, docNoY, { align: 'right' });
+
+  // Footer bar with company accent color
+  const footerY = 320;
+  doc.setDrawColor(accentColor.r, accentColor.g, accentColor.b);
+  doc.setFillColor(accentColor.r, accentColor.g, accentColor.b);
+  doc.setLineWidth(0.1);
+  doc.rect(10, footerY, 195, 1, 'FD');
+  doc.setDrawColor(0, 0, 0);
+  doc.setLineWidth(6);
+  doc.line(10, 324, 205, 324);
 
   return new Blob([doc.output('blob')], { type: 'application/pdf' });
 };

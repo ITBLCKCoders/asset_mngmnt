@@ -291,6 +291,46 @@ export async function createAccountabilityFormHandler(
             assetsDataPayload.assignment_ids = assignmentIds;
           }
 
+          // Determine which assignment_id to use for the accountability form
+          // Prioritize the assignment that matches a computer-type asset (same logic as frontend)
+          let selectedAssignmentId: string | null = null;
+          if (Array.isArray(assignmentIds) && assignmentIds.length > 0) {
+            if (assets && Array.isArray(assets)) {
+              // Query the assignments to find which one has a computer-type asset
+              const assignmentsQuery = `
+                SELECT aa.assignmentID, a.category_id, a.type_id, ac.name as category_name, at.name as type_name
+                FROM asset_assignments aa
+                LEFT JOIN assets a ON aa.asset_id = a.assetID AND a.deleted_at IS NULL
+                LEFT JOIN asset_categories ac ON a.category_id = ac.categoryID
+                LEFT JOIN asset_types at ON a.type_id = at.typeID
+                WHERE aa.assignmentID IN (${assignmentIds.map(() => '?').join(',')})
+                AND aa.deleted_at IS NULL
+              `;
+              const [assignmentRows] = await pool.execute(assignmentsQuery, assignmentIds);
+              
+              // Find the assignment with a computer-type asset
+              const computerAssignment = (assignmentRows as any[]).find((row: any) => {
+                const category = (row.category_name || '').toLowerCase();
+                const type = (row.type_name || '').toLowerCase();
+                return category.includes('computer') ||
+                       category.includes('laptop') ||
+                       category.includes('server') ||
+                       type.includes('computer') ||
+                       type.includes('laptop') ||
+                       type.includes('server');
+              });
+              
+              if (computerAssignment) {
+                selectedAssignmentId = computerAssignment.assignmentID;
+              }
+            }
+            
+            // Fall back to first assignment_id if no computer asset found
+            if (!selectedAssignmentId) {
+              selectedAssignmentId = assignmentIds[0];
+            }
+          }
+
           // Create accountability form with assets stored in separate column
           await repo.insertAccountabilityFormMulti({
             formNumber,
@@ -301,7 +341,7 @@ export async function createAccountabilityFormHandler(
             assetsDataJson: JSON.stringify(assetsDataPayload),
             issuerSignature: issuerSignature || null,
             itCopySignature: itCopySignature || null,
-            assignmentId: Array.isArray(assignmentIds) && assignmentIds.length > 0 ? assignmentIds[0] : null,
+            assignmentId: selectedAssignmentId,
           });
 
           break; // Success, exit retry loop

@@ -1078,11 +1078,7 @@ export default function AssetsAssignment() {
           selectedUser={selectedUser}
           users={users}
           departments={departments}
-          currentUserName={
-            currentUser
-              ? `${currentUser.firstName || ''} ${currentUser.lastName || ''}`.trim()
-              : ''
-          }
+          currentUserPosition={currentUser?.position || ''}
           onSubmit={handleChecklistSubmit}
         />
 

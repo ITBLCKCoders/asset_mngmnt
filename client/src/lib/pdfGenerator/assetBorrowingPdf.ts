@@ -1,5 +1,12 @@
 import { jsPDF } from 'jspdf';
-import { autoTable, fetchActiveCompanyForAssetReturnForm } from './shared';
+import {
+  addCompanyLogoToPDF,
+  autoTable,
+  getCompanyAccentColor,
+  getBlackCodersFooterGradient,
+  isBlackCoders,
+  resolveCompanyBranding,
+} from './shared';
 
 export interface AssetBorrowingData {
   formNumber: string;
@@ -19,6 +26,8 @@ export interface AssetBorrowingData {
   itApprovedBy: string;
   /** Upon return section */
   postUsageCondition: string;
+  borrowerCompanyName?: string | null;
+  borrowerCompanyLogoUrl?: string | null;
 }
 
 export const generateAssetBorrowingPDF = async (
@@ -37,6 +46,15 @@ export const generateAssetBorrowingPDF = async (
     creator: 'Asset Management System',
   });
 
+  const companyBranding = await resolveCompanyBranding({
+    name: borrowData.borrowerCompanyName,
+    logo_url: borrowData.borrowerCompanyLogoUrl,
+  });
+  const accentColor = getCompanyAccentColor(companyBranding?.name);
+  const isBlackCodersCompany = isBlackCoders(companyBranding?.name);
+  const headerFillColor: [number, number, number] = isBlackCodersCompany ? [0, 0, 0] : [accentColor.r, accentColor.g, accentColor.b];
+  const headerTextColor: [number, number, number] = [255, 255, 255];
+
   const pageMargin = 15;
   const tableWidth = 215.9 - pageMargin * 2;
   const tableLineWidth = 0.35;
@@ -49,56 +67,12 @@ export const generateAssetBorrowingPDF = async (
   doc.setFillColor(255, 255, 255);
   doc.rect(pageMargin, headerBoxY, tableWidth, headerBoxHeight, 'FD');
 
-  // Logo
-  const activeCompany = await fetchActiveCompanyForAssetReturnForm();
-  if (activeCompany?.logo_url) {
-    try {
-      const logoUrl =
-        activeCompany.logo_url.startsWith('/') && typeof window !== 'undefined'
-          ? `${window.location.origin}${activeCompany.logo_url}`
-          : activeCompany.logo_url;
-      const response = await fetch(logoUrl);
-      if (response.ok) {
-        const blob = await response.blob();
-        const format =
-          blob.type?.includes('jpeg') || blob.type?.includes('jpg')
-            ? 'JPEG'
-            : 'PNG';
-        const dataUrl = await new Promise<string>((resolve, reject) => {
-          const reader = new FileReader();
-          reader.onload = () => resolve(reader.result as string);
-          reader.onerror = reject;
-          reader.readAsDataURL(blob);
-        });
-        await new Promise<void>(resolve => {
-          const img = new Image();
-          img.onload = () => {
-            const pixelsToMm = 0.264583;
-            let w = img.width * pixelsToMm;
-            let h = img.height * pixelsToMm;
-            const maxW = 72;
-            const maxH = 38;
-            if (w > maxW) {
-              const s = maxW / w;
-              w = maxW;
-              h *= s;
-            }
-            if (h > maxH) {
-              const s = maxH / h;
-              h = maxH;
-              w *= s;
-            }
-            doc.addImage(dataUrl, format, pageMargin, headerBoxY + 2, w, h);
-            resolve();
-          };
-          img.onerror = () => resolve();
-          img.src = dataUrl;
-        });
-      }
-    } catch {
-      // no-op: keep PDF generation even if logo fails
-    }
-  }
+  await addCompanyLogoToPDF(
+    doc,
+    companyBranding?.logo_url,
+    pageMargin,
+    headerBoxY + 2
+  );
 
   // FOR INTERNAL USE ONLY + form number (right)
   const internalBoxW = 55;
@@ -119,9 +93,8 @@ export const generateAssetBorrowingPDF = async (
     { align: 'center' }
   );
   doc.setDrawColor(255, 0, 0);
-  doc.setLineWidth(tableLineWidth);
   doc.setFillColor(255, 255, 255);
-  doc.rect(internalBoxX, headerBoxY + 12, internalBoxW, 10, 'FD');
+  doc.rect(145, 20, 55, 8, 'FD');
   doc.setTextColor(255, 0, 0);
   doc.setFontSize(10);
   doc.setFont('helvetica', 'bold');
@@ -253,6 +226,10 @@ export const generateAssetBorrowingPDF = async (
       if (data.row.index === 1) {
         data.cell.styles.minCellHeight = 22;
       }
+      if (data.row.index === 0) {
+        data.cell.styles.fillColor = headerFillColor;
+        data.cell.styles.textColor = headerTextColor;
+      }
       // Upon Return row
       if (data.row.index === 3) {
         data.cell.styles.fontStyle = 'bold';
@@ -310,6 +287,16 @@ export const generateAssetBorrowingPDF = async (
   doc.setFont('helvetica', 'normal');
   doc.setTextColor(0, 0, 0);
   doc.text(docNoText, 215.9 - 15, docNoY, { align: 'right' });
+
+  // Footer bar with company accent color
+  const footerY = 320;
+  doc.setDrawColor(accentColor.r, accentColor.g, accentColor.b);
+  doc.setFillColor(accentColor.r, accentColor.g, accentColor.b);
+  doc.setLineWidth(0.1);
+  doc.rect(10, footerY, 195, 1, 'FD');
+  doc.setDrawColor(0, 0, 0);
+  doc.setLineWidth(6);
+  doc.line(10, 324, 205, 324);
 
   return new Blob([doc.output('blob')], { type: 'application/pdf' });
 };

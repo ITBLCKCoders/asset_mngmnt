@@ -1,8 +1,11 @@
 import { jsPDF } from 'jspdf';
 import {
+  addCompanyLogoToPDF,
   autoTable,
-  fetchActiveCompanyForAssetReturnForm,
-  pdfLogger as logger,
+  getCompanyAccentColor,
+  getBlackCodersFooterGradient,
+  isBlackCoders,
+  resolveCompanyBranding,
 } from './shared';
 
 export interface AssetChecklistData {
@@ -21,7 +24,10 @@ export interface AssetChecklistData {
   remarks?: string | null;
   created_at: string;
   created_by?: string | null;
+  creator_name?: string | null;
+  creator_digital_signature?: string | null;
   asset_label?: string;
+  employee_company_logo_url?: string | null;
 }
 
 export const generateAssetChecklistPDF = async (
@@ -45,7 +51,14 @@ export const generateAssetChecklistPDF = async (
   const tableLineWidth = 0.35;
   const headerBoxHeight = 40;
   const headerBoxY = 8;
-  const activeCompany = await fetchActiveCompanyForAssetReturnForm();
+  const companyBranding = await resolveCompanyBranding({
+    name: checklistData.employee_company,
+    logo_url: checklistData.employee_company_logo_url,
+  });
+  const accentColor = getCompanyAccentColor(companyBranding?.name);
+  const isBlackCodersCompany = isBlackCoders(companyBranding?.name);
+  const headerFillColor: [number, number, number] = isBlackCodersCompany ? [0, 0, 0] : [accentColor.r, accentColor.g, accentColor.b];
+  const headerTextColor: [number, number, number] = [255, 255, 255];
 
   // Header box
   doc.setDrawColor(0, 0, 0);
@@ -53,54 +66,12 @@ export const generateAssetChecklistPDF = async (
   doc.setFillColor(255, 255, 255);
   doc.rect(pageMargin, headerBoxY, tableWidth, headerBoxHeight, 'FD');
 
-  if (activeCompany?.logo_url) {
-    try {
-      const logoUrl =
-        activeCompany.logo_url.startsWith('/') && typeof window !== 'undefined'
-          ? `${window.location.origin}${activeCompany.logo_url}`
-          : activeCompany.logo_url;
-      const response = await fetch(logoUrl);
-      if (response.ok) {
-        const blob = await response.blob();
-        const format =
-          blob.type?.includes('jpeg') || blob.type?.includes('jpg')
-            ? 'JPEG'
-            : 'PNG';
-        const dataUrl = await new Promise<string>((resolve, reject) => {
-          const reader = new FileReader();
-          reader.onload = () => resolve(reader.result as string);
-          reader.onerror = reject;
-          reader.readAsDataURL(blob);
-        });
-        await new Promise<void>(resolve => {
-          const img = new Image();
-          img.onload = () => {
-            const pixelsToMm = 0.264583;
-            let w = img.width * pixelsToMm;
-            let h = img.height * pixelsToMm;
-            const maxW = 72;
-            const maxH = 38;
-            if (w > maxW) {
-              const s = maxW / w;
-              w = maxW;
-              h *= s;
-            }
-            if (h > maxH) {
-              const s = maxH / h;
-              h = maxH;
-              w *= s;
-            }
-            doc.addImage(dataUrl, format, pageMargin, headerBoxY + 2, w, h);
-            resolve();
-          };
-          img.onerror = () => resolve();
-          img.src = dataUrl;
-        });
-      }
-    } catch {
-      logger.debug('Logo not found on checklist form, continuing without it');
-    }
-  }
+  await addCompanyLogoToPDF(
+    doc,
+    companyBranding?.logo_url,
+    pageMargin,
+    headerBoxY + 2
+  );
 
   // FOR INTERNAL USE ONLY box and form number box
   const internalBoxW = 55;
@@ -310,8 +281,8 @@ export const generateAssetChecklistPDF = async (
     },
     didParseCell: data => {
       if (data.row.index === 0) {
-        data.cell.styles.fillColor = [199, 164, 100];
-        data.cell.styles.textColor = [0, 0, 0];
+        data.cell.styles.fillColor = headerFillColor;
+        data.cell.styles.textColor = headerTextColor;
         data.cell.styles.fontStyle = 'bold';
         data.cell.styles.halign = 'center';
       }
@@ -352,8 +323,8 @@ export const generateAssetChecklistPDF = async (
     },
     didParseCell: data => {
       if (data.row.index === 0) {
-        data.cell.styles.fillColor = [199, 164, 100];
-        data.cell.styles.textColor = [0, 0, 0];
+        data.cell.styles.fillColor = headerFillColor;
+        data.cell.styles.textColor = headerTextColor;
         data.cell.styles.fontStyle = 'bold';
         data.cell.styles.halign = 'center';
       }
@@ -367,6 +338,25 @@ export const generateAssetChecklistPDF = async (
   // Table 5: Approvals (Section C)
   const approvalsStartY = (doc as any).lastAutoTable.finalY;
   const approvalHalfWidth = tableWidth / 2;
+  
+  const creatorName = checklistData.creator_name || '';
+  const creatorDigitalSignature = checklistData.creator_digital_signature || '';
+  const creatorInitial = creatorName ? creatorName.charAt(0).toUpperCase() : '';
+  const createdDate = checklistData.created_at
+    ? new Date(checklistData.created_at).toLocaleDateString('en-US', {
+        year: 'numeric',
+        month: '2-digit',
+        day: '2-digit',
+      })
+    : '';
+  const createdTime = checklistData.created_at
+    ? new Date(checklistData.created_at).toLocaleTimeString('en-US', {
+        hour: '2-digit',
+        minute: '2-digit',
+        hour12: true,
+      })
+    : '';
+  
   const approvalRows = [
     [{ content: 'Section C: Approvals', colSpan: 2 }],
     ['', ''],
@@ -389,8 +379,8 @@ export const generateAssetChecklistPDF = async (
     },
     didParseCell: data => {
       if (data.row.index === 0) {
-        data.cell.styles.fillColor = [199, 164, 100];
-        data.cell.styles.textColor = [0, 0, 0];
+        data.cell.styles.fillColor = headerFillColor;
+        data.cell.styles.textColor = headerTextColor;
         data.cell.styles.fontStyle = 'bold';
         data.cell.styles.halign = 'center';
       }
@@ -402,6 +392,81 @@ export const generateAssetChecklistPDF = async (
       doc.setDrawColor(0, 0, 0);
       doc.setLineWidth(tableLineWidth);
     },
+    didDrawCell: data => {
+      const cell = data.cell;
+      const padding = 3;
+      const paddingTop = 1;
+      const xMin = cell.x + padding;
+      const xMax = cell.x + cell.width - padding;
+      const yMin = cell.y + paddingTop;
+      const yMax = cell.y + cell.height - padding;
+      const contentWidth = Math.max(20, xMax - xMin);
+      const contentHeight = Math.max(10, yMax - yMin);
+
+      // Row 1, column 1: IT Staff / IT Inventory Manager (creator signature)
+      if (creatorName && data.row.index === 1 && data.column.index === 1) {
+        const yTop = yMin;
+        const dateTimeReserved = 20;
+        const gap = 2;
+        const maxSigWidth = contentWidth - dateTimeReserved - gap;
+        const sigWidthClamped = Math.min(88, Math.max(30, maxSigWidth));
+        const sigHeight = Math.min(50, Math.max(28, contentHeight - 2));
+        const xLeft = xMin;
+        const dateTimeX = xLeft + sigWidthClamped + gap;
+        const nameY = yTop + sigHeight - 6;
+
+        doc.setFontSize(8);
+        doc.setFont('helvetica', 'normal');
+        doc.setTextColor(0, 0, 0);
+
+        // Display digital signature image at the top, or typed initial as fallback
+        if (creatorDigitalSignature && creatorDigitalSignature.startsWith('data:')) {
+          // Drawn signature (image)
+          const initialsY = yTop + 10;
+          const initialsX = xMin;
+          const initialsWidth = Math.min(40, contentWidth - 6);
+          const initialsHeight = 16;
+          try {
+            doc.addImage(creatorDigitalSignature, 'PNG', initialsX, initialsY, initialsWidth, initialsHeight);
+          } catch (err) {
+            console.error('Failed to add creator digital signature to PDF:', err);
+          }
+        } else if (creatorDigitalSignature) {
+          // Typed initial (text stored in digital_signature field)
+          const initialsY = yTop + 10;
+          const initialsX = xMin;
+          doc.setFontSize(14);
+          doc.setFont('helvetica', 'bold');
+          doc.text(creatorDigitalSignature, initialsX, initialsY);
+        } else if (creatorInitial) {
+          // Fallback to calculated initial from name
+          const initialsY = yTop + 10;
+          const initialsX = xMin;
+          doc.setFontSize(14);
+          doc.setFont('helvetica', 'bold');
+          doc.text(creatorInitial, initialsX, initialsY);
+        }
+
+        // Display creator name at the bottom
+        if (creatorName) {
+          doc.setFontSize(8);
+          doc.setFont('helvetica', 'normal');
+          const nameMaxWidth = Math.max(15, contentWidth - 6);
+          const nameLines = doc.splitTextToSize(creatorName, nameMaxWidth);
+          const adjustedNameY = (creatorDigitalSignature || creatorInitial) ? nameY + 8 : nameY;
+          doc.text(nameLines, xMin, adjustedNameY);
+        }
+
+        // Display date and time on the right
+        if (createdDate && createdTime) {
+          const dateTimeXClamped = Math.min(dateTimeX, xMax - 18);
+          doc.setFontSize(7);
+          doc.setFont('helvetica', 'normal');
+          doc.text(createdDate, dateTimeXClamped, yTop + 4);
+          doc.text(createdTime, dateTimeXClamped, yTop + 9);
+        }
+      }
+    },
   });
 
   // Document No
@@ -411,6 +476,16 @@ export const generateAssetChecklistPDF = async (
   doc.setFont('helvetica', 'normal');
   doc.setTextColor(0, 0, 0);
   doc.text(docNoText, 215.9 - 15, docNoY, { align: 'right' });
+
+  // Footer bar with company accent color
+  const footerY = 320;
+  doc.setDrawColor(accentColor.r, accentColor.g, accentColor.b);
+  doc.setFillColor(accentColor.r, accentColor.g, accentColor.b);
+  doc.setLineWidth(0.1);
+  doc.rect(10, footerY, 195, 1, 'FD');
+  doc.setDrawColor(0, 0, 0);
+  doc.setLineWidth(6);
+  doc.line(10, 324, 205, 324);
 
   return new Blob([doc.output('blob')], { type: 'application/pdf' });
 };

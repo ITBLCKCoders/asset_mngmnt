@@ -369,6 +369,8 @@ export default function AssetBorrowing() {
         itReceivedBy: row.approved_by_name || '—',
         itApprovedBy: row.approved_by_name || '—',
         postUsageCondition: row.return_condition || '',
+        borrowerCompanyName: row.requester_company_name ?? null,
+        borrowerCompanyLogoUrl: row.requester_company_logo_url ?? null,
       });
       downloadPDF(blob, `Borrow_Form_${row.form_number ?? row.borrow_request_id}.pdf`);
       toast.success('Borrow form downloaded');

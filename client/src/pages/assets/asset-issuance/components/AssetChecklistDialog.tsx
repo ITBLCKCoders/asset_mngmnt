@@ -48,7 +48,7 @@ interface AssetChecklistDialogProps {
   selectedUser: string;
   users: User[];
   departments: Department[];
-  currentUserName?: string | null;
+  currentUserPosition?: string | null;
   onSubmit: (checklistData: AssetChecklistItemData, typeOnboarding: boolean, typeOffboarding: boolean, receivedBy: string, remarks: string) => Promise<void>;
 }
 
@@ -103,13 +103,13 @@ export function AssetChecklistDialog({
   selectedUser,
   users,
   departments,
-  currentUserName,
+  currentUserPosition,
   onSubmit,
 }: AssetChecklistDialogProps) {
   const [checklistData, setChecklistData] = useState<AssetChecklistItemData>(initialChecklistData);
   const [typeOnboarding, setTypeOnboarding] = useState(false);
   const [typeOffboarding, setTypeOffboarding] = useState(false);
-  const [receivedBy, setReceivedBy] = useState(currentUserName || '');
+  const [receivedBy, setReceivedBy] = useState(currentUserPosition || '');
   const [remarks, setRemarks] = useState('');
   const [submitting, setSubmitting] = useState(false);
 
@@ -122,10 +122,10 @@ export function AssetChecklistDialog({
       setChecklistData(initialChecklistData);
       setTypeOnboarding(false);
       setTypeOffboarding(false);
-      setReceivedBy(currentUserName || '');
+      setReceivedBy(currentUserPosition || '');
       setRemarks('');
     }
-  }, [isOpen, currentUserName]);
+  }, [isOpen, currentUserPosition]);
 
   const updateChecklistItem = (
     section: keyof AssetChecklistItemData,
@@ -306,7 +306,7 @@ export function AssetChecklistDialog({
             <Input
               value={receivedBy}
               onChange={e => setReceivedBy(e.target.value)}
-              placeholder="Enter name of the person filling this dialog"
+              placeholder="Enter position (e.g., IT Staff, IT Manager)"
               className="w-full"
             />
           </div>

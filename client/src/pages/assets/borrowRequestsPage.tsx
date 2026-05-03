@@ -90,6 +90,8 @@ export interface BorrowRequestRow {
   requester_last_name?: string | null;
   requester_username?: string | null;
   requester_email?: string | null;
+  requester_company_name?: string | null;
+  requester_company_logo_url?: string | null;
   declined_at?: string | null;
   pre_usage_condition?: string | null;
   approved_at?: string | null;
@@ -537,6 +539,8 @@ export default function BorrowRequestsPage() {
       itReceivedBy: row.approved_by_name || '—',
       itApprovedBy: row.approved_by_name || '—',
       postUsageCondition: row.return_condition || '',
+      borrowerCompanyName: row.requester_company_name ?? null,
+      borrowerCompanyLogoUrl: row.requester_company_logo_url ?? null,
     });
     downloadPDF(
       blob,

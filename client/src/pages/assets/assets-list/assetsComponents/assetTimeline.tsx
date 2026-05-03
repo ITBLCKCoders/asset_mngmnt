@@ -194,17 +194,15 @@ export function AssetTimeline({ asset, showFieldChanges = true }: AssetTimelineP
   //   });
   // }
 
-  // Accountability Forms
-  if (asset.accountabilityForms && asset.accountabilityForms.length > 0) {
-    asset.accountabilityForms.forEach(form => {
-      events.push({
-        id: `accountability-${form.id}`,
-        date: new Date(form.created_at),
-        title: 'Asset Accountability Form',
-        description: `Asset is in accountability form ${form.formNumber}`,
-        type: 'accountability',
-        icon: FileText,
-      });
+  // Accountability Form
+  if (asset.accountabilityForm) {
+    events.push({
+      id: `accountability-${asset.accountabilityForm.id}`,
+      date: new Date(asset.accountabilityForm.created_at),
+      title: 'Asset Accountability Form',
+      description: `Asset is in accountability form ${asset.accountabilityForm.formNumber}`,
+      type: 'accountability',
+      icon: FileText,
     });
   }
 
