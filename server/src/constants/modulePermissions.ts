@@ -31,6 +31,7 @@ export const ALL_MODULE_NAMES = [
   'Audit Trail',
   'Forms',
   'Accountability Form',
+  'Checklist Form',
   'Borrow Form',
   'Return Form',
   'Transfer Form',

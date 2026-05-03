@@ -59,6 +59,7 @@ import UserManual from './pages/userManual';
 import FlowDiagrams from './pages/flowDiagrams';
 import AccountabilityFormsPage from './pages/forms/AccountabilityFormsPage';
 import BorrowFormsPage from './pages/forms/BorrowFormsPage';
+import AssetChecklistFormsPage from './pages/forms/AssetChecklistFormsPage';
 import AssetReturnFormsPage from './pages/forms/AssetReturnFormsPage';
 import AssetTransferFormsPage from './pages/forms/AssetTransferFormsPage';
 import ApprovalsPage from './pages/approvals/ApprovalsPage';
@@ -483,6 +484,16 @@ export default function App() {
               <PrivateRoute>
                 <PermissionRoute module="Borrow Form">
                   <BorrowFormsPage />
+                </PermissionRoute>
+              </PrivateRoute>
+            }
+          />
+          <Route
+            path="/forms/checklist"
+            element={
+              <PrivateRoute>
+                <PermissionRoute module="Checklist Form">
+                  <AssetChecklistFormsPage />
                 </PermissionRoute>
               </PrivateRoute>
             }

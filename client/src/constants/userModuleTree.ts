@@ -44,6 +44,7 @@ export const USER_MODULE_TREE: ModuleTreeNode[] = [
     name: 'Forms',
     children: [
       'Accountability Form',
+      'Checklist Form',
       'Borrow Form',
       'Return Form',
       'Transfer Form',
@@ -68,6 +69,9 @@ export const USER_MODULE_TREE: ModuleTreeNode[] = [
 export function moduleChildLabel(parentName: string, child: string): string {
   if (parentName === 'Forms' && child === 'Borrow Form') {
     return 'Borrow forms';
+  }
+  if (parentName === 'Forms' && child === 'Checklist Form') {
+    return 'Checklist forms';
   }
   if (parentName === 'Forms' && child === 'Transfer Form') {
     return 'Transfer forms';

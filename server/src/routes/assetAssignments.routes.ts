@@ -7,6 +7,7 @@ import {
   returnAssetHandler,
   createAssetChecklistHandler,
   getChecklistByAssignmentIdHandler,
+  getAssetChecklistsHandler,
 } from '../controllers/assetAssignments.controller.js';
 import { authenticate } from '../middleware/authenticate.js';
 
@@ -121,6 +122,8 @@ router.put('/:assignmentId/return', returnAssetHandler);
  *       401: { description: Unauthorized }
  */
 router.post('/checklist', createAssetChecklistHandler);
+
+router.get('/checklists', getAssetChecklistsHandler);
 
 /**
  * @swagger

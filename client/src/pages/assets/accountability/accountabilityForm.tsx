@@ -1578,33 +1578,64 @@ export function AccountabilityFormCard({
           
           <TabsContent value="checklist" className="space-y-4">
             {checklistLoading ? (
-              <div className="text-center py-8 text-gray-500">Loading checklist...</div>
+              <div className="rounded-xl border border-slate-200 bg-slate-50 px-4 py-8 text-center text-sm text-slate-500">
+                Loading checklist...
+              </div>
             ) : checklistData ? (
-              <div className="space-y-3">
-                <div className="text-sm">
-                  <span className="font-medium">Form Number:</span>{' '}
-                  {checklistData.form_number || `CHK-${checklistData.assignment_id}`}
+              <div className="space-y-3 rounded-xl border border-red-100 bg-gradient-to-br from-red-50/80 via-white to-slate-50 p-4 shadow-sm">
+                <div className="flex items-start justify-between gap-3 border-b border-red-100 pb-3">
+                  <div>
+                    <p className="text-xs font-medium uppercase tracking-wide text-red-600">
+                      Asset Checklist
+                    </p>
+                    <p className="mt-1 font-mono text-sm font-semibold text-slate-900">
+                      {checklistData.form_number || `CHK-${checklistData.assignment_id}`}
+                    </p>
+                  </div>
+                  <div className="flex flex-wrap justify-end gap-1.5">
+                    {checklistData.type_onboarding && (
+                      <Badge className="bg-emerald-100 text-emerald-800 hover:bg-emerald-100">
+                        Onboarding
+                      </Badge>
+                    )}
+                    {checklistData.type_offboarding && (
+                      <Badge className="bg-blue-100 text-blue-800 hover:bg-blue-100">
+                        Offboarding
+                      </Badge>
+                    )}
+                  </div>
                 </div>
-                <div className="text-sm">
-                  <span className="font-medium">Type:</span>{' '}
-                  {checklistData.type_onboarding && 'Onboarding '}
-                  {checklistData.type_offboarding && 'Offboarding'}
+
+                <div className="grid gap-3 text-sm sm:grid-cols-2">
+                  <div className="rounded-lg border border-slate-200 bg-white/80 p-3">
+                    <p className="text-xs font-medium uppercase tracking-wide text-slate-500">
+                      Date Created
+                    </p>
+                    <p className="mt-1 font-medium text-slate-900">
+                      {new Date(checklistData.created_at).toLocaleDateString()}
+                    </p>
+                  </div>
+                  <div className="rounded-lg border border-slate-200 bg-white/80 p-3">
+                    <p className="text-xs font-medium uppercase tracking-wide text-slate-500">
+                      Employee
+                    </p>
+                    <p className="mt-1 font-medium text-slate-900">
+                      {checklistData.employee_name}
+                    </p>
+                  </div>
                 </div>
-                <div className="text-sm">
-                  <span className="font-medium">Date:</span>{' '}
-                  {new Date(checklistData.created_at).toLocaleDateString()}
-                </div>
-                <div className="text-sm">
-                  <span className="font-medium">Employee:</span>{' '}
-                  {checklistData.employee_name}
-                </div>
-                <div className="text-sm">
-                  <span className="font-medium">Received by:</span>{' '}
-                  {checklistData.received_by || 'N/A'}
+
+                <div className="rounded-lg border border-slate-200 bg-white/80 p-3 text-sm">
+                  <p className="text-xs font-medium uppercase tracking-wide text-slate-500">
+                    Received By
+                  </p>
+                  <p className="mt-1 font-medium text-slate-900">
+                    {checklistData.received_by || 'N/A'}
+                  </p>
                 </div>
               </div>
             ) : (
-              <div className="text-center py-8 text-gray-500">
+              <div className="rounded-xl border border-dashed border-slate-300 bg-slate-50 px-4 py-8 text-center text-sm text-slate-500">
                 No checklist data available
               </div>
             )}

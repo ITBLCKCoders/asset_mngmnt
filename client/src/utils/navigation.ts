@@ -10,6 +10,7 @@ export const getLandingPage = (
   // Forms
   if (hasPermission('Accountability Form', 'view'))
     return '/forms/accountability';
+  if (hasPermission('Checklist Form', 'view')) return '/forms/checklist';
   if (hasPermission('Borrow Form', 'view')) return '/forms/borrow';
   if (hasPermission('Return Form', 'view')) return '/forms/return';
   if (hasPermission('Transfer Form', 'view')) return '/forms/transfer';

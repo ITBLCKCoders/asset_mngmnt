@@ -19,6 +19,7 @@ import {
   loadUserModulePermissions,
 } from '../services/assetAssignment.service.js';
 import * as checklistRepo from '../repositories/assetChecklist.repository.js';
+import * as checklistListRepo from '../repositories/assetChecklistList.repository.js';
 import { getCategoryDepartmentForAssetIds } from '../repositories/assetReturn.repository.js';
 import {
   generateChecklistFormNumber,
@@ -867,6 +868,19 @@ export async function getChecklistByAssignmentIdHandler(
   } catch (error) {
     logger.error('Get checklist by assignment ID failed:', error);
     return res.status(500).json({ error: 'Failed to get checklist' });
+  }
+}
+
+export async function getAssetChecklistsHandler(
+  _req: AuthRequest,
+  res: Response
+) {
+  try {
+    const checklists = await checklistListRepo.getAssetChecklists();
+    return res.status(200).json({ checklists });
+  } catch (error) {
+    logger.error('Get asset checklists failed:', error);
+    return res.status(500).json({ error: 'Failed to get asset checklists' });
   }
 }
 

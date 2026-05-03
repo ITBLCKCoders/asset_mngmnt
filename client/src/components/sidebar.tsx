@@ -241,6 +241,7 @@ export default function Sidebar({ onLogout }: SidebarProps) {
     if (
       location.pathname === '/forms/accountability' ||
       location.pathname === '/forms/borrow' ||
+      location.pathname === '/forms/checklist' ||
       location.pathname === '/forms/return' ||
       location.pathname === '/forms/transfer' ||
       location.pathname === '/approvals'
@@ -476,6 +477,7 @@ export default function Sidebar({ onLogout }: SidebarProps) {
               )}
 
               {(hasPermission('Accountability Form', 'view') ||
+                hasPermission('Checklist Form', 'view') ||
                 hasPermission('Borrow Form', 'view') ||
                 hasPermission('Return Form', 'view') ||
                 hasPermission('Transfer Form', 'view') ||
@@ -485,6 +487,7 @@ export default function Sidebar({ onLogout }: SidebarProps) {
                     active={
                       location.pathname === '/forms/accountability' ||
                       location.pathname === '/forms/borrow' ||
+                      location.pathname === '/forms/checklist' ||
                       location.pathname === '/forms/return' ||
                       location.pathname === '/forms/transfer' ||
                       location.pathname === '/approvals' ||
@@ -497,6 +500,7 @@ export default function Sidebar({ onLogout }: SidebarProps) {
                         'flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium w-full transition-all duration-200 justify-between',
                         location.pathname === '/forms/accountability' ||
                           location.pathname === '/forms/borrow' ||
+                          location.pathname === '/forms/checklist' ||
                           location.pathname === '/forms/return' ||
                           location.pathname === '/forms/transfer' ||
                           location.pathname === '/approvals' ||
@@ -542,6 +546,24 @@ export default function Sidebar({ onLogout }: SidebarProps) {
                           >
                             <FileText className="h-4 w-4 flex-shrink-0" />
                             <span>Accountability</span>
+                          </button>
+                        </SidebarHoverItem>
+                      )}
+                      {hasPermission('Checklist Form', 'view') && (
+                        <SidebarHoverItem
+                          active={location.pathname === '/forms/checklist'}
+                        >
+                          <button
+                            onClick={() => navigate('/forms/checklist')}
+                            className={cn(
+                              'flex items-center gap-3 px-3 py-2 rounded-lg text-sm w-full transition-all duration-200',
+                              location.pathname === '/forms/checklist'
+                                ? 'bg-white/15 text-white font-medium'
+                                : 'text-white/70 hover:bg-white/10 hover:text-white'
+                            )}
+                          >
+                            <FileText className="h-4 w-4 flex-shrink-0" />
+                            <span>Checklist forms</span>
                           </button>
                         </SidebarHoverItem>
                       )}
