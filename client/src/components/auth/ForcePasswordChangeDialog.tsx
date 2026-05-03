@@ -9,7 +9,7 @@ import { Alert, AlertDescription } from '@/components/ui/alert';
 import { api } from '@/lib/api';
 import { setToken, setRefreshToken } from '@/lib/api';
 import { toast } from 'sonner';
-import { Shield, Mail, AlertTriangle, Eye, EyeOff } from 'lucide-react';
+import { Shield, Mail, Loader2, AlertTriangle, Eye, EyeOff } from 'lucide-react';
 import {
   AppDialogFrame,
   AppDialogGradientHeader,
@@ -254,7 +254,7 @@ export default function ForcePasswordChangeDialog({
                     disabled={sendingOtp || isLoading}
                   >
                     {sendingOtp ? (
-                      <span className="inline-block h-4 w-14 animate-pulse rounded bg-red-200" />
+                      <Loader2 className="h-4 w-4 animate-spin" />
                     ) : otpSent ? (
                       'Resend'
                     ) : (
@@ -308,7 +308,10 @@ export default function ForcePasswordChangeDialog({
             className="rounded-xl"
           >
             {isLoading ? (
-              <span className="inline-block h-4 w-24 animate-pulse rounded bg-white/40" />
+              <>
+                <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                Changing...
+              </>
             ) : (
               'Change Password'
             )}

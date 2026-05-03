@@ -441,3 +441,78 @@ export interface BrandListResponseDto {
   limit: number;
   totalPages: number;
 }
+
+// Asset Checklist DTOs
+export interface CreateAssetChecklistDto {
+  assignmentId: string;
+  employeeId: string;
+  employeeName: string;
+  employeeDesignation?: string | null;
+  employeeDepartment?: string | null;
+  employeeCompany?: string | null;
+  typeOnboarding?: boolean;
+  typeOffboarding?: boolean;
+  receivedBy?: string | null;
+  checklistData: AssetChecklistItemData;
+  remarks?: string | null;
+}
+
+export interface AssetChecklistItemData {
+  firmwareHardwareValidation: {
+    updateBios: boolean | null;
+    setBiosPassword: boolean | null;
+    enableSecureBoot: boolean | null;
+    enableTpm: boolean | null;
+  };
+  osPreparationCleanup: {
+    removeBloatware: boolean | null;
+    updateWindows: boolean | null;
+    installDrivers: boolean | null;
+  };
+  endpointProtection: {
+    disableUsbStorage: boolean | null;
+    enableBitLocker: boolean | null;
+    installAntivirusEset: boolean | null;
+    enableRealTimeProtection: boolean | null;
+  };
+  userAccessControl: {
+    createItAdminAndStandardUser: boolean | null;
+    disableGuestAccounts: boolean | null;
+  };
+  applicationControl: {
+    installApprovedSoftwareOnly: boolean | null;
+  };
+  systemIdentityNaming: {
+    applyDeviceNamingStandard: boolean | null;
+    recordSpecsSerialsMacUserBitlockerKeyWarranty: boolean | null;
+  };
+  microsoft365Setup: {
+    installM365: boolean | null;
+    loginUser: boolean | null;
+  };
+  networkConfiguration: {
+    connectToNetwork: boolean | null;
+    registerMacOnFirewall: boolean | null;
+  };
+  patchUpdateManagement: {
+    enableUpdates: boolean | null;
+    applyUpdatePolicy: boolean | null;
+  };
+}
+
+export interface AssetChecklistResponseDto {
+  id: string;
+  assignmentId: string;
+  employeeId: string;
+  employeeName: string;
+  employeeDesignation: string | null;
+  employeeDepartment: string | null;
+  employeeCompany: string | null;
+  typeOnboarding: number;
+  typeOffboarding: number;
+  receivedBy: string | null;
+  checklistData: AssetChecklistItemData | null;
+  remarks: string | null;
+  createdAt: string;
+  createdBy: string | null;
+}

@@ -161,7 +161,7 @@ export function DepartmentsTab({
           >
             {copyingSettings ? (
               <>
-                <div className="mr-2 h-4 w-20 animate-pulse rounded bg-green-100"></div>
+                <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-green-600 mr-2"></div>
                 Copying Settings...
               </>
             ) : (

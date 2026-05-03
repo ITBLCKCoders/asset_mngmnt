@@ -4,6 +4,7 @@ import {
   getAssetBuildersHandler,
   updateAssetBuilderHandler,
   deleteAssetBuilderHandler,
+  getAssetBuilderFormsHandler,
 } from '../controllers/assetBuilders.controller.js';
 import { authenticate } from '../middleware/authenticate.js';
 
@@ -87,5 +88,23 @@ router.put('/:builderId', updateAssetBuilderHandler);
  *       404: { description: Not found }
  */
 router.delete('/:builderId', deleteAssetBuilderHandler);
+
+/**
+ * @swagger
+ * /api/asset-builders/{builderId}/forms:
+ *   get:
+ *     tags: [Asset Builders]
+ *     summary: Get all forms (accountability, return, transfer, borrow) for assets in a builder
+ *     parameters:
+ *       - in: path
+ *         name: builderId
+ *         required: true
+ *         schema: { type: string }
+ *     responses:
+ *       200: { description: List of all forms for assets in the builder }
+ *       401: { description: Unauthorized }
+ *       404: { description: Builder not found }
+ */
+router.get('/:builderId/forms', getAssetBuilderFormsHandler);
 
 export default router;

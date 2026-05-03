@@ -317,8 +317,14 @@ export default function Sidebar({ onLogout }: SidebarProps) {
       .toUpperCase()
       .slice(0, 2) ?? 'GU';
 
-  const matchesPath = (path: string) =>
-    location.pathname === path || location.pathname.startsWith(`${path}/`);
+  const matchesPath = (path: string) => {
+    // For /assets, only match exactly - don't match /assets/assignment, /assets/borrow, etc.
+    if (path === '/assets') {
+      return location.pathname === '/assets';
+    }
+    // For other paths, use the original logic
+    return location.pathname === path || location.pathname.startsWith(`${path}/`);
+  };
   const reportSection = new URLSearchParams(location.search).get('section');
 
   const handleLogout = async () => {

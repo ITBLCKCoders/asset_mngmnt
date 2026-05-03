@@ -13,7 +13,7 @@ import {
   CommandGroup,
   CommandItem,
 } from '@/components/ui/command';
-import { ChevronDown, Check } from 'lucide-react';
+import { ChevronDown, Check, Loader2 } from 'lucide-react';
 import { Label } from '@/components/ui/label';
 
 const CITY_ZIP_FALLBACK: Record<string, string> = {
@@ -178,7 +178,7 @@ export function BarangaySelect({
             disabled={!cityCode || loading}
           >
             {loading ? (
-              <span className="inline-block h-4 w-28 animate-pulse rounded bg-gray-200" />
+              <Loader2 className="h-4 w-4 animate-spin" />
             ) : (
               selected?.name || 'Select barangay'
             )}

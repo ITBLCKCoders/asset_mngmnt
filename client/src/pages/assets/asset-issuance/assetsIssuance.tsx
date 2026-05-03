@@ -35,6 +35,8 @@ import {
   type AssetAssignment,
 } from './components/AssignedAssetsTable';
 import { ConfirmationModal } from './components/ConfirmationModal';
+import { AssetChecklistDialog } from './components/AssetChecklistDialog';
+import { hasComputerTypeAssets } from '@/utils/assetTypeDetection';
 
 const logger = createLogger('AssetsIssuance');
 
@@ -77,6 +79,7 @@ interface User {
   last_name: string;
   department_id: string;
   company: any;
+  position?: string | null;
 }
 
 export default function AssetsAssignment() {
@@ -102,6 +105,8 @@ export default function AssetsAssignment() {
   const [departmentSearchTerm, setDepartmentSearchTerm] = useState('');
   const [userSearchTerm, setUserSearchTerm] = useState('');
   const [confirmModalOpen, setConfirmModalOpen] = useState(false);
+  const [checklistDialogOpen, setChecklistDialogOpen] = useState(false);
+  const [pendingAssignmentData, setPendingAssignmentData] = useState<any>(null);
   const [assetBuilders, setAssetBuilders] = useState<any[]>([]);
   const [buildersLoading, setBuildersLoading] = useState(false);
   const [groupedAssetIds, setGroupedAssetIds] = useState<Set<string>>(
@@ -321,6 +326,48 @@ export default function AssetsAssignment() {
     }
   };
 
+  const handleAssignClick = () => {
+    if (selectedAssets.length === 0) {
+      toast.error('Please select at least one asset');
+      return;
+    }
+
+    if (!selectedUser) {
+      toast.error('Please select a user to assign the assets to');
+      return;
+    }
+
+    // Check if any selected assets are computer-type
+    const hasComputerAssets = hasComputerTypeAssets(assets, selectedAssets);
+
+    if (hasComputerAssets) {
+      // Open checklist dialog for computer-type assets
+      setChecklistDialogOpen(true);
+    } else {
+      // Proceed directly to confirmation modal for non-computer assets
+      setConfirmModalOpen(true);
+    }
+  };
+
+  const handleChecklistSubmit = async (
+    checklistData: any,
+    typeOnboarding: boolean,
+    typeOffboarding: boolean,
+    receivedBy: string,
+    remarks: string
+  ) => {
+    // Save checklist data (will be saved after assignment is created)
+    setPendingAssignmentData({
+      checklistData,
+      typeOnboarding,
+      typeOffboarding,
+      receivedBy,
+      remarks,
+    });
+    setChecklistDialogOpen(false);
+    setConfirmModalOpen(true);
+  };
+
   const handleAssign = async (signAsIssuer: boolean, signITCopy: boolean) => {
     if (selectedAssets.length === 0) {
       toast.error('Please select at least one asset');
@@ -353,7 +400,7 @@ export default function AssetsAssignment() {
         itCopySignature: signITCopy ? currentUser?.digitalSignature || null : null,
       };
 
-      await api.post('/asset-assignments', assignmentData);
+      const assignmentResponse = await api.post('/asset-assignments', assignmentData);
 
       // Update builders if any are selected - DO NOT REMOVE ASSETS FROM BUILDERS
       if (selectedBuilders.length > 0) {
@@ -371,6 +418,38 @@ export default function AssetsAssignment() {
             console.error('Failed to update builder:', error);
           }
         }
+      }
+
+      // Save checklist data if it exists (for computer-type assets)
+      if (pendingAssignmentData && assignmentResponse.assignments && assignmentResponse.assignments.length > 0) {
+        const assignmentId = assignmentResponse.assignments[0]?.assignmentID;
+        if (assignmentId) {
+          try {
+            const assigneeUser = users.find(u => u.userID === selectedUser);
+            const assigneeName = assigneeUser
+              ? `${assigneeUser.first_name} ${assigneeUser.last_name}`
+              : '';
+            const department = departments.find(d => d.departmentID === selectedDepartment);
+
+            await api.post('/asset-assignments/checklist', {
+              assignmentId,
+              employeeId: selectedUser,
+              employeeName: assigneeName,
+              employeeDesignation: assigneeUser?.position || null,
+              employeeDepartment: department?.name || null,
+              employeeCompany: assigneeUser?.company?.name || null,
+              typeOnboarding: pendingAssignmentData.typeOnboarding,
+              typeOffboarding: pendingAssignmentData.typeOffboarding,
+              receivedBy: pendingAssignmentData.receivedBy,
+              checklistData: pendingAssignmentData.checklistData,
+              remarks: pendingAssignmentData.remarks,
+            });
+          } catch (error) {
+            console.error('Failed to save checklist:', error);
+            toast.error('Failed to save asset checklist');
+          }
+        }
+        setPendingAssignmentData(null);
       }
 
       // The server automatically creates one accountability form for all assets
@@ -949,7 +1028,7 @@ export default function AssetsAssignment() {
               onLocationChange={setSelectedLocation}
               onRoomChange={setSelectedRoom}
               onUserChange={setSelectedUser}
-              onAssign={() => setConfirmModalOpen(true)}
+              onAssign={handleAssignClick}
               assigning={assigning}
               selectedAssets={selectedAssets}
               departmentSearchTerm={departmentSearchTerm}
@@ -979,6 +1058,19 @@ export default function AssetsAssignment() {
           selectedUser={selectedUser}
           assigning={assigning}
           onConfirm={handleAssign}
+        />
+
+        {/* Asset Checklist Dialog */}
+        <AssetChecklistDialog
+          isOpen={checklistDialogOpen}
+          onOpenChange={setChecklistDialogOpen}
+          selectedAssets={selectedAssets}
+          assets={assets}
+          selectedUser={selectedUser}
+          users={users}
+          departments={departments}
+          currentUserPosition={currentUser?.position}
+          onSubmit={handleChecklistSubmit}
         />
 
       </main>

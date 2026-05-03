@@ -368,7 +368,7 @@ export function AssetsTab({ isActive }: { isActive?: boolean }) {
             >
               {copyingSettings ? (
                 <>
-                  <div className="mr-2 h-4 w-20 animate-pulse rounded bg-blue-100"></div>
+                  <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-blue-600 mr-2"></div>
                   Copying Settings...
                 </>
               ) : (

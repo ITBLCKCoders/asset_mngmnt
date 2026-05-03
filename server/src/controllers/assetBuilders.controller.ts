@@ -557,6 +557,153 @@ export async function updateAssetBuilderHandler(
   }
 }
 
+export async function getAssetBuilderFormsHandler(
+  req: AuthRequest,
+  res: Response
+) {
+  try {
+    const { builderId } = req.params;
+    const userId = req.user!.userID;
+
+    if (!builderId) {
+      return res.status(400).json({ error: 'Builder ID is required' });
+    }
+
+    // Check if builder exists and belongs to user's company
+    const [builderRows] = (await pool.execute(
+      `SELECT ab.*, u.company_id
+       FROM asset_builders ab
+       JOIN users u ON ab.created_by = u.userID
+       WHERE ab.builderID = ? AND ab.deleted_at IS NULL`,
+      [builderId]
+    )) as any[];
+
+    if (builderRows.length === 0) {
+      return res.status(404).json({ error: 'Asset builder not found' });
+    }
+
+    const builder = builderRows[0];
+
+    // Check if user belongs to the same company
+    const [userRows] = (await pool.execute(
+      'SELECT company_id FROM users WHERE userID = ?',
+      [userId]
+    )) as any[];
+
+    if (userRows[0]?.company_id !== builder.company_id) {
+      return res.status(403).json({ error: 'Access denied' });
+    }
+
+    // Get all asset codes in this builder
+    const [builderItems] = (await pool.execute(
+      `SELECT abi.asset_id, a.asset_code
+       FROM asset_builder_items abi
+       JOIN assets a ON abi.asset_id = a.assetID
+       WHERE abi.builder_id = ?`,
+      [builderId]
+    )) as any[];
+
+    if (builderItems.length === 0) {
+      return res.json({
+        accountabilityForms: [],
+        returnForms: [],
+        transferForms: [],
+        borrowForms: [],
+      });
+    }
+
+    // Import repository functions
+    const accountabilityFormsRepo = await import('../repositories/accountabilityForm.repository.js');
+    const returnFormsRepo = await import('../repositories/assetReturn.repository.js');
+    const transferFormsRepo = await import('../repositories/assetTransferForm.repository.js');
+    const borrowFormsRepo = await import('../repositories/assetBorrowRequests.repository.js');
+
+    // Aggregate forms from all assets in the builder
+    const accountabilityFormsMap = new Map();
+    const returnFormsMap = new Map();
+    const transferFormsMap = new Map();
+    const borrowFormsMap = new Map();
+
+    for (const item of builderItems) {
+      const assetCode = item.asset_code;
+
+      // Fetch accountability forms
+      const accountabilityRows = await accountabilityFormsRepo.findFormsByAssetId(assetCode);
+      for (const row of accountabilityRows) {
+        if (!accountabilityFormsMap.has(row.formID)) {
+          accountabilityFormsMap.set(row.formID, {
+            id: row.formID,
+            formNumber: row.form_number,
+            status: row.status,
+            created_at: row.created_at,
+            signed_at: row.signed_at,
+            assets_data: row.assets_data,
+            user: {
+              id: row.user_id,
+              first_name: row.first_name || '',
+              last_name: row.last_name || '',
+              email: row.email || '',
+            },
+            department: row.user_department_name ? {
+              id: row.user_department_id,
+              name: row.user_department_name,
+            } : null,
+            location: row.location_name ? {
+              id: row.location_id,
+              name: row.location_name,
+            } : null,
+            received_copy_wet_pdf_url: row.received_copy_wet_pdf_url || null,
+            asset_code: assetCode,
+          });
+        }
+      }
+
+      // Fetch return forms
+      const returnForms = await returnFormsRepo.getReturnFormsByAssetId(assetCode);
+      for (const form of returnForms) {
+        if (!returnFormsMap.has(form.id)) {
+          returnFormsMap.set(form.id, {
+            ...form,
+            asset_code: assetCode,
+          });
+        }
+      }
+
+      // Fetch transfer forms
+      const transferForms = await transferFormsRepo.getTransferFormsByAssetId(assetCode);
+      for (const form of transferForms) {
+        if (!transferFormsMap.has(form.id)) {
+          transferFormsMap.set(form.id, {
+            ...form,
+            asset_code: assetCode,
+          });
+        }
+      }
+
+      // Fetch borrow forms
+      const borrowForms = await borrowFormsRepo.getBorrowFormsByAssetId(pool, assetCode);
+      for (const form of borrowForms) {
+        if (!borrowFormsMap.has(form.id)) {
+          borrowFormsMap.set(form.id, {
+            ...form,
+            asset_code: assetCode,
+          });
+        }
+      }
+    }
+
+    return res.json({
+      accountabilityForms: Array.from(accountabilityFormsMap.values()),
+      returnForms: Array.from(returnFormsMap.values()),
+      transferForms: Array.from(transferFormsMap.values()),
+      borrowForms: Array.from(borrowFormsMap.values()),
+    });
+  } catch (error: any) {
+    logger.error('Get asset builder forms failed:', error);
+    return res.status(500).json({ error: 'Failed to fetch asset builder forms' });
+  }
+}
+
 export async function deleteAssetBuilderHandler(
   req: AuthRequest,
   res: Response

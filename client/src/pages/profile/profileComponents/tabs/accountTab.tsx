@@ -8,7 +8,7 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Button } from '@/components/ui/button';
 import { toast } from 'sonner';
-import { Lock, Shield, Bell, Mail, Eye, EyeOff, ShieldCheck, Ban, Smartphone, Copy, RefreshCw, CheckCircle2, Trash2, AlertTriangle } from 'lucide-react';
+import { Lock, Shield, Bell, Mail, Loader2, Eye, EyeOff, ShieldCheck, Ban, Smartphone, Copy, RefreshCw, CheckCircle2, Trash2, AlertTriangle } from 'lucide-react';
 import AnimatedSwitch from '../animatedSwitch';
 import zxcvbn from 'zxcvbn';
 import { api } from '@/lib/api';
@@ -558,7 +558,10 @@ export default function AccountTab() {
               className="w-full bg-red-600 hover:bg-red-700 text-white disabled:opacity-60"
             >
               {loading ? (
-                <span className="inline-block h-4 w-24 animate-pulse rounded bg-white/40" />
+                <>
+                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                  Updating...
+                </>
               ) : (
                 'Update Password'
               )}
@@ -575,7 +578,7 @@ export default function AccountTab() {
           <div className="space-y-8">
             {loadingMFA ? (
               <div className="flex items-center justify-center py-4">
-                <div className="h-5 w-32 animate-pulse rounded bg-red-100" />
+                <Loader2 className="h-5 w-5 animate-spin text-red-600" />
               </div>
             ) : userMFAEnabled ? (
               <div className="space-y-4">

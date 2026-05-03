@@ -55,7 +55,7 @@ export function PDFViewer({ pdfUrl, className }: PDFViewerProps) {
 
     try {
       const page = await pdfDoc.getPage(pageNum);
-      const viewport = page.getViewport({ scale });
+      const viewport = page.getViewport({ scale, rotation: page.rotate });
 
       // Clear the canvas before rendering
       const ctx = canvas.getContext('2d');

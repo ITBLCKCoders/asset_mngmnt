@@ -554,7 +554,7 @@ export default function ReturnRequestsPage() {
               onClick={fetchPending}
               className="flex items-center gap-2"
             >
-              <RefreshCw className="h-4 w-4" />
+              <RefreshCw className={`h-4 w-4 ${loading ? 'animate-spin' : ''}`} />
               Refresh
             </Button>
           </div>
@@ -1108,7 +1108,7 @@ export default function ReturnRequestsPage() {
                   >
                     {submitting ? (
                       <div className="flex items-center gap-2">
-                        <div className="h-4 w-16 animate-pulse rounded bg-white/40" />
+                        <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white" />
                         Processing...
                       </div>
                     ) : (

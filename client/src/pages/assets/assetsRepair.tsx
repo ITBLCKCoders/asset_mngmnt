@@ -441,7 +441,7 @@ export default function AssetsRepair() {
                 <div className="space-y-3 max-h-96 overflow-y-auto scrollbar-thin scrollbar-thumb-gray-300 scrollbar-track-gray-100">
                   {loading ? (
                     <div className="flex items-center justify-center py-12">
-                      <div className="h-8 w-32 animate-pulse rounded bg-orange-100"></div>
+                      <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-orange-600"></div>
                       <span className="ml-3 text-gray-600">
                         Loading assets...
                       </span>
@@ -815,7 +815,7 @@ export default function AssetsRepair() {
                 >
                   {requesting ? (
                     <div className="flex items-center gap-2">
-                      <div className="h-4 w-16 animate-pulse rounded bg-white/40"></div>
+                      <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white"></div>
                       Submitting Request...
                     </div>
                   ) : (

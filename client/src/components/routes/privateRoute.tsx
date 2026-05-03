@@ -2,7 +2,7 @@
 import { Navigate, useLocation } from 'react-router-dom';
 import { ReactNode } from 'react';
 import ProtectedLayout from './protectedLayout';
-import { useAuth, AuthLoadingSkeleton } from '@/context/AuthContext';
+import { useAuth, AuthLoadingSpinner } from '@/context/AuthContext';
 
 interface PrivateRouteProps {
   children: ReactNode;
@@ -13,7 +13,7 @@ export default function PrivateRoute({ children }: PrivateRouteProps) {
   const location = useLocation();
 
   if (isLoading) {
-    return <AuthLoadingSkeleton />;
+    return <AuthLoadingSpinner />;
   }
 
   if (!isAuthenticated) {

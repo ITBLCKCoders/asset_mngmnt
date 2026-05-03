@@ -5,7 +5,7 @@ import { useNavigate } from 'react-router-dom';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
-import { ArrowLeft, Eye, EyeOff } from 'lucide-react';
+import { Loader2, ArrowLeft, Eye, EyeOff } from 'lucide-react';
 import logo from '@/assets/Blackcoders-Black.png';
 import { api } from '@/lib/api';
 import { toast } from 'sonner';
@@ -221,7 +221,10 @@ export default function ResetPasswordPage() {
                   className="w-full max-w-xs bg-red-600 hover:bg-red-700 text-white font-medium text-sm py-2"
                 >
                   {loading ? (
-                    <span className="inline-block h-4 w-24 animate-pulse rounded bg-white/40" />
+                    <>
+                      <Loader2 className="w-4 h-4 animate-spin mr-2" />
+                      Resetting...
+                    </>
                   ) : (
                     'Reset Password'
                   )}

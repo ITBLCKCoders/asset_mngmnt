@@ -5,6 +5,7 @@ import {
   getFilteredAssetAssignmentsHandler,
   getMyAssignmentsHandler,
   returnAssetHandler,
+  createAssetChecklistHandler,
 } from '../controllers/assetAssignments.controller.js';
 import { authenticate } from '../middleware/authenticate.js';
 
@@ -89,5 +90,35 @@ router.post('/', createAssetAssignmentHandler);
  *       404: { description: Assignment not found }
  */
 router.put('/:assignmentId/return', returnAssetHandler);
+
+/**
+ * @swagger
+ * /api/asset-assignments/checklist:
+ *   post:
+ *     tags: [Asset Assignments]
+ *     summary: Create an asset checklist for computer-type assets
+ *     requestBody:
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             properties:
+ *               assignmentId: { type: string }
+ *               employeeId: { type: string }
+ *               employeeName: { type: string }
+ *               employeeDesignation: { type: string }
+ *               employeeDepartment: { type: string }
+ *               employeeCompany: { type: string }
+ *               typeOnboarding: { type: boolean }
+ *               typeOffboarding: { type: boolean }
+ *               receivedBy: { type: string }
+ *               checklistData: { type: object }
+ *               remarks: { type: string }
+ *     responses:
+ *       201: { description: Checklist created }
+ *       400: { description: Validation error }
+ *       401: { description: Unauthorized }
+ */
+router.post('/checklist', createAssetChecklistHandler);
 
 export default router;

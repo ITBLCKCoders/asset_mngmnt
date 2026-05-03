@@ -5,7 +5,6 @@ import { useUserPermissions } from '@/hooks/useUserPermissions';
 import { useCurrentUser } from '@/hooks/useCurrentUser';
 import { getToken } from '@/lib/api';
 import { getLandingPage } from '@/utils/navigation';
-import { Skeleton } from '@/components/ui/skeleton';
 
 export default function LandingRedirect() {
   const { hasPermission, loading: permsLoading } = useUserPermissions();
@@ -23,19 +22,8 @@ export default function LandingRedirect() {
 
   if (permsLoading || userLoading) {
     return (
-      <div className="flex h-screen items-center justify-center bg-white px-4">
-        <div className="w-full max-w-5xl space-y-6">
-          <div className="flex items-center justify-between">
-            <Skeleton className="h-10 w-48" />
-            <Skeleton className="h-10 w-32" />
-          </div>
-          <div className="grid gap-4 md:grid-cols-4">
-            {Array.from({ length: 4 }).map((_, index) => (
-              <Skeleton key={index} className="h-28 rounded-xl" />
-            ))}
-          </div>
-          <Skeleton className="h-80 rounded-xl" />
-        </div>
+      <div className="flex items-center justify-center h-screen bg-white">
+        <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-red-600"></div>
       </div>
     );
   }

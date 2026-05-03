@@ -144,9 +144,8 @@ export default function VerifyResetOTP() {
     }
 
     setSwitchingChannel(true);
-    const loadingToast = toast(
-      `Switching to ${nextChannel === 'sms' ? 'SMS' : 'Email'} OTP...`,
-      { duration: Infinity }
+    const loadingToast = toast.loading(
+      `Switching to ${nextChannel === 'sms' ? 'SMS' : 'Email'} OTP...`
     );
 
     try {
@@ -201,7 +200,7 @@ export default function VerifyResetOTP() {
 
   const verify = async (code: string) => {
     setStatus('loading');
-    const loadingToast = toast('Verifying OTP...', { duration: Infinity });
+    const loadingToast = toast.loading('Verifying OTP...');
     try {
       const { success, userId } = await api.post('/auth/verify-reset-otp', {
         channel,
@@ -248,7 +247,7 @@ export default function VerifyResetOTP() {
     );
     setOtpExpiry(600);
 
-    const loadingToast = toast('Sending new OTP...', { duration: Infinity });
+    const loadingToast = toast.loading('Sending new OTP...');
     try {
       const { effectiveChannel } = await api.post<{
         message: string;

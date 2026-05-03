@@ -8,7 +8,7 @@ import { Alert, AlertDescription } from '@/components/ui/alert';
 import { api } from '@/lib/api';
 import { setToken, setRefreshToken } from '@/lib/api';
 import { toast } from 'sonner';
-import { Shield, KeyRound, ArrowLeft } from 'lucide-react';
+import { Shield, KeyRound, ArrowLeft, Loader2 } from 'lucide-react';
 import MFARecoveryDialog from './MFARecoveryDialog';
 import {
   AppDialogFrame,
@@ -214,7 +214,10 @@ export default function MFAVerificationModal({
                   className="w-full bg-red-600 hover:bg-red-700 text-white"
                 >
                   {isLoading ? (
-                    <span className="inline-block h-4 w-24 animate-pulse rounded bg-white/40" />
+                    <>
+                      <Loader2 className="w-4 h-4 animate-spin mr-2" />
+                      Verifying...
+                    </>
                   ) : (
                     'Verify'
                   )}

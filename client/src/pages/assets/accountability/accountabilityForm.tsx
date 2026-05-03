@@ -1352,6 +1352,14 @@ export function AccountabilityFormCard({
                 Temporary
               </Badge>
             )}
+            {form.status === 'Pending' && (
+              <Badge
+                variant="outline"
+                className="border-orange-300 bg-orange-50 text-orange-900 font-medium"
+              >
+                Pending Receiver Signature
+              </Badge>
+            )}
           </div>
         </div>
       </CardHeader>
@@ -2476,7 +2484,7 @@ export function AccountabilityFormDetail({
         mainContent
       )}
       {showActionBar && !embedded ? (
-        <AppDialogChromeFooter className="mt-auto shrink-0 gap-2 rounded-none border-x-0 border-b-0 border-t-slate-200 bg-slate-50 px-4 py-2 sm:flex-row sm:justify-end sm:rounded-b-lg sm:px-4 sm:py-2">
+        <AppDialogChromeFooter className="mt-auto shrink-0 gap-2 rounded-none border-x-0 border-b-0 border-t-slate-200 bg-slate-50 px-4 py-4 sm:flex-row sm:items-center sm:justify-end sm:rounded-b-lg sm:px-4 sm:py-4">
           {actionBar}
         </AppDialogChromeFooter>
       ) : showActionBar && embedded ? (

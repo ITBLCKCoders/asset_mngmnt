@@ -804,7 +804,7 @@ export default function TransferRequestsPage() {
               >
                 {transferring ? (
                   <span className="flex items-center gap-2">
-                    <span className="inline-block h-4 w-16 animate-pulse rounded bg-white/40" />
+                    <span className="animate-spin rounded-full h-4 w-4 border-2 border-white border-t-transparent" />
                     Transferring...
                   </span>
                 ) : (

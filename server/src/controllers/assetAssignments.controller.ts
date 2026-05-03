@@ -18,6 +18,7 @@ import {
   buildAccountabilityFormMap,
   loadUserModulePermissions,
 } from '../services/assetAssignment.service.js';
+import * as checklistRepo from '../repositories/assetChecklist.repository.js';
 
 // ---------------------------------------------------------------------------
 // Internal helpers — controller-local. Pure HTTP / logging concerns only.
@@ -727,6 +728,85 @@ export async function getFilteredAssetAssignmentsHandler(
     return res
       .status(500)
       .json({ error: 'Failed to fetch filtered asset assignments' });
+  }
+}
+
+// ---------------------------------------------------------------------------
+// POST /asset-assignments/checklist
+// ---------------------------------------------------------------------------
+
+export async function createAssetChecklistHandler(
+  req: AuthRequest,
+  res: Response
+) {
+  try {
+    const {
+      assignmentId,
+      employeeId,
+      employeeName,
+      employeeDesignation,
+      employeeDepartment,
+      employeeCompany,
+      typeOnboarding,
+      typeOffboarding,
+      receivedBy,
+      checklistData,
+      remarks,
+    } = req.body;
+    const createdBy = req.user!.userID;
+
+    if (!assignmentId || !employeeId || !employeeName || !checklistData) {
+      return res.status(400).json({
+        error: 'assignmentId, employeeId, employeeName, and checklistData are required',
+      });
+    }
+
+    // Validate assignment exists
+    const assignment = await repo.getAssignmentById(assignmentId);
+    if (!assignment) {
+      return res.status(404).json({ error: 'Assignment not found' });
+    }
+
+    const checklistId = randomUUID();
+    await checklistRepo.createAssetChecklist({
+      id: checklistId,
+      assignmentId,
+      employeeId,
+      employeeName,
+      employeeDesignation: employeeDesignation || null,
+      employeeDepartment: employeeDepartment || null,
+      employeeCompany: employeeCompany || null,
+      typeOnboarding: typeOnboarding || false,
+      typeOffboarding: typeOffboarding || false,
+      receivedBy: receivedBy || null,
+      checklistData,
+      remarks: remarks || null,
+      createdBy,
+    });
+
+    await createAuditLog({
+      userId: createdBy,
+      action: 'Created Asset Checklist',
+      resourceType: 'asset_checklist',
+      resourceId: checklistId,
+      resourceName: `Checklist for assignment ${assignmentId}`,
+      details: `Asset checklist created for employee ${employeeName}`,
+      newValues: {
+        assignment_id: assignmentId,
+        employee_id: employeeId,
+        typeOnboarding,
+        typeOffboarding,
+      },
+      ...reqAudit(req),
+    });
+
+    return res.status(201).json({
+      message: 'Asset checklist created successfully',
+      checklistId,
+    });
+  } catch (error: any) {
+    logger.error('Create asset checklist failed:', error);
+    return res.status(500).json({ error: 'Failed to create asset checklist' });
   }
 }
 

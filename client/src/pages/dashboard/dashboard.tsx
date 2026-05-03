@@ -29,6 +29,7 @@ import {
   Archive,
   Trash2,
   RotateCcw,
+  Loader2,
   Wrench,
   FileText,
   HandHelping,
@@ -205,7 +206,7 @@ const STAT_CARDS: Array<{
   {
     key: 'underRepair',
     title: 'Under Repair',
-    icon: Wrench,
+    icon: Loader2,
     color: 'text-gray-600',
   },
   {
@@ -787,7 +788,7 @@ export default function Dashboard() {
             )}
             <Button variant="ghost" size="sm" onClick={handleRefresh}>
               {loading ? (
-                <span className="inline-block h-4 w-16 animate-pulse rounded bg-muted" />
+                <Loader2 className="h-4 w-4 animate-spin" />
               ) : (
                 <RefreshCw className="h-4 w-4 mr-1" />
               )}

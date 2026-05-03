@@ -388,7 +388,7 @@ export default function AccountabilityFormsPage() {
             className="flex items-center gap-2"
           >
             <RefreshCw
-              className="h-4 w-4"
+              className={`h-4 w-4 ${displayLoading ? 'animate-spin' : ''}`}
             />
             Refresh
           </Button>
@@ -698,7 +698,7 @@ export default function AccountabilityFormsPage() {
               title="Accountability form"
               description="View and manage accountability forms"
             />
-            <AppDialogBody className="flex min-h-[80vh] flex-1 flex-col overflow-hidden p-0 sm:p-0">
+            <AppDialogBody className="flex min-h-[60vh] flex-1 flex-col overflow-hidden p-0 sm:p-0">
               {selectedForm && (
                 <AccountabilityFormDetail
                   form={selectedForm}

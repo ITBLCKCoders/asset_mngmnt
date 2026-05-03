@@ -3,7 +3,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Button } from '@/components/ui/button';
-import { ArrowLeft } from 'lucide-react';
+import { Loader2, ArrowLeft } from 'lucide-react';
 import logo from '@/assets/Blackcoders-Black.png';
 import { api } from '@/lib/api';
 import { toast } from 'sonner';
@@ -168,7 +168,10 @@ export default function ResetMethodSelectionPage() {
                   className="w-full max-w-xs bg-red-600 hover:bg-red-700 text-white font-medium text-sm py-2"
                 >
                   {loading ? (
-                    <span className="inline-block h-4 w-20 animate-pulse rounded bg-white/40" />
+                    <>
+                      <Loader2 className="w-4 h-4 animate-spin mr-2" />
+                      Sending...
+                    </>
                   ) : (
                     'Send Reset Code'
                   )}

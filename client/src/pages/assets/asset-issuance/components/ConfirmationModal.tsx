@@ -327,7 +327,7 @@ export function ConfirmationModal({
             >
               {assigning ? (
                 <div className="flex items-center gap-2 text-white">
-                  <div className="h-4 w-16 animate-pulse rounded bg-white/40"></div>
+                  <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white"></div>
                   Assigning...
                 </div>
               ) : (

@@ -22,6 +22,12 @@ TRUNCATE TABLE asset_return_forms;
 -- Re-enable foreign key checks
 SET FOREIGN_KEY_CHECKS = 1;
 
+-- Update all asset statuses to Available
+UPDATE assets SET status = 'Available' WHERE status IN ('Assigned', 'In Use');
+
+-- Update all asset builder statuses to Available
+UPDATE asset_builders SET status = 'Available' WHERE status = 'Assigned';
+
 -- Optional: Reset auto-increment counters if needed
 ALTER TABLE accountability_forms AUTO_INCREMENT = 1;
 ALTER TABLE asset_builder_items AUTO_INCREMENT = 1;

@@ -8,7 +8,7 @@ import { Alert, AlertDescription } from '@/components/ui/alert';
 import { api } from '@/lib/api';
 import { setToken, setRefreshToken } from '@/lib/api';
 import { toast } from 'sonner';
-import { Mail, ArrowLeft } from 'lucide-react';
+import { Mail, Loader2, ArrowLeft } from 'lucide-react';
 import {
   AppDialogFrame,
   AppDialogGradientHeader,
@@ -293,7 +293,10 @@ export default function MFARecoveryDialog({
                     className="w-full bg-red-600 hover:bg-red-700 text-white"
                   >
                     {isVerifying ? (
-                      <span className="inline-block h-4 w-24 animate-pulse rounded bg-white/40" />
+                      <>
+                        <Loader2 className="w-4 h-4 animate-spin mr-2" />
+                        Verifying...
+                      </>
                     ) : (
                       'Verify Backup Code'
                     )}
@@ -334,7 +337,10 @@ export default function MFARecoveryDialog({
                         transition={{ duration: 0.1 }}
                       >
                         {isSending ? (
-                          <span className="inline-block h-4 w-20 animate-pulse rounded bg-white/40" />
+                          <>
+                            <Loader2 className="w-4 h-4 animate-spin mr-2" />
+                            Sending...
+                          </>
                         ) : (
                           'Send Recovery Code'
                         )}
@@ -373,7 +379,10 @@ export default function MFARecoveryDialog({
                         className="w-full bg-red-600 hover:bg-red-700 text-white"
                       >
                         {isVerifying ? (
-                          <span className="inline-block h-4 w-24 animate-pulse rounded bg-white/40" />
+                          <>
+                            <Loader2 className="w-4 h-4 animate-spin mr-2" />
+                            Verifying...
+                          </>
                         ) : (
                           'Verify'
                         )}
