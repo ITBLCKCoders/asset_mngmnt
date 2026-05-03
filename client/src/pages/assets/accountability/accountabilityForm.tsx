@@ -1582,6 +1582,10 @@ export function AccountabilityFormCard({
             ) : checklistData ? (
               <div className="space-y-3">
                 <div className="text-sm">
+                  <span className="font-medium">Form Number:</span>{' '}
+                  {checklistData.form_number || `CHK-${checklistData.assignment_id}`}
+                </div>
+                <div className="text-sm">
                   <span className="font-medium">Type:</span>{' '}
                   {checklistData.type_onboarding && 'Onboarding '}
                   {checklistData.type_offboarding && 'Offboarding'}

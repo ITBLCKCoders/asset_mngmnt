@@ -63,18 +63,39 @@ export const generateAssetChecklistPDF = async (
       if (response.ok) {
         const blob = await response.blob();
         const format =
-          blob.type === 'image/png'
-            ? 'PNG'
-            : blob.type === 'image/webp'
-              ? 'WEBP'
-              : 'JPEG';
+          blob.type?.includes('jpeg') || blob.type?.includes('jpg')
+            ? 'JPEG'
+            : 'PNG';
         const dataUrl = await new Promise<string>((resolve, reject) => {
           const reader = new FileReader();
-          reader.onload = () => resolve(String(reader.result));
+          reader.onload = () => resolve(reader.result as string);
           reader.onerror = reject;
           reader.readAsDataURL(blob);
         });
-        doc.addImage(dataUrl, format, pageMargin + 4, headerBoxY + 7, 28, 26);
+        await new Promise<void>(resolve => {
+          const img = new Image();
+          img.onload = () => {
+            const pixelsToMm = 0.264583;
+            let w = img.width * pixelsToMm;
+            let h = img.height * pixelsToMm;
+            const maxW = 72;
+            const maxH = 38;
+            if (w > maxW) {
+              const s = maxW / w;
+              w = maxW;
+              h *= s;
+            }
+            if (h > maxH) {
+              const s = maxH / h;
+              h = maxH;
+              w *= s;
+            }
+            doc.addImage(dataUrl, format, pageMargin, headerBoxY + 2, w, h);
+            resolve();
+          };
+          img.onerror = () => resolve();
+          img.src = dataUrl;
+        });
       }
     } catch {
       logger.debug('Logo not found on checklist form, continuing without it');
