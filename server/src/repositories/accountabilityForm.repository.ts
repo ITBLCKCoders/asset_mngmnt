@@ -279,13 +279,15 @@ export async function insertAccountabilityFormMulti(args: {
   assetsDataJson: string;
   issuerSignature: string | null;
   itCopySignature: string | null;
+  assignmentId?: string | null;
 }): Promise<void> {
   await pool.execute(
     `INSERT INTO accountability_forms
      (form_number, assignment_id, asset_id, user_id, department_id, location_id, created_by, assets_data, issuer_signature, it_copy_signature)
-     VALUES (?, NULL, NULL, ?, ?, ?, ?, ?, ?, ?)`,
+     VALUES (?, ?, NULL, ?, ?, ?, ?, ?, ?, ?)`,
     [
       args.formNumber,
+      args.assignmentId || null,
       args.userId,
       args.departmentId,
       args.locationId,

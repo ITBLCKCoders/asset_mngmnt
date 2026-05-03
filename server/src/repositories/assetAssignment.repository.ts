@@ -119,7 +119,6 @@ export interface AccountabilityFormByAssignmentRow extends RowDataPacket {
   form_number: string;
   assignment_id: string | null;
   status: string;
-  decline_reason: string | null;
   created_at: string | null;
   updated_at: string | null;
 }
@@ -544,7 +543,7 @@ export async function getAccountabilityFormsByAssignmentIds(
   if (assignmentIds.length === 0) return [];
   const placeholders = assignmentIds.map(() => '?').join(', ');
   const [rows] = await pool.execute<AccountabilityFormByAssignmentRow[]>(
-    `SELECT formID, form_number, assignment_id, status, decline_reason, created_at, updated_at
+    `SELECT formID, form_number, assignment_id, status, created_at, updated_at
      FROM accountability_forms
      WHERE deleted_at IS NULL AND assignment_id IN (${placeholders})`,
     assignmentIds
@@ -558,7 +557,7 @@ export async function getAccountabilityFormsByUserIds(
   if (userIds.length === 0) return [];
   const placeholders = userIds.map(() => '?').join(', ');
   const [rows] = await pool.execute<AccountabilityFormByUserRow[]>(
-    `SELECT formID, form_number, user_id, asset_id, assets_data, status, decline_reason, created_at, updated_at
+    `SELECT formID, form_number, user_id, asset_id, assets_data, status, created_at, updated_at
      FROM accountability_forms
      WHERE deleted_at IS NULL AND user_id IN (${placeholders})`,
     userIds

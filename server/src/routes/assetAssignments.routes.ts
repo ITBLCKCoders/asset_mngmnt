@@ -6,6 +6,7 @@ import {
   getMyAssignmentsHandler,
   returnAssetHandler,
   createAssetChecklistHandler,
+  getChecklistByAssignmentIdHandler,
 } from '../controllers/assetAssignments.controller.js';
 import { authenticate } from '../middleware/authenticate.js';
 
@@ -120,5 +121,24 @@ router.put('/:assignmentId/return', returnAssetHandler);
  *       401: { description: Unauthorized }
  */
 router.post('/checklist', createAssetChecklistHandler);
+
+/**
+ * @swagger
+ * /api/asset-assignments/checklist/:assignmentId:
+ *   get:
+ *     tags: [Asset Assignments]
+ *     summary: Get asset checklist by assignment ID
+ *     parameters:
+ *       - in: path
+ *         name: assignmentId
+ *         required: true
+ *         schema:
+ *           type: string
+ *     responses:
+ *       200: { description: Checklist data }
+ *       404: { description: Checklist not found }
+ *       401: { description: Unauthorized }
+ */
+router.get('/checklist/:assignmentId', getChecklistByAssignmentIdHandler);
 
 export default router;

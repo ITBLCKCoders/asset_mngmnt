@@ -152,7 +152,9 @@ export function AssetChecklistDialog({
   };
 
   const isAllChecked = () => {
-    const allItems = Object.values(checklistData).flat();
+    const allItems = Object.values(checklistData).flatMap(section =>
+      Object.values(section as any)
+    );
     return allItems.every(item => item === true || item === false);
   };
 
@@ -249,7 +251,10 @@ export function AssetChecklistDialog({
                 <Checkbox
                   id="type-onboarding"
                   checked={typeOnboarding}
-                  onCheckedChange={checked => setTypeOnboarding(!!checked)}
+                  onCheckedChange={checked => {
+                    setTypeOnboarding(!!checked);
+                    if (checked) setTypeOffboarding(false);
+                  }}
                 />
                 <Label htmlFor="type-onboarding" className="cursor-pointer">
                   Onboarding
@@ -259,7 +264,10 @@ export function AssetChecklistDialog({
                 <Checkbox
                   id="type-offboarding"
                   checked={typeOffboarding}
-                  onCheckedChange={checked => setTypeOffboarding(!!checked)}
+                  onCheckedChange={checked => {
+                    setTypeOffboarding(!!checked);
+                    if (checked) setTypeOnboarding(false);
+                  }}
                 />
                 <Label htmlFor="type-offboarding" className="cursor-pointer">
                   Offboarding

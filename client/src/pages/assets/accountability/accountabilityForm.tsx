@@ -1,9 +1,10 @@
 'use client';
 
-import { useState, useEffect, useRef, useCallback } from 'react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
+import { generateAssetChecklistPDF, downloadPDF } from '@/lib/pdfGenerator';
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
 import { Separator } from '@/components/ui/separator';
@@ -1180,6 +1181,15 @@ export function AccountabilityFormCard({
   const [showDeclineDialog, setShowDeclineDialog] = useState(false);
   const [declineReasonDraft, setDeclineReasonDraft] = useState('');
   const [isDeclining, setIsDeclining] = useState(false);
+  const [activeCardTab, setActiveCardTab] = useState<'accountability' | 'checklist'>('accountability');
+  const [checklistData, setChecklistData] = useState<any>(null);
+  const [checklistLoading, setChecklistLoading] = useState(false);
+  const [showChecklistDialog, setShowChecklistDialog] = useState(false);
+  const [hasChecklist, setHasChecklist] = useState(false);
+  const [checklistPdfUrl, setChecklistPdfUrl] = useState<string>('');
+  const checklistAssetLabel = form.assets
+    .map(asset => `${asset.name || 'Asset'} (${asset.code})`)
+    .join(', ');
 
   // OTP verification state
   const [showOtpDialog, setShowOtpDialog] = useState(false);
@@ -1205,6 +1215,53 @@ export function AccountabilityFormCard({
     };
     fetchOtpExpiry();
   }, []);
+
+  // Fetch checklist data when checklist tab is selected
+  useEffect(() => {
+    const fetchChecklist = async () => {
+      if (form.assignment?.id) {
+        try {
+          setChecklistLoading(true);
+          const response = await api.get(`/asset-assignments/checklist/${form.assignment.id}`);
+          setChecklistData(response);
+          setHasChecklist(!!response);
+        } catch (error) {
+          console.error('Failed to fetch checklist:', error);
+          setChecklistData(null);
+          setHasChecklist(false);
+        } finally {
+          setChecklistLoading(false);
+        }
+      } else {
+        setHasChecklist(false);
+      }
+    };
+    fetchChecklist();
+  }, [form.assignment?.id]);
+
+  // Generate checklist PDF when dialog opens
+  useEffect(() => {
+    const generateChecklistPdf = async () => {
+      if (showChecklistDialog && checklistData) {
+        try {
+          const pdfBlob = await generateAssetChecklistPDF({
+            ...checklistData,
+            asset_label: checklistAssetLabel,
+          });
+          const url = URL.createObjectURL(pdfBlob);
+          setChecklistPdfUrl(url);
+        } catch (error) {
+          console.error('Failed to generate checklist PDF:', error);
+          toast.error('Failed to generate checklist PDF');
+        }
+      } else if (!showChecklistDialog && checklistPdfUrl) {
+        // Cleanup URL when dialog closes
+        URL.revokeObjectURL(checklistPdfUrl);
+        setChecklistPdfUrl('');
+      }
+    };
+    generateChecklistPdf();
+  }, [showChecklistDialog, checklistData, checklistAssetLabel]);
 
   useEffect(() => {
     const generatePdf = async () => {
@@ -1248,6 +1305,22 @@ export function AccountabilityFormCard({
   }, [localForm, currentUser]);
 
   const handleDownload = async () => {
+    if (activeCardTab === 'checklist' && checklistData) {
+      try {
+        const pdfBlob = await generateAssetChecklistPDF({
+          ...checklistData,
+          asset_label: checklistAssetLabel,
+        });
+        const fileName = `Asset_Checklist_${checklistData.employee_name.replace(/\s+/g, '_')}_${Date.now()}.pdf`;
+        downloadPDF(pdfBlob, fileName);
+        toast.success('Checklist PDF downloaded successfully');
+      } catch (error) {
+        console.error('Failed to download checklist PDF:', error);
+        toast.error('Failed to download checklist PDF');
+      }
+      return;
+    }
+
     try {
       // Check cache first
       const cacheKey = generateCacheKey(localForm, currentUser);
@@ -1365,117 +1438,274 @@ export function AccountabilityFormCard({
       </CardHeader>
 
       <CardContent className="space-y-4 flex-1">
-        {(isDeclined || isDisabledWithDeclineReason) && (
-          <div
-            className="rounded-md border border-slate-200 bg-slate-50 px-3 py-2 text-sm text-slate-800"
-            title={form.declineReason || undefined}
-          >
-            <p className="font-semibold text-slate-900">
-              {isDeclined ? 'Declined' : 'Disabled'}
-            </p>
-            {form.declineReason ? (
-              <p className="mt-1 line-clamp-3 text-slate-700">
-                {form.declineReason}
-              </p>
-            ) : (
-              <p className="mt-1 text-slate-600">No reason on file.</p>
-            )}
-          </div>
-        )}
-        {/* Asset Info */}
-        <div className="flex items-start gap-3">
-          <Package className="h-4 w-4 text-gray-400 mt-0.5" />
-          <div className="flex-1">
-            <p className="font-medium text-sm">
-              {form.assets.length === 0
-                ? 'No Assets'
-                : `${form.assets.length} Assets`}
-            </p>
-            {form.assets.length > 0 && (
-              <div className="text-xs text-gray-500 mt-1">
-                <div className="space-y-0.5">
-                  {form.assets.slice(0, 5).map(asset => (
-                    <div key={asset.id} className="flex items-center">
-                      <span className="w-1 h-1 bg-gray-400 rounded-full mr-2 flex-shrink-0"></span>
-                      <span>{asset.code}</span>
-                    </div>
-                  ))}
-                  {form.assets.length > 5 && (
-                    <div className="flex items-center">
-                      <span className="w-1 h-1 bg-gray-400 rounded-full mr-2 flex-shrink-0"></span>
-                      <span className="text-gray-400">...</span>
-                    </div>
+        {hasChecklist ? (
+          <Tabs value={activeCardTab} onValueChange={(v) => setActiveCardTab(v as 'accountability' | 'checklist')} className="w-full">
+            <TabsList className="grid w-full grid-cols-2 mb-4">
+              <TabsTrigger value="accountability">Accountability</TabsTrigger>
+              <TabsTrigger value="checklist">Checklist</TabsTrigger>
+            </TabsList>
+            
+            <TabsContent value="accountability" className="space-y-4">
+              {(isDeclined || isDisabledWithDeclineReason) && (
+                <div
+                  className="rounded-md border border-slate-200 bg-slate-50 px-3 py-2 text-sm text-slate-800"
+                  title={form.declineReason || undefined}
+                >
+                  <p className="font-semibold text-slate-900">
+                    {isDeclined ? 'Declined' : 'Disabled'}
+                  </p>
+                  {form.declineReason ? (
+                    <p className="mt-1 line-clamp-3 text-slate-700">
+                      {form.declineReason}
+                    </p>
+                  ) : (
+                    <p className="mt-1 text-slate-600">No reason on file.</p>
                   )}
+                </div>
+              )}
+              {/* Asset Info */}
+              <div className="flex items-start gap-3">
+              <Package className="h-4 w-4 text-gray-400 mt-0.5" />
+              <div className="flex-1">
+                <p className="font-medium text-sm">
+                  {form.assets.length === 0
+                    ? 'No Assets'
+                    : `${form.assets.length} Assets`}
+                </p>
+                {form.assets.length > 0 && (
+                  <div className="text-xs text-gray-500 mt-1">
+                    <div className="space-y-0.5">
+                      {form.assets.slice(0, 5).map(asset => (
+                        <div key={asset.id} className="flex items-center">
+                          <span className="w-1 h-1 bg-gray-400 rounded-full mr-2 flex-shrink-0"></span>
+                          <span>{asset.code}</span>
+                        </div>
+                      ))}
+                      {form.assets.length > 5 && (
+                        <div className="flex items-center">
+                          <span className="w-1 h-1 bg-gray-400 rounded-full mr-2 flex-shrink-0"></span>
+                          <span className="text-gray-400">...</span>
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                )}
+              </div>
+            </div>
+
+            {/* Assignment Info */}
+            <div className="flex items-start gap-3">
+              <User className="h-4 w-4 text-gray-400 mt-0.5" />
+              <div className="flex-1">
+                <p className="font-medium text-sm">
+                  {form.user.first_name} {form.user.last_name}
+                </p>
+                <p className="text-xs text-gray-500">
+                  {form.user.position || 'No position'}
+                </p>
+              </div>
+            </div>
+
+            {/* Issued By Info */}
+            {form.issuer && (
+              <div className="flex items-start gap-3">
+                <User className="h-4 w-4 text-gray-400 mt-0.5" />
+                <div className="flex-1">
+                  <p className="font-medium text-sm">
+                    Issued by: {form.issuer.first_name} {form.issuer.last_name}
+                  </p>
+                  <p className="text-xs text-gray-500">{form.issuer.email}</p>
                 </div>
               </div>
             )}
-          </div>
-        </div>
 
-        {/* Assignment Info */}
-        <div className="flex items-start gap-3">
-          <User className="h-4 w-4 text-gray-400 mt-0.5" />
-          <div className="flex-1">
-            <p className="font-medium text-sm">
-              {form.user.first_name} {form.user.last_name}
-            </p>
-            <p className="text-xs text-gray-500">
-              {form.user.position || 'No position'}
-            </p>
-          </div>
-        </div>
-
-        {/* Issued By Info */}
-        {form.issuer && (
-          <div className="flex items-start gap-3">
-            <User className="h-4 w-4 text-gray-400 mt-0.5" />
-            <div className="flex-1">
-              <p className="font-medium text-sm">
-                Issued by: {form.issuer.first_name} {form.issuer.last_name}
-              </p>
-              <p className="text-xs text-gray-500">{form.issuer.email}</p>
-            </div>
-          </div>
-        )}
-
-        {/* Date Info */}
-        <div className="flex items-start gap-3">
-          <Calendar className="h-4 w-4 text-gray-400 mt-0.5" />
-          <div className="flex-1">
-            <p className="text-xs text-gray-500">
-              Assigned:{' '}
-              {form.created_at && !isNaN(new Date(form.created_at).getTime())
-                ? new Date(form.created_at).toLocaleDateString() +
-                  ' ' +
-                  new Date(form.created_at).toLocaleTimeString()
-                : 'Not specified'}
-            </p>
-            {form.assignment.expected_return_date &&
-              form.assignment.expected_return_date !==
-                '1970-01-01T00:00:00.000Z' &&
-              !form.assignment.expected_return_date.startsWith(
-                '1970-01-01'
-              ) && (
+            {/* Date Info */}
+            <div className="flex items-start gap-3">
+              <Calendar className="h-4 w-4 text-gray-400 mt-0.5" />
+              <div className="flex-1">
                 <p className="text-xs text-gray-500">
-                  Expected Return:{' '}
-                  {new Date(
-                    form.assignment.expected_return_date
-                  ).toLocaleDateString()}
+                  Assigned:{' '}
+                  {form.created_at && !isNaN(new Date(form.created_at).getTime())
+                    ? new Date(form.created_at).toLocaleDateString() +
+                      ' ' +
+                      new Date(form.created_at).toLocaleTimeString()
+                    : 'Not specified'}
                 </p>
-              )}
-          </div>
-        </div>
-
-        {/* Location Info */}
-        {form.location && (
-          <div className="flex items-start gap-3">
-            <MapPin className="h-4 w-4 text-gray-400 mt-0.5" />
-            <div className="flex-1">
-              <p className="text-xs text-gray-500">
-                {form.location.name} - {form.location.floor_unit},{' '}
-                {form.location.building}
-              </p>
+                {form.assignment.expected_return_date &&
+                  form.assignment.expected_return_date !==
+                    '1970-01-01T00:00:00.000Z' &&
+                  !form.assignment.expected_return_date.startsWith(
+                    '1970-01-01'
+                  ) && (
+                    <p className="text-xs text-gray-500">
+                      Expected Return:{' '}
+                      {new Date(
+                        form.assignment.expected_return_date
+                      ).toLocaleDateString()}
+                    </p>
+                  )}
+              </div>
             </div>
+
+            {/* Location Info */}
+            {form.location && (
+              <div className="flex items-start gap-3">
+                <MapPin className="h-4 w-4 text-gray-400 mt-0.5" />
+                <div className="flex-1">
+                  <p className="text-xs text-gray-500">
+                    {form.location.name} - {form.location.floor_unit},{' '}
+                    {form.location.building}
+                  </p>
+                </div>
+              </div>
+            )}
+          </TabsContent>
+          
+          <TabsContent value="checklist" className="space-y-4">
+            {checklistLoading ? (
+              <div className="text-center py-8 text-gray-500">Loading checklist...</div>
+            ) : checklistData ? (
+              <div className="space-y-3">
+                <div className="text-sm">
+                  <span className="font-medium">Type:</span>{' '}
+                  {checklistData.type_onboarding && 'Onboarding '}
+                  {checklistData.type_offboarding && 'Offboarding'}
+                </div>
+                <div className="text-sm">
+                  <span className="font-medium">Date:</span>{' '}
+                  {new Date(checklistData.created_at).toLocaleDateString()}
+                </div>
+                <div className="text-sm">
+                  <span className="font-medium">Employee:</span>{' '}
+                  {checklistData.employee_name}
+                </div>
+                <div className="text-sm">
+                  <span className="font-medium">Received by:</span>{' '}
+                  {checklistData.received_by || 'N/A'}
+                </div>
+              </div>
+            ) : (
+              <div className="text-center py-8 text-gray-500">
+                No checklist data available
+              </div>
+            )}
+          </TabsContent>
+        </Tabs>
+        ) : (
+          <div className="space-y-4">
+            {(isDeclined || isDisabledWithDeclineReason) && (
+              <div
+                className="rounded-md border border-slate-200 bg-slate-50 px-3 py-2 text-sm text-slate-800"
+                title={form.declineReason || undefined}
+              >
+                <p className="font-semibold text-slate-900">
+                  {isDeclined ? 'Declined' : 'Disabled'}
+                </p>
+                {form.declineReason ? (
+                  <p className="mt-1 line-clamp-3 text-slate-700">
+                    {form.declineReason}
+                  </p>
+                ) : (
+                  <p className="mt-1 text-slate-600">No reason on file.</p>
+                )}
+              </div>
+            )}
+            {/* Asset Info */}
+            <div className="flex items-start gap-3">
+              <Package className="h-4 w-4 text-gray-400 mt-0.5" />
+              <div className="flex-1">
+                <p className="font-medium text-sm">
+                  {form.assets.length === 0
+                    ? 'No Assets'
+                    : `${form.assets.length} Assets`}
+                </p>
+                {form.assets.length > 0 && (
+                  <div className="text-xs text-gray-500 mt-1">
+                    <div className="space-y-0.5">
+                      {form.assets.slice(0, 5).map(asset => (
+                        <div key={asset.id} className="flex items-center">
+                          <span className="w-1 h-1 bg-gray-400 rounded-full mr-2 flex-shrink-0"></span>
+                          <span>{asset.code}</span>
+                        </div>
+                      ))}
+                      {form.assets.length > 5 && (
+                        <div className="flex items-center">
+                          <span className="w-1 h-1 bg-gray-400 rounded-full mr-2 flex-shrink-0"></span>
+                          <span className="text-gray-400">...</span>
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                )}
+              </div>
+            </div>
+
+            {/* Assignment Info */}
+            <div className="flex items-start gap-3">
+              <User className="h-4 w-4 text-gray-400 mt-0.5" />
+              <div className="flex-1">
+                <p className="font-medium text-sm">
+                  {form.user.first_name} {form.user.last_name}
+                </p>
+                <p className="text-xs text-gray-500">
+                  {form.user.position || 'No position'}
+                </p>
+              </div>
+            </div>
+
+            {/* Issued By Info */}
+            {form.issuer && (
+              <div className="flex items-start gap-3">
+                <User className="h-4 w-4 text-gray-400 mt-0.5" />
+                <div className="flex-1">
+                  <p className="font-medium text-sm">
+                    Issued by: {form.issuer.first_name} {form.issuer.last_name}
+                  </p>
+                  <p className="text-xs text-gray-500">{form.issuer.email}</p>
+                </div>
+              </div>
+            )}
+
+            {/* Date Info */}
+            <div className="flex items-start gap-3">
+              <Calendar className="h-4 w-4 text-gray-400 mt-0.5" />
+              <div className="flex-1">
+                <p className="text-xs text-gray-500">
+                  Assigned:{' '}
+                  {form.created_at && !isNaN(new Date(form.created_at).getTime())
+                    ? new Date(form.created_at).toLocaleDateString() +
+                      ' ' +
+                      new Date(form.created_at).toLocaleTimeString()
+                    : 'Not specified'}
+                </p>
+                {form.assignment.expected_return_date &&
+                  form.assignment.expected_return_date !==
+                    '1970-01-01T00:00:00.000Z' &&
+                  !form.assignment.expected_return_date.startsWith(
+                    '1970-01-01'
+                  ) && (
+                    <p className="text-xs text-gray-500">
+                      Expected Return:{' '}
+                      {new Date(
+                        form.assignment.expected_return_date
+                      ).toLocaleDateString()}
+                    </p>
+                  )}
+              </div>
+            </div>
+
+            {/* Location Info */}
+            {form.location && (
+              <div className="flex items-start gap-3">
+                <MapPin className="h-4 w-4 text-gray-400 mt-0.5" />
+                <div className="flex-1">
+                  <p className="text-xs text-gray-500">
+                    {form.location.name} - {form.location.floor_unit},{' '}
+                    {form.location.building}
+                  </p>
+                </div>
+              </div>
+            )}
           </div>
         )}
       </CardContent>
@@ -1486,7 +1716,9 @@ export function AccountabilityFormCard({
           variant="outline"
           size="sm"
           onClick={() => {
-            if (onView) {
+            if (activeCardTab === 'checklist' && checklistData) {
+              setShowChecklistDialog(true);
+            } else if (onView) {
               onView(form);
             } else {
               setShowPreviewModal(true);
@@ -1864,6 +2096,76 @@ export function AccountabilityFormCard({
               variant="outline"
               size="sm"
               onClick={() => setShowPreviewModal(false)}
+            >
+              Close
+            </Button>
+          </AppDialogChromeFooter>
+        </AppDialogFrame>
+      </Dialog>
+
+      {/* Checklist Dialog */}
+      <Dialog open={showChecklistDialog} onOpenChange={setShowChecklistDialog}>
+        <AppDialogFrame
+          showCloseButton={false}
+          className="max-w-4xl max-h-[90vh] overflow-hidden !flex !flex-col !gap-0 !rounded-lg !p-0 !shadow-md"
+        >
+          <AppDialogGradientHeader
+            showCloseButton={false}
+            className="!px-4 !pb-4 !pt-4 sm:!px-5 sm:!pb-5 sm:!pt-5"
+            title="Asset Checklist"
+            description="View asset checklist form"
+          />
+          <AppDialogBody className="flex min-h-[60vh] flex-1 flex-col overflow-hidden p-0 sm:p-0">
+            <div className="flex-1 min-h-0 flex flex-col py-2 overflow-hidden">
+              <div className="w-full flex-1 min-h-0 border rounded-lg overflow-hidden bg-gray-50">
+                {checklistPdfUrl ? (
+                  <iframe
+                    src={checklistPdfUrl}
+                    className="w-full h-full min-h-0"
+                    title="Checklist PDF Preview"
+                    style={{
+                      width: '100%',
+                      height: '100%',
+                      border: 'none',
+                      display: 'block',
+                    }}
+                  />
+                ) : (
+                  <div className="w-full h-full min-h-[200px] flex items-center justify-center text-gray-500">
+                    Generating checklist PDF preview...
+                  </div>
+                )}
+              </div>
+            </div>
+          </AppDialogBody>
+          <AppDialogChromeFooter className="justify-end gap-3">
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={async () => {
+                if (checklistData) {
+                  try {
+                    const pdfBlob = await generateAssetChecklistPDF({
+                      ...checklistData,
+                      asset_label: checklistAssetLabel,
+                    });
+                    const fileName = `Asset_Checklist_${checklistData.employee_name.replace(/\s+/g, '_')}_${Date.now()}.pdf`;
+                    downloadPDF(pdfBlob, fileName);
+                    toast.success('Checklist PDF downloaded successfully');
+                  } catch (error) {
+                    console.error('Failed to download checklist PDF:', error);
+                    toast.error('Failed to download checklist PDF');
+                  }
+                }
+              }}
+            >
+              <Download className="h-4 w-4 mr-2" />
+              Download PDF
+            </Button>
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => setShowChecklistDialog(false)}
             >
               Close
             </Button>

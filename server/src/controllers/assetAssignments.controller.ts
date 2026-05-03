@@ -464,6 +464,10 @@ export async function createAssetAssignmentHandler(
             `Creating new accountability form for ${formType} department (${deptName}) with ${departmentAssets.length} assets`
           );
 
+          const departmentAssignmentIds = assignments.map(
+            assignment => assignment.assignmentID
+          );
+
           const accountabilityFormReq = {
             ...req,
             body: {
@@ -478,6 +482,7 @@ export async function createAssetAssignmentHandler(
               itCopySignature,
               previousFormId: disabledFormId,
               previousFormOriginalStatus,
+              assignmentIds: departmentAssignmentIds,
             },
           } as AuthRequest;
 
@@ -791,22 +796,42 @@ export async function createAssetChecklistHandler(
       resourceId: checklistId,
       resourceName: `Checklist for assignment ${assignmentId}`,
       details: `Asset checklist created for employee ${employeeName}`,
-      newValues: {
-        assignment_id: assignmentId,
-        employee_id: employeeId,
-        typeOnboarding,
-        typeOffboarding,
-      },
-      ...reqAudit(req),
     });
 
     return res.status(201).json({
       message: 'Asset checklist created successfully',
       checklistId,
     });
-  } catch (error: any) {
+  } catch (error) {
     logger.error('Create asset checklist failed:', error);
     return res.status(500).json({ error: 'Failed to create asset checklist' });
+  }
+}
+
+// GET /asset-assignments/checklist/:assignmentId
+// ---------------------------------------------------------------------------
+
+export async function getChecklistByAssignmentIdHandler(
+  req: AuthRequest,
+  res: Response
+) {
+  try {
+    const { assignmentId } = req.params;
+
+    if (!assignmentId) {
+      return res.status(400).json({ error: 'assignmentId is required' });
+    }
+
+    const checklist = await checklistRepo.getChecklistByAssignmentId(assignmentId);
+
+    if (!checklist) {
+      return res.status(404).json({ error: 'Checklist not found' });
+    }
+
+    return res.status(200).json(checklist);
+  } catch (error) {
+    logger.error('Get checklist by assignment ID failed:', error);
+    return res.status(500).json({ error: 'Failed to get checklist' });
   }
 }
 

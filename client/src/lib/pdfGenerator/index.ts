@@ -26,3 +26,6 @@ export { generateAssetTransferPDF } from './assetTransferPdf';
 
 export type { AssetBorrowingData } from './assetBorrowingPdf';
 export { generateAssetBorrowingPDF } from './assetBorrowingPdf';
+
+export type { AssetChecklistData } from './assetChecklistPdf';
+export { generateAssetChecklistPDF } from './assetChecklistPdf';

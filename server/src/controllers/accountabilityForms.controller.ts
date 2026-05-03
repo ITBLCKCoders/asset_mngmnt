@@ -287,6 +287,9 @@ export async function createAccountabilityFormHandler(
           if (previousFormOriginalStatus) {
             assetsDataPayload.previous_form_original_status = previousFormOriginalStatus;
           }
+          if (Array.isArray(assignmentIds) && assignmentIds.length > 0) {
+            assetsDataPayload.assignment_ids = assignmentIds;
+          }
 
           // Create accountability form with assets stored in separate column
           await repo.insertAccountabilityFormMulti({
@@ -298,6 +301,7 @@ export async function createAccountabilityFormHandler(
             assetsDataJson: JSON.stringify(assetsDataPayload),
             issuerSignature: issuerSignature || null,
             itCopySignature: itCopySignature || null,
+            assignmentId: Array.isArray(assignmentIds) && assignmentIds.length > 0 ? assignmentIds[0] : null,
           });
 
           break; // Success, exit retry loop
