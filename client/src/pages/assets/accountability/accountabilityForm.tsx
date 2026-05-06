@@ -503,9 +503,26 @@ export const generateAccountabilityFormPDF = async (
   }
 
   // Acknowledgment content - font size 12 normal (not bold)
+  doc.setFontSize(12);
+  doc.setFont('helvetica', 'normal');
+  const employeeName = `${form.user.first_name} ${form.user.last_name}`;
 
-  // Logo caching for continuation pages with fixed dimensions (50x25) for uniformity
-  let cachedContinuationLogo: { imgData: string; width: number; height: number } | null = null;
+  // Create acknowledgment text with underlined employee name
+  const acknowledgmentText = `I, ${employeeName}, acknowledge the receipt of the company properties listed below from ${issuingDepartment}, and agree to maintain them in good condition and to return them upon termination of my employment, for whatever reason, or when requested by Management. In case the said properties are no longer needed for the performance of my job, I will notify the Admin or IT Department through my superior to arrange for their surrender. Any damage incurred to the property, whether due to wear and tear or an incident or accident beyond my control, shall be reported immediately within twenty-four (24) hours to the Admin Department, with a copy furnished to the HR Department, using the Incident Report.
+
+I agree that if any of the items are damaged or lost due to my negligence, I shall be held accountable. I hereby authorize the Company to deduct the cost from my salary, final pay, or any monetary claims, equivalent to the amount of the damage or the value of the lost company property.`;
+
+  const splitAcknowledgment = doc.splitTextToSize(acknowledgmentText, 170);
+  doc.text(splitAcknowledgment, 20, y, { align: 'justify', maxWidth: 170 });
+
+  y += splitAcknowledgment.length * 5 + 5;
+
+  // Preload company logo for continuation page headers
+  let cachedContinuationLogo: {
+    imgData: string;
+    width: number;
+    height: number;
+  } | null = null;
   if (companyLogoUrl) {
     try {
       const response = await fetch(companyLogoUrl);
@@ -517,10 +534,35 @@ export const generateAccountabilityFormPDF = async (
           reader.onerror = () => reject(new Error('Failed to read logo'));
           reader.readAsDataURL(blob);
         });
+        const dimensions = await new Promise<{ w: number; h: number }>(
+          resolve => {
+            const img = new Image();
+            img.onload = () => {
+              const pixelsToMm = 0.264583;
+              let w = img.width * pixelsToMm;
+              let h = img.height * pixelsToMm;
+              const maxWidth = 80;
+              const maxHeight = 40;
+              if (w > maxWidth) {
+                const s = maxWidth / w;
+                w = maxWidth;
+                h *= s;
+              }
+              if (h > maxHeight) {
+                const s = maxHeight / h;
+                h = maxHeight;
+                w *= s;
+              }
+              resolve({ w, h });
+            };
+            img.onerror = () => resolve({ w: 0, h: 0 });
+            img.src = imgData;
+          }
+        );
         cachedContinuationLogo = {
           imgData,
-          width: 50, // Fixed width for uniformity
-          height: 25, // Fixed height for uniformity
+          width: dimensions.w,
+          height: dimensions.h,
         };
       }
     } catch (err) {
@@ -532,13 +574,16 @@ export const generateAccountabilityFormPDF = async (
 
   const drawContinuationHeader = () => {
     if (cachedContinuationLogo && cachedContinuationLogo.width > 0) {
+      // Use larger dimensions for continuation header and center within FOR INTERNAL USE ONLY box
+      const continuationLogoWidth = 40;
+      const continuationLogoHeight = 20;
       doc.addImage(
         cachedContinuationLogo.imgData,
         'PNG',
-        15,
+        152.5,
         8,
-        50, // Fixed width for uniformity
-        25  // Fixed height for uniformity
+        continuationLogoWidth,
+        continuationLogoHeight
       );
     }
     const continuationPageBoxWidth = 55;
