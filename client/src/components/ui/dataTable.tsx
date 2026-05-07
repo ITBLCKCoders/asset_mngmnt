@@ -512,12 +512,10 @@ export function DataTable<T>({
             <span className="text-gray-600">Show</span>
             <Input
               type="number"
-              min="1"
-              max="100"
               value={pagination.pageSize}
               onChange={e => {
                 const size = e.target.value
-                  ? Math.max(1, Math.min(100, Number(e.target.value)))
+                  ? Math.max(1, Number(e.target.value))
                   : 10;
                 setPagination({ ...pagination, pageSize: size, pageIndex: 0 });
               }}
@@ -529,7 +527,7 @@ export function DataTable<T>({
                   <ChevronDown className="h-3 w-3" />
                 </Button>
               </DropdownMenuTrigger>
-              <DropdownMenuContent align="end">
+              <DropdownMenuContent align="end" className="bg-white">
                 {[10, 20, 30, 50, 100].map(size => (
                   <DropdownMenuItem
                     key={size}
@@ -556,7 +554,7 @@ export function DataTable<T>({
                 Columns <ChevronDown className="ml-1 h-4 w-4" />
               </Button>
             </DropdownMenuTrigger>
-            <DropdownMenuContent align="end" className="w-48">
+            <DropdownMenuContent align="end" className="w-48 bg-white">
               <DropdownMenuLabel>Toggle Columns</DropdownMenuLabel>
               <DropdownMenuSeparator />
               <div
@@ -566,13 +564,13 @@ export function DataTable<T>({
               >
                 {table
                   .getAllColumns()
-                  .filter(col => col.getCanHide())
                   .map(col => (
                     <DropdownMenuCheckboxItem
                       key={col.id}
                       className="bg-white hover:bg-gray-200 cursor-pointer"
                       checked={col.getIsVisible()}
-                      onCheckedChange={v => col.toggleVisibility(!!v)}
+                      onCheckedChange={v => col.getCanHide() && col.toggleVisibility(!!v)}
+                      disabled={!col.getCanHide()}
                     >
                       {typeof col.columnDef.header === 'string'
                         ? col.columnDef.header

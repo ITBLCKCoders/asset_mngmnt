@@ -2,7 +2,7 @@
 
 import { useState, useMemo, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Package, X, Check, ArrowLeft, Trash2, RefreshCw, FileText, Crown } from 'lucide-react';
+import { Package, X, Check, ArrowLeft, Trash2, RefreshCw, Crown } from 'lucide-react';
 import {
   Card,
   CardContent,
@@ -14,9 +14,9 @@ import { PageHeader } from '@/components/common/PageHeader';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
+import { Textarea } from '@/components/ui/textarea';
 import { Checkbox } from '@/components/ui/checkbox';
 import { DataTable } from '@/components/ui/dataTable';
-import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { assetColumns } from './assets-list/assetsComponents/assetTable/assetColumns';
 import { Asset } from './assets-list/assetsComponents/assetTable/assetData';
 import { assetSearchText } from './assets-list/assetSearchText';
@@ -24,7 +24,6 @@ import { api } from '@/lib/api';
 import { toast } from 'sonner';
 import { useAssetsData } from './assets-list/useAssetsData';
 import { createLogger } from '@/lib/logger';
-import { BuilderFormsTab } from './assets-list/assetsComponents/BuilderFormsTab';
 import { useCompanyContext } from '@/context/CompanyContext';
 
 const logger = createLogger('AssetBuilder');
@@ -33,6 +32,7 @@ export default function AssetBuilderPage() {
   const navigate = useNavigate();
   const { activeCompany } = useCompanyContext();
   const [builderName, setBuilderName] = useState('');
+  const [builderDescription, setBuilderDescription] = useState('');
   const [selectedAssetIds, setSelectedAssetIds] = useState<Set<string>>(
     new Set()
   );
@@ -52,7 +52,6 @@ export default function AssetBuilderPage() {
   const [editingSelectableAssets, setEditingSelectableAssets] = useState<any[]>(
     []
   );
-  const [activeTab, setActiveTab] = useState('assets');
 
   const { assets, loading } = useAssetsData(activeCompany?.id);
 
@@ -169,6 +168,7 @@ export default function AssetBuilderPage() {
 
       await api.post('/asset-builders', {
         name: builderName.trim(),
+        description: builderDescription.trim(),
         assetIds,
         parentAssetId: selectedParentAssetId || assetIds[0],
       });
@@ -523,55 +523,87 @@ export default function AssetBuilderPage() {
             <Card className="rounded-xl border shadow-md overflow-hidden">
               <CardHeader>
                 <div className="flex items-center justify-between">
-                  <CardTitle>Viewing Asset Builder Information</CardTitle>
+                  <CardTitle>Editing Asset Builder</CardTitle>
                   <div className="flex gap-2">
+                    <Button
+                      onClick={handleSaveChanges}
+                      disabled={isSubmitting}
+                      className="bg-red-600 hover:bg-red-700 text-white"
+                    >
+                      {isSubmitting ? 'Saving...' : 'Save Changes'}
+                    </Button>
                     <Button variant="outline" onClick={handleCancelEdit}>
                       Close
                     </Button>
                   </div>
                 </div>
               </CardHeader>
-              <CardContent>
-                <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
-                  <TabsList className="grid w-full grid-cols-2 bg-red-50 h-auto p-1 gap-1">
-                    <TabsTrigger
-                      value="assets"
-                      className="flex items-center justify-center gap-2 px-4 py-3 data-[state=active]:bg-red-600 data-[state=active]:text-white data-[state=active]:shadow-md transition-all"
-                    >
-                      <Package className="h-4 w-4" />
-                      Assets
-                    </TabsTrigger>
-                    <TabsTrigger
-                      value="forms"
-                      className="flex items-center justify-center gap-2 px-4 py-3 data-[state=active]:bg-red-600 data-[state=active]:text-white data-[state=active]:shadow-md transition-all"
-                    >
-                      <FileText className="h-4 w-4" />
-                      Forms
-                    </TabsTrigger>
-                  </TabsList>
+              <CardContent className="space-y-6">
+                <div className="space-y-2">
+                  <Label htmlFor="editBuilderName" className="text-base font-medium">
+                    Asset Builder Name
+                  </Label>
+                  <Input
+                    id="editBuilderName"
+                    placeholder="Enter name for the asset group"
+                    value={selectedBuilder.name}
+                    onChange={e =>
+                      setSelectedBuilder({
+                        ...selectedBuilder,
+                        name: e.target.value,
+                      })
+                    }
+                    className="w-full max-w-md"
+                  />
+                </div>
 
-                  <TabsContent value="assets" className="mt-6 space-y-6">
-                    <div className="space-y-2">
-                      <Label htmlFor="editBuilderName" className="text-base font-medium">
-                        Asset Builder Name
-                      </Label>
-                      <Input
-                        id="editBuilderName"
-                        placeholder="Enter name for the asset group"
-                        value={selectedBuilder.name}
-                        onChange={e =>
-                          setSelectedBuilder({
-                            ...selectedBuilder,
-                            name: e.target.value,
-                          })
-                        }
-                        className="w-full max-w-md"
-                      />
-                    </div>
+                <div className="space-y-2">
+                  <Label htmlFor="editBuilderDescription" className="text-base font-medium">
+                    Description (optional)
+                  </Label>
+                  <Textarea
+                    id="editBuilderDescription"
+                    placeholder="Enter a description for this asset builder..."
+                    value={selectedBuilder.description || ''}
+                    onChange={e =>
+                      setSelectedBuilder({
+                        ...selectedBuilder,
+                        description: e.target.value,
+                      })
+                    }
+                    className="w-full max-w-md min-h-[100px]"
+                  />
+                </div>
+                <DataTable<Asset>
+                  tableId="asset-builder-assets"
+                  data={selectedBuilderAssets}
+                  columns={builderAssetsColumns}
+                  searchPlaceholder="Search all columns..."
+                  globalFilterFn={(row, _columnId, filterValue) => {
+                    const q = String(filterValue ?? '').trim();
+                    if (!q) return true;
+                    return assetSearchText(row.original).includes(
+                      q.toLowerCase()
+                    );
+                  }}
+                  title={`Assets in ${selectedBuilder.name}`}
+                  titleBadge={`${selectedBuilderAssets.length} assets`}
+                />
+
+                <div className="border-t border-gray-200 pt-6"></div>
+
+                <div className="space-y-4">
+                  <div className="flex items-center justify-between">
+                    <Label className="text-base font-medium">
+                      Available Assets to Add ({editingSelectableAssets.length} available)
+                    </Label>
+                  </div>
+
+                  <div className="border rounded-lg">
                     <DataTable<Asset>
-                      tableId="asset-builder-assets"
-                      data={selectedBuilderAssets}
-                      columns={builderAssetsColumns}
+                      tableId="asset-builder-editable"
+                      data={editingSelectableAssets}
+                      columns={editColumns}
                       searchPlaceholder="Search all columns..."
                       globalFilterFn={(row, _columnId, filterValue) => {
                         const q = String(filterValue ?? '').trim();
@@ -580,31 +612,34 @@ export default function AssetBuilderPage() {
                           q.toLowerCase()
                         );
                       }}
-                      title={`Assets in ${selectedBuilder.name}`}
-                      titleBadge={`${selectedBuilderAssets.length} assets`}
+                      title="Available Assets"
+                      titleBadge={`${editingSelectableAssets.length} available`}
+                      onRowClick={(row) => handleAddAssetToggle(row.original.id)}
                     />
-                  </TabsContent>
-
-                  <TabsContent value="forms" className="mt-6">
-                    <BuilderFormsTab builderId={selectedBuilder.builderID} />
-                  </TabsContent>
-                </Tabs>
+                  </div>
+                </div>
               </CardContent>
             </Card>
           </div>
         )}
 
         {!isEditing && (
-          <Card className="rounded-xl border shadow-md overflow-hidden">
-            <CardHeader className="pb-2">
-              <CardTitle className="text-base font-semibold">
-                New asset builder
-              </CardTitle>
-              <CardDescription>
-                Create a grouped asset from multiple individual assets
-              </CardDescription>
-            </CardHeader>
-            <CardContent className="p-6 pt-0 space-y-6">
+          <Card className="rounded-xl border-2 border-gray-200 shadow-lg overflow-hidden hover:shadow-xl transition-shadow">
+            <CardContent className="p-6 space-y-6">
+              <div className="flex items-center gap-4 p-4 bg-gradient-to-r from-red-600 to-rose-600 rounded-xl shadow-md">
+                <div className="p-3 bg-white/20 backdrop-blur-md rounded-lg border border-white/30 shrink-0">
+                  <Package className="h-6 w-6 text-white" />
+                </div>
+                <div className="flex-1">
+                  <h2 className="text-lg font-bold text-white">
+                    Create New Asset Builder
+                  </h2>
+                  <p className="text-sm text-red-100 mt-0.5">
+                    Group multiple individual assets into a single builder
+                  </p>
+                </div>
+              </div>
+
               <div className="space-y-2">
                 <Label htmlFor="builderName" className="text-base font-medium">
                   Asset Builder Name *
@@ -617,6 +652,21 @@ export default function AssetBuilderPage() {
                   className="w-full max-w-md"
                 />
               </div>
+
+              <div className="space-y-2">
+                <Label htmlFor="builderDescription" className="text-base font-medium">
+                  Description (optional)
+                </Label>
+                <Textarea
+                  id="builderDescription"
+                  placeholder="Enter a description for this asset builder..."
+                  value={builderDescription}
+                  onChange={e => setBuilderDescription(e.target.value)}
+                  className="w-full max-w-md min-h-[100px]"
+                />
+              </div>
+
+              <div className="border-t border-gray-200 pt-6"></div>
 
               <div className="space-y-4">
                 <div className="flex items-center justify-between">

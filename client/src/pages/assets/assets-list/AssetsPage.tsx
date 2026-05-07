@@ -47,6 +47,7 @@ import { AssetStats } from './assetsComponents/assetStats';
 import { AddAssetModal } from './assetsComponents/assetModal';
 import { AssetViewModal } from './assetsComponents/assetViewModal';
 import { EditAssetModal } from './assetsComponents/assetEditModal';
+import { BuilderFormsTab } from './assetsComponents/BuilderFormsTab';
 import { AssetFormData } from './assetsComponents/assetTypes/assetFormTypes';
 import { Asset } from './assetsComponents/assetTable/assetData';
 import { api } from '@/lib/api';
@@ -1259,6 +1260,12 @@ export function AssetsPage() {
                         value: 'timeline',
                         description: 'Builder History & Events',
                       },
+                      {
+                        title: 'Forms',
+                        icon: FileText,
+                        value: 'forms',
+                        description: 'Builder Forms',
+                      },
                     ].map((tab, index) => {
                       const Icon = tab.icon;
                       const isActive =
@@ -1283,7 +1290,7 @@ export function AssetsPage() {
                               {tab.title}
                             </p>
                           </div>
-                          {index < 1 && (
+                          {index < 2 && (
                             <div className="w-8 md:w-20 lg:w-24 h-1 mx-2 md:mx-4 bg-gray-300" />
                           )}
                         </div>
@@ -1303,6 +1310,7 @@ export function AssetsPage() {
                           description: 'Builder Information',
                         },
                         { value: 'timeline', description: 'Builder Timeline' },
+                        { value: 'forms', description: 'Builder Forms' },
                       ].find(
                         tab => tab.value === (activeBuilderTab || 'information')
                       )?.description
@@ -1685,6 +1693,12 @@ export function AssetsPage() {
                         </div>
                       </div>
                     </div>
+                  </div>
+                )}
+
+                {(activeBuilderTab || 'information') === 'forms' && (
+                  <div className="space-y-6 w-full">
+                    <BuilderFormsTab builderId={selectedBuilder.builderID} />
                   </div>
                 )}
               </CardContent>
