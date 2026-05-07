@@ -53,7 +53,7 @@ import {
   AppDialogBody,
   AppDialogChromeFooter,
 } from '@/components/common/appDialogChrome';
-import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
+import { Tabs, TabsContent, TabsList, TabsTrigger, segmentTabsListClassName, segmentTabsTriggerClassName } from '@/components/ui/tabs';
 import { Location } from '@/types/assets';
 import { useDelayedLoading } from '@/hooks/useDelayedLoading';
 import { Shimmer } from '@/components/ui/shimmer';
@@ -1071,7 +1071,7 @@ export default function AssetsReturn() {
           description="Process asset returns and assess condition"
         >
           <Button
-            variant="ghost"
+            variant="header"
             size="sm"
             onClick={() => {
               fetchAssignments();
@@ -1089,10 +1089,10 @@ export default function AssetsReturn() {
           {/* Asset Selection / Asset Built Tabs */}
           <div className="xl:col-span-2">
             <Tabs defaultValue="select-assets" className="w-full">
-              <TabsList className="grid w-full grid-cols-2 rounded-xl bg-gray-100 p-1.5 h-auto">
+              <TabsList className={segmentTabsListClassName + ' grid grid-cols-2'}>
                 <TabsTrigger
                   value="select-assets"
-                  className="flex items-center gap-2 data-[state=active]:bg-red-500 data-[state=active]:text-white data-[state=active]:shadow-sm"
+                  className={segmentTabsTriggerClassName + ' flex items-center gap-2'}
                 >
                   <Package className="h-4 w-4" />
                   Select Assets
@@ -1102,7 +1102,7 @@ export default function AssetsReturn() {
                 </TabsTrigger>
                 <TabsTrigger
                   value="asset-built"
-                  className="flex items-center gap-2 data-[state=active]:bg-red-500 data-[state=active]:text-white data-[state=active]:shadow-sm"
+                  className={segmentTabsTriggerClassName + ' flex items-center gap-2'}
                 >
                   <Boxes className="h-4 w-4" />
                   Asset Built

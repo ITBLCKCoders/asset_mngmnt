@@ -198,9 +198,10 @@ export default function ProfileHeader({
             <div className="flex w-full flex-col gap-3 sm:w-auto sm:flex-row">
               {!isEditing ? (
                 <Button
+                  variant="header"
                   size="lg"
                   onClick={onStartEdit}
-                  className="w-full bg-red-600 text-white shadow-lg hover:bg-red-700 sm:w-auto"
+                  className="w-full sm:w-auto"
                 >
                   <UserCheck className="w-5 h-5 mr-2" />
                   Edit Profile
@@ -208,21 +209,22 @@ export default function ProfileHeader({
               ) : (
                 <>
                   <Button
-                    variant="outline"
+                    variant="header"
                     size="lg"
                     onClick={handleCancel}
                     disabled={isSaving}
-                    className="w-full border-red-600 text-red-600 hover:bg-red-50 sm:w-auto"
+                    className="w-full sm:w-auto"
                   >
                     <X className="w-5 h-5 mr-2" />
                     Cancel
                   </Button>
 
                   <Button
+                    variant="header"
                     size="lg"
                     onClick={onSave}
                     disabled={isSaving}
-                    className="w-full bg-red-600 text-white shadow-lg hover:bg-red-700 sm:w-auto"
+                    className="w-full sm:w-auto"
                   >
                     {isSaving ? (
                       <>

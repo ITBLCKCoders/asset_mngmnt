@@ -42,7 +42,7 @@ import {
   AlertDialogAction,
 } from '@/components/ui/alert-dialog';
 import { Shimmer } from '@/components/ui/shimmer';
-import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs';
+import { Tabs, TabsList, TabsTrigger, TabsContent, segmentTabsListClassName, segmentTabsTriggerClassName } from '@/components/ui/tabs';
 import { api } from '@/lib/api';
 import { toast } from 'sonner';
 import {
@@ -853,16 +853,16 @@ export const ReturnFormCard: React.FC<{
       </CardHeader>
 
       <Tabs defaultValue="details" className="flex-1 flex flex-col min-h-0">
-        <TabsList className="mx-4 mb-2 grid h-auto w-[calc(100%-2rem)] grid-cols-2">
+        <TabsList className={segmentTabsListClassName + ' mx-4 mb-2 grid grid-cols-2 w-[calc(100%-2rem)]'}>
           <TabsTrigger
             value="details"
-            className="data-[state=active]:bg-red-100 data-[state=active]:text-red-800 data-[state=active]:shadow-sm"
+            className={segmentTabsTriggerClassName}
           >
             Details
           </TabsTrigger>
           <TabsTrigger
             value="timeline"
-            className="data-[state=active]:bg-red-100 data-[state=active]:text-red-800 data-[state=active]:shadow-sm"
+            className={segmentTabsTriggerClassName}
           >
             Timeline
           </TabsTrigger>
@@ -1194,16 +1194,16 @@ export const TransferFormCard: React.FC<{
         </div>
       </CardHeader>
       <Tabs defaultValue="details" className="flex-1 flex flex-col min-h-0">
-        <TabsList className="mx-4 mb-2 grid h-auto w-[calc(100%-2rem)] grid-cols-2">
+        <TabsList className={segmentTabsListClassName + ' mx-4 mb-2 grid grid-cols-2 w-[calc(100%-2rem)]'}>
           <TabsTrigger
             value="details"
-            className="data-[state=active]:bg-red-100 data-[state=active]:text-red-800 data-[state=active]:shadow-sm"
+            className={segmentTabsTriggerClassName}
           >
             Details
           </TabsTrigger>
           <TabsTrigger
             value="timeline"
-            className="data-[state=active]:bg-red-100 data-[state=active]:text-red-800 data-[state=active]:shadow-sm"
+            className={segmentTabsTriggerClassName}
           >
             Timeline
           </TabsTrigger>
@@ -1777,16 +1777,16 @@ export const BorrowFormCard: React.FC<{
       </CardHeader>
 
       <Tabs defaultValue="details" className="flex-1 flex flex-col min-h-0">
-        <TabsList className="mx-4 mb-2 grid h-auto w-[calc(100%-2rem)] grid-cols-2">
+        <TabsList className={segmentTabsListClassName + ' mx-4 mb-2 grid grid-cols-2 w-[calc(100%-2rem)]'}>
           <TabsTrigger
             value="details"
-            className="data-[state=active]:bg-red-100 data-[state=active]:text-red-800 data-[state=active]:shadow-sm"
+            className={segmentTabsTriggerClassName}
           >
             Details
           </TabsTrigger>
           <TabsTrigger
             value="timeline"
-            className="data-[state=active]:bg-red-100 data-[state=active]:text-red-800 data-[state=active]:shadow-sm"
+            className={segmentTabsTriggerClassName}
           >
             Timeline
           </TabsTrigger>

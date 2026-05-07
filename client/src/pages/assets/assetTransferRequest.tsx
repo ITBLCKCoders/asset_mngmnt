@@ -29,7 +29,7 @@ import { Badge } from '@/components/ui/badge';
 import { Checkbox } from '@/components/ui/checkbox';
 import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
-import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
+import { Tabs, TabsContent, TabsList, TabsTrigger, segmentTabsListClassName, segmentTabsTriggerClassName } from '@/components/ui/tabs';
 import { Dialog } from '@/components/ui/dialog';
 import {
   AppDialogBody,
@@ -839,10 +839,10 @@ export default function AssetTransferRequest() {
         <div className="grid grid-cols-1 xl:grid-cols-3 gap-8">
           <div className="xl:col-span-2">
             <Tabs defaultValue="select-assets" className="w-full">
-              <TabsList className="grid w-full grid-cols-2 rounded-xl bg-gray-100 p-1.5 h-auto mb-4">
+              <TabsList className={segmentTabsListClassName + ' grid grid-cols-2 mb-4'}>
                 <TabsTrigger
                   value="select-assets"
-                  className="flex items-center gap-2 data-[state=active]:bg-red-500 data-[state=active]:text-white data-[state=active]:shadow-sm"
+                  className={segmentTabsTriggerClassName + ' flex items-center gap-2'}
                 >
                   <Package className="h-4 w-4" />
                   Asset
@@ -852,7 +852,7 @@ export default function AssetTransferRequest() {
                 </TabsTrigger>
                 <TabsTrigger
                   value="asset-built"
-                  className="flex items-center gap-2 data-[state=active]:bg-red-500 data-[state=active]:text-white data-[state=active]:shadow-sm"
+                  className={segmentTabsTriggerClassName + ' flex items-center gap-2'}
                 >
                   <Boxes className="h-4 w-4" />
                   Asset Built

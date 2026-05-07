@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect, useState } from 'react';
-import { TabsList, TabsTrigger } from '@/components/ui/tabs';
+import { TabsList, TabsTrigger, segmentTabsListClassName, segmentTabsTriggerClassName } from '@/components/ui/tabs';
 import { User, Lock, FileText } from 'lucide-react';
 import { cn } from '@/lib/utils';
 
@@ -19,11 +19,11 @@ export default function TabTriggers() {
 
   if (isLoading) {
     return (
-      <div className="grid grid-cols-1 gap-2 rounded-xl border bg-white p-2 shadow-sm sm:grid-cols-3">
+      <div className={cn(segmentTabsListClassName, 'grid grid-cols-1 sm:grid-cols-3')}>
         {[...Array(3)].map((_, i) => (
           <div
             key={i}
-            className="flex h-12 items-center justify-center gap-3 rounded-lg bg-gray-100 px-4"
+            className="flex h-12 items-center justify-center gap-3 rounded-lg bg-slate-100/90 px-4"
           >
             <Shimmer className="w-5 h-5 rounded" />
             <Shimmer className="h-5 w-20 rounded" />
@@ -34,22 +34,22 @@ export default function TabTriggers() {
   }
 
   return (
-    <TabsList className="grid h-auto w-full grid-cols-1 rounded-xl border bg-white p-1 shadow-sm sm:grid-cols-3">
+    <TabsList className={cn(segmentTabsListClassName, 'grid grid-cols-1 sm:grid-cols-3')}>
       <TabsTrigger
         value="basic"
-        className="justify-start rounded-lg px-3 py-2 text-left font-medium data-[state=active]:bg-red-600 data-[state=active]:text-white hover:bg-gray-200 hover:text-gray-900 sm:justify-center"
+        className={cn(segmentTabsTriggerClassName, 'justify-start sm:justify-center')}
       >
         <User className="mr-2 h-4 w-4" /> Basic Information
       </TabsTrigger>
       <TabsTrigger
         value="account"
-        className="justify-start rounded-lg px-3 py-2 text-left font-medium data-[state=active]:bg-red-600 data-[state=active]:text-white hover:bg-gray-200 hover:text-gray-900 sm:justify-center"
+        className={cn(segmentTabsTriggerClassName, 'justify-start sm:justify-center')}
       >
         <Lock className="mr-2 h-4 w-4" /> Account
       </TabsTrigger>
       <TabsTrigger
         value="documents"
-        className="justify-start rounded-lg px-3 py-2 text-left font-medium data-[state=active]:bg-red-600 data-[state=active]:text-white hover:bg-gray-200 hover:text-gray-900 sm:justify-center"
+        className={cn(segmentTabsTriggerClassName, 'justify-start sm:justify-center')}
       >
         <FileText className="mr-2 h-4 w-4" /> Documents
       </TabsTrigger>

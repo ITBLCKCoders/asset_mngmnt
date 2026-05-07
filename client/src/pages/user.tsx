@@ -378,7 +378,7 @@ function UserPermissions() {
           description="Manage module access and assign roles to users"
         >
           <Button
-            variant="ghost"
+            variant="header"
             size="sm"
             onClick={() => window.location.reload()}
             className="flex items-center gap-2"

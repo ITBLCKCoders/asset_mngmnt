@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
+import { Tabs, TabsContent, TabsList, TabsTrigger, segmentTabsListClassName, segmentTabsTriggerClassName } from '@/components/ui/tabs';
 import {
   Card,
   CardContent,
@@ -573,34 +573,34 @@ export function FormsTab({ isActive }: { isActive?: boolean }) {
   return (
     <TabsContent value="forms" className="mt-0">
       <Tabs defaultValue="accountability" className="space-y-6">
-        <TabsList className="flex h-auto w-full gap-2 overflow-x-auto rounded-xl border bg-white p-2 shadow-sm scrollbar-hide">
+        <TabsList className={segmentTabsListClassName + ' flex w-full overflow-x-auto scrollbar-hide'}>
           <TabsTrigger
             value="accountability"
-            className="flex-1 whitespace-nowrap rounded-lg px-3 py-2 font-medium data-[state=active]:bg-red-600 data-[state=active]:text-white hover:bg-gray-100 data-[state=active]:hover:bg-red-700"
+            className={segmentTabsTriggerClassName + ' flex-1 whitespace-nowrap'}
           >
             Asset Accountability
           </TabsTrigger>
           <TabsTrigger
             value="return"
-            className="flex-1 whitespace-nowrap rounded-lg px-3 py-2 font-medium data-[state=active]:bg-red-600 data-[state=active]:text-white hover:bg-gray-100 data-[state=active]:hover:bg-red-700"
+            className={segmentTabsTriggerClassName + ' flex-1 whitespace-nowrap'}
           >
             Asset Return
           </TabsTrigger>
           <TabsTrigger
             value="checklist"
-            className="flex-1 whitespace-nowrap rounded-lg px-3 py-2 font-medium data-[state=active]:bg-red-600 data-[state=active]:text-white hover:bg-gray-100 data-[state=active]:hover:bg-red-700"
+            className={segmentTabsTriggerClassName + ' flex-1 whitespace-nowrap'}
           >
             Asset Checklist
           </TabsTrigger>
           <TabsTrigger
             value="transfer"
-            className="flex-1 whitespace-nowrap rounded-lg px-3 py-2 font-medium data-[state=active]:bg-red-600 data-[state=active]:text-white hover:bg-gray-100 data-[state=active]:hover:bg-red-700"
+            className={segmentTabsTriggerClassName + ' flex-1 whitespace-nowrap'}
           >
             Asset Transfer
           </TabsTrigger>
           <TabsTrigger
             value="borrow"
-            className="flex-1 whitespace-nowrap rounded-lg px-3 py-2 font-medium data-[state=active]:bg-red-600 data-[state=active]:text-white hover:bg-gray-100 data-[state=active]:hover:bg-red-700"
+            className={segmentTabsTriggerClassName + ' flex-1 whitespace-nowrap'}
           >
             Asset Borrow
           </TabsTrigger>

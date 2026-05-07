@@ -40,7 +40,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select';
-import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
+import { Tabs, TabsContent, TabsList, TabsTrigger, segmentTabsListClassName, segmentTabsTriggerClassName } from '@/components/ui/tabs';
 import { assetColumns as defaultAssetColumns } from './assetsComponents/assetTable/assetColumns';
 
 import { AssetStats } from './assetsComponents/assetStats';
@@ -735,7 +735,7 @@ export function AssetsPage() {
           loading={isInitialLoading}
         >
           <Button
-            variant="ghost"
+            variant="header"
             size="sm"
             onClick={() => fetchAssets()}
             disabled={loading}
@@ -745,17 +745,17 @@ export function AssetsPage() {
             Refresh
           </Button>
           <Button
+            variant="header"
             size="sm"
             onClick={handleAddAssetClick}
             disabled={!hasPermission('Asset List', 'create')}
-            className="bg-white text-red-600 hover:bg-white/90"
           >
             <Plus className="mr-2 h-4 w-4" />
             Add New Asset
           </Button>
           <Button
+            variant="header"
             size="sm"
-            variant="outline"
             onClick={() => {
               if (!hasAssetManagementAccess()) {
                 setIsAccessDeniedDialogOpen(true);
@@ -764,7 +764,6 @@ export function AssetsPage() {
               }
             }}
             disabled={!hasPermission('Asset List', 'create')}
-            className="border-white/30 text-white hover:bg-white/20"
             aria-label="Create Asset Builder"
           >
             <Package className="mr-2 h-4 w-4" />
@@ -779,16 +778,16 @@ export function AssetsPage() {
         />
 
         <Tabs defaultValue="asset-list" className="w-full">
-          <TabsList className="grid h-auto w-full grid-cols-2 rounded-xl bg-gray-100 p-1.5">
+          <TabsList className={segmentTabsListClassName + ' grid grid-cols-2'}>
             <TabsTrigger
               value="asset-list"
-              className="rounded-lg px-3 py-2 text-xs sm:text-sm transition-all data-[state=active]:bg-red-600 data-[state=active]:text-white data-[state=active]:shadow-sm"
+              className={segmentTabsTriggerClassName}
             >
               Asset List
             </TabsTrigger>
             <TabsTrigger
               value="asset-built"
-              className="rounded-lg px-3 py-2 text-xs sm:text-sm transition-all data-[state=active]:bg-red-600 data-[state=active]:text-white data-[state=active]:shadow-sm"
+              className={segmentTabsTriggerClassName}
             >
               Asset Built
             </TabsTrigger>

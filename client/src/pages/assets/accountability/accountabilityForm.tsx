@@ -71,6 +71,7 @@ import {
   getCompanyAccentColor,
   getBlackCodersFooterGradient,
   isBlackCoders,
+  sortAssetsByLast5Digits,
 } from '@/lib/pdfGenerator/shared';
 
 const logger = createLogger('AccountabilityForm');
@@ -485,10 +486,11 @@ export const generateAccountabilityFormPDF = async (
   y += 10;
 
   // Categorize assets based on IT/Admin scope classification
-  const itAssets = form.assets.filter(
+  const sortedAssets = sortAssetsByLast5Digits(form.assets);
+  const itAssets = sortedAssets.filter(
     asset => getAssetScopeType(asset, form) === 'IT'
   );
-  const adminAssets = form.assets.filter(
+  const adminAssets = sortedAssets.filter(
     asset => getAssetScopeType(asset, form) === 'Admin'
   );
 
@@ -1376,16 +1378,16 @@ export function AccountabilityFormCard({
       <CardContent className="space-y-4 flex-1">
         {hasChecklist ? (
           <Tabs value={activeCardTab} onValueChange={(v) => setActiveCardTab(v as 'accountability' | 'checklist')} className="w-full">
-            <TabsList className="grid w-full grid-cols-2 mb-4 rounded-xl border bg-white p-1 shadow-sm">
+            <TabsList className={segmentTabsListClassName + ' grid grid-cols-2 mb-4'}>
               <TabsTrigger
                 value="accountability"
-                className="rounded-lg transition-all duration-200 hover:bg-red-50 hover:text-red-700 data-[state=active]:bg-red-600 data-[state=active]:text-white data-[state=active]:shadow"
+                className={segmentTabsTriggerClassName}
               >
                 Accountability
               </TabsTrigger>
               <TabsTrigger
                 value="checklist"
-                className="rounded-lg transition-all duration-200 hover:bg-red-50 hover:text-red-700 data-[state=active]:bg-red-600 data-[state=active]:text-white data-[state=active]:shadow"
+                className={segmentTabsTriggerClassName}
               >
                 Checklist
               </TabsTrigger>

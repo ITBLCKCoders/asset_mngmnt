@@ -10,6 +10,7 @@ import {
   getBlackCodersFooterGradient,
   isBlackCoders,
   resolveCompanyBranding,
+  sortAssetsByLast5Digits,
 } from './shared';
 
 export interface AssetTransferData {
@@ -187,7 +188,8 @@ export const generateAssetTransferPDF = async (
     : ['IT Staff', 'IT Officer', 'IT Manager', 'IT helpdesk'];
   const transferTypeLabels = ['Transfer', 'Transfer Offboarding'];
 
-  const assetRows = transferData.assets.map(asset => [
+  const sortedAssets = sortAssetsByLast5Digits(transferData.assets);
+  const assetRows = sortedAssets.map(asset => [
     asset.name || '—',
     asset.code || '—',
     asset.transferCondition ?? '—',

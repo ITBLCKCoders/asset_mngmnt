@@ -139,7 +139,7 @@ export default function MyTransferRequestsPage() {
         >
           <Link to="/assets/transfer-request">
             <Button
-              variant="outline"
+              variant="header"
               size="sm"
               className="flex items-center gap-2"
             >
@@ -148,7 +148,7 @@ export default function MyTransferRequestsPage() {
             </Button>
           </Link>
           <Button
-            variant="ghost"
+            variant="header"
             size="sm"
             onClick={fetchRequests}
             disabled={loading}

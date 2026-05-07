@@ -740,7 +740,7 @@ export default function ApprovalsPage() {
           description="Manage return and transfer form approvals and signatures"
         >
           <Button
-            variant="ghost"
+            variant="header"
             size="sm"
             onClick={refreshAll}
             disabled={isAnyLoading}

@@ -6,6 +6,7 @@ import {
   getBlackCodersFooterGradient,
   isBlackCoders,
   resolveCompanyBranding,
+  sortAssetsByLast5Digits,
 } from './shared';
 
 export interface AssetChecklistData {

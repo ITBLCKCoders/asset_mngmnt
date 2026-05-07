@@ -542,14 +542,14 @@ export default function ReturnRequestsPage() {
         >
           <div className="flex items-center gap-2">
             <Button
-              variant="outline"
+              variant="header"
               size="sm"
               onClick={() => navigate('/assets/return')}
             >
               Back to Asset Return
             </Button>
             <Button
-              variant="ghost"
+              variant="header"
               size="sm"
               onClick={fetchPending}
               className="flex items-center gap-2"

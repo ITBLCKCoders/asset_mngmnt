@@ -10,12 +10,12 @@ import { Asset } from '../assets-list/assetsComponents/assetTable/assetData';
 import { AssetViewModal } from '../assets-list/assetsComponents/assetViewModal';
 import { api } from '@/lib/api';
 import { toast } from 'sonner';
-import { Company } from '@/pages/settings/settingsComponents/settingsTabs/generalTab/components/utils/companyTypes';
 import jsPDF from 'jspdf';
 import html2canvas from 'html2canvas';
 import { useUserPermissions } from '@/hooks/useUserPermissions';
 import { useCurrentUser } from '@/hooks/useCurrentUser';
 import { useDelayedLoading } from '@/hooks/useDelayedLoading';
+import { useCompanyContext } from '@/context/CompanyContext';
 import { TaggingColumns } from './components/TaggingColumns';
 import { AssetTagModal } from './components/AssetTagModal';
 
@@ -96,6 +96,7 @@ interface ApiAsset {
 export default function AssetsTagging() {
   const { user: currentUser } = useCurrentUser();
   const { hasPermission } = useUserPermissions();
+  const { activeCompany } = useCompanyContext();
   const [assets, setAssets] = useState<Asset[]>([]);
   const [loading, setLoading] = useState(true);
   const [selectedAssets, setSelectedAssets] = useState<Set<string>>(new Set());
@@ -103,7 +104,6 @@ export default function AssetsTagging() {
   const [isAssetViewModalOpen, setIsAssetViewModalOpen] = useState(false);
   const [selectedAssetForView, setSelectedAssetForView] =
     useState<Asset | null>(null);
-  const [activeCompany, setActiveCompany] = useState<Company | null>(null);
   const displayLoading = useDelayedLoading(loading, 2000);
 
   const taggingColumns = TaggingColumns({
@@ -224,20 +224,6 @@ export default function AssetsTagging() {
       setLoading(false);
     }
   };
-
-  const fetchActiveCompany = async () => {
-    try {
-      const response = await api.get('/companies/active');
-      const active = response?.data?.[0] || null;
-      setActiveCompany(active);
-    } catch (error) {
-      console.error('Failed to fetch active company:', error);
-    }
-  };
-
-  useEffect(() => {
-    fetchActiveCompany();
-  }, []);
 
   useEffect(() => {
     fetchAssets();
@@ -368,7 +354,7 @@ export default function AssetsTagging() {
         >
           <div className="flex w-full flex-col gap-2 sm:w-auto sm:flex-row sm:flex-wrap sm:items-center sm:justify-end">
             <Button
-              variant="ghost"
+              variant="header"
               size="sm"
               onClick={() => fetchAssets()}
               className="flex items-center gap-2"
@@ -377,10 +363,9 @@ export default function AssetsTagging() {
               Refresh
             </Button>
             <Button
-              variant="outline"
+              variant="header"
               size="sm"
               onClick={() => handleSelectAll(true)}
-              className="border-red-200 text-red-600 hover:bg-red-50"
               disabled={
                 !hasPermission('Asset Tagging', 'create') ||
                 !hasPermission('Asset Tagging', 'edit')
@@ -389,10 +374,9 @@ export default function AssetsTagging() {
               Select All
             </Button>
             <Button
-              variant="outline"
+              variant="header"
               size="sm"
               onClick={() => handleSelectAll(false)}
-              className="border-red-200 text-red-600 hover:bg-red-50"
               disabled={
                 !hasPermission('Asset Tagging', 'create') ||
                 !hasPermission('Asset Tagging', 'edit')
@@ -401,9 +385,9 @@ export default function AssetsTagging() {
               Deselect All
             </Button>
             <Button
+              variant="header"
               size="sm"
               onClick={handleGenerateTags}
-              className="bg-red-600 hover:bg-red-700 text-white shadow-md ml-1"
               disabled={
                 selectedAssets.size === 0 ||
                 !hasPermission('Asset Tagging', 'create') ||

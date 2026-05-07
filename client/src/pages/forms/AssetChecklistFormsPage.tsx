@@ -161,7 +161,7 @@ export default function AssetChecklistFormsPage() {
           description="View and download asset checklist forms"
         >
           <Button
-            variant="ghost"
+            variant="header"
             size="sm"
             onClick={fetchChecklists}
             disabled={loading}

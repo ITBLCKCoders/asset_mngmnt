@@ -190,7 +190,7 @@ export default function AssetReturnFormsPage() {
           loading={displayLoading}
         >
           <Button
-            variant="ghost"
+            variant="header"
             size="sm"
             onClick={fetchReturnForms}
             disabled={loading}

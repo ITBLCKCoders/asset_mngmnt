@@ -202,7 +202,7 @@ export default function BorrowFormsPage() {
           loading={displayLoading}
         >
           <Button
-            variant="ghost"
+            variant="header"
             size="sm"
             onClick={() => void fetchBorrowForms()}
             disabled={loading}

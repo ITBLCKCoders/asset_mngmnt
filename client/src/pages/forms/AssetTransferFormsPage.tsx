@@ -148,7 +148,7 @@ export default function AssetTransferFormsPage() {
           loading={displayLoading}
         >
           <Button
-            variant="ghost"
+            variant="header"
             size="sm"
             onClick={fetchTransferForms}
             disabled={loading}

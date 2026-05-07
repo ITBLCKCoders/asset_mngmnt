@@ -11,7 +11,7 @@ import {
 } from '@/components/ui/card';
 import { PageHeader } from '@/components/common/PageHeader';
 import { Button } from '@/components/ui/button';
-import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
+import { Tabs, TabsList, TabsTrigger, segmentTabsListClassName, segmentTabsTriggerClassName } from '@/components/ui/tabs';
 import { getToken } from '@/lib/api';
 import { toast } from 'sonner';
 import { useCurrentUser } from '@/hooks/useCurrentUser';
@@ -770,23 +770,23 @@ export default function Dashboard() {
                 value={scope}
                 onValueChange={v => setScope(v as 'it' | 'admin')}
               >
-                <TabsList className="grid h-auto w-full grid-cols-2 max-w-full sm:max-w-[280px]">
+                <TabsList className={segmentTabsListClassName + ' grid grid-cols-2 max-w-full sm:max-w-[280px]'}>
                   <TabsTrigger
                     value="it"
-                    className="px-3 py-2 text-xs sm:text-sm hover:bg-gray-200 data-[state=active]:bg-red-600 data-[state=active]:text-white data-[state=active]:shadow"
+                    className={segmentTabsTriggerClassName}
                   >
                     IT Asset
                   </TabsTrigger>
                   <TabsTrigger
                     value="admin"
-                    className="px-3 py-2 text-xs sm:text-sm hover:bg-gray-200 data-[state=active]:bg-red-600 data-[state=active]:text-white data-[state=active]:shadow"
+                    className={segmentTabsTriggerClassName}
                   >
                     Admin Asset
                   </TabsTrigger>
                 </TabsList>
               </Tabs>
             )}
-            <Button variant="ghost" size="sm" onClick={handleRefresh}>
+            <Button variant="header" size="sm" onClick={handleRefresh}>
               {loading ? (
                 <Loader2 className="h-4 w-4 animate-spin" />
               ) : (
@@ -919,16 +919,16 @@ export default function Dashboard() {
                         setMovementPeriod(v as 'weekly' | 'monthly')
                       }
                     >
-                      <TabsList className="h-auto w-full sm:w-auto">
+                      <TabsList className={segmentTabsListClassName + ' w-full sm:w-auto'}>
                         <TabsTrigger
                           value="weekly"
-                          className="px-3 py-2 text-xs sm:text-sm data-[state=active]:bg-red-600 data-[state=active]:text-white hover:bg-gray-200"
+                          className={segmentTabsTriggerClassName}
                         >
                           Weekly
                         </TabsTrigger>
                         <TabsTrigger
                           value="monthly"
-                          className="px-3 py-2 text-xs sm:text-sm data-[state=active]:bg-red-600 data-[state=active]:text-white hover:bg-gray-200"
+                          className={segmentTabsTriggerClassName}
                         >
                           Monthly
                         </TabsTrigger>

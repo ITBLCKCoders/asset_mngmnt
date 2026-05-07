@@ -381,15 +381,13 @@ export default function AccountabilityFormsPage() {
           loading={displayLoading}
         >
           <Button
-            variant="ghost"
+            variant="header"
             size="sm"
-            onClick={() => fetchForms()}
+            onClick={() => void fetchForms()}
             disabled={displayLoading}
             className="flex items-center gap-2"
           >
-            <RefreshCw
-              className={`h-4 w-4 ${displayLoading ? 'animate-spin' : ''}`}
-            />
+            <RefreshCw className={`h-4 w-4 ${displayLoading ? 'animate-spin' : ''}`} />
             Refresh
           </Button>
         </PageHeader>

@@ -448,7 +448,7 @@ export default function AuditTrail() {
           description="Track all system activities and changes"
         >
           <Button
-            variant="outline"
+            variant="header"
             size="sm"
             onClick={() => exportCurrentView('csv')}
             className="flex items-center gap-2"
@@ -466,7 +466,7 @@ export default function AuditTrail() {
             Export JSON
           </Button>
           <Button
-            variant="ghost"
+            variant="header"
             size="sm"
             onClick={() => setCurrentPage(1)}
             className="flex items-center gap-2"

@@ -1514,7 +1514,7 @@ export default function UserManual() {
           description="Asset Management System - Complete Guide"
         >
           <Button
-            variant="ghost"
+            variant="header"
             size="sm"
             onClick={() => window.location.reload()}
             className="flex items-center gap-2"

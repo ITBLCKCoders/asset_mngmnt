@@ -60,6 +60,36 @@ export const getBlackCodersFooterGradient = (): { start: string; end: string } =
   end: '#000000', // black
 });
 
+/** Sort assets by the last 5 digits of asset_code in ascending order */
+export const sortAssetsByLast5Digits = <T extends { code: string }>(assets: T[]): T[] => {
+  return [...assets].sort((a, b) => {
+    const aLast5 = a.code.slice(-5);
+    const bLast5 = b.code.slice(-5);
+    const aNum = parseInt(aLast5, 10);
+    const bNum = parseInt(bLast5, 10);
+    return aNum - bNum;
+  });
+};
+
+/** Format builder items for display: parent first, then indented children */
+export const formatBuilderItems = <T extends { is_parent?: boolean }>(items: T[]): T[] => {
+  const parent = items.find(item => item.is_parent);
+  const children = items.filter(item => !item.is_parent);
+  
+  // Sort children by last 5 digits of code if they have a code property
+  const sortedChildren = children.sort((a, b) => {
+    const aCode = (a as any).code || '';
+    const bCode = (b as any).code || '';
+    const aLast5 = aCode.slice(-5);
+    const bLast5 = bCode.slice(-5);
+    const aNum = parseInt(aLast5, 10);
+    const bNum = parseInt(bLast5, 10);
+    return aNum - bNum;
+  });
+  
+  return parent ? [parent, ...sortedChildren] : sortedChildren;
+};
+
 export const fetchCompanyBrandingByName = async (
   companyName?: string | null
 ): Promise<PdfCompanyBranding | null> => {

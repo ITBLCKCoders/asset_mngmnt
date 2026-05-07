@@ -31,7 +31,7 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Badge } from '@/components/ui/badge';
 import { DataTable } from '@/components/ui/dataTable';
-import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
+import { Tabs, TabsList, TabsTrigger, segmentTabsListClassName, segmentTabsTriggerClassName } from '@/components/ui/tabs';
 import { api } from '@/lib/api';
 import { useCurrentUser } from '@/hooks/useCurrentUser';
 import { useUserPermissions } from '@/hooks/useUserPermissions';
@@ -956,16 +956,16 @@ export default function ReportsPage() {
                 value={scope}
                 onValueChange={v => setScope(v as 'it' | 'admin')}
               >
-                <TabsList className="grid h-auto w-full max-w-full grid-cols-2 sm:max-w-[280px]">
+                <TabsList className={segmentTabsListClassName + ' grid grid-cols-2 max-w-full sm:max-w-[280px]'}>
                   <TabsTrigger
                     value="it"
-                    className="px-3 py-2 text-xs sm:text-sm hover:bg-gray-200 data-[state=active]:bg-red-600 data-[state=active]:text-white data-[state=active]:shadow"
+                    className={segmentTabsTriggerClassName}
                   >
                     IT Asset
                   </TabsTrigger>
                   <TabsTrigger
                     value="admin"
-                    className="px-3 py-2 text-xs sm:text-sm hover:bg-gray-200 data-[state=active]:bg-red-600 data-[state=active]:text-white data-[state=active]:shadow"
+                    className={segmentTabsTriggerClassName}
                   >
                     Admin Asset
                   </TabsTrigger>
@@ -973,7 +973,7 @@ export default function ReportsPage() {
               </Tabs>
             )}
             <Button
-              variant="ghost"
+              variant="header"
               size="sm"
               onClick={() => setRefreshTick(prev => prev + 1)}
               disabled={loading || userLoading}
@@ -985,7 +985,7 @@ export default function ReportsPage() {
               )}
               Refresh
             </Button>
-            <Button size="sm" onClick={() => openExport()}>
+            <Button variant="header" size="sm" onClick={() => openExport()}>
               <FileStack className="mr-2 h-4 w-4" />
               Export Reports
             </Button>
@@ -1032,10 +1032,10 @@ export default function ReportsPage() {
                   value={graphPeriod}
                   onValueChange={v => setGraphPeriod(v as GraphPeriod)}
                 >
-                  <TabsList className="grid grid-cols-3">
-                    <TabsTrigger value="weekly">Weekly</TabsTrigger>
-                    <TabsTrigger value="monthly">Monthly</TabsTrigger>
-                    <TabsTrigger value="yearly">Yearly</TabsTrigger>
+                  <TabsList className={segmentTabsListClassName + ' grid grid-cols-3'}>
+                    <TabsTrigger value="weekly" className={segmentTabsTriggerClassName}>Weekly</TabsTrigger>
+                    <TabsTrigger value="monthly" className={segmentTabsTriggerClassName}>Monthly</TabsTrigger>
+                    <TabsTrigger value="yearly" className={segmentTabsTriggerClassName}>Yearly</TabsTrigger>
                   </TabsList>
                 </Tabs>
               </div>
@@ -1089,10 +1089,10 @@ export default function ReportsPage() {
                   value={graphPeriod}
                   onValueChange={v => setGraphPeriod(v as GraphPeriod)}
                 >
-                  <TabsList className="grid grid-cols-3">
-                    <TabsTrigger value="weekly">Weekly</TabsTrigger>
-                    <TabsTrigger value="monthly">Monthly</TabsTrigger>
-                    <TabsTrigger value="yearly">Yearly</TabsTrigger>
+                  <TabsList className={segmentTabsListClassName + ' grid grid-cols-3'}>
+                    <TabsTrigger value="weekly" className={segmentTabsTriggerClassName}>Weekly</TabsTrigger>
+                    <TabsTrigger value="monthly" className={segmentTabsTriggerClassName}>Monthly</TabsTrigger>
+                    <TabsTrigger value="yearly" className={segmentTabsTriggerClassName}>Yearly</TabsTrigger>
                   </TabsList>
                 </Tabs>
               </div>
@@ -1154,7 +1154,7 @@ export default function ReportsPage() {
               { key: 'date', label: 'Date', render: row => formatDateLabel(row.date) },
             ]}
           >
-            <Button size="sm" onClick={() => openExport(focusedTableKey)}>
+            <Button variant="header" size="sm" onClick={() => openExport(focusedTableKey)}>
               <Download className="mr-2 h-4 w-4" />
               Export {focusedTableLabel}
             </Button>

@@ -59,19 +59,17 @@ export function SettingsHeader() {
           </div>
           <div className="flex w-full flex-col gap-3 sm:w-auto sm:flex-row sm:items-center">
             <Button
-              variant="secondary"
+              variant="header"
               size="lg"
               onClick={() => navigate('/audit')}
-              className="border-white/20 bg-white/10 text-white shadow-lg transition-all duration-300 hover:bg-white/20 sm:w-auto"
             >
               <History className="mr-2 h-5 w-5" />
               Audit Log
             </Button>
             <Button
-              variant="secondary"
+              variant="header"
               size="lg"
               onClick={() => window.location.reload()}
-              className="border-white/20 bg-white/10 text-white shadow-lg transition-all duration-300 hover:bg-white/20 sm:w-auto"
             >
               <RefreshCw className="mr-2 h-5 w-5" />
               Refresh

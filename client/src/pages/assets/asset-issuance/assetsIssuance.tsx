@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState, useMemo } from 'react';
+import { useEffect, useState, useMemo, useRef, useCallback } from 'react';
 import {
   Package,
   Boxes,
@@ -28,7 +28,7 @@ import { toast } from 'sonner';
 import { useCurrentUser } from '@/hooks/useCurrentUser';
 import { useUserPermissions } from '@/hooks/useUserPermissions';
 import { createLogger } from '@/lib/logger';
-import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
+import { Tabs, TabsContent, TabsList, TabsTrigger, segmentTabsListClassName, segmentTabsTriggerClassName } from '@/components/ui/tabs';
 import { AssetSelectionPanel } from './components/AssetSelectionPanel';
 import { AssignmentDetailsPanel } from './components/AssignmentDetailsPanel';
 import {
@@ -115,6 +115,8 @@ export default function AssetsAssignment() {
   );
   const [buildersPage, setBuildersPage] = useState(1);
   const buildersPerPage = 9; // 3x3 grid
+  const [loadingMoreBuilders, setLoadingMoreBuilders] = useState(false);
+  const sentinelRef = useRef<HTMLDivElement>(null);
   const displayLoading = useDelayedLoading(loading, 2000);
 
   const fetchAssets = async () => {
@@ -655,6 +657,36 @@ export default function AssetsAssignment() {
 
   const hasMoreBuilders = filteredBuilders.length > paginatedBuilders.length;
 
+  // Infinite scroll for asset builders
+  useEffect(() => {
+    const observer = new IntersectionObserver(
+      (entries) => {
+        if (entries[0].isIntersecting && hasMoreBuilders && !loadingMoreBuilders && !buildersLoading) {
+          setLoadingMoreBuilders(true);
+          setBuildersPage(prev => prev + 1);
+          setTimeout(() => setLoadingMoreBuilders(false), 500);
+        }
+      },
+      { threshold: 0.1 }
+    );
+
+    const currentSentinel = sentinelRef.current;
+    if (currentSentinel) {
+      observer.observe(currentSentinel);
+    }
+
+    return () => {
+      if (currentSentinel) {
+        observer.unobserve(currentSentinel);
+      }
+    };
+  }, [hasMoreBuilders, loadingMoreBuilders, buildersLoading]);
+
+  // Reset builders page when search term changes
+  useEffect(() => {
+    setBuildersPage(1);
+  }, [builderSearchTerm]);
+
   const selectedBuilders = useMemo(() => {
     return availableBuilders.filter((builder: any) => {
       const builderAssets =
@@ -785,10 +817,10 @@ export default function AssetsAssignment() {
           {/* Asset Selection / Asset Built Tabs */}
           <div className="xl:col-span-2">
             <Tabs defaultValue="select-assets" className="w-full">
-              <TabsList className="grid h-auto w-full grid-cols-1 rounded-xl bg-gray-100 p-1.5 sm:grid-cols-2">
+              <TabsList className={segmentTabsListClassName + ' grid grid-cols-2'}>
                 <TabsTrigger
                   value="select-assets"
-                  className="flex items-center gap-2 px-3 py-2 text-xs sm:text-sm data-[state=active]:bg-red-500 data-[state=active]:text-white data-[state=active]:shadow-sm"
+                  className={segmentTabsTriggerClassName + ' flex items-center gap-2'}
                 >
                   <Package className="h-4 w-4" />
                   Select Assets
@@ -798,7 +830,7 @@ export default function AssetsAssignment() {
                 </TabsTrigger>
                 <TabsTrigger
                   value="asset-built"
-                  className="flex items-center gap-2 px-3 py-2 text-xs sm:text-sm data-[state=active]:bg-red-500 data-[state=active]:text-white data-[state=active]:shadow-sm"
+                  className={segmentTabsTriggerClassName + ' flex items-center gap-2'}
                 >
                   <Boxes className="h-4 w-4" />
                   Asset Built
@@ -822,8 +854,8 @@ export default function AssetsAssignment() {
               </TabsContent>
 
               <TabsContent value="asset-built" className="mt-4">
-                <Card className="shadow-xl border-0 bg-white/80 backdrop-blur-sm min-h-[500px]">
-                  <CardHeader className="pb-4">
+                <Card className="shadow-xl border-0 bg-white/80 backdrop-blur-sm h-[592px] flex flex-col">
+                  <CardHeader className="pb-4 flex-shrink-0">
                     <CardTitle className="flex flex-wrap items-center gap-3 text-xl">
                       <div className="p-2 bg-red-100 rounded-lg flex-shrink-0">
                         <Boxes className="h-5 w-5 text-red-600" />
@@ -848,7 +880,7 @@ export default function AssetsAssignment() {
                       />
                     </div>
                   </CardHeader>
-                  <CardContent className="pt-0">
+                  <CardContent className="pt-0 flex-1 flex flex-col overflow-hidden">
                     {buildersLoading ? (
                       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
                         {Array.from({ length: 6 }).map((_, index) => (
@@ -856,8 +888,8 @@ export default function AssetsAssignment() {
                         ))}
                       </div>
                     ) : paginatedBuilders.length > 0 ? (
-                      <div className="space-y-4">
-                        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 max-h-96 overflow-y-auto scrollbar-thin scrollbar-thumb-gray-300 scrollbar-track-gray-100 p-1">
+                      <div className="flex flex-col h-full overflow-hidden">
+                        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 overflow-y-auto flex-1 p-1 scrollbar-thin scrollbar-thumb-gray-300 scrollbar-track-gray-100">
                           {paginatedBuilders.map((builder: any) => {
                             const isAvailable = builder.status === 'Available';
                             const builderAssets =
@@ -952,36 +984,34 @@ export default function AssetsAssignment() {
                                               Assets in this builder (asset code
                                               · name):
                                             </div>
-                                            <ul className="space-y-1.5 max-h-[8.5rem] overflow-y-auto overflow-x-hidden scrollbar-thin scrollbar-thumb-gray-300 scrollbar-track-gray-100 pl-5 list-disc">
+                                            <div className="space-y-1 max-h-[8.5rem] overflow-y-auto scrollbar-thin scrollbar-thumb-gray-300 scrollbar-track-gray-100">
                                               {builder.items.map(
                                                 (item: any, index: number) => (
-                                                  <li
+                                                  <div
                                                     key={index}
-                                                    className={`flex items-center gap-2 text-xs rounded px-3 py-2 border -ml-1 pl-3 ${
-                                                      item.is_parent ? 'bg-amber-50 border-amber-200' : 'bg-gray-50 border-gray-200'
+                                                    className={`flex items-center gap-2 text-xs rounded-lg px-2 py-1.5 ${
+                                                      item.is_parent ? 'bg-amber-50 border border-amber-200' : 'bg-muted/30'
                                                     }`}
                                                   >
-                                                    <div className="flex items-center gap-2">
-                                                      {item.is_parent && (
-                                                        <Crown className="h-3 w-3 text-amber-600 shrink-0" />
-                                                      )}
-                                                      <span
-                                                        className={`font-mono font-medium shrink-0 ${item.is_parent ? 'text-amber-900' : 'text-gray-900'}`}
-                                                        title="Asset code"
-                                                      >
-                                                        {item.asset_code}
-                                                      </span>
-                                                    </div>
+                                                    {item.is_parent && (
+                                                      <Crown className="h-3 w-3 text-amber-600 shrink-0" />
+                                                    )}
                                                     <span
-                                                      className={`truncate ${item.is_parent ? 'text-amber-700' : 'text-gray-600'}`}
+                                                      className={`font-mono font-medium shrink-0 ${item.is_parent ? 'text-amber-900' : 'text-gray-900'}`}
+                                                      title="Asset code"
+                                                    >
+                                                      {item.asset_code}
+                                                    </span>
+                                                    <span
+                                                      className={`truncate flex-1 min-w-0 ${item.is_parent ? 'text-amber-700' : 'text-gray-600'}`}
                                                       title={item.asset_name}
                                                     >
                                                       {item.asset_name}
                                                     </span>
-                                                  </li>
+                                                  </div>
                                                 )
                                               )}
-                                            </ul>
+                                            </div>
                                           </div>
                                         )}
                                     </div>
@@ -991,16 +1021,9 @@ export default function AssetsAssignment() {
                             );
                           })}
                         </div>
+                        {/* Sentinel element for infinite scroll */}
                         {hasMoreBuilders && (
-                          <div className="flex justify-center pt-4">
-                            <Button
-                              onClick={() => setBuildersPage(prev => prev + 1)}
-                              variant="outline"
-                              className="px-6"
-                            >
-                              Load More Builders
-                            </Button>
-                          </div>
+                          <div ref={sentinelRef} className="flex-shrink-0 h-1" />
                         )}
                       </div>
                     ) : (

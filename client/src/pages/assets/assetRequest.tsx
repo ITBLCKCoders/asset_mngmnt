@@ -266,7 +266,7 @@ export default function AssetDepartment() {
           description="Request specific types of assets for your needs"
         >
           <Button
-            variant="ghost"
+            variant="header"
             size="sm"
             onClick={() => fetchAssetRequests()}
             className="flex items-center gap-2"

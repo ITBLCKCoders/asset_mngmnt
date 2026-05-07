@@ -12,6 +12,7 @@ import {
   isBlackCoders,
   pdfLogger as logger,
   resolveCompanyBranding,
+  sortAssetsByLast5Digits,
 } from './shared';
 
 export interface AssetReturnData {
@@ -218,7 +219,8 @@ export const generateAssetReturnPDF = async (
 
   /** Condition is recorded when IT processes the return; keep PDF column blank until then. */
   const showReturnConditionOnPdf = !!returnData.process_signed_at?.trim();
-  const assetRows = returnData.assets.map(asset => [
+  const sortedAssets = sortAssetsByLast5Digits(returnData.assets);
+  const assetRows = sortedAssets.map(asset => [
     asset.name || '—',
     asset.code || '—',
     showReturnConditionOnPdf

@@ -100,7 +100,7 @@ export default function MyReturnRequestsPage() {
         >
           <Link to="/assets/return-request">
             <Button
-              variant="outline"
+              variant="header"
               size="sm"
               className="flex items-center gap-2"
             >
@@ -109,7 +109,7 @@ export default function MyReturnRequestsPage() {
             </Button>
           </Link>
           <Button
-            variant="ghost"
+            variant="header"
             size="sm"
             onClick={fetchForms}
             disabled={loading}

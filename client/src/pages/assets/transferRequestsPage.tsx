@@ -392,14 +392,14 @@ export default function TransferRequestsPage() {
         >
           <div className="flex items-center gap-2">
             <Button
-              variant="outline"
+              variant="header"
               size="sm"
               onClick={() => navigate('/assets/transfer')}
             >
               Back to Asset Transfer
             </Button>
             <Button
-              variant="ghost"
+              variant="header"
               size="sm"
               onClick={fetchApproved}
               className="flex items-center gap-2"

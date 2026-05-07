@@ -387,7 +387,7 @@ export default function MyAssetsPage() {
           description={`Assets assigned to ${user.name} • ${assets.length} items`}
         >
           <Button
-            variant="ghost"
+            variant="header"
             size="sm"
             onClick={fetchMyAssets}
             disabled={loading}
@@ -397,10 +397,9 @@ export default function MyAssetsPage() {
             Refresh
           </Button>
           <Button
+            variant="header"
             size="sm"
-            variant="outline"
             onClick={() => navigate('/profile?tab=documents')}
-            className="border-red-200 text-red-600 hover:bg-red-50"
             aria-label="View My Accountability Forms"
           >
             <FileText className="mr-2 h-4 w-4" />

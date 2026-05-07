@@ -47,8 +47,8 @@ export function AssetSelectionPanel({
   onClearAll,
 }: AssetSelectionPanelProps) {
   return (
-    <Card className="shadow-xl border-0 bg-white/80 backdrop-blur-sm min-h-[500px]">
-      <CardHeader className="pb-4">
+    <Card className="shadow-xl border-0 bg-white/80 backdrop-blur-sm h-[592px] flex flex-col">
+      <CardHeader className="pb-4 flex-shrink-0">
         <CardTitle className="flex flex-wrap items-center gap-3 text-xl">
           <div className="p-2 bg-red-100 rounded-lg">
             <Package className="h-5 w-5 text-red-600" />
@@ -71,8 +71,8 @@ export function AssetSelectionPanel({
         </div>
       </CardHeader>
 
-      <CardContent className="pt-0">
-        <div className="space-y-3 max-h-96 overflow-y-auto pr-1 sm:-mr-6 sm:pr-6 scrollbar-thin scrollbar-thumb-gray-300 scrollbar-track-gray-100">
+      <CardContent className="pt-0 flex-1 flex flex-col overflow-hidden">
+        <div className="space-y-3 overflow-y-auto flex-1 pr-1 sm:-mr-6 sm:pr-6 scrollbar-thin scrollbar-thumb-gray-300 scrollbar-track-gray-100">
           {loading ? (
             <div className="flex items-center justify-center py-12">
               <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-red-600"></div>
