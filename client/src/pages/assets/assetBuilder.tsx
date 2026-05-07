@@ -2,7 +2,7 @@
 
 import { useState, useMemo, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Package, X, Check, ArrowLeft, Trash2, RefreshCw, FileText } from 'lucide-react';
+import { Package, X, Check, ArrowLeft, Trash2, RefreshCw, FileText, Crown } from 'lucide-react';
 import {
   Card,
   CardContent,
@@ -25,14 +25,19 @@ import { toast } from 'sonner';
 import { useAssetsData } from './assets-list/useAssetsData';
 import { createLogger } from '@/lib/logger';
 import { BuilderFormsTab } from './assets-list/assetsComponents/BuilderFormsTab';
+import { useCompanyContext } from '@/context/CompanyContext';
 
 const logger = createLogger('AssetBuilder');
 
 export default function AssetBuilderPage() {
   const navigate = useNavigate();
+  const { activeCompany } = useCompanyContext();
   const [builderName, setBuilderName] = useState('');
   const [selectedAssetIds, setSelectedAssetIds] = useState<Set<string>>(
     new Set()
+  );
+  const [selectedParentAssetId, setSelectedParentAssetId] = useState<string | null>(
+    null
   );
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [groupedAssetIds, setGroupedAssetIds] = useState<Set<string> | null>(
@@ -49,7 +54,7 @@ export default function AssetBuilderPage() {
   );
   const [activeTab, setActiveTab] = useState('assets');
 
-  const { assets, loading } = useAssetsData();
+  const { assets, loading } = useAssetsData(activeCompany?.id);
 
   useEffect(() => {
     const fetchGroupedAssets = async () => {
@@ -120,8 +125,16 @@ export default function AssetBuilderPage() {
     const newSelected = new Set(selectedAssetIds);
     if (newSelected.has(assetId)) {
       newSelected.delete(assetId);
+      // If removing the parent, clear parent selection
+      if (selectedParentAssetId === assetId) {
+        setSelectedParentAssetId(null);
+      }
     } else {
       newSelected.add(assetId);
+      // If this is the first selected asset, make it the parent
+      if (selectedAssetIds.size === 0) {
+        setSelectedParentAssetId(assetId);
+      }
     }
     setSelectedAssetIds(newSelected);
   };
@@ -157,6 +170,7 @@ export default function AssetBuilderPage() {
       await api.post('/asset-builders', {
         name: builderName.trim(),
         assetIds,
+        parentAssetId: selectedParentAssetId || assetIds[0],
       });
 
       toast.success(
@@ -232,10 +246,15 @@ export default function AssetBuilderPage() {
       );
       logger.debug('Updating asset builder with assets', { assetIds });
 
+      // Find the parent asset from the items
+      const parentItem = selectedBuilder.items.find((item: any) => item.is_parent);
+      const parentAssetId = parentItem ? parentItem.asset_code : assetIds[0];
+
       await api.put(`/asset-builders/${selectedBuilder.builderID}`, {
         name: selectedBuilder.name,
         description: selectedBuilder.description || '',
         assetIds,
+        parentAssetId,
       });
 
       toast.success(
@@ -291,6 +310,19 @@ export default function AssetBuilderPage() {
         />
       ),
     },
+    {
+      id: 'parent',
+      header: 'Parent',
+      size: 80,
+      cell: ({ row }: any) => (
+        selectedParentAssetId === row.original.id ? (
+          <div className="flex items-center gap-1 text-amber-600">
+            <Crown className="h-4 w-4" />
+            <span className="text-xs font-medium">Parent</span>
+          </div>
+        ) : null
+      ),
+    },
     ...assetColumns,
   ];
 
@@ -321,11 +353,23 @@ export default function AssetBuilderPage() {
       status: 'In Builder',
       asset_code: item.asset_code,
       asset_name: item.asset_name,
+      is_parent: item.is_parent,
     }));
   }, [selectedBuilder]);
 
   // Columns for builder assets table with remove
   const builderAssetsColumns = [
+    {
+      accessorKey: 'is_parent',
+      header: 'Parent',
+      cell: ({ row }: any) =>
+        row.original.is_parent ? (
+          <div className="flex items-center gap-1 text-amber-600">
+            <Crown className="h-4 w-4" />
+            <span className="text-xs font-medium">Parent</span>
+          </div>
+        ) : null,
+    },
     { accessorKey: 'asset_code', header: 'Asset Code' },
     { accessorKey: 'asset_name', header: 'Asset Name' },
     { accessorKey: 'category_name', header: 'Category' },
@@ -443,12 +487,19 @@ export default function AssetBuilderPage() {
                                   (item: any, index: number) => (
                                     <div
                                       key={index}
-                                      className="flex items-center justify-between text-xs bg-muted/30 rounded-lg px-2 py-1.5"
+                                      className={`flex items-center justify-between text-xs rounded-lg px-2 py-1.5 ${
+                                        item.is_parent ? 'bg-amber-50 border border-amber-200' : 'bg-muted/30'
+                                      }`}
                                     >
-                                      <span className="font-medium text-gray-900">
-                                        {item.asset_code}
-                                      </span>
-                                      <span className="text-gray-600">
+                                      <div className="flex items-center gap-2">
+                                        {item.is_parent && (
+                                          <Crown className="h-3 w-3 text-amber-600" />
+                                        )}
+                                        <span className={`font-medium ${item.is_parent ? 'text-amber-900' : 'text-gray-900'}`}>
+                                          {item.asset_code}
+                                        </span>
+                                      </div>
+                                      <span className={`text-gray-600 ${item.is_parent ? 'text-amber-700' : ''}`}>
                                         {item.asset_name}
                                       </span>
                                     </div>
@@ -598,6 +649,7 @@ export default function AssetBuilderPage() {
                     }}
                     title="Available Assets"
                     titleBadge={`${selectableAssets.length} available`}
+                    onRowClick={(row) => handleAssetToggle(row.original.id)}
                   />
                 </div>
               </div>

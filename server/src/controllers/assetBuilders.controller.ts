@@ -10,7 +10,7 @@ export async function createAssetBuilderHandler(
   res: Response
 ) {
   try {
-    const { name, description, assetIds } = req.body;
+    const { name, description, assetIds, parentAssetId } = req.body;
     const userId = req.user!.userID;
 
     if (
@@ -46,6 +46,16 @@ export async function createAssetBuilderHandler(
       });
     }
 
+    // Validate parentAssetId if provided
+    if (parentAssetId) {
+      const parentExists = assetRows.some((a: any) => a.asset_code === parentAssetId);
+      if (!parentExists) {
+        return res.status(400).json({
+          error: 'Parent asset must be one of the selected assets',
+        });
+      }
+    }
+
     // Get active company for the user
     const [companyRows] = (await pool.execute(
       'SELECT company_id FROM users WHERE userID = ?',
@@ -63,16 +73,19 @@ export async function createAssetBuilderHandler(
     const builder = builderRows[0][0];
 
     // Create asset builder items using the actual assetIDs
+    // First item or parentAssetId becomes the parent
+    const defaultParentId = parentAssetId || assetIds[0];
     const itemValues = assetRows.map((asset: any) => [
       builder.builderID,
       asset.assetID,
+      asset.asset_code === defaultParentId ? 1 : 0,
       userId,
     ]);
     if (itemValues.length > 0) {
-      const placeholders = itemValues.map(() => '(?, ?, ?)').join(',');
+      const placeholders = itemValues.map(() => '(?, ?, ?, ?)').join(',');
       const flatValues = itemValues.flat();
       await pool.execute(
-        `INSERT INTO asset_builder_items (builder_id, asset_id, created_by) VALUES ${placeholders}`,
+        `INSERT INTO asset_builder_items (builder_id, asset_id, is_parent, created_by) VALUES ${placeholders}`,
         flatValues
       );
     }
@@ -195,6 +208,7 @@ export async function getAssetBuildersHandler(req: AuthRequest, res: Response) {
         asset_name: item.asset_name,
         category_name: item.category_name,
         type_name: item.type_name,
+        is_parent: item.is_parent === 1,
       }));
 
       // When builder is Assigned, resolve assigned user (owner of assets in this builder)
@@ -291,7 +305,7 @@ export async function updateAssetBuilderHandler(
 ) {
   try {
     const { builderId } = req.params;
-    const { name, description, assetIds, status } = req.body;
+    const { name, description, assetIds, status, parentAssetId } = req.body;
     const userId = req.user!.userID;
 
     if (!name) {
@@ -370,6 +384,16 @@ export async function updateAssetBuilderHandler(
         }
       }
 
+      // Validate parentAssetId if provided
+      if (parentAssetId) {
+        const parentExists = rows.some((a: any) => a.asset_code === parentAssetId);
+        if (!parentExists) {
+          return res.status(400).json({
+            error: 'Parent asset must be one of the selected assets',
+          });
+        }
+      }
+
       assetRows = rows;
     } else {
       assetRows = currentItems.map((item: any) => ({
@@ -417,17 +441,20 @@ export async function updateAssetBuilderHandler(
         [builderId]
       );
 
-      // Create new asset builder items
+      // Create new asset builder items with parent designation
+      // First item or parentAssetId becomes the parent
+      const defaultParentId = parentAssetId || assetIds[0];
       const itemValues = assetRows.map((asset: any) => [
         builderId,
         asset.assetID,
+        asset.asset_code === defaultParentId ? 1 : 0,
         userId,
       ]);
       if (itemValues.length > 0) {
-        const placeholders = itemValues.map(() => '(?, ?, ?)').join(',');
+        const placeholders = itemValues.map(() => '(?, ?, ?, ?)').join(',');
         const flatValues = itemValues.flat();
         await pool.execute(
-          `INSERT INTO asset_builder_items (builder_id, asset_id, created_by) VALUES ${placeholders}`,
+          `INSERT INTO asset_builder_items (builder_id, asset_id, is_parent, created_by) VALUES ${placeholders}`,
           flatValues
         );
       }

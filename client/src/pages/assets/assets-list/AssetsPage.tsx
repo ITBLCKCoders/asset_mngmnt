@@ -17,6 +17,7 @@ import {
   RefreshCw,
   User,
   Building,
+  Crown,
 } from 'lucide-react';
 import { Card, CardContent, CardHeader } from '@/components/ui/card';
 import { PageHeader } from '@/components/common/PageHeader';
@@ -222,22 +223,22 @@ export function AssetsPage() {
   };
 
   // Custom filter function that searches accountability form number as well
-  const customFilterFn: any = (row: any, globalFilter: string) => {
-    if (!globalFilter) return true;
+  const customFilterFn: any = (row: any, _columnId: any, filterValue: string) => {
+    if (!filterValue) return true;
     
-    const filterValue = globalFilter.toLowerCase();
+    const filterValueLower = filterValue.toLowerCase();
     
     // Search all standard columns
     const standardColumns = ['id', 'name', 'description', 'category', 'type', 'serialNo', 'modelNo', 'brand', 'status', 'assignedTo', 'department', 'location'];
     for (const col of standardColumns) {
-      if (row.original[col] && String(row.original[col]).toLowerCase().includes(filterValue)) {
+      if (row.original[col] && String(row.original[col]).toLowerCase().includes(filterValueLower)) {
         return true;
       }
     }
     
     // Search accountability form number
     if (row.original.accountabilityForm?.formNumber && 
-        String(row.original.accountabilityForm.formNumber).toLowerCase().includes(filterValue)) {
+        String(row.original.accountabilityForm.formNumber).toLowerCase().includes(filterValueLower)) {
       return true;
     }
     
@@ -1044,12 +1045,19 @@ export function AssetsPage() {
                                       (item: any, index: number) => (
                                         <div
                                           key={index}
-                                          className="flex items-center justify-between text-xs bg-muted/30 rounded-lg px-2 py-1.5"
+                                          className={`flex items-center justify-between text-xs rounded-lg px-2 py-1.5 ${
+                                            item.is_parent ? 'bg-amber-50 border border-amber-200' : 'bg-muted/30'
+                                          }`}
                                         >
-                                          <span className="font-medium text-gray-900">
-                                            {item.asset_code}
-                                          </span>
-                                          <span className="text-gray-600">
+                                          <div className="flex items-center gap-2">
+                                            {item.is_parent && (
+                                              <Crown className="h-3 w-3 text-amber-600" />
+                                            )}
+                                            <span className={`font-medium ${item.is_parent ? 'text-amber-900' : 'text-gray-900'}`}>
+                                              {item.asset_code}
+                                            </span>
+                                          </div>
+                                          <span className={`text-gray-600 ${item.is_parent ? 'text-amber-700' : ''}`}>
                                             {item.asset_name}
                                           </span>
                                         </div>
@@ -1355,7 +1363,9 @@ export function AssetsPage() {
                               <button
                                 key={index}
                                 type="button"
-                                className="border border-gray-200 rounded-lg p-4 hover:bg-gray-50 transition-colors w-full text-left"
+                                className={`border rounded-lg p-4 hover:bg-gray-50 transition-colors w-full text-left ${
+                                  item.is_parent ? 'border-amber-200 bg-amber-50' : 'border-gray-200'
+                                }`}
                                 onClick={async e => {
                                   e.stopPropagation();
                                   let foundAsset = assets.find(
@@ -1531,11 +1541,14 @@ export function AssetsPage() {
                                 <div className="flex items-start justify-between">
                                   <div className="flex-1">
                                     <div className="flex items-center gap-2 mb-2">
-                                      <span className="font-medium text-gray-900">
+                                      {item.is_parent && (
+                                        <Crown className="h-4 w-4 text-amber-600" />
+                                      )}
+                                      <span className={`font-medium ${item.is_parent ? 'text-amber-900' : 'text-gray-900'}`}>
                                         {item.asset_code}
                                       </span>
                                     </div>
-                                    <p className="text-sm text-gray-600 mb-2">
+                                    <p className={`text-sm mb-2 ${item.is_parent ? 'text-amber-700' : 'text-gray-600'}`}>
                                       {item.asset_name}
                                     </p>
                                     <div className="text-xs text-gray-500">

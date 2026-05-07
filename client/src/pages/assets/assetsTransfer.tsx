@@ -21,6 +21,7 @@ import {
   ImagePlus,
   Building2,
   Images,
+  Crown,
 } from 'lucide-react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { PageHeader } from '@/components/common/PageHeader';
@@ -1426,19 +1427,28 @@ export default function AssetsTransfer() {
                                           {builderAssignments.length} assigned
                                         </Badge>
                                       </div>
-                                      <ul className="text-xs text-gray-500 mt-2 font-mono space-y-1.5 pl-5 list-disc max-h-[8.5rem] overflow-y-auto scrollbar-thin scrollbar-thumb-gray-300 scrollbar-track-gray-100">
+                                      <ul className="text-xs text-gray-500 mt-2 font-mono space-y-1.5 max-h-[8.5rem] overflow-y-auto scrollbar-thin scrollbar-thumb-gray-300 scrollbar-track-gray-100">
                                         {builderAssignments
                                           .map(
-                                            (a: AssetAssignment) =>
-                                              a.asset?.code
+                                            (a: AssetAssignment) => ({
+                                              code: a.asset?.code,
+                                              isParent: builder.items?.find(
+                                                (item: any) => item.asset_code === a.asset?.code
+                                              )?.is_parent
+                                            })
                                           )
-                                          .filter(Boolean)
-                                          .map((code: string, idx: number) => (
+                                          .filter((item: any) => item.code)
+                                          .map((item: any, idx: number) => (
                                             <li
                                               key={idx}
-                                              className="border border-gray-200 rounded px-2 py-1 bg-gray-50 -ml-1 pl-3"
+                                              className={`flex items-center gap-2 border rounded px-2 py-1 -ml-1 pl-3 ${
+                                                item.isParent ? 'bg-amber-50 border-amber-200' : 'bg-gray-50 border-gray-200'
+                                              }`}
                                             >
-                                              {code}
+                                              {item.isParent && (
+                                                <Crown className="h-3 w-3 text-amber-600 shrink-0" />
+                                              )}
+                                              {item.code}
                                             </li>
                                           ))}
                                       </ul>

@@ -98,6 +98,34 @@ export interface AssetChildDto {
   name: string;
 }
 
+export interface AssetBuilderItemDto {
+  itemID: string;
+  asset_id: string;
+  asset_code: string;
+  asset_name: string;
+  category_name: string;
+  type_name: string;
+  is_parent: boolean;
+}
+
+export interface AssetBuilderDto {
+  builderID: string;
+  name: string;
+  description: string | null;
+  status: string;
+  company_id: string | null;
+  created_at: string;
+  created_by: string;
+  updated_at: string;
+  updated_by: string | null;
+  items: AssetBuilderItemDto[];
+  assigned_to?: {
+    id: string;
+    first_name: string;
+    last_name: string;
+  };
+}
+
 export interface AssetListResponseDto {
   assets: AssetResponseDto[];
   total: number;

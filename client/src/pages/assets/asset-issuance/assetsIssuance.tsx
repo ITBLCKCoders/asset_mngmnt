@@ -13,6 +13,7 @@ import {
   Warehouse,
   UserCheck,
   RefreshCw,
+  Crown,
 } from 'lucide-react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { PageHeader } from '@/components/common/PageHeader';
@@ -956,16 +957,23 @@ export default function AssetsAssignment() {
                                                 (item: any, index: number) => (
                                                   <li
                                                     key={index}
-                                                    className="flex items-center gap-2 text-xs bg-gray-50 rounded px-3 py-2 border border-gray-200 -ml-1 pl-3"
+                                                    className={`flex items-center gap-2 text-xs rounded px-3 py-2 border -ml-1 pl-3 ${
+                                                      item.is_parent ? 'bg-amber-50 border-amber-200' : 'bg-gray-50 border-gray-200'
+                                                    }`}
                                                   >
+                                                    <div className="flex items-center gap-2">
+                                                      {item.is_parent && (
+                                                        <Crown className="h-3 w-3 text-amber-600 shrink-0" />
+                                                      )}
+                                                      <span
+                                                        className={`font-mono font-medium shrink-0 ${item.is_parent ? 'text-amber-900' : 'text-gray-900'}`}
+                                                        title="Asset code"
+                                                      >
+                                                        {item.asset_code}
+                                                      </span>
+                                                    </div>
                                                     <span
-                                                      className="font-mono font-medium text-gray-900 shrink-0"
-                                                      title="Asset code"
-                                                    >
-                                                      {item.asset_code}
-                                                    </span>
-                                                    <span
-                                                      className="text-gray-600 truncate"
+                                                      className={`truncate ${item.is_parent ? 'text-amber-700' : 'text-gray-600'}`}
                                                       title={item.asset_name}
                                                     >
                                                       {item.asset_name}

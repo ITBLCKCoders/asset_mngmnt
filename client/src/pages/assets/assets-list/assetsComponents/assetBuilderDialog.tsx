@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useMemo } from 'react';
-import { Package, X, Check } from 'lucide-react';
+import { Package, X, Check, Crown } from 'lucide-react';
 import { Dialog } from '@/components/ui/dialog';
 import {
   AppDialogFrame,
@@ -23,7 +23,7 @@ interface AssetBuilderDialogProps {
   isOpen: boolean;
   onClose: () => void;
   assets: Asset[];
-  onSave: (builderName: string, selectedAssets: Asset[]) => void;
+  onSave: (builderName: string, selectedAssets: Asset[], parentAssetId: string | null) => void;
 }
 
 export function AssetBuilderDialog({
@@ -36,6 +36,9 @@ export function AssetBuilderDialog({
   const [selectedAssetIds, setSelectedAssetIds] = useState<Set<string>>(
     new Set()
   );
+  const [selectedParentAssetId, setSelectedParentAssetId] = useState<string | null>(
+    null
+  );
 
   const selectableAssets = useMemo(() => {
     return assets.filter(asset => asset.status === 'Available');
@@ -45,8 +48,16 @@ export function AssetBuilderDialog({
     const newSelected = new Set(selectedAssetIds);
     if (newSelected.has(assetId)) {
       newSelected.delete(assetId);
+      // If removing the parent, clear parent selection
+      if (selectedParentAssetId === assetId) {
+        setSelectedParentAssetId(null);
+      }
     } else {
       newSelected.add(assetId);
+      // If this is the first selected asset, make it the parent
+      if (selectedAssetIds.size === 0) {
+        setSelectedParentAssetId(assetId);
+      }
     }
     setSelectedAssetIds(newSelected);
   };
@@ -65,13 +76,14 @@ export function AssetBuilderDialog({
     const selectedAssets = selectableAssets.filter(asset =>
       selectedAssetIds.has(asset.id)
     );
-    onSave(builderName.trim(), selectedAssets);
+    onSave(builderName.trim(), selectedAssets, selectedParentAssetId);
     handleClose();
   };
 
   const handleClose = () => {
     setBuilderName('');
     setSelectedAssetIds(new Set());
+    setSelectedParentAssetId(null);
     onClose();
   };
 
@@ -86,6 +98,19 @@ export function AssetBuilderDialog({
           checked={selectedAssetIds.has(row.original.id)}
           onCheckedChange={() => handleAssetToggle(row.original.id)}
         />
+      ),
+    },
+    {
+      id: 'parent',
+      header: 'Parent',
+      size: 80,
+      cell: ({ row }: any) => (
+        selectedParentAssetId === row.original.id ? (
+          <div className="flex items-center gap-1 text-amber-600">
+            <Crown className="h-4 w-4" />
+            <span className="text-xs font-medium">Parent</span>
+          </div>
+        ) : null
       ),
     },
     ...assetColumns,
@@ -133,6 +158,7 @@ export function AssetBuilderDialog({
                 }}
                 title="Available Assets"
                 titleBadge={`${selectableAssets.length} available`}
+                onRowClick={(row) => handleAssetToggle(row.original.id)}
               />
             </div>
           </div>
