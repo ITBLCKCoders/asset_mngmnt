@@ -1202,7 +1202,7 @@ export function AssetsPage() {
               Cancel
             </Button>
             <Button
-              onClick={() => handleExportConfirm(displayAssets, activeCompany)}
+              onClick={() => handleExportConfirm(displayAssets, activeCompany, user, assetBuilders)}
               disabled={selectedColumns.size === 0}
               className="bg-red-600 hover:bg-red-700 text-white"
             >

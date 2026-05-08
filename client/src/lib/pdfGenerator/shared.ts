@@ -154,8 +154,19 @@ export const addCompanyLogoToPDF = async (
     await new Promise<void>(resolve => {
       const img = new Image();
       img.onload = () => {
-        // Force exact dimensions for uniformity across all forms
-        doc.addImage(dataUrl, format, x, y, maxWidth, maxHeight);
+        // Calculate dimensions maintaining aspect ratio
+        const aspectRatio = img.width / img.height;
+        let imgWidth = maxWidth;
+        let imgHeight = maxWidth / aspectRatio;
+
+        // If height exceeds maxHeight, scale down
+        if (imgHeight > maxHeight) {
+          imgHeight = maxHeight;
+          imgWidth = maxHeight * aspectRatio;
+        }
+
+        // Add image with proper aspect ratio to prevent distortion
+        doc.addImage(dataUrl, format, x, y, imgWidth, imgHeight);
         resolve();
       };
       img.onerror = () => resolve();

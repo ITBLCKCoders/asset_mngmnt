@@ -8,6 +8,12 @@ import { formatCurrency } from '@/lib/currency';
 import { toast } from 'sonner';
 import { Asset } from './assetsComponents/assetTable/assetData';
 import { Company } from './useAssetsData';
+import {
+  addCompanyLogoToPDF,
+  formatBuilderItems,
+  getCompanyAccentColor,
+  isBlackCoders,
+} from '@/lib/pdfGenerator/shared';
 
 /**
  * Trigger a browser download for an ExcelJS-generated .xlsx buffer. ExcelJS
@@ -127,7 +133,9 @@ export const useAssetExport = () => {
 
   const exportToPDF = async (
     assets: Asset[],
-    activeCompany: Company | null
+    activeCompany: Company | null,
+    currentUser?: { name: string } | null,
+    assetBuilders?: any[] | null
   ) => {
     const selectedCols = availableColumns.filter(col =>
       selectedColumns.has(col.key)
@@ -135,62 +143,82 @@ export const useAssetExport = () => {
 
     const doc = new jsPDF('l', 'mm', [330, 216]); // landscape long bond paper (8.5x13 inches)
 
-    let currentY = 14;
+    // Add company logo using shared utility
+    await addCompanyLogoToPDF(doc, activeCompany?.logo_url, 14, 12);
 
-    // Add report title with logo on the left
+    // Center the report title
     doc.setFontSize(20);
     doc.setFont('helvetica', 'bold');
+    doc.text('Asset List Report', 165, 25, { align: 'center' });
 
-    const logoMaxHeight = 20;
-    const logoX = 14;
-    let titleX = 14;
+    // Add total asset count below title
+    doc.setFontSize(12);
+    doc.setFont('helvetica', 'normal');
+    doc.text(`Total Assets: ${assets.length}`, 165, 32, { align: 'center' });
 
-    if (activeCompany?.logo_url) {
-      try {
-        // Load the image
-        const img = new Image();
-        img.crossOrigin = 'anonymous';
-
-        await new Promise((resolve, reject) => {
-          img.onload = resolve;
-          img.onerror = reject;
-          img.src = activeCompany.logo_url!;
-        });
-
-        // Calculate logo dimensions (maintain aspect ratio, max height)
-        const aspectRatio = img.width / img.height;
-        const imgHeight = Math.min(logoMaxHeight, img.height);
-        const imgWidth = imgHeight * aspectRatio;
-
-        // Convert image to canvas for jsPDF
-        const canvas = document.createElement('canvas');
-        const ctx = canvas.getContext('2d');
-        canvas.width = img.width;
-        canvas.height = img.height;
-        ctx?.drawImage(img, 0, 0);
-
-        const imgData = canvas.toDataURL('image/png');
-        doc.addImage(imgData, 'PNG', logoX, currentY - 2, imgWidth, imgHeight);
-
-        // Position title to the right of logo
-        titleX = logoX + imgWidth + 10;
-      } catch (error) {
-        console.error('Error loading company logo:', error);
-        // Use default title position if logo fails
-        titleX = 14;
-      }
-    }
-
-    // Add report title next to logo
-    doc.text('Asset List Report', titleX, currentY + 8);
-
-    currentY += 8;
+    let currentY = 35;
 
     // Prepare table data with selected columns
-    const tableData = assets.map(asset => {
-      return selectedCols.map(col =>
-        String(getExportValue(asset, col.key, 'pdf'))
-      );
+    // Group assets by builder for display
+    const flattenedAssets: Asset[] = [];
+    const childRowIndices: number[] = [];
+    const processedAssetIds = new Set<string>();
+
+    // Process builders first - add builder items as children (no parent row)
+    if (assetBuilders && assetBuilders.length > 0) {
+      assetBuilders.forEach(builder => {
+        if (!builder.items || !Array.isArray(builder.items)) return;
+
+        // Mark builder ID as processed to exclude parent asset
+        processedAssetIds.add(builder.builderID);
+
+        // Sort builder items by last 5 digits of asset code
+        const sortedItems = [...builder.items].sort((a: any, b: any) => {
+          const aCode = a.asset_code || '';
+          const bCode = b.asset_code || '';
+          const aLast5 = aCode.slice(-5);
+          const bLast5 = bCode.slice(-5);
+          const aNum = parseInt(aLast5, 10) || 0;
+          const bNum = parseInt(bLast5, 10) || 0;
+          return aNum - bNum;
+        });
+
+        // Add builder items as children (no parent row for builder name)
+        sortedItems.forEach((item: any) => {
+          const matchingAsset = assets.find(a => a.id === item.asset_code);
+          if (matchingAsset) {
+            // Exclude parent assets (those with CMTH-ITOFE-LAP- prefix) from being marked as children
+            const isParentAsset = item.asset_code.startsWith('CMTH-ITOFE-LAP-');
+            if (!isParentAsset) {
+              flattenedAssets.push({ ...matchingAsset, isChild: true } as Asset & { isChild?: boolean });
+              childRowIndices.push(flattenedAssets.length - 1);
+              processedAssetIds.add(item.asset_code);
+            } else {
+              // Parent asset is added as normal (not italic)
+              flattenedAssets.push(matchingAsset);
+              processedAssetIds.add(item.asset_code);
+            }
+          }
+        });
+      });
+    }
+
+    // Add remaining assets that are not part of any builder
+    assets.forEach(asset => {
+      if (!processedAssetIds.has(asset.id)) {
+        flattenedAssets.push(asset);
+      }
+    });
+
+    console.log('Total assets:', assets.length, 'Flattened assets:', flattenedAssets.length, 'Child rows:', childRowIndices.length, 'Builders processed:', assetBuilders?.length || 0);
+    console.log('Flattened assets with isChild flag:', flattenedAssets.filter(a => (a as any).isChild).map(a => ({ id: a.id, name: a.name, isChild: (a as any).isChild, isAssetBuilder: (a as any).isAssetBuilder })));
+
+    const tableData = flattenedAssets.map((asset, rowIndex) => {
+      return selectedCols.map(col => {
+        const value = getExportValue(asset, col.key, 'pdf');
+        // No indentation, child rows will be styled with italic in didParseCell
+        return String(value);
+      });
     });
 
     // Calculate column widths dynamically
@@ -206,27 +234,70 @@ export const useAssetExport = () => {
     autoTable(doc, {
       head: [selectedCols.map(col => col.label)],
       body: tableData,
-      startY: currentY + 18,
+      startY: currentY + 8,
       styles: {
         fontSize: Math.max(5, 8 - selectedCols.length * 0.2),
         cellPadding: 1,
       },
       headStyles: {
-        fillColor: [220, 53, 69],
+        fillColor: isBlackCoders(activeCompany?.name)
+          ? [0, 0, 0]
+          : [
+              getCompanyAccentColor(activeCompany?.name).r,
+              getCompanyAccentColor(activeCompany?.name).g,
+              getCompanyAccentColor(activeCompany?.name).b,
+            ],
         fontSize: Math.max(6, 9 - selectedCols.length * 0.2),
-      }, // Red header
+      },
       columnStyles,
       margin: { left: 5, right: 5 },
+      didParseCell: data => {
+        // Apply italic styling to child rows for visual distinction
+        const asset = flattenedAssets[data.row.index];
+        if ((asset as any).isChild && !(asset as any).isAssetBuilder) {
+          data.cell.styles.fontStyle = 'italic';
+        } else {
+          // Ensure non-child rows and builder parent assets are not italic
+          data.cell.styles.fontStyle = 'normal';
+        }
+      },
     });
 
-    // Add footer with generation date and time
+    // Add generation date, time, and user in upper right of table on first page
     const pageHeight = doc.internal.pageSize.getHeight();
     const now = new Date();
-    const footerText = `Generated on: ${now.toLocaleDateString()} ${now.toLocaleTimeString()}`;
+    const footerText = `Generated on: ${now.toLocaleDateString()} ${now.toLocaleTimeString()} by ${currentUser?.name || 'Unknown'}`;
+
+    // Ensure text is on the first page
+    doc.setPage(1);
 
     doc.setFontSize(8);
     doc.setFont('helvetica', 'normal');
-    doc.text(footerText, 14, pageHeight - 10);
+    doc.text(footerText, 315, currentY, { align: 'right' });
+
+    // Add colored bar and black line footer (from accountability form)
+    const footerGoldY = pageHeight - 14; // Near bottom of first page
+    const footerLineY = pageHeight - 10;
+    const accentColor = getCompanyAccentColor(activeCompany?.name);
+    const isBlackCodersCompany = isBlackCoders(activeCompany?.name);
+
+    if (isBlackCodersCompany) {
+      // Solid red bar for Black Coders
+      doc.setDrawColor(220, 38, 38);
+      doc.setFillColor(220, 38, 38);
+      doc.setLineWidth(0.1);
+      doc.rect(5, footerGoldY, 320, 1, 'FD');
+    } else {
+      // Solid color bar for other companies
+      doc.setDrawColor(accentColor.r, accentColor.g, accentColor.b);
+      doc.setFillColor(accentColor.r, accentColor.g, accentColor.b);
+      doc.setLineWidth(0.1);
+      doc.rect(5, footerGoldY, 320, 1, 'FD');
+    }
+
+    doc.setDrawColor(0, 0, 0);
+    doc.setLineWidth(6);
+    doc.line(5, footerLineY, 325, footerLineY);
 
     // Save the PDF
     doc.save('asset_list.pdf');
@@ -296,10 +367,12 @@ export const useAssetExport = () => {
 
   const handleExportConfirm = async (
     assets: Asset[],
-    activeCompany: Company | null
+    activeCompany: Company | null,
+    currentUser?: { name: string } | null,
+    assetBuilders?: any[] | null
   ) => {
     if (exportType === 'pdf') {
-      await exportToPDF(assets, activeCompany);
+      await exportToPDF(assets, activeCompany, currentUser, assetBuilders);
     } else if (exportType === 'excel') {
       await exportToExcel(assets, activeCompany);
     }
