@@ -4,7 +4,7 @@ import { useState, useEffect, useMemo } from 'react';
 import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
 import { PageHeader } from '@/components/common/PageHeader';
-import { Search, RefreshCw, ArrowRightLeft } from 'lucide-react';
+import { Search, ArrowRightLeft } from 'lucide-react';
 import { api } from '@/lib/api';
 import { toast } from 'sonner';
 import { useCurrentUser } from '@/hooks/useCurrentUser';
@@ -21,7 +21,6 @@ import {
   AppDialogGradientHeader,
   AppDialogChromeFooter,
 } from '@/components/common/appDialogChrome';
-import { useDelayedLoading } from '@/hooks/useDelayedLoading';
 import { Shimmer } from '@/components/ui/shimmer';
 import { Download } from 'lucide-react';
 import { matchesFormListSearch } from '@/utils/formListSearch';
@@ -62,7 +61,7 @@ export default function AssetTransferFormsPage() {
   const [selectedBatch, setSelectedBatch] =
     useState<AssetTransferFormBatch | null>(null);
   const [showDetail, setShowDetail] = useState(false);
-  const displayLoading = useDelayedLoading(loading, 2000);
+  const displayLoading = loading;
 
   const fetchTransferForms = async () => {
     try {
@@ -147,16 +146,6 @@ export default function AssetTransferFormsPage() {
           description="View and manage all asset transfer forms"
           loading={displayLoading}
         >
-          <Button
-            variant="header"
-            size="sm"
-            onClick={fetchTransferForms}
-            disabled={loading}
-            className="flex items-center gap-2"
-          >
-            <RefreshCw className={`h-4 w-4 ${loading ? 'animate-spin' : ''}`} />
-            Refresh
-          </Button>
         </PageHeader>
 
         <div>

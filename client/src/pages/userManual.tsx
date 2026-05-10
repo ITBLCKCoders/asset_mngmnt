@@ -2,7 +2,6 @@ import { useState, useMemo } from 'react';
 import { Button } from '@/components/ui/button';
 import {
   BookOpen,
-  RefreshCw,
   CheckCircle2,
   ChevronLeft,
   ChevronRight,
@@ -1513,15 +1512,6 @@ export default function UserManual() {
           title="User Manual"
           description="Asset Management System - Complete Guide"
         >
-          <Button
-            variant="header"
-            size="sm"
-            onClick={() => window.location.reload()}
-            className="flex items-center gap-2"
-          >
-            <RefreshCw className="h-4 w-4" />
-            Refresh
-          </Button>
         </PageHeader>
 
         <div className="flex flex-col gap-6 xl:flex-row">

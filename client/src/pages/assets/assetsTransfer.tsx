@@ -64,11 +64,8 @@ import {
   type AssetReturnFormBatch,
   type AssetTransferFormBatch,
 } from '@/pages/profile/profileComponents/tabs/documentsTab';
-import {
-  downloadPDF,
-  generateAssetReturnPDF,
-  generateAssetTransferPDF,
-} from '@/lib/pdfGenerator';
+import { downloadPDF, generateAssetReturnPDF, generateAssetTransferPDF } from '@/lib/pdfGenerator';
+import { Shimmer } from '@/components/ui/shimmer';
 
 interface Asset {
   id: string;
@@ -229,6 +226,8 @@ export default function AssetsTransfer() {
   const [expandedBuilderForSelect, setExpandedBuilderForSelect] = useState<
     string | null
   >(null);
+  const [activeTab, setActiveTab] = useState('select-assets');
+  const [tabLoading, setTabLoading] = useState(false);
   const [showNextStepsDialog, setShowNextStepsDialog] = useState(false);
   const [nextStepsAssigneeUserId, setNextStepsAssigneeUserId] = useState<
     string | null
@@ -1066,26 +1065,12 @@ export default function AssetsTransfer() {
           icon={ArrowRightLeft}
           title="Assets Transfer"
           description="Transfer assets between users, departments, and locations"
-        >
-          <Button
-            variant="header"
-            size="sm"
-            onClick={() => {
-              fetchAssignments();
-              fetchAssetBuilders();
-              fetchTransferHistory();
-            }}
-            className="flex items-center gap-2"
-          >
-            <RefreshCw className="h-4 w-4" />
-            Refresh
-          </Button>
-        </PageHeader>
+        />
 
         <div className="grid grid-cols-1 xl:grid-cols-3 gap-8">
           {/* Asset Selection / Asset Built Tabs */}
           <div className="xl:col-span-2">
-            <Tabs defaultValue="select-assets" className="w-full">
+            <Tabs value={activeTab} onValueChange={(value) => { setActiveTab(value); setTabLoading(true); setTimeout(() => setTabLoading(false), 300); }} className="w-full">
               <TabsList className={segmentTabsListClassName + ' grid grid-cols-2'}>
                 <TabsTrigger
                   value="select-assets"
@@ -1135,12 +1120,38 @@ export default function AssetsTransfer() {
 
                   <CardContent className="pt-0">
                     <div className="space-y-3 max-h-96 overflow-y-auto scrollbar-thin scrollbar-thumb-gray-300 scrollbar-track-gray-100 -mr-6 pr-6">
-                      {loading ? (
-                        <div className="flex items-center justify-center py-12">
-                          <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-red-600"></div>
-                          <span className="ml-3 text-gray-600">
-                            Loading assignments...
-                          </span>
+                      {loading || tabLoading ? (
+                        <div className="space-y-3">
+                          {Array.from({ length: 5 }).map((_, index) => (
+                            <div
+                              key={index}
+                              className="group relative p-4 border-2 rounded-xl border-gray-200"
+                            >
+                              <div className="flex items-start gap-4">
+                                <div className="flex-shrink-0 mt-1">
+                                  <Shimmer className="h-5 w-5 rounded" />
+                                </div>
+                                <div className="flex-1 min-w-0">
+                                  <div className="mb-2">
+                                    <div className="flex items-center justify-between">
+                                      <Shimmer className="h-6 w-40 rounded" />
+                                      <Shimmer className="h-5 w-20 rounded ml-2" />
+                                    </div>
+                                  </div>
+                                  <div className="mb-3">
+                                    <Shimmer className="h-4 w-24 rounded" />
+                                    <Shimmer className="h-4 w-32 rounded ml-2" />
+                                    <Shimmer className="h-4 w-24 rounded ml-2" />
+                                  </div>
+                                  <div className="flex flex-wrap gap-2">
+                                    <Shimmer className="h-5 w-28 rounded-full" />
+                                    <Shimmer className="h-5 w-16 rounded-full" />
+                                    <Shimmer className="h-5 w-24 rounded-full" />
+                                  </div>
+                                </div>
+                              </div>
+                            </div>
+                          ))}
                         </div>
                       ) : filteredAssignments.length === 0 ? (
                         <div className="text-center py-12">
@@ -1356,12 +1367,32 @@ export default function AssetsTransfer() {
                     </div>
                   </CardHeader>
                   <CardContent className="pt-0">
-                    {buildersLoading ? (
-                      <div className="flex items-center justify-center py-12">
-                        <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-red-600" />
-                        <span className="ml-3 text-gray-600">
-                          Loading builders...
-                        </span>
+                    {buildersLoading || tabLoading ? (
+                      <div className="space-y-4">
+                        {Array.from({ length: 4 }).map((_, index) => (
+                          <div
+                            key={index}
+                            className="border-2 rounded-xl border-gray-200 p-4"
+                          >
+                            <div className="flex items-center justify-between mb-2">
+                              <Shimmer className="h-6 w-40 rounded" />
+                              <Shimmer className="h-5 w-20 rounded-full" />
+                            </div>
+                            <Shimmer className="h-4 w-64 rounded mb-3" />
+                            <div className="space-y-2">
+                              {Array.from({ length: 2 }).map((_, idx) => (
+                                <div
+                                  key={idx}
+                                  className="flex items-center gap-3 p-2 border rounded-lg"
+                                >
+                                  <Shimmer className="h-5 w-5 rounded" />
+                                  <Shimmer className="h-4 w-32 rounded" />
+                                  <Shimmer className="h-4 w-24 rounded" />
+                                </div>
+                              ))}
+                            </div>
+                          </div>
+                        ))}
                       </div>
                     ) : filteredAssignedBuilders.length === 0 ? (
                       <div className="text-center py-12">
@@ -1647,8 +1678,8 @@ export default function AssetsTransfer() {
         <Card className="shadow-xl border-0 bg-white/80 backdrop-blur-sm">
           <CardHeader>
             <CardTitle className="flex items-center gap-3 text-xl">
-              <div className="p-2 bg-purple-100 rounded-lg">
-                <ArrowRightLeft className="h-5 w-5 text-purple-600" />
+              <div className="p-2 bg-red-100 rounded-lg">
+                <ArrowRightLeft className="h-5 w-5 text-red-600" />
               </div>
               Transfer History
               <Badge variant="secondary" className="ml-auto">
@@ -1659,19 +1690,45 @@ export default function AssetsTransfer() {
 
           <CardContent>
             {transferHistoryLoading ? (
-              <div className="text-center py-12">
-                <div className="animate-spin h-10 w-10 border-2 border-purple-500 border-t-transparent rounded-full mx-auto mb-4" />
-                <p className="text-gray-500 text-lg">
-                  Loading transfer history...
-                </p>
+              <div className="border border-gray-200 rounded-lg overflow-hidden">
+                <div className="bg-gray-50 p-3 space-y-2">
+                  <div className="flex gap-4">
+                    <Shimmer className="h-5 w-32 rounded" />
+                    <Shimmer className="h-5 w-24 rounded" />
+                    <Shimmer className="h-5 w-24 rounded" />
+                    <Shimmer className="h-5 w-28 rounded" />
+                    <Shimmer className="h-5 w-20 rounded" />
+                    <Shimmer className="h-5 w-24 rounded" />
+                    <Shimmer className="h-5 w-32 rounded" />
+                    <Shimmer className="h-5 w-24 rounded" />
+                    <Shimmer className="h-5 w-20 rounded" />
+                  </div>
+                </div>
+                {[...Array(5)].map((_, index) => (
+                  <div key={index} className="border-t border-gray-200 p-3 space-y-2">
+                    <div className="flex gap-4">
+                      <Shimmer className="h-5 w-32 rounded" />
+                      <Shimmer className="h-5 w-24 rounded" />
+                      <Shimmer className="h-5 w-24 rounded" />
+                      <Shimmer className="h-5 w-28 rounded" />
+                      <Shimmer className="h-5 w-20 rounded" />
+                      <Shimmer className="h-5 w-24 rounded" />
+                      <Shimmer className="h-5 w-32 rounded" />
+                      <Shimmer className="h-5 w-24 rounded" />
+                      <Shimmer className="h-5 w-20 rounded" />
+                    </div>
+                  </div>
+                ))}
               </div>
             ) : transferHistory.length === 0 ? (
               <div className="text-center py-12">
-                <ArrowRightLeft className="h-16 w-16 text-gray-300 mx-auto mb-4" />
-                <p className="text-gray-500 text-lg">
+                <div className="inline-flex items-center justify-center w-20 h-20 rounded-full bg-gradient-to-br from-red-100 to-red-200 mb-4">
+                  <ArrowRightLeft className="h-10 w-10 text-red-600" />
+                </div>
+                <h3 className="text-lg font-semibold text-gray-900 mb-2">
                   No transfer history found
-                </p>
-                <p className="text-gray-400 text-sm mt-1">
+                </h3>
+                <p className="text-gray-500 text-sm">
                   Completed transfers will appear here
                 </p>
               </div>

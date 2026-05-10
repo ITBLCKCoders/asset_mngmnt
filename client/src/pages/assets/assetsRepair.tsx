@@ -16,7 +16,6 @@ import {
   CheckCircle,
   XCircle,
   Zap,
-  RefreshCw,
 } from 'lucide-react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { PageHeader } from '@/components/common/PageHeader';
@@ -399,15 +398,6 @@ export default function AssetsRepair() {
           title="Assets Repair"
           description="Request repairs for damaged or malfunctioning assets"
         >
-          <Button
-            variant="ghost"
-            size="sm"
-            onClick={() => fetchAssets()}
-            className="flex items-center gap-2"
-          >
-            <RefreshCw className="h-4 w-4" />
-            Refresh
-          </Button>
         </PageHeader>
 
         <div className="grid grid-cols-1 xl:grid-cols-3 gap-8">

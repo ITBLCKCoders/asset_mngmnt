@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
-import { Undo2, RefreshCw, ArrowLeft, FileText, Package } from 'lucide-react';
+import { Undo2, ArrowLeft, FileText, Package } from 'lucide-react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { PageHeader } from '@/components/common/PageHeader';
 import { Button } from '@/components/ui/button';
@@ -108,16 +108,6 @@ export default function MyReturnRequestsPage() {
               Back to Return Request
             </Button>
           </Link>
-          <Button
-            variant="header"
-            size="sm"
-            onClick={fetchForms}
-            disabled={loading}
-            className="flex items-center gap-2"
-          >
-            <RefreshCw className={`h-4 w-4 ${loading ? 'animate-spin' : ''}`} />
-            Refresh
-          </Button>
         </PageHeader>
 
         {loading ? (

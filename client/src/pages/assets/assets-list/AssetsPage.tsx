@@ -58,7 +58,6 @@ import { useCompanyContext } from '@/context/CompanyContext';
 import { useAssetsData } from './useAssetsData';
 import { useAssetExport } from './useAssetExport';
 import { computeNextMaintenanceDate } from '@/utils/computeNextMaintenanceDate';
-import { useDelayedLoading } from '@/hooks/useDelayedLoading';
 import { Shimmer } from '@/components/ui/shimmer';
 import { createLogger } from '@/lib/logger';
 import { formatCurrency } from '@/lib/currency';
@@ -127,10 +126,7 @@ export function AssetsPage() {
   const { assets, loading, fetchAssets, meta } = useAssetsData(
     activeCompany?.id || null
   );
-  const isInitialLoading = useDelayedLoading(
-    loading && assets.length === 0,
-    500
-  );
+  const isInitialLoading = loading && assets.length === 0;
 
   // Filtering is handled on server-side, no need for client-side filtering
   const filteredAssets = useMemo(() => {
@@ -138,7 +134,7 @@ export function AssetsPage() {
   }, [assets]);
 
   const [assetBuilders, setAssetBuilders] = useState<any[]>([]);
-  const [, setBuildersLoading] = useState(false);
+  const [buildersLoading, setBuildersLoading] = useState(false);
   const [selectedBuilder, setSelectedBuilder] = useState<any>(null);
   const [isBuilderDialogOpen, setIsBuilderDialogOpen] = useState(false);
   const [activeBuilderTab, setActiveBuilderTab] = useState('information');
@@ -147,6 +143,8 @@ export function AssetsPage() {
   const { lookups: builderAuditLookups, mergedIdLabels: builderMergedIdLabels } =
     useAuditFieldLookups();
   const [searchTerm, setSearchTerm] = useState('');
+  const [activeTab, setActiveTab] = useState('asset-list');
+  const [tabLoading, setTabLoading] = useState(false);
 
   const fetchAssetBuilders = async () => {
     try {
@@ -737,16 +735,6 @@ export function AssetsPage() {
           <Button
             variant="header"
             size="sm"
-            onClick={() => fetchAssets()}
-            disabled={loading}
-            className="flex items-center gap-2"
-          >
-            <RefreshCw className={`h-4 w-4 ${loading ? 'animate-spin' : ''}`} />
-            Refresh
-          </Button>
-          <Button
-            variant="header"
-            size="sm"
             onClick={handleAddAssetClick}
             disabled={!hasPermission('Asset List', 'create')}
           >
@@ -777,21 +765,28 @@ export function AssetsPage() {
           totalCount={meta.total}
         />
 
-        <Tabs defaultValue="asset-list" className="w-full">
-          <TabsList className={segmentTabsListClassName + ' grid grid-cols-2'}>
-            <TabsTrigger
-              value="asset-list"
-              className={segmentTabsTriggerClassName}
-            >
-              Asset List
-            </TabsTrigger>
-            <TabsTrigger
-              value="asset-built"
-              className={segmentTabsTriggerClassName}
-            >
-              Asset Built
-            </TabsTrigger>
-          </TabsList>
+        <Tabs value={activeTab} onValueChange={(value) => { setActiveTab(value); setTabLoading(true); setTimeout(() => setTabLoading(false), 300); }} className="w-full">
+          {isInitialLoading ? (
+            <div className="grid grid-cols-2 gap-2 rounded-xl border border-slate-200 bg-slate-100/90 p-1">
+              <Shimmer className="h-10 w-full rounded-lg bg-red-600" />
+              <Shimmer className="h-10 w-full rounded-lg" />
+            </div>
+          ) : (
+            <TabsList className={segmentTabsListClassName + ' grid grid-cols-2'}>
+              <TabsTrigger
+                value="asset-list"
+                className={segmentTabsTriggerClassName}
+              >
+                Asset List
+              </TabsTrigger>
+              <TabsTrigger
+                value="asset-built"
+                className={segmentTabsTriggerClassName}
+              >
+                Asset Built
+              </TabsTrigger>
+            </TabsList>
+          )}
 
           <TabsContent value="asset-list" className="mt-6 space-y-4">
             <Card className="rounded-xl border shadow-sm overflow-hidden">
@@ -811,7 +806,7 @@ export function AssetsPage() {
                       : undefined
                   }
                   onRowClick={handleRowClick}
-                  isLoading={isInitialLoading}
+                  isLoading={isInitialLoading || tabLoading}
                   globalFilterFn={customFilterFn}
                   mobileCardClassName="overflow-hidden rounded-2xl border border-red-100 bg-gradient-to-br from-white via-white to-red-50/40 p-4 shadow-sm shadow-red-100/40"
                   mobileCardFields={[
@@ -981,7 +976,38 @@ export function AssetsPage() {
                 </div>
               </div>
 
-              {filteredBuilders.length > 0 ? (
+              {buildersLoading || tabLoading ? (
+                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                  {Array.from({ length: 6 }).map((_, index) => (
+                    <Card key={index} className="border-0 shadow-sm">
+                      <CardContent className="p-4">
+                        <div className="flex items-start justify-between">
+                          <div className="flex-1">
+                            <div className="flex items-center gap-2 mb-2">
+                              <Shimmer className="h-5 w-16 rounded-full" />
+                              <Shimmer className="h-5 w-20 rounded-full" />
+                            </div>
+                            <Shimmer className="h-6 w-48 mb-2 rounded" />
+                            <Shimmer className="h-4 w-64 mb-3 rounded" />
+                            <div className="flex items-center gap-4 text-xs mb-3">
+                              <Shimmer className="h-3 w-24 rounded" />
+                              <Shimmer className="h-3 w-20 rounded" />
+                            </div>
+                            <div className="space-y-2">
+                              <Shimmer className="h-4 w-32 rounded" />
+                              <div className="space-y-1">
+                                <Shimmer className="h-3 w-full rounded" />
+                                <Shimmer className="h-3 w-3/4 rounded" />
+                                <Shimmer className="h-3 w-1/2 rounded" />
+                              </div>
+                            </div>
+                          </div>
+                        </div>
+                      </CardContent>
+                    </Card>
+                  ))}
+                </div>
+              ) : filteredBuilders.length > 0 ? (
                 <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
                   {filteredBuilders.map((builder: any) => {
                     const isAvailable = availableBuilders.some(

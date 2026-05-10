@@ -5,7 +5,7 @@ import { useSearchParams } from 'react-router-dom';
 import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
 import { PageHeader } from '@/components/common/PageHeader';
-import { Search, FileDown, Download, RefreshCw } from 'lucide-react';
+import { Search, FileDown, Download } from 'lucide-react';
 import { api } from '@/lib/api';
 import { toast } from 'sonner';
 import { useCurrentUser } from '@/hooks/useCurrentUser';
@@ -22,7 +22,6 @@ import {
   AppDialogGradientHeader,
   AppDialogChromeFooter,
 } from '@/components/common/appDialogChrome';
-import { useDelayedLoading } from '@/hooks/useDelayedLoading';
 import { Shimmer } from '@/components/ui/shimmer';
 import { matchesFormListSearch } from '@/utils/formListSearch';
 import { Label } from '@/components/ui/label';
@@ -63,7 +62,7 @@ export default function AssetReturnFormsPage() {
   const [selectedBatch, setSelectedBatch] =
     useState<AssetReturnFormBatch | null>(null);
   const [showDetail, setShowDetail] = useState(false);
-  const displayLoading = useDelayedLoading(loading, 2000);
+  const displayLoading = loading;
 
   const fetchReturnForms = async () => {
     try {
@@ -189,16 +188,6 @@ export default function AssetReturnFormsPage() {
           description="View and manage all asset return forms"
           loading={displayLoading}
         >
-          <Button
-            variant="header"
-            size="sm"
-            onClick={fetchReturnForms}
-            disabled={loading}
-            className="flex items-center gap-2"
-          >
-            <RefreshCw className={`h-4 w-4 ${loading ? 'animate-spin' : ''}`} />
-            Refresh
-          </Button>
         </PageHeader>
 
         <div>

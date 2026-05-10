@@ -10,7 +10,6 @@ import {
   CheckCircle2,
   PackageCheck,
   ClipboardCheck,
-  RefreshCw,
 } from 'lucide-react';
 import { api } from '@/lib/api';
 import { toast } from 'sonner';
@@ -42,7 +41,6 @@ import {
 } from '@/lib/pdfGenerator';
 import { useCurrentUser } from '@/hooks/useCurrentUser';
 import { useUserPermissions } from '@/hooks/useUserPermissions';
-import { useDelayedLoading } from '@/hooks/useDelayedLoading';
 import { Shimmer } from '@/components/ui/shimmer';
 import { Input } from '@/components/ui/input';
 import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs';
@@ -167,9 +165,9 @@ export default function ApprovalsPage() {
   const [approvedLoading, setApprovedLoading] = useState(true);
   const [receiveLoading, setReceiveLoading] = useState(true);
 
-  const displayLoading = useDelayedLoading(loading, 1500);
-  const displayApprovedLoading = useDelayedLoading(approvedLoading, 1500);
-  const displayReceiveLoading = useDelayedLoading(receiveLoading, 1500);
+  const displayLoading = loading;
+  const displayApprovedLoading = approvedLoading;
+  const displayReceiveLoading = receiveLoading;
 
   // ---------- Tabs ----------
   const [activeTab, setActiveTab] = useState('for-approval');
@@ -739,18 +737,6 @@ export default function ApprovalsPage() {
           title="Approvals"
           description="Manage return and transfer form approvals and signatures"
         >
-          <Button
-            variant="header"
-            size="sm"
-            onClick={refreshAll}
-            disabled={isAnyLoading}
-            className="flex items-center gap-2"
-          >
-            <RefreshCw
-              className={`h-4 w-4 ${isAnyLoading ? 'animate-spin' : ''}`}
-            />
-            Refresh
-          </Button>
         </PageHeader>
 
         {/* ───── Tabs ───── */}

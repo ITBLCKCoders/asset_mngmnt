@@ -55,7 +55,6 @@ import {
 } from '@/components/common/appDialogChrome';
 import { Tabs, TabsContent, TabsList, TabsTrigger, segmentTabsListClassName, segmentTabsTriggerClassName } from '@/components/ui/tabs';
 import { Location } from '@/types/assets';
-import { useDelayedLoading } from '@/hooks/useDelayedLoading';
 import { Shimmer } from '@/components/ui/shimmer';
 import { DataTable } from '@/components/ui/dataTable';
 import type { ColumnDef } from '@tanstack/react-table';
@@ -163,6 +162,8 @@ export default function AssetsReturn() {
   const [expandedBuilderForSelect, setExpandedBuilderForSelect] = useState<
     string | null
   >(null);
+  const [activeTab, setActiveTab] = useState('select-assets');
+  const [tabLoading, setTabLoading] = useState(false);
   const [sharedReturnDepartmentId, setSharedReturnDepartmentId] =
     useState<string>('');
   const [sharedReturnLocationId, setSharedReturnLocationId] =
@@ -178,7 +179,7 @@ export default function AssetsReturn() {
     null
   );
   const [nextStepsOwnerAbsent, setNextStepsOwnerAbsent] = useState(false);
-  const displayLoading = useDelayedLoading(loading, 2000);
+  const displayLoading = loading;
 
   const flattenedReturnHistory = useMemo((): ReturnHistoryRow[] => {
     return returnHistory.map((returnRecord: any) => {
@@ -1069,26 +1070,12 @@ export default function AssetsReturn() {
           icon={RotateCcw}
           title="Assets Return"
           description="Process asset returns and assess condition"
-        >
-          <Button
-            variant="header"
-            size="sm"
-            onClick={() => {
-              fetchAssignments();
-              fetchReturnHistory();
-              fetchAssetBuilders();
-            }}
-            className="flex items-center gap-2"
-          >
-            <RefreshCw className="h-4 w-4" />
-            Refresh
-          </Button>
-        </PageHeader>
+        />
 
         <div className="grid grid-cols-1 xl:grid-cols-3 gap-8">
           {/* Asset Selection / Asset Built Tabs */}
           <div className="xl:col-span-2">
-            <Tabs defaultValue="select-assets" className="w-full">
+            <Tabs value={activeTab} onValueChange={(value) => { setActiveTab(value); setTabLoading(true); setTimeout(() => setTabLoading(false), 300); }} className="w-full">
               <TabsList className={segmentTabsListClassName + ' grid grid-cols-2'}>
                 <TabsTrigger
                   value="select-assets"
@@ -1138,7 +1125,7 @@ export default function AssetsReturn() {
 
                   <CardContent className="pt-0">
                     <div className="space-y-3 max-h-96 overflow-y-auto scrollbar-thin scrollbar-thumb-gray-300 scrollbar-track-gray-100 -mr-6 pr-6">
-                      {displayLoading ? (
+                      {displayLoading || tabLoading ? (
                         <div className="space-y-3">
                           {[1, 2, 3, 4, 5].map(i => (
                             <div
@@ -1157,11 +1144,13 @@ export default function AssetsReturn() {
                         </div>
                       ) : filteredAssignments.length === 0 ? (
                         <div className="text-center py-12">
-                          <Package className="h-16 w-16 text-gray-300 mx-auto mb-4" />
-                          <p className="text-gray-500 text-lg">
+                          <div className="inline-flex items-center justify-center w-20 h-20 rounded-full bg-gradient-to-br from-red-100 to-red-200 mb-4">
+                            <Package className="h-10 w-10 text-red-600" />
+                          </div>
+                          <h3 className="text-lg font-semibold text-gray-900 mb-2">
                             No active asset assignments found
-                          </p>
-                          <p className="text-gray-400 text-sm mt-1">
+                          </h3>
+                          <p className="text-gray-500 text-sm">
                             Try adjusting your search criteria
                           </p>
                         </div>
@@ -1359,22 +1348,51 @@ export default function AssetsReturn() {
                     </div>
                   </CardHeader>
                   <CardContent className="pt-0">
-                    {buildersLoading ? (
-                      <div className="flex items-center justify-center py-12">
-                        <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-red-600" />
-                        <span className="ml-3 text-gray-600">
-                          Loading builders...
-                        </span>
+                    {buildersLoading || tabLoading ? (
+                      <div className="space-y-4">
+                        {Array.from({ length: 4 }).map((_, index) => (
+                          <Card
+                            key={index}
+                            className="border shadow-sm border-gray-200"
+                          >
+                            <CardContent className="p-4">
+                              <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-4">
+                                <div className="flex-1 min-w-0">
+                                  <Shimmer className="h-6 w-40 rounded mb-1" />
+                                  <Shimmer className="h-4 w-64 rounded mb-2" />
+                                  <div className="flex items-center gap-1.5 mb-2">
+                                    <Shimmer className="h-3.5 w-3.5 rounded" />
+                                    <Shimmer className="h-4 w-32 rounded" />
+                                  </div>
+                                  <Shimmer className="h-5 w-20 rounded-full" />
+                                  <div className="space-y-1.5 mt-2">
+                                    {Array.from({ length: 2 }).map((_, idx) => (
+                                      <div key={idx} className="flex items-center gap-2 border rounded px-2 py-1">
+                                        <Shimmer className="h-3 w-3 rounded" />
+                                        <Shimmer className="h-3.5 w-24 rounded" />
+                                      </div>
+                                    ))}
+                                  </div>
+                                </div>
+                                <div className="flex flex-row sm:flex-col gap-2 flex-shrink-0">
+                                  <Shimmer className="h-9 w-24 rounded-lg" />
+                                  <Shimmer className="h-9 w-24 rounded-lg" />
+                                </div>
+                              </div>
+                            </CardContent>
+                          </Card>
+                        ))}
                       </div>
                     ) : filteredAssignedBuilders.length === 0 ? (
                       <div className="text-center py-12">
-                        <Boxes className="h-16 w-16 text-gray-300 mx-auto mb-4" />
-                        <p className="text-gray-500 text-lg">
+                        <div className="inline-flex items-center justify-center w-20 h-20 rounded-full bg-gradient-to-br from-red-100 to-red-200 mb-4">
+                          <Boxes className="h-10 w-10 text-red-600" />
+                        </div>
+                        <h3 className="text-lg font-semibold text-gray-900 mb-2">
                           No assigned asset builders to return
-                        </p>
-                        <p className="text-gray-400 text-sm mt-1">
-                          Asset builders that have been assigned will appear
-                          here
+                        </h3>
+                        <p className="text-gray-500 text-sm">
+                          Asset builders that have been assigned will appear here
                         </p>
                       </div>
                     ) : (
@@ -1663,17 +1681,45 @@ export default function AssetsReturn() {
 
           <CardContent>
             {returnHistoryLoading ? (
-              <div className="flex items-center justify-center py-12">
-                <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-red-600"></div>
-                <span className="ml-3 text-gray-600">
-                  Loading return history...
-                </span>
+              <div className="border border-gray-200 rounded-lg overflow-hidden">
+                <div className="bg-gray-50 p-3 space-y-2">
+                  <div className="flex gap-4">
+                    <Shimmer className="h-5 w-32 rounded" />
+                    <Shimmer className="h-5 w-24 rounded" />
+                    <Shimmer className="h-5 w-24 rounded" />
+                    <Shimmer className="h-5 w-28 rounded" />
+                    <Shimmer className="h-5 w-20 rounded" />
+                    <Shimmer className="h-5 w-24 rounded" />
+                    <Shimmer className="h-5 w-32 rounded" />
+                    <Shimmer className="h-5 w-24 rounded" />
+                    <Shimmer className="h-5 w-20 rounded" />
+                  </div>
+                </div>
+                {[...Array(5)].map((_, index) => (
+                  <div key={index} className="border-t border-gray-200 p-3 space-y-2">
+                    <div className="flex gap-4">
+                      <Shimmer className="h-5 w-32 rounded" />
+                      <Shimmer className="h-5 w-24 rounded" />
+                      <Shimmer className="h-5 w-24 rounded" />
+                      <Shimmer className="h-5 w-28 rounded" />
+                      <Shimmer className="h-5 w-20 rounded" />
+                      <Shimmer className="h-5 w-24 rounded" />
+                      <Shimmer className="h-5 w-32 rounded" />
+                      <Shimmer className="h-5 w-24 rounded" />
+                      <Shimmer className="h-5 w-20 rounded" />
+                    </div>
+                  </div>
+                ))}
               </div>
             ) : returnHistory.length === 0 ? (
               <div className="text-center py-12">
-                <RotateCcw className="h-16 w-16 text-gray-300 mx-auto mb-4" />
-                <p className="text-gray-500 text-lg">No return history found</p>
-                <p className="text-gray-400 text-sm mt-1">
+                <div className="inline-flex items-center justify-center w-20 h-20 rounded-full bg-gradient-to-br from-red-100 to-red-200 mb-4">
+                  <RotateCcw className="h-10 w-10 text-red-600" />
+                </div>
+                <h3 className="text-lg font-semibold text-gray-900 mb-2">
+                  No return history found
+                </h3>
+                <p className="text-gray-500 text-sm">
                   Completed returns will appear here
                 </p>
               </div>

@@ -2,7 +2,7 @@
 
 import { useState, useMemo, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Package, X, Check, ArrowLeft, Trash2, RefreshCw, Crown } from 'lucide-react';
+import { Package, X, Check, ArrowLeft, Trash2, Crown } from 'lucide-react';
 import {
   Card,
   CardContent,
@@ -406,15 +406,6 @@ export default function AssetBuilderPage() {
           >
             <ArrowLeft className="h-4 w-4" />
             Back
-          </Button>
-          <Button
-            variant="ghost"
-            size="sm"
-            onClick={() => window.location.reload()}
-            className="flex items-center gap-2"
-          >
-            <RefreshCw className="h-4 w-4" />
-            Refresh
           </Button>
         </PageHeader>
 

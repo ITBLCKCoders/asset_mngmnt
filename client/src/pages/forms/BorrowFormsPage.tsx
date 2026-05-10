@@ -12,7 +12,6 @@ import {
 } from '@/components/common/appDialogChrome';
 import { Dialog } from '@/components/ui/dialog';
 import { Shimmer } from '@/components/ui/shimmer';
-import { useDelayedLoading } from '@/hooks/useDelayedLoading';
 import { api } from '@/lib/api';
 import { downloadPDF, generateAssetBorrowingPDF } from '@/lib/pdfGenerator';
 import {
@@ -24,7 +23,6 @@ import {
 import { matchesFormListSearch } from '@/utils/formListSearch';
 import {
   HandHelping,
-  RefreshCw,
   Search,
   Download,
 } from 'lucide-react';
@@ -73,7 +71,7 @@ export default function BorrowFormsPage() {
   const [selectedBatch, setSelectedBatch] =
     useState<AssetBorrowFormBatch | null>(null);
   const [showDetail, setShowDetail] = useState(false);
-  const displayLoading = useDelayedLoading(loading, 2000);
+  const displayLoading = loading;
 
   const fetchBorrowForms = async () => {
     try {
@@ -201,16 +199,6 @@ export default function BorrowFormsPage() {
           description="View and manage all borrow forms"
           loading={displayLoading}
         >
-          <Button
-            variant="header"
-            size="sm"
-            onClick={() => void fetchBorrowForms()}
-            disabled={loading}
-            className="flex items-center gap-2"
-          >
-            <RefreshCw className={`h-4 w-4 ${loading ? 'animate-spin' : ''}`} />
-            Refresh
-          </Button>
         </PageHeader>
 
         <div>

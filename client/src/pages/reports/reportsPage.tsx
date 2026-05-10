@@ -11,7 +11,6 @@ import {
   Download,
   FileStack,
   Loader2,
-  RefreshCw,
 } from 'lucide-react';
 import { toast } from 'sonner';
 import {
@@ -67,7 +66,8 @@ type ReportTableKey =
   | 'maintenance'
   | 'repair'
   | 'borrow'
-  | 'assetRequest';
+  | 'assetRequest'
+  | 'finance';
 
 type ReportFilterState = {
   from: string;
@@ -92,6 +92,7 @@ type MonthlyHistoryCount = {
   repair: number;
   borrow: number;
   assetRequest: number;
+  finance: number;
 };
 
 type GraphPeriod = 'weekly' | 'monthly' | 'yearly';
@@ -123,6 +124,7 @@ const REPORT_TABLES: Array<{ key: ReportTableKey; label: string }> = [
   { key: 'repair', label: 'Repair History' },
   { key: 'borrow', label: 'Borrow History' },
   { key: 'assetRequest', label: 'Asset Request History' },
+  { key: 'finance', label: 'Finance Reports' },
 ];
 
 const REPORT_ACTION_LABELS: Record<ReportTableKey, string> = {
@@ -133,6 +135,7 @@ const REPORT_ACTION_LABELS: Record<ReportTableKey, string> = {
   repair: 'Asset sent to repair',
   borrow: 'Borrow request submitted',
   assetRequest: 'Asset request submitted',
+  finance: 'Finance reports',
 };
 
 const emptyFilters = (): ReportFilterState => ({
@@ -150,6 +153,7 @@ const initialFilters = (): Record<ReportTableKey, ReportFilterState> => ({
   repair: emptyFilters(),
   borrow: emptyFilters(),
   assetRequest: emptyFilters(),
+  finance: emptyFilters(),
 });
 
 const HISTORY_COLORS: Record<ReportTableKey, string> = {
@@ -160,6 +164,7 @@ const HISTORY_COLORS: Record<ReportTableKey, string> = {
   repair: 'hsl(0, 84%, 60%)',
   borrow: 'hsl(262, 83%, 58%)',
   assetRequest: 'hsl(47, 96%, 53%)',
+  finance: 'hsl(142, 76%, 36%)',
 };
 
 const dateOnly = (value: string) => (value ? value.slice(0, 10) : '');
@@ -232,6 +237,7 @@ const sectionToTableKey = (section: string | null): ReportTableKey | null => {
   if (section === 'repair') return 'repair';
   if (section === 'borrow') return 'borrow';
   if (section === 'assetRequest') return 'assetRequest';
+  if (section === 'finance') return 'finance';
   return null;
 };
 
@@ -250,6 +256,9 @@ export default function ReportsPage() {
   const [repairRows, setRepairRows] = useState<ReportRow[]>([]);
   const [borrowRows, setBorrowRows] = useState<ReportRow[]>([]);
   const [assetRequestRows, setAssetRequestRows] = useState<ReportRow[]>([]);
+  const [financeRows, setFinanceRows] = useState<ReportRow[]>([]);
+  const [financeData, setFinanceData] = useState<any>(null);
+  const [financeLoading, setFinanceLoading] = useState(false);
   const [exportOpen, setExportOpen] = useState(false);
   const [exportFilters, setExportFilters] = useState<ReportFilterState>(
     emptyFilters()
@@ -340,6 +349,7 @@ export default function ReportsPage() {
       repair: repairRows,
       borrow: borrowRows,
       assetRequest: assetRequestRows,
+      finance: financeRows,
     }),
     [
       assignmentRows,
@@ -349,6 +359,7 @@ export default function ReportsPage() {
       repairRows,
       borrowRows,
       assetRequestRows,
+      financeRows,
     ]
   );
 
@@ -464,6 +475,7 @@ export default function ReportsPage() {
       repair: 0,
       borrow: 0,
       assetRequest: 0,
+      finance: 0,
     });
 
     const bucketMap = new Map<string, MonthlyHistoryCount>();
@@ -532,6 +544,7 @@ export default function ReportsPage() {
       repair: { label: 'Asset sent to repair', color: HISTORY_COLORS.repair },
       borrow: { label: 'Borrow request submitted', color: HISTORY_COLORS.borrow },
       assetRequest: { label: 'Asset request submitted', color: HISTORY_COLORS.assetRequest },
+      finance: { label: 'Finance reports', color: HISTORY_COLORS.finance },
     }),
     []
   );
@@ -700,6 +713,20 @@ export default function ReportsPage() {
 
         const reportsRes = await api
           .get<any>(maintenancePath)
+          .then(value => ({ status: 'fulfilled' as const, value }))
+          .catch(reason => ({ status: 'rejected' as const, reason }));
+
+        const financeCompanyId =
+          user.role?.name === 'Super Admin'
+            ? selectedCompanyIdRef.current || activeId
+            : '';
+        const financePath =
+          financeCompanyId.length > 0
+            ? `/reports/finance-reports?companyId=${encodeURIComponent(financeCompanyId)}`
+            : '/reports/finance-reports';
+
+        const financeRes = await api
+          .get<any>(financePath)
           .then(value => ({ status: 'fulfilled' as const, value }))
           .catch(reason => ({ status: 'rejected' as const, reason }));
 
@@ -889,6 +916,35 @@ export default function ReportsPage() {
             notes: row.details ?? row.action ?? 'No notes',
           }))
         );
+
+        const financeData =
+          financeRes.status === 'fulfilled'
+            ? (financeRes.value as { data?: any })?.data ?? {}
+            : {};
+
+        console.log('Finance data received:', JSON.stringify(financeData, null, 2));
+        console.log('Fixed Asset Register count:', financeData.fixedAssetRegister?.length);
+        console.log('Depreciation Schedule count:', financeData.depreciationSchedule?.length);
+        console.log('Asset Valuation Summary:', financeData.assetValuationSummary);
+        setFinanceData(financeData);
+
+        // Set finance rows as placeholder for now - will be used for summary display
+        setFinanceRows([
+          {
+            id: 'finance-summary',
+            reference: 'FINANCE',
+            asset: 'Finance Reports',
+            person: 'System',
+            categoryId: '',
+            departmentId: '',
+            departmentName: 'Finance',
+            companyId: defaultCompanyId,
+            companyName: defaultCompanyName,
+            status: 'Available',
+            date: new Date().toISOString(),
+            notes: 'View detailed finance reports below',
+          },
+        ]);
       } catch {
         toast.error('Failed to load reports page data.');
       } finally {
@@ -938,15 +994,17 @@ export default function ReportsPage() {
       <main className="flex-1 space-y-6 p-6">
         <PageHeader
           icon={BarChart3}
-          title={reportsTitle}
+          title={focusedTableKey ? focusedTableLabel : reportsTitle}
           description={
-            isSuperAdmin
-              ? scope === 'it'
-                ? 'Same IT asset scope as the dashboard: categories under IT departments for the selected company.'
-                : 'Same Admin asset scope as the dashboard: categories under Administration departments for the selected company.'
-              : scopeFilterEnabled
-                ? 'History filtered to the same category scope as your IT or Admin asset dashboard.'
-                : 'Review history across assignments, returns, transfers, maintenance, repairs, borrow requests, and asset requests.'
+            focusedTableKey
+              ? 'Showing only the selected history table from the Reports submenu.'
+              : isSuperAdmin
+                ? scope === 'it'
+                  ? 'Same IT asset scope as the dashboard: categories under IT departments for the selected company.'
+                  : 'Same Admin asset scope as the dashboard: categories under Administration departments for the selected company.'
+                : scopeFilterEnabled
+                  ? 'History filtered to the same category scope as your IT or Admin asset dashboard.'
+                  : 'Review history across assignments, returns, transfers, maintenance, repairs, borrow requests, and asset requests.'
           }
           loading={loading}
         >
@@ -972,19 +1030,6 @@ export default function ReportsPage() {
                 </TabsList>
               </Tabs>
             )}
-            <Button
-              variant="header"
-              size="sm"
-              onClick={() => setRefreshTick(prev => prev + 1)}
-              disabled={loading || userLoading}
-            >
-              {loading || userLoading ? (
-                <Loader2 className="mr-1 h-4 w-4 animate-spin" />
-              ) : (
-                <RefreshCw className="mr-1 h-4 w-4" />
-              )}
-              Refresh
-            </Button>
             <Button variant="header" size="sm" onClick={() => openExport()}>
               <FileStack className="mr-2 h-4 w-4" />
               Export Reports
@@ -1126,18 +1171,7 @@ export default function ReportsPage() {
           </div>
         )}
 
-        {focusedTableKey && (
-          <Card className="border border-border/60 shadow-sm">
-            <CardHeader className="space-y-1">
-              <CardTitle className="text-base">{focusedTableLabel}</CardTitle>
-              <p className="text-sm text-muted-foreground">
-                Showing only the selected history table from the Reports submenu.
-              </p>
-            </CardHeader>
-          </Card>
-        )}
-
-        {focusedTableKey && (
+        {focusedTableKey && focusedTableKey !== 'finance' && (
           <DataTable<ReportRow>
             tableId={`reports-focused-${focusedTableKey}`}
             data={scopedRows[focusedTableKey]}
@@ -1159,6 +1193,150 @@ export default function ReportsPage() {
               Export {focusedTableLabel}
             </Button>
           </DataTable>
+        )}
+
+        {focusedTableKey === 'finance' && (
+          <>
+            {!financeData && loading && (
+              <Card className="border border-border/60 shadow-sm">
+                <CardContent className="py-12">
+                  <p className="text-center text-muted-foreground">Loading finance reports...</p>
+                </CardContent>
+              </Card>
+            )}
+            {financeData && (
+          <div className="space-y-6">
+            {/* Asset Valuation Summary */}
+            <Card className="border border-border/60 shadow-sm">
+              <CardHeader className="bg-red-600 rounded-t-lg pb-4">
+                <CardTitle className="text-xl font-semibold text-white">Asset Valuation Summary</CardTitle>
+              </CardHeader>
+              <CardContent className="pt-8">
+                <div className="grid gap-6 md:grid-cols-3 mb-8">
+                  <div className="space-y-2">
+                    <p className="text-sm text-muted-foreground">Total Asset Value</p>
+                    <p className="text-3xl font-bold tracking-tight text-foreground">
+                      ₱{financeData.assetValuationSummary?.totalAssetValue?.toLocaleString() || '0'}
+                    </p>
+                  </div>
+                  <div className="space-y-2">
+                    <p className="text-sm text-muted-foreground">Total Accumulated Depreciation</p>
+                    <p className="text-3xl font-bold tracking-tight text-orange-600">
+                      ₱{financeData.assetValuationSummary?.totalAccumulatedDepreciation?.toLocaleString() || '0'}
+                    </p>
+                  </div>
+                  <div className="space-y-2">
+                    <p className="text-sm text-muted-foreground">Total Net Book Value</p>
+                    <p className="text-3xl font-bold tracking-tight text-green-600">
+                      ₱{financeData.assetValuationSummary?.totalNetBookValue?.toLocaleString() || '0'}
+                    </p>
+                  </div>
+                </div>
+
+                <div className="grid gap-6 lg:grid-cols-2">
+                  <div className="space-y-4">
+                    <h3 className="text-lg font-semibold">By Category</h3>
+                    <div className="space-y-2">
+                      {financeData.assetValuationSummary?.byCategory?.map((item: any) => (
+                        <div key={item.category} className="flex justify-between items-center p-3 bg-muted/50 rounded-lg">
+                          <div className="min-w-0 flex-1">
+                            <p className="font-medium truncate">{item.category}</p>
+                            <p className="text-sm text-muted-foreground">{item.assetCount} assets</p>
+                          </div>
+                          <div className="text-right ml-4 flex-shrink-0">
+                            <p className="font-semibold">₱{item.totalNetBookValue.toLocaleString()}</p>
+                            <p className="text-xs text-muted-foreground">NBV</p>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+
+                  <div className="space-y-4">
+                    <h3 className="text-lg font-semibold">By Department</h3>
+                    <div className="space-y-2">
+                      {financeData.assetValuationSummary?.byDepartment?.map((item: any) => (
+                        <div key={item.department} className="flex justify-between items-center p-3 bg-muted/50 rounded-lg">
+                          <div className="min-w-0 flex-1">
+                            <p className="font-medium truncate">{item.department}</p>
+                            <p className="text-sm text-muted-foreground">{item.assetCount} assets</p>
+                          </div>
+                          <div className="text-right ml-4 flex-shrink-0">
+                            <p className="font-semibold">₱{item.totalNetBookValue.toLocaleString()}</p>
+                            <p className="text-xs text-muted-foreground">NBV</p>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                </div>
+              </CardContent>
+            </Card>
+
+            {/* Fixed Asset Register */}
+            <Card className="border border-border/60 shadow-sm">
+              <CardHeader className="bg-red-600 rounded-t-lg pb-4">
+                <CardTitle className="text-xl font-semibold text-white">Fixed Asset Register</CardTitle>
+                <p className="text-sm text-red-100">
+                  Complete inventory of all assets with financial details
+                </p>
+              </CardHeader>
+              <CardContent className="pt-8">
+                <DataTable
+                  tableId="fixed-asset-register"
+                  data={financeData.fixedAssetRegister || []}
+                  columns={[
+                    { id: 'asset_code', header: 'Asset Code', accessorKey: 'asset_code', size: 150 },
+                    { id: 'name', header: 'Asset Name', accessorKey: 'name', size: 200 },
+                    { id: 'category_name', header: 'Category', accessorKey: 'category_name', size: 150 },
+                    { id: 'asset_value', header: 'Asset Value', accessorKey: 'asset_value', size: 120, cell: ({ row }) => `₱${row.original.asset_value?.toLocaleString() || '0'}` },
+                    { id: 'salvage_value', header: 'Salvage Value', accessorKey: 'salvage_value', size: 120, cell: ({ row }) => `₱${row.original.salvage_value?.toLocaleString() || '0'}` },
+                    { id: 'depreciation_method', header: 'Depreciation Method', accessorKey: 'depreciation_method', size: 150 },
+                    { id: 'useful_life_years', header: 'Useful Life (Years)', accessorKey: 'useful_life_years', size: 120 },
+                    { id: 'annual_depreciation', header: 'Annual Depreciation', accessorKey: 'annual_depreciation', size: 150, cell: ({ row }) => `₱${row.original.annual_depreciation?.toLocaleString() || '0'}` },
+                    { id: 'department_name', header: 'Department', accessorKey: 'department_name', size: 150 },
+                    { id: 'status', header: 'Status', accessorKey: 'status', size: 120 },
+                  ]}
+                  title="Fixed Asset Register"
+                  titleBadge={`${financeData.fixedAssetRegister?.length || 0} assets`}
+                  searchPlaceholder="Search assets..."
+                  isLoading={loading}
+                />
+              </CardContent>
+            </Card>
+
+            {/* Depreciation Schedule */}
+            <Card className="border border-border/60 shadow-sm">
+              <CardHeader className="bg-red-600 rounded-t-lg pb-4">
+                <CardTitle className="text-xl font-semibold text-white">Depreciation Schedule</CardTitle>
+                <p className="text-sm text-red-100">
+                  Current depreciation status for all assets
+                </p>
+              </CardHeader>
+              <CardContent className="pt-8">
+                <DataTable
+                  tableId="depreciation-schedule"
+                  data={financeData.depreciationSchedule || []}
+                  columns={[
+                    { id: 'asset_code', header: 'Asset Code', accessorKey: 'asset_code', size: 150 },
+                    { id: 'name', header: 'Asset Name', accessorKey: 'name', size: 200 },
+                    { id: 'asset_value', header: 'Asset Value', accessorKey: 'asset_value', size: 120, cell: ({ row }) => `₱${row.original.asset_value?.toLocaleString() || '0'}` },
+                    { id: 'accumulated_depreciation', header: 'Accumulated Depreciation', accessorKey: 'accumulated_depreciation', size: 180, cell: ({ row }) => `₱${row.original.accumulated_depreciation?.toLocaleString() || '0'}` },
+                    { id: 'net_book_value', header: 'Net Book Value', accessorKey: 'net_book_value', size: 150, cell: ({ row }) => `₱${row.original.net_book_value?.toLocaleString() || '0'}` },
+                    { id: 'years_depreciated', header: 'Years Depreciated', accessorKey: 'years_depreciated', size: 150, cell: ({ row }) => row.original.years_depreciated?.toFixed(1) || '0' },
+                    { id: 'remaining_useful_life', header: 'Remaining Useful Life', accessorKey: 'remaining_useful_life', size: 180, cell: ({ row }) => row.original.remaining_useful_life?.toFixed(1) || 'N/A' },
+                    { id: 'depreciation_method', header: 'Depreciation Method', accessorKey: 'depreciation_method', size: 150 },
+                  ]}
+                  title="Depreciation Schedule"
+                  titleBadge={`${financeData.depreciationSchedule?.length || 0} assets`}
+                  searchPlaceholder="Search assets..."
+                  isLoading={loading}
+                />
+              </CardContent>
+            </Card>
+          </div>
+            )}
+          </>
         )}
 
         <Dialog open={exportOpen} onOpenChange={setExportOpen}>

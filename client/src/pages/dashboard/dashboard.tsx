@@ -24,7 +24,6 @@ import {
   CheckCircle,
   Clock,
   ArrowRightLeft,
-  RefreshCw,
   UserCheck,
   Archive,
   Trash2,
@@ -139,8 +138,6 @@ export interface DashboardData {
 
 interface EmployeeDashboardStats {
   myAssets: number;
-  myReturnRequests: number;
-  myTransferRequests: number;
   myAssetRequests: number;
   myBorrowingRequests: number;
   myPendingRequests: number;
@@ -335,27 +332,17 @@ export default function Dashboard() {
       if (isEmployee && user?.id) {
         const settled = await Promise.allSettled([
           api.get<{ assets?: unknown[] }>('/assets/my-assets'),
-          api.get<{ assetReturnForms?: any[] }>(`/asset-returns/user/${user.id}`),
-          api.get<{ assetTransferForms?: any[] }>(
-            `/asset-transfers/user/${user.id}`
-          ),
           api.get<{ requests?: any[] }>('/asset-requests'),
           api.get<unknown>('/asset-borrow-requests/mine'),
         ]);
 
-        const [myAssetsResult, myReturnsResult, myTransfersResult, myAssetRequestsResult, myBorrowsResult] =
+        const [myAssetsResult, myAssetRequestsResult, myBorrowsResult] =
           settled;
 
         const safeValue = <T,>(result: PromiseSettledResult<T>, fallback: T): T =>
           result.status === 'fulfilled' ? result.value : fallback;
 
         const myAssetsRes = safeValue(myAssetsResult, { assets: [] as unknown[] });
-        const myReturnRequestsRes = safeValue(myReturnsResult, {
-          assetReturnForms: [] as any[],
-        });
-        const myTransferRequestsRes = safeValue(myTransfersResult, {
-          assetTransferForms: [] as any[],
-        });
         const myAssetRequestsRes = safeValue(myAssetRequestsResult, {
           requests: [] as any[],
         });
@@ -370,8 +357,6 @@ export default function Dashboard() {
         const myAssets = Array.isArray(myAssetsRes?.assets)
           ? myAssetsRes.assets.length
           : 0;
-        const returnRows = myReturnRequestsRes?.assetReturnForms ?? [];
-        const transferRows = myTransferRequestsRes?.assetTransferForms ?? [];
         const myAssetRequestRows = Array.isArray(myAssetRequestsRes?.requests)
           ? myAssetRequestsRes.requests.filter(
               request => String(request?.user_id ?? '') === user.id
@@ -389,35 +374,6 @@ export default function Dashboard() {
         const borrowRows = Array.isArray(borrowPayload?.borrowRequests)
           ? borrowPayload.borrowRequests
           : [];
-
-        const returnPendingCount = returnRows.filter((batch: any) => {
-          const status = String(batch?.status ?? '').toLowerCase();
-          return (
-            status.includes('pending') ||
-            status.includes('submitted') ||
-            (!status && !batch?.process_signed_at)
-          );
-        }).length;
-        const returnCompletedCount = returnRows.filter((batch: any) => {
-          const status = String(batch?.status ?? '').toLowerCase();
-          return status.includes('returned') || Boolean(batch?.process_signed_at);
-        }).length;
-        const returnDeclinedCount = returnRows.filter((batch: any) => {
-          const status = String(batch?.status ?? '').toLowerCase();
-          return status.includes('declined') || status.includes('rejected');
-        }).length;
-
-        const transferPendingCount = transferRows.filter((batch: any) =>
-          String(batch?.status ?? '').toLowerCase().includes('pending')
-        ).length;
-        const transferCompletedCount = transferRows.filter((batch: any) => {
-          const status = String(batch?.status ?? '').toLowerCase();
-          return status.includes('completed') || status.includes('approved');
-        }).length;
-        const transferDeclinedCount = transferRows.filter((batch: any) => {
-          const status = String(batch?.status ?? '').toLowerCase();
-          return status.includes('declined') || status.includes('rejected');
-        }).length;
 
         const assetRequestPendingCount = myAssetRequestRows.filter(request =>
           String(request?.status ?? '').toLowerCase().includes('pending')
@@ -449,23 +405,15 @@ export default function Dashboard() {
 
         const employeeStats: EmployeeDashboardStats = {
           myAssets,
-          myReturnRequests: returnRows.length,
-          myTransferRequests: transferRows.length,
           myAssetRequests: myAssetRequestRows.length,
           myBorrowingRequests: borrowRows.length,
           myPendingRequests:
-            returnPendingCount +
-            transferPendingCount +
             assetRequestPendingCount +
             borrowPendingCount,
           myCompletedRequests:
-            returnCompletedCount +
-            transferCompletedCount +
             assetRequestCompletedCount +
             borrowCompletedCount,
           myDeclinedRequests:
-            returnDeclinedCount +
-            transferDeclinedCount +
             assetRequestDeclinedCount +
             borrowDeclinedCount,
         };
@@ -478,14 +426,14 @@ export default function Dashboard() {
             deployedAssets: 0,
             underMaintenance: 0,
             forDisposal: 0,
-            assetReturnsCount: employeeStats.myReturnRequests,
+            assetReturnsCount: 0,
             borrowRequestsCount: employeeStats.myBorrowingRequests,
             pendingReturnCount: 0,
             pendingTransferCount: 0,
             disposedAssets: 0,
             borrowedAssets: 0,
             underRepair: 0,
-            transferedAssets: employeeStats.myTransferRequests,
+            transferedAssets: 0,
             returnedAssets: 0,
             forMaintenance: 0,
             forRepair: 0,
@@ -662,20 +610,6 @@ export default function Dashboard() {
       path: '/my-assets',
     },
     {
-      title: 'My Return Requests',
-      value: dashboardData?.stats.assetReturnsCount ?? 0,
-      icon: FileText,
-      color: 'text-emerald-600',
-      path: '/assets/return-request/my-requests',
-    },
-    {
-      title: 'My Transfer Requests',
-      value: dashboardData?.stats.transferedAssets ?? 0,
-      icon: ArrowRightLeft,
-      color: 'text-purple-600',
-      path: '/assets/transfer-request/my-requests',
-    },
-    {
       title: 'My Asset Requests',
       value:
         dashboardData?.categoryMix?.find(item => item.name === 'Asset Requests')
@@ -786,14 +720,6 @@ export default function Dashboard() {
                 </TabsList>
               </Tabs>
             )}
-            <Button variant="header" size="sm" onClick={handleRefresh}>
-              {loading ? (
-                <Loader2 className="h-4 w-4 animate-spin" />
-              ) : (
-                <RefreshCw className="h-4 w-4 mr-1" />
-              )}
-              Refresh
-            </Button>
           </div>
         </PageHeader>
 

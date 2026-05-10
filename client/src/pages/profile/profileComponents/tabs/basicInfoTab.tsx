@@ -30,18 +30,6 @@ import { useAvatarPreview } from '@/hooks/avatarPreview';
 import { Shimmer } from '@/components/ui/shimmer';
 import { toast } from 'sonner';
 
-function useDelayedLoading(loading: boolean, minDelayMs = 2000) {
-  const [show, setShow] = useState(true);
-  useEffect(() => {
-    if (loading) setShow(true);
-    else {
-      const t = setTimeout(() => setShow(false), minDelayMs);
-      return () => clearTimeout(t);
-    }
-  }, [loading, minDelayMs]);
-  return loading || show;
-}
-
 interface BasicInfoTabProps {
   isEditing: boolean;
 }
@@ -130,7 +118,7 @@ const BasicInfoTab = forwardRef<BasicInfoTabHandle, BasicInfoTabProps>(
 
     const { pendingFile, clearPreview } = useAvatarPreview();
 
-    const isLoading = useDelayedLoading(userLoading, 2000);
+    const isLoading = userLoading;
 
     useEffect(() => {
       if (user && !isEditing) {
@@ -1206,7 +1194,12 @@ const BasicInfoTab = forwardRef<BasicInfoTabHandle, BasicInfoTabProps>(
 
       {/* OTP Verification Dialog */}
       <Dialog open={showOtpDialog} onOpenChange={setShowOtpDialog}>
-        <DialogContent showCloseButton={false} className="max-w-md">
+        <DialogContent 
+          showCloseButton={false} 
+          className="max-w-md"
+          onInteractOutside={(e) => e.preventDefault()}
+          onEscapeKeyDown={(e) => e.preventDefault()}
+        >
           <DialogHeader>
             <div className="flex items-center gap-3 mb-1">
               <div className="rounded-xl bg-blue-100 p-2">

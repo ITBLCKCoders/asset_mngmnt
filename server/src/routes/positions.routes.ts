@@ -1,5 +1,6 @@
 import { Router } from 'express';
 import { authenticate } from '../middleware/authenticate.js';
+import { requirePermission } from '../middleware/requirePermission.js';
 import {
   getPositionsHandler,
   getPositionsByDepartmentHandler,
@@ -60,7 +61,11 @@ router.get('/department/:departmentId', getPositionsByDepartmentHandler);
  *       201: { description: Position created }
  *       401: { description: Unauthorized }
  */
-router.post('/', createPositionHandler);
+router.post(
+  '/',
+  requirePermission('Departments', 'create'),
+  createPositionHandler
+);
 
 /**
  * @swagger
@@ -86,7 +91,11 @@ router.post('/', createPositionHandler);
  *       401: { description: Unauthorized }
  *       404: { description: Position not found }
  */
-router.patch('/:id', updatePositionHandler);
+router.patch(
+  '/:id',
+  requirePermission('Departments', 'edit'),
+  updatePositionHandler
+);
 
 /**
  * @swagger
@@ -104,6 +113,10 @@ router.patch('/:id', updatePositionHandler);
  *       401: { description: Unauthorized }
  *       404: { description: Position not found }
  */
-router.delete('/:id', deletePositionHandler);
+router.delete(
+  '/:id',
+  requirePermission('Departments', 'delete'),
+  deletePositionHandler
+);
 
 export default router;

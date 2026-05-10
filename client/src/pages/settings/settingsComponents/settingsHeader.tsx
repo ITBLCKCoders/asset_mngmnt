@@ -2,7 +2,7 @@ import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
-import { Settings, History, RefreshCw } from 'lucide-react';
+import { Settings, History } from 'lucide-react';
 import { cn } from '@/lib/utils';
 
 const Shimmer = ({ className }: { className?: string }) => (
@@ -65,14 +65,6 @@ export function SettingsHeader() {
             >
               <History className="mr-2 h-5 w-5" />
               Audit Log
-            </Button>
-            <Button
-              variant="header"
-              size="lg"
-              onClick={() => window.location.reload()}
-            >
-              <RefreshCw className="mr-2 h-5 w-5" />
-              Refresh
             </Button>
           </div>
         </div>

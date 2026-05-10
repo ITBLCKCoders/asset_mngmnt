@@ -22,20 +22,6 @@ const Shimmer = ({ className }: { className?: string }) => (
   <div className={cn('animate-shimmer rounded bg-gray-200/80', className)} />
 );
 
-function useDelayedLoading(loading: boolean, minDelayMs: number = 2000) {
-  const [isDelayedLoading, setIsDelayedLoading] = useState(true);
-
-  useEffect(() => {
-    if (loading) {
-      setIsDelayedLoading(true);
-    } else {
-      const timer = setTimeout(() => setIsDelayedLoading(false), minDelayMs);
-      return () => clearTimeout(timer);
-    }
-  }, [loading, minDelayMs]);
-
-  return loading || isDelayedLoading;
-}
 
 interface ProfileHeaderProps {
   user: any;
@@ -63,7 +49,7 @@ export default function ProfileHeader({
   const { previewUrl, setPreviewUrl, setPendingFile, clearPreview } =
     useAvatarPreview();
 
-  const isLoading = useDelayedLoading(externalLoading, 2000);
+  const isLoading = externalLoading;
 
   const getInitials = (name: string) => {
     return name

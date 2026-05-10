@@ -18,6 +18,7 @@ import {
   uploadConditionPhotoHandler,
 } from '../controllers/assetReturns.controller.js';
 import { authenticate } from '../middleware/authenticate.js';
+import { requirePermission } from '../middleware/requirePermission.js';
 import { verifyFileMagicBytes } from '../middleware/verifyFileMagicBytes.js';
 
 const router = express.Router();
@@ -72,7 +73,12 @@ router.post(
  *       400: { description: Validation error }
  *       401: { description: Unauthorized }
  */
-router.post('/submit-request', authenticate, submitAssetReturnRequestHandler);
+router.post(
+  '/submit-request',
+  authenticate,
+  requirePermission('Return Request', 'create'),
+  submitAssetReturnRequestHandler
+);
 
 /**
  * @swagger
@@ -94,7 +100,12 @@ router.post('/submit-request', authenticate, submitAssetReturnRequestHandler);
  *       201: { description: Asset return created }
  *       401: { description: Unauthorized }
  */
-router.post('/', authenticate, createAssetReturnHandler);
+router.post(
+  '/',
+  authenticate,
+  requirePermission('Return Form', 'create'),
+  createAssetReturnHandler
+);
 
 /**
  * @swagger
@@ -106,7 +117,12 @@ router.post('/', authenticate, createAssetReturnHandler);
  *       200: { description: List of asset returns }
  *       401: { description: Unauthorized }
  */
-router.get('/', authenticate, getAssetReturnsHandler);
+router.get(
+  '/',
+  authenticate,
+  requirePermission('Return Form', 'view'),
+  getAssetReturnsHandler
+);
 
 /**
  * @swagger
@@ -163,6 +179,7 @@ router.post('/forms/:formId/sign', authenticate, signAssetReturnFormHandler);
 router.get(
   '/forms/pending-approvals',
   authenticate,
+  requirePermission('Return Request', 'view'),
   getPendingApprovalsHandler
 );
 
@@ -220,8 +237,18 @@ router.post('/forms/:formId/receive', authenticate, receiveReturnFormHandler);
  *       403: { description: Forbidden }
  *       404: { description: Form not found }
  */
-router.post('/forms/:formId/approve', authenticate, approveReturnFormHandler);
-router.post('/forms/:formId/decline', authenticate, declineReturnFormHandler);
+router.post(
+  '/forms/:formId/approve',
+  authenticate,
+  requirePermission('Return Request', 'edit'),
+  approveReturnFormHandler
+);
+router.post(
+  '/forms/:formId/decline',
+  authenticate,
+  requirePermission('Return Request', 'edit'),
+  declineReturnFormHandler
+);
 
 /**
  * @swagger
@@ -239,6 +266,11 @@ router.post('/forms/:formId/decline', authenticate, declineReturnFormHandler);
  *       401: { description: Unauthorized }
  *       404: { description: Not found }
  */
-router.get('/:id', authenticate, getAssetReturnByIdHandler);
+router.get(
+  '/:id',
+  authenticate,
+  requirePermission('Return Form', 'view'),
+  getAssetReturnByIdHandler
+);
 
 export default router;

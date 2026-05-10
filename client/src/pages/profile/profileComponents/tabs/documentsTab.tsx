@@ -2140,17 +2140,6 @@ export interface AssetReturnFormBatch {
   returns: AssetReturnForm[];
 }
 
-function useDelayedLoading(loading: boolean, minDelayMs = 2000) {
-  const [show, setShow] = useState(true);
-  useEffect(() => {
-    if (loading) setShow(true);
-    else {
-      const t = setTimeout(() => setShow(false), minDelayMs);
-      return () => clearTimeout(t);
-    }
-  }, [loading, minDelayMs]);
-  return loading || show;
-}
 
 export default function DocumentsTab({
   setActiveTab,
@@ -2213,7 +2202,7 @@ export default function DocumentsTab({
     'all' | 'active' | 'disabled'
   >('active');
 
-  const isLoading = useDelayedLoading(userLoading, 2000);
+  const isLoading = userLoading;
 
   const fetchAccountabilityForms = async () => {
     if (!currentUser?.id) {

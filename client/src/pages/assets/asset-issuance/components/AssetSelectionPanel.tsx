@@ -7,6 +7,7 @@ import { Input } from '@/components/ui/input';
 import { Search } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { CheckCircle2, Package } from 'lucide-react';
+import { Shimmer } from '@/components/ui/shimmer';
 
 interface Asset {
   id: string;
@@ -74,9 +75,33 @@ export function AssetSelectionPanel({
       <CardContent className="pt-0 flex-1 flex flex-col overflow-hidden">
         <div className="space-y-3 overflow-y-auto flex-1 pr-1 sm:-mr-6 sm:pr-6 scrollbar-thin scrollbar-thumb-gray-300 scrollbar-track-gray-100">
           {loading ? (
-            <div className="flex items-center justify-center py-12">
-              <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-red-600"></div>
-              <span className="ml-3 text-gray-600">Loading assets...</span>
+            <div className="space-y-3">
+              {Array.from({ length: 6 }).map((_, index) => (
+                <div
+                  key={index}
+                  className="p-4 border-2 rounded-xl border-gray-200"
+                >
+                  <div className="flex items-start gap-3 sm:gap-4">
+                    <div className="flex-shrink-0 mt-1">
+                      <Shimmer className="h-5 w-5 rounded" />
+                    </div>
+                    <div className="flex-1 min-w-0">
+                      <div className="mb-2">
+                        <div className="flex items-center justify-between">
+                          <Shimmer className="h-6 w-48 mb-1 rounded" />
+                          <Shimmer className="h-5 w-5 rounded" />
+                        </div>
+                      </div>
+                      <Shimmer className="h-4 w-64 mb-3 rounded" />
+                      <div className="flex gap-2">
+                        <Shimmer className="h-5 w-16 rounded-full" />
+                        <Shimmer className="h-5 w-16 rounded-full" />
+                        <Shimmer className="h-5 w-20 rounded-full" />
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              ))}
             </div>
           ) : assets.length === 0 ? (
             <div className="text-center py-12">

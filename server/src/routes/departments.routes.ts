@@ -6,6 +6,7 @@ import {
   deleteDepartmentHandler,
 } from '../controllers/departments.controller.js';
 import { authenticate } from '../middleware/authenticate.js';
+import { requirePermission } from '../middleware/requirePermission.js';
 
 const router = Router();
 
@@ -42,7 +43,11 @@ router.use(authenticate);
  *       201: { description: Department created }
  *       401: { description: Unauthorized }
  */
-router.post('/', createDepartmentHandler);
+router.post(
+  '/',
+  requirePermission('Departments', 'create'),
+  createDepartmentHandler
+);
 
 /**
  * @swagger
@@ -67,7 +72,11 @@ router.post('/', createDepartmentHandler);
  *       401: { description: Unauthorized }
  *       404: { description: Department not found }
  */
-router.patch('/:id', updateDepartmentHandler);
+router.patch(
+  '/:id',
+  requirePermission('Departments', 'edit'),
+  updateDepartmentHandler
+);
 
 /**
  * @swagger
@@ -85,6 +94,10 @@ router.patch('/:id', updateDepartmentHandler);
  *       401: { description: Unauthorized }
  *       404: { description: Department not found }
  */
-router.delete('/:id', deleteDepartmentHandler);
+router.delete(
+  '/:id',
+  requirePermission('Departments', 'delete'),
+  deleteDepartmentHandler
+);
 
 export default router;

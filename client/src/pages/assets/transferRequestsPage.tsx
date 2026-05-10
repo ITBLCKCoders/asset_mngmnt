@@ -30,6 +30,7 @@ import { Textarea } from '@/components/ui/textarea';
 import { api } from '@/lib/api';
 import { cn } from '@/lib/utils';
 import { toast } from 'sonner';
+import { Shimmer } from '@/components/ui/shimmer';
 import { useCurrentUser } from '@/hooks/useCurrentUser';
 import {
   generateAccountabilityFormPDF,
@@ -390,35 +391,58 @@ export default function TransferRequestsPage() {
           title="Transfer Requests"
           description="Approved transfer requests ready to execute"
         >
-          <div className="flex items-center gap-2">
-            <Button
-              variant="header"
-              size="sm"
-              onClick={() => navigate('/assets/transfer')}
-            >
-              Back to Asset Transfer
-            </Button>
-            <Button
-              variant="header"
-              size="sm"
-              onClick={fetchApproved}
-              className="flex items-center gap-2"
-            >
-              <RefreshCw
-                className="h-4 w-4"
-              />
-              Refresh
-            </Button>
-          </div>
+          <Button
+            variant="header"
+            size="sm"
+            onClick={() => navigate('/assets/transfer')}
+          >
+            Back to Asset Transfer
+          </Button>
         </PageHeader>
 
         {loading ? (
-          <p className="text-muted-foreground">Loading...</p>
+          <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-3">
+            {Array.from({ length: 6 }).map((_, index) => (
+              <Card
+                key={index}
+                className="flex flex-col shadow-xl border-0 bg-white/80 backdrop-blur-sm overflow-hidden rounded-2xl border-l-4 border-l-gray-300"
+              >
+                <CardHeader className="pb-2 bg-gradient-to-r from-slate-50 to-white border-b border-slate-100">
+                  <div className="flex items-center justify-between">
+                    <Shimmer className="h-6 w-24 rounded" />
+                    <Shimmer className="h-5 w-16 rounded-full" />
+                  </div>
+                  <div className="flex items-center gap-2 mt-2">
+                    <Shimmer className="h-4 w-4 rounded" />
+                    <Shimmer className="h-4 w-32 rounded" />
+                  </div>
+                </CardHeader>
+                <CardContent className="flex-1 flex flex-col gap-3 pt-4">
+                  <div className="space-y-1.5">
+                    {Array.from({ length: 5 }).map((_, idx) => (
+                      <div key={idx} className="flex gap-2">
+                        <Shimmer className="h-4 w-20 rounded" />
+                        <Shimmer className="h-4 w-16 rounded" />
+                      </div>
+                    ))}
+                  </div>
+                  <Shimmer className="h-9 w-full rounded-lg mt-auto" />
+                </CardContent>
+              </Card>
+            ))}
+          </div>
         ) : batches.length === 0 ? (
           <Card className="shadow-xl border-0 bg-white/80 backdrop-blur-sm">
-            <CardContent className="py-12 text-center text-muted-foreground">
-              No approved transfer requests. Requests appear here after a
-              Department Head approves a transfer request.
+            <CardContent className="py-12 text-center">
+              <div className="inline-flex items-center justify-center w-20 h-20 rounded-full bg-gradient-to-br from-red-100 to-red-200 mb-4">
+                <ArrowRightLeft className="h-10 w-10 text-red-600" />
+              </div>
+              <h3 className="text-lg font-semibold text-gray-900 mb-2">
+                No approved transfer requests
+              </h3>
+              <p className="text-gray-500 text-sm">
+                Requests appear here after a Department Head approves a transfer request.
+              </p>
             </CardContent>
           </Card>
         ) : (

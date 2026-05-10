@@ -35,3 +35,38 @@ export async function getMaintenanceAndRepairHistoryHandler(
     );
   }
 }
+
+export async function getFinanceReportsHandler(
+  req: AuthRequest,
+  res: Response
+): Promise<Response> {
+  try {
+    const userId = req.user?.userID;
+    if (!userId) {
+      return createErrorResponse(res, 'UNAUTHORIZED', [], 401);
+    }
+
+    const companyId =
+      typeof req.query.companyId === 'string' ? req.query.companyId : null;
+
+    logger.info(`[finance-reports] Request received - userId: ${userId}, companyId: ${companyId}`);
+
+    const data = await ReportsService.getFinanceReports(
+      pool,
+      userId,
+      companyId
+    );
+
+    logger.info(`[finance-reports] Returning data - fixedAssetRegister: ${data.fixedAssetRegister.length}, depreciationSchedule: ${data.depreciationSchedule.length}`);
+
+    return createSuccessResponse(res, data);
+  } catch (error) {
+    logger.error('[reports] failed to get finance reports', error);
+    return createErrorResponse(
+      res,
+      'Failed to fetch finance reports',
+      [],
+      500
+    );
+  }
+}

@@ -1,7 +1,7 @@
 'use client';
 
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import { HandHelping } from 'lucide-react';
+import { HandHelping, LayoutGrid, Table, Calendar } from 'lucide-react';
 import { PageHeader } from '@/components/common/PageHeader';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
@@ -41,6 +41,7 @@ import {
   borrowRequestStatusLabel,
   type BorrowRequestRow,
 } from './borrowRequestsPage';
+import { Shimmer } from '@/components/ui/shimmer';
 
 type BorrowScope = 'it' | 'admin';
 
@@ -146,9 +147,12 @@ export default function AssetBorrowing() {
   const [submitting, setSubmitting] = useState(false);
   const [myRequests, setMyRequests] = useState<BorrowRequestRow[]>([]);
   const [loadingMyRequests, setLoadingMyRequests] = useState(true);
+  const [isInitialLoading, setIsInitialLoading] = useState(true);
   const [returnGuideOpen, setReturnGuideOpen] = useState(false);
   const [selectedReturnRequest, setSelectedReturnRequest] =
     useState<BorrowRequestRow | null>(null);
+  const [viewMode, setViewMode] = useState<'table' | 'card'>('table');
+  const [viewSwitchingLoading, setViewSwitchingLoading] = useState(false);
 
   const [borrowScope, setBorrowScope] = useState<BorrowScope | ''>('');
   const [categoryId, setCategoryId] = useState('');
@@ -214,6 +218,7 @@ export default function AssetBorrowing() {
       setMyRequests([]);
     } finally {
       setLoadingMyRequests(false);
+      setIsInitialLoading(false);
     }
   }, []);
 
@@ -390,109 +395,329 @@ export default function AssetBorrowing() {
   return (
     <div className="min-h-screen">
       <main className="flex-1 space-y-6 p-4 sm:p-6">
+        {isInitialLoading ? (
+          <>
+            <Card className="border-0 shadow-md bg-gradient-to-r from-red-600 to-red-800">
+              <CardContent className="p-5 sm:p-6">
+                <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between w-full min-w-0">
+                  <div className="flex items-center gap-3 min-w-0 flex-1">
+                    <Shimmer className="h-10 w-10 rounded-lg shrink-0 bg-white/20" />
+                    <div className="space-y-2 min-w-0 flex-1">
+                      <Shimmer className="h-6 w-48 max-w-full bg-white/20" />
+                      <Shimmer className="h-3 w-64 max-w-full bg-white/20" />
+                    </div>
+                  </div>
+                  <div className="flex items-center gap-3 shrink-0">
+                    <Shimmer className="h-9 w-9 rounded-md bg-white/20" />
+                    <Shimmer className="h-9 w-24 rounded-md bg-white/20" />
+                  </div>
+                </div>
+              </CardContent>
+            </Card>
+            <div className="pb-6">
+              {viewMode === 'table' ? (
+                <DataTable<BorrowRequestRow>
+                  tableId="my-asset-borrow-requests"
+                  data={[]}
+                  columns={myBorrowRequestColumns}
+                  isLoading={true}
+                  searchPlaceholder="Search scope, category, type, purpose, status…"
+                  title="My requests"
+                  onRowClick={() => {}}
+                  titleBadge={undefined}
+                  emptyState={undefined}
+                  mobileCardFields={[]}
+                />
+              ) : (
+                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                  {Array.from({ length: 6 }).map((_, index) => (
+                    <Card key={index} className="border border-gray-200 shadow-sm">
+                      <CardHeader className="pb-3">
+                        <div className="flex items-start justify-between gap-2 mb-2">
+                          <div className="flex gap-2 flex-1">
+                            <Shimmer className="h-5 w-20 rounded-full bg-blue-50" />
+                            <Shimmer className="h-5 w-16 rounded-full bg-blue-50" />
+                          </div>
+                          <Shimmer className="h-5 w-24 rounded-full bg-blue-50" />
+                        </div>
+                        <Shimmer className="h-6 w-3/4 rounded" />
+                      </CardHeader>
+                      <CardContent className="space-y-3">
+                        <div className="flex items-center gap-2 text-sm text-gray-600">
+                          <Shimmer className="h-4 w-4 rounded" />
+                          <Shimmer className="h-4 w-24 rounded" />
+                          <Shimmer className="h-4 w-40 rounded flex-1" />
+                        </div>
+                        <Shimmer className="h-5 w-full rounded" />
+                        <Shimmer className="h-4 w-48 rounded" />
+                        <Shimmer className="h-9 w-full rounded-lg" />
+                      </CardContent>
+                    </Card>
+                  ))}
+                </div>
+              )}
+            </div>
+          </>
+        ) : (
+          <>
         <PageHeader
           icon={HandHelping}
           title="Asset borrowing"
           description="Request equipment by category and type. Your department head approves first; then IT or Admin processes the request."
-        />
-
-        <Card className="border-0 shadow-sm">
-          <CardHeader className="flex flex-col gap-3 space-y-0 pb-4 sm:flex-row sm:items-center sm:justify-between">
-            <CardTitle className="text-lg font-semibold">
-              My asset Borrowing Request
-            </CardTitle>
+        >
+          <div className="flex items-center gap-2">
             <Button
+              variant="header"
+              size="sm"
+              onClick={() => {
+                setViewMode(viewMode === 'table' ? 'card' : 'table');
+                setViewSwitchingLoading(true);
+                setTimeout(() => setViewSwitchingLoading(false), 300);
+              }}
+              className="flex items-center gap-2"
+            >
+              {viewMode === 'table' ? <LayoutGrid className="h-4 w-4 mr-2" /> : <Table className="h-4 w-4 mr-2" />}
+              {viewMode === 'table' ? 'Card' : 'Table'} View
+            </Button>
+            <Button
+              variant="header"
+              size="sm"
               onClick={() => setFormOpen(true)}
               disabled={!canCreate}
-              className="shrink-0 self-end bg-red-600 text-white hover:bg-red-700 sm:self-auto"
             >
+              <HandHelping className="mr-2 h-4 w-4" />
               Borrow assets
             </Button>
-          </CardHeader>
-          <CardContent className="p-0 pt-0">
-            <div className="px-4 pb-6 sm:px-6">
-              <DataTable<BorrowRequestRow>
-                tableId="my-asset-borrow-requests"
-                data={myRequests}
-                columns={myBorrowRequestColumns}
-                isLoading={loadingMyRequests}
-                searchPlaceholder="Search scope, category, type, purpose, status…"
-                title="My requests"
-                onRowClick={row => {
-                  const request = row.original as BorrowRequestRow;
-                  if (request.status === 'approved') {
-                    setSelectedReturnRequest(request);
-                    setReturnGuideOpen(true);
+          </div>
+        </PageHeader>
+
+        <div className="pb-6">
+              {viewMode === 'table' ? (
+                <DataTable<BorrowRequestRow>
+                  tableId="my-asset-borrow-requests"
+                  data={myRequests}
+                  columns={myBorrowRequestColumns}
+                  isLoading={loadingMyRequests || viewSwitchingLoading}
+                  searchPlaceholder="Search scope, category, type, purpose, status…"
+                  title="My requests"
+                  onRowClick={row => {
+                    const request = row.original as BorrowRequestRow;
+                    if (request.status === 'approved') {
+                      setSelectedReturnRequest(request);
+                      setReturnGuideOpen(true);
+                    }
+                  }}
+                  titleBadge={
+                    myRequests.length > 0
+                      ? `${myRequests.length} request${myRequests.length !== 1 ? 's' : ''}`
+                      : undefined
                   }
-                }}
-                titleBadge={
-                  myRequests.length > 0
-                    ? `${myRequests.length} request${myRequests.length !== 1 ? 's' : ''}`
-                    : undefined
-                }
-                emptyState={
-                  <div className="py-10 text-center text-sm text-muted-foreground">
-                    You have not submitted any borrow requests yet.
+                  emptyState={
+                    <div className="flex flex-col items-center justify-center py-12 px-6 bg-gray-50/50 rounded-xl mx-4 mb-4">
+                      <div className="p-4 bg-gray-100 rounded-full mb-4">
+                        <HandHelping className="h-12 w-12 text-gray-400" />
+                      </div>
+                      <h3 className="text-lg font-medium text-gray-900 mb-2">
+                        No borrow requests yet
+                      </h3>
+                      <p className="text-gray-500 mb-4 text-center max-w-md">
+                        You haven't submitted any asset borrow requests. Get started by requesting equipment you need.
+                      </p>
+                      <Button
+                        onClick={() => setFormOpen(true)}
+                        disabled={!canCreate}
+                        className="bg-red-600 hover:bg-red-700 text-white"
+                      >
+                        Borrow assets
+                      </Button>
+                    </div>
+                  }
+                  mobileCardFields={[
+                    {
+                      key: 'form_number',
+                      label: 'Form #',
+                      render: row => row.form_number?.trim() || '—',
+                    },
+                    {
+                      key: 'borrow_scope',
+                      label: 'Scope',
+                      render: row => (
+                        <span className="text-xs uppercase">{row.borrow_scope}</span>
+                      ),
+                    },
+                    {
+                      key: 'category_name',
+                      label: 'Category',
+                      render: row => row.category_name ?? '—',
+                    },
+                    {
+                      key: 'type_name',
+                      label: 'Type',
+                      render: row => row.type_name ?? '—',
+                    },
+                    {
+                      key: 'expected_return_at',
+                      label: 'Expected return',
+                      render: row =>
+                        row.expected_return_at
+                          ? new Date(row.expected_return_at).toLocaleString()
+                          : '—',
+                    },
+                    {
+                      key: 'status',
+                      label: 'Status',
+                      render: row => (
+                        <Badge variant="outline" className="text-xs">
+                          {borrowRequestStatusLabel(row)}
+                        </Badge>
+                      ),
+                    },
+                    {
+                      key: 'created_at',
+                      label: 'Requested',
+                      render: row =>
+                        row.created_at
+                          ? new Date(row.created_at).toLocaleString()
+                          : '—',
+                    },
+                    {
+                      key: 'purpose',
+                      label: 'Purpose',
+                      render: row => row.purpose,
+                    },
+                  ]}
+                />
+              ) : (
+                <div className="space-y-4">
+                  <div className="flex items-center justify-between mb-4">
+                    <h2 className="text-lg font-semibold text-gray-900">
+                      My requests
+                      {myRequests.length > 0 && (
+                        <span className="ml-2 text-sm font-normal text-gray-500">
+                          ({myRequests.length} request{myRequests.length !== 1 ? 's' : ''})
+                        </span>
+                      )}
+                    </h2>
                   </div>
-                }
-                mobileCardFields={[
-                  {
-                    key: 'form_number',
-                    label: 'Form #',
-                    render: row => row.form_number?.trim() || '—',
-                  },
-                  {
-                    key: 'borrow_scope',
-                    label: 'Scope',
-                    render: row => (
-                      <span className="text-xs uppercase">{row.borrow_scope}</span>
-                    ),
-                  },
-                  {
-                    key: 'category_name',
-                    label: 'Category',
-                    render: row => row.category_name ?? '—',
-                  },
-                  {
-                    key: 'type_name',
-                    label: 'Type',
-                    render: row => row.type_name ?? '—',
-                  },
-                  {
-                    key: 'expected_return_at',
-                    label: 'Expected return',
-                    render: row =>
-                      row.expected_return_at
-                        ? new Date(row.expected_return_at).toLocaleString()
-                        : '—',
-                  },
-                  {
-                    key: 'status',
-                    label: 'Status',
-                    render: row => (
-                      <Badge variant="outline" className="text-xs">
-                        {borrowRequestStatusLabel(row)}
-                      </Badge>
-                    ),
-                  },
-                  {
-                    key: 'created_at',
-                    label: 'Requested',
-                    render: row =>
-                      row.created_at
-                        ? new Date(row.created_at).toLocaleString()
-                        : '—',
-                  },
-                  {
-                    key: 'purpose',
-                    label: 'Purpose',
-                    render: row => row.purpose,
-                  },
-                ]}
-              />
+                  {loadingMyRequests || viewSwitchingLoading ? (
+                    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                      {Array.from({ length: 6 }).map((_, index) => (
+                        <Card key={index} className="border border-gray-200 shadow-sm">
+                          <CardHeader className="pb-3">
+                            <div className="flex items-start justify-between gap-2 mb-2">
+                              <div className="flex gap-2 flex-1">
+                                <Shimmer className="h-5 w-20 rounded-full bg-blue-50" />
+                                <Shimmer className="h-5 w-16 rounded-full bg-blue-50" />
+                              </div>
+                              <Shimmer className="h-5 w-24 rounded-full bg-blue-50" />
+                            </div>
+                            <Shimmer className="h-6 w-3/4 rounded" />
+                          </CardHeader>
+                          <CardContent className="space-y-3">
+                            <div className="flex items-center gap-2 text-sm text-gray-600">
+                              <Shimmer className="h-4 w-4 rounded" />
+                              <Shimmer className="h-4 w-24 rounded" />
+                              <Shimmer className="h-4 w-40 rounded flex-1" />
+                            </div>
+                            <Shimmer className="h-5 w-full rounded" />
+                            <Shimmer className="h-4 w-48 rounded" />
+                            <Shimmer className="h-9 w-full rounded-lg" />
+                          </CardContent>
+                        </Card>
+                      ))}
+                    </div>
+                  ) : myRequests.length === 0 ? (
+                    <div className="flex flex-col items-center justify-center py-12 px-6 bg-gray-50/50 rounded-xl">
+                      <div className="p-4 bg-gray-100 rounded-full mb-4">
+                        <HandHelping className="h-12 w-12 text-gray-400" />
+                      </div>
+                      <h3 className="text-lg font-medium text-gray-900 mb-2">
+                        No borrow requests yet
+                      </h3>
+                      <p className="text-gray-500 mb-4 text-center max-w-md">
+                        You haven't submitted any asset borrow requests. Get started by requesting equipment you need.
+                      </p>
+                      <Button
+                        onClick={() => setFormOpen(true)}
+                        disabled={!canCreate}
+                        className="bg-red-600 hover:bg-red-700 text-white"
+                      >
+                        Borrow assets
+                      </Button>
+                    </div>
+                  ) : (
+                    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                      {myRequests.map((request) => (
+                        <Card
+                          key={request.borrow_request_id}
+                          className="gborder border-gray-200 shadow-sm hover:shadow-md transition-shadow cursor-pointer"
+                          onClick={() => {
+                            if (request.status === 'approved') {
+                              setSelectedReturnRequest(request);
+                              setReturnGuideOpen(true);
+                            }
+                          }}
+                        >
+                          <CardHeader className="pb-3">
+                            <div className="flex items-start justify-between gap-2 mb-2">
+                              <div className="flex gap-2">
+                                <Badge variant="outline" className="text-xs font-mono bg-blue-50 text-blue-700 border-blue-200">
+                                  {request.form_number?.trim() || '—'}
+                                </Badge>
+                                <Badge variant="outline" className="text-xs uppercase">
+                                  {request.borrow_scope}
+                                </Badge>
+                              </div>
+                              <Badge variant="outline" className="text-xs">
+                                {borrowRequestStatusLabel(request)}
+                              </Badge>
+                            </div>
+                            <CardTitle className="text-lg font-semibold text-gray-900 line-clamp-2">
+                              {request.category_name} - {request.type_name}
+                            </CardTitle>
+                          </CardHeader>
+                          <CardContent className="space-y-3">
+                            <div className="flex items-center gap-2 text-sm text-gray-600">
+                              <Calendar className="h-4 w-4" />
+                              <span className="text-xs text-gray-500">Expected return:</span>
+                              <span className="truncate">
+                                {request.expected_return_at
+                                  ? new Date(request.expected_return_at).toLocaleString()
+                                  : '—'}
+                              </span>
+                            </div>
+                            <p className="text-sm text-gray-500 line-clamp-2">
+                              {request.purpose}
+                            </p>
+                            <div className="flex items-center gap-2 text-xs text-gray-400">
+                              <span>
+                                Requested: {request.created_at ? new Date(request.created_at).toLocaleString() : '—'}
+                              </span>
+                            </div>
+                            {request.status === 'approved' && (
+                              <Button
+                                variant="outline"
+                                size="sm"
+                                className="w-full mt-2"
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  setSelectedReturnRequest(request);
+                                  setReturnGuideOpen(true);
+                                }}
+                              >
+                                Return
+                              </Button>
+                            )}
+                          </CardContent>
+                        </Card>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              )}
             </div>
-          </CardContent>
-        </Card>
+          </>
+        )}
 
         <Dialog open={formOpen} onOpenChange={setFormOpen}>
           <AppDialogFrame className="max-w-lg overflow-hidden !flex !flex-col">

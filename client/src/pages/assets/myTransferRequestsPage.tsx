@@ -3,9 +3,8 @@
 import { useEffect, useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
 import {
-  ArrowRightLeft,
-  RefreshCw,
   ArrowLeft,
+  ArrowRightLeft,
   FileText,
   Search,
   Package,
@@ -147,16 +146,6 @@ export default function MyTransferRequestsPage() {
               Back to Transfer Request
             </Button>
           </Link>
-          <Button
-            variant="header"
-            size="sm"
-            onClick={fetchRequests}
-            disabled={loading}
-            className="flex items-center gap-2"
-          >
-            <RefreshCw className={`h-4 w-4 ${loading ? 'animate-spin' : ''}`} />
-            Refresh
-          </Button>
         </PageHeader>
 
         {loading ? (

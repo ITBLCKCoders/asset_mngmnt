@@ -1,6 +1,7 @@
 // src/routes/types.routes.ts
 import { Router } from 'express';
 import { authenticate } from '../middleware/authenticate.js';
+import { requirePermission } from '../middleware/requirePermission.js';
 import { validateDto } from '../utils/validation.js';
 import {
   CreateTypeDtoSchema,
@@ -26,7 +27,7 @@ router.use(authenticate);
  *       200: { description: List of types }
  *       401: { description: Unauthorized }
  */
-router.get('/', getAllTypes);
+router.get('/', requirePermission('Asset Types', 'view'), getAllTypes);
 
 /**
  * @swagger
@@ -49,7 +50,12 @@ router.get('/', getAllTypes);
  *       400: { description: Validation error }
  *       401: { description: Unauthorized }
  */
-router.post('/', validateDto(CreateTypeDtoSchema), createType);
+router.post(
+  '/',
+  requirePermission('Asset Types', 'create'),
+  validateDto(CreateTypeDtoSchema),
+  createType
+);
 
 /**
  * @swagger
@@ -78,6 +84,7 @@ router.post('/', validateDto(CreateTypeDtoSchema), createType);
  */
 router.patch(
   '/:id',
+  requirePermission('Asset Types', 'edit'),
   validateDto(UpdateTypeDtoSchema),
   updateType
 );
@@ -98,6 +105,6 @@ router.patch(
  *       401: { description: Unauthorized }
  *       404: { description: Type not found }
  */
-router.delete('/:id', deleteType);
+router.delete('/:id', requirePermission('Asset Types', 'delete'), deleteType);
 
 export default router;

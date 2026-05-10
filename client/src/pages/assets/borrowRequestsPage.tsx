@@ -54,6 +54,7 @@ import {
 } from '@/lib/pdfGenerator';
 import { Label } from '@/components/ui/label';
 import { cn } from '@/lib/utils';
+import { Shimmer } from '@/components/ui/shimmer';
 
 const MAX_BORROW_CONDITION_PHOTOS = 5;
 const VALID_CONDITION_IMAGE_TYPES = [
@@ -614,14 +615,34 @@ export default function BorrowRequestsPage() {
           description="Pending and historical borrow requests for your IT or Admin scope."
         />
         <Card className="border-0 shadow-sm">
-          <CardHeader className="pb-4">
-            <CardTitle className="text-lg font-semibold">Asset borrowing requests</CardTitle>
-          </CardHeader>
           <CardContent className="p-0 pt-0">
             <div className="space-y-4 px-4 pb-6 sm:px-6">
               {loading ? (
-                <div className="rounded-lg border border-dashed border-gray-200 p-6 text-center text-sm text-muted-foreground">
-                  Loading…
+                <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-3">
+                  {Array.from({ length: 6 }).map((_, index) => (
+                    <Card
+                      key={index}
+                      className="flex flex-col shadow-xl border-0 bg-white/80 backdrop-blur-sm overflow-hidden rounded-2xl border-l-4 border-l-gray-300"
+                    >
+                      <CardHeader className="pb-2 bg-gradient-to-r from-slate-50 to-white border-b border-slate-100">
+                        <div className="flex items-center justify-between">
+                          <Shimmer className="h-6 w-24 rounded" />
+                          <Shimmer className="h-5 w-20 rounded-full" />
+                        </div>
+                        <div className="flex items-center gap-2 mt-2">
+                          <Shimmer className="h-4 w-4 rounded" />
+                          <Shimmer className="h-4 w-32 rounded" />
+                        </div>
+                      </CardHeader>
+                      <CardContent className="flex-1 flex flex-col gap-3 pt-4">
+                        <Shimmer className="h-4 w-48 rounded" />
+                        <Shimmer className="h-5 w-20 rounded-full" />
+                        <Shimmer className="h-5 w-full rounded" />
+                        <Shimmer className="h-9 w-full rounded-lg" />
+                        <Shimmer className="h-9 w-full rounded-lg" />
+                      </CardContent>
+                    </Card>
+                  ))}
                 </div>
               ) : rows.length === 0 ? (
                 <div className="rounded-lg border border-dashed border-gray-200 p-6 text-center text-sm text-muted-foreground">

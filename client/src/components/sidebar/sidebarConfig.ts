@@ -130,30 +130,12 @@ export const ASSET_SIDEBAR_ENTRIES: AssetSidebarEntry[] = [
     perm: 'Return Request',
     path: '/assets/return-request',
     icon: Undo2,
-    groupKey: 'assets-return-request',
-    children: [
-      {
-        label: 'My Requests',
-        perm: 'Return Request',
-        path: '/assets/return-request/my-requests',
-        icon: FileText,
-      },
-    ],
   },
   {
     label: 'Transfer asset',
     perm: 'Transfer Request',
     path: '/assets/transfer-request',
     icon: ArrowRightLeft,
-    groupKey: 'assets-transfer-request',
-    children: [
-      {
-        label: 'My Requests',
-        perm: 'Transfer Request',
-        path: '/assets/transfer-request/my-requests',
-        icon: FileText,
-      },
-    ],
   },
   {
     label: 'Asset Disposal',

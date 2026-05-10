@@ -13,7 +13,7 @@ import {
 import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
 import { PageHeader } from '@/components/common/PageHeader';
-import { Search, FileCheck, RefreshCw, ClipboardList } from 'lucide-react';
+import { Search, FileCheck, ClipboardList } from 'lucide-react';
 import { api } from '@/lib/api';
 import { toast } from 'sonner';
 import { useUserPermissions } from '@/hooks/useUserPermissions';
@@ -29,7 +29,6 @@ import {
   AccountabilityFormDetail,
   AccountabilityForm,
 } from '@/pages/assets/accountability/accountabilityForm';
-import { useDelayedLoading } from '@/hooks/useDelayedLoading';
 import { Shimmer } from '@/components/ui/shimmer';
 import { Label } from '@/components/ui/label';
 import {
@@ -87,7 +86,7 @@ export default function AccountabilityFormsPage() {
   const [viewDetailContext, setViewDetailContext] = useState<'all' | 'hrCopy'>(
     'all'
   );
-  const displayLoading = useDelayedLoading(loading, 2000);
+  const displayLoading = loading;
 
   const fetchForms = async (): Promise<AccountabilityForm[]> => {
     try {
@@ -381,16 +380,6 @@ export default function AccountabilityFormsPage() {
           description="View and manage all asset accountability forms"
           loading={displayLoading}
         >
-          <Button
-            variant="header"
-            size="sm"
-            onClick={() => void fetchForms()}
-            disabled={displayLoading}
-            className="flex items-center gap-2"
-          >
-            <RefreshCw className={`h-4 w-4 ${displayLoading ? 'animate-spin' : ''}`} />
-            Refresh
-          </Button>
         </PageHeader>
 
         <div>

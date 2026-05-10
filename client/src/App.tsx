@@ -43,11 +43,9 @@ import AssetRequestAdmin from './pages/assets/admin/assetRequestAdmin';
 import AssetBorrowing from './pages/assets/assetBorrowing';
 import BorrowRequestsPage from './pages/assets/borrowRequestsPage';
 import AssetReturnRequest from './pages/assets/assetReturnRequest';
-import MyReturnRequestsPage from './pages/assets/myReturnRequestsPage';
 import ReturnRequestsPage from './pages/assets/returnRequestsPage';
 import AssetTransferRequest from './pages/assets/assetTransferRequest';
 import TransferRequestsPage from './pages/assets/transferRequestsPage';
-import MyTransferRequestsPage from './pages/assets/myTransferRequestsPage';
 import AssetsAssignmentHistory from './pages/assets-history/assetsIssuanceHistroy';
 import AssetsTransferHistory from './pages/assets-history/assetsTransferHistory';
 import AssetsMaintenanceHistory from './pages/assets-history/assetsMaintenanceHistory';
@@ -276,16 +274,6 @@ export default function App() {
             }
           />
           <Route
-            path="/assets/return-request/my-requests"
-            element={
-              <PrivateRoute>
-                <PermissionRoute module="Return Request">
-                  <MyReturnRequestsPage />
-                </PermissionRoute>
-              </PrivateRoute>
-            }
-          />
-          <Route
             path="/assets/return-request"
             element={
               <PrivateRoute>
@@ -331,16 +319,6 @@ export default function App() {
               <PrivateRoute>
                 <PermissionRoute module="Borrow Request Management">
                   <BorrowRequestsPage />
-                </PermissionRoute>
-              </PrivateRoute>
-            }
-          />
-          <Route
-            path="/assets/transfer-request/my-requests"
-            element={
-              <PrivateRoute>
-                <PermissionRoute module="Transfer Request">
-                  <MyTransferRequestsPage />
                 </PermissionRoute>
               </PrivateRoute>
             }

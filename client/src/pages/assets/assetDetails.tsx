@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from 'react';
 import { useParams } from 'react-router-dom';
-import { Package, Clock, RefreshCw, FileText } from 'lucide-react';
+import { Package, Clock, FileText } from 'lucide-react';
 import { Card, CardContent } from '@/components/ui/card';
 import { PageHeader } from '@/components/common/PageHeader';
 import { Button } from '@/components/ui/button';
@@ -318,15 +318,6 @@ export default function AssetDetails() {
           title="Asset Details"
           description={`${asset.name} - ${asset.id}`}
         >
-          <Button
-            variant="ghost"
-            size="sm"
-            onClick={() => fetchAsset()}
-            className="flex items-center gap-2"
-          >
-            <RefreshCw className="h-4 w-4" />
-            Refresh
-          </Button>
         </PageHeader>
 
         {/* Asset Status Badge */}

@@ -1,6 +1,7 @@
 // src/routes/suppliers.routes.ts
 import { Router } from 'express';
 import { authenticate } from '../middleware/authenticate.js';
+import { requirePermission } from '../middleware/requirePermission.js';
 import { validateDto } from '../utils/validation.js';
 import {
   CreateSupplierDtoSchema,
@@ -26,7 +27,7 @@ router.use(authenticate);
  *       200: { description: List of suppliers }
  *       401: { description: Unauthorized }
  */
-router.get('/', getAllSuppliers);
+router.get('/', requirePermission('Suppliers', 'view'), getAllSuppliers);
 
 /**
  * @swagger
@@ -52,6 +53,7 @@ router.get('/', getAllSuppliers);
  */
 router.post(
   '/',
+  requirePermission('Suppliers', 'create'),
   validateDto(CreateSupplierDtoSchema),
   createSupplier
 );
@@ -84,6 +86,7 @@ router.post(
  */
 router.patch(
   '/:id',
+  requirePermission('Suppliers', 'edit'),
   validateDto(UpdateSupplierDtoSchema),
   updateSupplier
 );
@@ -104,6 +107,6 @@ router.patch(
  *       401: { description: Unauthorized }
  *       404: { description: Supplier not found }
  */
-router.delete('/:id', deleteSupplier);
+router.delete('/:id', requirePermission('Suppliers', 'delete'), deleteSupplier);
 
 export default router;

@@ -143,13 +143,9 @@ async function generateFormNumber(
   } else if (isAdminByDept) {
     isITAsset = false;
   } else {
-    // Fallback: keyword matching on category/type when no department info
+    // Fallback: keyword matching on type only when no department info
     isITAsset = assets.some(
       (asset: any) =>
-        (asset.category || '').toLowerCase().includes('computer') ||
-        (asset.category || '').toLowerCase().includes('server') ||
-        (asset.category || '').toLowerCase().includes('laptop') ||
-        (asset.category || '').toLowerCase().includes('software') ||
         (asset.type || '').toLowerCase().includes('computer') ||
         (asset.type || '').toLowerCase().includes('server') ||
         (asset.type || '').toLowerCase().includes('laptop')
@@ -310,12 +306,8 @@ export async function createAccountabilityFormHandler(
               
               // Find the assignment with a computer-type asset
               const computerAssignment = (assignmentRows as any[]).find((row: any) => {
-                const category = (row.category_name || '').toLowerCase();
                 const type = (row.type_name || '').toLowerCase();
-                return category.includes('computer') ||
-                       category.includes('laptop') ||
-                       category.includes('server') ||
-                       type.includes('computer') ||
+                return type.includes('computer') ||
                        type.includes('laptop') ||
                        type.includes('server');
               });

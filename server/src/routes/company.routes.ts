@@ -1,6 +1,7 @@
 // src/routes/company.routes.ts
 import { Router } from 'express';
 import { authenticate } from '../middleware/authenticate.js';
+import { requirePermission } from '../middleware/requirePermission.js';
 import {
   createCompany,
   updateCompany,
@@ -43,7 +44,12 @@ router.get('/public', getCompaniesPublicHandler);
  *       201: { description: Company created }
  *       401: { description: Unauthorized }
  */
-router.post('/', authenticate, createCompany);
+router.post(
+  '/',
+  authenticate,
+  requirePermission('Companies', 'create'),
+  createCompany
+);
 
 /**
  * @swagger
@@ -70,7 +76,12 @@ router.post('/', authenticate, createCompany);
  *       401: { description: Unauthorized }
  *       404: { description: Company not found }
  */
-router.patch('/:id', authenticate, updateCompany);
+router.patch(
+  '/:id',
+  authenticate,
+  requirePermission('Companies', 'edit'),
+  updateCompany
+);
 
 /**
  * @swagger
@@ -88,7 +99,12 @@ router.patch('/:id', authenticate, updateCompany);
  *       401: { description: Unauthorized }
  *       404: { description: Company not found }
  */
-router.delete('/:id/logo', authenticate, deleteCompanyLogo);
+router.delete(
+  '/:id/logo',
+  authenticate,
+  requirePermission('Companies', 'edit'),
+  deleteCompanyLogo
+);
 
 /**
  * @swagger
@@ -100,7 +116,12 @@ router.delete('/:id/logo', authenticate, deleteCompanyLogo);
  *       200: { description: List of companies with full audit metadata }
  *       401: { description: Unauthorized }
  */
-router.get('/', authenticate, getAllCompanies);
+router.get(
+  '/',
+  authenticate,
+  requirePermission('Companies', 'view'),
+  getAllCompanies
+);
 
 /**
  * @swagger
@@ -178,6 +199,11 @@ router.patch('/:id/main', authenticate, setMainCompany);
  *       401: { description: Unauthorized }
  *       404: { description: Company not found }
  */
-router.delete('/:id', authenticate, deleteCompany);
+router.delete(
+  '/:id',
+  authenticate,
+  requirePermission('Companies', 'delete'),
+  deleteCompany
+);
 
 export default router;

@@ -6,11 +6,14 @@ import {
   verifyAuditChainHandler,
 } from '../controllers/audit.controller.js';
 import { authenticate } from '../middleware/authenticate.js';
+import { requirePermission } from '../middleware/requirePermission.js';
 
 const router = Router();
 
 // All routes require authentication
 router.use(authenticate);
+// Audit Trail module is read-only — every endpoint requires view permission.
+router.use(requirePermission('Audit Trail', 'view'));
 
 /**
  * @swagger

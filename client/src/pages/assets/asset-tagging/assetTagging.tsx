@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect, useState } from 'react';
-import { Tag, QrCode, RefreshCw } from 'lucide-react';
+import { Tag, QrCode } from 'lucide-react';
 import { Card, CardContent } from '@/components/ui/card';
 import { PageHeader } from '@/components/common/PageHeader';
 import { Button } from '@/components/ui/button';
@@ -14,7 +14,6 @@ import jsPDF from 'jspdf';
 import html2canvas from 'html2canvas';
 import { useUserPermissions } from '@/hooks/useUserPermissions';
 import { useCurrentUser } from '@/hooks/useCurrentUser';
-import { useDelayedLoading } from '@/hooks/useDelayedLoading';
 import { useCompanyContext } from '@/context/CompanyContext';
 import { TaggingColumns } from './components/TaggingColumns';
 import { AssetTagModal } from './components/AssetTagModal';
@@ -104,7 +103,7 @@ export default function AssetsTagging() {
   const [isAssetViewModalOpen, setIsAssetViewModalOpen] = useState(false);
   const [selectedAssetForView, setSelectedAssetForView] =
     useState<Asset | null>(null);
-  const displayLoading = useDelayedLoading(loading, 2000);
+  const displayLoading = loading;
 
   const taggingColumns = TaggingColumns({
     selectedAssets,
@@ -353,15 +352,6 @@ export default function AssetsTagging() {
           description="Generate and print QR code tags for assets"
         >
           <div className="flex w-full flex-col gap-2 sm:w-auto sm:flex-row sm:flex-wrap sm:items-center sm:justify-end">
-            <Button
-              variant="header"
-              size="sm"
-              onClick={() => fetchAssets()}
-              className="flex items-center gap-2"
-            >
-              <RefreshCw className="h-4 w-4" />
-              Refresh
-            </Button>
             <Button
               variant="header"
               size="sm"

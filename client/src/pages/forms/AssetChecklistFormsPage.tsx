@@ -14,11 +14,10 @@ import {
 } from '@/components/common/appDialogChrome';
 import { Shimmer } from '@/components/ui/shimmer';
 import { PDFViewer } from '@/components/PDFViewer';
-import { useDelayedLoading } from '@/hooks/useDelayedLoading';
 import { api } from '@/lib/api';
 import { downloadPDF } from '@/lib/pdfGenerator';
 import { generateAssetChecklistPDF } from '@/lib/pdfGenerator/assetChecklistPdf';
-import { Download, Eye, FileText, RefreshCw, Search, Package, User, Calendar } from 'lucide-react';
+import { Download, Eye, FileText, Search, Package, User, Calendar } from 'lucide-react';
 import { toast } from 'sonner';
 import { Card, CardHeader, CardTitle, CardContent } from '@/components/ui/card';
 
@@ -68,7 +67,7 @@ export default function AssetChecklistFormsPage() {
   const [selectedChecklist, setSelectedChecklist] = useState<ChecklistRow | null>(null);
   const [showPreview, setShowPreview] = useState(false);
   const [previewUrl, setPreviewUrl] = useState('');
-  const displayLoading = useDelayedLoading(loading, 2000);
+  const displayLoading = loading;
 
   const fetchChecklists = async () => {
     try {
@@ -160,16 +159,6 @@ export default function AssetChecklistFormsPage() {
           title="Checklist Forms"
           description="View and download asset checklist forms"
         >
-          <Button
-            variant="header"
-            size="sm"
-            onClick={fetchChecklists}
-            disabled={loading}
-            className="flex items-center gap-2"
-          >
-            <RefreshCw className={`h-4 w-4 ${loading ? 'animate-spin' : ''}`} />
-            Refresh
-          </Button>
         </PageHeader>
 
         <div className="flex flex-col gap-4 mb-6">

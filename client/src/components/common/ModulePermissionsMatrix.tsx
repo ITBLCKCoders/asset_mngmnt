@@ -3,7 +3,7 @@ import { motion } from 'framer-motion';
 import { ChevronDown } from 'lucide-react';
 import { Switch } from '@/components/ui/switch';
 import { cn } from '@/lib/utils';
-import { USER_MODULE_TREE, moduleChildLabel } from '@/constants/userModuleTree';
+import { USER_MODULE_TREE, moduleChildLabel, type ModuleTreeNode } from '@/constants/userModuleTree';
 
 export type ModulePermissionKey = 'view' | 'create' | 'edit' | 'delete';
 
@@ -61,13 +61,47 @@ export function ModulePermissionsMatrix({
     return modPerm[perm as ModulePermissionKey];
   };
 
+  // Helper to get all leaf module names from a module tree node
+  const getLeafModuleNames = (node: ModuleTreeNode): string[] => {
+    if (!node.children || node.children.length === 0) {
+      return [node.name];
+    }
+    const leaves: string[] = [];
+    node.children.forEach((child: string | ModuleTreeNode) => {
+      if (typeof child === 'string') {
+        leaves.push(child);
+      } else {
+        leaves.push(...getLeafModuleNames(child));
+      }
+    });
+    return leaves;
+  };
+
+  // Helper to get child module names from a module tree node
+  const getChildModuleNames = (node: ModuleTreeNode): string[] => {
+    if (!node.children || node.children.length === 0) {
+      return [];
+    }
+    const names: string[] = [];
+    node.children.forEach((child: string | ModuleTreeNode) => {
+      if (typeof child === 'string') {
+        names.push(child);
+      } else {
+        names.push(child.name);
+        names.push(...getChildModuleNames(child));
+      }
+    });
+    return names;
+  };
+
   const getModulePermissionState = (moduleName: string, perm: string) => {
     const module = USER_MODULE_TREE.find(m => m.name === moduleName);
     if (!module || module.children.length === 0) {
       const modPerm = value[moduleName];
       return modPerm?.[perm as ModulePermissionKey] ?? false;
     }
-    const childrenPerms = module.children.map(
+    const childNames = getChildModuleNames(module);
+    const childrenPerms = childNames.map(
       child => value[child]?.[perm as ModulePermissionKey] ?? false
     );
     const allTrue = childrenPerms.every(v => v);
@@ -93,14 +127,28 @@ export function ModulePermissionsMatrix({
       const updated: ModulePermissionsMap = { ...value };
       if (!updated[module]) updated[module] = emptyPerms();
       updated[module] = { ...updated[module], [permissionKey]: valueToSet };
-      moduleData.children.forEach(child => {
-        if (!updated[child]) updated[child] = emptyPerms();
-        updated[child] = { ...updated[child], [permissionKey]: valueToSet };
-      });
+      
+      // Apply to all leaf children recursively
+      const applyToLeaves = (node: ModuleTreeNode) => {
+        if (!node.children || node.children.length === 0) {
+          if (!updated[node.name]) updated[node.name] = emptyPerms();
+          updated[node.name] = { ...updated[node.name], [permissionKey]: valueToSet };
+        } else {
+          node.children.forEach((child: string | ModuleTreeNode) => {
+            if (typeof child === 'string') {
+              if (!updated[child]) updated[child] = emptyPerms();
+              updated[child] = { ...updated[child], [permissionKey]: valueToSet };
+            } else {
+              applyToLeaves(child);
+            }
+          });
+        }
+      };
+      applyToLeaves(moduleData);
       onChange(updated);
     } else {
       const parentModules = USER_MODULE_TREE.filter(m =>
-        m.children.includes(module)
+        getChildModuleNames(m).includes(module)
       );
       const current = get(module, perm);
       const valueToSet = newValue !== undefined ? newValue : !current;
@@ -114,7 +162,8 @@ export function ModulePermissionsMatrix({
       parentModules.forEach(parentModule => {
         const parentName = parentModule.name;
         if (!updated[parentName]) updated[parentName] = emptyPerms();
-        const childrenPerms = parentModule.children.map(child =>
+        const childNames = getChildModuleNames(parentModule);
+        const childrenPerms = childNames.map(child =>
           readChildPerm(child)
         );
         const allTrue = childrenPerms.every(v => v);
@@ -142,13 +191,14 @@ export function ModulePermissionsMatrix({
     leafModule: string
   ) => {
     const parentModules = USER_MODULE_TREE.filter(m =>
-      m.children.includes(leafModule)
+      getChildModuleNames(m).includes(leafModule)
     );
     parentModules.forEach(parentModule => {
       const parentName = parentModule.name;
       if (!updated[parentName]) updated[parentName] = emptyPerms();
       PERM_KEYS.forEach(pk => {
-        const childrenPerms = parentModule.children.map(
+        const childNames = getChildModuleNames(parentModule);
+        const childrenPerms = childNames.map(
           ch => updated[ch]?.[pk] ?? false
         );
         const allTrue = childrenPerms.every(v => v);
@@ -174,8 +224,9 @@ export function ModulePermissionsMatrix({
     if (moduleData && moduleData.children.length > 0) {
       const parentFull = isFullPerms(value[moduleName]);
       const parentEmpty = isEmptyPerms(value[moduleName]);
-      const childrenFull = moduleData.children.every(c => isFullPerms(value[c]));
-      const childrenEmpty = moduleData.children.every(c => isEmptyPerms(value[c]));
+      const childNames = getChildModuleNames(moduleData);
+      const childrenFull = childNames.every(c => isFullPerms(value[c]));
+      const childrenEmpty = childNames.every(c => isEmptyPerms(value[c]));
       if (parentFull && childrenFull) return 'all';
       if (parentEmpty && childrenEmpty) return 'none';
       return 'some';
@@ -195,10 +246,24 @@ export function ModulePermissionsMatrix({
     if (moduleData && moduleData.children.length > 0) {
       if (!updated[module]) updated[module] = emptyPerms();
       updated[module] = { ...target };
-      moduleData.children.forEach(child => {
-        if (!updated[child]) updated[child] = emptyPerms();
-        updated[child] = { ...target };
-      });
+      
+      // Apply to all leaf children recursively
+      const applyToLeaves = (node: ModuleTreeNode) => {
+        if (!node.children || node.children.length === 0) {
+          if (!updated[node.name]) updated[node.name] = emptyPerms();
+          updated[node.name] = { ...target };
+        } else {
+          node.children.forEach((child: string | ModuleTreeNode) => {
+            if (typeof child === 'string') {
+              if (!updated[child]) updated[child] = emptyPerms();
+              updated[child] = { ...target };
+            } else {
+              applyToLeaves(child);
+            }
+          });
+        }
+      };
+      applyToLeaves(moduleData);
     } else {
       if (!updated[module]) updated[module] = emptyPerms();
       updated[module] = { ...target };
@@ -354,57 +419,191 @@ export function ModulePermissionsMatrix({
                   )}
                 </motion.tr>
                 {openModules.has(module.name) &&
-                  module.children.map(child => {
-                    const childMaster = getMasterAllState(child);
-                    return (
-                      <motion.tr
-                        key={`${module.name}:${child}`}
-                        className={`border-t border-gray-100 hover:bg-gradient-to-r hover:from-red-50/30 hover:to-red-50/30 transition-all duration-200 ${idx % 2 === 0 ? 'bg-gray-50/20' : 'bg-white/50'}`}
-                        whileHover={{ y: -1 }}
-                        transition={{
-                          type: 'spring',
-                          stiffness: 420,
-                          damping: 28,
-                          mass: 0.55,
-                        }}
-                      >
-                        <td className="px-8 py-4 align-middle sm:px-12">
-                          <div className="flex min-w-0 items-center gap-3">
-                            <div className="h-6 w-1.5 shrink-0 rounded-full bg-gradient-to-b from-red-400 to-red-500" />
-                            <span className="text-sm font-medium text-gray-700 sm:text-base">
-                              {moduleChildLabel(module.name, child)}
-                            </span>
-                          </div>
-                        </td>
-                        <td className={cn(switchBodyCellClass, 'py-4')}>
-                          <Switch
-                            checked={childMaster === 'all'}
-                            indeterminate={childMaster === 'some'}
-                            onCheckedChange={on =>
-                              setModuleAllPerms(child, on)
-                            }
-                            disabled={disabled}
-                            aria-label={`All permissions for ${moduleChildLabel(module.name, child)}`}
-                          />
-                        </td>
-                        {(['view', 'create', 'edit', 'delete'] as const).map(
-                          perm => (
-                            <td
-                              key={perm}
-                              className={cn(switchBodyCellClass, 'py-4')}
-                            >
+                  module.children.map((child, childIdx) => {
+                    if (typeof child === 'string') {
+                      const childMaster = getMasterAllState(child);
+                      return (
+                        <motion.tr
+                          key={`${module.name}:${child}`}
+                          className={`border-t border-gray-100 hover:bg-gradient-to-r hover:from-red-50/30 hover:to-red-50/30 transition-all duration-200 ${idx % 2 === 0 ? 'bg-gray-50/20' : 'bg-white/50'}`}
+                          whileHover={{ y: -1 }}
+                          transition={{
+                            type: 'spring',
+                            stiffness: 420,
+                            damping: 28,
+                            mass: 0.55,
+                          }}
+                        >
+                          <td className="px-8 py-4 align-middle sm:px-12">
+                            <div className="flex min-w-0 items-center gap-3">
+                              <div className="h-6 w-1.5 shrink-0 rounded-full bg-gradient-to-b from-red-400 to-red-500" />
+                              <span className="text-xs font-medium text-gray-700 sm:text-sm">
+                                {moduleChildLabel(module.name, child)}
+                              </span>
+                            </div>
+                          </td>
+                          <td className={cn(switchBodyCellClass, 'py-4')}>
+                            <Switch
+                              checked={childMaster === 'all'}
+                              indeterminate={childMaster === 'some'}
+                              onCheckedChange={on => setModuleAllPerms(child, on)}
+                              disabled={disabled}
+                              aria-label={`All permissions for ${moduleChildLabel(module.name, child)}`}
+                            />
+                          </td>
+                          {(['view', 'create', 'edit', 'delete'] as const).map(
+                            perm => (
+                              <td
+                                key={perm}
+                                className={cn(switchBodyCellClass, 'py-4')}
+                              >
+                                <Switch
+                                  checked={get(child, perm)}
+                                  onCheckedChange={newChecked =>
+                                    toggle(child, perm, newChecked)
+                                  }
+                                  disabled={disabled}
+                                />
+                              </td>
+                            )
+                          )}
+                        </motion.tr>
+                      );
+                    } else {
+                      // It's a ModuleTreeNode, render it with its own expand/collapse
+                      const childModule = child;
+                      const childMaster = getMasterAllState(childModule.name);
+                      const isChildOpen = openModules.has(childModule.name);
+                      const hasGrandChildren = childModule.children && childModule.children.length > 0;
+                      return (
+                        <React.Fragment key={`${module.name}:${childModule.name}`}>
+                          <motion.tr
+                            className={`border-t border-gray-100 hover:bg-gradient-to-r hover:from-red-50/30 hover:to-red-50/30 transition-all duration-200 ${idx % 2 === 0 ? 'bg-gray-50/20' : 'bg-white/50'}`}
+                            whileHover={{ y: -1 }}
+                            transition={{
+                              type: 'spring',
+                              stiffness: 420,
+                              damping: 28,
+                              mass: 0.55,
+                            }}
+                          >
+                            <td className="px-8 py-4 align-middle sm:px-12">
+                              <div className="flex min-w-0 items-center gap-3">
+                                <div className="h-6 w-1.5 shrink-0 rounded-full bg-gradient-to-b from-red-400 to-red-500" />
+                                {hasGrandChildren ? (
+                                  <motion.button
+                                    type="button"
+                                    onClick={() =>
+                                      setOpenModules(prev => {
+                                        const newSet = new Set(prev);
+                                        if (newSet.has(childModule.name)) {
+                                          newSet.delete(childModule.name);
+                                        } else {
+                                          newSet.add(childModule.name);
+                                        }
+                                        return newSet;
+                                      })
+                                    }
+                                    className="inline-flex min-w-0 max-w-full items-center gap-2 rounded-md text-left font-bold text-gray-900 transition-colors hover:text-red-600 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red-500/30"
+                                    whileHover={{ x: 4 }}
+                                  >
+                                    <span className="truncate text-xs sm:text-sm">{childModule.name}</span>
+                                    <ChevronDown
+                                      className={cn(
+                                        'h-4 w-4 shrink-0 transition-transform',
+                                        isChildOpen && 'rotate-180'
+                                      )}
+                                    />
+                                  </motion.button>
+                                ) : (
+                                  <span className="truncate text-xs font-bold text-gray-900 sm:text-sm">
+                                    {childModule.name}
+                                  </span>
+                                )}
+                              </div>
+                            </td>
+                            <td className={cn(switchBodyCellClass, 'py-4')}>
                               <Switch
-                                checked={get(child, perm)}
-                                onCheckedChange={newChecked =>
-                                  toggle(child, perm, newChecked)
-                                }
+                                checked={childMaster === 'all'}
+                                indeterminate={childMaster === 'some'}
+                                onCheckedChange={on => setModuleAllPerms(childModule.name, on)}
                                 disabled={disabled}
+                                aria-label={`All permissions for ${childModule.name}`}
                               />
                             </td>
-                          )
-                        )}
-                      </motion.tr>
-                    );
+                            {(['view', 'create', 'edit', 'delete'] as const).map(
+                              perm => (
+                                <td
+                                  key={perm}
+                                  className={cn(switchBodyCellClass, 'py-4')}
+                                >
+                                  <Switch
+                                    checked={get(childModule.name, perm)}
+                                    onCheckedChange={newChecked =>
+                                      toggle(childModule.name, perm, newChecked)
+                                    }
+                                    disabled={disabled}
+                                  />
+                                </td>
+                              )
+                            )}
+                          </motion.tr>
+                          {isChildOpen &&
+                            hasGrandChildren &&
+                            childModule.children.map((grandChild: string | ModuleTreeNode) => {
+                              if (typeof grandChild !== 'string') return null;
+                              const grandChildMaster = getMasterAllState(grandChild);
+                              return (
+                                <motion.tr
+                                  key={`${module.name}:${childModule.name}:${grandChild}`}
+                                  className={`border-t border-gray-100 hover:bg-gradient-to-r hover:from-red-50/30 hover:to-red-50/30 transition-all duration-200 ${idx % 2 === 0 ? 'bg-gray-50/20' : 'bg-white/50'}`}
+                                  whileHover={{ y: -1 }}
+                                  transition={{
+                                    type: 'spring',
+                                    stiffness: 420,
+                                    damping: 28,
+                                    mass: 0.55,
+                                  }}
+                                >
+                                  <td className="px-12 py-4 align-middle sm:px-16">
+                                    <div className="flex min-w-0 items-center gap-3">
+                                      <div className="h-5 w-1 shrink-0 rounded-full bg-gradient-to-b from-red-300 to-red-400" />
+                                      <span className="text-xs font-normal text-gray-500">
+                                        {moduleChildLabel(childModule.name, grandChild)}
+                                      </span>
+                                    </div>
+                                  </td>
+                                  <td className={cn(switchBodyCellClass, 'py-4')}>
+                                    <Switch
+                                      checked={grandChildMaster === 'all'}
+                                      indeterminate={grandChildMaster === 'some'}
+                                      onCheckedChange={on => setModuleAllPerms(grandChild, on)}
+                                      disabled={disabled}
+                                      aria-label={`All permissions for ${moduleChildLabel(childModule.name, grandChild)}`}
+                                    />
+                                  </td>
+                                  {(['view', 'create', 'edit', 'delete'] as const).map(
+                                    perm => (
+                                      <td
+                                        key={perm}
+                                        className={cn(switchBodyCellClass, 'py-4')}
+                                      >
+                                        <Switch
+                                          checked={get(grandChild, perm)}
+                                          onCheckedChange={newChecked =>
+                                            toggle(grandChild, perm, newChecked)
+                                          }
+                                          disabled={disabled}
+                                        />
+                                      </td>
+                                    )
+                                  )}
+                                </motion.tr>
+                              );
+                            })}
+                        </React.Fragment>
+                      );
+                    }
                   })}
               </React.Fragment>
             );

@@ -22,7 +22,6 @@ import { Badge } from '@/components/ui/badge';
 import { useCompanyContext } from '@/context/CompanyContext';
 import { Input } from '@/components/ui/input';
 import { Shimmer } from '@/components/ui/shimmer';
-import { useDelayedLoading } from '@/hooks/useDelayedLoading';
 import { api } from '@/lib/api';
 import { toast } from 'sonner';
 import { useCurrentUser } from '@/hooks/useCurrentUser';
@@ -117,7 +116,9 @@ export default function AssetsAssignment() {
   const buildersPerPage = 9; // 3x3 grid
   const [loadingMoreBuilders, setLoadingMoreBuilders] = useState(false);
   const sentinelRef = useRef<HTMLDivElement>(null);
-  const displayLoading = useDelayedLoading(loading, 2000);
+  const [activeTab, setActiveTab] = useState('select-assets');
+  const [tabLoading, setTabLoading] = useState(false);
+  const displayLoading = loading;
 
   const fetchAssets = async () => {
     try {
@@ -755,40 +756,116 @@ export default function AssetsAssignment() {
   if (displayLoading) {
     return (
       <div className="min-h-screen">
-        <main className="flex-1 p-6 space-y-6">
-          <Card className="border-0 shadow-sm">
+        <main className="flex-1 p-4 sm:p-6 space-y-6">
+          <Card className="border-0 shadow-md bg-gradient-to-r from-red-600 to-red-800">
             <CardContent className="p-5 sm:p-6">
               <div className="flex items-center gap-4">
-                <Shimmer className="h-14 w-14 rounded-2xl bg-red-100/80" />
+                <Shimmer className="h-14 w-14 rounded-2xl bg-white/20" />
                 <div className="space-y-2">
-                  <Shimmer className="h-8 w-48 rounded bg-red-100/80" />
-                  <Shimmer className="h-4 w-64 rounded bg-red-100/80" />
+                  <Shimmer className="h-8 w-48 rounded bg-white/20" />
+                  <Shimmer className="h-4 w-64 rounded bg-white/20" />
                 </div>
               </div>
             </CardContent>
           </Card>
-          <div className="grid grid-cols-1 xl:grid-cols-3 gap-8">
-            <div className="xl:col-span-2 space-y-4">
-              <Shimmer className="h-10 w-full max-w-md rounded-lg" />
-              <div className="space-y-3">
-                {[1, 2, 3, 4, 5].map(i => (
-                  <div key={i} className="flex gap-3 p-3 border rounded-lg">
-                    <Shimmer className="h-10 w-10 rounded flex-shrink-0" />
-                    <div className="flex-1 space-y-2">
-                      <Shimmer className="h-4 w-3/4 rounded" />
-                      <Shimmer className="h-3 w-1/2 rounded" />
-                    </div>
-                  </div>
-                ))}
-              </div>
+          <div className="grid grid-cols-1 gap-6 xl:grid-cols-3 xl:gap-8">
+            {/* Asset Selection / Asset Built Tabs skeleton */}
+            <div className="xl:col-span-2">
+              <Tabs defaultValue="select-assets" className="w-full">
+                <div className="grid grid-cols-2 gap-2 mb-4 rounded-xl border border-slate-200 bg-slate-100/90 p-1">
+                  <Shimmer className="h-10 w-full rounded-lg bg-red-600" />
+                  <Shimmer className="h-10 w-full rounded-lg" />
+                </div>
+                <div className="mt-4">
+                  <Card className="shadow-xl border-0 bg-white/80 backdrop-blur-sm h-[592px] flex flex-col">
+                    <CardHeader className="pb-4 flex-shrink-0">
+                      <div className="flex flex-wrap items-center gap-3">
+                        <Shimmer className="h-10 w-10 rounded-lg bg-red-100/80" />
+                        <Shimmer className="h-6 w-32 rounded" />
+                        <Shimmer className="h-6 w-16 rounded-full ml-auto" />
+                      </div>
+                      <div className="relative mt-4">
+                        <Shimmer className="h-10 w-full rounded-lg" />
+                      </div>
+                    </CardHeader>
+                    <CardContent className="pt-0 flex-1 flex flex-col overflow-hidden">
+                      <div className="space-y-3 overflow-y-auto flex-1 pr-1">
+                        {[1, 2, 3, 4, 5].map(i => (
+                          <div key={i} className="flex gap-3 p-4 border-2 rounded-xl">
+                            <Shimmer className="h-5 w-5 rounded flex-shrink-0 mt-1" />
+                            <div className="flex-1 space-y-2">
+                              <Shimmer className="h-5 w-3/4 rounded" />
+                              <div className="flex gap-2">
+                                <Shimmer className="h-4 w-20 rounded" />
+                                <Shimmer className="h-4 w-16 rounded" />
+                                <Shimmer className="h-4 w-24 rounded" />
+                              </div>
+                              <div className="flex gap-2">
+                                <Shimmer className="h-6 w-16 rounded-full" />
+                                <Shimmer className="h-6 w-20 rounded-full" />
+                              </div>
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    </CardContent>
+                  </Card>
+                </div>
+              </Tabs>
             </div>
-            <div className="space-y-4">
-              <Shimmer className="h-10 w-full rounded-lg" />
-              <Shimmer className="h-10 w-full rounded-lg" />
-              <Shimmer className="h-24 w-full rounded-lg" />
-              <Shimmer className="h-10 w-32 rounded-lg" />
+            {/* Assignment Details Panel skeleton */}
+            <div className="xl:col-span-1">
+              <Card className="shadow-xl border-0 bg-white/80 backdrop-blur-sm">
+                <CardHeader>
+                  <div className="flex flex-wrap items-center gap-3">
+                    <Shimmer className="h-10 w-10 rounded-lg bg-green-100/80" />
+                    <Shimmer className="h-6 w-40 rounded" />
+                  </div>
+                </CardHeader>
+                <CardContent className="space-y-4">
+                  <Shimmer className="h-10 w-full rounded-lg" />
+                  <Shimmer className="h-10 w-full rounded-lg" />
+                  <Shimmer className="h-10 w-full rounded-lg" />
+                  <Shimmer className="h-10 w-full rounded-lg" />
+                  <Shimmer className="h-24 w-full rounded-lg" />
+                  <Shimmer className="h-10 w-32 rounded-lg" />
+                </CardContent>
+              </Card>
             </div>
           </div>
+          {/* Currently Assigned Assets table skeleton */}
+          <Card className="shadow-xl border-0 bg-white/80 backdrop-blur-sm">
+            <CardHeader>
+              <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
+                <Shimmer className="h-10 w-10 rounded-lg bg-blue-100/80" />
+                <Shimmer className="h-6 w-48 rounded" />
+                <Shimmer className="h-6 w-20 rounded-full sm:ml-auto" />
+              </div>
+            </CardHeader>
+            <CardContent>
+              <div className="space-y-3">
+                {[1, 2, 3, 4, 5].map(i => (
+                <div key={i} className="flex gap-4 p-4 border rounded-lg">
+                  <div className="flex-1 space-y-2">
+                    <Shimmer className="h-4 w-32 rounded" />
+                    <Shimmer className="h-3 w-24 rounded" />
+                  </div>
+                  <div className="flex-1 space-y-2">
+                    <Shimmer className="h-4 w-28 rounded" />
+                    <Shimmer className="h-3 w-20 rounded" />
+                  </div>
+                  <div className="flex-1 space-y-2">
+                    <Shimmer className="h-4 w-28 rounded" />
+                    <Shimmer className="h-3 w-20 rounded" />
+                  </div>
+                  <div className="w-24">
+                    <Shimmer className="h-6 w-20 rounded-full" />
+                  </div>
+                </div>
+                ))}
+              </div>
+            </CardContent>
+          </Card>
         </main>
       </div>
     );
@@ -801,22 +878,12 @@ export default function AssetsAssignment() {
           icon={Package}
           title="Assets Assignment"
           description="Issue and assign assets to users"
-        >
-          <Button
-            variant="ghost"
-            size="sm"
-            onClick={() => fetchAssets()}
-            className="flex items-center gap-2"
-          >
-            <RefreshCw className="h-4 w-4" />
-            Refresh
-          </Button>
-        </PageHeader>
+        />
 
         <div className="grid grid-cols-1 gap-6 xl:grid-cols-3 xl:gap-8">
           {/* Asset Selection / Asset Built Tabs */}
           <div className="xl:col-span-2">
-            <Tabs defaultValue="select-assets" className="w-full">
+            <Tabs value={activeTab} onValueChange={(value) => { setActiveTab(value); setTabLoading(true); setTimeout(() => setTabLoading(false), 300); }} className="w-full">
               <TabsList className={segmentTabsListClassName + ' grid grid-cols-2'}>
                 <TabsTrigger
                   value="select-assets"
@@ -845,7 +912,7 @@ export default function AssetsAssignment() {
                   assets={availableAssets}
                   selectedAssets={selectedAssets}
                   searchTerm={searchTerm}
-                  loading={loading || buildersLoading}
+                  loading={loading || buildersLoading || tabLoading}
                   hasPermission={hasPermission}
                   onSearchChange={setSearchTerm}
                   onAssetSelection={handleAssetSelection}
@@ -881,7 +948,7 @@ export default function AssetsAssignment() {
                     </div>
                   </CardHeader>
                   <CardContent className="pt-0 flex-1 flex flex-col overflow-hidden">
-                    {buildersLoading ? (
+                    {buildersLoading || tabLoading ? (
                       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
                         {Array.from({ length: 6 }).map((_, index) => (
                           <BuilderCardSkeleton key={index} />
