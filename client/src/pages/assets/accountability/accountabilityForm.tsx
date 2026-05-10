@@ -374,6 +374,8 @@ interface AccountabilityFormProps {
   onReceive?: (form: AccountabilityForm) => void;
   /** Show download button in card footer */
   showDownloadButton?: boolean;
+  /** Show "Pending Receiver Signature" badge (only in AccountabilityFormsPage) */
+  showPendingReceiverSignatureBadge?: boolean;
 }
 
 // Reusable PDF generation function (exported for issuer decline notification dialog)
@@ -1082,6 +1084,7 @@ export function AccountabilityFormCard({
   showReceiveButton = false,
   onReceive,
   showDownloadButton = false,
+  showPendingReceiverSignatureBadge = false,
 }: AccountabilityFormProps) {
   const { user: currentUser } = useCurrentUser();
   const displayedStatus =
@@ -1363,7 +1366,7 @@ export function AccountabilityFormCard({
                 Temporary
               </Badge>
             )}
-            {form.status === 'Pending' && (
+            {showPendingReceiverSignatureBadge && form.status === 'Pending' && (
               <Badge
                 variant="outline"
                 className="border-orange-300 bg-orange-50 text-orange-900 font-medium"
@@ -2040,15 +2043,13 @@ export function AccountabilityFormCard({
             description="Asset Accountability Form Preview"
           />
           <AppDialogBody className="min-h-0 flex-1 overflow-auto !p-0">
-            <div className="mx-4 my-4 h-[620px] overflow-hidden rounded-lg border border-slate-200 bg-slate-50 sm:mx-6">
-              {pdfUrl ? (
-                <PDFViewer pdfUrl={pdfUrl} className="h-full w-full" />
-              ) : (
-                <div className="flex h-full w-full items-center justify-center text-gray-500">
-                  Loading form preview...
-                </div>
-              )}
-            </div>
+            {pdfUrl ? (
+              <PDFViewer pdfUrl={pdfUrl} className="h-full w-full" />
+            ) : (
+              <div className="flex h-full w-full items-center justify-center text-gray-500">
+                Loading form preview...
+              </div>
+            )}
           </AppDialogBody>
 
           <AppDialogChromeFooter className="justify-end gap-3">
@@ -2094,15 +2095,13 @@ export function AccountabilityFormCard({
             description="Asset Checklist Form Preview"
           />
           <AppDialogBody className="min-h-0 flex-1 overflow-auto !p-0">
-            <div className="mx-4 my-4 h-[620px] overflow-hidden rounded-lg border border-slate-200 bg-slate-50 sm:mx-6">
-              {checklistPdfUrl ? (
-                <PDFViewer pdfUrl={checklistPdfUrl} className="h-full w-full" />
-              ) : (
-                <div className="flex h-full w-full items-center justify-center text-gray-500">
-                  Generating checklist PDF preview...
-                </div>
-              )}
-            </div>
+            {checklistPdfUrl ? (
+              <PDFViewer pdfUrl={checklistPdfUrl} className="h-full w-full" />
+            ) : (
+              <div className="flex h-full w-full items-center justify-center text-gray-500">
+                Generating checklist PDF preview...
+              </div>
+            )}
           </AppDialogBody>
           <AppDialogChromeFooter className="justify-end gap-3">
             <Button
@@ -2272,9 +2271,7 @@ export function AccountabilityFormDetail({
     ? 'w-full min-h-0 flex-1 overflow-auto rounded-none border-0 bg-transparent px-4 sm:px-6'
     : headerInParentChrome
       ? 'flex min-h-0 w-full min-w-0 flex-1 flex-col overflow-auto border-0 bg-transparent'
-      : hrViewMode
-        ? 'flex w-full min-h-[70vh] flex-1 flex-col overflow-auto rounded-lg border border-slate-200/80 bg-slate-50/50'
-        : 'w-full h-[85vh] border rounded-lg mx-auto overflow-auto';
+      : 'flex w-full h-[85vh] flex-1 flex-col overflow-auto';
   const showHrReceive = false;
   const showActionBar =
     canSign || showSignReceivedCopy || showHrReceive || !embedded;
@@ -2296,7 +2293,7 @@ export function AccountabilityFormDetail({
       : 'flex min-h-0 flex-1 flex-col gap-2 p-2 sm:p-3';
 
   const previewPaneClass =
-    headerInParentChrome && hrViewMode
+    headerInParentChrome
       ? 'h-[70vh] w-full min-w-0 overflow-auto border-0 bg-white'
       : 'h-[70vh] w-full overflow-auto rounded-md border border-slate-200 bg-slate-50';
 
@@ -2720,7 +2717,7 @@ export function AccountabilityFormDetail({
               ) : null}
             </div>
           )}
-          <div className="mx-0 my-2 flex h-[70vh] flex-1 flex-col overflow-hidden rounded-lg border border-slate-200 bg-slate-50 sm:my-3">
+          <div className="flex h-[70vh] flex-1 flex-col overflow-hidden">
             {pdfUrl ? (
               <PDFViewer pdfUrl={pdfUrl} className="h-full w-full" />
             ) : (

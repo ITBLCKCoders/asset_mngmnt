@@ -1145,15 +1145,13 @@ export function AssetsPage() {
             description="Asset Accountability Form Preview"
           />
           <AppDialogBody className="min-h-0 flex-1 overflow-auto !p-0">
-            <div className="mx-4 my-4 h-[620px] overflow-hidden rounded-lg border border-slate-200 bg-slate-50 sm:mx-6">
-              {currentPdfUrl ? (
-                <PDFViewer pdfUrl={currentPdfUrl} className="h-full w-full" />
-              ) : (
-                <div className="flex h-full w-full items-center justify-center text-gray-500">
-                  Loading form preview...
-                </div>
-              )}
-            </div>
+            {currentPdfUrl ? (
+              <PDFViewer pdfUrl={currentPdfUrl} className="h-full w-full" />
+            ) : (
+              <div className="flex h-full w-full items-center justify-center text-gray-500">
+                Loading form preview...
+              </div>
+            )}
           </AppDialogBody>
           <AppDialogChromeFooter className="justify-end gap-3">
             <Button

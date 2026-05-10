@@ -45,9 +45,10 @@ import { Shimmer } from '@/components/ui/shimmer';
 import { Tabs, TabsList, TabsTrigger, TabsContent, segmentTabsListClassName, segmentTabsTriggerClassName } from '@/components/ui/tabs';
 import { api } from '@/lib/api';
 import { toast } from 'sonner';
+import { PDFViewer } from '@/components/PDFViewer';
 import {
   AccountabilityFormCard,
-  AccountabilityFormDetail,
+  generateAccountabilityFormPDF,
   type AccountabilityForm,
 } from '@/pages/assets/accountability/accountabilityForm';
 import { useCurrentUser } from '@/hooks/useCurrentUser';
@@ -2194,6 +2195,7 @@ export default function DocumentsTab({
   const [selectedForm, setSelectedForm] = useState<AccountabilityForm | null>(
     null
   );
+  const [formPdfUrl, setFormPdfUrl] = useState<string | null>(null);
   const [selectedReturnFormBatch, setSelectedReturnFormBatch] =
     useState<AssetReturnFormBatch | null>(null);
   const [selectedTransferFormBatch, setSelectedTransferFormBatch] =
@@ -2463,14 +2465,24 @@ export default function DocumentsTab({
     }
   };
 
-  const handleViewForm = (form: AccountabilityForm) => {
+  const handleViewForm = async (form: AccountabilityForm) => {
     setSelectedForm(form);
-    setShowFormDetail(true);
+    try {
+      const fullFormResponse = await api.get(`/accountability-forms/${form.id}`);
+      const fullForm = fullFormResponse.form;
+      const pdfBlob = await generateAccountabilityFormPDF(fullForm);
+      const pdfUrl = URL.createObjectURL(pdfBlob);
+      setFormPdfUrl(pdfUrl);
+      setShowFormDetail(true);
+    } catch (error) {
+      toast.error('Failed to generate PDF for this accountability form');
+    }
   };
 
   const handleCloseFormDetail = () => {
     setShowFormDetail(false);
     setSelectedForm(null);
+    setFormPdfUrl(null);
   };
 
   const handleDownloadReturnFormBatch = async (batch: AssetReturnFormBatch) => {
@@ -3072,25 +3084,36 @@ export default function DocumentsTab({
       </Card>
 
       {/* Form Detail Dialog */}
-      <Dialog open={showFormDetail} onOpenChange={setShowFormDetail}>
-        <AppDialogFrame className="flex h-[min(96dvh,calc(100vh-0.5rem))] !max-h-[min(96dvh,calc(100vh-0.5rem))] min-h-0 !max-w-2xl flex-col overflow-hidden !gap-0 !border-0 !p-0">
+      <Dialog open={showFormDetail} onOpenChange={(open) => {
+        if (!open) {
+          handleCloseFormDetail();
+        }
+      }}>
+        <AppDialogFrame className="max-w-4xl max-h-[90vh] overflow-hidden !flex !flex-col !gap-0 !border-0 !p-0">
           {selectedForm && (
             <>
               <AppDialogGradientHeader
-                className="shrink-0 px-4 pb-4 pt-4 sm:px-5 sm:pb-5 sm:pt-5"
                 title={`${selectedForm.user.first_name} ${selectedForm.user.last_name} - ${selectedForm.formNumber}`}
                 description="Asset Accountability Form Preview"
               />
-              <AccountabilityFormDetail
-                form={selectedForm}
-                onClose={handleCloseFormDetail}
-                onSign={handleSignForm}
-                setActiveTab={setActiveTab}
-                headerInParentChrome
-                showDeclineButton
-                onDecline={handleDeclineAccountabilityForm}
-                viewContext={accountabilityViewContext}
-              />
+              <AppDialogBody className="min-h-0 flex-1 overflow-auto !p-0">
+                {formPdfUrl ? (
+                  <PDFViewer pdfUrl={formPdfUrl} className="h-full w-full" />
+                ) : (
+                  <div className="flex h-full w-full items-center justify-center text-gray-500">
+                    Loading form preview...
+                  </div>
+                )}
+              </AppDialogBody>
+              <AppDialogChromeFooter className="justify-end gap-3">
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={handleCloseFormDetail}
+                >
+                  Close
+                </Button>
+              </AppDialogChromeFooter>
             </>
           )}
         </AppDialogFrame>

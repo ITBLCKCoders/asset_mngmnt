@@ -365,6 +365,7 @@ export default function AccountabilityFormsPage() {
             showReceiveButton={isHrList && hasHrCopyAccess}
             onReceive={handleReceiveCopy}
             showDownloadButton={!isHrList}
+            showPendingReceiverSignatureBadge
           />
         ))}
       </div>
