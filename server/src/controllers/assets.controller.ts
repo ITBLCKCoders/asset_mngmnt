@@ -24,6 +24,7 @@ import { getActiveCompany } from '../utils/activeCompany.js';
 import {
   getAssetScope,
   classifyDepartmentScopeByName,
+  getDepartmentIdsForScope,
 } from '../utils/assetScope.js';
 
 /** Matches `sp_create_asset` / `sp_update_asset` `p_status` ENUM (excludes UI-only `Assigned`). */
@@ -359,23 +360,37 @@ export async function getAssetsHandler(req: AuthRequest, res: Response) {
     const normalizedRoleName = String(user?.role_name ?? '').trim().toLowerCase();
     const isSuperAdmin = normalizedRoleName === 'super admin';
     const isAdmin = normalizedRoleName === 'admin';
+    const isOverallManager = String(user?.manager_role ?? '').trim() === 'overallManager';
 
     // Use companyId from query parameter if provided and user is Super Admin or Admin
     const queryCompanyId = req.query.companyId
       ? String(req.query.companyId)
       : null;
 
+    // Accept optional scope query param for IT/Admin tab switching
+    const scopeParam = req.query.scope as string | undefined;
+    const scopeOverride =
+      scopeParam === 'it' || scopeParam === 'admin' ? scopeParam : undefined;
+
     let companyId: string | null = null;
     let departmentIds: string[] | null = null;
 
-    if (isSuperAdmin || isAdmin) {
-      // For Super Admin and Admin, use query parameter if provided, otherwise show all companies
+    if (isSuperAdmin || isAdmin || isOverallManager) {
+      // For Super Admin, Admin, and overallManager, use query parameter if provided
       if (queryCompanyId) {
         companyId = queryCompanyId;
-        departmentIds = null; // Show all departments when filtering by company
+      } else if (!isSuperAdmin && !isAdmin) {
+        // overallManager: use their company
+        companyId = user?.company_id ?? null;
+      }
+      // else Super Admin/Admin with no companyId: show all companies (companyId stays null)
+
+      // Apply scope override if provided
+      if (scopeOverride && companyId) {
+        departmentIds = await getDepartmentIdsForScope(pool, scopeOverride, companyId);
+      } else if (scopeOverride && !companyId) {
+        departmentIds = await getDepartmentIdsForScope(pool, scopeOverride);
       } else {
-        // No company filter selected - show assets from all companies
-        companyId = null;
         departmentIds = null;
       }
     } else {

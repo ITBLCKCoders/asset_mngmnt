@@ -126,7 +126,7 @@ interface Company {
   is_main?: boolean;
 }
 
-export const useAssetsData = (companyFilter?: string | null) => {
+export const useAssetsData = (companyFilter?: string | null, scope?: string | null) => {
   const [assets, setAssets] = useState<Asset[]>([]);
   const [loading, setLoading] = useState(true);
   const [meta, setMeta] = useState<{
@@ -140,8 +140,16 @@ export const useAssetsData = (companyFilter?: string | null) => {
     try {
       setLoading(true);
       let url = '/assets';
+      const params = new URLSearchParams();
       if (companyFilter) {
-        url += `?companyId=${encodeURIComponent(companyFilter)}`;
+        params.append('companyId', companyFilter);
+      }
+      if (scope) {
+        params.append('scope', scope);
+      }
+      const queryString = params.toString();
+      if (queryString) {
+        url += `?${queryString}`;
       }
       const response = await api.get<{
         assets: ApiAsset[];
@@ -299,7 +307,7 @@ export const useAssetsData = (companyFilter?: string | null) => {
 
   useEffect(() => {
     fetchAssets();
-  }, [companyFilter]);
+  }, [companyFilter, scope]);
 
   useEffect(() => {
     const handleAssetsUpdate = () => {

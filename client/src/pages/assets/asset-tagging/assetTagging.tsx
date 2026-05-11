@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from 'react';
 import { Tag, QrCode } from 'lucide-react';
+import { Tabs, TabsList, TabsTrigger, segmentTabsListClassName, segmentTabsTriggerClassName } from '@/components/ui/tabs';
 import { Card, CardContent } from '@/components/ui/card';
 import { PageHeader } from '@/components/common/PageHeader';
 import { Button } from '@/components/ui/button';
@@ -94,7 +95,7 @@ interface ApiAsset {
 
 export default function AssetsTagging() {
   const { user: currentUser } = useCurrentUser();
-  const { hasPermission } = useUserPermissions();
+  const { hasPermission, roleCustodian } = useUserPermissions();
   const { activeCompany } = useCompanyContext();
   const [assets, setAssets] = useState<Asset[]>([]);
   const [loading, setLoading] = useState(true);
@@ -103,6 +104,11 @@ export default function AssetsTagging() {
   const [isAssetViewModalOpen, setIsAssetViewModalOpen] = useState(false);
   const [selectedAssetForView, setSelectedAssetForView] =
     useState<Asset | null>(null);
+  const isSuperAdmin = currentUser?.role?.name?.toLowerCase() === 'super admin';
+  const isAdmin = currentUser?.role?.name?.toLowerCase() === 'admin';
+  const isOverallManager = roleCustodian?.managerRole === 'overallManager';
+  const showScopeTabs = isSuperAdmin || isAdmin || isOverallManager;
+  const [scope, setScope] = useState<'it' | 'admin'>('it');
   const displayLoading = loading;
 
   const taggingColumns = TaggingColumns({
@@ -138,6 +144,9 @@ export default function AssetsTagging() {
       queryParams.append('limit', '-1');
       if (companyId) {
         queryParams.append('companyId', companyId);
+      }
+      if (showScopeTabs) {
+        queryParams.append('scope', scope);
       }
       const response = await api.get<{ assets: ApiAsset[] }>(
         `/assets?${queryParams.toString()}`
@@ -351,6 +360,14 @@ export default function AssetsTagging() {
           title="Assets Tagging"
           description="Generate and print QR code tags for assets"
         >
+          {showScopeTabs && (
+            <Tabs value={scope} onValueChange={v => setScope(v as 'it' | 'admin')} className="w-full sm:w-auto">
+              <TabsList className={segmentTabsListClassName + ' grid grid-cols-2 max-w-full sm:max-w-[280px]'}>
+                <TabsTrigger value="it" className={segmentTabsTriggerClassName}>IT Asset</TabsTrigger>
+                <TabsTrigger value="admin" className={segmentTabsTriggerClassName}>Admin Asset</TabsTrigger>
+              </TabsList>
+            </Tabs>
+          )}
           <div className="flex w-full flex-col gap-2 sm:w-auto sm:flex-row sm:flex-wrap sm:items-center sm:justify-end">
             <Button
               variant="header"

@@ -129,7 +129,7 @@ interface ReturnHistoryRow {
 
 export default function AssetsReturn() {
   const { user: currentUser } = useCurrentUser();
-  const { hasPermission } = useUserPermissions();
+  const { hasPermission, roleCustodian } = useUserPermissions();
   const { activeCompany } = useCompanyContext();
   const [assignments, setAssignments] = useState<AssetAssignment[]>([]);
   const [departments, setDepartments] = useState<any[]>([]);
@@ -179,6 +179,12 @@ export default function AssetsReturn() {
     null
   );
   const [nextStepsOwnerAbsent, setNextStepsOwnerAbsent] = useState(false);
+
+  const isSuperAdmin = currentUser?.role?.name?.toLowerCase() === 'super admin';
+  const isAdmin = currentUser?.role?.name?.toLowerCase() === 'admin';
+  const isOverallManager = roleCustodian?.managerRole === 'overallManager';
+  const showScopeTabs = isSuperAdmin || isAdmin || isOverallManager;
+  const [scope, setScope] = useState<'it' | 'admin'>('it');
   const displayLoading = loading;
 
   const flattenedReturnHistory = useMemo((): ReturnHistoryRow[] => {
@@ -427,6 +433,9 @@ export default function AssetsReturn() {
       if (companyId) {
         queryParams.append('companyId', companyId);
       }
+      if (showScopeTabs) {
+        queryParams.append('scope', scope);
+      }
       const response = await api.get(`/asset-assignments/filtered?${queryParams.toString()}`);
       setAssignments(response.assignments || []);
     } catch (error) {
@@ -438,7 +447,10 @@ export default function AssetsReturn() {
   const fetchAssetBuilders = async () => {
     try {
       setBuildersLoading(true);
-      const response = await api.get('/asset-builders', {
+      const builderUrl = showScopeTabs
+        ? `/asset-builders?scope=${scope}`
+        : '/asset-builders';
+      const response = await api.get(builderUrl, {
         headers: { 'Cache-Control': 'no-cache', Pragma: 'no-cache' },
       });
       if (response?.builders) {
@@ -1070,7 +1082,16 @@ export default function AssetsReturn() {
           icon={RotateCcw}
           title="Assets Return"
           description="Process asset returns and assess condition"
-        />
+        >
+          {showScopeTabs && (
+            <Tabs value={scope} onValueChange={v => setScope(v as 'it' | 'admin')} className="w-full sm:w-auto">
+              <TabsList className={segmentTabsListClassName + ' grid grid-cols-2 max-w-full sm:max-w-[280px]'}>
+                <TabsTrigger value="it" className={segmentTabsTriggerClassName}>IT Asset</TabsTrigger>
+                <TabsTrigger value="admin" className={segmentTabsTriggerClassName}>Admin Asset</TabsTrigger>
+              </TabsList>
+            </Tabs>
+          )}
+        </PageHeader>
 
         <div className="grid grid-cols-1 xl:grid-cols-3 gap-8">
           {/* Asset Selection / Asset Built Tabs */}

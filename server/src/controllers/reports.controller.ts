@@ -48,13 +48,18 @@ export async function getFinanceReportsHandler(
 
     const companyId =
       typeof req.query.companyId === 'string' ? req.query.companyId : null;
+    const scope =
+      typeof req.query.scope === 'string' && (req.query.scope === 'it' || req.query.scope === 'admin')
+        ? req.query.scope
+        : null;
 
-    logger.info(`[finance-reports] Request received - userId: ${userId}, companyId: ${companyId}`);
+    logger.info(`[finance-reports] Request received - userId: ${userId}, companyId: ${companyId}, scope: ${scope}`);
 
     const data = await ReportsService.getFinanceReports(
       pool,
       userId,
-      companyId
+      companyId,
+      scope
     );
 
     logger.info(`[finance-reports] Returning data - fixedAssetRegister: ${data.fixedAssetRegister.length}, depreciationSchedule: ${data.depreciationSchedule.length}`);

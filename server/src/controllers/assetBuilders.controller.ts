@@ -3,7 +3,7 @@ import { pool } from '../db.js';
 import type { AuthRequest } from '../middleware/authenticate.js';
 import logger from '../logger.js';
 import { createAuditLog } from '../utils/audit.js';
-import { getAssetScope } from '../utils/assetScope.js';
+import { getAssetScope, getDepartmentIdsForScope } from '../utils/assetScope.js';
 
 export async function createAssetBuilderHandler(
   req: AuthRequest,
@@ -165,16 +165,38 @@ export async function getAssetBuildersHandler(req: AuthRequest, res: Response) {
     const userId = req.user!.userID;
     logger.info(`Getting asset builders for user: ${userId}`);
 
+    // Accept optional scope query param for IT/Admin tab switching
+    const scopeParam = req.query.scope as string | undefined;
+    const scopeOverride =
+      scopeParam === 'it' || scopeParam === 'admin' ? scopeParam : undefined;
+
     // Get asset scope (company + optional department-based filtering)
-    const { companyId, departmentIds } = await getAssetScope(pool, userId);
+    const { companyId, departmentIds: scopeDeptIds, isSuperAdmin } = await getAssetScope(pool, userId);
 
     logger.info(`User company ID from asset scope: ${companyId}`, {
-      departmentIdsCount: departmentIds?.length ?? 0,
+      departmentIdsCount: scopeDeptIds?.length ?? 0,
     });
 
     if (!companyId) {
       logger.warn(`User ${userId} has no company_id in scope`);
       return res.json({ builders: [] });
+    }
+
+    let departmentIds = scopeDeptIds;
+
+    // For Super Admin, Admin, and overallManager: apply scope override if provided
+    if (scopeOverride) {
+      const [userRows] = (await pool.execute(
+        `SELECT r.manager_role FROM users u
+         LEFT JOIN asset_mngmnt_roles r ON u.role_id = r.roleID AND r.deleted_at IS NULL
+         WHERE u.userID = ?`,
+        [userId]
+      )) as any[];
+      const managerRole = String(userRows?.[0]?.manager_role ?? '').trim();
+      const isAdmin = String(userRows?.[0]?.role_name ?? '').trim().toLowerCase() === 'admin';
+      if (isSuperAdmin || isAdmin || managerRole === 'overallManager') {
+        departmentIds = await getDepartmentIdsForScope(pool, scopeOverride, companyId);
+      }
     }
 
     // Get asset builders for the company using stored procedure

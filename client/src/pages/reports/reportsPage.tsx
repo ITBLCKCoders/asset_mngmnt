@@ -590,70 +590,183 @@ export default function ReportsPage() {
     selectedExportTables.forEach(tableKey => {
       const label =
         REPORT_TABLES.find(table => table.key === tableKey)?.label ?? tableKey;
-      const rows = tableRows[tableKey].filter(row => {
-        if (scopeFilterEnabled) {
-          if (!rowMatchesDashboardCategoryScope(row, scopeCategoryIdSet)) {
-            return false;
-          }
-        }
-        return rowMatchesFilters(row, exportFilters);
-      });
 
-      if (!first) doc.addPage();
-      first = false;
+      if (tableKey === 'finance') {
+        const far = financeData?.fixedAssetRegister || [];
+        const dep = financeData?.depreciationSchedule || [];
+        const summary = financeData?.assetValuationSummary;
 
-      doc.setFontSize(16);
-      doc.text(label, 14, 16);
-      doc.setFontSize(10);
-      doc.text(
-        `From: ${exportFilters.from || 'All'}   To: ${exportFilters.to || 'All'}   Company: ${
-          exportFilters.companyId === 'all'
-            ? 'All'
-            : companies.find(company => company.id === exportFilters.companyId)?.name ??
-              'Selected'
-        }   Department: ${
-          exportFilters.departmentId === 'all'
-            ? 'All'
-            : departments.find(
-                department =>
-                  (department.id ?? department.departmentID) ===
-                  exportFilters.departmentId
-              )?.name ?? 'Selected'
-        }`,
-        14,
-        24
-      );
+        // Page 1: Fixed Asset Register
+        if (!first) doc.addPage();
+        first = false;
+        doc.setFontSize(16);
+        doc.text('Fixed Asset Register', 14, 16);
+        doc.setFontSize(10);
+        doc.text(
+          `Company: ${
+            exportFilters.companyId === 'all'
+              ? 'All'
+              : companies.find(c => c.id === exportFilters.companyId)?.name ?? 'Selected'
+          }`,
+          14, 24
+        );
+        autoTable(doc, {
+          startY: 30,
+          head: [['Asset Code', 'Name', 'Category', 'Purchase Date', 'Asset Value', 'Salvage Value', 'Dep Method', 'Useful Life (yrs)', 'Annual Dep', 'Status']],
+          body: far.length > 0
+            ? far.map((a: any) => [
+                a.asset_code || '',
+                a.name || '',
+                a.category_name || '',
+                a.purchase_date ? formatDateLabel(a.purchase_date) : '',
+                a.asset_value != null ? `₱${Number(a.asset_value).toLocaleString()}` : '',
+                a.salvage_value != null ? `₱${Number(a.salvage_value).toLocaleString()}` : '',
+                a.depreciation_method || '',
+                a.useful_life_years ?? '',
+                a.annual_depreciation != null ? `₱${Number(a.annual_depreciation).toLocaleString()}` : '',
+                a.status || '',
+              ])
+            : [['No records found', '', '', '', '', '', '', '', '', '']],
+          styles: { fontSize: 7, cellPadding: 2, overflow: 'linebreak' },
+          headStyles: { fillColor: [136, 17, 21] },
+        });
 
-      autoTable(doc, {
-        startY: 30,
-        head: [
-          [
-            'Reference',
-            'Asset / Request',
-            'User / Requester',
-            'Department',
-            'Company',
-            'Status',
-            'Date',
-            'Notes',
-          ],
-        ],
-        body:
-          rows.length > 0
-            ? rows.map(row => [
-                row.reference,
-                row.asset,
-                row.person,
-                row.departmentName,
-                row.companyName,
-                row.status,
-                formatDateLabel(row.date),
-                row.notes,
+        // Page 2: Depreciation Schedule
+        doc.addPage();
+        doc.setFontSize(16);
+        doc.text('Depreciation Schedule', 14, 16);
+        autoTable(doc, {
+          startY: 24,
+          head: [['Asset Code', 'Name', 'Asset Value', 'Accumulated Dep', 'Net Book Value', 'Years Depreciated', 'Remaining Life (yrs)', 'Status']],
+          body: dep.length > 0
+            ? dep.map((d: any) => [
+                d.asset_code || '',
+                d.name || '',
+                d.asset_value != null ? `₱${Number(d.asset_value).toLocaleString()}` : '',
+                `₱${Number(d.accumulated_depreciation || 0).toLocaleString()}`,
+                `₱${Number(d.net_book_value || 0).toLocaleString()}`,
+                Number(d.years_depreciated || 0).toFixed(2),
+                d.remaining_useful_life != null ? Number(d.remaining_useful_life).toFixed(2) : '',
+                d.status || '',
               ])
             : [['No records found', '', '', '', '', '', '', '']],
-        styles: { fontSize: 8, cellPadding: 2, overflow: 'linebreak' },
-        headStyles: { fillColor: [136, 17, 21] },
-      });
+          styles: { fontSize: 7, cellPadding: 2, overflow: 'linebreak' },
+          headStyles: { fillColor: [136, 17, 21] },
+        });
+
+        // Page 3: Asset Valuation Summary
+        if (summary) {
+          doc.addPage();
+          doc.setFontSize(16);
+          doc.text('Asset Valuation Summary', 14, 16);
+          doc.setFontSize(10);
+          doc.text(`Total Asset Value: ₱${(summary.totalAssetValue || 0).toLocaleString()}`, 14, 24);
+          doc.text(`Total Accumulated Depreciation: ₱${(summary.totalAccumulatedDepreciation || 0).toLocaleString()}`, 14, 30);
+          doc.text(`Total Net Book Value: ₱${(summary.totalNetBookValue || 0).toLocaleString()}`, 14, 36);
+
+          if (summary.byCategory?.length > 0) {
+            doc.setFontSize(12);
+            doc.text('By Category', 14, 46);
+            autoTable(doc, {
+              startY: 50,
+              head: [['Category', 'Asset Value', 'Accumulated Dep', 'Net Book Value', 'Count']],
+              body: summary.byCategory.map((c: any) => [
+                c.category,
+                `₱${(c.totalAssetValue || 0).toLocaleString()}`,
+                `₱${(c.totalAccumulatedDepreciation || 0).toLocaleString()}`,
+                `₱${(c.totalNetBookValue || 0).toLocaleString()}`,
+                String(c.assetCount),
+              ]),
+              styles: { fontSize: 8, cellPadding: 2 },
+              headStyles: { fillColor: [136, 17, 21] },
+            });
+          }
+
+          if (summary.byDepartment?.length > 0) {
+            const deptStartY = (doc as any).lastAutoTable?.finalY ? (doc as any).lastAutoTable.finalY + 10 : 50;
+            doc.setFontSize(12);
+            doc.text('By Department', 14, deptStartY);
+            autoTable(doc, {
+              startY: deptStartY + 4,
+              head: [['Department', 'Asset Value', 'Accumulated Dep', 'Net Book Value', 'Count']],
+              body: summary.byDepartment.map((d: any) => [
+                d.department,
+                `₱${(d.totalAssetValue || 0).toLocaleString()}`,
+                `₱${(d.totalAccumulatedDepreciation || 0).toLocaleString()}`,
+                `₱${(d.totalNetBookValue || 0).toLocaleString()}`,
+                String(d.assetCount),
+              ]),
+              styles: { fontSize: 8, cellPadding: 2 },
+              headStyles: { fillColor: [136, 17, 21] },
+            });
+          }
+        }
+      } else {
+        const rows = tableRows[tableKey].filter(row => {
+          if (scopeFilterEnabled) {
+            if (!rowMatchesDashboardCategoryScope(row, scopeCategoryIdSet)) {
+              return false;
+            }
+          }
+          return rowMatchesFilters(row, exportFilters);
+        });
+
+        if (!first) doc.addPage();
+        first = false;
+
+        doc.setFontSize(16);
+        doc.text(label, 14, 16);
+        doc.setFontSize(10);
+        doc.text(
+          `From: ${exportFilters.from || 'All'}   To: ${exportFilters.to || 'All'}   Company: ${
+            exportFilters.companyId === 'all'
+              ? 'All'
+              : companies.find(company => company.id === exportFilters.companyId)?.name ??
+                'Selected'
+          }   Department: ${
+            exportFilters.departmentId === 'all'
+              ? 'All'
+              : departments.find(
+                  department =>
+                    (department.id ?? department.departmentID) ===
+                    exportFilters.departmentId
+                )?.name ?? 'Selected'
+          }`,
+          14,
+          24
+        );
+
+        autoTable(doc, {
+          startY: 30,
+          head: [
+            [
+              'Reference',
+              'Asset / Request',
+              'User / Requester',
+              'Department',
+              'Company',
+              'Status',
+              'Date',
+              'Notes',
+            ],
+          ],
+          body:
+            rows.length > 0
+              ? rows.map(row => [
+                  row.reference,
+                  row.asset,
+                  row.person,
+                  row.departmentName,
+                  row.companyName,
+                  row.status,
+                  formatDateLabel(row.date),
+                  row.notes,
+                ])
+              : [['No records found', '', '', '', '', '', '', '']],
+          styles: { fontSize: 8, cellPadding: 2, overflow: 'linebreak' },
+          headStyles: { fillColor: [136, 17, 21] },
+        });
+      }
     });
 
     doc.save(`reports-${Date.now()}.pdf`);
@@ -663,6 +776,7 @@ export default function ReportsPage() {
     companies,
     departments,
     exportFilters,
+    financeData,
     scopeCategoryIdSet,
     scopeFilterEnabled,
     selectedExportTables,
@@ -720,10 +834,15 @@ export default function ReportsPage() {
           user.role?.name === 'Super Admin'
             ? selectedCompanyIdRef.current || activeId
             : '';
-        const financePath =
-          financeCompanyId.length > 0
-            ? `/reports/finance-reports?companyId=${encodeURIComponent(financeCompanyId)}`
-            : '/reports/finance-reports';
+        const financeScope = isSuperAdmin ? scope : null;
+        const financeParams = new URLSearchParams();
+        if (financeCompanyId.length > 0) {
+          financeParams.set('companyId', financeCompanyId);
+        }
+        if (financeScope) {
+          financeParams.set('scope', financeScope);
+        }
+        const financePath = `/reports/finance-reports${financeParams.toString() ? `?${financeParams.toString()}` : ''}`;
 
         const financeRes = await api
           .get<any>(financePath)
@@ -928,23 +1047,33 @@ export default function ReportsPage() {
         console.log('Asset Valuation Summary:', financeData.assetValuationSummary);
         setFinanceData(financeData);
 
-        // Set finance rows as placeholder for now - will be used for summary display
-        setFinanceRows([
-          {
-            id: 'finance-summary',
-            reference: 'FINANCE',
-            asset: 'Finance Reports',
-            person: 'System',
+        const fixedAssets = financeData.fixedAssetRegister || [];
+        setFinanceRows(
+          fixedAssets.map((asset: any, i: number) => ({
+            id: `finance-${asset.assetID || i}`,
+            reference: asset.asset_code || `FAR-${i + 1}`,
+            asset: asset.name || 'Unknown Asset',
+            person: asset.brand || 'N/A',
             categoryId: '',
-            departmentId: '',
-            departmentName: 'Finance',
+            departmentId: asset.department_name || '',
+            departmentName: asset.department_name || 'Unassigned',
             companyId: defaultCompanyId,
-            companyName: defaultCompanyName,
-            status: 'Available',
-            date: new Date().toISOString(),
-            notes: 'View detailed finance reports below',
-          },
-        ]);
+            companyName: asset.company_name || defaultCompanyName,
+            status: asset.status || 'Unknown',
+            date: asset.purchase_date || asset.created_at || '',
+            notes: [
+              asset.category_name ? `Cat: ${asset.category_name}` : '',
+              asset.model ? `Model: ${asset.model}` : '',
+              asset.serial ? `S/N: ${asset.serial}` : '',
+              asset.asset_value ? `Val: ₱${Number(asset.asset_value).toLocaleString()}` : '',
+              asset.depreciation_method ? `DepMethod: ${asset.depreciation_method}` : '',
+              asset.useful_life_years ? `Life: ${asset.useful_life_years}yrs` : '',
+              asset.annual_depreciation ? `AnnualDep: ₱${Number(asset.annual_depreciation).toLocaleString()}` : '',
+              asset.location_name ? `Loc: ${asset.location_name}` : '',
+              asset.condition ? `Cond: ${asset.condition}` : '',
+            ].filter(Boolean).join(' | '),
+          }))
+        );
       } catch {
         toast.error('Failed to load reports page data.');
       } finally {
@@ -953,7 +1082,7 @@ export default function ReportsPage() {
     };
 
     void load();
-  }, [isSuperAdmin, refreshTick, user?.id, user?.role?.name, userLoading, activeCompany?.id]);
+  }, [isSuperAdmin, refreshTick, user?.id, user?.role?.name, userLoading, activeCompany?.id, scope]);
 
   useEffect(() => {
     if (isSuperAdmin || !activeCompany?.id) return;

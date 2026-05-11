@@ -1,5 +1,5 @@
 import type { Pool } from 'mysql2/promise';
-import { getAssetScope } from '../utils/assetScope.js';
+import { getAssetScope, getDepartmentIdsForScope } from '../utils/assetScope.js';
 import logger from '../logger.js';
 
 export type ReportsAuditHistoryRow = {
@@ -185,7 +185,8 @@ export class ReportsService {
   static async getFinanceReports(
     pool: Pool,
     userId: string,
-    requestedCompanyId?: string | null
+    requestedCompanyId?: string | null,
+    scopeOverride?: 'it' | 'admin' | null
   ): Promise<FinanceReportsResult> {
     const scope = await getAssetScope(pool, userId);
     const companyId =
@@ -207,7 +208,30 @@ export class ReportsService {
       };
     }
 
-    const baseQuery = `
+    let categoryIds: string[] | null = null;
+    if (scopeOverride && (scopeOverride === 'it' || scopeOverride === 'admin')) {
+      const departmentIds = await getDepartmentIdsForScope(pool, scopeOverride, companyId);
+      logger.info(`[finance-reports] Scope override: ${scopeOverride}, department IDs: ${JSON.stringify(departmentIds)}`);
+
+      if (departmentIds && departmentIds.length > 0) {
+        const placeholders = departmentIds.map(() => '?').join(',');
+        const categoryQuery = `
+          SELECT DISTINCT ac.categoryID
+          FROM asset_categories ac
+          INNER JOIN asset_mngmnt_departments d ON ac.department_id = d.departmentID
+          WHERE d.deleted_at IS NULL
+            AND ac.deleted_at IS NULL
+            AND d.departmentID IN (${placeholders})
+        `;
+        const [categoryRows] = (await pool.execute(categoryQuery, departmentIds)) as any[];
+        categoryIds = categoryRows.map((row: any) => String(row.categoryID));
+        logger.info(`[finance-reports] Category IDs for scope ${scopeOverride}: ${JSON.stringify(categoryIds)}`);
+      }
+    } else {
+      logger.info(`[finance-reports] No scope override or invalid scope. scopeOverride: ${scopeOverride}`);
+    }
+
+    let baseQuery = `
       SELECT
         a.assetID,
         a.asset_code,
@@ -253,14 +277,23 @@ export class ReportsService {
        AND lr.deleted_at IS NULL
       WHERE a.deleted_at IS NULL
         AND a.company_id = ?
-      ORDER BY a.asset_code
     `;
 
-    const [assetRows] = (await pool.execute(baseQuery, [companyId])) as any[];
+    const queryParams: any[] = [companyId];
+
+    if (categoryIds && categoryIds.length > 0) {
+      const placeholders = categoryIds.map(() => '?').join(',');
+      baseQuery += ` AND a.category_id IN (${placeholders})`;
+      queryParams.push(...categoryIds);
+    }
+
+    baseQuery += ` ORDER BY a.asset_code`;
+
+    const [assetRows] = (await pool.execute(baseQuery, queryParams)) as any[];
 
     const assets = assetRows as FinanceAssetRow[];
 
-    logger.info(`[finance-reports] Found ${assets.length} assets for company ${companyId}`);
+    logger.info(`[finance-reports] Found ${assets.length} assets for company ${companyId} with scope ${scopeOverride || 'none'}`);
 
     // Calculate depreciation for each asset
     const depreciationSchedule: FinanceDepreciationRow[] = assets.map(asset => {

@@ -123,8 +123,15 @@ export function AssetsPage() {
       user?.role?.name?.toLowerCase() === 'admin'
   );
 
+  const isSuperAdmin = user?.role?.name?.toLowerCase() === 'super admin';
+  const isAdmin = user?.role?.name?.toLowerCase() === 'admin';
+  const isOverallManager = roleCustodian?.managerRole === 'overallManager';
+  const showScopeTabs = isSuperAdmin || isAdmin || isOverallManager;
+  const [scope, setScope] = useState<'it' | 'admin'>('it');
+
   const { assets, loading, fetchAssets, meta } = useAssetsData(
-    activeCompany?.id || null
+    activeCompany?.id || null,
+    showScopeTabs ? scope : null
   );
   const isInitialLoading = loading && assets.length === 0;
 
@@ -155,7 +162,10 @@ export function AssetsPage() {
       const controller = new AbortController();
       const timeoutId = setTimeout(() => controller.abort(), 10000); // 10 second timeout
 
-      const response = await api.get('/asset-builders', {
+      const builderUrl = showScopeTabs
+        ? `/asset-builders?scope=${scope}`
+        : '/asset-builders';
+      const response = await api.get(builderUrl, {
         headers: {
           'Cache-Control': 'no-cache',
           Pragma: 'no-cache',
@@ -732,6 +742,14 @@ export function AssetsPage() {
           description="Track and manage company assets"
           loading={isInitialLoading}
         >
+          {showScopeTabs && (
+            <Tabs value={scope} onValueChange={v => setScope(v as 'it' | 'admin')} className="w-full sm:w-auto">
+              <TabsList className={segmentTabsListClassName + ' grid grid-cols-2 max-w-full sm:max-w-[280px]'}>
+                <TabsTrigger value="it" className={segmentTabsTriggerClassName}>IT Asset</TabsTrigger>
+                <TabsTrigger value="admin" className={segmentTabsTriggerClassName}>Admin Asset</TabsTrigger>
+              </TabsList>
+            </Tabs>
+          )}
           <Button
             variant="header"
             size="sm"
