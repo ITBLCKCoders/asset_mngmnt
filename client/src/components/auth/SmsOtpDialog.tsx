@@ -243,10 +243,11 @@ export default function SmsOtpDialog({
 
   return (
     <Dialog open={isOpen} onOpenChange={onOpenChange} modal={false}>
-      <DialogContent 
-        showCloseButton={false} 
-        disableScroll 
+      <DialogContent
+        showCloseButton={false}
+        disableScroll
         className="max-w-md !overflow-hidden !p-6"
+        overlayClassName="bg-gradient-to-br from-gray-400/80 via-gray-500/80 to-gray-600/80 backdrop-blur-sm"
         onInteractOutside={(e) => e.preventDefault()}
         onEscapeKeyDown={(e) => e.preventDefault()}
       >
