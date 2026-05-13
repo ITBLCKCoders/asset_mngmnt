@@ -1,6 +1,5 @@
 import { Router } from 'express';
 import { authenticate } from '../middleware/authenticate.js';
-import { requirePermission } from '../middleware/requirePermission.js';
 import { validateDto } from '../utils/validation.js';
 import { CreateAssetBorrowRequestDtoSchema } from '../dtos/assetBorrowRequests/CreateAssetBorrowRequestDto.js';
 import {
@@ -34,30 +33,22 @@ router.get(
   authenticate,
   listApprovedByDeptHeadMeBorrowRequests
 );
-router.get(
-  '/',
-  authenticate,
-  requirePermission('Borrow Request Management', 'view'),
-  listAssetBorrowRequests
-);
+router.get('/', authenticate, listAssetBorrowRequests);
 router.post(
   '/',
   authenticate,
-  requirePermission('Asset Borrowing', 'create'),
   validateDto(CreateAssetBorrowRequestDtoSchema),
   createAssetBorrowRequest
 );
 router.post(
   '/:borrowRequestId/dept-head-approve',
   authenticate,
-  requirePermission('Borrow Request Management', 'edit'),
   validateDto(DeptHeadApproveBorrowRequestDtoSchema),
   approveDeptHeadBorrowRequest
 );
 router.post(
   '/:borrowRequestId/dept-head-decline',
   authenticate,
-  requirePermission('Borrow Request Management', 'edit'),
   declineDeptHeadBorrowRequest
 );
 
@@ -70,14 +61,12 @@ router.get(
 router.post(
   '/:borrowRequestId/staff-approve',
   authenticate,
-  requirePermission('Borrow Request Management', 'edit'),
   validateDto(StaffApproveBorrowRequestDtoSchema),
   staffApproveBorrowRequest
 );
 router.post(
   '/:borrowRequestId/staff-decline',
   authenticate,
-  requirePermission('Borrow Request Management', 'edit'),
   validateDto(StaffDeclineBorrowRequestDtoSchema),
   staffDeclineBorrowRequest
 );

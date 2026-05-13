@@ -10,7 +10,6 @@ import {
   updateRolePermissionsHandler,
 } from '../controllers/permissions.controller.js';
 import { authenticate } from '../middleware/authenticate.js';
-import { requirePermission } from '../middleware/requirePermission.js';
 
 const router = Router();
 router.use(authenticate);
@@ -25,7 +24,7 @@ router.use(authenticate);
  *       200: { description: List of roles }
  *       401: { description: Unauthorized }
  */
-router.get('/', requirePermission('Roles', 'view'), getRolesHandler);
+router.get('/', getRolesHandler);
 
 /**
  * @swagger
@@ -45,18 +44,10 @@ router.get('/', requirePermission('Roles', 'view'), getRolesHandler);
  *       201: { description: Role created }
  *       401: { description: Unauthorized }
  */
-router.post('/', requirePermission('Roles', 'create'), createRoleHandler);
+router.post('/', createRoleHandler);
 
-router.get(
-  '/:roleID/permissions',
-  requirePermission('Roles', 'view'),
-  getRolePermissionsHandler
-);
-router.put(
-  '/:roleID/permissions',
-  requirePermission('Roles', 'edit'),
-  updateRolePermissionsHandler
-);
+router.get('/:roleID/permissions', getRolePermissionsHandler);
+router.put('/:roleID/permissions', updateRolePermissionsHandler);
 
 /**
  * @swagger
@@ -82,7 +73,7 @@ router.put(
  *       401: { description: Unauthorized }
  *       404: { description: Role not found }
  */
-router.put('/:roleID', requirePermission('Roles', 'edit'), updateRoleHandler);
+router.put('/:roleID', updateRoleHandler);
 
 /**
  * @swagger
@@ -100,10 +91,6 @@ router.put('/:roleID', requirePermission('Roles', 'edit'), updateRoleHandler);
  *       401: { description: Unauthorized }
  *       404: { description: Role not found }
  */
-router.delete(
-  '/:roleID',
-  requirePermission('Roles', 'delete'),
-  deleteRoleHandler
-);
+router.delete('/:roleID', deleteRoleHandler);
 
 export default router;

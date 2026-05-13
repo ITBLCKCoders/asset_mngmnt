@@ -10,7 +10,6 @@ import {
   getAllFormsByAssetIdHandler,
 } from '../controllers/assets.controller.js';
 import { authenticate } from '../middleware/authenticate.js';
-import { requirePermission } from '../middleware/requirePermission.js';
 import { validateDto } from '../utils/validation.js';
 import {
   CreateAssetDtoSchema,
@@ -44,7 +43,7 @@ router.use(authenticate);
  *       200: { description: List of assets }
  *       401: { description: Unauthorized }
  */
-router.get('/', requirePermission('Asset List', 'view'), getAssetsHandler);
+router.get('/', getAssetsHandler);
 
 /**
  * @swagger
@@ -74,11 +73,7 @@ router.get('/my-assets', getMyAssetsHandler);
  *       401: { description: Unauthorized }
  *       404: { description: Asset not found }
  */
-router.get(
-  '/:assetCode',
-  requirePermission('Asset List', 'view'),
-  getAssetByCodeHandler
-);
+router.get('/:assetCode', getAssetByCodeHandler);
 
 /**
  * @swagger
@@ -115,7 +110,7 @@ router.get(
  *       400: { description: Validation error }
  *       401: { description: Unauthorized }
  */
-router.post('/', requirePermission('Asset List', 'create'), createAssetHandler);
+router.post('/', createAssetHandler);
 
 /**
  * @swagger
@@ -148,11 +143,7 @@ router.post('/', requirePermission('Asset List', 'create'), createAssetHandler);
  *       401: { description: Unauthorized }
  *       404: { description: Asset not found }
  */
-router.put(
-  '/:assetId',
-  requirePermission('Asset List', 'edit'),
-  updateAssetHandler
-);
+router.put('/:assetId', updateAssetHandler);
 
 /**
  * @swagger
@@ -180,11 +171,7 @@ router.put(
  *       401: { description: Unauthorized }
  *       404: { description: Asset not found }
  */
-router.post(
-  '/:assetId/assign',
-  requirePermission('Asset Assignment', 'create'),
-  assignAssetHandler
-);
+router.post('/:assetId/assign', assignAssetHandler);
 
 /**
  * @swagger

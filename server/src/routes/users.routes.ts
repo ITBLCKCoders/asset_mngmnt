@@ -13,7 +13,6 @@ import {
   applyRolePermissionsHandler,
 } from '../controllers/permissions.controller.js';
 import { authenticate } from '../middleware/authenticate.js';
-import { requirePermission } from '../middleware/requirePermission.js';
 import { validateDto } from '../utils/validation.js';
 import {
   UserDtoSchema,
@@ -63,12 +62,7 @@ router.use(authenticate);
  *       400: { description: Validation error }
  *       401: { description: Unauthorized }
  */
-router.post(
-  '/',
-  requirePermission('Users', 'create'),
-  validateDto(UserDtoSchema),
-  createUserHandler
-);
+router.post('/', validateDto(UserDtoSchema), createUserHandler);
 
 /**
  * @swagger
@@ -98,12 +92,7 @@ router.post(
  *       401: { description: Unauthorized }
  *       404: { description: User not found }
  */
-router.patch(
-  '/:id',
-  requirePermission('Users', 'edit'),
-  validateDto(UpdateUserDtoSchema),
-  updateUserHandler
-);
+router.patch('/:id', validateDto(UpdateUserDtoSchema), updateUserHandler);
 
 /**
  * @swagger
@@ -121,7 +110,7 @@ router.patch(
  *       401: { description: Unauthorized }
  *       404: { description: User not found }
  */
-router.delete('/:id', requirePermission('Users', 'delete'), deleteUserHandler);
+router.delete('/:id', deleteUserHandler);
 
 /**
  * @swagger
@@ -140,8 +129,6 @@ router.delete('/:id', requirePermission('Users', 'delete'), deleteUserHandler);
  *       404: { description: User not found }
  */
 router.get('/:userId/permissions', getUserPermissionsHandler);
-// NOTE: getUserPermissionsHandler is NOT gated — every authenticated user
-// must be able to load their own permission matrix on app boot.
 
 /**
  * @swagger
@@ -166,11 +153,7 @@ router.get('/:userId/permissions', getUserPermissionsHandler);
  *       401: { description: Unauthorized }
  *       404: { description: User not found }
  */
-router.put(
-  '/:userId/permissions',
-  requirePermission('Users', 'edit'),
-  updateUserPermissionsHandler
-);
+router.put('/:userId/permissions', updateUserPermissionsHandler);
 
 /**
  * @swagger
@@ -187,11 +170,7 @@ router.put(
  *       200: { description: Role permissions applied }
  *       401: { description: Unauthorized }
  */
-router.post(
-  '/:userId/apply-role-permissions',
-  requirePermission('Users', 'edit'),
-  applyRolePermissionsHandler
-);
+router.post('/:userId/apply-role-permissions', applyRolePermissionsHandler);
 
 /**
  * @swagger
@@ -209,11 +188,7 @@ router.post(
  *       401: { description: Unauthorized }
  *       404: { description: User not found }
  */
-router.post(
-  '/:id/remove-lockout',
-  requirePermission('Users', 'edit'),
-  removeUserLockoutHandler
-);
+router.post('/:id/remove-lockout', removeUserLockoutHandler);
 
 /**
  * @swagger
@@ -240,10 +215,6 @@ router.post(
  *       401: { description: Unauthorized }
  *       404: { description: User not found }
  */
-router.post(
-  '/:id/change-password',
-  requirePermission('Users', 'edit'),
-  changeUserPasswordHandler
-);
+router.post('/:id/change-password', changeUserPasswordHandler);
 
 export default router;

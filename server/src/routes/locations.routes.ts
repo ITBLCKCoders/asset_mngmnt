@@ -6,7 +6,6 @@ import {
   deleteLocationHandler,
 } from '../controllers/locations.controller.js';
 import { authenticate } from '../middleware/authenticate.js';
-import { requirePermission } from '../middleware/requirePermission.js';
 
 const router = Router();
 
@@ -44,11 +43,7 @@ router.use(authenticate);
  *       201: { description: Location created }
  *       401: { description: Unauthorized }
  */
-router.post(
-  '/',
-  requirePermission('Locations', 'create'),
-  createLocationHandler
-);
+router.post('/', createLocationHandler);
 
 /**
  * @swagger
@@ -74,11 +69,7 @@ router.post(
  *       401: { description: Unauthorized }
  *       404: { description: Location not found }
  */
-router.patch(
-  '/:id',
-  requirePermission('Locations', 'edit'),
-  updateLocationHandler
-);
+router.patch('/:id', updateLocationHandler);
 
 /**
  * @swagger
@@ -96,10 +87,6 @@ router.patch(
  *       401: { description: Unauthorized }
  *       404: { description: Location not found }
  */
-router.delete(
-  '/:id',
-  requirePermission('Locations', 'delete'),
-  deleteLocationHandler
-);
+router.delete('/:id', deleteLocationHandler);
 
 export default router;

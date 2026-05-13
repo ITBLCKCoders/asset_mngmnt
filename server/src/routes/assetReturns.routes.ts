@@ -18,7 +18,6 @@ import {
   uploadConditionPhotoHandler,
 } from '../controllers/assetReturns.controller.js';
 import { authenticate } from '../middleware/authenticate.js';
-import { requirePermission } from '../middleware/requirePermission.js';
 import { verifyFileMagicBytes } from '../middleware/verifyFileMagicBytes.js';
 
 const router = express.Router();
@@ -73,12 +72,7 @@ router.post(
  *       400: { description: Validation error }
  *       401: { description: Unauthorized }
  */
-router.post(
-  '/submit-request',
-  authenticate,
-  requirePermission('Return Request', 'create'),
-  submitAssetReturnRequestHandler
-);
+router.post('/submit-request', authenticate, submitAssetReturnRequestHandler);
 
 /**
  * @swagger
@@ -100,12 +94,7 @@ router.post(
  *       201: { description: Asset return created }
  *       401: { description: Unauthorized }
  */
-router.post(
-  '/',
-  authenticate,
-  requirePermission('Return Form', 'create'),
-  createAssetReturnHandler
-);
+router.post('/', authenticate, createAssetReturnHandler);
 
 /**
  * @swagger
@@ -117,12 +106,7 @@ router.post(
  *       200: { description: List of asset returns }
  *       401: { description: Unauthorized }
  */
-router.get(
-  '/',
-  authenticate,
-  requirePermission('Return Form', 'view'),
-  getAssetReturnsHandler
-);
+router.get('/', authenticate, getAssetReturnsHandler);
 
 /**
  * @swagger
@@ -179,7 +163,6 @@ router.post('/forms/:formId/sign', authenticate, signAssetReturnFormHandler);
 router.get(
   '/forms/pending-approvals',
   authenticate,
-  requirePermission('Return Request', 'view'),
   getPendingApprovalsHandler
 );
 
@@ -237,18 +220,8 @@ router.post('/forms/:formId/receive', authenticate, receiveReturnFormHandler);
  *       403: { description: Forbidden }
  *       404: { description: Form not found }
  */
-router.post(
-  '/forms/:formId/approve',
-  authenticate,
-  requirePermission('Return Request', 'edit'),
-  approveReturnFormHandler
-);
-router.post(
-  '/forms/:formId/decline',
-  authenticate,
-  requirePermission('Return Request', 'edit'),
-  declineReturnFormHandler
-);
+router.post('/forms/:formId/approve', authenticate, approveReturnFormHandler);
+router.post('/forms/:formId/decline', authenticate, declineReturnFormHandler);
 
 /**
  * @swagger
@@ -266,11 +239,6 @@ router.post(
  *       401: { description: Unauthorized }
  *       404: { description: Not found }
  */
-router.get(
-  '/:id',
-  authenticate,
-  requirePermission('Return Form', 'view'),
-  getAssetReturnByIdHandler
-);
+router.get('/:id', authenticate, getAssetReturnByIdHandler);
 
 export default router;

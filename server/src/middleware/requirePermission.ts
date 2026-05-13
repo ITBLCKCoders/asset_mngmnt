@@ -8,42 +8,18 @@ interface PermissionRow extends RowDataPacket {
   granted: number;
 }
 
-interface RoleNameRow extends RowDataPacket {
-  name: string | null;
-}
-
 export type PermissionType = 'view' | 'create' | 'edit' | 'delete' | 'assign';
-
-/**
- * Returns true when the user holds an `admin` or `super admin` role. Mirrors
- * the client-side bypass in `useUserPermissions.hasPermission` so that
- * privileged roles are not locked out by the per-module matrix.
- */
-async function userIsAdmin(userId: string): Promise<boolean> {
-  const [rows] = await pool.execute<RoleNameRow[]>(
-    `SELECT r.name
-       FROM users u
-       LEFT JOIN asset_mngmnt_roles r ON r.roleID = u.role_id
-      WHERE u.userID = ?
-      LIMIT 1`,
-    [userId]
-  );
-  const name = (rows[0]?.name ?? '').trim().toLowerCase();
-  return name === 'admin' || name === 'super admin';
-}
 
 /**
  * Resolve whether the given user has a granted permission for a module +
  * permission_type. Reads from `user_permissions`. Returns `false` when no
- * row exists or when `granted = 0`. Admin / super-admin roles are granted
- * automatically.
+ * row exists or when `granted = 0`.
  */
 export async function userHasPermission(
   userId: string,
   moduleName: string,
   permissionType: PermissionType
 ): Promise<boolean> {
-  if (await userIsAdmin(userId)) return true;
   const [rows] = await pool.execute<PermissionRow[]>(
     `SELECT granted
        FROM user_permissions

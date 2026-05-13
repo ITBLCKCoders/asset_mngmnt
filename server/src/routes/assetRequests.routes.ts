@@ -1,6 +1,5 @@
 import { Router } from 'express';
 import { authenticate } from '../middleware/authenticate.js';
-import { requirePermission } from '../middleware/requirePermission.js';
 import AssetRequestsController from '../controllers/assetRequests.controller.js';
 
 const router = Router();
@@ -15,12 +14,7 @@ const router = Router();
  *       200: { description: List of all asset requests }
  *       401: { description: Unauthorized }
  */
-router.get(
-  '/all',
-  authenticate,
-  requirePermission('Request Management', 'view'),
-  AssetRequestsController.getAll
-);
+router.get('/all', authenticate, AssetRequestsController.getAll);
 
 /**
  * @swagger
@@ -32,12 +26,7 @@ router.get(
  *       200: { description: List of user's asset requests }
  *       401: { description: Unauthorized }
  */
-router.get(
-  '/',
-  authenticate,
-  requirePermission('Asset Request', 'view'),
-  AssetRequestsController.getByCurrentUser
-);
+router.get('/', authenticate, AssetRequestsController.getByCurrentUser);
 
 /**
  * @swagger
@@ -55,12 +44,7 @@ router.get(
  *       401: { description: Unauthorized }
  *       404: { description: Not found }
  */
-router.get(
-  '/:id',
-  authenticate,
-  requirePermission('Asset Request', 'view'),
-  AssetRequestsController.getById
-);
+router.get('/:id', authenticate, AssetRequestsController.getById);
 
 /**
  * @swagger
@@ -80,12 +64,7 @@ router.get(
  *       201: { description: Asset request created }
  *       401: { description: Unauthorized }
  */
-router.post(
-  '/',
-  authenticate,
-  requirePermission('Asset Request', 'create'),
-  AssetRequestsController.create
-);
+router.post('/', authenticate, AssetRequestsController.create);
 
 /**
  * @swagger
@@ -103,12 +82,7 @@ router.post(
  *       401: { description: Unauthorized }
  *       404: { description: Not found }
  */
-router.put(
-  '/:id/approve',
-  authenticate,
-  requirePermission('Request Management', 'edit'),
-  AssetRequestsController.approve
-);
+router.put('/:id/approve', authenticate, AssetRequestsController.approve);
 
 /**
  * @swagger
@@ -133,12 +107,7 @@ router.put(
  *       401: { description: Unauthorized }
  *       404: { description: Not found }
  */
-router.put(
-  '/:id/reject',
-  authenticate,
-  requirePermission('Request Management', 'edit'),
-  AssetRequestsController.reject
-);
+router.put('/:id/reject', authenticate, AssetRequestsController.reject);
 
 /**
  * @swagger
@@ -156,11 +125,6 @@ router.put(
  *       401: { description: Unauthorized }
  *       404: { description: Not found }
  */
-router.delete(
-  '/:id',
-  authenticate,
-  requirePermission('Asset Request', 'delete'),
-  AssetRequestsController.delete
-);
+router.delete('/:id', authenticate, AssetRequestsController.delete);
 
 export default router;

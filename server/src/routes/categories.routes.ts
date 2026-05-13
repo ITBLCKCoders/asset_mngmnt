@@ -1,7 +1,6 @@
 // src/routes/categories.routes.ts
 import { Router } from 'express';
 import { authenticate } from '../middleware/authenticate.js';
-import { requirePermission } from '../middleware/requirePermission.js';
 import { validateDto } from '../utils/validation.js';
 import {
   CreateCategoryDtoSchema,
@@ -27,11 +26,7 @@ router.use(authenticate);
  *       200: { description: List of categories }
  *       401: { description: Unauthorized }
  */
-router.get(
-  '/',
-  requirePermission('Asset Categories', 'view'),
-  getAllCategories
-);
+router.get('/', getAllCategories);
 
 /**
  * @swagger
@@ -59,7 +54,6 @@ router.get(
  */
 router.post(
   '/',
-  requirePermission('Asset Categories', 'create'),
   validateDto(CreateCategoryDtoSchema),
   createCategory
 );
@@ -94,7 +88,6 @@ router.post(
  */
 router.patch(
   '/:id',
-  requirePermission('Asset Categories', 'edit'),
   validateDto(UpdateCategoryDtoSchema),
   updateCategory
 );
@@ -115,10 +108,6 @@ router.patch(
  *       401: { description: Unauthorized }
  *       404: { description: Category not found }
  */
-router.delete(
-  '/:id',
-  requirePermission('Asset Categories', 'delete'),
-  deleteCategory
-);
+router.delete('/:id', deleteCategory);
 
 export default router;

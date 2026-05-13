@@ -1,7 +1,6 @@
 // src/routes/company.routes.ts
 import { Router } from 'express';
 import { authenticate } from '../middleware/authenticate.js';
-import { requirePermission } from '../middleware/requirePermission.js';
 import {
   createCompany,
   updateCompany,
@@ -44,12 +43,7 @@ router.get('/public', getCompaniesPublicHandler);
  *       201: { description: Company created }
  *       401: { description: Unauthorized }
  */
-router.post(
-  '/',
-  authenticate,
-  requirePermission('Companies', 'create'),
-  createCompany
-);
+router.post('/', authenticate, createCompany);
 
 /**
  * @swagger
@@ -76,12 +70,7 @@ router.post(
  *       401: { description: Unauthorized }
  *       404: { description: Company not found }
  */
-router.patch(
-  '/:id',
-  authenticate,
-  requirePermission('Companies', 'edit'),
-  updateCompany
-);
+router.patch('/:id', authenticate, updateCompany);
 
 /**
  * @swagger
@@ -99,12 +88,7 @@ router.patch(
  *       401: { description: Unauthorized }
  *       404: { description: Company not found }
  */
-router.delete(
-  '/:id/logo',
-  authenticate,
-  requirePermission('Companies', 'edit'),
-  deleteCompanyLogo
-);
+router.delete('/:id/logo', authenticate, deleteCompanyLogo);
 
 /**
  * @swagger
@@ -116,12 +100,7 @@ router.delete(
  *       200: { description: List of companies with full audit metadata }
  *       401: { description: Unauthorized }
  */
-router.get(
-  '/',
-  authenticate,
-  requirePermission('Companies', 'view'),
-  getAllCompanies
-);
+router.get('/', authenticate, getAllCompanies);
 
 /**
  * @swagger
@@ -199,11 +178,6 @@ router.patch('/:id/main', authenticate, setMainCompany);
  *       401: { description: Unauthorized }
  *       404: { description: Company not found }
  */
-router.delete(
-  '/:id',
-  authenticate,
-  requirePermission('Companies', 'delete'),
-  deleteCompany
-);
+router.delete('/:id', authenticate, deleteCompany);
 
 export default router;

@@ -19,7 +19,6 @@ import {
   uploadTransferConditionPhotoHandler,
 } from '../controllers/assetTransfers.controller.js';
 import { authenticate } from '../middleware/authenticate.js';
-import { requirePermission } from '../middleware/requirePermission.js';
 import { verifyFileMagicBytes } from '../middleware/verifyFileMagicBytes.js';
 
 const router = express.Router();
@@ -48,24 +47,9 @@ router.post(
   uploadTransferConditionPhotoHandler
 );
 
-router.post(
-  '/',
-  authenticate,
-  requirePermission('Transfer Form', 'create'),
-  createAssetTransferHandler
-);
-router.post(
-  '/create-held',
-  authenticate,
-  requirePermission('Transfer Form', 'create'),
-  createHeldTransferHandler
-);
-router.post(
-  '/submit-request',
-  authenticate,
-  requirePermission('Transfer Request', 'create'),
-  submitTransferRequestHandler
-);
+router.post('/', authenticate, createAssetTransferHandler);
+router.post('/create-held', authenticate, createHeldTransferHandler);
+router.post('/submit-request', authenticate, submitTransferRequestHandler);
 
 router.get('/history', authenticate, getTransferHistoryHandler);
 router.get(
@@ -74,16 +58,10 @@ router.get(
   getApprovedForExecutionHandler
 );
 
-router.get(
-  '/forms',
-  authenticate,
-  requirePermission('Transfer Form', 'view'),
-  getAllAssetTransferFormsHandler
-);
+router.get('/forms', authenticate, getAllAssetTransferFormsHandler);
 router.get(
   '/forms/pending-approvals',
   authenticate,
-  requirePermission('Transfer Request', 'view'),
   getTransferPendingApprovalsHandler
 );
 router.get(
@@ -96,18 +74,8 @@ router.get(
   authenticate,
   getTransferApprovedByMeHandler
 );
-router.post(
-  '/forms/:formId/approve',
-  authenticate,
-  requirePermission('Transfer Request', 'edit'),
-  approveTransferFormHandler
-);
-router.post(
-  '/forms/:formId/decline',
-  authenticate,
-  requirePermission('Transfer Request', 'edit'),
-  declineTransferFormHandler
-);
+router.post('/forms/:formId/approve', authenticate, approveTransferFormHandler);
+router.post('/forms/:formId/decline', authenticate, declineTransferFormHandler);
 router.post('/forms/:formId/receive', authenticate, receiveTransferFormHandler);
 router.post('/forms/:formId/execute', authenticate, executeTransferFormHandler);
 

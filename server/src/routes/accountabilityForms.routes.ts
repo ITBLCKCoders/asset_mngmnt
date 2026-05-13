@@ -10,7 +10,6 @@ import {
   checkUnsignedAccountabilityFormsHandler,
 } from '../controllers/accountabilityForms.controller.js';
 import { authenticate } from '../middleware/authenticate.js';
-import { requirePermission } from '../middleware/requirePermission.js';
 
 const router = Router();
 
@@ -27,11 +26,7 @@ router.use(authenticate);
  *       200: { description: List of accountability forms }
  *       401: { description: Unauthorized }
  */
-router.get(
-  '/',
-  requirePermission('Accountability Form', 'view'),
-  getAccountabilityFormsHandler
-);
+router.get('/', getAccountabilityFormsHandler);
 
 /**
  * @swagger
@@ -48,11 +43,7 @@ router.get(
  *       200: { description: List of forms for asset }
  *       401: { description: Unauthorized }
  */
-router.get(
-  '/asset/:assetId',
-  requirePermission('Accountability Form', 'view'),
-  getAccountabilityFormsByAssetIdHandler
-);
+router.get('/asset/:assetId', getAccountabilityFormsByAssetIdHandler);
 
 /**
  * @swagger
@@ -70,11 +61,7 @@ router.get(
  *       401: { description: Unauthorized }
  *       404: { description: Form not found }
  */
-router.get(
-  '/:formId',
-  requirePermission('Accountability Form', 'view'),
-  getAccountabilityFormByIdHandler
-);
+router.get('/:formId', getAccountabilityFormByIdHandler);
 
 /**
  * @swagger
@@ -94,11 +81,7 @@ router.get(
  *       201: { description: Form created }
  *       401: { description: Unauthorized }
  */
-router.post(
-  '/',
-  requirePermission('Accountability Form', 'create'),
-  createAccountabilityFormHandler
-);
+router.post('/', createAccountabilityFormHandler);
 
 /**
  * @swagger

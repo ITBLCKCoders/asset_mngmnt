@@ -10,7 +10,6 @@ import {
   getAssetChecklistsHandler,
 } from '../controllers/assetAssignments.controller.js';
 import { authenticate } from '../middleware/authenticate.js';
-import { requirePermission } from '../middleware/requirePermission.js';
 
 const router = Router();
 
@@ -39,11 +38,7 @@ router.get('/me', getMyAssignmentsHandler);
  *       200: { description: List of asset assignments }
  *       401: { description: Unauthorized }
  */
-router.get(
-  '/',
-  requirePermission('Asset Assignment', 'view'),
-  getAssetAssignmentsHandler
-);
+router.get('/', getAssetAssignmentsHandler);
 
 /**
  * @swagger
@@ -55,11 +50,7 @@ router.get(
  *       200: { description: Filtered list of asset assignments }
  *       401: { description: Unauthorized }
  */
-router.get(
-  '/filtered',
-  requirePermission('Asset Assignment', 'view'),
-  getFilteredAssetAssignmentsHandler
-);
+router.get('/filtered', getFilteredAssetAssignmentsHandler);
 
 /**
  * @swagger
@@ -82,11 +73,7 @@ router.get(
  *       400: { description: Validation error }
  *       401: { description: Unauthorized }
  */
-router.post(
-  '/',
-  requirePermission('Asset Assignment', 'create'),
-  createAssetAssignmentHandler
-);
+router.post('/', createAssetAssignmentHandler);
 
 /**
  * @swagger
@@ -104,11 +91,7 @@ router.post(
  *       401: { description: Unauthorized }
  *       404: { description: Assignment not found }
  */
-router.put(
-  '/:assignmentId/return',
-  requirePermission('Asset Assignment', 'edit'),
-  returnAssetHandler
-);
+router.put('/:assignmentId/return', returnAssetHandler);
 
 /**
  * @swagger
@@ -138,17 +121,9 @@ router.put(
  *       400: { description: Validation error }
  *       401: { description: Unauthorized }
  */
-router.post(
-  '/checklist',
-  requirePermission('Checklist Form', 'create'),
-  createAssetChecklistHandler
-);
+router.post('/checklist', createAssetChecklistHandler);
 
-router.get(
-  '/checklists',
-  requirePermission('Checklist Form', 'view'),
-  getAssetChecklistsHandler
-);
+router.get('/checklists', getAssetChecklistsHandler);
 
 /**
  * @swagger
@@ -167,10 +142,6 @@ router.get(
  *       404: { description: Checklist not found }
  *       401: { description: Unauthorized }
  */
-router.get(
-  '/checklist/:assignmentId',
-  requirePermission('Checklist Form', 'view'),
-  getChecklistByAssignmentIdHandler
-);
+router.get('/checklist/:assignmentId', getChecklistByAssignmentIdHandler);
 
 export default router;
