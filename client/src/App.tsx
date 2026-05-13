@@ -45,6 +45,7 @@ import BorrowRequestsPage from './pages/assets/borrowRequestsPage';
 import AssetReturnRequest from './pages/assets/assetReturnRequest';
 import ReturnRequestsPage from './pages/assets/returnRequestsPage';
 import AssetTransferRequest from './pages/assets/assetTransferRequest';
+import GatePass from './pages/assets/gatePass';
 import TransferRequestsPage from './pages/assets/transferRequestsPage';
 import AssetsAssignmentHistory from './pages/assets-history/assetsIssuanceHistroy';
 import AssetsTransferHistory from './pages/assets-history/assetsTransferHistory';
@@ -349,6 +350,16 @@ export default function App() {
               <PrivateRoute>
                 <PermissionRoute module="Asset Disposal">
                   <Assetsdisposal />
+                </PermissionRoute>
+              </PrivateRoute>
+            }
+          />
+          <Route
+            path="/assets/gate-pass"
+            element={
+              <PrivateRoute>
+                <PermissionRoute module="Gate Pass">
+                  <GatePass />
                 </PermissionRoute>
               </PrivateRoute>
             }

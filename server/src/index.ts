@@ -29,6 +29,7 @@ import assetBuildersRoutes from './routes/assetBuilders.routes.js';
 import notificationsRoutes from './routes/notifications.routes.js';
 import assetRequestsRoutes from './routes/assetRequests.routes.js';
 import assetBorrowRequestsRoutes from './routes/assetBorrowRequests.routes.js';
+import gatePassRoutes from './routes/gatePass.routes.js';
 import dashboardRoutes from './routes/dashboard.routes.js';
 import reportsRoutes from './routes/reports.routes.js';
 import { cleanupExpiredSessions } from './auth/cleanup.js';
@@ -165,6 +166,7 @@ app.use('/api/asset-builders', assetBuildersRoutes); // NEW: Asset builders rout
 app.use('/api/notifications', notificationsRoutes); // NEW: Notifications routes mounted
 app.use('/api/asset-requests', assetRequestsRoutes); // NEW: Asset requests routes mounted
 app.use('/api/asset-borrow-requests', assetBorrowRequestsRoutes);
+app.use('/api/gate-passes', gatePassRoutes);
 app.use('/api/dashboard', dashboardRoutes);
 app.use('/api/reports', reportsRoutes);
 app.get('/api/hello', (_req: Request, res: Response) =>

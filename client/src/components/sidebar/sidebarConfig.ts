@@ -11,6 +11,7 @@ import {
   PlusCircle,
   FileText,
   HandHelping,
+  DoorOpen,
 } from 'lucide-react';
 
 export type AssetSidebarChild = {
@@ -142,5 +143,11 @@ export const ASSET_SIDEBAR_ENTRIES: AssetSidebarEntry[] = [
     perm: 'Asset Disposal',
     path: '/assets/disposal',
     icon: Trash2,
+  },
+  {
+    label: 'Gate Pass',
+    perm: 'Gate Pass',
+    path: '/assets/gate-pass',
+    icon: DoorOpen,
   },
 ];

@@ -19,6 +19,7 @@ export const ALL_MODULE_NAMES = [
   'Asset Disposal',
   'Asset Borrowing',
   'Borrow Request Management',
+  'Gate Pass',
   'Asset History',
   'Assignment History',
   'Transfer History',

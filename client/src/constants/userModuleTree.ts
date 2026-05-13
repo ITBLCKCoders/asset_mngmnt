@@ -45,6 +45,7 @@ export const USER_MODULE_TREE: ModuleTreeNode[] = [
       'Return Request',
       'Transfer Request',
       'Asset Disposal',
+      'Gate Pass',
     ],
   },
   { name: 'Audit Trail', children: [] },

@@ -658,7 +658,8 @@ export default function Sidebar({ onLogout }: SidebarProps) {
                 hasPermission('Transfer Request', 'view') ||
                 hasPermission('Asset Disposal', 'view') ||
                 hasPermission('Asset Borrowing', 'view') ||
-                hasPermission('Borrow Request Management', 'view')) && (
+                hasPermission('Borrow Request Management', 'view') ||
+                hasPermission('Gate Pass', 'view')) && (
                 <li>
                   <SidebarHoverItem
                     active={

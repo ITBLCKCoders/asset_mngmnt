@@ -346,14 +346,12 @@ export function ConfirmationModal({
         isOpen={showOtpDialog}
         onOpenChange={(otpDialogOpen) => {
           setShowOtpDialog(otpDialogOpen);
-          if (!otpDialogOpen) {
-            pendingActionRef.current = null;
-          }
+          // Don't clear pendingActionRef here - SmsOtpDialog handles it after execution
         }}
         sendOtpEndpoint='/auth/initials/send-otp'
         verifyOtpEndpoint='/auth/initials/verify-otp'
         onVerified={() => {
-          pendingActionRef.current = null;
+          // SmsOtpDialog already handles setting pendingActionRef.current = null after execution
         }}
         onCancel={() => {
           pendingActionRef.current = null;
