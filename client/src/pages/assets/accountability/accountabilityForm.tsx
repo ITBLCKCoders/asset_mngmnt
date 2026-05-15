@@ -2294,7 +2294,7 @@ export function AccountabilityFormDetail({
 
   const previewPaneClass =
     headerInParentChrome
-      ? 'h-[70vh] w-full min-w-0 overflow-auto border-0 bg-white'
+      ? 'h-[70vh] w-full min-w-0 overflow-auto border-0 bg-gray-100'
       : 'h-[70vh] w-full overflow-auto rounded-md border border-slate-200 bg-slate-50';
 
   const actionBar = (
