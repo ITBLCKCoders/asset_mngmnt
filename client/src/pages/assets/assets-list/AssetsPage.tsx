@@ -256,6 +256,10 @@ export function AssetsPage() {
 
   // Check if user has permission to edit a specific asset
   const canEditAsset = (_asset: any) => {
+    if (_asset?.transferred_out) {
+      return false;
+    }
+
     // If user doesn't have asset management access, return false
     if (!hasAssetManagementAccess()) {
       return false;

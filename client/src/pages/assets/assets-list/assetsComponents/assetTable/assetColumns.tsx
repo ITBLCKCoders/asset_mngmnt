@@ -57,17 +57,38 @@ export const assetColumns = [
     }: {
       row: {
         original: {
-          status: 'Assigned' | 'Available' | 'In Maintenance';
+          status: string;
           isAssetBuilder?: boolean;
           builderStatus?: string;
         };
       };
     }) => {
+      // Check for transferred status first (takes precedence over builderStatus)
+      if (String(row.original.status).startsWith('Transferred to ')) {
+        return (
+          <Badge
+            variant="secondary"
+            className="font-medium border bg-slate-100 text-slate-700 border-slate-300 transition-all duration-200"
+          >
+            {row.original.status}
+          </Badge>
+        );
+      }
       // Use builderStatus for asset builders, otherwise use regular status
       const displayStatus =
         row.original.isAssetBuilder && row.original.builderStatus
           ? row.original.builderStatus
           : row.original.status;
+      if (String(displayStatus).startsWith('Transferred to ')) {
+        return (
+          <Badge
+            variant="secondary"
+            className="font-medium border bg-slate-100 text-slate-700 border-slate-300 transition-all duration-200"
+          >
+            {displayStatus}
+          </Badge>
+        );
+      }
 
       const variants = {
         Assigned: {

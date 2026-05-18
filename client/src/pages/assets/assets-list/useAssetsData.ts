@@ -44,6 +44,8 @@ interface ApiAsset {
   last_maintenance_date?: string;
   next_maintenance_date?: string;
   status?: string;
+  transferred_out?: boolean;
+  transferred_to_company_name?: string | null;
   created_at: string;
   created_by?: string;
   created_by_name?: string;
@@ -147,6 +149,8 @@ export const useAssetsData = (companyFilter?: string | null, scope?: string | nu
       if (scope) {
         params.append('scope', scope);
       }
+      // Add cache-busting parameter
+      params.append('_t', Date.now().toString());
       const queryString = params.toString();
       if (queryString) {
         url += `?${queryString}`;
@@ -193,13 +197,9 @@ export const useAssetsData = (companyFilter?: string | null, scope?: string | nu
           serialNo: asset.serial || '',
           modelNo: asset.model || '',
           brand: asset.brand || '',
-          status:
-            (asset.status === 'In Use'
-              ? 'Assigned'
-              : (asset.status as
-                  | 'Available'
-                  | 'Assigned'
-                  | 'In Maintenance')) || 'Available',
+          status: asset.status === 'In Use' ? 'Assigned' : asset.status || 'Available',
+          transferred_out: Boolean(asset.transferred_out),
+          transferred_to_company_name: asset.transferred_to_company_name ?? null,
           assignedTo: asset.currentAssignment?.user?.name || '',
           department:
             asset.currentAssignment?.department ||

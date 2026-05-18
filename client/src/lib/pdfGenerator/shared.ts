@@ -177,11 +177,6 @@ export const addCompanyLogoToPDF = async (
   }
 };
 
-/**
- * Add a signature to the PDF. Signature can be either plain text initials
- * (rendered as bold helvetica) or a base64/HTTP image (rendered after
- * compositing the source to pure black via canvas).
- */
 export const addSignatureToPDF = async (
   doc: jsPDF,
   signatureData: string | undefined,
@@ -202,89 +197,84 @@ export const addSignatureToPDF = async (
       return;
     }
 
-    const isPlainText =
-      !signatureData.startsWith('data:image/') &&
-      !signatureData.startsWith('http://') &&
-      !signatureData.startsWith('https://') &&
-      signatureData.length < 100;
+    const isImageSignature =
+      signatureData.startsWith('data:image/') ||
+      signatureData.startsWith('http://') ||
+      signatureData.startsWith('https://');
 
-    if (isPlainText) {
-      pdfLogger.debug('Rendering signature as text', { text: signatureData });
-      doc.setFontSize(12);
-      doc.setFont('helvetica', 'bold');
-      doc.text(signatureData, x, y);
-      doc.setFont('helvetica', 'normal');
-      doc.setFontSize(10);
-    } else {
-      const img = new Image();
-      img.crossOrigin = 'anonymous';
-      img.src = signatureData;
+    if (!isImageSignature) {
+      pdfLogger.debug('Skipping non-image signature data');
+      return;
+    }
 
-      await new Promise<void>((resolve, reject) => {
-        img.onload = () => {
-          pdfLogger.debug('Signature image loaded', {
-            width: img.width,
-            height: img.height,
-          });
+    const img = new Image();
+    img.crossOrigin = 'anonymous';
+    img.src = signatureData;
 
-          const canvas = document.createElement('canvas');
-          canvas.width = img.width;
-          canvas.height = img.height;
-          const ctx = canvas.getContext('2d');
-          if (ctx) {
-            ctx.drawImage(img, 0, 0);
-            const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
-            const data = imageData.data;
+    await new Promise<void>((resolve, reject) => {
+      img.onload = () => {
+        pdfLogger.debug('Signature image loaded', {
+          width: img.width,
+          height: img.height,
+        });
 
-            for (let i = 0; i < data.length; i += 4) {
-              const a = data[i + 3];
-              if (a > 0) {
-                data[i] = 0;
-                data[i + 1] = 0;
-                data[i + 2] = 0;
-                data[i + 3] = a;
-              }
+        const canvas = document.createElement('canvas');
+        canvas.width = img.width;
+        canvas.height = img.height;
+        const ctx = canvas.getContext('2d');
+        if (ctx) {
+          ctx.drawImage(img, 0, 0);
+          const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
+          const data = imageData.data;
+
+          for (let i = 0; i < data.length; i += 4) {
+            const a = data[i + 3];
+            if (a > 0) {
+              data[i] = 0;
+              data[i + 1] = 0;
+              data[i + 2] = 0;
+              data[i + 3] = a;
             }
-
-            ctx.putImageData(imageData, 0, 0);
-            img.src = canvas.toDataURL();
           }
 
-          resolve();
-        };
-        img.onerror = () => {
-          pdfLogger.debug('Failed to load signature image');
-          reject(new Error('Failed to load signature image'));
-        };
-      });
+          ctx.putImageData(imageData, 0, 0);
+          img.src = canvas.toDataURL();
+        }
 
-      const pixelsToMm = 0.264583;
-      const sigWidth = img.width * pixelsToMm;
-      const sigHeight = img.height * pixelsToMm;
+        resolve();
+      };
+      img.onerror = () => {
+        pdfLogger.debug('Failed to load signature image');
+        reject(new Error('Failed to load signature image'));
+      };
+    });
 
-      let finalSigWidth = sigWidth;
-      let finalSigHeight = sigHeight;
+    const pixelsToMm = 0.264583;
+    const sigWidth = img.width * pixelsToMm;
+    const sigHeight = img.height * pixelsToMm;
 
-      if (sigWidth > maxWidth) {
-        const scale = maxWidth / sigWidth;
-        finalSigWidth = maxWidth;
-        finalSigHeight = sigHeight * scale;
-      }
+    let finalSigWidth = sigWidth;
+    let finalSigHeight = sigHeight;
 
-      if (finalSigHeight > maxHeight) {
-        const scale = maxHeight / finalSigHeight;
-        finalSigHeight = maxHeight;
-        finalSigWidth = finalSigWidth * scale;
-      }
-
-      pdfLogger.debug('Adding signature image to PDF', {
-        finalSigWidth,
-        finalSigHeight,
-        x,
-        y,
-      });
-      doc.addImage(img.src, 'PNG', x, y, finalSigWidth, finalSigHeight);
+    if (sigWidth > maxWidth) {
+      const scale = maxWidth / sigWidth;
+      finalSigWidth = maxWidth;
+      finalSigHeight = sigHeight * scale;
     }
+
+    if (finalSigHeight > maxHeight) {
+      const scale = maxHeight / finalSigHeight;
+      finalSigHeight = maxHeight;
+      finalSigWidth = finalSigWidth * scale;
+    }
+
+    pdfLogger.debug('Adding signature image to PDF', {
+      finalSigWidth,
+      finalSigHeight,
+      x,
+      y,
+    });
+    doc.addImage(img.src, 'PNG', x, y, finalSigWidth, finalSigHeight);
   } catch (error) {
     pdfLogger.debug(
       'Failed to add signature to PDF',

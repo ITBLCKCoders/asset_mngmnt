@@ -17,6 +17,8 @@ import {
   getTransferHistoryHandler,
   signAssetTransferFormHandler,
   uploadTransferConditionPhotoHandler,
+  getCompanyTransferEligibleAssetsHandler,
+  createCompanyTransferHandler,
 } from '../controllers/assetTransfers.controller.js';
 import { authenticate } from '../middleware/authenticate.js';
 import { verifyFileMagicBytes } from '../middleware/verifyFileMagicBytes.js';
@@ -50,6 +52,8 @@ router.post(
 router.post('/', authenticate, createAssetTransferHandler);
 router.post('/create-held', authenticate, createHeldTransferHandler);
 router.post('/submit-request', authenticate, submitTransferRequestHandler);
+router.get('/company-assets', authenticate, getCompanyTransferEligibleAssetsHandler);
+router.post('/company-transfer', authenticate, createCompanyTransferHandler);
 
 router.get('/history', authenticate, getTransferHistoryHandler);
 router.get(

@@ -71,6 +71,47 @@ function normalizeAssetStatusForStoredProcedure(
   return 'Available';
 }
 
+async function getTransferredOutAssetsForCompany(companyId: string) {
+  const [rows] = (await pool.execute(
+    `SELECT
+        a.*,
+        c.name as company_name,
+        ac.name as category_name,
+        at.name as type_name,
+        d.name as department_name,
+        latest.target_company_name
+      FROM (
+        SELECT
+          al.resource_id as asset_id,
+          JSON_UNQUOTE(JSON_EXTRACT(al.new_values, '$.company_id')) as target_company_id,
+          c2.name as target_company_name,
+          MAX(al.created_at) as transferred_at
+        FROM audit_logs al
+        LEFT JOIN companies c2
+          ON c2.companyID = JSON_UNQUOTE(JSON_EXTRACT(al.new_values, '$.company_id'))
+        WHERE al.action = 'Transferred Asset to Company'
+          AND al.resource_type = 'asset'
+          AND JSON_UNQUOTE(JSON_EXTRACT(al.old_values, '$.company_id')) = ?
+        GROUP BY al.resource_id, target_company_id, c2.name
+      ) latest
+      JOIN assets a ON CAST(a.assetID AS CHAR) = CAST(latest.asset_id AS CHAR)
+      LEFT JOIN companies c ON a.company_id = c.companyID
+      LEFT JOIN asset_categories ac ON a.category_id = ac.categoryID
+      LEFT JOIN asset_types at ON a.type_id = at.typeID
+      LEFT JOIN asset_mngmnt_departments d ON a.department_id = d.departmentID
+      WHERE a.deleted_at IS NULL
+        AND a.company_id <> ?
+        AND latest.target_company_id = a.company_id`,
+    [companyId, companyId]
+  )) as any[];
+  return (rows as any[]).map(row => ({
+    ...row,
+    status: `Transferred to ${row.target_company_name || row.company_name || 'Company'}`,
+    transferred_out: true,
+    transferred_to_company_name: row.target_company_name || row.company_name || null,
+  }));
+}
+
 const parseFormData = (
   req: AuthRequest
 ): Promise<{
@@ -329,7 +370,10 @@ export async function getAssetsHandler(req: AuthRequest, res: Response) {
       ? String(req.query.search).toLowerCase()
       : '';
 
+    logger.info(`getAssetsHandler called with search: "${search}", companyId: ${req.query.companyId}, scope: ${req.query.scope}`);
+
     let assets = await assetRepo.callGetAllAssets();
+    logger.info(`Stored procedure returned ${assets.length} total assets`);
 
     // Filter by search term if provided
     if (search) {
@@ -401,23 +445,54 @@ export async function getAssetsHandler(req: AuthRequest, res: Response) {
     }
 
     if (companyId) {
-      assets = assets.filter((a: any) => a.company_id === companyId);
+      const currentCompanyAssets = assets.filter(
+        (a: any) => a.company_id === companyId
+      );
+      logger.info(`Found ${currentCompanyAssets.length} assets with company_id = ${companyId}`);
+      const transferredOutAssets =
+        await getTransferredOutAssetsForCompany(companyId);
+      logger.info(`Found ${transferredOutAssets.length} transferred-out assets for company ${companyId}`);
+      const currentAssetIds = new Set(
+        currentCompanyAssets.map((a: any) => String(a.assetID))
+      );
+      assets = [
+        ...currentCompanyAssets,
+        ...transferredOutAssets.filter(
+          (a: any) => !currentAssetIds.has(String(a.assetID))
+        ),
+      ];
+      logger.info(`Total assets after merging: ${assets.length}`);
     } else if (!isSuperAdmin && !isAdmin) {
       // If no company is associated and user is not Super Admin or Admin, show nothing
       assets = [];
     }
     // For Super Admin and Admin, when companyId is null, show all assets (no filtering)
 
+    // Separate transferred-out assets before scope filtering (they should always be visible in source company)
+    const transferredOutAssetIds = new Set(
+      assets.filter((a: any) => a.target_company_name).map((a: any) => String(a.assetID))
+    );
+    const nonTransferredOutAssets = assets.filter((a: any) => !transferredOutAssetIds.has(String(a.assetID)));
+
     if (departmentIds && departmentIds.length > 0) {
-      // Filter assets solely by the department of their category
+      // Filter assets solely by the department of their category (exclude transferred-out assets)
       const categoryIds = await assetRepo.getCategoryIdsByDepartmentIds(departmentIds);
 
-      assets = assets
+      const filteredNonTransferredOut = nonTransferredOutAssets
         .filter((asset: any) => categoryIds.includes(asset.category_id))
         .map((asset: any) => ({
           ...asset,
           asset_scope_type: classifyDepartmentScopeByName(asset.department),
         }));
+
+      // Merge filtered assets with transferred-out assets (they bypass scope filtering)
+      assets = [
+        ...filteredNonTransferredOut,
+        ...assets.filter((a: any) => transferredOutAssetIds.has(String(a.assetID))).map((a: any) => ({
+          ...a,
+          asset_scope_type: classifyDepartmentScopeByName(a.department),
+        })),
+      ];
     } else {
       // Still expose a scope type for clients even when departmentIds is null
       assets = assets.map((asset: any) => ({

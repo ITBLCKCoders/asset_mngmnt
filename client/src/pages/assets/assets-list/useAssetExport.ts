@@ -307,7 +307,8 @@ export const useAssetExport = () => {
 
   const exportToExcel = async (
     assets: Asset[],
-    activeCompany: Company | null
+    activeCompany: Company | null,
+    assetBuilders?: any[] | null
   ) => {
     const selectedCols = availableColumns.filter(col =>
       selectedColumns.has(col.key)
@@ -315,37 +316,205 @@ export const useAssetExport = () => {
 
     const workbook = new ExcelJS.Workbook();
 
-    // Optional company-info sheet
-    if (activeCompany) {
-      const companySheet = workbook.addWorksheet('Company Info');
-      companySheet.addRows([
-        ['Company Information'],
-        ['Company Name', activeCompany.name],
-        ['Company Code', activeCompany.code],
-        ['Email', activeCompany.email],
-        ['Logo URL', activeCompany.logo_url || 'N/A'],
-        [''],
-        ['Asset List Report'],
-        ['Generated on', new Date().toLocaleDateString()],
-      ]);
-    }
-
     // Assets sheet — header row + data rows derived from selected columns.
     const assetsSheet = workbook.addWorksheet('Assets');
+
+    // Define column widths based on content type
+    const columnWidths: Record<string, number> = {
+      id: 15,
+      name: 25,
+      description: 40,
+      category: 20,
+      type: 20,
+      serialNo: 18,
+      brand: 18,
+      modelNo: 18,
+      status: 15,
+      assignedTo: 30,
+      department: 25,
+      location: 25,
+      purchasePrice: 18,
+      purchaseDate: 18,
+      supplier: 25,
+      warranty: 18,
+      documents: 18,
+      maintenanceSchedule: 25,
+      lastMaintenanceDate: 20,
+      nextMaintenanceDate: 20,
+      condition: 18,
+      usefulLifeYears: 20,
+      salvageValue: 18,
+      depreciationMethod: 25,
+      annualDepreciation: 20,
+      depreciationStartDate: 22,
+      company: 25,
+      building: 20,
+      createdBy: 25,
+      createdAt: 18,
+      updatedBy: 25,
+      updatedAt: 18,
+    };
+
     assetsSheet.columns = selectedCols.map(col => ({
       header: col.label,
       key: col.key,
-      width: 18,
+      width: columnWidths[col.key] || 20,
     }));
-    assets.forEach(asset => {
-      const row: Record<string, string | number> = {};
-      selectedCols.forEach(col => {
-        row[col.key] = getExportValue(asset, col.key, 'excel');
+
+    // Process assets with builder grouping logic
+    const flattenedAssets: (Asset & { isChild?: boolean; builderName?: string })[] = [];
+    const processedAssetIds = new Set<string>();
+    const builderGroups: { name: string; startIndex: number; endIndex: number }[] = [];
+
+    // Process builders first
+    if (assetBuilders && assetBuilders.length > 0) {
+      assetBuilders.forEach(builder => {
+        if (!builder.items || !Array.isArray(builder.items)) return;
+
+        // Mark builder ID as processed to exclude parent asset
+        processedAssetIds.add(builder.builderID);
+
+        // Sort builder items by last 5 digits of asset code
+        const sortedItems = [...builder.items].sort((a: any, b: any) => {
+          const aCode = a.asset_code || '';
+          const bCode = b.asset_code || '';
+          const aLast5 = aCode.slice(-5);
+          const bLast5 = bCode.slice(-5);
+          const aNum = parseInt(aLast5, 10) || 0;
+          const bNum = parseInt(bLast5, 10) || 0;
+          return aNum - bNum;
+        });
+
+        // Record the start index for this builder group
+        const groupStartIndex = flattenedAssets.length;
+
+        // Add builder items as children
+        sortedItems.forEach((item: any) => {
+          const matchingAsset = assets.find(a => a.id === item.asset_code);
+          if (matchingAsset) {
+            // Exclude parent assets (those with CMTH-ITOFE-LAP- prefix) from being marked as children
+            const isParentAsset = item.asset_code.startsWith('CMTH-ITOFE-LAP-');
+            if (!isParentAsset) {
+              flattenedAssets.push({ 
+                ...matchingAsset, 
+                isChild: true,
+                builderName: builder.builderName 
+              } as Asset & { isChild?: boolean; builderName?: string });
+              processedAssetIds.add(item.asset_code);
+            } else {
+              // Parent asset is added as normal (not italic)
+              flattenedAssets.push(matchingAsset);
+              processedAssetIds.add(item.asset_code);
+            }
+          }
+        });
+
+        // Record the end index for this builder group
+        const groupEndIndex = flattenedAssets.length - 1;
+        if (groupStartIndex <= groupEndIndex) {
+          builderGroups.push({
+            name: builder.builderName,
+            startIndex: groupStartIndex,
+            endIndex: groupEndIndex,
+          });
+        }
       });
-      assetsSheet.addRow(row);
+    }
+
+    // Add remaining assets that are not part of any builder
+    assets.forEach(asset => {
+      if (!processedAssetIds.has(asset.id)) {
+        flattenedAssets.push(asset);
+      }
     });
 
-    await downloadXlsx(workbook, 'asset_list.xlsx');
+    // Add header row with styling
+    const headerRow = assetsSheet.addRow(selectedCols.map(col => col.label));
+    headerRow.font = { bold: true };
+    headerRow.fill = {
+      type: 'pattern',
+      pattern: 'solid',
+      fgColor: { argb: 'FFE0E0E0' },
+    };
+    headerRow.alignment = { wrapText: true, vertical: 'top' };
+
+    // Add data rows with builder grouping
+    let currentRowIndex = 2; // Header is row 1
+    let currentGroupIndex = 0;
+
+    builderGroups.forEach(group => {
+      // Add separator row with builder name
+      const separatorRow = assetsSheet.addRow([]);
+      separatorRow.height = 25;
+      
+      // Merge cells for builder name
+      assetsSheet.mergeCells(`A${currentRowIndex}:${String.fromCharCode(64 + selectedCols.length)}${currentRowIndex}`);
+      const separatorCell = assetsSheet.getCell(`A${currentRowIndex}`);
+      separatorCell.value = group.name;
+      separatorCell.font = { bold: true, size: 14 };
+      separatorCell.fill = {
+        type: 'pattern',
+        pattern: 'solid',
+        fgColor: { argb: 'FFD3D3D3' },
+      };
+      separatorCell.alignment = { horizontal: 'center', vertical: 'middle' };
+      
+      currentRowIndex++;
+
+      // Add builder items with indentation
+      for (let i = group.startIndex; i <= group.endIndex; i++) {
+        const asset = flattenedAssets[i];
+        const row: Record<string, string | number> = {};
+        selectedCols.forEach(col => {
+          row[col.key] = getExportValue(asset, col.key, 'excel');
+        });
+        const dataRow = assetsSheet.addRow(row);
+        
+        // Apply indentation and text wrapping to builder items
+        if (asset.isChild) {
+          dataRow.eachCell((cell) => {
+            cell.alignment = { wrapText: true, vertical: 'top', indent: 1 };
+          });
+        } else {
+          dataRow.eachCell((cell) => {
+            cell.alignment = { wrapText: true, vertical: 'top' };
+          });
+        }
+        currentRowIndex++;
+      }
+
+      // Note: ExcelJS doesn't support native row grouping in browser environment
+      // The separator rows and indentation provide visual grouping
+    });
+
+    // Add remaining non-builder assets
+    for (let i = 0; i < flattenedAssets.length; i++) {
+      const asset = flattenedAssets[i];
+      if (!asset.isChild) {
+        // Check if this asset was already processed as part of a builder
+        const alreadyProcessed = builderGroups.some(
+          g => i >= g.startIndex && i <= g.endIndex
+        );
+        if (!alreadyProcessed) {
+          const row: Record<string, string | number> = {};
+          selectedCols.forEach(col => {
+            row[col.key] = getExportValue(asset, col.key, 'excel');
+          });
+          const dataRow = assetsSheet.addRow(row);
+          dataRow.eachCell((cell) => {
+            cell.alignment = { wrapText: true, vertical: 'top' };
+          });
+          currentRowIndex++;
+        }
+      }
+    }
+
+    // Generate filename with company name
+    const fileName = activeCompany 
+      ? `${activeCompany.name}_asset_list.xlsx` 
+      : 'asset_list.xlsx';
+
+    await downloadXlsx(workbook, fileName);
     toast.success('Excel exported successfully');
     setIsExportDialogOpen(false);
   };
@@ -374,7 +543,7 @@ export const useAssetExport = () => {
     if (exportType === 'pdf') {
       await exportToPDF(assets, activeCompany, currentUser, assetBuilders);
     } else if (exportType === 'excel') {
-      await exportToExcel(assets, activeCompany);
+      await exportToExcel(assets, activeCompany, assetBuilders);
     }
   };
 

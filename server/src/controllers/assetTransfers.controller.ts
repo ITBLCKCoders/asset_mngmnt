@@ -57,6 +57,336 @@ import {
   executeRawWrite,
 } from '../repositories/assetTransferForm.repository.js';
 
+async function getCompanyNameById(companyId: string): Promise<string | null> {
+  const [rows] = (await pool.execute(
+    'SELECT name FROM companies WHERE companyID = ? AND deleted_at IS NULL LIMIT 1',
+    [companyId]
+  )) as any[];
+  return rows?.[0]?.name ?? null;
+}
+
+async function userCanAccessCompanyTransfer(userId: string): Promise<boolean> {
+  const [rows] = (await pool.execute(
+    `SELECT r.asset_type, r.manager_role, r.name as role_name
+       FROM users u
+       LEFT JOIN asset_mngmnt_roles r ON u.role_id = r.roleID AND r.deleted_at IS NULL
+      WHERE u.userID = ?
+      LIMIT 1`,
+    [userId]
+  )) as any[];
+  const row = rows?.[0];
+  const roleName = String(row?.role_name ?? '').trim().toLowerCase();
+  const assetType = String(row?.asset_type ?? '').trim().toLowerCase();
+  const managerRole = String(row?.manager_role ?? '').trim();
+  return (
+    roleName === 'super admin' ||
+    roleName === 'admin' ||
+    managerRole === 'overallManager' ||
+    assetType === 'it' ||
+    assetType === 'admin'
+  );
+}
+
+export async function getCompanyTransferEligibleAssetsHandler(
+  req: AuthRequest,
+  res: Response
+) {
+  try {
+    const currentUserId = req.user!.userID;
+    if (!(await userCanAccessCompanyTransfer(currentUserId))) {
+      return res.status(403).json({ error: 'Not allowed to transfer assets by company' });
+    }
+
+    const { companyId, departmentIds } = await getAssetScope(pool, currentUserId);
+    if (!companyId) return res.json({ assets: [] });
+
+    const params: unknown[] = [companyId];
+    let departmentFilter = '';
+    if (departmentIds && departmentIds.length > 0) {
+      departmentFilter = ` AND ac.department_id IN (${departmentIds.map(() => '?').join(',')})`;
+      params.push(...departmentIds);
+    }
+
+    const [rows] = (await pool.execute(
+      `SELECT
+          a.assetID as assetId,
+          a.asset_code as assetCode,
+          a.name as assetName,
+          a.status,
+          a.company_id as companyId,
+          ac.name as categoryName,
+          at.name as typeName,
+          aa.assignmentID as assignmentId,
+          aa.assignment_notes as assignmentNotes,
+          aa.user_id as assignedUserId,
+          u.first_name,
+          u.last_name
+       FROM assets a
+       LEFT JOIN asset_categories ac ON a.category_id = ac.categoryID
+       LEFT JOIN asset_types at ON a.type_id = at.typeID
+       LEFT JOIN asset_assignments aa
+         ON aa.asset_id = a.assetID
+        AND aa.status = 'Active'
+        AND aa.deleted_at IS NULL
+       LEFT JOIN users u ON aa.user_id = u.userID
+       WHERE a.deleted_at IS NULL
+         AND a.company_id = ?
+         ${departmentFilter}
+         AND (
+           (a.status = 'Available' AND aa.assignmentID IS NULL)
+           OR LOWER(COALESCE(aa.assignment_notes, '')) LIKE '%assigned via asset return (assign to processor)%'
+         )
+       ORDER BY a.asset_code ASC`,
+      params as never[]
+    )) as any[];
+
+    return res.json({
+      assets: (rows as any[]).map(row => ({
+        assetId: row.assetId,
+        assetCode: row.assetCode,
+        assetName: row.assetName,
+        status: row.status,
+        companyId: row.companyId,
+        categoryName: row.categoryName,
+        typeName: row.typeName,
+        assignmentId: row.assignmentId ?? null,
+        assignmentNotes: row.assignmentNotes ?? null,
+        source:
+          row.assignmentId &&
+          String(row.assignmentNotes ?? '')
+            .toLowerCase()
+            .includes('assigned via asset return (assign to processor)')
+            ? 'temporary_custody'
+            : 'available',
+        assignedUser:
+          row.assignedUserId != null
+            ? {
+                id: row.assignedUserId,
+                name: `${row.first_name ?? ''} ${row.last_name ?? ''}`.trim(),
+              }
+            : null,
+      })),
+    });
+  } catch (error: any) {
+    logger.error('Get company transfer eligible assets failed:', error);
+    return res.status(500).json({ error: 'Failed to fetch company transfer assets' });
+  }
+}
+
+export async function createCompanyTransferHandler(
+  req: AuthRequest,
+  res: Response
+) {
+  try {
+    const currentUserId = req.user!.userID;
+    if (!(await userCanAccessCompanyTransfer(currentUserId))) {
+      return res.status(403).json({ error: 'Not allowed to transfer assets by company' });
+    }
+
+    const body = req.body as {
+      assetIds?: unknown[];
+      targetCompanyId?: string;
+      notes?: string;
+    };
+    const assetIds = Array.isArray(body.assetIds)
+      ? body.assetIds.map(id => String(id)).filter(Boolean)
+      : [];
+    const targetCompanyId = body.targetCompanyId ? String(body.targetCompanyId) : '';
+    if (assetIds.length === 0) {
+      return res.status(400).json({ error: 'assetIds array is required' });
+    }
+    if (!targetCompanyId) {
+      return res.status(400).json({ error: 'targetCompanyId is required' });
+    }
+
+    const targetCompanyName = await getCompanyNameById(targetCompanyId);
+    if (!targetCompanyName) {
+      return res.status(404).json({ error: 'Target company not found' });
+    }
+
+    const { companyId, departmentIds } = await getAssetScope(pool, currentUserId);
+    if (!companyId) return res.status(403).json({ error: 'Company scope not found' });
+    if (companyId === targetCompanyId) {
+      return res.status(400).json({ error: 'Target company must be different' });
+    }
+
+    const placeholders = assetIds.map(() => '?').join(',');
+    const params: unknown[] = [...assetIds, companyId];
+    let departmentFilter = '';
+    if (departmentIds && departmentIds.length > 0) {
+      departmentFilter = ` AND ac.department_id IN (${departmentIds.map(() => '?').join(',')})`;
+      params.push(...departmentIds);
+    }
+
+    const [rows] = (await pool.execute(
+      `SELECT
+          a.assetID, a.asset_code, a.name, a.status, a.company_id,
+          aa.assignmentID, aa.assignment_notes, aa.status as assignment_status
+       FROM assets a
+       LEFT JOIN asset_categories ac ON a.category_id = ac.categoryID
+       LEFT JOIN asset_assignments aa
+         ON aa.asset_id = a.assetID
+        AND aa.status = 'Active'
+        AND aa.deleted_at IS NULL
+       WHERE a.assetID IN (${placeholders})
+         AND a.deleted_at IS NULL
+         AND a.company_id = ?
+         ${departmentFilter}`,
+      params as never[]
+    )) as any[];
+
+    const uniqueRowsByAsset = new Map<string, any>();
+    for (const row of rows as any[]) uniqueRowsByAsset.set(String(row.assetID), row);
+    if (uniqueRowsByAsset.size !== assetIds.length) {
+      return res.status(404).json({ error: 'One or more assets are not available in your company scope' });
+    }
+
+    for (const row of uniqueRowsByAsset.values()) {
+      const isAvailable = row.status === 'Available' && !row.assignmentID;
+      const isTemp =
+        row.assignmentID &&
+        String(row.assignment_notes ?? '')
+          .toLowerCase()
+          .includes('assigned via asset return (assign to processor)');
+      if (!isAvailable && !isTemp) {
+        return res.status(400).json({
+          error: `Asset ${row.asset_code ?? row.assetID} is not eligible for company transfer`,
+        });
+      }
+    }
+
+    const transferredAssets: any[] = [];
+    const transferredAssetIdSet = new Set(assetIds.map(String));
+    for (const row of uniqueRowsByAsset.values()) {
+      const assetId = String(row.assetID);
+      const assetCode = row.asset_code ?? assetId;
+      const isTemp =
+        row.assignmentID &&
+        String(row.assignment_notes ?? '')
+          .toLowerCase()
+          .includes('assigned via asset return (assign to processor)');
+
+      if (isTemp) {
+        await pool.execute('CALL sp_mark_assignment_returned(?, ?, ?)', [
+          row.assignmentID,
+          `Returned for company transfer to ${targetCompanyName}`,
+          'Good',
+        ]);
+      }
+
+      // Find IT department in target company for scope compatibility
+      const [itDeptRows] = (await pool.execute(
+        `SELECT departmentID FROM asset_mngmnt_departments
+         WHERE company_id = ? AND (name LIKE '%IT%' OR name LIKE '%Information Technology%')
+         AND deleted_at IS NULL LIMIT 1`,
+        [targetCompanyId]
+      )) as any[];
+      const targetItDepartmentId = itDeptRows.length > 0 ? itDeptRows[0].departmentID : null;
+
+      let targetCategoryId = null;
+      if (targetItDepartmentId) {
+        // Find a category belonging to the IT department
+        const [catRows] = (await pool.execute(
+          `SELECT categoryID FROM asset_categories
+           WHERE department_id = ? AND deleted_at IS NULL LIMIT 1`,
+          [targetItDepartmentId]
+        )) as any[];
+        targetCategoryId = catRows.length > 0 ? catRows[0].categoryID : null;
+      }
+
+      logger.info(`Updating asset ${assetCode} (ID: ${assetId}) company_id from ${companyId} to ${targetCompanyId}, IT department: ${targetItDepartmentId || 'not found'}, IT category: ${targetCategoryId || 'not found'}`);
+      
+      const updateFields = ['company_id = ?', 'status = ?', 'updated_by = ?', 'updated_at = NOW()'];
+      const updateValues = [targetCompanyId, 'Available', currentUserId];
+      
+      if (targetItDepartmentId) {
+        updateFields.push('department_id = ?');
+        updateValues.push(targetItDepartmentId);
+      }
+      
+      if (targetCategoryId) {
+        updateFields.push('category_id = ?');
+        updateValues.push(targetCategoryId);
+      }
+      
+      await pool.execute(
+        `UPDATE assets SET ${updateFields.join(', ')} WHERE assetID = ?`,
+        [...updateValues, assetId]
+      );
+      logger.info(`Updated asset ${assetCode} company_id to ${targetCompanyId}${targetItDepartmentId ? ' and department_id to IT department' : ''}${targetCategoryId ? ' and category_id to IT category' : ''}`);
+
+      await createAuditLog({
+        userId: currentUserId,
+        action: 'Transferred Asset to Company',
+        resourceType: 'asset',
+        resourceId: assetId,
+        resourceName: `Asset ${assetCode}`,
+        details: `Asset ${assetCode} transferred to ${targetCompanyName}${targetItDepartmentId ? ' and assigned to IT department' : ''}${targetCategoryId ? ' with IT category' : ''}. If transferred back to a past company, it is re-enabled as Available.`,
+        oldValues: { company_id: companyId, status: row.status, department_id: row.department_id, category_id: row.category_id },
+        newValues: { company_id: targetCompanyId, status: 'Available', ...(targetItDepartmentId && { department_id: targetItDepartmentId }), ...(targetCategoryId && { category_id: targetCategoryId }) },
+        ipAddress: req.ip,
+        userAgent: req.get ? req.get('User-Agent') : 'Unknown',
+      });
+
+      transferredAssets.push({ assetId, assetCode, targetCompanyName });
+    }
+
+    const [builderRows] = (await pool.execute(
+      `SELECT DISTINCT ab.builderID, ab.name, ab.status, ab.company_id
+         FROM asset_builders ab
+         JOIN asset_builder_items abi ON abi.builder_id = ab.builderID
+        WHERE abi.asset_id IN (${placeholders})
+          AND ab.deleted_at IS NULL`,
+      assetIds as never[]
+    )) as any[];
+
+    for (const builder of builderRows as any[]) {
+      const [itemRows] = (await pool.execute(
+        `SELECT asset_id FROM asset_builder_items WHERE builder_id = ?`,
+        [builder.builderID]
+      )) as any[];
+      const allBuilderAssetIds = (itemRows as any[]).map(row =>
+        String(row.asset_id)
+      );
+      const isWholeBuilderTransferred =
+        allBuilderAssetIds.length > 0 &&
+        allBuilderAssetIds.every(id => transferredAssetIdSet.has(id));
+      if (!isWholeBuilderTransferred) continue;
+
+      await pool.execute(
+        `UPDATE asset_builders
+            SET company_id = ?,
+                status = 'Available',
+                updated_by = ?,
+                updated_at = NOW()
+          WHERE builderID = ?`,
+        [targetCompanyId, currentUserId, builder.builderID]
+      );
+
+      await createAuditLog({
+        userId: currentUserId,
+        action: 'Transferred Asset Builder to Company',
+        resourceType: 'asset_builder',
+        resourceId: builder.builderID,
+        resourceName: builder.name,
+        details: `Asset builder "${builder.name}" transferred to ${targetCompanyName}`,
+        oldValues: { company_id: companyId, status: builder.status },
+        newValues: { company_id: targetCompanyId, status: 'Available' },
+        ipAddress: req.ip,
+        userAgent: req.get ? req.get('User-Agent') : 'Unknown',
+      });
+    }
+
+    return res.json({
+      message: `Transferred ${transferredAssets.length} asset${transferredAssets.length === 1 ? '' : 's'} to ${targetCompanyName}`,
+      transferredAssets,
+    });
+  } catch (error: any) {
+    logger.error('Create company transfer failed:', error);
+    return res.status(500).json({ error: 'Failed to transfer assets to company' });
+  }
+}
+
 export async function createAssetTransferHandler(
   req: AuthRequest,
   res: Response

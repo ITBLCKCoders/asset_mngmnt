@@ -58,6 +58,12 @@ import {
   ChartTooltipContent,
   type ChartConfig,
 } from '@/components/ui/chart';
+import {
+  addCompanyLogoToPDF,
+  getCompanyAccentColor,
+  isBlackCoders,
+  resolveCompanyBranding,
+} from '@/lib/pdfGenerator/shared';
 
 type ReportTableKey =
   | 'assignment'
@@ -67,6 +73,7 @@ type ReportTableKey =
   | 'repair'
   | 'borrow'
   | 'assetRequest'
+  | 'gatePass'
   | 'finance';
 
 type ReportFilterState = {
@@ -92,6 +99,7 @@ type MonthlyHistoryCount = {
   repair: number;
   borrow: number;
   assetRequest: number;
+  gatePass: number;
   finance: number;
 };
 
@@ -102,6 +110,7 @@ type ReportRow = {
   reference: string;
   asset: string;
   person: string;
+  processor: string;
   /** Asset category id — same scope axis as dashboard (category → department). */
   categoryId: string;
   departmentId: string;
@@ -110,10 +119,13 @@ type ReportRow = {
   companyName: string;
   status: string;
   date: string;
+  pullOutDate?: string;
+  returnDate?: string;
+  transferee?: string;
   notes: string;
 };
 
-type CompanyOption = { id: string; name: string };
+type CompanyOption = { id: string; name: string; logo_url?: string | null };
 type DepartmentOption = { departmentID?: string; id?: string; name: string };
 
 const REPORT_TABLES: Array<{ key: ReportTableKey; label: string }> = [
@@ -124,8 +136,18 @@ const REPORT_TABLES: Array<{ key: ReportTableKey; label: string }> = [
   { key: 'repair', label: 'Repair History' },
   { key: 'borrow', label: 'Borrow History' },
   { key: 'assetRequest', label: 'Asset Request History' },
+  { key: 'gatePass', label: 'Gate Pass History' },
   { key: 'finance', label: 'Finance Reports' },
 ];
+
+const REPORTS_WITH_STATUS = new Set<ReportTableKey>([
+  'maintenance',
+  'repair',
+  'borrow',
+  'assetRequest',
+  'gatePass',
+  'finance',
+]);
 
 const REPORT_ACTION_LABELS: Record<ReportTableKey, string> = {
   assignment: 'Asset assigned',
@@ -135,6 +157,7 @@ const REPORT_ACTION_LABELS: Record<ReportTableKey, string> = {
   repair: 'Asset sent to repair',
   borrow: 'Borrow request submitted',
   assetRequest: 'Asset request submitted',
+  gatePass: 'Gate pass processed',
   finance: 'Finance reports',
 };
 
@@ -153,6 +176,7 @@ const initialFilters = (): Record<ReportTableKey, ReportFilterState> => ({
   repair: emptyFilters(),
   borrow: emptyFilters(),
   assetRequest: emptyFilters(),
+  gatePass: emptyFilters(),
   finance: emptyFilters(),
 });
 
@@ -164,6 +188,7 @@ const HISTORY_COLORS: Record<ReportTableKey, string> = {
   repair: 'hsl(0, 84%, 60%)',
   borrow: 'hsl(262, 83%, 58%)',
   assetRequest: 'hsl(47, 96%, 53%)',
+  gatePass: 'hsl(188, 86%, 53%)',
   finance: 'hsl(142, 76%, 36%)',
 };
 
@@ -178,6 +203,17 @@ const formatDateLabel = (value: string) => {
 const makeReference = (value: unknown, prefix: string) => {
   const text = String(value ?? '').trim();
   return text || prefix;
+};
+
+const formatUserName = (user?: {
+  first_name?: string | null;
+  last_name?: string | null;
+  name?: string | null;
+  email?: string | null;
+}) => {
+  const name = user?.name?.trim?.() || '';
+  const fullName = `${user?.first_name ?? ''} ${user?.last_name ?? ''}`.trim();
+  return name || fullName || user?.email || '';
 };
 
 const parseBorrowStatus = (row: { status?: string; declined_at?: string }) => {
@@ -237,6 +273,7 @@ const sectionToTableKey = (section: string | null): ReportTableKey | null => {
   if (section === 'repair') return 'repair';
   if (section === 'borrow') return 'borrow';
   if (section === 'assetRequest') return 'assetRequest';
+  if (section === 'gatePass') return 'gatePass';
   if (section === 'finance') return 'finance';
   return null;
 };
@@ -256,6 +293,7 @@ export default function ReportsPage() {
   const [repairRows, setRepairRows] = useState<ReportRow[]>([]);
   const [borrowRows, setBorrowRows] = useState<ReportRow[]>([]);
   const [assetRequestRows, setAssetRequestRows] = useState<ReportRow[]>([]);
+  const [gatePassRows, setGatePassRows] = useState<ReportRow[]>([]);
   const [financeRows, setFinanceRows] = useState<ReportRow[]>([]);
   const [financeData, setFinanceData] = useState<any>(null);
   const [financeLoading, setFinanceLoading] = useState(false);
@@ -272,6 +310,11 @@ export default function ReportsPage() {
   const [searchParams] = useSearchParams();
   const selectedCompanyIdRef = useRef(selectedCompanyId);
   selectedCompanyIdRef.current = selectedCompanyId;
+  const sectionFromUrl = searchParams.get('section');
+  const focusedTableKey = sectionToTableKey(sectionFromUrl);
+  const focusedTableLabel = focusedTableKey
+    ? REPORT_TABLES.find(table => table.key === focusedTableKey)?.label ?? ''
+    : '';
 
   const [scopeCategoryIds, setScopeCategoryIds] = useState<string[]>([]);
   const [scopeCategoryIdsLoading, setScopeCategoryIdsLoading] = useState(false);
@@ -349,6 +392,7 @@ export default function ReportsPage() {
       repair: repairRows,
       borrow: borrowRows,
       assetRequest: assetRequestRows,
+      gatePass: gatePassRows,
       finance: financeRows,
     }),
     [
@@ -359,21 +403,22 @@ export default function ReportsPage() {
       repairRows,
       borrowRows,
       assetRequestRows,
+      gatePassRows,
       financeRows,
     ]
   );
 
   const columns = useMemo<ColumnDef<ReportRow>[]>(
     () => [
-      { id: 'reference', header: 'Reference', accessorKey: 'reference', size: 150 },
-      { id: 'asset', header: 'Asset / Request', accessorKey: 'asset', size: 220 },
-      { id: 'person', header: 'User / Requester', accessorKey: 'person', size: 180 },
+      { id: 'asset', header: 'Asset', accessorKey: 'asset', size: 220 },
+      { id: 'person', header: 'Assigned To', accessorKey: 'person', size: 180 },
       {
         id: 'departmentName',
         header: 'Department',
         accessorKey: 'departmentName',
         size: 150,
       },
+      { id: 'processor', header: 'Processed By', accessorKey: 'processor', size: 180 },
       {
         id: 'companyName',
         header: 'Company',
@@ -402,6 +447,121 @@ export default function ReportsPage() {
     ],
     []
   );
+
+  const focusedColumns = useMemo<ColumnDef<ReportRow>[]>(
+    () => {
+      const visibleColumns =
+        focusedTableKey && REPORTS_WITH_STATUS.has(focusedTableKey)
+          ? columns
+          : columns.filter(column => column.id !== 'status');
+      const labelAdjustedColumns = visibleColumns.map(column => {
+        if (column.id !== 'person') return column;
+        return {
+          ...column,
+          header:
+            focusedTableKey === 'return'
+              ? 'Returner'
+              : focusedTableKey === 'transfer'
+                ? 'Transferrer'
+                : focusedTableKey === 'borrow'
+                  ? 'Borrower'
+                  : 'Assigned To',
+        };
+      });
+
+      const transferColumns =
+        focusedTableKey === 'transfer'
+          ? labelAdjustedColumns.flatMap(column =>
+              column.id === 'person'
+                ? [
+                    column,
+                    {
+                      id: 'transferee',
+                      header: 'Transferee',
+                      accessorKey: 'transferee',
+                      size: 180,
+                    },
+                  ]
+                : [column]
+            )
+          : labelAdjustedColumns;
+
+      if (focusedTableKey !== 'gatePass' && focusedTableKey !== 'borrow') {
+        return transferColumns;
+      }
+
+      return transferColumns.flatMap(column =>
+        column.id === 'date'
+          ? [
+              {
+                id: 'pullOutDate',
+                header: focusedTableKey === 'borrow' ? 'Borrow Date' : 'Pull Out Date',
+                accessorKey: 'pullOutDate',
+                size: 170,
+                cell: ({ row }) => formatDateLabel(row.original.pullOutDate ?? ''),
+              },
+              {
+                id: 'returnDate',
+                header: 'Return Date',
+                accessorKey: 'returnDate',
+                size: 170,
+                cell: ({ row }) => formatDateLabel(row.original.returnDate ?? ''),
+              },
+            ]
+          : [column]
+      );
+    },
+    [columns, focusedTableKey]
+  );
+
+  const focusedMobileCardFields = useMemo(() => {
+    const fields = [
+      { key: 'asset', label: 'Asset', render: (row: ReportRow) => row.asset },
+      {
+        key: 'person',
+        label:
+          focusedTableKey === 'return'
+            ? 'Returner'
+            : focusedTableKey === 'transfer'
+              ? 'Transferrer'
+              : focusedTableKey === 'borrow'
+                ? 'Borrower'
+                : 'Assigned To',
+        render: (row: ReportRow) => row.person,
+      },
+      { key: 'transferee', label: 'Transferee', render: (row: ReportRow) => row.transferee ?? '' },
+      { key: 'departmentName', label: 'Department', render: (row: ReportRow) => row.departmentName },
+      { key: 'processor', label: 'Processed By', render: (row: ReportRow) => row.processor },
+      { key: 'status', label: 'Status', render: (row: ReportRow) => row.status },
+      { key: 'date', label: 'Date', render: (row: ReportRow) => formatDateLabel(row.date) },
+    ];
+    const visibleFields = focusedTableKey && REPORTS_WITH_STATUS.has(focusedTableKey)
+      ? fields
+      : fields.filter(field => field.key !== 'status');
+    const transferFields =
+      focusedTableKey === 'transfer'
+        ? visibleFields
+        : visibleFields.filter(field => field.key !== 'transferee');
+    return focusedTableKey === 'gatePass' || focusedTableKey === 'borrow'
+      ? transferFields.flatMap(field =>
+          field.key === 'date'
+            ? [
+                {
+                  key: 'pullOutDate',
+                  label: focusedTableKey === 'borrow' ? 'Borrow Date' : 'Pull Out Date',
+                  render: (row: ReportRow) => formatDateLabel(row.pullOutDate ?? ''),
+                },
+                {
+                  key: 'returnDate',
+                  label: 'Return Date',
+                  render: (row: ReportRow) => formatDateLabel(row.returnDate ?? ''),
+                },
+              ]
+            : [field]
+        )
+      : transferFields;
+  }, [focusedTableKey]);
+
   const scopedRows = useMemo(
     () =>
       REPORT_TABLES.reduce(
@@ -475,6 +635,7 @@ export default function ReportsPage() {
       repair: 0,
       borrow: 0,
       assetRequest: 0,
+      gatePass: 0,
       finance: 0,
     });
 
@@ -544,16 +705,11 @@ export default function ReportsPage() {
       repair: { label: 'Asset sent to repair', color: HISTORY_COLORS.repair },
       borrow: { label: 'Borrow request submitted', color: HISTORY_COLORS.borrow },
       assetRequest: { label: 'Asset request submitted', color: HISTORY_COLORS.assetRequest },
+      gatePass: { label: 'Gate pass processed', color: HISTORY_COLORS.gatePass },
       finance: { label: 'Finance reports', color: HISTORY_COLORS.finance },
     }),
     []
   );
-
-  const sectionFromUrl = searchParams.get('section');
-  const focusedTableKey = sectionToTableKey(sectionFromUrl);
-  const focusedTableLabel = focusedTableKey
-    ? REPORT_TABLES.find(table => table.key === focusedTableKey)?.label ?? ''
-    : '';
 
   const openExport = useCallback(
     (tableKey?: ReportTableKey) => {
@@ -578,127 +734,184 @@ export default function ReportsPage() {
     );
   }, []);
 
-  const exportPdf = useCallback(() => {
+  const exportPdf = useCallback(async () => {
     if (selectedExportTables.length === 0) {
       toast.error('Select at least one table to export.');
       return;
     }
 
     const doc = new jsPDF({ orientation: 'landscape', unit: 'mm', format: 'a4' });
+    const selectedCompany =
+      exportFilters.companyId === 'all'
+        ? activeCompany
+        : companies.find(company => company.id === exportFilters.companyId) ??
+          activeCompany;
+    const companyBranding = await resolveCompanyBranding({
+      name: selectedCompany?.name,
+      logo_url: selectedCompany?.logo_url,
+    });
+    const accentColor = getCompanyAccentColor(companyBranding?.name);
+    const headerFillColor: [number, number, number] = isBlackCoders(
+      companyBranding?.name
+    )
+      ? [0, 0, 0]
+      : [accentColor.r, accentColor.g, accentColor.b];
+    const headerTextColor: [number, number, number] = [255, 255, 255];
+    const generatedBy =
+      formatUserName(user as any) || (user as any)?.username || 'Unknown User';
+    const generatedAt = new Date().toLocaleString();
+    const assetScopeLabel = effectiveScope === 'admin' ? 'Admin Asset' : 'IT Asset';
+    const drawReportHeader = async (title: string, detailText?: string) => {
+      const reportTitle = title.toLowerCase().includes('asset')
+        ? title
+        : `Asset ${title}`;
+      await addCompanyLogoToPDF(doc, companyBranding?.logo_url, 14, 11, 45, 16);
+      doc.setFontSize(16);
+      doc.setFont('helvetica', 'bold');
+      doc.setTextColor(0, 0, 0);
+      doc.text(reportTitle, 148.5, 16, { align: 'center' });
+      doc.setFontSize(11);
+      doc.setFont('helvetica', 'normal');
+      doc.text(assetScopeLabel, 148.5, 23, { align: 'center' });
+      if (detailText) {
+        doc.setFontSize(10);
+        doc.setFont('helvetica', 'normal');
+        doc.text(detailText, 14, 34);
+      }
+    };
+    const drawReportFooter = () => {
+      const pageHeight = doc.internal.pageSize.getHeight();
+      doc.setFontSize(9);
+      doc.setFont('helvetica', 'normal');
+      doc.setTextColor(80, 80, 80);
+      doc.text(`Generated by: ${generatedBy}`, 14, pageHeight - 14);
+      doc.text(`Generated at: ${generatedAt}`, 14, pageHeight - 9);
+      doc.setTextColor(0, 0, 0);
+    };
     let first = true;
 
-    selectedExportTables.forEach(tableKey => {
+    for (const tableKey of selectedExportTables) {
       const label =
         REPORT_TABLES.find(table => table.key === tableKey)?.label ?? tableKey;
+      const pdfLabel =
+        tableKey === 'maintenance' ? 'Preventive Maintenance History' : label;
 
       if (tableKey === 'finance') {
-        const far = financeData?.fixedAssetRegister || [];
+        const far = (financeData?.fixedAssetRegister || []).filter(
+          (asset: any) => String(asset.status || '').toLowerCase() === 'assigned'
+        );
         const dep = financeData?.depreciationSchedule || [];
         const summary = financeData?.assetValuationSummary;
 
         // Page 1: Fixed Asset Register
         if (!first) doc.addPage();
         first = false;
-        doc.setFontSize(16);
-        doc.text('Fixed Asset Register', 14, 16);
-        doc.setFontSize(10);
-        doc.text(
+        await drawReportHeader(
+          'Fixed Asset Register',
           `Company: ${
             exportFilters.companyId === 'all'
               ? 'All'
               : companies.find(c => c.id === exportFilters.companyId)?.name ?? 'Selected'
-          }`,
-          14, 24
+          }   Status: Assigned`
         );
         autoTable(doc, {
-          startY: 30,
-          head: [['Asset Code', 'Name', 'Category', 'Purchase Date', 'Asset Value', 'Salvage Value', 'Dep Method', 'Useful Life (yrs)', 'Annual Dep', 'Status']],
+          startY: 38,
+          head: [['No.', 'Asset Code', 'Name', 'Category', 'Purchase Date', 'Asset Value', 'Salvage Value', 'Dep Method', 'Useful Life (yrs)', 'Annual Dep', 'Status']],
           body: far.length > 0
-            ? far.map((a: any) => [
+            ? far.map((a: any, index: number) => [
+                String(index + 1),
                 a.asset_code || '',
                 a.name || '',
                 a.category_name || '',
                 a.purchase_date ? formatDateLabel(a.purchase_date) : '',
-                a.asset_value != null ? `₱${Number(a.asset_value).toLocaleString()}` : '',
-                a.salvage_value != null ? `₱${Number(a.salvage_value).toLocaleString()}` : '',
+                a.asset_value != null ? `PHP ${Number(a.asset_value).toLocaleString()}` : '',
+                a.salvage_value != null ? `PHP ${Number(a.salvage_value).toLocaleString()}` : '',
                 a.depreciation_method || '',
                 a.useful_life_years ?? '',
-                a.annual_depreciation != null ? `₱${Number(a.annual_depreciation).toLocaleString()}` : '',
+                a.annual_depreciation != null ? `PHP ${Number(a.annual_depreciation).toLocaleString()}` : '',
                 a.status || '',
               ])
-            : [['No records found', '', '', '', '', '', '', '', '', '']],
+            : [['No records found', '', '', '', '', '', '', '', '', '', '']],
           styles: { fontSize: 7, cellPadding: 2, overflow: 'linebreak' },
-          headStyles: { fillColor: [136, 17, 21] },
+          headStyles: { fillColor: headerFillColor, textColor: headerTextColor },
+          didDrawPage: drawReportFooter,
         });
 
         // Page 2: Depreciation Schedule
         doc.addPage();
-        doc.setFontSize(16);
-        doc.text('Depreciation Schedule', 14, 16);
+        await drawReportHeader('Depreciation Schedule');
         autoTable(doc, {
-          startY: 24,
-          head: [['Asset Code', 'Name', 'Asset Value', 'Accumulated Dep', 'Net Book Value', 'Years Depreciated', 'Remaining Life (yrs)', 'Status']],
+          startY: 38,
+          head: [['No.', 'Asset Code', 'Name', 'Asset Value', 'Accumulated Dep', 'Net Book Value', 'Years Depreciated', 'Remaining Life (yrs)', 'Status']],
           body: dep.length > 0
-            ? dep.map((d: any) => [
+            ? dep.map((d: any, index: number) => [
+                String(index + 1),
                 d.asset_code || '',
                 d.name || '',
-                d.asset_value != null ? `₱${Number(d.asset_value).toLocaleString()}` : '',
-                `₱${Number(d.accumulated_depreciation || 0).toLocaleString()}`,
-                `₱${Number(d.net_book_value || 0).toLocaleString()}`,
+                d.asset_value != null ? `PHP ${Number(d.asset_value).toLocaleString()}` : '',
+                `PHP ${Number(d.accumulated_depreciation || 0).toLocaleString()}`,
+                `PHP ${Number(d.net_book_value || 0).toLocaleString()}`,
                 Number(d.years_depreciated || 0).toFixed(2),
                 d.remaining_useful_life != null ? Number(d.remaining_useful_life).toFixed(2) : '',
                 d.status || '',
               ])
-            : [['No records found', '', '', '', '', '', '', '']],
+            : [['No records found', '', '', '', '', '', '', '', '']],
           styles: { fontSize: 7, cellPadding: 2, overflow: 'linebreak' },
-          headStyles: { fillColor: [136, 17, 21] },
+          headStyles: { fillColor: headerFillColor, textColor: headerTextColor },
+          didDrawPage: drawReportFooter,
         });
 
         // Page 3: Asset Valuation Summary
         if (summary) {
           doc.addPage();
-          doc.setFontSize(16);
-          doc.text('Asset Valuation Summary', 14, 16);
+          await drawReportHeader('Asset Valuation Summary');
           doc.setFontSize(10);
-          doc.text(`Total Asset Value: ₱${(summary.totalAssetValue || 0).toLocaleString()}`, 14, 24);
-          doc.text(`Total Accumulated Depreciation: ₱${(summary.totalAccumulatedDepreciation || 0).toLocaleString()}`, 14, 30);
-          doc.text(`Total Net Book Value: ₱${(summary.totalNetBookValue || 0).toLocaleString()}`, 14, 36);
+          doc.text(`Total Asset Value: PHP ${(summary.totalAssetValue || 0).toLocaleString()}`, 14, 40);
+          doc.text(`Total Accumulated Depreciation: PHP ${(summary.totalAccumulatedDepreciation || 0).toLocaleString()}`, 14, 46);
+          doc.text(`Total Net Book Value: PHP ${(summary.totalNetBookValue || 0).toLocaleString()}`, 14, 52);
 
           if (summary.byCategory?.length > 0) {
             doc.setFontSize(12);
-            doc.text('By Category', 14, 46);
+            doc.text('By Category', 14, 62);
             autoTable(doc, {
-              startY: 50,
-              head: [['Category', 'Asset Value', 'Accumulated Dep', 'Net Book Value', 'Count']],
-              body: summary.byCategory.map((c: any) => [
+              startY: 66,
+              head: [['No.', 'Category', 'Asset Value', 'Accumulated Dep', 'Net Book Value', 'Count']],
+              body: summary.byCategory.map((c: any, index: number) => [
+                String(index + 1),
                 c.category,
-                `₱${(c.totalAssetValue || 0).toLocaleString()}`,
-                `₱${(c.totalAccumulatedDepreciation || 0).toLocaleString()}`,
-                `₱${(c.totalNetBookValue || 0).toLocaleString()}`,
+                `PHP ${(c.totalAssetValue || 0).toLocaleString()}`,
+                `PHP ${(c.totalAccumulatedDepreciation || 0).toLocaleString()}`,
+                `PHP ${(c.totalNetBookValue || 0).toLocaleString()}`,
                 String(c.assetCount),
               ]),
               styles: { fontSize: 8, cellPadding: 2 },
-              headStyles: { fillColor: [136, 17, 21] },
+              headStyles: { fillColor: headerFillColor, textColor: headerTextColor },
+              didDrawPage: drawReportFooter,
             });
           }
 
           if (summary.byDepartment?.length > 0) {
-            const deptStartY = (doc as any).lastAutoTable?.finalY ? (doc as any).lastAutoTable.finalY + 10 : 50;
+            const deptStartY = (doc as any).lastAutoTable?.finalY ? (doc as any).lastAutoTable.finalY + 10 : 74;
             doc.setFontSize(12);
             doc.text('By Department', 14, deptStartY);
             autoTable(doc, {
               startY: deptStartY + 4,
-              head: [['Department', 'Asset Value', 'Accumulated Dep', 'Net Book Value', 'Count']],
-              body: summary.byDepartment.map((d: any) => [
+              head: [['No.', 'Department', 'Asset Value', 'Accumulated Dep', 'Net Book Value', 'Count']],
+              body: summary.byDepartment.map((d: any, index: number) => [
+                String(index + 1),
                 d.department,
-                `₱${(d.totalAssetValue || 0).toLocaleString()}`,
-                `₱${(d.totalAccumulatedDepreciation || 0).toLocaleString()}`,
-                `₱${(d.totalNetBookValue || 0).toLocaleString()}`,
+                `PHP ${(d.totalAssetValue || 0).toLocaleString()}`,
+                `PHP ${(d.totalAccumulatedDepreciation || 0).toLocaleString()}`,
+                `PHP ${(d.totalNetBookValue || 0).toLocaleString()}`,
                 String(d.assetCount),
               ]),
               styles: { fontSize: 8, cellPadding: 2 },
-              headStyles: { fillColor: [136, 17, 21] },
+              headStyles: { fillColor: headerFillColor, textColor: headerTextColor },
+              didDrawPage: drawReportFooter,
             });
+          }
+          if (!summary.byCategory?.length && !summary.byDepartment?.length) {
+            drawReportFooter();
           }
         }
       } else {
@@ -710,14 +923,24 @@ export default function ReportsPage() {
           }
           return rowMatchesFilters(row, exportFilters);
         });
+        const showStatus = REPORTS_WITH_STATUS.has(tableKey);
+        const showGatePassDates = tableKey === 'gatePass';
+        const showBorrowDates = tableKey === 'borrow';
+        const showTransferee = tableKey === 'transfer';
+        const personHeader =
+          tableKey === 'return'
+            ? 'Returner'
+            : tableKey === 'transfer'
+              ? 'Transferrer'
+              : tableKey === 'borrow'
+                ? 'Borrower'
+                : 'Assigned To';
 
         if (!first) doc.addPage();
         first = false;
 
-        doc.setFontSize(16);
-        doc.text(label, 14, 16);
-        doc.setFontSize(10);
-        doc.text(
+        await drawReportHeader(
+          pdfLabel,
           `From: ${exportFilters.from || 'All'}   To: ${exportFilters.to || 'All'}   Company: ${
             exportFilters.companyId === 'all'
               ? 'All'
@@ -731,56 +954,84 @@ export default function ReportsPage() {
                     (department.id ?? department.departmentID) ===
                     exportFilters.departmentId
                 )?.name ?? 'Selected'
-          }`,
-          14,
-          24
+          }`
         );
 
         autoTable(doc, {
-          startY: 30,
+          startY: 38,
           head: [
             [
-              'Reference',
-              'Asset / Request',
-              'User / Requester',
+              'No.',
+              'Asset',
+              personHeader,
+              ...(showTransferee ? ['Transferee'] : []),
               'Department',
+              'Processed By',
               'Company',
-              'Status',
-              'Date',
+              ...(showStatus ? ['Status'] : []),
+              ...(showGatePassDates
+                ? ['Pull Out Date', 'Return Date']
+                : showBorrowDates
+                  ? ['Borrow Date', 'Return Date']
+                  : ['Date']),
               'Notes',
             ],
           ],
           body:
             rows.length > 0
-              ? rows.map(row => [
-                  row.reference,
+              ? rows.map((row, index) => [
+                  String(index + 1),
                   row.asset,
                   row.person,
+                  ...(showTransferee ? [row.transferee ?? ''] : []),
                   row.departmentName,
+                  row.processor,
                   row.companyName,
-                  row.status,
-                  formatDateLabel(row.date),
+                  ...(showStatus ? [row.status] : []),
+                  ...(showGatePassDates || showBorrowDates
+                    ? [
+                        formatDateLabel(row.pullOutDate ?? ''),
+                        formatDateLabel(row.returnDate ?? ''),
+                      ]
+                    : [formatDateLabel(row.date)]),
                   row.notes,
                 ])
-              : [['No records found', '', '', '', '', '', '', '']],
+              : [
+                  [
+                    'No records found',
+                    '',
+                    '',
+                    '',
+                    ...(showTransferee ? [''] : []),
+                    '',
+                    '',
+                    ...(showStatus ? [''] : []),
+                    ...(showGatePassDates || showBorrowDates ? ['', ''] : ['']),
+                    '',
+                  ],
+                ],
           styles: { fontSize: 8, cellPadding: 2, overflow: 'linebreak' },
-          headStyles: { fillColor: [136, 17, 21] },
+          headStyles: { fillColor: headerFillColor, textColor: headerTextColor },
+          didDrawPage: drawReportFooter,
         });
       }
-    });
+    }
 
     doc.save(`reports-${Date.now()}.pdf`);
     setExportOpen(false);
     toast.success('Reports PDF exported successfully.');
   }, [
     companies,
+    activeCompany,
     departments,
+    effectiveScope,
     exportFilters,
     financeData,
     scopeCategoryIdSet,
     scopeFilterEnabled,
     selectedExportTables,
     tableRows,
+    user,
   ]);
 
   useEffect(() => {
@@ -799,6 +1050,7 @@ export default function ReportsPage() {
           borrowMineRes,
           requestRes,
           requestMineRes,
+          gatePassRes,
         ] = await Promise.allSettled([
           api.get<{ companies?: CompanyOption[] }>('/companies'),
           api.get<{ departments?: DepartmentOption[] }>('/departments'),
@@ -809,6 +1061,7 @@ export default function ReportsPage() {
           api.get<any>('/asset-borrow-requests/mine'),
           api.get<{ requests?: any[] }>('/asset-requests/all'),
           api.get<{ requests?: any[] }>('/asset-requests'),
+          api.get<any>('/gate-passes'),
         ]);
 
         const activeId = String(activeCompany?.id ?? '');
@@ -873,6 +1126,12 @@ export default function ReportsPage() {
               assignment.user?.first_name || assignment.user?.last_name
                 ? `${assignment.user?.first_name ?? ''} ${assignment.user?.last_name ?? ''}`.trim()
                 : assignment.user?.email ?? 'Unknown User',
+            processor:
+              formatUserName(assignment.assigned_by) ||
+              formatUserName(assignment.assignedBy) ||
+              assignment.assignedBy ||
+              assignment.processed_by ||
+              'System',
             departmentId: String(assignment.department?.id ?? ''),
             departmentName: assignment.department?.name ?? 'Unassigned',
             companyId: defaultCompanyId,
@@ -898,6 +1157,7 @@ export default function ReportsPage() {
               row.assignment?.user?.first_name || row.assignment?.user?.last_name
                 ? `${row.assignment?.user?.first_name ?? ''} ${row.assignment?.user?.last_name ?? ''}`.trim()
                 : row.processed_by ?? 'Unknown User',
+            processor: row.processed_by ?? row.processor ?? 'System',
             departmentId: String(
               row.assignment?.department?.id ?? row.form_department?.id ?? ''
             ),
@@ -921,7 +1181,16 @@ export default function ReportsPage() {
             reference: makeReference(row.formNumber ?? row.formId, 'TRANSFER'),
             asset: `${row.asset?.name ?? 'Unknown Asset'} (${row.asset?.code ?? 'No Code'})`,
             categoryId: String(row.asset?.category_id ?? ''),
-            person: `${row.from?.name ?? 'Unknown'} -> ${row.to?.name ?? 'Unknown'}`,
+            person: row.from?.name ?? 'Unknown',
+            transferee: row.to?.name ?? 'Unknown',
+            processor:
+              row.processed_by ||
+              formatUserName(row.assignment?.assigned_by) ||
+              row.dept_head_user_name ||
+              row.it_manager_user_name ||
+              row.actorName ||
+              row.actionBy ||
+              'System',
             departmentId: '',
             departmentName: '-',
             companyId: defaultCompanyId,
@@ -955,12 +1224,21 @@ export default function ReportsPage() {
               row.requester_first_name || row.requester_last_name
                 ? `${row.requester_first_name ?? ''} ${row.requester_last_name ?? ''}`.trim()
                 : row.requester_username ?? row.requester_email ?? 'Unknown User',
+            processor:
+              row.approved_by_name ??
+              row.processed_by ??
+              row.approved_by ??
+              row.declined_by ??
+              row.staff_name ??
+              'Pending',
             departmentId: '',
             departmentName: row.requester_department_name ?? 'Unassigned',
             companyId: defaultCompanyId,
             companyName: defaultCompanyName,
             status: parseBorrowStatus(row),
             date: row.created_at ?? '',
+            pullOutDate: row.created_at ?? '',
+            returnDate: row.returned_at ?? row.expected_return_at ?? '',
             notes: row.purpose ?? 'No notes',
           }))
         );
@@ -988,6 +1266,15 @@ export default function ReportsPage() {
               row.user?.username ??
               row.user_id ??
               'Unknown User',
+            processor:
+              row.processed_by ??
+              row.processedBy ??
+              row.approved_by ??
+              row.approvedBy ??
+              row.rejected_by ??
+              row.rejectedBy ??
+              row.admin?.name ??
+              'Pending',
             departmentId: String(row.department?.id ?? ''),
             departmentName: row.department?.name ?? 'Unassigned',
             companyId: defaultCompanyId,
@@ -995,6 +1282,38 @@ export default function ReportsPage() {
             status: parseRequestStatus(row.status),
             date: row.request_date ?? '',
             notes: row.notes ?? row.admin_notes ?? 'No notes',
+          }))
+        );
+
+        const gatePassPayload =
+          gatePassRes.status === 'fulfilled'
+            ? gatePassRes.value?.data?.gatePasses ?? gatePassRes.value?.gatePasses ?? []
+            : [];
+        setGatePassRows(
+          (Array.isArray(gatePassPayload) ? gatePassPayload : []).map((row: any) => ({
+            id: String(row.gate_pass_id ?? row.gatePassId ?? Math.random()),
+            reference: makeReference(row.gate_pass_id ?? row.gatePassId, 'GATEPASS'),
+            asset: `${row.asset_name ?? 'Unknown Asset'} (${row.asset_code ?? 'No Code'})`,
+            categoryId: String(row.category_id ?? row.categoryId ?? ''),
+            person:
+              row.first_name || row.last_name
+                ? `${row.first_name ?? ''} ${row.last_name ?? ''}`.trim()
+                : row.user_name ?? row.username ?? row.email ?? row.user_id ?? 'Unknown User',
+            processor:
+              row.processed_by_name ??
+              row.created_by_name ??
+              row.processed_by ??
+              row.created_by ??
+              'System',
+            departmentId: String(row.destination_department_id ?? ''),
+            departmentName: row.department_name ?? 'Unassigned',
+            companyId: defaultCompanyId,
+            companyName: defaultCompanyName,
+            status: row.status ?? 'Unknown',
+            date: row.created_at ?? row.expected_return_date ?? '',
+            pullOutDate: row.created_at ?? '',
+            returnDate: row.actual_return_date ?? row.expected_return_date ?? '',
+            notes: row.purpose ?? row.notes ?? 'No notes',
           }))
         );
 
@@ -1010,6 +1329,7 @@ export default function ReportsPage() {
             asset: `${row.assetName ?? 'Unknown Asset'} (${row.assetCode ?? 'No Code'})`,
             categoryId: String(row.categoryId ?? row.category_id ?? ''),
             person: row.performedBy ?? 'System',
+            processor: row.performedBy ?? 'System',
             departmentId: String(row.departmentId ?? ''),
             departmentName: row.departmentName ?? 'Unassigned',
             companyId: String(row.companyId ?? defaultCompanyId),
@@ -1026,6 +1346,7 @@ export default function ReportsPage() {
             asset: `${row.assetName ?? 'Unknown Asset'} (${row.assetCode ?? 'No Code'})`,
             categoryId: String(row.categoryId ?? row.category_id ?? ''),
             person: row.performedBy ?? 'System',
+            processor: row.performedBy ?? 'System',
             departmentId: String(row.departmentId ?? ''),
             departmentName: row.departmentName ?? 'Unassigned',
             companyId: String(row.companyId ?? defaultCompanyId),
@@ -1054,6 +1375,7 @@ export default function ReportsPage() {
             reference: asset.asset_code || `FAR-${i + 1}`,
             asset: asset.name || 'Unknown Asset',
             person: asset.brand || 'N/A',
+            processor: 'System',
             categoryId: '',
             departmentId: asset.department_name || '',
             departmentName: asset.department_name || 'Unassigned',
@@ -1304,18 +1626,12 @@ export default function ReportsPage() {
           <DataTable<ReportRow>
             tableId={`reports-focused-${focusedTableKey}`}
             data={scopedRows[focusedTableKey]}
-            columns={columns}
+            columns={focusedColumns}
             title={focusedTableLabel}
             titleBadge={`${scopedRows[focusedTableKey].length} records`}
             searchPlaceholder={`Search ${focusedTableLabel.toLowerCase()}...`}
             isLoading={loading || (scopeFilterEnabled && scopeCategoryIdsLoading)}
-            mobileCardFields={[
-              { key: 'reference', label: 'Reference', render: row => row.reference },
-              { key: 'asset', label: 'Asset / Request', render: row => row.asset },
-              { key: 'person', label: 'User / Requester', render: row => row.person },
-              { key: 'status', label: 'Status', render: row => row.status },
-              { key: 'date', label: 'Date', render: row => formatDateLabel(row.date) },
-            ]}
+            mobileCardFields={focusedMobileCardFields}
           >
             <Button variant="header" size="sm" onClick={() => openExport(focusedTableKey)}>
               <Download className="mr-2 h-4 w-4" />
@@ -1391,6 +1707,8 @@ export default function ReportsPage() {
                             <p className="text-sm text-muted-foreground">{item.assetCount} assets</p>
                           </div>
                           <div className="text-right ml-4 flex-shrink-0">
+                            <p className="font-semibold">₱{item.totalAssetValue.toLocaleString()}</p>
+                            <p className="text-xs text-muted-foreground mb-1">Asset Value</p>
                             <p className="font-semibold">₱{item.totalNetBookValue.toLocaleString()}</p>
                             <p className="text-xs text-muted-foreground">NBV</p>
                           </div>

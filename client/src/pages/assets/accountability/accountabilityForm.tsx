@@ -128,111 +128,102 @@ const addSignatureToPDF = async (
       return;
     }
 
-    // Check if signature is plain text (not a base64 image or Cloudinary URL)
-    // Base64 images start with "data:image/", Cloudinary URLs start with "http://" or "https://"
-    // Plain text is short and doesn't start with these prefixes
-    const isPlainText = !signatureData.startsWith('data:image/') &&
-                        !signatureData.startsWith('http://') &&
-                        !signatureData.startsWith('https://') &&
-                        signatureData.length < 100;
+    const isImageSignature =
+      signatureData.startsWith('data:image/') ||
+      signatureData.startsWith('http://') ||
+      signatureData.startsWith('https://');
 
-    if (isPlainText) {
-      // Render as text initials
-      logger.debug('Rendering signature as text', { text: signatureData });
-      doc.setFontSize(12);
-      doc.setFont('helvetica', 'bold');
-      doc.text(signatureData, x, y);
-      doc.setFont('helvetica', 'normal');
-      doc.setFontSize(10);
-    } else {
-      // Render as base64 image or Cloudinary URL
-      const img = new Image();
-      img.crossOrigin = 'anonymous';
-      
-      // Check if signature is a URL (not base64) and if it's cached
-      if (signatureData.startsWith('http://') || signatureData.startsWith('https://')) {
-        if (imageCache.has(signatureData)) {
-          logger.debug('Using cached signature image');
-          img.src = imageCache.get(signatureData)!;
-        } else {
-          img.src = signatureData;
-        }
+    if (!isImageSignature) {
+      logger.debug('Skipping non-image signature data');
+      return;
+    }
+
+    const img = new Image();
+    img.crossOrigin = 'anonymous';
+    
+    // Check if signature is a URL (not base64) and if it's cached
+    if (signatureData.startsWith('http://') || signatureData.startsWith('https://')) {
+      if (imageCache.has(signatureData)) {
+        logger.debug('Using cached signature image');
+        img.src = imageCache.get(signatureData)!;
       } else {
         img.src = signatureData;
       }
-      
-      await new Promise<void>((resolve, reject) => {
-        img.onload = () => {
-          logger.debug('Signature image loaded', { width: img.width, height: img.height });
+    } else {
+      img.src = signatureData;
+    }
+    
+    await new Promise<void>((resolve, reject) => {
+      img.onload = () => {
+        logger.debug('Signature image loaded', { width: img.width, height: img.height });
+        
+        // Convert image to black using canvas
+        const canvas = document.createElement('canvas');
+        canvas.width = img.width;
+        canvas.height = img.height;
+        const ctx = canvas.getContext('2d');
+        if (ctx) {
+          ctx.drawImage(img, 0, 0);
+          const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
+          const data = imageData.data;
           
-          // Convert image to black using canvas
-          const canvas = document.createElement('canvas');
-          canvas.width = img.width;
-          canvas.height = img.height;
-          const ctx = canvas.getContext('2d');
-          if (ctx) {
-            ctx.drawImage(img, 0, 0);
-            const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
-            const data = imageData.data;
+          // Convert to black and white, keeping black pixels black, others transparent
+          for (let i = 0; i < data.length; i += 4) {
+            const r = data[i];
+            const g = data[i + 1];
+            const b = data[i + 2];
+            const a = data[i + 3];
             
-            // Convert to black and white, keeping black pixels black, others transparent
-            for (let i = 0; i < data.length; i += 4) {
-              const r = data[i];
-              const g = data[i + 1];
-              const b = data[i + 2];
-              const a = data[i + 3];
-              
-              // If pixel is not transparent
-              if (a > 0) {
-                // Make it black
-                data[i] = 0;     // R
-                data[i + 1] = 0; // G
-                data[i + 2] = 0; // B
-                data[i + 3] = a; // Keep original alpha
-              }
-            }
-            
-            ctx.putImageData(imageData, 0, 0);
-            // Cache the processed signature image if it's a URL
-            if (signatureData.startsWith('http://') || signatureData.startsWith('https://')) {
-              const processedDataUrl = canvas.toDataURL();
-              imageCache.set(signatureData, processedDataUrl);
-              img.src = processedDataUrl;
-            } else {
-              img.src = canvas.toDataURL();
+            // If pixel is not transparent
+            if (a > 0) {
+              // Make it black
+              data[i] = 0;     // R
+              data[i + 1] = 0; // G
+              data[i + 2] = 0; // B
+              data[i + 3] = a; // Keep original alpha
             }
           }
           
-          resolve();
-        };
-        img.onerror = () => {
-          logger.debug('Failed to load signature image');
-          reject(new Error('Failed to load signature image'));
-        };
-      });
+          ctx.putImageData(imageData, 0, 0);
+          // Cache the processed signature image if it's a URL
+          if (signatureData.startsWith('http://') || signatureData.startsWith('https://')) {
+            const processedDataUrl = canvas.toDataURL();
+            imageCache.set(signatureData, processedDataUrl);
+            img.src = processedDataUrl;
+          } else {
+            img.src = canvas.toDataURL();
+          }
+        }
+        
+        resolve();
+      };
+      img.onerror = () => {
+        logger.debug('Failed to load signature image');
+        reject(new Error('Failed to load signature image'));
+      };
+    });
 
-      const pixelsToMm = 0.264583;
-      const sigWidth = img.width * pixelsToMm;
-      const sigHeight = img.height * pixelsToMm;
-      
-      let finalSigWidth = sigWidth;
-      let finalSigHeight = sigHeight;
-      
-      if (sigWidth > maxWidth) {
-        const scale = maxWidth / sigWidth;
-        finalSigWidth = maxWidth;
-        finalSigHeight = sigHeight * scale;
-      }
-      
-      if (finalSigHeight > maxHeight) {
-        const scale = maxHeight / finalSigHeight;
-        finalSigHeight = maxHeight;
-        finalSigWidth = finalSigWidth * scale;
-      }
-      
-      logger.debug('Adding signature image to PDF', { finalSigWidth, finalSigHeight, x, y });
-      doc.addImage(img.src, 'PNG', x, y, finalSigWidth, finalSigHeight);
+    const pixelsToMm = 0.264583;
+    const sigWidth = img.width * pixelsToMm;
+    const sigHeight = img.height * pixelsToMm;
+    
+    let finalSigWidth = sigWidth;
+    let finalSigHeight = sigHeight;
+    
+    if (sigWidth > maxWidth) {
+      const scale = maxWidth / sigWidth;
+      finalSigWidth = maxWidth;
+      finalSigHeight = sigHeight * scale;
     }
+    
+    if (finalSigHeight > maxHeight) {
+      const scale = maxHeight / finalSigHeight;
+      finalSigHeight = maxHeight;
+      finalSigWidth = finalSigWidth * scale;
+    }
+    
+    logger.debug('Adding signature image to PDF', { finalSigWidth, finalSigHeight, x, y });
+    doc.addImage(img.src, 'PNG', x, y, finalSigWidth, finalSigHeight);
   } catch (error) {
     logger.debug('Failed to add signature to PDF', error as Record<string, unknown>);
   }
@@ -1046,7 +1037,7 @@ I agree that if any of the items are damaged or lost due to my negligence, I sha
         : '') ||
       '';
     doc.text(rcSignerName, 130, signatureY + 88);
-    // Display digital initials (supports both drawn images and typed text)
+    // Display digital initials
     if (form.receivedCopy201FileSignature) {
       await addSignatureToPDF(doc, form.receivedCopy201FileSignature, 130, signatureY + 82, 50, 30);
     }

@@ -548,9 +548,7 @@ const DIGITAL_SIGNATURE_CONTENT = (
         <strong>Edit Profile</strong>.
       </li>
       <li>
-        Choose <strong>Type Initials</strong> to enter your initials as text
-        (e.g. J.D.), or <strong>Draw Initials</strong> to hand-draw them on the
-        canvas.
+        Use the drawing canvas to hand-draw your initials.
       </li>
       <li>
         Click <strong>Save</strong>. A consent dialog will appear — read and

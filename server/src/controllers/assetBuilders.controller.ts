@@ -160,6 +160,41 @@ export async function createAssetBuilderHandler(
   }
 }
 
+async function getTransferredOutBuildersForCompany(companyId: string) {
+  const [rows] = (await pool.execute(
+    `SELECT
+        ab.*,
+        c.name as company_name,
+        latest.target_company_name
+      FROM (
+        SELECT
+          al.resource_id as builder_id,
+          JSON_UNQUOTE(JSON_EXTRACT(al.new_values, '$.company_id')) as target_company_id,
+          c2.name as target_company_name,
+          MAX(al.created_at) as transferred_at
+        FROM audit_logs al
+        LEFT JOIN companies c2
+          ON c2.companyID = JSON_UNQUOTE(JSON_EXTRACT(al.new_values, '$.company_id'))
+        WHERE al.action = 'Transferred Asset Builder to Company'
+          AND al.resource_type = 'asset_builder'
+          AND JSON_UNQUOTE(JSON_EXTRACT(al.old_values, '$.company_id')) = ?
+        GROUP BY al.resource_id, target_company_id, c2.name
+      ) latest
+      JOIN asset_builders ab ON CAST(ab.builderID AS CHAR) = CAST(latest.builder_id AS CHAR)
+      LEFT JOIN companies c ON ab.company_id = c.companyID
+      WHERE ab.deleted_at IS NULL
+        AND ab.company_id <> ?
+        AND latest.target_company_id = ab.company_id`,
+    [companyId, companyId]
+  )) as any[];
+  return (rows as any[]).map(row => ({
+    ...row,
+    status: `Transferred to ${row.target_company_name || row.company_name || 'Company'}`,
+    transferred_out: true,
+    transferred_to_company_name: row.target_company_name || row.company_name || null,
+  }));
+}
+
 export async function getAssetBuildersHandler(req: AuthRequest, res: Response) {
   try {
     const userId = req.user!.userID;
@@ -208,6 +243,14 @@ export async function getAssetBuildersHandler(req: AuthRequest, res: Response) {
     let builderRows =
       (Array.isArray(builderResult?.[0]) ? builderResult[0] : builderResult) ??
       [];
+
+    // Add transferred-out builders to the list
+    const transferredOutBuilders = await getTransferredOutBuildersForCompany(companyId);
+    const currentBuilderIds = new Set(builderRows.map((b: any) => String(b.builderID)));
+    builderRows = [
+      ...builderRows,
+      ...transferredOutBuilders.filter((b: any) => !currentBuilderIds.has(String(b.builderID))),
+    ];
 
     logger.info(
       `Found ${builderRows.length} asset builders for company ${companyId} before loading items`

@@ -31,7 +31,7 @@ interface ProfileHeaderProps {
   isSaving?: boolean;
   onStartEdit: () => void;
   onCancel: () => void;
-  onSave: () => Promise<void>;
+  onSave: () => void;
 }
 
 export default function ProfileHeader({
@@ -46,8 +46,7 @@ export default function ProfileHeader({
 }: ProfileHeaderProps) {
   const fileInputRef = useRef<HTMLInputElement>(null);
 
-  const { previewUrl, setPreviewUrl, setPendingFile, clearPreview } =
-    useAvatarPreview();
+  const { previewUrl, setPreviewUrl, setPendingFile } = useAvatarPreview();
 
   const isLoading = externalLoading;
 
@@ -80,7 +79,6 @@ export default function ProfileHeader({
   };
 
   const handleCancel = () => {
-    clearPreview();
     onCancel();
   };
 

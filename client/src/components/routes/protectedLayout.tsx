@@ -4,6 +4,7 @@ import { useLocation, useNavigate } from 'react-router-dom';
 import { ReactNode, useEffect, useState } from 'react';
 import { motion } from 'framer-motion';
 import { useIdleTimer } from '@/hooks/useIdleTimer';
+import { IdleTimerDialog } from '@/components/IdleTimerDialog';
 import { Sheet, SheetContent, SheetTrigger } from '@/components/ui/sheet';
 import { Button } from '@/components/ui/button';
 import { Menu, Search } from 'lucide-react';
@@ -53,7 +54,7 @@ export default function ProtectedLayout({ children }: ProtectedLayoutProps) {
     setMobileNavOpen(false);
   }, [location.pathname]);
 
-  useIdleTimer();
+  const { showDialog, setShowDialog, onStay, onLogout: onIdleLogout, warningTime } = useIdleTimer();
 
   const handleLogout = () => {
     localStorage.removeItem('token');
@@ -253,6 +254,15 @@ export default function ProtectedLayout({ children }: ProtectedLayoutProps) {
 
         {/* Password Expiration Warning Dialog */}
         <PasswordExpirationWarning />
+
+        {/* Idle Timer Dialog */}
+        <IdleTimerDialog
+          open={showDialog}
+          onOpenChange={setShowDialog}
+          warningTime={warningTime}
+          onStay={onStay}
+          onLogout={onIdleLogout}
+        />
       </div>
     </AvatarPreviewProvider>
     </CompanyProvider>

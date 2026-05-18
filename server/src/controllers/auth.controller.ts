@@ -656,6 +656,7 @@ export async function updateProfileHandler(req: AuthRequest, res: Response) {
 
     if (digitalSignature !== undefined) {
       let signatureToStore: string | null = digitalSignature || null;
+      logger.info('Processing digitalSignature', { hasSignature: !!digitalSignature, signatureLength: digitalSignature?.length });
 
       if (
         signatureToStore &&
@@ -665,6 +666,7 @@ export async function updateProfileHandler(req: AuthRequest, res: Response) {
         if (matches && matches[1]) {
           const buffer = Buffer.from(matches[1], 'base64');
           signatureToStore = await uploadInitialsToCloudinary(buffer);
+          logger.info('Uploaded to Cloudinary', { cloudinaryUrl: signatureToStore });
         }
       }
 
@@ -707,6 +709,7 @@ export async function updateProfileHandler(req: AuthRequest, res: Response) {
         'UPDATE users SET digital_signature = ? WHERE userID = ?',
         [signatureToStore, userId]
       );
+      logger.info('Updated digital_signature in database', { userId, hasSignatureToStore: !!signatureToStore });
     }
 
     await pool.execute(

@@ -11,9 +11,21 @@ import AccountTab from './profileComponents/tabs/accountTab';
 import DocumentsTab from './profileComponents/tabs/documentsTab';
 
 import { Tabs, TabsContent } from '@/components/ui/tabs';
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogDescription,
+} from '@/components/ui/alert-dialog';
+import {
+  AppAlertDialogChromeFooter,
+  AppAlertDialogFrame,
+  AppAlertDialogGradientHeader,
+  AppAlertDialogMessage,
+} from '@/components/common/appDialogChrome';
 import { toast } from 'sonner';
-import Swal from 'sweetalert2';
 import { useCurrentUser } from '@/hooks/useCurrentUser';
+import { useAvatarPreview } from '@/hooks/avatarPreview';
 
 export default function ProfilePage() {
   const [searchParams] = useSearchParams();
@@ -26,10 +38,13 @@ export default function ProfilePage() {
   });
   const [isEditing, setIsEditing] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
+  const [showCancelDialog, setShowCancelDialog] = useState(false);
+  const [showSaveDialog, setShowSaveDialog] = useState(false);
 
   const basicInfoTabRef = useRef<BasicInfoTabHandle>(null);
 
   const { user, loading: userLoading, refetch } = useCurrentUser();
+  const { clearPreview } = useAvatarPreview();
 
   useEffect(() => {
     localStorage.setItem('profile-active-tab', activeTab);
@@ -65,46 +80,27 @@ export default function ProfilePage() {
     setIsEditing(true);
   };
 
-  const handleCancel = async () => {
+  const handleCancel = () => {
     if (!isEditing) return;
-
-    const result = await Swal.fire({
-      title: 'Discard Changes?',
-      text: 'All unsaved changes will be lost.',
-      icon: 'warning',
-      showCancelButton: true,
-      confirmButtonText: 'Yes, Discard',
-      cancelButtonText: 'No, Keep Editing',
-      confirmButtonColor: '#dc2626',
-      cancelButtonColor: '#6b7280',
-      reverseButtons: true,
-    });
-
-    if (result.isConfirmed) {
-      setIsEditing(false);
-      delete (window as any).pendingAvatarFile;
-      await refetch();
-      toast.info('Changes discarded.');
-    }
+    setShowCancelDialog(true);
   };
 
-  const handleSave = async () => {
+  const handleDiscardChanges = async () => {
+    setShowCancelDialog(false);
+    setIsEditing(false);
+    clearPreview();
+    delete (window as any).pendingAvatarFile;
+    await refetch();
+    toast.info('Changes discarded.');
+  };
+
+  const handleSave = () => {
     if (isSaving) return;
+    setShowSaveDialog(true);
+  };
 
-    const result = await Swal.fire({
-      title: 'Save Profile Changes?',
-      text: 'This will update your profile permanently.',
-      icon: 'question',
-      showCancelButton: true,
-      confirmButtonText: 'Yes, Save Changes',
-      cancelButtonText: 'Cancel',
-      confirmButtonColor: '#16a34a',
-      cancelButtonColor: '#dc2626',
-      reverseButtons: true,
-    });
-
-    if (!result.isConfirmed) return;
-
+  const handleConfirmSave = async () => {
+    setShowSaveDialog(false);
     setIsSaving(true);
     toast.loading('Saving profile...', { id: 'save-profile' });
 
@@ -170,6 +166,52 @@ export default function ProfilePage() {
             <DocumentsTab setActiveTab={setActiveTab} />
           </TabsContent>
         </Tabs>
+
+        <AlertDialog
+          open={showCancelDialog}
+          onOpenChange={setShowCancelDialog}
+        >
+          <AppAlertDialogFrame className="max-w-md">
+            <AppAlertDialogGradientHeader title="Discard Changes?" />
+            <AppAlertDialogMessage>
+              <AlertDialogDescription className="text-base text-gray-600">
+                All unsaved changes will be lost.
+              </AlertDialogDescription>
+            </AppAlertDialogMessage>
+            <AppAlertDialogChromeFooter>
+              <AlertDialogCancel>No, Keep Editing</AlertDialogCancel>
+              <AlertDialogAction
+                onClick={handleDiscardChanges}
+                className="bg-red-600 text-white hover:bg-red-700"
+              >
+                Yes, Discard
+              </AlertDialogAction>
+            </AppAlertDialogChromeFooter>
+          </AppAlertDialogFrame>
+        </AlertDialog>
+
+        <AlertDialog
+          open={showSaveDialog}
+          onOpenChange={setShowSaveDialog}
+        >
+          <AppAlertDialogFrame className="max-w-md">
+            <AppAlertDialogGradientHeader title="Save Profile Changes?" />
+            <AppAlertDialogMessage>
+              <AlertDialogDescription className="text-base text-gray-600">
+                This will update your profile permanently.
+              </AlertDialogDescription>
+            </AppAlertDialogMessage>
+            <AppAlertDialogChromeFooter>
+              <AlertDialogCancel>Cancel</AlertDialogCancel>
+              <AlertDialogAction
+                onClick={handleConfirmSave}
+                className="bg-green-600 text-white hover:bg-green-700"
+              >
+                Yes, Save Changes
+              </AlertDialogAction>
+            </AppAlertDialogChromeFooter>
+          </AppAlertDialogFrame>
+        </AlertDialog>
       </div>
     </div>
   );

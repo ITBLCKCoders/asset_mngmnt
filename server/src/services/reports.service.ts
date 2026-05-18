@@ -39,6 +39,7 @@ export type FinanceAssetRow = {
   depreciation_start_date: string | null;
   company_name: string | null;
   department_name: string | null;
+  assigned_department_name: string | null;
   location_name: string | null;
   room_name: string | null;
   condition: string;
@@ -250,6 +251,7 @@ export class ReportsService {
         a.depreciation_start_date,
         c.name AS company_name,
         d.name AS department_name,
+        ad.name AS assigned_department_name,
         l.name AS location_name,
         lr.room_name,
         a.condition,
@@ -269,6 +271,15 @@ export class ReportsService {
       LEFT JOIN asset_mngmnt_departments d
         ON a.department_id = d.departmentID
        AND d.deleted_at IS NULL
+      LEFT JOIN asset_assignments aa
+        ON aa.asset_id = a.assetID
+       AND aa.deleted_at IS NULL
+       AND aa.status = 'Active'
+      LEFT JOIN users au
+        ON aa.user_id = au.userID
+      LEFT JOIN asset_mngmnt_departments ad
+        ON au.department_id = ad.departmentID
+       AND ad.deleted_at IS NULL
       LEFT JOIN asset_mngmnt_locations l
         ON a.location_id = l.locationID
        AND l.deleted_at IS NULL
@@ -298,10 +309,11 @@ export class ReportsService {
     // Calculate depreciation for each asset
     const depreciationSchedule: FinanceDepreciationRow[] = assets.map(asset => {
       const accumulatedDepreciation = this.calculateAccumulatedDepreciation(asset);
-      const netBookValue = (asset.asset_value || 0) - accumulatedDepreciation;
+      const assetValue = this.toFinanceNumber(asset.asset_value);
+      const netBookValue = Math.max(0, assetValue - accumulatedDepreciation);
       const yearsDepreciated = this.calculateYearsDepreciated(asset);
       const remainingUsefulLife = asset.useful_life_years
-        ? Math.max(0, asset.useful_life_years - yearsDepreciated)
+        ? Math.max(0, this.toFinanceNumber(asset.useful_life_years) - yearsDepreciated)
         : null;
 
       return {
@@ -314,7 +326,7 @@ export class ReportsService {
     });
 
     // Calculate valuation summary
-    const totalAssetValue = assets.reduce((sum, a) => sum + (parseFloat(String(a.asset_value)) || 0), 0);
+    const totalAssetValue = assets.reduce((sum, a) => sum + this.toFinanceNumber(a.asset_value), 0);
     const totalAccumulatedDepreciation = depreciationSchedule.reduce(
       (sum, a) => sum + a.accumulated_depreciation,
       0
@@ -335,7 +347,7 @@ export class ReportsService {
         });
       }
       const group = byCategoryMap.get(category);
-      group.totalAssetValue += parseFloat(String(asset.asset_value)) || 0;
+      group.totalAssetValue += this.toFinanceNumber(asset.asset_value);
       group.assetCount += 1;
     });
 
@@ -352,7 +364,8 @@ export class ReportsService {
     // Group by department
     const byDepartmentMap = new Map<string, any>();
     assets.forEach(asset => {
-      const department = asset.department_name || 'Unassigned';
+      const department =
+        asset.assigned_department_name || asset.department_name || 'Unassigned';
       if (!byDepartmentMap.has(department)) {
         byDepartmentMap.set(department, {
           department,
@@ -363,13 +376,14 @@ export class ReportsService {
         });
       }
       const group = byDepartmentMap.get(department);
-      group.totalAssetValue += parseFloat(String(asset.asset_value)) || 0;
+      group.totalAssetValue += this.toFinanceNumber(asset.asset_value);
       group.assetCount += 1;
     });
 
     // Add depreciation to department groups
     depreciationSchedule.forEach(asset => {
-      const department = asset.department_name || 'Unassigned';
+      const department =
+        asset.assigned_department_name || asset.department_name || 'Unassigned';
       const group = byDepartmentMap.get(department);
       if (group) {
         group.totalAccumulatedDepreciation += asset.accumulated_depreciation;
@@ -391,11 +405,16 @@ export class ReportsService {
   }
 
   private static calculateAccumulatedDepreciation(asset: FinanceAssetRow): number {
-    if (!asset.asset_value || asset.is_old_unit === 1) {
+    const assetValue = this.toFinanceNumber(asset.asset_value);
+    const salvageValue = this.toFinanceNumber(asset.salvage_value);
+    const annualDepreciation = this.toFinanceNumber(asset.annual_depreciation);
+    const usefulLifeYears = this.toFinanceNumber(asset.useful_life_years);
+
+    if (!assetValue || asset.is_old_unit === 1) {
       return 0;
     }
 
-    if (!asset.depreciation_start_date || !asset.annual_depreciation) {
+    if (!asset.depreciation_start_date || !annualDepreciation) {
       return 0;
     }
 
@@ -403,12 +422,13 @@ export class ReportsService {
     const today = new Date();
     const yearsDiff = (today.getTime() - startDate.getTime()) / (1000 * 60 * 60 * 24 * 365.25);
 
-    if (asset.useful_life_years && yearsDiff >= asset.useful_life_years) {
-      // Asset is fully depreciated
-      return asset.asset_value - asset.salvage_value;
+    const depreciableValue = Math.max(0, assetValue - salvageValue);
+
+    if (usefulLifeYears && yearsDiff >= usefulLifeYears) {
+      return depreciableValue;
     }
 
-    return Math.min(asset.annual_depreciation * yearsDiff, asset.asset_value - asset.salvage_value);
+    return Math.min(annualDepreciation * yearsDiff, depreciableValue);
   }
 
   private static calculateYearsDepreciated(asset: FinanceAssetRow): number {
@@ -419,5 +439,10 @@ export class ReportsService {
     const startDate = new Date(asset.depreciation_start_date);
     const today = new Date();
     return (today.getTime() - startDate.getTime()) / (1000 * 60 * 60 * 24 * 365.25);
+  }
+
+  private static toFinanceNumber(value: unknown): number {
+    const parsed = Number.parseFloat(String(value ?? 0));
+    return Number.isFinite(parsed) ? parsed : 0;
   }
 }
