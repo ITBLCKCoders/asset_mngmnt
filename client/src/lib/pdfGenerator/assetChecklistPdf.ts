@@ -36,6 +36,10 @@ export interface AssetChecklistData {
   dept_head_signed_by?: string | null;
   dept_head_digital_signature?: string | null;
   dept_head_name?: string | null;
+  it_manager_signed_at?: string | null;
+  it_manager_signed_by?: string | null;
+  it_manager_digital_signature?: string | null;
+  it_manager_name?: string | null;
   asset_label?: string;
   employee_company_logo_url?: string | null;
   asset?: {
@@ -417,6 +421,27 @@ export const generateAssetChecklistPDF = async (
       })
     : '';
 
+  const itManagerName = checklistData.it_manager_name || '';
+  const itManagerDigitalSignature =
+    checklistData.it_manager_digital_signature || '';
+  const itManagerInitial = itManagerName
+    ? itManagerName.charAt(0).toUpperCase()
+    : '';
+  const itManagerSignedDate = checklistData.it_manager_signed_at
+    ? new Date(checklistData.it_manager_signed_at).toLocaleDateString('en-US', {
+        year: 'numeric',
+        month: '2-digit',
+        day: '2-digit',
+      })
+    : '';
+  const itManagerSignedTime = checklistData.it_manager_signed_at
+    ? new Date(checklistData.it_manager_signed_at).toLocaleTimeString('en-US', {
+        hour: '2-digit',
+        minute: '2-digit',
+        hour12: true,
+      })
+    : '';
+
   type PendingChecklistSignature = {
     data: string;
     x: number;
@@ -472,6 +497,53 @@ export const generateAssetChecklistPDF = async (
       const yMax = cell.y + cell.height - padding;
       const contentWidth = Math.max(20, xMax - xMin);
       const contentHeight = Math.max(10, yMax - yMin);
+
+      // Row 1, column 0: IT Manager / IT Department Head
+      if (data.row.index === 1 && data.column.index === 0) {
+        const yTop = yMin;
+        const dateTimeReserved = 20;
+        const sigHeight = Math.min(50, Math.max(28, contentHeight - 2));
+        const dateTimeX = xMax - dateTimeReserved;
+        const nameY = yTop + sigHeight - 6;
+        const displayItManagerName = itManagerName || '';
+
+        doc.setFontSize(8);
+        doc.setFont('helvetica', 'normal');
+        doc.setTextColor(0, 0, 0);
+
+        if (itManagerDigitalSignature) {
+          pendingSignatures.push({
+            data: itManagerDigitalSignature,
+            x: cell.x + 1,
+            y: yTop,
+            anchorBottomY: nameY - 2,
+            maxWidth: PDF_SIGNATURE_MAX_WIDTH_MM,
+            maxHeight: PDF_SIGNATURE_MAX_HEIGHT_MM,
+          });
+        } else if (itManagerInitial) {
+          doc.setFontSize(14);
+          doc.setFont('helvetica', 'bold');
+          doc.text(itManagerInitial, xMin, yTop + 10);
+        }
+
+        if (displayItManagerName) {
+          doc.setFontSize(8);
+          doc.setFont('helvetica', 'normal');
+          const nameMaxWidth = Math.max(15, contentWidth - 6);
+          const nameLines = doc.splitTextToSize(
+            displayItManagerName,
+            nameMaxWidth
+          );
+          doc.text(nameLines, xMin, nameY);
+        }
+
+        if (itManagerSignedDate && itManagerSignedTime) {
+          doc.setFontSize(7);
+          doc.setFont('helvetica', 'normal');
+          doc.text(itManagerSignedDate, dateTimeX, yTop + 4);
+          doc.text(itManagerSignedTime, dateTimeX, yTop + 9);
+        }
+      }
 
       // Row 1, column 1: IT Staff / IT Inventory Manager (name/date only; signature overlays later)
       if (creatorName && data.row.index === 1 && data.column.index === 1) {

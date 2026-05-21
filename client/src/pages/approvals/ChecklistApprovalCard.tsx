@@ -16,6 +16,7 @@ export type ChecklistApprovalBatch = {
   checklist_count: number;
   checklists: AssetChecklistData[];
   dept_head_signed_at?: string | null;
+  it_manager_signed_at?: string | null;
 };
 
 export function ChecklistApprovalCard({

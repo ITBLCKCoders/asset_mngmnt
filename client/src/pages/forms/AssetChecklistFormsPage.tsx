@@ -49,6 +49,18 @@ type ChecklistRow = {
   checklist_data: any;
   remarks?: string | null;
   created_at: string;
+  creator_name?: string | null;
+  creator_digital_signature?: string | null;
+  employee_signed_at?: string | null;
+  employee_digital_signature?: string | null;
+  dept_head_signed_at?: string | null;
+  dept_head_signed_by?: string | null;
+  dept_head_digital_signature?: string | null;
+  dept_head_name?: string | null;
+  it_manager_signed_at?: string | null;
+  it_manager_signed_by?: string | null;
+  it_manager_digital_signature?: string | null;
+  it_manager_name?: string | null;
   asset?: {
     id: string;
     code?: string | null;

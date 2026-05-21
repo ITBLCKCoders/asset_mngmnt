@@ -4,8 +4,12 @@ import type { AuthRequest } from '../middleware/authenticate.js';
 import logger from '../logger.js';
 import * as checklistRepo from '../repositories/assetChecklist.repository.js';
 import { getAssetScope } from '../utils/assetScope.js';
+import { createNotificationForApi } from '../utils/notificationsApi.js';
 import {
+  getManagerApprover2UserIdsInItDepartmentAndCompany,
+  isUserInItDepartmentForCompany,
   isUserManagerApprover1,
+  isUserManagerApprover2,
 } from '../utils/approverNotifications.js';
 import { createAuditLog } from '../utils/audit.js';
 
@@ -183,6 +187,46 @@ export async function approveChecklistsDeptHeadHandler(
       userAgent: req.get ? req.get('User-Agent') : 'Unknown',
     });
 
+    try {
+      const itApproverIds =
+        await getManagerApprover2UserIdsInItDepartmentAndCompany(companyId);
+      const [approverNameRows] = (await pool.query(
+        `SELECT name, first_name, last_name FROM users WHERE userID = ? LIMIT 1`,
+        [userId]
+      )) as [
+        {
+          name?: string | null;
+          first_name?: string | null;
+          last_name?: string | null;
+        }[],
+        unknown,
+      ];
+      const approverRow = approverNameRows[0];
+      const deptHeadName =
+        [approverRow?.first_name, approverRow?.last_name]
+          .filter(Boolean)
+          .join(' ')
+          .trim() ||
+        approverRow?.name ||
+        'Department head';
+      for (const itUserId of itApproverIds) {
+        if (itUserId === userId) continue;
+        await createNotificationForApi({
+          user_id: itUserId,
+          title: 'Asset Checklist Receive Approval Needed',
+          message: `${deptHeadName} approved ${approvedCount} asset checklist${approvedCount !== 1 ? 's' : ''} — IT receive approval required.`,
+          type: 'system',
+          data: {
+            route: '/approvals',
+            actionTarget: 'checklist_receive',
+            checklist_count: approvedCount,
+          },
+        });
+      }
+    } catch (notifError) {
+      logger.error('Failed to notify IT checklist receivers:', notifError);
+    }
+
     return res.status(200).json({
       message: `Approved ${approvedCount} checklist(s) successfully`,
       approvedCount,
@@ -201,5 +245,137 @@ export async function approveChecklistsDeptHeadHandler(
       });
     }
     return res.status(500).json({ error: 'Failed to approve checklists' });
+  }
+}
+
+export async function getReceivePendingChecklistApprovalsHandler(
+  req: AuthRequest,
+  res: Response
+) {
+  try {
+    const userId = req.user!.userID;
+    if (!(await isUserManagerApprover2(userId))) {
+      return res.status(200).json({ checklistBatches: [] });
+    }
+
+    const { companyId } = await getAssetScope(pool, userId);
+    if (!companyId) {
+      return res.status(200).json({ checklistBatches: [] });
+    }
+
+    if (!(await isUserInItDepartmentForCompany(userId, companyId))) {
+      return res.status(200).json({ checklistBatches: [] });
+    }
+
+    const rows = await checklistRepo.findPendingItManagerReceiveChecklists(
+      companyId
+    );
+    const checklistBatches = groupChecklistsIntoBatches(rows).map(batch => ({
+      ...batch,
+      dept_head_signed_at: batch.checklists[0]?.dept_head_signed_at ?? null,
+      it_manager_signed_at: batch.checklists[0]?.it_manager_signed_at ?? null,
+    }));
+
+    return res.status(200).json({ checklistBatches });
+  } catch (error) {
+    logger.error('Get receive-pending checklist approvals failed:', error);
+    return res
+      .status(500)
+      .json({ error: 'Failed to fetch receive-pending checklist approvals' });
+  }
+}
+
+export async function receiveChecklistsItManagerHandler(
+  req: AuthRequest,
+  res: Response
+) {
+  try {
+    const userId = req.user!.userID;
+    const bodyIds = req.body?.checklistIds;
+    const checklistIds = Array.isArray(bodyIds)
+      ? bodyIds.map((id: unknown) => String(id).trim()).filter(Boolean)
+      : [];
+    const bodySignature =
+      typeof req.body?.digitalSignature === 'string'
+        ? req.body.digitalSignature.trim()
+        : '';
+
+    if (checklistIds.length === 0) {
+      return res.status(400).json({ error: 'checklistIds is required' });
+    }
+
+    if (!(await isUserManagerApprover2(userId))) {
+      return res
+        .status(403)
+        .json({ error: 'Not authorized as IT manager approver' });
+    }
+
+    const { companyId } = await getAssetScope(pool, userId);
+    if (!companyId) {
+      return res.status(400).json({ error: 'Company context required' });
+    }
+
+    if (!(await isUserInItDepartmentForCompany(userId, companyId))) {
+      return res
+        .status(403)
+        .json({ error: 'Only IT department Manager Approver 2 can receive' });
+    }
+
+    const [approverRows] = (await pool.query(
+      'SELECT digital_signature FROM users WHERE userID = ? LIMIT 1',
+      [userId]
+    )) as [{ digital_signature?: string | null }[], unknown];
+    let digitalSignature: string | null = bodySignature || null;
+    if (!digitalSignature) {
+      const fromUser = approverRows[0]?.digital_signature;
+      digitalSignature =
+        fromUser != null && String(fromUser).trim() !== ''
+          ? String(fromUser).trim()
+          : null;
+    }
+
+    const receivedCount = await checklistRepo.receiveChecklistsAsItManager({
+      checklistIds,
+      approverUserId: userId,
+      companyId,
+      digitalSignature,
+    });
+
+    if (receivedCount === 0) {
+      return res.status(400).json({
+        error:
+          'No checklists were received. They may already be received or not in your company.',
+      });
+    }
+
+    await createAuditLog({
+      userId,
+      action: 'Received Asset Checklists (IT)',
+      resourceType: 'asset_checklist',
+      resourceId: checklistIds.join(','),
+      details: `IT manager received ${receivedCount} asset checklist(s)`,
+      newValues: { received_count: receivedCount, checklist_ids: checklistIds },
+      ipAddress: req.ip,
+      userAgent: req.get ? req.get('User-Agent') : 'Unknown',
+    });
+
+    return res.status(200).json({
+      message: `Received ${receivedCount} checklist(s) successfully`,
+      receivedCount,
+    });
+  } catch (error: unknown) {
+    const message =
+      error instanceof Error ? error.message : String(error ?? '');
+    logger.error('Receive checklists IT manager failed:', error);
+    if (
+      typeof message === 'string' &&
+      message.includes('it_manager_signed_at')
+    ) {
+      return res.status(503).json({
+        error:
+          'Checklist receive is not available: run db/migration_add_asset_checklist_it_manager_sign.sql',
+      });
+    }
+    return res.status(500).json({ error: 'Failed to receive checklists' });
   }
 }

@@ -207,6 +207,9 @@ export default function ApprovalsPage() {
 
   // ---------- SMS OTP Dialog ----------
   const [showOtpDialog, setShowOtpDialog] = useState(false);
+  const [otpPurpose, setOtpPurpose] = useState<'approve' | 'decline' | 'receive'>(
+    'approve'
+  );
   const pendingActionRef = useRef<(() => Promise<void>) | null>(null);
 
   // ---------- Decline Reason Dialog ----------
@@ -316,12 +319,15 @@ export default function ApprovalsPage() {
     if (!canReceive) return;
     try {
       setReceiveLoading(true);
-      const [returnRes, transferRes] = await Promise.all([
+      const [returnRes, transferRes, checklistRes] = await Promise.all([
         api.get<{ assetReturnForms?: AssetReturnFormBatch[] }>(
           '/asset-returns/forms/receive-pending-approvals'
         ),
         api.get<{ assetTransferForms?: AssetTransferFormBatch[] }>(
           '/asset-transfers/forms/receive-pending-approvals'
+        ),
+        api.get<{ checklistBatches?: ChecklistApprovalBatch[] }>(
+          '/asset-checklists/receive-pending-approvals'
         ),
       ]);
       const returns = (returnRes.assetReturnForms ?? []).map(b => ({
@@ -332,8 +338,22 @@ export default function ApprovalsPage() {
         ...b,
         formType: 'transfer' as const,
       })) as FormApprovalBatch[];
+      const checklists = (checklistRes.checklistBatches ?? []).map(
+        (b: ChecklistApprovalBatch) => ({
+          ...b,
+          formType: 'checklist' as const,
+          dept_head_signed_at:
+            b.checklists[0]?.dept_head_signed_at ??
+            b.dept_head_signed_at ??
+            null,
+          it_manager_signed_at:
+            b.checklists[0]?.it_manager_signed_at ??
+            b.it_manager_signed_at ??
+            null,
+        })
+      );
       setReceiveBatches(
-        ([...returns, ...transfers] as ApprovalBatch[]).sort(
+        ([...returns, ...transfers, ...checklists] as ApprovalBatch[]).sort(
           (a, b) =>
             new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
         )
@@ -645,8 +665,8 @@ export default function ApprovalsPage() {
         setApproving(false);
       }
     };
-    
-    // Show OTP dialog
+
+    setOtpPurpose('approve');
     setShowOtpDialog(true);
   };
 
@@ -724,53 +744,98 @@ export default function ApprovalsPage() {
         setDeclining(false);
       }
     };
-    
-    // Show OTP dialog
+
+    setOtpPurpose('decline');
     setShowOtpDialog(true);
   };
 
-  const handleReceive = async () => {
-    if (
-      !selectedBatch ||
-      selectedBatch.formType === 'checklist' ||
-      selectedBatch.formType === 'borrow' ||
-      !('formID' in selectedBatch) ||
-      !selectedBatch.formID
-    ) {
+  const handleReceive = () => {
+    if (!selectedBatch || selectedBatch.formType === 'borrow') {
       return;
     }
-    const base =
-      selectedBatch.formType === 'transfer'
-        ? '/asset-transfers'
-        : '/asset-returns';
-    const successMsg =
-      selectedBatch.formType === 'transfer'
-        ? 'Transfer form received successfully'
-        : 'Return form received successfully';
-    try {
-      setReceiving(true);
-      await api.post(`${base}/forms/${selectedBatch.formID}/receive`, {});
-      toast.success(successMsg);
-      setShowDetail(false);
-      setSelectedBatch(null);
-      await refreshAll();
-    } catch (error: any) {
-      const msg =
-        error?.response?.data?.error || error?.message || 'Failed to receive';
-      toast.error(msg);
-    } finally {
-      setReceiving(false);
-    }
+
+    pendingActionRef.current = async () => {
+      if (!selectedBatch) {
+        return;
+      }
+
+      if (selectedBatch.formType === 'checklist') {
+        const cb = selectedBatch as ChecklistApprovalBatch;
+        try {
+          setReceiving(true);
+          const sig =
+            (currentUser as { digitalSignature?: string })?.digitalSignature ||
+            '';
+          await api.post('/asset-checklists/it-manager-receive', {
+            checklistIds: cb.checklists.map(c => c.id),
+            digitalSignature: sig || undefined,
+          });
+          toast.success(
+            cb.checklist_count > 1
+              ? `Received ${cb.checklist_count} checklists`
+              : 'Checklist received'
+          );
+          if (checklistPreviewUrl) URL.revokeObjectURL(checklistPreviewUrl);
+          setChecklistPreviewUrl('');
+          setShowDetail(false);
+          setSelectedBatch(null);
+          await refreshAll();
+        } catch (error: unknown) {
+          const msg =
+            (error as { data?: { error?: string } })?.data?.error ||
+            (error as Error)?.message ||
+            'Failed to receive';
+          toast.error(msg);
+        } finally {
+          setReceiving(false);
+        }
+        return;
+      }
+
+      if (!('formID' in selectedBatch) || !selectedBatch.formID) {
+        return;
+      }
+      const formBatch = selectedBatch as FormApprovalBatch;
+      const base =
+        formBatch.formType === 'transfer'
+          ? '/asset-transfers'
+          : '/asset-returns';
+      const successMsg =
+        formBatch.formType === 'transfer'
+          ? 'Transfer form received successfully'
+          : 'Return form received successfully';
+      try {
+        setReceiving(true);
+        await api.post(`${base}/forms/${formBatch.formID}/receive`, {});
+        toast.success(successMsg);
+        setShowDetail(false);
+        setSelectedBatch(null);
+        await refreshAll();
+      } catch (error: unknown) {
+        const msg =
+          (error as { data?: { error?: string } })?.data?.error ||
+          (error as Error)?.message ||
+          'Failed to receive';
+        toast.error(msg);
+      } finally {
+        setReceiving(false);
+      }
+    };
+
+    setOtpPurpose('receive');
+    setShowOtpDialog(true);
   };
 
   const showReceiveButton =
     canReceive &&
     selectedBatch != null &&
     selectedBatch.formType !== 'borrow' &&
-    selectedBatch.formType !== 'checklist' &&
-    !!(selectedBatch as FormApprovalBatch).dept_head_signed_at &&
-    !!(selectedBatch as FormApprovalBatch).process_signed_at &&
-    !(selectedBatch as FormApprovalBatch).it_manager_signed_at;
+    (selectedBatch.formType === 'checklist'
+      ? !!(selectedBatch as ChecklistApprovalBatch).dept_head_signed_at &&
+        !(selectedBatch as ChecklistApprovalBatch).it_manager_signed_at
+      : !!(selectedBatch as FormApprovalBatch).dept_head_signed_at &&
+        !!(selectedBatch as FormApprovalBatch).process_signed_at &&
+        !(selectedBatch as FormApprovalBatch).it_manager_signed_at);
 
   const handleDownloadCurrent = async () => {
     if (!selectedBatch) return;
@@ -1265,8 +1330,16 @@ export default function ApprovalsPage() {
           }}
           pendingActionRef={pendingActionRef}
           title="OTP SMS Verification"
-          description="OTP SMS Verification has been sent to your registered mobile number for approval confirmation."
-          verifyButtonLabel="Verify & Confirm"
+          description={
+            otpPurpose === 'receive'
+              ? 'OTP SMS Verification has been sent to your registered mobile number for receive confirmation.'
+              : otpPurpose === 'decline'
+                ? 'OTP SMS Verification has been sent to your registered mobile number for decline confirmation.'
+                : 'OTP SMS Verification has been sent to your registered mobile number for approval confirmation.'
+          }
+          verifyButtonLabel={
+            otpPurpose === 'receive' ? 'Verify & Receive' : 'Verify & Confirm'
+          }
         />
       </main>
     </div>
