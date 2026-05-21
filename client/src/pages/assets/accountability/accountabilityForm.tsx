@@ -113,6 +113,16 @@ const generateCacheKey = (form: AccountabilityForm, currentUser?: any, intangibl
   return JSON.stringify(keyData);
 };
 
+// Helper function to convert Blob to Data URL
+const blobToDataUrl = (blob: Blob): Promise<string> => {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onloadend = () => resolve(reader.result as string);
+    reader.onerror = reject;
+    reader.readAsDataURL(blob);
+  });
+};
+
 // Helper function to add signature to PDF (handles both text and base64 images)
 const addSignatureToPDF = async (
   doc: jsPDF,
@@ -159,7 +169,7 @@ const addSignatureToPDF = async (
       img.onload = () => {
         logger.debug('Signature image loaded', { width: img.width, height: img.height });
         
-        // Convert image to black using canvas
+        // Process image to remove white background and make it transparent
         const canvas = document.createElement('canvas');
         canvas.width = img.width;
         canvas.height = img.height;
@@ -169,24 +179,23 @@ const addSignatureToPDF = async (
           const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
           const data = imageData.data;
           
-          // Convert to black and white, keeping black pixels black, others transparent
+          // Make white/near-white pixels transparent
           for (let i = 0; i < data.length; i += 4) {
             const r = data[i];
             const g = data[i + 1];
             const b = data[i + 2];
             const a = data[i + 3];
             
-            // If pixel is not transparent
-            if (a > 0) {
-              // Make it black
-              data[i] = 0;     // R
-              data[i + 1] = 0; // G
-              data[i + 2] = 0; // B
-              data[i + 3] = a; // Keep original alpha
+            // Check if pixel is white or near-white
+            const brightness = (r + g + b) / 3;
+            if (brightness > 240 && a > 0) {
+              // Make transparent
+              data[i + 3] = 0;
             }
           }
           
           ctx.putImageData(imageData, 0, 0);
+          
           // Cache the processed signature image if it's a URL
           if (signatureData.startsWith('http://') || signatureData.startsWith('https://')) {
             const processedDataUrl = canvas.toDataURL();
@@ -1080,7 +1089,7 @@ I agree that if any of the items are damaged or lost due to my negligence, I sha
     hasIssuerSignature: !!form.issuerSignature, 
     signatureLength: form.issuerSignature?.length 
   });
-  await addSignatureToPDF(doc, form.issuerSignature, 20, signatureY + 22, 40, 15);
+  await addSignatureToPDF(doc, form.issuerSignature, -20, signatureY, 122, 74);
   
   doc.setLineWidth(0.2);
   doc.line(20, signatureY + 30, 80, signatureY + 30);
@@ -1106,7 +1115,7 @@ I agree that if any of the items are damaged or lost due to my negligence, I sha
       signaturePrefix: digitalSignature?.substring(0, 50)
     });
     if (digitalSignature) {
-      await addSignatureToPDF(doc, digitalSignature, 125, signatureY + 22, 40, 25);
+      await addSignatureToPDF(doc, digitalSignature, 90, signatureY - 30, 122, 74);
     }
     
     doc.setLineWidth(0.2);
@@ -1137,7 +1146,7 @@ I agree that if any of the items are damaged or lost due to my negligence, I sha
     hasITCopySignature: !!form.itCopySignature, 
     signatureLength: form.itCopySignature?.length 
   });
-  await addSignatureToPDF(doc, form.itCopySignature, 20, signatureY + 82, 40, 15);
+  await addSignatureToPDF(doc, form.itCopySignature, -20, signatureY + 60, 122, 74);
   
   doc.setLineWidth(0.2);
   doc.line(20, signatureY + 90, 80, signatureY + 90);
@@ -1163,7 +1172,7 @@ I agree that if any of the items are damaged or lost due to my negligence, I sha
     doc.text(rcSignerName, 130, signatureY + 88);
     // Display digital initials
     if (form.receivedCopy201FileSignature) {
-      await addSignatureToPDF(doc, form.receivedCopy201FileSignature, 130, signatureY + 82, 50, 30);
+      await addSignatureToPDF(doc, form.receivedCopy201FileSignature, 90, signatureY + 30, 122, 74);
     }
     doc.setLineWidth(0.2);
     doc.line(130, signatureY + 90, 190, signatureY + 90);
@@ -1222,6 +1231,7 @@ export function AccountabilityFormCard({
   const isAssignedUser = currentUser?.id === form.user.id;
   const canSign = isAssignedUser && form.status === 'Pending';
   const [pdfUrl, setPdfUrl] = useState<string>('');
+  const [isPdfGenerating, setIsPdfGenerating] = useState(false);
   const [isSigning, setIsSigning] = useState(false);
   const [localForm, setLocalForm] = useState<AccountabilityForm>(form);
   const [showConfirmDialog, setShowConfirmDialog] = useState(false);
@@ -1282,8 +1292,11 @@ export function AccountabilityFormCard({
           const response = await api.get(`/asset-assignments/checklist/${form.assignment.id}`);
           setChecklistData(response);
           setHasChecklist(!!response);
-        } catch (error) {
-          console.error('Failed to fetch checklist:', error);
+        } catch (error: any) {
+          // 404 is expected when no checklist exists for this assignment - don't log as error
+          if (error?.response?.status !== 404) {
+            console.error('Failed to fetch checklist:', error);
+          }
           setChecklistData(null);
           setHasChecklist(false);
         } finally {
@@ -1345,20 +1358,31 @@ export function AccountabilityFormCard({
     generateChecklistPdf();
   }, [showChecklistDialog, checklistData, checklistAssetLabel]);
 
+  // Generate PDF only when preview modal opens
   useEffect(() => {
+    if (!showPreviewModal) return;
+
     const generatePdf = async () => {
       try {
+        console.log('Starting PDF generation for preview...');
+        setIsPdfGenerating(true);
+        console.log('Set isPdfGenerating to true');
+        
         // Check cache first
         const cacheKey = generateCacheKey(localForm, currentUser, intangibleAssets);
         const cachedPdf = pdfCache.get(cacheKey);
         
         if (cachedPdf) {
-          logger.debug('Using cached PDF');
+          console.log('Using cached PDF');
           const url = URL.createObjectURL(cachedPdf);
+          console.log('Created blob URL from cache:', url);
           setPdfUrl(url);
+          setIsPdfGenerating(false);
+          console.log('Set isPdfGenerating to false (cached)');
           return;
         }
 
+        console.log('Generating new PDF...');
         // Generate new PDF
         const pdfBlob = await generateAccountabilityFormPDF(
           localForm,
@@ -1366,26 +1390,35 @@ export function AccountabilityFormCard({
           intangibleAssets
         );
         
+        console.log('PDF generated, size:', pdfBlob.size, 'bytes');
+        
         // Cache the generated PDF
         pdfCache.set(cacheKey, pdfBlob);
         
         const url = URL.createObjectURL(pdfBlob);
+        console.log('Created blob URL:', url);
         setPdfUrl(url);
+        setIsPdfGenerating(false);
+        console.log('Set isPdfGenerating to false (generated)');
       } catch (error) {
         console.error('Error generating PDF:', error);
+        setIsPdfGenerating(false);
+        console.log('Set isPdfGenerating to false (error)');
+        toast.error('Failed to generate PDF preview');
       }
     };
 
-    // Debounce PDF generation to avoid rapid regeneration
-    const debouncedGenerate = debounce(generatePdf, 500);
-    debouncedGenerate();
+    generatePdf();
 
     return () => {
       if (pdfUrl) {
+        console.log('Revoking blob URL:', pdfUrl);
         URL.revokeObjectURL(pdfUrl);
+        setPdfUrl('');
       }
+      setIsPdfGenerating(false);
     };
-  }, [localForm, currentUser, intangibleAssets]);
+  }, [showPreviewModal, localForm, currentUser, intangibleAssets]);
 
   const handleDownload = async () => {
     if (activeCardTab === 'checklist' && checklistData) {
@@ -2187,9 +2220,17 @@ export function AccountabilityFormCard({
             title={`${form.user.first_name} ${form.user.last_name} - ${form.formNumber}`}
             description="Asset Accountability Form Preview"
           />
-          <AppDialogBody className="min-h-0 flex-1 overflow-auto !p-0">
-            {pdfUrl ? (
-              <PDFViewer pdfUrl={pdfUrl} className="h-full w-full" />
+          <AppDialogBody className="min-h-0 flex-1 overflow-auto !p-0 bg-gray-100">
+            {isPdfGenerating ? (
+              <div className="flex h-full w-full items-center justify-center text-gray-500 bg-gray-100">
+                <div className="flex flex-col items-center gap-4 p-8 bg-white rounded-lg shadow-md">
+                  <div className="h-12 w-12 animate-spin rounded-full border-4 border-gray-200 border-t-blue-600" />
+                  <p className="text-lg font-medium text-gray-700">Generating PDF preview...</p>
+                  <p className="text-sm text-gray-500">This may take a few seconds</p>
+                </div>
+              </div>
+            ) : pdfUrl ? (
+              <PDFViewer pdfUrl={pdfUrl} className="w-full" />
             ) : (
               <div className="flex h-full w-full items-center justify-center text-gray-500">
                 Loading form preview...

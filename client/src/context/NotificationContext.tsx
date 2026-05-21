@@ -303,6 +303,11 @@ export function NotificationProvider({ children }: NotificationProviderProps) {
       connectionAttempts++;
       dispatch({ type: 'SET_CONNECTION_STATUS', payload: false });
 
+      // Log the error for debugging but don't spam console
+      if (connectionAttempts === 1) {
+        logger.warn(`[SOCKET] Connection error: ${error.message}. Will retry with polling if WebSocket fails.`);
+      }
+
       // Check if error is due to authentication (expired token)
       if (error.message?.includes('TokenExpiredError') || error.message?.includes('401') || error.message?.includes('unauthorized')) {
         logger.info('[SOCKET] Authentication error detected, attempting token refresh');
@@ -344,9 +349,9 @@ export function NotificationProvider({ children }: NotificationProviderProps) {
 
       if (connectionAttempts >= maxConnectionAttempts) {
         logger.warn(
-          `Failed to connect after ${maxConnectionAttempts} attempts. Please check if the server is running at ${socketUrl}`
+          `[SOCKET] Failed to connect after ${maxConnectionAttempts} attempts. Socket.IO will fall back to polling transport. Server should be running at ${socketUrl}`
         );
-        // Don't automatically retry if max attempts reached
+        // Don't automatically retry if max attempts reached - let Socket.IO handle fallback to polling
         socket.io.reconnection(false);
       }
     });

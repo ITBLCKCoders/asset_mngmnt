@@ -693,7 +693,6 @@ export default function AccountabilityFormsPage() {
                   onClose={() => {
                     setShowFormDetail(false);
                     setSelectedForm(null);
-                    fetchForms();
                   }}
                   onSign={handleSignForm}
                   headerInParentChrome
