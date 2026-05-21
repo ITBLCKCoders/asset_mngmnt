@@ -329,7 +329,14 @@ export default function AssetsTransfer() {
   const fetchCompanyTransferAssets = async () => {
     try {
       setCompanyAssetsLoading(true);
-      const response = await api.get('/asset-transfers/company-assets');
+      const queryParams = new URLSearchParams();
+      if (showScopeTabs) {
+        queryParams.append('scope', scope);
+      }
+      const companyAssetsUrl = queryParams.toString()
+        ? `/asset-transfers/company-assets?${queryParams.toString()}`
+        : '/asset-transfers/company-assets';
+      const response = await api.get(companyAssetsUrl);
       setCompanyTransferAssets(response.assets || []);
     } catch (error) {
       console.error('Failed to fetch company transfer assets:', error);
@@ -420,7 +427,14 @@ export default function AssetsTransfer() {
       setLoading(false);
     };
     fetchData();
-  }, [activeCompany?.id]);
+  }, [activeCompany?.id, scope]);
+
+  useEffect(() => {
+    if (!showScopeTabs) return;
+    setSelectedAssignments([]);
+    setSelectedCompanyAssetIds([]);
+    setExpandedBuilderForSelect(null);
+  }, [scope, showScopeTabs]);
 
   const assignedBuilders = useMemo(() => {
     return assetBuilders.filter(

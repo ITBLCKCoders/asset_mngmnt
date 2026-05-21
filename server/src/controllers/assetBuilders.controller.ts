@@ -4,6 +4,10 @@ import type { AuthRequest } from '../middleware/authenticate.js';
 import logger from '../logger.js';
 import { createAuditLog } from '../utils/audit.js';
 import { getAssetScope, getDepartmentIdsForScope } from '../utils/assetScope.js';
+import {
+  getTransferredOutBuildersForCompany,
+  setAssetBuilderOriginatingCompany,
+} from '../utils/companyTransferVisibility.js';
 
 export async function createAssetBuilderHandler(
   req: AuthRequest,
@@ -71,6 +75,12 @@ export async function createAssetBuilderHandler(
     )) as any[];
 
     const builder = builderRows[0][0];
+
+    await setAssetBuilderOriginatingCompany(
+      pool,
+      String(builder.builderID),
+      companyId ?? builder.company_id ?? null
+    );
 
     // Create asset builder items using the actual assetIDs
     // First item or parentAssetId becomes the parent
@@ -160,41 +170,6 @@ export async function createAssetBuilderHandler(
   }
 }
 
-async function getTransferredOutBuildersForCompany(companyId: string) {
-  const [rows] = (await pool.execute(
-    `SELECT
-        ab.*,
-        c.name as company_name,
-        latest.target_company_name
-      FROM (
-        SELECT
-          al.resource_id as builder_id,
-          JSON_UNQUOTE(JSON_EXTRACT(al.new_values, '$.company_id')) as target_company_id,
-          c2.name as target_company_name,
-          MAX(al.created_at) as transferred_at
-        FROM audit_logs al
-        LEFT JOIN companies c2
-          ON c2.companyID = JSON_UNQUOTE(JSON_EXTRACT(al.new_values, '$.company_id'))
-        WHERE al.action = 'Transferred Asset Builder to Company'
-          AND al.resource_type = 'asset_builder'
-          AND JSON_UNQUOTE(JSON_EXTRACT(al.old_values, '$.company_id')) = ?
-        GROUP BY al.resource_id, target_company_id, c2.name
-      ) latest
-      JOIN asset_builders ab ON CAST(ab.builderID AS CHAR) = CAST(latest.builder_id AS CHAR)
-      LEFT JOIN companies c ON ab.company_id = c.companyID
-      WHERE ab.deleted_at IS NULL
-        AND ab.company_id <> ?
-        AND latest.target_company_id = ab.company_id`,
-    [companyId, companyId]
-  )) as any[];
-  return (rows as any[]).map(row => ({
-    ...row,
-    status: `Transferred to ${row.target_company_name || row.company_name || 'Company'}`,
-    transferred_out: true,
-    transferred_to_company_name: row.target_company_name || row.company_name || null,
-  }));
-}
-
 export async function getAssetBuildersHandler(req: AuthRequest, res: Response) {
   try {
     const userId = req.user!.userID;
@@ -245,7 +220,10 @@ export async function getAssetBuildersHandler(req: AuthRequest, res: Response) {
       [];
 
     // Add transferred-out builders to the list
-    const transferredOutBuilders = await getTransferredOutBuildersForCompany(companyId);
+    const transferredOutBuilders = await getTransferredOutBuildersForCompany(
+      pool,
+      companyId
+    );
     const currentBuilderIds = new Set(builderRows.map((b: any) => String(b.builderID)));
     builderRows = [
       ...builderRows,
@@ -338,6 +316,9 @@ export async function getAssetBuildersHandler(req: AuthRequest, res: Response) {
         const allowedDeptSet = new Set(departmentIds.map(String));
 
         builderRows = builderRows.filter(builder => {
+          if (builder.transferred_out === true) {
+            return true;
+          }
           if (!Array.isArray(builder.items) || builder.items.length === 0) {
             return false;
           }

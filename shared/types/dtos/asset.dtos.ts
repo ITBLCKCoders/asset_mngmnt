@@ -65,6 +65,9 @@ export interface AssetResponseDto {
   depreciation_start_date: string | null;
   company_id: string | null;
   company_name: string | null;
+  originating_company_id?: string | null;
+  transferred_out?: boolean;
+  transferred_to_company_name?: string | null;
   location_id: string | null;
   location_name: string | null;
   location_room_id: string | null;

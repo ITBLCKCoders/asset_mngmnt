@@ -136,8 +136,9 @@ function buildAssetFilter(
   const params: (string | number)[] = [];
   let whereClause = 'a.deleted_at IS NULL';
   if (companyId && companyId !== 'all') {
-    params.push(companyId);
-    whereClause += ' AND a.company_id = ?';
+    params.push(companyId, companyId);
+    whereClause +=
+      ' AND (a.company_id = ? OR a.originating_company_id = ?)';
   }
   if (departmentIds && departmentIds.length > 0) {
     const placeholders = departmentIds.map(() => '?').join(',');

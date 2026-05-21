@@ -30,7 +30,7 @@ import {
   generateTransferFormNumber,
   generateTransferFormNumberFallback,
 } from '../utils/transferFormNumber.js';
-import { getAssetScope } from '../utils/assetScope.js';
+import { getAssetScope, getDepartmentIdsForScope } from '../utils/assetScope.js';
 import { createAccountabilityFormHandler } from './accountabilityForms.controller.js';
 import {
   toBind,
@@ -97,8 +97,29 @@ export async function getCompanyTransferEligibleAssetsHandler(
       return res.status(403).json({ error: 'Not allowed to transfer assets by company' });
     }
 
-    const { companyId, departmentIds } = await getAssetScope(pool, currentUserId);
+    const scopeParam = req.query.scope as string | undefined;
+    const scopeOverride =
+      scopeParam === 'it' || scopeParam === 'admin' ? scopeParam : undefined;
+
+    const { companyId, departmentIds: scopeDeptIds, isSuperAdmin } =
+      await getAssetScope(pool, currentUserId);
     if (!companyId) return res.json({ assets: [] });
+
+    let departmentIds = scopeDeptIds;
+
+    if (scopeOverride) {
+      const [userRows] = (await pool.execute(
+        `SELECT r.manager_role, r.name as role_name FROM users u
+         LEFT JOIN asset_mngmnt_roles r ON u.role_id = r.roleID AND r.deleted_at IS NULL
+         WHERE u.userID = ?`,
+        [currentUserId]
+      )) as any[];
+      const managerRole = String(userRows?.[0]?.manager_role ?? '').trim();
+      const roleName = String(userRows?.[0]?.role_name ?? '').trim().toLowerCase();
+      if (isSuperAdmin || roleName === 'admin' || managerRole === 'overallManager') {
+        departmentIds = await getDepartmentIdsForScope(pool, scopeOverride, companyId);
+      }
+    }
 
     const params: unknown[] = [companyId];
     let departmentFilter = '';
@@ -295,7 +316,14 @@ export async function createCompanyTransferHandler(
       }
 
       logger.info(`Updating asset ${assetCode} (ID: ${assetId}) company_id from ${companyId} to ${targetCompanyId}, IT department: ${targetItDepartmentId || 'not found'}, IT category: ${targetCategoryId || 'not found'}`);
-      
+
+      // Preserve home company: set origin from source if missing (never overwrite existing origin)
+      await pool.execute(
+        `UPDATE assets SET originating_company_id = ?
+         WHERE assetID = ? AND originating_company_id IS NULL`,
+        [companyId, assetId]
+      );
+
       const updateFields = ['company_id = ?', 'status = ?', 'updated_by = ?', 'updated_at = NOW()'];
       const updateValues = [targetCompanyId, 'Available', currentUserId];
       
@@ -352,6 +380,12 @@ export async function createCompanyTransferHandler(
         allBuilderAssetIds.length > 0 &&
         allBuilderAssetIds.every(id => transferredAssetIdSet.has(id));
       if (!isWholeBuilderTransferred) continue;
+
+      await pool.execute(
+        `UPDATE asset_builders SET originating_company_id = ?
+         WHERE builderID = ? AND originating_company_id IS NULL`,
+        [companyId, builder.builderID]
+      );
 
       await pool.execute(
         `UPDATE asset_builders

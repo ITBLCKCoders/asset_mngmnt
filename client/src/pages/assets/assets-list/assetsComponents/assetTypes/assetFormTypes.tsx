@@ -29,6 +29,7 @@ export interface AssetFormData {
 
   // === LOCATION & ASSIGNMENT===
   company?: string;
+  companyId?: string;
   locationSite?: string;
   locationSiteName?: string;
   locationBuilding?: string;

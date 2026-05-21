@@ -16,22 +16,27 @@ import {
 import { Switch } from '@/components/ui/switch';
 import { Button } from '@/components/ui/button';
 import { Package, QrCode } from 'lucide-react';
-import { useSmartIdFormat } from '../hooks/useSmartIdFormat';
-import { ActiveCompany } from '../types';
+import { ActiveCompany, SmartIdFormat } from '../types';
 
 interface SmartAssetIdFormatProps {
   activeCompany: ActiveCompany | null;
+  smartIdFormat: SmartIdFormat;
+  setSmartIdFormat: (format: SmartIdFormat) => void;
+  settingsLoading: boolean;
+  hasUnsavedChanges: boolean;
+  save: () => Promise<void>;
+  cancel: () => void;
 }
 
-export function SmartAssetIdFormat({ activeCompany }: SmartAssetIdFormatProps) {
-  const {
-    smartIdFormat,
-    setSmartIdFormat,
-    settingsLoading,
-    hasUnsavedChanges,
-    save,
-    cancel,
-  } = useSmartIdFormat(activeCompany);
+export function SmartAssetIdFormat({
+  activeCompany,
+  smartIdFormat,
+  setSmartIdFormat,
+  settingsLoading,
+  hasUnsavedChanges,
+  save,
+  cancel,
+}: SmartAssetIdFormatProps) {
 
   return (
     <Card className="relative overflow-hidden border-2 border-red-500/30 bg-gradient-to-br from-red-50 to-white shadow-xl rounded-2xl">

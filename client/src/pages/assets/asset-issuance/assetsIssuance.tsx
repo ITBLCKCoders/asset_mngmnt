@@ -124,6 +124,11 @@ export default function AssetsAssignment() {
   const [tabLoading, setTabLoading] = useState(false);
   const displayLoading = loading;
 
+  const isSuperAdmin = currentUser?.role?.name?.toLowerCase() === 'super admin';
+  const isAdmin = currentUser?.role?.name?.toLowerCase() === 'admin';
+  const showScopeTabs = isSuperAdmin || isAdmin;
+  const [scope, setScope] = useState<'it' | 'admin'>('it');
+
   const fetchAssets = async () => {
     try {
       // Determine companyId based on user role
@@ -141,6 +146,9 @@ export default function AssetsAssignment() {
       queryParams.append('limit', '-1');
       if (companyId) {
         queryParams.append('companyId', companyId);
+      }
+      if (showScopeTabs) {
+        queryParams.append('scope', scope);
       }
       const url = `/assets?${queryParams.toString()}`;
       const response = await api.get(url);
@@ -217,7 +225,10 @@ export default function AssetsAssignment() {
     try {
       setBuildersLoading(true);
       logger.debug('Fetching asset builders...');
-      const response = await api.get('/asset-builders', {
+      const builderUrl = showScopeTabs
+        ? `/asset-builders?scope=${scope}`
+        : '/asset-builders';
+      const response = await api.get(builderUrl, {
         headers: {
           'Cache-Control': 'no-cache',
           Pragma: 'no-cache',
@@ -289,7 +300,12 @@ export default function AssetsAssignment() {
       setLoading(false);
     };
     fetchData();
-  }, [activeCompany?.id]);
+  }, [activeCompany?.id, scope]);
+
+  useEffect(() => {
+    if (!showScopeTabs) return;
+    setSelectedAssets([]);
+  }, [scope, showScopeTabs]);
 
   // Reset selections based on hierarchical dependencies
   useEffect(() => {
@@ -686,6 +702,12 @@ export default function AssetsAssignment() {
     );
   }, [filteredAssets]);
 
+  const scopedIntangibleAssets = useMemo(() => {
+    if (!showScopeTabs) return intangibleAssets;
+    const targetType = scope === 'it' ? 'IT scope' : 'Admin scope';
+    return intangibleAssets.filter((asset: { type?: string }) => asset.type === targetType);
+  }, [intangibleAssets, showScopeTabs, scope]);
+
   const availableBuilders = useMemo(() => {
     return assetBuilders.filter((builder: any) => {
       return (
@@ -940,7 +962,24 @@ export default function AssetsAssignment() {
           icon={Package}
           title="Assets Assignment"
           description="Issue and assign assets to users"
-        />
+        >
+          {showScopeTabs && (
+            <Tabs
+              value={scope}
+              onValueChange={v => setScope(v as 'it' | 'admin')}
+              className="w-full sm:w-auto"
+            >
+              <TabsList className={segmentTabsListClassName + ' grid grid-cols-2 max-w-full sm:max-w-[280px]'}>
+                <TabsTrigger value="it" className={segmentTabsTriggerClassName}>
+                  IT Asset
+                </TabsTrigger>
+                <TabsTrigger value="admin" className={segmentTabsTriggerClassName}>
+                  Admin Asset
+                </TabsTrigger>
+              </TabsList>
+            </Tabs>
+          )}
+        </PageHeader>
 
         <div className="grid grid-cols-1 gap-6 xl:grid-cols-3 xl:gap-8">
           {/* Asset Selection / Asset Built Tabs */}
@@ -974,7 +1013,7 @@ export default function AssetsAssignment() {
                   <Layers className="h-4 w-4" />
                   Intangible Assets
                   <Badge variant="secondary" className="ml-1 text-xs">
-                    {intangibleAssets.length}
+                    {scopedIntangibleAssets.length}
                   </Badge>
                 </TabsTrigger>
               </TabsList>
@@ -1193,7 +1232,7 @@ export default function AssetsAssignment() {
                       </div>
                       <span>Intangible Assets</span>
                       <Badge variant="secondary" className="w-fit">
-                        {intangibleAssets.length} available
+                        {scopedIntangibleAssets.length} available
                       </Badge>
                     </CardTitle>
                   </CardHeader>
@@ -1207,9 +1246,9 @@ export default function AssetsAssignment() {
                           Loading intangible assets...
                         </h3>
                       </div>
-                    ) : intangibleAssets.length > 0 ? (
+                    ) : scopedIntangibleAssets.length > 0 ? (
                       <div className="space-y-3 overflow-y-auto flex-1 pr-1 sm:-mr-6 sm:pr-6 scrollbar-thin scrollbar-thumb-gray-300 scrollbar-track-gray-100">
-                        {intangibleAssets.map((asset: any) => {
+                        {scopedIntangibleAssets.map((asset: any) => {
                           const isSelected = selectedAssets.includes(asset.id);
                           const typeColor = asset.type === 'IT scope' 
                             ? 'bg-red-100 text-red-800 border-red-200' 

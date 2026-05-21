@@ -844,7 +844,12 @@ export function AssetsPage() {
         'depreciationStartDate',
         formData.depreciationStartDate || ''
       );
-      apiFormData.append('companyId', formData.company || '');
+      const companyIdForUpdate =
+        formData.companyId ||
+        activeCompany?.id ||
+        formData.company ||
+        '';
+      apiFormData.append('companyId', companyIdForUpdate);
       apiFormData.append('locationId', formData.locationSite || '');
       apiFormData.append('locationRoomId', formData.locationRoom || '');
       apiFormData.append('departmentId', formData.department || '');

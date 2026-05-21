@@ -26,6 +26,10 @@ import {
   classifyDepartmentScopeByName,
   getDepartmentIdsForScope,
 } from '../utils/assetScope.js';
+import {
+  getTransferredOutAssetsForCompany,
+  setAssetOriginatingCompany,
+} from '../utils/companyTransferVisibility.js';
 
 /** Matches `sp_create_asset` / `sp_update_asset` `p_status` ENUM (excludes UI-only `Assigned`). */
 const STORED_PROC_ASSET_STATUSES = new Set([
@@ -69,47 +73,6 @@ function normalizeAssetStatusForStoredProcedure(
 
   if (prevResolved) return prevResolved;
   return 'Available';
-}
-
-async function getTransferredOutAssetsForCompany(companyId: string) {
-  const [rows] = (await pool.execute(
-    `SELECT
-        a.*,
-        c.name as company_name,
-        ac.name as category_name,
-        at.name as type_name,
-        d.name as department_name,
-        latest.target_company_name
-      FROM (
-        SELECT
-          al.resource_id as asset_id,
-          JSON_UNQUOTE(JSON_EXTRACT(al.new_values, '$.company_id')) as target_company_id,
-          c2.name as target_company_name,
-          MAX(al.created_at) as transferred_at
-        FROM audit_logs al
-        LEFT JOIN companies c2
-          ON c2.companyID = JSON_UNQUOTE(JSON_EXTRACT(al.new_values, '$.company_id'))
-        WHERE al.action = 'Transferred Asset to Company'
-          AND al.resource_type = 'asset'
-          AND JSON_UNQUOTE(JSON_EXTRACT(al.old_values, '$.company_id')) = ?
-        GROUP BY al.resource_id, target_company_id, c2.name
-      ) latest
-      JOIN assets a ON CAST(a.assetID AS CHAR) = CAST(latest.asset_id AS CHAR)
-      LEFT JOIN companies c ON a.company_id = c.companyID
-      LEFT JOIN asset_categories ac ON a.category_id = ac.categoryID
-      LEFT JOIN asset_types at ON a.type_id = at.typeID
-      LEFT JOIN asset_mngmnt_departments d ON a.department_id = d.departmentID
-      WHERE a.deleted_at IS NULL
-        AND a.company_id <> ?
-        AND latest.target_company_id = a.company_id`,
-    [companyId, companyId]
-  )) as any[];
-  return (rows as any[]).map(row => ({
-    ...row,
-    status: `Transferred to ${row.target_company_name || row.company_name || 'Company'}`,
-    transferred_out: true,
-    transferred_to_company_name: row.target_company_name || row.company_name || null,
-  }));
 }
 
 const parseFormData = (
@@ -450,16 +413,16 @@ export async function getAssetsHandler(req: AuthRequest, res: Response) {
       );
       logger.info(`Found ${currentCompanyAssets.length} assets with company_id = ${companyId}`);
       const transferredOutAssets =
-        await getTransferredOutAssetsForCompany(companyId);
+        await getTransferredOutAssetsForCompany(pool, companyId);
       logger.info(`Found ${transferredOutAssets.length} transferred-out assets for company ${companyId}`);
       const currentAssetIds = new Set(
         currentCompanyAssets.map((a: any) => String(a.assetID))
       );
       assets = [
         ...currentCompanyAssets,
-        ...transferredOutAssets.filter(
+        ...(transferredOutAssets.filter(
           (a: any) => !currentAssetIds.has(String(a.assetID))
-        ),
+        ) as any[]),
       ];
       logger.info(`Total assets after merging: ${assets.length}`);
     } else if (!isSuperAdmin && !isAdmin) {
@@ -470,9 +433,13 @@ export async function getAssetsHandler(req: AuthRequest, res: Response) {
 
     // Separate transferred-out assets before scope filtering (they should always be visible in source company)
     const transferredOutAssetIds = new Set(
-      assets.filter((a: any) => a.target_company_name).map((a: any) => String(a.assetID))
+      assets
+        .filter((a: any) => a.transferred_out === true)
+        .map((a: any) => String(a.assetID))
     );
-    const nonTransferredOutAssets = assets.filter((a: any) => !transferredOutAssetIds.has(String(a.assetID)));
+    const nonTransferredOutAssets = assets.filter(
+      (a: any) => !transferredOutAssetIds.has(String(a.assetID))
+    );
 
     if (departmentIds && departmentIds.length > 0) {
       // Filter assets solely by the department of their category (exclude transferred-out assets)
@@ -827,6 +794,12 @@ export async function createAssetHandler(req: AuthRequest, res: Response) {
     )) as any[];
 
     const asset = rows[0][0];
+
+    await setAssetOriginatingCompany(
+      pool,
+      String(asset.assetID),
+      validCompanyId ?? asset.company_id ?? null
+    );
 
     // Create audit log for asset creation
     await createAuditLog({
@@ -1317,6 +1290,20 @@ export async function updateAssetHandler(req: AuthRequest, res: Response) {
   const oldAsset = await assetRepo.getAssetForUpdateById(asset.assetID);
   if (!oldAsset) {
     return res.status(404).json({ error: 'Asset not found' });
+  }
+
+  // Preserve FKs when client omits or fails to resolve them (sp_update_asset overwrites with NULL)
+  if (!validCompanyId) {
+    validCompanyId = oldAsset.company_id ?? null;
+  }
+  if (!validLocationId) {
+    validLocationId = oldAsset.location_id ?? null;
+  }
+  if (!validLocationRoomId) {
+    validLocationRoomId = oldAsset.location_room_id ?? null;
+  }
+  if (!validDepartmentId) {
+    validDepartmentId = oldAsset.department_id ?? null;
   }
 
   // Handle image upload if provided

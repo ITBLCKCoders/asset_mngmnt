@@ -480,8 +480,13 @@ export default function AssetsReturn() {
       setLoading(false);
     };
     fetchData();
-  }, [activeCompany?.id]);
+  }, [activeCompany?.id, scope]);
 
+  useEffect(() => {
+    if (!showScopeTabs) return;
+    setSelectedAssignments([]);
+    setExpandedBuilderForSelect(null);
+  }, [scope, showScopeTabs]);
 
   // Fetch return history
   const fetchReturnHistory = async () => {

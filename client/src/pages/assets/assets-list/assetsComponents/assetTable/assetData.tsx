@@ -59,7 +59,9 @@ export interface Asset {
   image: string;
   description: string;
   category: string;
+  categoryId?: string;
   type: string;
+  typeId?: string;
   serialNo: string;
   modelNo: string;
   brand: string;
