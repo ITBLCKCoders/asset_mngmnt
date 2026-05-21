@@ -95,17 +95,19 @@ const debounce = <T extends (...args: T[]) => void>(
 };
 
 // Generate cache key from form data
-const generateCacheKey = (form: AccountabilityForm, currentUser?: any): string => {
+const generateCacheKey = (form: AccountabilityForm, currentUser?: any, intangibleAssets: any[] = []): string => {
   const keyData = {
     formId: form.id,
     formNumber: form.formNumber,
     status: form.status,
     issuerSignature: form.issuerSignature,
     itCopySignature: form.itCopySignature,
-    receivedCopy201FileSignature: form.receivedCopy201FileSignature,
+    receivedCopy201FileSignature: form.receivedCopy201FileSignedAt,
     digitalSignature: form.acknowledgments?.digitalSignature,
     assetCount: form.assets.length,
     assetIds: form.assets.map(a => a.id).join(','),
+    intangibleAssetCount: intangibleAssets.length,
+    intangibleAssetIds: intangibleAssets.map(a => a.id).join(','),
     currentUser: currentUser?.id,
   };
   return JSON.stringify(keyData);
@@ -372,7 +374,8 @@ interface AccountabilityFormProps {
 // Reusable PDF generation function (exported for issuer decline notification dialog)
 export const generateAccountabilityFormPDF = async (
   form: AccountabilityForm,
-  currentUser?: any
+  currentUser?: any,
+  intangibleAssets: any[] = []
 ): Promise<Blob> => {
   // 8.5 x 13 inches is approximately 215.9 mm x 330.2 mm
   const doc = new jsPDF({
@@ -647,17 +650,22 @@ I agree that if any of the items are damaged or lost due to my negligence, I sha
         'Good',
       ]);
 
+      // Show table header on first batch or when batch starts at top of page (one header per page)
+      const showTableHead = isFirstBatch || currentY <= 80;
+
+      // Reduce empty rows if intangible assets will be displayed
+      const hasITIntangibleAssets = intangibleAssets.some(
+        (asset: any) => asset.type === 'IT scope'
+      );
+      const adjustedMaxRowsFirstPage = hasITIntangibleAssets ? 5 : 10;
+
       // On first page only: add empty rows when there are few assets; cap so table does not overflow to next page
-      const maxRowsFirstPage = 10;
-      if (isFirstBatch && itAssetRows.length < maxRowsFirstPage) {
-        const emptyRowsNeeded = maxRowsFirstPage - itAssetRows.length;
+      if (isFirstBatch && itAssetRows.length < adjustedMaxRowsFirstPage) {
+        const emptyRowsNeeded = adjustedMaxRowsFirstPage - itAssetRows.length;
         for (let i = 0; i < emptyRowsNeeded; i++) {
           itAssetRows.push(['', '', '', '', '', '']);
         }
       }
-
-      // Show table header on first batch or when batch starts at top of page (one header per page)
-      const showTableHead = isFirstBatch || currentY <= 80;
 
       autoTable(doc, {
         startY: currentY,
@@ -734,17 +742,22 @@ I agree that if any of the items are damaged or lost due to my negligence, I sha
         'Good',
       ]);
 
+      // Show table header on first batch or when batch starts at top of page (one header per page)
+      const showTableHead = isFirstBatch || currentY <= 80;
+
+      // Reduce empty rows if intangible assets will be displayed
+      const hasAdminIntangibleAssets = intangibleAssets.some(
+        (asset: any) => asset.type === 'Admin scope'
+      );
+      const adjustedMaxRowsFirstPage = hasAdminIntangibleAssets ? 5 : 10;
+
       // On first page only: add empty rows when there are few assets; cap so table does not overflow to next page
-      const maxRowsFirstPage = 10;
-      if (isFirstBatch && adminAssetRows.length < maxRowsFirstPage) {
-        const emptyRowsNeeded = maxRowsFirstPage - adminAssetRows.length;
+      if (isFirstBatch && adminAssetRows.length < adjustedMaxRowsFirstPage) {
+        const emptyRowsNeeded = adjustedMaxRowsFirstPage - adminAssetRows.length;
         for (let i = 0; i < emptyRowsNeeded; i++) {
           adminAssetRows.push(['', '', '', '', '', '']);
         }
       }
-
-      // Show table header on first batch or when batch starts at top of page (one header per page)
-      const showTableHead = isFirstBatch || currentY <= 80;
 
       autoTable(doc, {
         startY: currentY,
@@ -793,6 +806,117 @@ I agree that if any of the items are damaged or lost due to my negligence, I sha
     }
 
     y = currentY;
+  }
+
+  // IT Intangible Assets - font size 12 bold
+  const itIntangibleAssets = intangibleAssets.filter(
+    (asset: any) => asset.type === 'IT scope'
+  );
+  if (itIntangibleAssets.length > 0) {
+    y += 10; // Add spacing before IT Intangible Assets title
+    doc.setFontSize(12);
+    doc.setFont('helvetica', 'bold');
+    doc.text('IT Intangible Assets', 20, y);
+
+    // Intangible asset table columns
+    const intangibleTableHead = ['Asset Name', 'Description', 'Type', 'Status'];
+    const intangibleTableColumnStyles = {
+      0: { cellWidth: 80 },
+      1: { cellWidth: 60 },
+      2: { cellWidth: 30 },
+      3: { cellWidth: 25.9 },
+    };
+
+    const intangibleRows = itIntangibleAssets.map((asset: any) => [
+      asset.name,
+      asset.description || '',
+      asset.type,
+      asset.status,
+    ]);
+
+    autoTable(doc, {
+      startY: y + 5,
+      tableWidth,
+      margin: { ...tableMargin, top: 45 },
+      head: [intangibleTableHead],
+      body: intangibleRows,
+      theme: 'grid',
+      styles: {
+        fontSize: 12,
+        cellPadding: 1,
+        lineWidth: 0.1,
+        lineColor: [0, 0, 0],
+      },
+      headStyles: { fillColor: headerFillColor, textColor: headerTextColor },
+      columnStyles: intangibleTableColumnStyles,
+      didDrawPage: data => {
+        if (
+          data.pageNumber >= 2 &&
+          !continuationHeaderDrawnPages.has(data.pageNumber)
+        ) {
+          doc.setPage(data.pageNumber);
+          drawContinuationHeader();
+          continuationHeaderDrawnPages.add(data.pageNumber);
+        }
+      },
+    });
+
+    y = (doc as any).lastAutoTable.finalY + 1;
+  }
+
+  // Admin Intangible Assets - font size 12 bold
+  const adminIntangibleAssets = intangibleAssets.filter(
+    (asset: any) => asset.type === 'Admin scope'
+  );
+  if (adminIntangibleAssets.length > 0) {
+    y += 10; // Add spacing before Admin Intangible Assets title
+    doc.setFontSize(12);
+    doc.setFont('helvetica', 'bold');
+    doc.text('Admin Intangible Assets', 20, y);
+
+    const intangibleTableHead = ['Asset Name', 'Description', 'Type', 'Status'];
+    const intangibleTableColumnStyles = {
+      0: { cellWidth: 80 },
+      1: { cellWidth: 60 },
+      2: { cellWidth: 30 },
+      3: { cellWidth: 25.9 },
+    };
+
+    const intangibleRows = adminIntangibleAssets.map((asset: any) => [
+      asset.name,
+      asset.description || '',
+      asset.type,
+      asset.status,
+    ]);
+
+    autoTable(doc, {
+      startY: y + 5,
+      tableWidth,
+      margin: { ...tableMargin, top: 45 },
+      head: [intangibleTableHead],
+      body: intangibleRows,
+      theme: 'grid',
+      styles: {
+        fontSize: 12,
+        cellPadding: 1,
+        lineWidth: 0.1,
+        lineColor: [0, 0, 0],
+      },
+      headStyles: { fillColor: headerFillColor, textColor: headerTextColor },
+      columnStyles: intangibleTableColumnStyles,
+      didDrawPage: data => {
+        if (
+          data.pageNumber >= 2 &&
+          !continuationHeaderDrawnPages.has(data.pageNumber)
+        ) {
+          doc.setPage(data.pageNumber);
+          drawContinuationHeader();
+          continuationHeaderDrawnPages.add(data.pageNumber);
+        }
+      },
+    });
+
+    y = (doc as any).lastAutoTable.finalY + 1;
   }
 
   // Last page number that has table content (table continuation pages only; agreement/signature pages come after)
@@ -1114,6 +1238,8 @@ export function AccountabilityFormCard({
   const [hasChecklist, setHasChecklist] = useState(false);
   const [checklistPdfUrl, setChecklistPdfUrl] = useState<string>('');
   const checklistAsset = checklistData?.asset;
+  const [intangibleAssets, setIntangibleAssets] = useState<any[]>([]);
+  const [intangibleAssetsLoading, setIntangibleAssetsLoading] = useState(false);
   const fallbackChecklistAsset =
     form.assets.find(asset => asset.id === checklistAsset?.id) ?? form.assets[0];
   const checklistAssetName =
@@ -1170,6 +1296,31 @@ export function AccountabilityFormCard({
     fetchChecklist();
   }, [form.assignment?.id]);
 
+  // Fetch intangible assets for the assignment
+  useEffect(() => {
+    const fetchIntangibleAssets = async () => {
+      if (form.assignment?.id) {
+        try {
+          setIntangibleAssetsLoading(true);
+          const response = await api.get('/intangible-assets');
+          // Filter intangible assets that are assigned to this assignment
+          const assignmentIntangibleAssets = (response || []).filter(
+            (asset: any) => asset.assignment_id === form.assignment?.id
+          );
+          setIntangibleAssets(assignmentIntangibleAssets);
+        } catch (error) {
+          console.error('Failed to fetch intangible assets:', error);
+          setIntangibleAssets([]);
+        } finally {
+          setIntangibleAssetsLoading(false);
+        }
+      } else {
+        setIntangibleAssets([]);
+      }
+    };
+    fetchIntangibleAssets();
+  }, [form.assignment?.id]);
+
   // Generate checklist PDF when dialog opens
   useEffect(() => {
     const generateChecklistPdf = async () => {
@@ -1198,7 +1349,7 @@ export function AccountabilityFormCard({
     const generatePdf = async () => {
       try {
         // Check cache first
-        const cacheKey = generateCacheKey(localForm, currentUser);
+        const cacheKey = generateCacheKey(localForm, currentUser, intangibleAssets);
         const cachedPdf = pdfCache.get(cacheKey);
         
         if (cachedPdf) {
@@ -1211,7 +1362,8 @@ export function AccountabilityFormCard({
         // Generate new PDF
         const pdfBlob = await generateAccountabilityFormPDF(
           localForm,
-          currentUser
+          currentUser,
+          intangibleAssets
         );
         
         // Cache the generated PDF
@@ -1233,7 +1385,7 @@ export function AccountabilityFormCard({
         URL.revokeObjectURL(pdfUrl);
       }
     };
-  }, [localForm, currentUser]);
+  }, [localForm, currentUser, intangibleAssets]);
 
   const handleDownload = async () => {
     if (activeCardTab === 'checklist' && checklistData) {
@@ -1255,7 +1407,7 @@ export function AccountabilityFormCard({
 
     try {
       // Check cache first
-      const cacheKey = generateCacheKey(localForm, currentUser);
+      const cacheKey = generateCacheKey(localForm, currentUser, intangibleAssets);
       const cachedPdf = pdfCache.get(cacheKey);
       
       let pdfBlob: Blob;
@@ -1265,7 +1417,8 @@ export function AccountabilityFormCard({
       } else {
         pdfBlob = await generateAccountabilityFormPDF(
           localForm,
-          currentUser
+          currentUser,
+          intangibleAssets
         );
         // Cache the generated PDF
         pdfCache.set(cacheKey, pdfBlob);
@@ -1852,7 +2005,7 @@ export function AccountabilityFormCard({
                           const generatePdf = async () => {
                             try {
                               // Check cache first
-                              const cacheKey = generateCacheKey(updatedForm, currentUser);
+                              const cacheKey = generateCacheKey(updatedForm, currentUser, intangibleAssets);
                               const cachedPdf = pdfCache.get(cacheKey);
                               
                               let pdfBlob: Blob;
@@ -1862,7 +2015,8 @@ export function AccountabilityFormCard({
                               } else {
                                 pdfBlob = await generateAccountabilityFormPDF(
                                   updatedForm,
-                                  currentUser
+                                  currentUser,
+                                  intangibleAssets
                                 );
                                 // Cache the generated PDF
                                 pdfCache.set(cacheKey, pdfBlob);
@@ -2187,6 +2341,8 @@ export function AccountabilityFormDetail({
   const [pendingDigitalInitials, setPendingDigitalInitials] = useState<string | null>(null);
   const pendingActionRef = useRef<(() => Promise<void>) | null>(null);
   const pendingReceiveActionRef = useRef<(() => Promise<void>) | null>(null);
+  const [intangibleAssets, setIntangibleAssets] = useState<any[]>([]);
+  const [intangibleAssetsLoading, setIntangibleAssetsLoading] = useState(false);
 
   const isAssignedUser = currentUser?.id === form.user.id;
   const canSign = !readOnly && isAssignedUser && form.status === 'Pending';
@@ -2207,11 +2363,36 @@ export function AccountabilityFormDetail({
     setLocalForm(form);
   }, [form]);
 
+  // Fetch intangible assets for the assignment
+  useEffect(() => {
+    const fetchIntangibleAssets = async () => {
+      if (form.assignment?.id) {
+        try {
+          setIntangibleAssetsLoading(true);
+          const response = await api.get('/intangible-assets');
+          // Filter intangible assets that are assigned to this assignment
+          const assignmentIntangibleAssets = (response || []).filter(
+            (asset: any) => asset.assignment_id === form.assignment?.id
+          );
+          setIntangibleAssets(assignmentIntangibleAssets);
+        } catch (error) {
+          console.error('Failed to fetch intangible assets:', error);
+          setIntangibleAssets([]);
+        } finally {
+          setIntangibleAssetsLoading(false);
+        }
+      } else {
+        setIntangibleAssets([]);
+      }
+    };
+    fetchIntangibleAssets();
+  }, [form.assignment?.id]);
+
   useEffect(() => {
     const generatePdf = async () => {
       try {
         // Check cache first
-        const cacheKey = generateCacheKey(localForm, currentUser);
+        const cacheKey = generateCacheKey(localForm, currentUser, intangibleAssets);
         const cachedPdf = pdfCache.get(cacheKey);
         
         if (cachedPdf) {
@@ -2224,7 +2405,8 @@ export function AccountabilityFormDetail({
         // Generate new PDF
         const pdfBlob = await generateAccountabilityFormPDF(
           localForm,
-          currentUser
+          currentUser,
+          intangibleAssets
         );
         
         // Cache the generated PDF
@@ -2248,7 +2430,7 @@ export function AccountabilityFormDetail({
         URL.revokeObjectURL(pdfUrl);
       }
     };
-  }, [localForm, currentUser]);
+  }, [localForm, currentUser, intangibleAssets]);
 
   const hrWorkflowActions = viewContext === 'hrCopy';
   const containerClassName = embedded

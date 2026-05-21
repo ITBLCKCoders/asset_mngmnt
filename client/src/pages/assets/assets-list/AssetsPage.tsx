@@ -18,8 +18,10 @@ import {
   User,
   Building,
   Crown,
+  Layers,
+  Edit,
 } from 'lucide-react';
-import { Card, CardContent, CardHeader } from '@/components/ui/card';
+import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { PageHeader } from '@/components/common/PageHeader';
 import { Button } from '@/components/ui/button';
 import { DataTable } from '@/components/ui/dataTable';
@@ -50,6 +52,9 @@ import { EditAssetModal } from './assetsComponents/assetEditModal';
 import { BuilderFormsTab } from './assetsComponents/BuilderFormsTab';
 import { AssetFormData } from './assetsComponents/assetTypes/assetFormTypes';
 import { Asset } from './assetsComponents/assetTable/assetData';
+import IntangibleAssetDialog from '../components/IntangibleAssetDialog';
+import type { ColumnDef } from '@tanstack/react-table';
+import { Badge } from '@/components/ui/badge';
 import { api } from '@/lib/api';
 import { toast } from 'sonner';
 import { useUserPermissions } from '@/hooks/useUserPermissions';
@@ -152,6 +157,25 @@ export function AssetsPage() {
   const [searchTerm, setSearchTerm] = useState('');
   const [activeTab, setActiveTab] = useState('asset-list');
   const [tabLoading, setTabLoading] = useState(false);
+
+  // Intangible Assets state
+  const [intangibleAssets, setIntangibleAssets] = useState<any[]>([]);
+  const [intangibleLoading, setIntangibleLoading] = useState(true);
+  const [intangibleDialogOpen, setIntangibleDialogOpen] = useState(false);
+  const [editingIntangibleAsset, setEditingIntangibleAsset] = useState<any | null>(null);
+  const [intangibleDialogMode, setIntangibleDialogMode] = useState<'create' | 'edit'>('create');
+
+  const fetchIntangibleAssets = async () => {
+    try {
+      setIntangibleLoading(true);
+      const response = await api.get('/intangible-assets');
+      setIntangibleAssets(response);
+    } catch (error: any) {
+      toast.error(error.message || 'Failed to fetch intangible assets');
+    } finally {
+      setIntangibleLoading(false);
+    }
+  };
 
   const fetchAssetBuilders = async () => {
     try {
@@ -311,6 +335,134 @@ export function AssetsPage() {
     ];
   }, [defaultAssetColumns, canEditAsset]);
 
+  // Intangible Assets columns
+  const intangibleAssetColumns: ColumnDef<any>[] = useMemo(
+    () => [
+      {
+        accessorKey: 'name',
+        header: 'Name',
+        size: 200,
+        cell: ({ row }) => (
+          <div className="font-medium text-gray-900">
+            {row.original.name}
+          </div>
+        ),
+      },
+      {
+        accessorKey: 'description',
+        header: 'Description',
+        size: 250,
+        cell: ({ row }) => (
+          <span className="text-sm text-gray-600 max-w-[250px] truncate block">
+            {row.original.description || '-'}
+          </span>
+        ),
+      },
+      {
+        accessorKey: 'remarks',
+        header: 'Remarks',
+        size: 200,
+        cell: ({ row }) => (
+          <span className="text-sm text-gray-600 max-w-[200px] truncate block">
+            {row.original.remarks || '-'}
+          </span>
+        ),
+      },
+      {
+        accessorKey: 'type',
+        header: 'Type',
+        size: 120,
+        cell: ({ row }) => {
+          const type = row.original.type;
+          const badgeClass = type === 'IT scope'
+            ? 'bg-blue-100 text-blue-800 hover:bg-blue-200'
+            : 'bg-purple-100 text-purple-800 hover:bg-purple-200';
+          return (
+            <Badge variant="secondary" className={badgeClass}>
+              {type}
+            </Badge>
+          );
+        },
+      },
+      {
+        accessorKey: 'status',
+        header: 'Status',
+        size: 120,
+        cell: ({ row }) => {
+          const status = row.original.status;
+          const badgeClass = status === 'available'
+            ? 'bg-green-100 text-green-800 hover:bg-green-200'
+            : 'bg-amber-100 text-amber-800 hover:bg-amber-200';
+          return (
+            <Badge variant="secondary" className={badgeClass}>
+              {status}
+            </Badge>
+          );
+        },
+      },
+      {
+        accessorKey: 'assigned_to',
+        header: 'Assigned To',
+        size: 180,
+        cell: ({ row }) => {
+          const assignedFirstName = row.original.assigned_first_name;
+          const assignedLastName = row.original.assigned_last_name;
+          const status = row.original.status;
+          
+          if (status === 'available' || (!assignedFirstName && !assignedLastName)) {
+            return (
+              <span className="text-sm text-gray-500">
+                Not assigned
+              </span>
+            );
+          }
+          
+          return (
+            <div className="text-sm">
+              <div className="font-medium text-gray-900">
+                {assignedFirstName} {assignedLastName}
+              </div>
+              {row.original.assigned_email && (
+                <div className="text-xs text-gray-500 truncate">
+                  {row.original.assigned_email}
+                </div>
+              )}
+            </div>
+          );
+        },
+      },
+      {
+        accessorKey: 'created_at',
+        header: 'Date Created',
+        size: 150,
+        cell: ({ row }) => {
+          const date = new Date(row.original.created_at);
+          return (
+            <span className="text-sm text-gray-600">
+              {date.toLocaleDateString()}
+            </span>
+          );
+        },
+      },
+      {
+        id: 'actions',
+        header: 'Actions',
+        size: 100,
+        cell: ({ row }) => (
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={() => handleEditIntangibleAsset(row.original)}
+            className="text-blue-600 hover:text-blue-700 hover:bg-blue-50 rounded-lg"
+          >
+            <Edit className="h-4 w-4" />
+          </Button>
+        ),
+      },
+    ],
+    []
+  );
+
   const {
     isExportDialogOpen,
     exportType,
@@ -434,6 +586,13 @@ export function AssetsPage() {
   useEffect(() => {
     fetchAssets();
   }, [activeCompany?.id]);
+
+  // Fetch intangible assets when the tab changes to intangible-assets
+  useEffect(() => {
+    if (activeTab === 'intangible-assets') {
+      fetchIntangibleAssets();
+    }
+  }, [activeTab]);
 
   // Fetch audit logs when selected builder changes - use dedicated builder audit API
   useEffect(() => {
@@ -580,6 +739,29 @@ export function AssetsPage() {
     }
 
     setIsAddModalOpen(true);
+  };
+
+  // Intangible Assets handlers
+  const handleAddIntangibleAssetClick = () => {
+    setIntangibleDialogMode('create');
+    setEditingIntangibleAsset(null);
+    setIntangibleDialogOpen(true);
+  };
+
+  const handleEditIntangibleAsset = (asset: any) => {
+    setIntangibleDialogMode('edit');
+    setEditingIntangibleAsset(asset);
+    setIntangibleDialogOpen(true);
+  };
+
+  const handleIntangibleDialogClose = () => {
+    setIntangibleDialogOpen(false);
+    setEditingIntangibleAsset(null);
+  };
+
+  const handleIntangibleDialogSuccess = () => {
+    fetchIntangibleAssets();
+    handleIntangibleDialogClose();
   };
 
   // Access Denied Dialog
@@ -789,12 +971,13 @@ export function AssetsPage() {
 
         <Tabs value={activeTab} onValueChange={(value) => { setActiveTab(value); setTabLoading(true); setTimeout(() => setTabLoading(false), 300); }} className="w-full">
           {isInitialLoading ? (
-            <div className="grid grid-cols-2 gap-2 rounded-xl border border-slate-200 bg-slate-100/90 p-1">
+            <div className="grid grid-cols-3 gap-2 rounded-xl border border-slate-200 bg-slate-100/90 p-1">
               <Shimmer className="h-10 w-full rounded-lg bg-red-600" />
+              <Shimmer className="h-10 w-full rounded-lg" />
               <Shimmer className="h-10 w-full rounded-lg" />
             </div>
           ) : (
-            <TabsList className={segmentTabsListClassName + ' grid grid-cols-2'}>
+            <TabsList className={segmentTabsListClassName + ' grid grid-cols-3'}>
               <TabsTrigger
                 value="asset-list"
                 className={segmentTabsTriggerClassName}
@@ -806,6 +989,12 @@ export function AssetsPage() {
                 className={segmentTabsTriggerClassName}
               >
                 Asset Built
+              </TabsTrigger>
+              <TabsTrigger
+                value="intangible-assets"
+                className={segmentTabsTriggerClassName}
+              >
+                Intangible Assets
               </TabsTrigger>
             </TabsList>
           )}
@@ -1157,6 +1346,52 @@ export function AssetsPage() {
               )}
             </div>
           </TabsContent>
+
+          <TabsContent value="intangible-assets" className="mt-6 space-y-4">
+            <Card className="rounded-xl border shadow-sm overflow-hidden">
+              <CardHeader className="pb-4">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-3">
+                    <div className="p-2 bg-blue-100 rounded-lg">
+                      <Layers className="h-5 w-5 text-blue-600" />
+                    </div>
+                    <div>
+                      <CardTitle className="text-xl">All Intangible Assets</CardTitle>
+                      <p className="text-sm text-gray-600 mt-1">{intangibleAssets.length} intangible assets</p>
+                    </div>
+                  </div>
+                  <Button
+                    onClick={handleAddIntangibleAssetClick}
+                    className="bg-red-600 hover:bg-red-700 text-white rounded-xl shadow-md hover:shadow-lg transition-all"
+                  >
+                    <Plus className="h-4 w-4 mr-2" />
+                    Add Intangible Asset
+                  </Button>
+                </div>
+              </CardHeader>
+              <CardContent className="pt-0">
+                {intangibleLoading ? (
+                  <div className="text-center py-12">
+                    <div className="inline-flex items-center justify-center w-20 h-20 rounded-full bg-gradient-to-br from-blue-100 to-blue-200 mb-4">
+                      <Layers className="h-10 w-10 text-blue-600" />
+                    </div>
+                    <h3 className="text-lg font-semibold text-gray-900 mb-2">
+                      Loading intangible assets...
+                    </h3>
+                  </div>
+                ) : (
+                  <DataTable
+                    columns={intangibleAssetColumns}
+                    data={intangibleAssets}
+                    searchPlaceholder="Search intangible assets..."
+                    title="Intangible Assets"
+                    titleBadge={`${intangibleAssets.length} assets`}
+                    isLoading={intangibleLoading}
+                  />
+                )}
+              </CardContent>
+            </Card>
+          </TabsContent>
         </Tabs>
       </main>
       <AddAssetModal
@@ -1257,6 +1492,14 @@ export function AssetsPage() {
           </AppDialogChromeFooter>
         </AppDialogFrame>
       </Dialog>
+
+      <IntangibleAssetDialog
+        isOpen={intangibleDialogOpen}
+        setIsOpen={setIntangibleDialogOpen}
+        mode={intangibleDialogMode}
+        editingAsset={editingIntangibleAsset}
+        onSuccess={handleIntangibleDialogSuccess}
+      />
 
       {/* Asset Builder Details Modal */}
       {isBuilderDialogOpen && selectedBuilder && (

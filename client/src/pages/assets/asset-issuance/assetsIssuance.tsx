@@ -4,6 +4,7 @@ import { useEffect, useState, useMemo, useRef, useCallback } from 'react';
 import {
   Package,
   Boxes,
+  Layers,
   User,
   MapPin,
   Building,
@@ -19,13 +20,14 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { PageHeader } from '@/components/common/PageHeader';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
-import { useCompanyContext } from '@/context/CompanyContext';
 import { Input } from '@/components/ui/input';
+import { Checkbox } from '@/components/ui/checkbox';
 import { Shimmer } from '@/components/ui/shimmer';
 import { api } from '@/lib/api';
 import { toast } from 'sonner';
 import { useCurrentUser } from '@/hooks/useCurrentUser';
 import { useUserPermissions } from '@/hooks/useUserPermissions';
+import { useCompanyContext } from '@/context/CompanyContext';
 import { createLogger } from '@/lib/logger';
 import { Tabs, TabsContent, TabsList, TabsTrigger, segmentTabsListClassName, segmentTabsTriggerClassName } from '@/components/ui/tabs';
 import { AssetSelectionPanel } from './components/AssetSelectionPanel';
@@ -109,6 +111,8 @@ export default function AssetsAssignment() {
   const [pendingAssignmentData, setPendingAssignmentData] = useState<any>(null);
   const [assetBuilders, setAssetBuilders] = useState<any[]>([]);
   const [buildersLoading, setBuildersLoading] = useState(false);
+  const [intangibleAssets, setIntangibleAssets] = useState<any[]>([]);
+  const [intangibleAssetsLoading, setIntangibleAssetsLoading] = useState(false);
   const [groupedAssetIds, setGroupedAssetIds] = useState<Set<string>>(
     new Set()
   );
@@ -240,23 +244,33 @@ export default function AssetsAssignment() {
         setAssetBuilders(response.builders);
       } else if (response && Object.keys(response).length === 0) {
         // 304 Not Modified or empty response, keep existing data
-        logger.debug(
-          'Received empty response for grouped assets, keeping existing'
-        );
-        setGroupedAssetIds(new Set());
-        setAssetBuilders([]);
       } else {
-        logger.warn('Invalid response structure for asset builders');
-        setGroupedAssetIds(new Set());
         setAssetBuilders([]);
+        setGroupedAssetIds(new Set());
       }
     } catch (error) {
+      logger.error('Failed to fetch asset builders', error);
       console.error('Failed to fetch asset builders:', error);
       // Keep empty set if API fails
       setGroupedAssetIds(new Set());
       setAssetBuilders([]);
     } finally {
       setBuildersLoading(false);
+    }
+  };
+
+  const fetchIntangibleAssets = async () => {
+    try {
+      setIntangibleAssetsLoading(true);
+      const response = await api.get('/intangible-assets');
+      // Filter to show only available intangible assets (not assigned)
+      const availableAssets = (response || []).filter((asset: any) => asset.status === 'available');
+      setIntangibleAssets(availableAssets);
+    } catch (error) {
+      console.error('Failed to fetch intangible assets:', error);
+      setIntangibleAssets([]);
+    } finally {
+      setIntangibleAssetsLoading(false);
     }
   };
 
@@ -270,6 +284,7 @@ export default function AssetsAssignment() {
         fetchUsers(),
         fetchAssignments(),
         fetchAssetBuilders(),
+        fetchIntangibleAssets(),
       ]);
       setLoading(false);
     };
@@ -390,21 +405,61 @@ export default function AssetsAssignment() {
 
     setAssigning(true);
     try {
-      // Send all selected assets in a single API call to create one assignment with multiple assets
-      const assignmentData = {
-        assetId: selectedAssets, // Array of asset IDs
-        userId: selectedUser,
-        departmentId: selectedDepartment || undefined,
-        locationId: selectedLocation || undefined,
-        locationRoomId: selectedRoom || undefined,
-        assignmentNotes: `Assigned via asset issuance`,
-        signAsIssuer: signAsIssuer,
-        issuerSignature: signAsIssuer ? currentUser?.digitalSignature || null : null,
-        signITCopy: signITCopy,
-        itCopySignature: signITCopy ? currentUser?.digitalSignature || null : null,
-      };
+      // Separate tangible and intangible assets
+      const tangibleAssets = selectedAssets.filter(id => !intangibleAssets.some(ia => ia.id === id));
+      const selectedIntangibleAssets = selectedAssets.filter(id => intangibleAssets.some(ia => ia.id === id));
 
-      const assignmentResponse = await api.post('/asset-assignments', assignmentData);
+      let assignmentResponse: any = null;
+
+      // Handle tangible assets assignment
+      if (tangibleAssets.length > 0) {
+        const assignmentData = {
+          assetId: tangibleAssets, // Array of tangible asset IDs
+          userId: selectedUser,
+          departmentId: selectedDepartment || undefined,
+          locationId: selectedLocation || undefined,
+          locationRoomId: selectedRoom || undefined,
+          assignmentNotes: `Assigned via asset issuance`,
+          signAsIssuer: signAsIssuer,
+          issuerSignature: signAsIssuer ? currentUser?.digitalSignature || null : null,
+          signITCopy: signITCopy,
+          itCopySignature: signITCopy ? currentUser?.digitalSignature || null : null,
+        };
+
+        assignmentResponse = await api.post('/asset-assignments', assignmentData);
+      }
+
+      // Handle intangible assets assignment
+      if (selectedIntangibleAssets.length > 0 && assignmentResponse) {
+        // Use the assignment ID from the tangible assets assignment
+        const assignmentId = assignmentResponse.assignments?.[0]?.assignmentID;
+        
+        for (const intangibleAssetId of selectedIntangibleAssets) {
+          try {
+            await api.post(`/intangible-assets/${intangibleAssetId}/assign`, {
+              assignedTo: selectedUser,
+              assignmentId: assignmentId,
+            });
+          } catch (error) {
+            console.error('Failed to assign intangible asset:', error);
+            toast.error(`Failed to assign intangible asset ${intangibleAssetId}`);
+          }
+        }
+      } else if (selectedIntangibleAssets.length > 0 && !assignmentResponse) {
+        // If only intangible assets are selected, create a simple assignment ID
+        const assignmentId = crypto.randomUUID();
+        for (const intangibleAssetId of selectedIntangibleAssets) {
+          try {
+            await api.post(`/intangible-assets/${intangibleAssetId}/assign`, {
+              assignedTo: selectedUser,
+              assignmentId: assignmentId,
+            });
+          } catch (error) {
+            console.error('Failed to assign intangible asset:', error);
+            toast.error(`Failed to assign intangible asset ${intangibleAssetId}`);
+          }
+        }
+      }
 
       // Update builders if any are selected - DO NOT REMOVE ASSETS FROM BUILDERS
       if (selectedBuilders.length > 0) {
@@ -468,9 +523,15 @@ export default function AssetsAssignment() {
       // The server automatically creates one accountability form for all assets
       // No need to create separate accountability forms here
 
-      toast.success(
-        `Assigned ${selectedAssets.length} asset(s) to ${assigneeDisplayName || 'user'}`
-      );
+      const tangibleCount = tangibleAssets.length;
+      const intangibleCount = selectedIntangibleAssets.length;
+      const message = tangibleCount > 0 && intangibleCount > 0
+        ? `Assigned ${tangibleCount} tangible asset(s) and ${intangibleCount} intangible asset(s) to ${assigneeDisplayName || 'user'}`
+        : tangibleCount > 0
+          ? `Assigned ${tangibleCount} tangible asset(s) to ${assigneeDisplayName || 'user'}`
+          : `Assigned ${intangibleCount} intangible asset(s) to ${assigneeDisplayName || 'user'}`;
+
+      toast.success(message);
 
       // Dispatch event to refetch assets in other components
       window.dispatchEvent(new CustomEvent('assetsUpdated'));
@@ -483,10 +544,11 @@ export default function AssetsAssignment() {
       setSelectedRoom('');
       setSelectedUser('');
 
-      // Refresh assets, assignments, and asset builders
+      // Refresh assets, assignments, asset builders, and intangible assets
       await fetchAssets();
       await fetchAssignments();
       await fetchAssetBuilders();
+      await fetchIntangibleAssets();
     } catch (error: unknown) {
       console.error('Failed to assign assets:', error);
       toast.error('Failed to assign assets');
@@ -884,7 +946,7 @@ export default function AssetsAssignment() {
           {/* Asset Selection / Asset Built Tabs */}
           <div className="xl:col-span-2">
             <Tabs value={activeTab} onValueChange={(value) => { setActiveTab(value); setTabLoading(true); setTimeout(() => setTabLoading(false), 300); }} className="w-full">
-              <TabsList className={segmentTabsListClassName + ' grid grid-cols-2'}>
+              <TabsList className={segmentTabsListClassName + ' grid grid-cols-3'}>
                 <TabsTrigger
                   value="select-assets"
                   className={segmentTabsTriggerClassName + ' flex items-center gap-2'}
@@ -903,6 +965,16 @@ export default function AssetsAssignment() {
                   Asset Built
                   <Badge variant="secondary" className="ml-1 text-xs">
                     {availableBuilders.length}
+                  </Badge>
+                </TabsTrigger>
+                <TabsTrigger
+                  value="intangible-assets"
+                  className={segmentTabsTriggerClassName + ' flex items-center gap-2'}
+                >
+                  <Layers className="h-4 w-4" />
+                  Intangible Assets
+                  <Badge variant="secondary" className="ml-1 text-xs">
+                    {intangibleAssets.length}
                   </Badge>
                 </TabsTrigger>
               </TabsList>
@@ -1105,6 +1177,131 @@ export default function AssetsAssignment() {
                           {builderSearchTerm
                             ? 'Try adjusting your search terms or clear the search to see all available builders.'
                             : 'All asset builders have been assigned or are currently unavailable.'}
+                        </p>
+                      </div>
+                    )}
+                  </CardContent>
+                </Card>
+              </TabsContent>
+
+              <TabsContent value="intangible-assets" className="mt-4">
+                <Card className="shadow-xl border-0 bg-white/80 backdrop-blur-sm h-[592px] flex flex-col">
+                  <CardHeader className="pb-4 flex-shrink-0">
+                    <CardTitle className="flex flex-wrap items-center gap-3 text-xl">
+                      <div className="p-2 bg-red-100 rounded-lg flex-shrink-0">
+                        <Layers className="h-5 w-5 text-red-600" />
+                      </div>
+                      <span>Intangible Assets</span>
+                      <Badge variant="secondary" className="w-fit">
+                        {intangibleAssets.length} available
+                      </Badge>
+                    </CardTitle>
+                  </CardHeader>
+                  <CardContent className="pt-0 flex-1 flex flex-col overflow-hidden">
+                    {intangibleAssetsLoading || tabLoading ? (
+                      <div className="text-center py-12">
+                        <div className="inline-flex items-center justify-center w-20 h-20 rounded-full bg-gradient-to-br from-blue-100 to-blue-200 mb-4">
+                          <Layers className="h-10 w-10 text-blue-600" />
+                        </div>
+                        <h3 className="text-lg font-semibold text-gray-900 mb-2">
+                          Loading intangible assets...
+                        </h3>
+                      </div>
+                    ) : intangibleAssets.length > 0 ? (
+                      <div className="space-y-3 overflow-y-auto flex-1 pr-1 sm:-mr-6 sm:pr-6 scrollbar-thin scrollbar-thumb-gray-300 scrollbar-track-gray-100">
+                        {intangibleAssets.map((asset: any) => {
+                          const isSelected = selectedAssets.includes(asset.id);
+                          const typeColor = asset.type === 'IT scope' 
+                            ? 'bg-red-100 text-red-800 border-red-200' 
+                            : 'bg-orange-100 text-orange-800 border-orange-200';
+                          return (
+                            <div
+                              key={asset.id}
+                              className={`group relative p-4 border-2 rounded-xl transition-all duration-200 cursor-pointer ${
+                                isSelected
+                                  ? 'border-red-500 bg-gradient-to-r from-red-50 to-orange-50 shadow-md'
+                                  : 'border-gray-200 bg-white hover:border-red-300 hover:shadow-sm'
+                              }`}
+                              onClick={() => {
+                                if (isSelected) {
+                                  setSelectedAssets(prev => prev.filter(id => id !== asset.id));
+                                } else {
+                                  setSelectedAssets(prev => [...prev, asset.id]);
+                                }
+                              }}
+                            >
+                              <div className="flex items-start gap-3 sm:gap-4">
+                                <div className="flex-shrink-0 mt-1">
+                                  <Checkbox
+                                    id={asset.id}
+                                    checked={isSelected}
+                                    onCheckedChange={(checked: boolean | string) => {
+                                      if (checked) {
+                                        setSelectedAssets(prev => [...prev, asset.id]);
+                                      } else {
+                                        setSelectedAssets(prev => prev.filter(id => id !== asset.id));
+                                      }
+                                    }}
+                                    className="pointer-events-none data-[state=checked]:bg-red-600 data-[state=checked]:border-red-600"
+                                  />
+                                </div>
+
+                                <div className="flex-1 min-w-0">
+                                  <div className="flex items-center justify-between mb-2">
+                                    <div className="flex items-center gap-2 flex-wrap">
+                                      <h3 className="truncate text-base font-bold text-gray-900 sm:text-lg">
+                                        {asset.name}
+                                      </h3>
+                                      <Badge
+                                        variant="outline"
+                                        className={`text-xs font-semibold ${typeColor} px-2.5 py-1`}
+                                      >
+                                        {asset.type}
+                                      </Badge>
+                                      <Badge
+                                        variant="secondary"
+                                        className={`text-xs font-semibold ${
+                                          asset.status === 'available'
+                                            ? 'bg-green-100 text-green-800 border-green-200'
+                                            : 'bg-blue-100 text-blue-800 border-blue-200'
+                                        } px-2.5 py-1`}
+                                      >
+                                        {asset.status}
+                                      </Badge>
+                                    </div>
+                                    <div className="flex items-center gap-2">
+                                      {isSelected && (
+                                        <CheckCircle2 className="h-5 w-5 text-red-600 flex-shrink-0" />
+                                      )}
+                                    </div>
+                                  </div>
+
+                                  <div className="text-sm">
+                                    {asset.description && (
+                                      <p className="text-gray-600 line-clamp-1 mb-1">
+                                        {asset.description}
+                                      </p>
+                                    )}
+                                    {asset.remarks && (
+                                      <p className="text-gray-500 italic truncate">
+                                        {asset.remarks}
+                                      </p>
+                                    )}
+                                  </div>
+                                </div>
+                              </div>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    ) : (
+                      <div className="text-center py-12">
+                        <Layers className="mx-auto h-12 w-12 text-gray-400 mb-4" />
+                        <h3 className="text-lg font-medium text-gray-900 mb-2">
+                          No Available Intangible Assets
+                        </h3>
+                        <p className="text-sm text-gray-500">
+                          All intangible assets have been assigned or are currently unavailable.
                         </p>
                       </div>
                     )}

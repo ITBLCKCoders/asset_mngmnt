@@ -386,9 +386,8 @@ export function AddAssetModal({
     try {
       const response = await api.get('/settings/asset-id-format');
       const settings = response.settings || [];
-      const hasFormat = settings.some(
-        (s: any) => s.company_id === activeCompany.id
-      );
+      // Backend already filters by user's scoped company, so just check if any settings exist
+      const hasFormat = settings.length > 0;
       setHasSmartIdFormat(hasFormat);
     } catch (error) {
       console.error('Failed to check Smart Asset ID Format:', error);
