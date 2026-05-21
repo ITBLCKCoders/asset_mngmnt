@@ -217,20 +217,22 @@ export default function SmsOtpDialog({
 
   const handleVerify = async () => {
     const verified = await verifyOtp();
-    if (verified) {
-      onOpenChange(false);
-      setOtpCode(['', '', '', '', '', '']);
-      // Execute the pending action after successful verification
-      if (pendingActionRef.current) {
-        try {
-          await pendingActionRef.current();
-          onVerified();
-        } catch (err: any) {
-          toast.error(err.message || 'Failed to complete action');
-          throw err;
-        }
-        pendingActionRef.current = null;
-      }
+    if (!verified) return;
+
+    const action = pendingActionRef.current;
+    pendingActionRef.current = null;
+
+    onOpenChange(false);
+    setOtpCode(['', '', '', '', '', '']);
+
+    if (!action) return;
+
+    try {
+      await action();
+      onVerified();
+    } catch (err: any) {
+      toast.error(err.message || 'Failed to complete action');
+      throw err;
     }
   };
 

@@ -14,9 +14,9 @@ import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
 import { Input } from '@/components/ui/input';
 import { ScrollArea } from '@/components/ui/scroll-area';
-import { CheckCircle2, User, Building, Package, MessageSquare, Laptop } from 'lucide-react';
+import { CheckCircle2, User, Package, MessageSquare, Laptop, ChevronRight } from 'lucide-react';
 import { toast } from 'sonner';
-import { filterComputerTypeAssets, filterNonComputerTypeAssets } from '@/utils/assetTypeDetection';
+import { filterNonComputerTypeAssets } from '@/utils/assetTypeDetection';
 import type { AssetChecklistItemData } from '../../../../../../shared/types/dtos/asset.dtos';
 
 interface Asset {
@@ -40,16 +40,29 @@ interface Department {
   name: string;
 }
 
+export type AssetChecklistSubmitPayload = {
+  checklistData: AssetChecklistItemData;
+  typeOnboarding: boolean;
+  typeOffboarding: boolean;
+  receivedBy: string;
+  remarks: string;
+};
+
 interface AssetChecklistDialogProps {
   isOpen: boolean;
   onOpenChange: (open: boolean) => void;
   selectedAssets: string[];
   assets: Asset[];
+  computerAssets: Asset[];
+  currentIndex: number;
   selectedUser: string;
   users: User[];
   departments: Department[];
   currentUserPosition?: string | null;
-  onSubmit: (checklistData: AssetChecklistItemData, typeOnboarding: boolean, typeOffboarding: boolean, receivedBy: string, remarks: string) => Promise<void>;
+  onNext: (payload: AssetChecklistSubmitPayload) => Promise<void>;
+  onFinalSubmit: (payload: AssetChecklistSubmitPayload) => Promise<void>;
+  /** Clears in-progress checklist queue when user cancels without finishing */
+  onCancel?: () => void;
 }
 
 const initialChecklistData: AssetChecklistItemData = {
@@ -100,11 +113,15 @@ export function AssetChecklistDialog({
   onOpenChange,
   selectedAssets,
   assets,
+  computerAssets,
+  currentIndex,
   selectedUser,
   users,
   departments,
   currentUserPosition,
-  onSubmit,
+  onNext,
+  onFinalSubmit,
+  onCancel,
 }: AssetChecklistDialogProps) {
   const [checklistData, setChecklistData] = useState<AssetChecklistItemData>(initialChecklistData);
   const [typeOnboarding, setTypeOnboarding] = useState(false);
@@ -116,16 +133,27 @@ export function AssetChecklistDialog({
   const selectedUserObj = users.find(u => u.userID === selectedUser);
   const userDepartment = departments.find(d => d.departmentID === selectedUserObj?.department_id);
 
-  // Reset form when dialog opens
+  const currentAsset = computerAssets[currentIndex];
+  const isLastAsset = currentIndex >= computerAssets.length - 1;
+  const totalAssets = computerAssets.length;
+
+  // Reset meta when dialog first opens; carry over between steps
   useEffect(() => {
-    if (isOpen) {
+    if (isOpen && currentIndex === 0) {
       setChecklistData(initialChecklistData);
       setTypeOnboarding(false);
       setTypeOffboarding(false);
       setReceivedBy(currentUserPosition || '');
       setRemarks('');
     }
-  }, [isOpen, currentUserPosition]);
+  }, [isOpen, currentUserPosition, currentIndex]);
+
+  // Reset checklist item answers when moving to the next asset
+  useEffect(() => {
+    if (isOpen && currentIndex > 0) {
+      setChecklistData(initialChecklistData);
+    }
+  }, [isOpen, currentIndex]);
 
   const updateChecklistItem = (
     section: keyof AssetChecklistItemData,
@@ -158,9 +186,9 @@ export function AssetChecklistDialog({
     return allItems.every(item => item === true || item === false);
   };
 
-  const handleSubmit = async () => {
+  const handleAction = async () => {
     if (!isAllChecked()) {
-      toast.error('Please complete all checklist items before submitting');
+      toast.error('Please complete all checklist items before continuing');
       return;
     }
 
@@ -174,26 +202,31 @@ export function AssetChecklistDialog({
       return;
     }
 
+    const payload: AssetChecklistSubmitPayload = {
+      checklistData,
+      typeOnboarding,
+      typeOffboarding,
+      receivedBy,
+      remarks,
+    };
+
     setSubmitting(true);
     try {
-      await onSubmit(checklistData, typeOnboarding, typeOffboarding, receivedBy, remarks);
-      onOpenChange(false);
+      if (isLastAsset) {
+        await onFinalSubmit(payload);
+      } else {
+        await onNext(payload);
+      }
     } catch (error) {
-      console.error('Failed to submit checklist:', error);
-      toast.error('Failed to submit checklist');
+      console.error('Failed to save checklist step:', error);
+      toast.error('Failed to save checklist');
     } finally {
       setSubmitting(false);
     }
   };
 
   const selectedAssetObjects = assets.filter(asset => selectedAssets.includes(asset.id));
-  const computerAssets = filterComputerTypeAssets(selectedAssetObjects);
   const nonComputerAssets = filterNonComputerTypeAssets(selectedAssetObjects);
-
-  const selectedAssetsList = selectedAssets.map(assetId => {
-    const asset = assets.find(a => a.id === assetId);
-    return asset ? { id: asset.id, name: asset.name } : null;
-  }).filter(Boolean);
 
   return (
     <Dialog open={isOpen} onOpenChange={onOpenChange}>
@@ -205,10 +238,17 @@ export function AssetChecklistDialog({
               Asset Checklist
             </span>
           }
-          description="Complete the asset checklist for computer-type assets before assignment."
+          description={
+            totalAssets > 1
+              ? `Complete the checklist for each computer asset (${currentIndex + 1} of ${totalAssets}).`
+              : 'Complete the asset checklist for computer-type assets before assignment.'
+          }
         />
 
-        <AppDialogBody className="min-h-0 flex-1 space-y-4 overflow-y-auto">
+        <AppDialogBody
+          key={currentAsset?.id ?? currentIndex}
+          className="min-h-0 flex-1 space-y-4 overflow-y-auto"
+        >
           {/* Employee Information */}
           <div className="p-4 bg-gray-50 rounded-lg">
             <h4 className="font-semibold text-gray-900 mb-3 flex items-center gap-2">
@@ -278,19 +318,24 @@ export function AssetChecklistDialog({
 
           {/* Computer Assets Being Checklist */}
           <div className="p-4 bg-blue-50 rounded-lg border border-blue-200">
-            <h4 className="font-semibold text-gray-900 mb-3 flex items-center gap-2">
-              <Laptop className="h-5 w-5 text-blue-600" />
-              Computer Assets Being Checklist
-            </h4>
-            {computerAssets.length > 0 ? (
-              <div className="space-y-2">
-                {computerAssets.map(asset => (
-                  <div key={asset.id} className="flex items-center gap-2 text-sm bg-white p-2 rounded border border-blue-200">
-                    <Package className="h-4 w-4 text-blue-600" />
-                    <span className="font-medium text-gray-800">{asset.name}</span>
-                    <span className="text-gray-500 text-xs">({asset.type || asset.category || 'N/A'})</span>
-                  </div>
-                ))}
+            <div className="flex items-center justify-between gap-2 mb-3">
+              <h4 className="font-semibold text-gray-900 flex items-center gap-2">
+                <Laptop className="h-5 w-5 text-blue-600" />
+                Computer Assets Being Checklist
+              </h4>
+              {totalAssets > 1 && (
+                <span className="text-xs font-medium text-blue-700 bg-blue-100 px-2 py-1 rounded">
+                  Asset {currentIndex + 1} of {totalAssets}
+                </span>
+              )}
+            </div>
+            {currentAsset ? (
+              <div className="flex items-center gap-2 text-sm bg-white p-2 rounded border border-blue-200">
+                <Package className="h-4 w-4 text-blue-600" />
+                <span className="font-medium text-gray-800">{currentAsset.name}</span>
+                <span className="text-gray-500 text-xs">
+                  ({currentAsset.type || currentAsset.category || 'N/A'})
+                </span>
               </div>
             ) : (
               <p className="text-sm text-gray-500">No computer-type assets selected</p>
@@ -842,25 +887,33 @@ export function AssetChecklistDialog({
     <AppDialogChromeFooter className="shrink-0 border-t bg-gray-50">
       <Button
             variant="outline"
-            onClick={() => onOpenChange(false)}
+            onClick={() => {
+              onCancel?.();
+              onOpenChange(false);
+            }}
             disabled={submitting}
           >
             Cancel
           </Button>
           <Button
-            onClick={handleSubmit}
+            onClick={handleAction}
             disabled={!isAllChecked() || (!typeOnboarding && !typeOffboarding) || !receivedBy.trim() || submitting}
             className="bg-gradient-to-r from-red-500 to-red-600 hover:from-red-600 hover:to-red-700 disabled:from-gray-300 disabled:to-gray-400"
           >
             {submitting ? (
               <div className="flex items-center gap-2 text-white">
                 <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white"></div>
-                Submitting...
+                {isLastAsset ? 'Submitting...' : 'Saving...'}
               </div>
-            ) : (
+            ) : isLastAsset ? (
               <div className="flex items-center gap-2 text-white">
                 <CheckCircle2 className="h-4 w-4" />
                 Submit Checklist
+              </div>
+            ) : (
+              <div className="flex items-center gap-2 text-white">
+                Next
+                <ChevronRight className="h-4 w-4" />
               </div>
             )}
           </Button>

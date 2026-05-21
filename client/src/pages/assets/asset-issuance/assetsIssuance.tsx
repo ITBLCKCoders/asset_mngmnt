@@ -37,8 +37,15 @@ import {
   type AssetAssignment,
 } from './components/AssignedAssetsTable';
 import { ConfirmationModal } from './components/ConfirmationModal';
-import { AssetChecklistDialog } from './components/AssetChecklistDialog';
-import { hasComputerTypeAssets, isComputerTypeAsset } from '@/utils/assetTypeDetection';
+import {
+  AssetChecklistDialog,
+  type AssetChecklistSubmitPayload,
+} from './components/AssetChecklistDialog';
+import {
+  filterComputerTypeAssets,
+  hasComputerTypeAssets,
+} from '@/utils/assetTypeDetection';
+import type { AssetChecklistItemData } from '../../../../../shared/types/dtos/asset.dtos';
 
 const logger = createLogger('AssetsIssuance');
 
@@ -108,7 +115,31 @@ export default function AssetsAssignment() {
   const [userSearchTerm, setUserSearchTerm] = useState('');
   const [confirmModalOpen, setConfirmModalOpen] = useState(false);
   const [checklistDialogOpen, setChecklistDialogOpen] = useState(false);
-  const [pendingAssignmentData, setPendingAssignmentData] = useState<any>(null);
+  const [checklistStepIndex, setChecklistStepIndex] = useState(0);
+  type PendingChecklistEntry = {
+    assetId: string;
+    checklistData: AssetChecklistItemData;
+    typeOnboarding: boolean;
+    typeOffboarding: boolean;
+    receivedBy: string;
+    remarks: string;
+  };
+  const [pendingChecklists, setPendingChecklists] = useState<
+    PendingChecklistEntry[]
+  >([]);
+  const pendingChecklistsRef = useRef<PendingChecklistEntry[]>([]);
+  /** When true, closing the checklist dialog must not wipe the queued checklists */
+  const checklistCloseAfterSubmitRef = useRef(false);
+
+  const syncPendingChecklists = (next: PendingChecklistEntry[]) => {
+    pendingChecklistsRef.current = next;
+    setPendingChecklists(next);
+  };
+
+  const computerAssetsForChecklist = useMemo(() => {
+    const selected = assets.filter(a => selectedAssets.includes(a.id));
+    return filterComputerTypeAssets(selected);
+  }, [assets, selectedAssets]);
   const [assetBuilders, setAssetBuilders] = useState<any[]>([]);
   const [buildersLoading, setBuildersLoading] = useState(false);
   const [intangibleAssets, setIntangibleAssets] = useState<any[]>([]);
@@ -376,30 +407,46 @@ export default function AssetsAssignment() {
     const hasComputerAssets = hasComputerTypeAssets(assets, selectedAssets);
 
     if (hasComputerAssets) {
-      // Open checklist dialog for computer-type assets
+      setChecklistStepIndex(0);
+      syncPendingChecklists([]);
       setChecklistDialogOpen(true);
     } else {
-      // Proceed directly to confirmation modal for non-computer assets
       setConfirmModalOpen(true);
     }
   };
 
-  const handleChecklistSubmit = async (
-    checklistData: any,
-    typeOnboarding: boolean,
-    typeOffboarding: boolean,
-    receivedBy: string,
-    remarks: string
-  ) => {
-    // Save checklist data (will be saved after assignment is created)
-    setPendingAssignmentData({
-      checklistData,
-      typeOnboarding,
-      typeOffboarding,
-      receivedBy,
-      remarks,
-    });
+  const buildPendingEntry = (
+    payload: AssetChecklistSubmitPayload,
+    assetId: string
+  ): PendingChecklistEntry => ({
+    assetId,
+    checklistData: payload.checklistData,
+    typeOnboarding: payload.typeOnboarding,
+    typeOffboarding: payload.typeOffboarding,
+    receivedBy: payload.receivedBy,
+    remarks: payload.remarks,
+  });
+
+  const handleChecklistNext = async (payload: AssetChecklistSubmitPayload) => {
+    const currentAsset = computerAssetsForChecklist[checklistStepIndex];
+    if (!currentAsset) return;
+    syncPendingChecklists([
+      ...pendingChecklistsRef.current,
+      buildPendingEntry(payload, currentAsset.id),
+    ]);
+    setChecklistStepIndex(prev => prev + 1);
+  };
+
+  const handleChecklistFinalSubmit = async (payload: AssetChecklistSubmitPayload) => {
+    const currentAsset = computerAssetsForChecklist[checklistStepIndex];
+    if (!currentAsset) return;
+    syncPendingChecklists([
+      ...pendingChecklistsRef.current,
+      buildPendingEntry(payload, currentAsset.id),
+    ]);
+    checklistCloseAfterSubmitRef.current = true;
     setChecklistDialogOpen(false);
+    setChecklistStepIndex(0);
     setConfirmModalOpen(true);
   };
 
@@ -495,26 +542,37 @@ export default function AssetsAssignment() {
         }
       }
 
-      // Save checklist data if it exists (for computer-type assets)
-      if (pendingAssignmentData && assignmentResponse.assignments && assignmentResponse.assignments.length > 0) {
-        const checklistAsset = assets.find(
-          asset => selectedAssets.includes(asset.id) && isComputerTypeAsset(asset)
+      // Save one checklist per computer asset assignment (use ref for latest queue)
+      const checklistQueue = pendingChecklistsRef.current;
+      if (
+        checklistQueue.length > 0 &&
+        assignmentResponse?.assignments?.length > 0
+      ) {
+        const assigneeUser = users.find(u => u.userID === selectedUser);
+        const assigneeName = assigneeUser
+          ? `${assigneeUser.first_name} ${assigneeUser.last_name}`
+          : '';
+        const department = departments.find(
+          d => d.departmentID === selectedDepartment
         );
-        const checklistAssignment =
-          assignmentResponse.assignments.find(
-            (assignment: any) =>
-              assignment.asset_code === checklistAsset?.id ||
-              assignment.asset_id === checklistAsset?.id
-          ) || assignmentResponse.assignments[0];
-        const assignmentId = checklistAssignment?.assignmentID;
-        if (assignmentId) {
-          try {
-            const assigneeUser = users.find(u => u.userID === selectedUser);
-            const assigneeName = assigneeUser
-              ? `${assigneeUser.first_name} ${assigneeUser.last_name}`
-              : '';
-            const department = departments.find(d => d.departmentID === selectedDepartment);
 
+        let savedCount = 0;
+        for (const pending of checklistQueue) {
+          const checklistAssignment = assignmentResponse.assignments.find(
+            (assignment: { assignmentID: string; asset_id?: string; asset_code?: string }) =>
+              assignment.asset_id === pending.assetId ||
+              assignment.asset_code === pending.assetId
+          );
+          const assignmentId = checklistAssignment?.assignmentID;
+          if (!assignmentId) {
+            console.error(
+              'No assignment found for checklist asset:',
+              pending.assetId
+            );
+            toast.error('Failed to save asset checklist: assignment not found');
+            continue;
+          }
+          try {
             await api.post('/asset-assignments/checklist', {
               assignmentId,
               employeeId: selectedUser,
@@ -522,18 +580,27 @@ export default function AssetsAssignment() {
               employeeDesignation: assigneeUser?.position || null,
               employeeDepartment: department?.name || null,
               employeeCompany: assigneeUser?.company?.name || null,
-              typeOnboarding: pendingAssignmentData.typeOnboarding,
-              typeOffboarding: pendingAssignmentData.typeOffboarding,
-              receivedBy: pendingAssignmentData.receivedBy,
-              checklistData: pendingAssignmentData.checklistData,
-              remarks: pendingAssignmentData.remarks,
+              typeOnboarding: pending.typeOnboarding,
+              typeOffboarding: pending.typeOffboarding,
+              receivedBy: pending.receivedBy,
+              checklistData: pending.checklistData,
+              remarks: pending.remarks,
             });
+            savedCount += 1;
           } catch (error) {
             console.error('Failed to save checklist:', error);
             toast.error('Failed to save asset checklist');
           }
         }
-        setPendingAssignmentData(null);
+        if (savedCount > 0 && savedCount < checklistQueue.length) {
+          toast.warning(
+            `Saved ${savedCount} of ${checklistQueue.length} asset checklists`
+          );
+        } else if (savedCount === 0 && checklistQueue.length > 0) {
+          toast.error('Asset checklists were not saved');
+        }
+        syncPendingChecklists([]);
+        setChecklistStepIndex(0);
       }
 
       // The server automatically creates one accountability form for all assets
@@ -1406,14 +1473,32 @@ export default function AssetsAssignment() {
         {/* Asset Checklist Dialog */}
         <AssetChecklistDialog
           isOpen={checklistDialogOpen}
-          onOpenChange={setChecklistDialogOpen}
+          onOpenChange={open => {
+            setChecklistDialogOpen(open);
+            if (!open) {
+              if (checklistCloseAfterSubmitRef.current) {
+                checklistCloseAfterSubmitRef.current = false;
+              } else {
+                setChecklistStepIndex(0);
+                syncPendingChecklists([]);
+              }
+            }
+          }}
+          onCancel={() => {
+            checklistCloseAfterSubmitRef.current = false;
+            setChecklistStepIndex(0);
+            syncPendingChecklists([]);
+          }}
           selectedAssets={selectedAssets}
           assets={assets}
+          computerAssets={computerAssetsForChecklist}
+          currentIndex={checklistStepIndex}
           selectedUser={selectedUser}
           users={users}
           departments={departments}
           currentUserPosition={currentUser?.position || ''}
-          onSubmit={handleChecklistSubmit}
+          onNext={handleChecklistNext}
+          onFinalSubmit={handleChecklistFinalSubmit}
         />
 
       </main>

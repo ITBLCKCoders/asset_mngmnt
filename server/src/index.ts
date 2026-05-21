@@ -16,6 +16,7 @@ import locationsRoutes from './routes/locations.routes.js';
 import rolesRoutes from './routes/roles.routes.js';
 import assetsRoutes from './routes/assets.routes.js';
 import assetAssignmentsRoutes from './routes/assetAssignments.routes.js';
+import assetChecklistsRoutes from './routes/assetChecklists.routes.js';
 import assetReturnsRoutes from './routes/assetReturns.routes.js';
 import assetTransfersRoutes from './routes/assetTransfers.routes.js';
 import accountabilityFormsRoutes from './routes/accountabilityForms.routes.js';
@@ -154,6 +155,7 @@ app.use('/api/locations', locationsRoutes); // NEW: Locations routes mounted
 app.use('/api/roles', rolesRoutes); // NEW: Roles routes mounted
 app.use('/api/assets', assetsRoutes); // NEW: Assets routes mounted
 app.use('/api/asset-assignments', assetAssignmentsRoutes); // NEW: Asset assignments routes mounted
+app.use('/api/asset-checklists', assetChecklistsRoutes);
 app.use('/api/asset-returns', assetReturnsRoutes);
 app.use('/api/asset-transfers', assetTransfersRoutes); // NEW: Asset returns routes mounted
 app.use('/api/accountability-forms', accountabilityFormsRoutes); // NEW: Accountability forms routes mounted

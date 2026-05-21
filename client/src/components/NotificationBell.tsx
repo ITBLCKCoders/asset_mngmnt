@@ -401,8 +401,8 @@ export default function NotificationBell({ className }: NotificationBellProps) {
       form={accountabilityFormPreview}
       onClose={() => setAccountabilityFormPreview(null)}
       onSign={async (formId: string, acknowledgments?: Record<string, unknown>) => {
-        // Navigate to documents tab to use the sign flow there
-        navigate('/profile?tab=documents');
+        // The AccountabilityFormPreviewDialog handles the complete signing process
+        // including OTP verification and API calls. Just close the dialog after signing.
         setAccountabilityFormPreview(null);
       }}
       onDecline={handleDeclineAccountabilityForm}

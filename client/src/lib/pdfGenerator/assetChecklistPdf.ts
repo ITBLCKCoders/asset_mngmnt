@@ -1,7 +1,10 @@
 import { jsPDF } from 'jspdf';
 import {
   addCompanyLogoToPDF,
+  addSignatureToPDF,
   autoTable,
+  PDF_SIGNATURE_MAX_HEIGHT_MM,
+  PDF_SIGNATURE_MAX_WIDTH_MM,
   getCompanyAccentColor,
   getBlackCodersFooterGradient,
   isBlackCoders,
@@ -27,8 +30,19 @@ export interface AssetChecklistData {
   created_by?: string | null;
   creator_name?: string | null;
   creator_digital_signature?: string | null;
+  employee_signed_at?: string | null;
+  employee_digital_signature?: string | null;
+  dept_head_signed_at?: string | null;
+  dept_head_signed_by?: string | null;
+  dept_head_digital_signature?: string | null;
+  dept_head_name?: string | null;
   asset_label?: string;
   employee_company_logo_url?: string | null;
+  asset?: {
+    id: string;
+    code?: string | null;
+    name?: string | null;
+  } | null;
 }
 
 export const generateAssetChecklistPDF = async (
@@ -357,7 +371,62 @@ export const generateAssetChecklistPDF = async (
         hour12: true,
       })
     : '';
-  
+
+  /** Fixed approval row height — digital signature is drawn last and may overlap */
+  const approvalSignatureRowHeight = 32;
+
+  const employeeName = checklistData.employee_name || '';
+  const employeeDigitalSignature =
+    checklistData.employee_digital_signature || '';
+  const employeeInitial = employeeName
+    ? employeeName.charAt(0).toUpperCase()
+    : '';
+  const employeeSignedDate = checklistData.employee_signed_at
+    ? new Date(checklistData.employee_signed_at).toLocaleDateString('en-US', {
+        year: 'numeric',
+        month: '2-digit',
+        day: '2-digit',
+      })
+    : '';
+  const employeeSignedTime = checklistData.employee_signed_at
+    ? new Date(checklistData.employee_signed_at).toLocaleTimeString('en-US', {
+        hour: '2-digit',
+        minute: '2-digit',
+        hour12: true,
+      })
+    : '';
+
+  const deptHeadName = checklistData.dept_head_name || '';
+  const deptHeadDigitalSignature =
+    checklistData.dept_head_digital_signature || '';
+  const deptHeadInitial = deptHeadName
+    ? deptHeadName.charAt(0).toUpperCase()
+    : '';
+  const deptHeadSignedDate = checklistData.dept_head_signed_at
+    ? new Date(checklistData.dept_head_signed_at).toLocaleDateString('en-US', {
+        year: 'numeric',
+        month: '2-digit',
+        day: '2-digit',
+      })
+    : '';
+  const deptHeadSignedTime = checklistData.dept_head_signed_at
+    ? new Date(checklistData.dept_head_signed_at).toLocaleTimeString('en-US', {
+        hour: '2-digit',
+        minute: '2-digit',
+        hour12: true,
+      })
+    : '';
+
+  type PendingChecklistSignature = {
+    data: string;
+    x: number;
+    y: number;
+    maxWidth: number;
+    maxHeight: number;
+    anchorBottomY?: number;
+  };
+  const pendingSignatures: PendingChecklistSignature[] = [];
+
   const approvalRows = [
     [{ content: 'Section C: Approvals', colSpan: 2 }],
     ['', ''],
@@ -386,7 +455,7 @@ export const generateAssetChecklistPDF = async (
         data.cell.styles.halign = 'center';
       }
       if (data.row.index === 1 || data.row.index === 3) {
-        data.cell.styles.minCellHeight = 32;
+        data.cell.styles.minCellHeight = approvalSignatureRowHeight;
       }
     },
     willDrawCell: () => {
@@ -404,67 +473,131 @@ export const generateAssetChecklistPDF = async (
       const contentWidth = Math.max(20, xMax - xMin);
       const contentHeight = Math.max(10, yMax - yMin);
 
-      // Row 1, column 1: IT Staff / IT Inventory Manager (creator signature)
+      // Row 1, column 1: IT Staff / IT Inventory Manager (name/date only; signature overlays later)
       if (creatorName && data.row.index === 1 && data.column.index === 1) {
         const yTop = yMin;
         const dateTimeReserved = 20;
-        const gap = 2;
-        const maxSigWidth = contentWidth - dateTimeReserved - gap;
-        const sigWidthClamped = Math.min(88, Math.max(30, maxSigWidth));
         const sigHeight = Math.min(50, Math.max(28, contentHeight - 2));
-        const xLeft = xMin;
-        const dateTimeX = xLeft + sigWidthClamped + gap;
+        const dateTimeX = xMax - dateTimeReserved;
         const nameY = yTop + sigHeight - 6;
 
         doc.setFontSize(8);
         doc.setFont('helvetica', 'normal');
         doc.setTextColor(0, 0, 0);
 
-        // Display digital signature image at the top, or typed initial as fallback
-        if (creatorDigitalSignature && creatorDigitalSignature.startsWith('data:')) {
-          // Drawn signature (image)
-          const initialsY = yTop + 10;
-          const initialsX = xMin;
-          const initialsWidth = Math.min(40, contentWidth - 6);
-          const initialsHeight = 16;
-          try {
-            doc.addImage(creatorDigitalSignature, 'PNG', initialsX, initialsY, initialsWidth, initialsHeight);
-          } catch (err) {
-            console.error('Failed to add creator digital signature to PDF:', err);
-          }
-        } else if (creatorDigitalSignature) {
-          // Typed initial (text stored in digital_signature field)
-          const initialsY = yTop + 10;
-          const initialsX = xMin;
-          doc.setFontSize(14);
-          doc.setFont('helvetica', 'bold');
-          doc.text(creatorDigitalSignature, initialsX, initialsY);
+        if (creatorDigitalSignature) {
+          pendingSignatures.push({
+            data: creatorDigitalSignature,
+            x: cell.x + 1,
+            y: yTop,
+            anchorBottomY: nameY - 2,
+            maxWidth: PDF_SIGNATURE_MAX_WIDTH_MM,
+            maxHeight: PDF_SIGNATURE_MAX_HEIGHT_MM,
+          });
         } else if (creatorInitial) {
-          // Fallback to calculated initial from name
-          const initialsY = yTop + 10;
-          const initialsX = xMin;
           doc.setFontSize(14);
           doc.setFont('helvetica', 'bold');
-          doc.text(creatorInitial, initialsX, initialsY);
+          doc.text(creatorInitial, xMin, yTop + 10);
         }
 
-        // Display creator name at the bottom
         if (creatorName) {
           doc.setFontSize(8);
           doc.setFont('helvetica', 'normal');
           const nameMaxWidth = Math.max(15, contentWidth - 6);
           const nameLines = doc.splitTextToSize(creatorName, nameMaxWidth);
-          const adjustedNameY = (creatorDigitalSignature || creatorInitial) ? nameY + 8 : nameY;
-          doc.text(nameLines, xMin, adjustedNameY);
+          doc.text(nameLines, xMin, nameY);
         }
 
-        // Display date and time on the right
         if (createdDate && createdTime) {
-          const dateTimeXClamped = Math.min(dateTimeX, xMax - 18);
           doc.setFontSize(7);
           doc.setFont('helvetica', 'normal');
-          doc.text(createdDate, dateTimeXClamped, yTop + 4);
-          doc.text(createdTime, dateTimeXClamped, yTop + 9);
+          doc.text(createdDate, dateTimeX, yTop + 4);
+          doc.text(createdTime, dateTimeX, yTop + 9);
+        }
+      }
+
+      // Row 3, column 0: Employee's Department Head
+      if (data.row.index === 3 && data.column.index === 0) {
+        const yTop = yMin;
+        const dateTimeReserved = 20;
+        const sigHeight = Math.min(50, Math.max(28, contentHeight - 2));
+        const dateTimeX = xMax - dateTimeReserved;
+        const nameY = yTop + sigHeight - 6;
+        const displayDeptHeadName = deptHeadName || '';
+
+        doc.setFontSize(8);
+        doc.setFont('helvetica', 'normal');
+        doc.setTextColor(0, 0, 0);
+
+        if (deptHeadDigitalSignature) {
+          pendingSignatures.push({
+            data: deptHeadDigitalSignature,
+            x: cell.x + 1,
+            y: yTop,
+            anchorBottomY: nameY - 2,
+            maxWidth: PDF_SIGNATURE_MAX_WIDTH_MM,
+            maxHeight: PDF_SIGNATURE_MAX_HEIGHT_MM,
+          });
+        } else if (deptHeadInitial) {
+          doc.setFontSize(14);
+          doc.setFont('helvetica', 'bold');
+          doc.text(deptHeadInitial, xMin, yTop + 10);
+        }
+
+        if (displayDeptHeadName) {
+          doc.setFontSize(8);
+          doc.setFont('helvetica', 'normal');
+          const nameMaxWidth = Math.max(15, contentWidth - 6);
+          const nameLines = doc.splitTextToSize(displayDeptHeadName, nameMaxWidth);
+          doc.text(nameLines, xMin, nameY);
+        }
+
+        if (deptHeadSignedDate && deptHeadSignedTime) {
+          doc.setFontSize(7);
+          doc.setFont('helvetica', 'normal');
+          doc.text(deptHeadSignedDate, dateTimeX, yTop + 4);
+          doc.text(deptHeadSignedTime, dateTimeX, yTop + 9);
+        }
+      }
+
+      // Row 3, column 1: Employee (name/date only; signature overlays later)
+      if (employeeName && data.row.index === 3 && data.column.index === 1) {
+        const yTop = yMin;
+        const dateTimeReserved = 20;
+        const sigHeight = Math.min(50, Math.max(28, contentHeight - 2));
+        const dateTimeX = xMax - dateTimeReserved;
+        const nameY = yTop + sigHeight - 6;
+
+        doc.setFontSize(8);
+        doc.setFont('helvetica', 'normal');
+        doc.setTextColor(0, 0, 0);
+
+        if (employeeDigitalSignature) {
+          pendingSignatures.push({
+            data: employeeDigitalSignature,
+            x: cell.x + 1,
+            y: yTop,
+            anchorBottomY: nameY - 2,
+            maxWidth: PDF_SIGNATURE_MAX_WIDTH_MM,
+            maxHeight: PDF_SIGNATURE_MAX_HEIGHT_MM,
+          });
+        } else if (employeeInitial) {
+          doc.setFontSize(14);
+          doc.setFont('helvetica', 'bold');
+          doc.text(employeeInitial, xMin, yTop + 10);
+        }
+
+        doc.setFontSize(8);
+        doc.setFont('helvetica', 'normal');
+        const nameMaxWidth = Math.max(15, contentWidth - 6);
+        const nameLines = doc.splitTextToSize(employeeName, nameMaxWidth);
+        doc.text(nameLines, xMin, nameY);
+
+        if (employeeSignedDate && employeeSignedTime) {
+          doc.setFontSize(7);
+          doc.setFont('helvetica', 'normal');
+          doc.text(employeeSignedDate, dateTimeX, yTop + 4);
+          doc.text(employeeSignedTime, dateTimeX, yTop + 9);
         }
       }
     },
@@ -487,6 +620,19 @@ export const generateAssetChecklistPDF = async (
   doc.setDrawColor(0, 0, 0);
   doc.setLineWidth(6);
   doc.line(10, 324, 205, 324);
+
+  // Draw digital signatures last so they overlay table lines, names, and dates
+  for (const sig of pendingSignatures) {
+    await addSignatureToPDF(
+      doc,
+      sig.data,
+      sig.x,
+      sig.y,
+      sig.maxWidth,
+      sig.maxHeight,
+      sig.anchorBottomY
+    );
+  }
 
   return new Blob([doc.output('blob')], { type: 'application/pdf' });
 };

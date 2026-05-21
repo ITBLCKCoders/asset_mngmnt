@@ -5,6 +5,13 @@ import { api } from '@/lib/api';
 
 export const pdfLogger = createLogger('PDFGenerator');
 
+/** Cache processed signature data URLs (keyed by remote URL) for PDF generation */
+const signatureImageCache = new Map<string, string>();
+
+/** Digital signature max size (mm) — matches asset accountability form PDF */
+export const PDF_SIGNATURE_MAX_WIDTH_MM = 122;
+export const PDF_SIGNATURE_MAX_HEIGHT_MM = 74;
+
 export { autoTable };
 
 export interface PdfCompanyBranding {
@@ -183,17 +190,12 @@ export const addSignatureToPDF = async (
   x: number,
   y: number,
   maxWidth: number = 50,
-  maxHeight: number = 20
+  maxHeight: number = 20,
+  /** When set, bottom edge of the image aligns to this Y (mm) instead of using `y` as top */
+  anchorBottomY?: number
 ): Promise<void> => {
   try {
-    pdfLogger.debug('addSignatureToPDF called', {
-      hasSignature: !!signatureData,
-      x,
-      y,
-    });
-
     if (!signatureData) {
-      pdfLogger.debug('No signature data provided');
       return;
     }
 
@@ -209,15 +211,16 @@ export const addSignatureToPDF = async (
 
     const img = new Image();
     img.crossOrigin = 'anonymous';
-    img.src = signatureData;
+
+    if (signatureData.startsWith('http://') || signatureData.startsWith('https://')) {
+      const cached = signatureImageCache.get(signatureData);
+      img.src = cached ?? signatureData;
+    } else {
+      img.src = signatureData;
+    }
 
     await new Promise<void>((resolve, reject) => {
       img.onload = () => {
-        pdfLogger.debug('Signature image loaded', {
-          width: img.width,
-          height: img.height,
-        });
-
         const canvas = document.createElement('canvas');
         canvas.width = img.width;
         canvas.height = img.height;
@@ -227,18 +230,28 @@ export const addSignatureToPDF = async (
           const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
           const data = imageData.data;
 
+          // Match accountability form PDF: remove white background, keep ink colors
           for (let i = 0; i < data.length; i += 4) {
+            const r = data[i];
+            const g = data[i + 1];
+            const b = data[i + 2];
             const a = data[i + 3];
-            if (a > 0) {
-              data[i] = 0;
-              data[i + 1] = 0;
-              data[i + 2] = 0;
-              data[i + 3] = a;
+            const brightness = (r + g + b) / 3;
+            if (brightness > 240 && a > 0) {
+              data[i + 3] = 0;
             }
           }
 
           ctx.putImageData(imageData, 0, 0);
-          img.src = canvas.toDataURL();
+          const processedDataUrl = canvas.toDataURL('image/png');
+
+          if (
+            signatureData.startsWith('http://') ||
+            signatureData.startsWith('https://')
+          ) {
+            signatureImageCache.set(signatureData, processedDataUrl);
+          }
+          img.src = processedDataUrl;
         }
 
         resolve();
@@ -268,13 +281,10 @@ export const addSignatureToPDF = async (
       finalSigWidth = finalSigWidth * scale;
     }
 
-    pdfLogger.debug('Adding signature image to PDF', {
-      finalSigWidth,
-      finalSigHeight,
-      x,
-      y,
-    });
-    doc.addImage(img.src, 'PNG', x, y, finalSigWidth, finalSigHeight);
+    const format = img.src.startsWith('data:image/jpeg') ? 'JPEG' : 'PNG';
+    const drawY =
+      anchorBottomY != null ? anchorBottomY - finalSigHeight : y;
+    doc.addImage(img.src, format, x, drawY, finalSigWidth, finalSigHeight);
   } catch (error) {
     pdfLogger.debug(
       'Failed to add signature to PDF',

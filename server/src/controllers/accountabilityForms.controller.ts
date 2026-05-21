@@ -4,6 +4,7 @@ import type { AuthRequest } from '../middleware/authenticate.js';
 import logger from '../logger.js';
 import { createAuditLog } from '../utils/audit.js';
 import * as repo from '../repositories/accountabilityForm.repository.js';
+import * as checklistRepo from '../repositories/assetChecklist.repository.js';
 import { declineAccountabilityFormBodySchema } from '../dtos/accountabilityForms/DeclineAccountabilityFormDto.js';
 import { applyReturnAssignmentSideEffectsOnConnection } from '../utils/returnAssignmentSideEffects.js';
 import { signedRawUrlFromStoredSecureUrl } from '../utils/cloudinary.js';
@@ -13,6 +14,43 @@ import { getHrAccountabilityReceiverUserIds } from '../utils/approverNotificatio
 import { getIoInstance } from '../utils/socketManager.js';
 import { NotificationService } from '../services/notification.service.js';
 import { randomUUID } from 'crypto';
+import { resolveChecklistAssignmentIds } from '../utils/accountabilityFormAssetsData.js';
+import { isComputerTypeName } from '../utils/computerTypeAsset.js';
+import * as assignmentRepo from '../repositories/assetAssignment.repository.js';
+import { getManagerApprover1UserIdsInDepartmentAndCompany } from '../utils/approverNotifications.js';
+
+async function userHasHrAccountabilityReceiverAccess(
+  userId: string
+): Promise<boolean> {
+  const [rows] = (await pool.execute(
+    `SELECT 1
+     FROM users u
+     LEFT JOIN asset_mngmnt_roles r ON u.role_id = r.roleID AND r.deleted_at IS NULL
+     LEFT JOIN user_custodian_settings uc ON u.userID = uc.user_id
+     WHERE u.userID = ?
+       AND (r.hr_accountability_receiver = 1 OR COALESCE(uc.hr_accountability_receiver, 0) = 1)
+     LIMIT 1`,
+    [userId]
+  )) as [unknown[], unknown];
+  return Array.isArray(rows) && rows.length > 0;
+}
+
+async function userCanViewAccountabilityFormRow(
+  row: { user_id: string; created_by: string | null },
+  currentUserId: string
+): Promise<boolean> {
+  if (row.user_id === currentUserId || row.created_by === currentUserId) {
+    return true;
+  }
+  if (await userHasHrAccountabilityFullAccess(currentUserId)) {
+    return true;
+  }
+  if (await userHasHrAccountabilityReceiverAccess(currentUserId)) {
+    return true;
+  }
+  const perms = await repo.getUserAccountabilityFormPermissions(currentUserId);
+  return perms.some(p => p.granted === 1);
+}
 
 async function userHasHrAccountabilityFullAccess(
   userId: string
@@ -1397,6 +1435,231 @@ export async function signReceivedCopyHandler(req: AuthRequest, res: Response) {
         detail: error?.message,
       }),
     });
+  }
+}
+
+export async function getAccountabilityFormChecklistsHandler(
+  req: AuthRequest,
+  res: Response
+) {
+  try {
+    const { formId } = req.params;
+    const currentUserId = req.user!.userID;
+
+    if (!formId) {
+      return res.status(400).json({ error: 'Form ID is required' });
+    }
+
+    const row = await repo.getFormFullDetailById(formId);
+    if (!row) {
+      return res.status(404).json({ error: 'Accountability form not found' });
+    }
+
+    const canView = await userCanViewAccountabilityFormRow(
+      {
+        user_id: String(row.user_id),
+        created_by: row.created_by != null ? String(row.created_by) : null,
+      },
+      currentUserId
+    );
+    if (!canView) {
+      return res.status(403).json({
+        error: 'You do not have permission to view checklists for this form',
+      });
+    }
+
+    const assignmentIds = await resolveChecklistAssignmentIds({
+      assetsDataRaw: row.assets_data,
+      fallbackAssignmentId: row.assignment_id,
+      userId: row.user_id,
+      getActiveAssignmentIdsByAssetIds:
+        assignmentRepo.getActiveAssignmentIdsByUserAndAssetIds,
+      getActiveAssignmentIdsByAssetCodes:
+        assignmentRepo.getActiveAssignmentIdsByUserAndAssetCodes,
+      isComputerType: isComputerTypeName,
+    });
+    const checklists =
+      await checklistRepo.getChecklistsByAssignmentIds(assignmentIds);
+
+    return res.status(200).json({ checklists });
+  } catch (error) {
+    logger.error('Get accountability form checklists failed:', error);
+    return res
+      .status(500)
+      .json({ error: 'Failed to fetch accountability form checklists' });
+  }
+}
+
+export async function signAccountabilityFormChecklistsHandler(
+  req: AuthRequest,
+  res: Response
+) {
+  try {
+    const { formId } = req.params;
+    const currentUserId = req.user!.userID;
+    const bodySignature =
+      typeof req.body?.digitalSignature === 'string'
+        ? req.body.digitalSignature.trim()
+        : '';
+
+    if (!formId) {
+      return res.status(400).json({ error: 'Form ID is required' });
+    }
+
+    const row = await repo.getFormFullDetailById(formId);
+    if (!row) {
+      return res.status(404).json({ error: 'Accountability form not found' });
+    }
+
+    if (String(row.user_id) !== String(currentUserId)) {
+      return res
+        .status(403)
+        .json({ error: 'You can only sign checklists assigned to you' });
+    }
+
+    if (row.status !== 'Pending') {
+      return res.status(400).json({
+        error: 'Checklists can only be signed while the accountability form is pending',
+      });
+    }
+
+    const assignmentIds = await resolveChecklistAssignmentIds({
+      assetsDataRaw: row.assets_data,
+      fallbackAssignmentId: row.assignment_id,
+      userId: row.user_id,
+      getActiveAssignmentIdsByAssetIds:
+        assignmentRepo.getActiveAssignmentIdsByUserAndAssetIds,
+      getActiveAssignmentIdsByAssetCodes:
+        assignmentRepo.getActiveAssignmentIdsByUserAndAssetCodes,
+      isComputerType: isComputerTypeName,
+    });
+
+    const checklists =
+      await checklistRepo.getChecklistsByAssignmentIds(assignmentIds);
+    const unsigned = checklists.filter(
+      (c: { employee_signed_at?: string | null }) => !c.employee_signed_at
+    );
+
+    if (unsigned.length === 0) {
+      return res.status(400).json({
+        error: 'All checklists for this form are already signed',
+      });
+    }
+
+    let digitalSignature: string | null = bodySignature || null;
+    if (!digitalSignature) {
+      const [userRows] = (await pool.query(
+        `SELECT digital_signature FROM users WHERE userID = ? LIMIT 1`,
+        [currentUserId]
+      )) as [{ digital_signature?: string | null }[], unknown];
+      const fromUser = userRows[0]?.digital_signature;
+      digitalSignature =
+        fromUser != null && String(fromUser).trim() !== ''
+          ? String(fromUser).trim()
+          : null;
+    }
+
+    const signedCount = await checklistRepo.signChecklistsAsEmployee({
+      checklistIds: unsigned.map((c: { id: string }) => c.id),
+      employeeId: currentUserId,
+      digitalSignature,
+    });
+
+    if (signedCount === 0) {
+      return res.status(400).json({
+        error: 'No checklists were signed. They may already be signed.',
+      });
+    }
+
+    const updatedChecklists =
+      await checklistRepo.getChecklistsByAssignmentIds(assignmentIds);
+
+    try {
+      const [empRows] = (await pool.query(
+        `SELECT department_id, company_id, name, first_name, last_name
+         FROM users WHERE userID = ? LIMIT 1`,
+        [currentUserId]
+      )) as [
+        {
+          department_id: string | null;
+          company_id: string | null;
+          name?: string | null;
+          first_name?: string | null;
+          last_name?: string | null;
+        }[],
+        unknown,
+      ];
+      const emp = empRows[0];
+      const departmentId = emp?.department_id ?? null;
+      const companyId = emp?.company_id ?? null;
+      if (departmentId && companyId) {
+        const approverIds =
+          await getManagerApprover1UserIdsInDepartmentAndCompany(
+            departmentId,
+            companyId
+          );
+        const employeeName =
+          [emp?.first_name, emp?.last_name].filter(Boolean).join(' ').trim() ||
+          emp?.name ||
+          'An employee';
+        for (const approverUserId of approverIds) {
+          if (approverUserId === currentUserId) continue;
+          await createNotificationForApi({
+            user_id: approverUserId,
+            title: 'Asset Checklist Approval Needed',
+            message: `${employeeName} signed ${signedCount} asset checklist${signedCount !== 1 ? 's' : ''} and requires your approval.`,
+            type: 'system',
+            data: {
+              route: '/approvals',
+              actionTarget: 'checklist_approval',
+              form_id: formId,
+              employee_id: currentUserId,
+              employee_name: employeeName,
+              checklist_count: signedCount,
+            },
+          });
+        }
+      }
+    } catch (notifError) {
+      logger.error('Failed to notify checklist approvers:', notifError);
+    }
+
+    await createAuditLog({
+      userId: currentUserId,
+      action: 'Signed Asset Checklists',
+      resourceType: 'accountability_form',
+      resourceId: formId,
+      resourceName: row.form_number ?? formId,
+      details: `Signed ${signedCount} asset checklist(s) for accountability form`,
+      newValues: {
+        signed_checklist_count: signedCount,
+        checklist_ids: unsigned.map((c: { id: string }) => c.id),
+      },
+      ipAddress: req.ip,
+      userAgent: req.get ? req.get('User-Agent') : 'Unknown',
+    });
+
+    return res.status(200).json({
+      message: `Signed ${signedCount} checklist(s) successfully`,
+      signedCount,
+      checklists: updatedChecklists,
+    });
+  } catch (error: unknown) {
+    const message =
+      error instanceof Error ? error.message : String(error ?? '');
+    logger.error('Sign accountability form checklists failed:', error);
+    if (
+      typeof message === 'string' &&
+      message.includes('employee_signed_at')
+    ) {
+      return res.status(503).json({
+        error:
+          'Checklist signing is not available: run db/migration_add_asset_checklist_employee_sign.sql',
+      });
+    }
+    return res
+      .status(500)
+      .json({ error: 'Failed to sign asset checklists' });
   }
 }
 

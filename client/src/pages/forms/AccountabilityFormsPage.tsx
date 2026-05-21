@@ -43,6 +43,7 @@ import { cn } from '@/lib/utils';
 import { classifyDepartmentScopeByName } from '@/lib/assetScope';
 
 type StatusFilter = 'all' | 'active' | 'disabled';
+type AssetTypeFilter = 'all' | 'it' | 'admin';
 
 export default function AccountabilityFormsPage() {
   const { hasPermission } = useUserPermissions();
@@ -62,6 +63,7 @@ export default function AccountabilityFormsPage() {
   const [searchQuery, setSearchQuery] = useState('');
   const [companyFilterId, setCompanyFilterId] = useState('');
   const [departmentFilterId, setDepartmentFilterId] = useState('');
+  const [assetTypeFilter, setAssetTypeFilter] = useState<AssetTypeFilter>('all');
   
   // Auto-set company filter to user's company if they have one
   const userCompanyScope = currentUser?.company_id || '';
@@ -171,12 +173,12 @@ export default function AccountabilityFormsPage() {
   };
   
   const filterByAssetType = (list: AccountabilityForm[]) => {
-    if (userRoleAssetType === 'none') return list;
+    if (assetTypeFilter === 'all') return list;
     
-    const targetScope = userRoleAssetType === 'it' ? 'IT' : 'Admin';
+    const targetScope = assetTypeFilter === 'it' ? 'IT' : 'Admin';
     
     return list.filter((f: AccountabilityForm) => {
-      // Check if any asset in the form matches the user's asset type scope
+      // Check if any asset in the form matches the selected asset type
       return f.assets.some(asset => {
         const deptCandidate =
           asset.categoryDepartment ||
@@ -248,14 +250,14 @@ export default function AccountabilityFormsPage() {
           )
         )
       ),
-    [forms, searchQuery, statusFilter, companyFilterId, departmentFilterId, userRoleAssetType]
+    [forms, searchQuery, statusFilter, companyFilterId, departmentFilterId, assetTypeFilter]
   );
   const filteredHrCopy = useMemo(
     () =>
       applyStatusFilter(
         filterBySearch(filterByAssetType(filterByCompanyAndDepartment(hrCopyForms)))
       ),
-    [hrCopyForms, searchQuery, statusFilter, companyFilterId, departmentFilterId, userRoleAssetType]
+    [hrCopyForms, searchQuery, statusFilter, companyFilterId, departmentFilterId, assetTypeFilter]
   );
 
   const hasActiveOrgFilters = Boolean(companyFilterId || departmentFilterId);
@@ -526,6 +528,44 @@ export default function AccountabilityFormsPage() {
                     Disabled
                   </Button>
                 </div>
+                <div className="flex gap-2 flex-wrap">
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => setAssetTypeFilter('all')}
+                    className={
+                      assetTypeFilter === 'all'
+                        ? 'bg-red-600 text-white hover:bg-red-700 hover:text-white border-red-600'
+                        : ''
+                    }
+                  >
+                    All Assets
+                  </Button>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => setAssetTypeFilter('it')}
+                    className={
+                      assetTypeFilter === 'it'
+                        ? 'bg-red-600 text-white hover:bg-red-700 hover:text-white border-red-600'
+                        : ''
+                    }
+                  >
+                    IT Assets
+                  </Button>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => setAssetTypeFilter('admin')}
+                    className={
+                      assetTypeFilter === 'admin'
+                        ? 'bg-red-600 text-white hover:bg-red-700 hover:text-white border-red-600'
+                        : ''
+                    }
+                  >
+                    Admin Assets
+                  </Button>
+                </div>
               </div>
 
               <TabsContent value="all" className="mt-0">
@@ -655,6 +695,44 @@ export default function AccountabilityFormsPage() {
                     Disabled
                   </Button>
                 </div>
+                <div className="flex gap-2 flex-wrap">
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => setAssetTypeFilter('all')}
+                    className={
+                      assetTypeFilter === 'all'
+                        ? 'bg-red-600 text-white hover:bg-red-700 hover:text-white border-red-600'
+                        : ''
+                    }
+                  >
+                    All Assets
+                  </Button>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => setAssetTypeFilter('it')}
+                    className={
+                      assetTypeFilter === 'it'
+                        ? 'bg-red-600 text-white hover:bg-red-700 hover:text-white border-red-600'
+                        : ''
+                    }
+                  >
+                    IT Assets
+                  </Button>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => setAssetTypeFilter('admin')}
+                    className={
+                      assetTypeFilter === 'admin'
+                        ? 'bg-red-600 text-white hover:bg-red-700 hover:text-white border-red-600'
+                        : ''
+                    }
+                  >
+                    Admin Assets
+                  </Button>
+                </div>
               </div>
 
               <div className="flex items-center gap-2 mb-4">
@@ -698,6 +776,9 @@ export default function AccountabilityFormsPage() {
                   headerInParentChrome
                   viewContext={viewDetailContext}
                   hrViewMode
+                  onReceiveCompleted={async () => {
+                    await fetchForms();
+                  }}
                 />
               )}
             </AppDialogBody>

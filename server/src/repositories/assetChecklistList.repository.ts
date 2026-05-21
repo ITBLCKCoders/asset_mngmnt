@@ -1,7 +1,15 @@
 import { pool } from '../db.js';
 import logger from '../logger.js';
+import { hasEmployeeSignColumns } from './assetChecklist.repository.js';
 
 export async function getAssetChecklists() {
+  const includeEmployeeSign = await hasEmployeeSignColumns();
+  const employeeSignFields = includeEmployeeSign
+    ? `ac.employee_signed_at,
+      ac.employee_digital_signature,`
+    : `NULL AS employee_signed_at,
+      NULL AS employee_digital_signature,`;
+
   const query = `
     SELECT
       ac.id,
@@ -19,6 +27,7 @@ export async function getAssetChecklists() {
       ac.remarks,
       ac.created_at,
       ac.created_by,
+      ${employeeSignFields}
       u.name AS creator_name,
       u.digital_signature AS creator_digital_signature,
       aa.asset_id,

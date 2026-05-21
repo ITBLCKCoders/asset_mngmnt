@@ -472,6 +472,48 @@ export async function getActiveAssignmentsByUserAndCategories(
   return rows;
 }
 
+export async function getActiveAssignmentIdsByUserAndAssetIds(
+  userId: string,
+  assetIds: string[]
+): Promise<string[]> {
+  if (assetIds.length === 0) return [];
+  const placeholders = assetIds.map(() => '?').join(',');
+  const [rows] = await pool.execute(
+    `SELECT aa.assignmentID
+     FROM asset_assignments aa
+     JOIN assets a ON aa.asset_id = a.assetID AND a.deleted_at IS NULL
+     WHERE aa.user_id = ?
+       AND aa.status = 'Active'
+       AND aa.deleted_at IS NULL
+       AND a.assetID IN (${placeholders})`,
+    [userId, ...assetIds]
+  );
+  return (rows as { assignmentID: string }[])
+    .map(r => String(r.assignmentID))
+    .filter(Boolean);
+}
+
+export async function getActiveAssignmentIdsByUserAndAssetCodes(
+  userId: string,
+  assetCodes: string[]
+): Promise<string[]> {
+  if (assetCodes.length === 0) return [];
+  const placeholders = assetCodes.map(() => '?').join(',');
+  const [rows] = await pool.execute(
+    `SELECT aa.assignmentID
+     FROM asset_assignments aa
+     JOIN assets a ON aa.asset_id = a.assetID AND a.deleted_at IS NULL
+     WHERE aa.user_id = ?
+       AND aa.status = 'Active'
+       AND aa.deleted_at IS NULL
+       AND a.asset_code IN (${placeholders})`,
+    [userId, ...assetCodes]
+  );
+  return (rows as { assignmentID: string }[])
+    .map(r => String(r.assignmentID))
+    .filter(Boolean);
+}
+
 export async function getActiveAssignmentsByUserAndAssetIds(
   userId: string,
   assetIds: string[]

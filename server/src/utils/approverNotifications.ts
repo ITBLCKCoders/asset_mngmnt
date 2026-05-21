@@ -63,6 +63,35 @@ export async function getManagerApprover1UserIdsInDepartment(
 }
 
 /**
+ * Manager Approver 1 users in the same department and company (e.g. checklist dept-head approval).
+ */
+export async function getManagerApprover1UserIdsInDepartmentAndCompany(
+  departmentId: string | null,
+  companyId: string | null
+): Promise<string[]> {
+  if (
+    departmentId == null ||
+    departmentId === '' ||
+    companyId == null ||
+    companyId === ''
+  ) {
+    return [];
+  }
+  const [rows] = (await pool.execute(
+    `SELECT DISTINCT u.userID
+     FROM users u
+     LEFT JOIN asset_mngmnt_roles r ON u.role_id = r.roleID AND r.deleted_at IS NULL
+     LEFT JOIN user_custodian_settings uc ON u.userID = uc.user_id
+     WHERE u.department_id = ?
+       AND u.company_id = ?
+       AND u.is_active = 1
+       AND (r.manager_approver_1 = 1 OR COALESCE(uc.manager_approver_1, 0) = 1)`,
+    [departmentId, companyId]
+  )) as [{ userID: string }[], unknown];
+  return (rows || []).map(row => row.userID);
+}
+
+/**
  * Returns user IDs of users who are Manager Approver 2 in the given department.
  * Checks role (asset_mngmnt_roles.manager_approver_2) and per-user override (user_custodian_settings.manager_approver_2).
  * Returns [] if departmentId is null.
