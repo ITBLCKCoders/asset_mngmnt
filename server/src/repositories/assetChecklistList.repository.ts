@@ -1,7 +1,45 @@
 import { pool } from '../db.js';
 import logger from '../logger.js';
+import {
+  hasDeptHeadSignColumns,
+  hasEmployeeSignColumns,
+  hasItManagerSignColumns,
+} from './assetChecklist.repository.js';
 
 export async function getAssetChecklists() {
+  const [includeEmployeeSign, includeDeptHeadSign, includeItManagerSign] =
+    await Promise.all([
+      hasEmployeeSignColumns(),
+      hasDeptHeadSignColumns(),
+      hasItManagerSignColumns(),
+    ]);
+
+  const employeeSignFields = includeEmployeeSign
+    ? `ac.employee_signed_at,
+      ac.employee_digital_signature,`
+    : `NULL AS employee_signed_at,
+      NULL AS employee_digital_signature,`;
+
+  const deptHeadSignFields = includeDeptHeadSign
+    ? `ac.dept_head_signed_at,
+      ac.dept_head_signed_by,
+      ac.dept_head_digital_signature,
+      dh.name AS dept_head_name,`
+    : `NULL AS dept_head_signed_at,
+      NULL AS dept_head_signed_by,
+      NULL AS dept_head_digital_signature,
+      NULL AS dept_head_name,`;
+
+  const itManagerSignFields = includeItManagerSign
+    ? `ac.it_manager_signed_at,
+      ac.it_manager_signed_by,
+      ac.it_manager_digital_signature,
+      im.name AS it_manager_name,`
+    : `NULL AS it_manager_signed_at,
+      NULL AS it_manager_signed_by,
+      NULL AS it_manager_digital_signature,
+      NULL AS it_manager_name,`;
+
   const query = `
     SELECT
       ac.id,
@@ -19,6 +57,9 @@ export async function getAssetChecklists() {
       ac.remarks,
       ac.created_at,
       ac.created_by,
+      ${employeeSignFields}
+      ${deptHeadSignFields}
+      ${itManagerSignFields}
       u.name AS creator_name,
       u.digital_signature AS creator_digital_signature,
       aa.asset_id,
@@ -29,6 +70,8 @@ export async function getAssetChecklists() {
     LEFT JOIN asset_assignments aa ON ac.assignment_id = aa.assignmentID
     LEFT JOIN assets a ON aa.asset_id = a.assetID
     LEFT JOIN users u ON ac.created_by = u.userID
+    LEFT JOIN users dh ON ac.dept_head_signed_by = dh.userID
+    LEFT JOIN users im ON ac.it_manager_signed_by = im.userID
     LEFT JOIN companies c ON ac.employee_company = c.name AND c.deleted_at IS NULL
     ORDER BY ac.created_at DESC
   `;

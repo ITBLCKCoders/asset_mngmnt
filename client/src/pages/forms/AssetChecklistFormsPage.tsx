@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
+import { Label } from '@/components/ui/label';
 import { Badge } from '@/components/ui/badge';
 import { Dialog } from '@/components/ui/dialog';
 import { PageHeader } from '@/components/common/PageHeader';
@@ -14,13 +15,23 @@ import {
 } from '@/components/common/appDialogChrome';
 import { Shimmer } from '@/components/ui/shimmer';
 import { PDFViewer } from '@/components/PDFViewer';
-import { useDelayedLoading } from '@/hooks/useDelayedLoading';
 import { api } from '@/lib/api';
 import { downloadPDF } from '@/lib/pdfGenerator';
 import { generateAssetChecklistPDF } from '@/lib/pdfGenerator/assetChecklistPdf';
-import { Download, Eye, FileText, RefreshCw, Search, Package, User, Calendar } from 'lucide-react';
+import { Download, Eye, FileText, Search, Package, User, Calendar } from 'lucide-react';
 import { toast } from 'sonner';
 import { Card, CardHeader, CardTitle, CardContent } from '@/components/ui/card';
+import { classifyDepartmentScopeByName } from '@/lib/assetScope';
+import { useCurrentUser } from '@/hooks/useCurrentUser';
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select';
+
+type AssetTypeFilter = 'all' | 'it' | 'admin';
 
 type ChecklistRow = {
   id: string;
@@ -38,6 +49,18 @@ type ChecklistRow = {
   checklist_data: any;
   remarks?: string | null;
   created_at: string;
+  creator_name?: string | null;
+  creator_digital_signature?: string | null;
+  employee_signed_at?: string | null;
+  employee_digital_signature?: string | null;
+  dept_head_signed_at?: string | null;
+  dept_head_signed_by?: string | null;
+  dept_head_digital_signature?: string | null;
+  dept_head_name?: string | null;
+  it_manager_signed_at?: string | null;
+  it_manager_signed_by?: string | null;
+  it_manager_digital_signature?: string | null;
+  it_manager_name?: string | null;
   asset?: {
     id: string;
     code?: string | null;
@@ -62,13 +85,30 @@ function checklistTypeLabel(row: ChecklistRow): string {
 }
 
 export default function AssetChecklistFormsPage() {
+  const { user: currentUser } = useCurrentUser();
   const [checklists, setChecklists] = useState<ChecklistRow[]>([]);
   const [loading, setLoading] = useState(true);
   const [searchQuery, setSearchQuery] = useState('');
+  const [companyFilterId, setCompanyFilterId] = useState('');
+  const [departmentFilterId, setDepartmentFilterId] = useState('');
+  const [assetTypeFilter, setAssetTypeFilter] = useState<AssetTypeFilter>('all');
   const [selectedChecklist, setSelectedChecklist] = useState<ChecklistRow | null>(null);
   const [showPreview, setShowPreview] = useState(false);
   const [previewUrl, setPreviewUrl] = useState('');
-  const displayLoading = useDelayedLoading(loading, 2000);
+  const displayLoading = loading;
+  
+  // Auto-set company filter to user's company if they have one
+  const userCompanyScope = currentUser?.company_id || '';
+  const userRoleName = currentUser?.role?.name?.toLowerCase() || '';
+  const isSuperAdminOrAdmin = userRoleName === 'super admin' || userRoleName === 'admin';
+  const hasHrAccountabilityReceiver = currentUser?.role?.hr_accountability_receiver === true;
+  const showCompanyFilter = !userCompanyScope || isSuperAdminOrAdmin || hasHrAccountabilityReceiver;
+  
+  useEffect(() => {
+    if (userCompanyScope && !isSuperAdminOrAdmin && !hasHrAccountabilityReceiver && companyFilterId !== userCompanyScope) {
+      setCompanyFilterId(userCompanyScope);
+    }
+  }, [userCompanyScope, isSuperAdminOrAdmin, hasHrAccountabilityReceiver]);
 
   const fetchChecklists = async () => {
     try {
@@ -87,6 +127,37 @@ export default function AssetChecklistFormsPage() {
   useEffect(() => {
     fetchChecklists();
   }, []);
+
+  useEffect(() => {
+    setDepartmentFilterId('');
+  }, [companyFilterId]);
+
+  const companyOptions = useMemo(() => {
+    const map = new Map<string, string>();
+    for (const row of checklists) {
+      if (row.employee_company) {
+        map.set(row.employee_company, row.employee_company);
+      }
+    }
+    return [...map.entries()]
+      .map(([id, name]) => ({ id, name }))
+      .sort((a, b) => a.name.localeCompare(b.name));
+  }, [checklists]);
+
+  const departmentOptions = useMemo(() => {
+    const map = new Map<string, string>();
+    const pool = companyFilterId
+      ? checklists.filter(row => row.employee_company === companyFilterId)
+      : checklists;
+    for (const row of pool) {
+      if (row.employee_department) {
+        map.set(row.employee_department, row.employee_department);
+      }
+    }
+    return [...map.entries()]
+      .map(([id, name]) => ({ id, name }))
+      .sort((a, b) => a.name.localeCompare(b.name));
+  }, [checklists, companyFilterId]);
 
   useEffect(() => {
     if (!showPreview || !selectedChecklist) return;
@@ -119,10 +190,33 @@ export default function AssetChecklistFormsPage() {
   }, [showPreview, selectedChecklist]);
 
   const filteredChecklists = useMemo(() => {
-    const q = searchQuery.trim().toLowerCase();
-    if (!q) return checklists;
+    let result = checklists;
 
-    return checklists.filter(row =>
+    // Apply company filter
+    if (companyFilterId) {
+      result = result.filter(row => row.employee_company === companyFilterId);
+    }
+
+    // Apply department filter
+    if (departmentFilterId) {
+      result = result.filter(row => row.employee_department === departmentFilterId);
+    }
+
+    // Apply asset type filter
+    if (assetTypeFilter !== 'all') {
+      const targetScope = assetTypeFilter === 'it' ? 'IT' : 'Admin';
+      result = result.filter(row => {
+        const deptCandidate = row.employee_department || '';
+        const assetScope = classifyDepartmentScopeByName(deptCandidate);
+        return assetScope === targetScope;
+      });
+    }
+
+    // Apply search filter
+    const q = searchQuery.trim().toLowerCase();
+    if (!q) return result;
+
+    return result.filter(row =>
       [
         checklistFormNumber(row),
         row.employee_name,
@@ -136,7 +230,7 @@ export default function AssetChecklistFormsPage() {
         .filter(Boolean)
         .some(value => String(value).toLowerCase().includes(q))
     );
-  }, [checklists, searchQuery]);
+  }, [checklists, searchQuery, companyFilterId, departmentFilterId, assetTypeFilter]);
 
   const handleDownload = async (row: ChecklistRow) => {
     try {
@@ -160,28 +254,113 @@ export default function AssetChecklistFormsPage() {
           title="Checklist Forms"
           description="View and download asset checklist forms"
         >
-          <Button
-            variant="ghost"
-            size="sm"
-            onClick={fetchChecklists}
-            disabled={loading}
-            className="flex items-center gap-2"
-          >
-            <RefreshCw className={`h-4 w-4 ${loading ? 'animate-spin' : ''}`} />
-            Refresh
-          </Button>
         </PageHeader>
 
         <div className="flex flex-col gap-4 mb-6">
-          <div className="relative max-w-md">
-            <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 w-4 h-4" />
-            <Input
-              type="text"
-              placeholder="Search form number, employee, asset, received by..."
-              value={searchQuery}
-              onChange={e => setSearchQuery(e.target.value)}
-              className="pl-10"
-            />
+          <div className="flex flex-col lg:flex-row gap-4 lg:items-end">
+            <div className="relative flex-1 min-w-0">
+              <Label className="text-sm font-medium text-muted-foreground mb-1.5 block">
+                Search
+              </Label>
+              <div className="relative max-w-md">
+                <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 w-4 h-4" />
+                <Input
+                  type="text"
+                  placeholder="Search form number, employee, asset, received by..."
+                  value={searchQuery}
+                  onChange={e => setSearchQuery(e.target.value)}
+                  className="pl-10"
+                />
+              </div>
+            </div>
+            <div className="flex flex-col sm:flex-row gap-4 sm:items-end flex-wrap">
+              {showCompanyFilter && (
+                <div className="space-y-1.5 w-full sm:w-[220px]">
+                  <Label className="text-sm font-medium text-muted-foreground">
+                    Company
+                  </Label>
+                  <Select
+                    value={companyFilterId || 'all'}
+                    onValueChange={v =>
+                      setCompanyFilterId(v === 'all' ? '' : v)
+                    }
+                  >
+                    <SelectTrigger className="w-full">
+                      <SelectValue placeholder="All companies" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="all">All companies</SelectItem>
+                      {companyOptions.map(c => (
+                        <SelectItem key={c.id} value={c.id}>
+                          {c.name}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+              )}
+              <div className="space-y-1.5 w-full sm:w-[220px]">
+                <Label className="text-sm font-medium text-muted-foreground">
+                  Department
+                </Label>
+                <Select
+                  value={departmentFilterId || 'all'}
+                  onValueChange={v =>
+                    setDepartmentFilterId(v === 'all' ? '' : v)
+                  }
+                >
+                  <SelectTrigger className="w-full">
+                    <SelectValue placeholder="All departments" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="all">All departments</SelectItem>
+                    {departmentOptions.map(d => (
+                      <SelectItem key={d.id} value={d.id}>
+                        {d.name}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+            </div>
+          </div>
+          <div className="flex gap-2 flex-wrap">
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => setAssetTypeFilter('all')}
+              className={
+                assetTypeFilter === 'all'
+                  ? 'bg-red-600 text-white hover:bg-red-700 hover:text-white border-red-600'
+                  : ''
+              }
+            >
+              All Assets
+            </Button>
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => setAssetTypeFilter('it')}
+              className={
+                assetTypeFilter === 'it'
+                  ? 'bg-red-600 text-white hover:bg-red-700 hover:text-white border-red-600'
+                  : ''
+              }
+            >
+              IT Assets
+            </Button>
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => setAssetTypeFilter('admin')}
+              className={
+                assetTypeFilter === 'admin'
+                  ? 'bg-red-600 text-white hover:bg-red-700 hover:text-white border-red-600'
+                  : ''
+              }
+            >
+              Admin Assets
+            </Button>
           </div>
         </div>
 

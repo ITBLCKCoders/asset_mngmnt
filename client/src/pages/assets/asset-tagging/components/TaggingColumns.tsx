@@ -30,7 +30,7 @@ export function TaggingColumns({
         row,
       }: {
         row: {
-          original: { status: 'Assigned' | 'Available' | 'In Maintenance' };
+          original: { status: string };
         };
       }) => {
         const status = row.original.status;
@@ -56,7 +56,7 @@ export function TaggingColumns({
           },
         } as const;
 
-        const style = variants[status] ?? {
+        const style = variants[status as keyof typeof variants] ?? {
           label: status,
           variant: 'secondary' as const,
           className: 'bg-muted text-muted-foreground',

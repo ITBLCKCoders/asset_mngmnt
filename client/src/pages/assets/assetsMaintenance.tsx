@@ -17,7 +17,6 @@ import {
   AlertTriangle,
   Wrench,
   Shield,
-  RefreshCw,
 } from 'lucide-react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { PageHeader } from '@/components/common/PageHeader';
@@ -499,15 +498,6 @@ export default function AssetsMaintenance() {
           title="Assets Maintenance"
           description="Schedule preventive maintenance and upkeep for assets"
         >
-          <Button
-            variant="ghost"
-            size="sm"
-            onClick={() => fetchAssets()}
-            className="flex items-center gap-2"
-          >
-            <RefreshCw className="h-4 w-4" />
-            Refresh
-          </Button>
         </PageHeader>
 
         <div className="grid grid-cols-1 gap-8 xl:grid-cols-3 xl:items-start">

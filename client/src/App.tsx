@@ -43,11 +43,10 @@ import AssetRequestAdmin from './pages/assets/admin/assetRequestAdmin';
 import AssetBorrowing from './pages/assets/assetBorrowing';
 import BorrowRequestsPage from './pages/assets/borrowRequestsPage';
 import AssetReturnRequest from './pages/assets/assetReturnRequest';
-import MyReturnRequestsPage from './pages/assets/myReturnRequestsPage';
 import ReturnRequestsPage from './pages/assets/returnRequestsPage';
 import AssetTransferRequest from './pages/assets/assetTransferRequest';
+import GatePass from './pages/assets/gatePass';
 import TransferRequestsPage from './pages/assets/transferRequestsPage';
-import MyTransferRequestsPage from './pages/assets/myTransferRequestsPage';
 import AssetsAssignmentHistory from './pages/assets-history/assetsIssuanceHistroy';
 import AssetsTransferHistory from './pages/assets-history/assetsTransferHistory';
 import AssetsMaintenanceHistory from './pages/assets-history/assetsMaintenanceHistory';
@@ -276,16 +275,6 @@ export default function App() {
             }
           />
           <Route
-            path="/assets/return-request/my-requests"
-            element={
-              <PrivateRoute>
-                <PermissionRoute module="Return Request">
-                  <MyReturnRequestsPage />
-                </PermissionRoute>
-              </PrivateRoute>
-            }
-          />
-          <Route
             path="/assets/return-request"
             element={
               <PrivateRoute>
@@ -336,16 +325,6 @@ export default function App() {
             }
           />
           <Route
-            path="/assets/transfer-request/my-requests"
-            element={
-              <PrivateRoute>
-                <PermissionRoute module="Transfer Request">
-                  <MyTransferRequestsPage />
-                </PermissionRoute>
-              </PrivateRoute>
-            }
-          />
-          <Route
             path="/assets/transfer-requests"
             element={
               <PrivateRoute>
@@ -371,6 +350,16 @@ export default function App() {
               <PrivateRoute>
                 <PermissionRoute module="Asset Disposal">
                   <Assetsdisposal />
+                </PermissionRoute>
+              </PrivateRoute>
+            }
+          />
+          <Route
+            path="/assets/gate-pass"
+            element={
+              <PrivateRoute>
+                <PermissionRoute module="Gate Pass">
+                  <GatePass />
                 </PermissionRoute>
               </PrivateRoute>
             }

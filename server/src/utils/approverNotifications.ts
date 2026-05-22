@@ -2,6 +2,7 @@
  * Helpers for notifying approver users (e.g. Manager Approver 1) when forms are signed.
  */
 import { pool } from '../db.js';
+import { getDepartmentIdsForScope } from './assetScope.js';
 
 /**
  * Returns true if the given user is Manager Approver 1 (role or user_custodian_settings).
@@ -63,6 +64,35 @@ export async function getManagerApprover1UserIdsInDepartment(
 }
 
 /**
+ * Manager Approver 1 users in the same department and company (e.g. checklist dept-head approval).
+ */
+export async function getManagerApprover1UserIdsInDepartmentAndCompany(
+  departmentId: string | null,
+  companyId: string | null
+): Promise<string[]> {
+  if (
+    departmentId == null ||
+    departmentId === '' ||
+    companyId == null ||
+    companyId === ''
+  ) {
+    return [];
+  }
+  const [rows] = (await pool.execute(
+    `SELECT DISTINCT u.userID
+     FROM users u
+     LEFT JOIN asset_mngmnt_roles r ON u.role_id = r.roleID AND r.deleted_at IS NULL
+     LEFT JOIN user_custodian_settings uc ON u.userID = uc.user_id
+     WHERE u.department_id = ?
+       AND u.company_id = ?
+       AND u.is_active = 1
+       AND (r.manager_approver_1 = 1 OR COALESCE(uc.manager_approver_1, 0) = 1)`,
+    [departmentId, companyId]
+  )) as [{ userID: string }[], unknown];
+  return (rows || []).map(row => row.userID);
+}
+
+/**
  * Returns user IDs of users who are Manager Approver 2 in the given department.
  * Checks role (asset_mngmnt_roles.manager_approver_2) and per-user override (user_custodian_settings.manager_approver_2).
  * Returns [] if departmentId is null.
@@ -83,6 +113,54 @@ export async function getManagerApprover2UserIdsInDepartment(
     [departmentId]
   )) as [{ userID: string }[], unknown];
   return (rows || []).map(row => row.userID);
+}
+
+/**
+ * Manager Approver 2 users in the company's IT department(s) (checklist IT receive step).
+ */
+export async function getManagerApprover2UserIdsInItDepartmentAndCompany(
+  companyId: string | null
+): Promise<string[]> {
+  if (companyId == null || companyId === '') {
+    return [];
+  }
+  const itDepartmentIds = await getDepartmentIdsForScope(pool, 'it', companyId);
+  if (itDepartmentIds.length === 0) {
+    return [];
+  }
+  const placeholders = itDepartmentIds.map(() => '?').join(',');
+  const [rows] = (await pool.execute(
+    `SELECT DISTINCT u.userID
+     FROM users u
+     LEFT JOIN asset_mngmnt_roles r ON u.role_id = r.roleID AND r.deleted_at IS NULL
+     LEFT JOIN user_custodian_settings uc ON u.userID = uc.user_id
+     WHERE u.company_id = ?
+       AND u.department_id IN (${placeholders})
+       AND u.is_active = 1
+       AND (r.manager_approver_2 = 1 OR COALESCE(uc.manager_approver_2, 0) = 1)`,
+    [companyId, ...itDepartmentIds]
+  )) as [{ userID: string }[], unknown];
+  return (rows || []).map(row => row.userID);
+}
+
+/** True when user belongs to an IT department in the given company. */
+export async function isUserInItDepartmentForCompany(
+  userId: string,
+  companyId: string | null
+): Promise<boolean> {
+  if (companyId == null || companyId === '') {
+    return false;
+  }
+  const [userRows] = (await pool.execute(
+    `SELECT department_id, company_id FROM users WHERE userID = ? LIMIT 1`,
+    [userId]
+  )) as [{ department_id: string | null; company_id: string | null }[], unknown];
+  const row = userRows[0];
+  if (!row?.department_id || row.company_id !== companyId) {
+    return false;
+  }
+  const itDepartmentIds = await getDepartmentIdsForScope(pool, 'it', companyId);
+  return itDepartmentIds.includes(String(row.department_id));
 }
 
 /**

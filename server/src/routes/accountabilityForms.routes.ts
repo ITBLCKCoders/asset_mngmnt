@@ -6,6 +6,8 @@ import {
   declineAccountabilityFormHandler,
   signReceivedCopyHandler,
   getAccountabilityFormByIdHandler,
+  getAccountabilityFormChecklistsHandler,
+  signAccountabilityFormChecklistsHandler,
   getAccountabilityFormsByAssetIdHandler,
   checkUnsignedAccountabilityFormsHandler,
 } from '../controllers/accountabilityForms.controller.js';
@@ -44,6 +46,12 @@ router.get('/', getAccountabilityFormsHandler);
  *       401: { description: Unauthorized }
  */
 router.get('/asset/:assetId', getAccountabilityFormsByAssetIdHandler);
+
+router.get('/:formId/checklists', getAccountabilityFormChecklistsHandler);
+router.post(
+  '/:formId/checklists/sign',
+  signAccountabilityFormChecklistsHandler
+);
 
 /**
  * @swagger

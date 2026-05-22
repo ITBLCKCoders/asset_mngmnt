@@ -224,25 +224,15 @@ export function AccountabilityFormPreviewDialog({
     }
   };
 
-  const handleDecline = async (formId: string, reason: string) => {
-    // Store the decline action and show OTP dialog
-    pendingDeclineRef.current = async () => {
-      try {
-        if (onDecline) {
-          await onDecline(formId, reason);
-        }
-      } catch (error) {
-        console.error('Failed to decline form:', error);
-        throw error;
-      }
-    };
-    
-    // Send OTP and show dialog
-    const otpSent = await sendOtp();
-    if (otpSent) {
-      setOtpCode(['', '', '', '', '', '']);
-      setShowOtpDialog(true);
-    }
+  const handleDeclineAfterOtp = async (formId: string, reason: string) => {
+    if (!onDecline) return;
+    await onDecline(formId, reason);
+    setLocalForm(prev =>
+      prev
+        ? { ...prev, status: 'Disabled', declineReason: reason }
+        : null
+    );
+    onClose();
   };
 
   return (
@@ -263,7 +253,7 @@ export function AccountabilityFormPreviewDialog({
                 setActiveTab={() => {}}
                 headerInParentChrome={true}
                 showDeclineButton
-                onDecline={handleDecline}
+                onDecline={onDecline ? handleDeclineAfterOtp : undefined}
                 viewContext={viewContext}
               />
             </>

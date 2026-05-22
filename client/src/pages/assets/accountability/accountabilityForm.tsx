@@ -4,7 +4,11 @@ import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
-import { generateAssetChecklistPDF, downloadPDF } from '@/lib/pdfGenerator';
+import {
+  generateAssetChecklistPDF,
+  downloadPDF,
+  type AssetChecklistData,
+} from '@/lib/pdfGenerator';
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
 import { Separator } from '@/components/ui/separator';
@@ -71,6 +75,7 @@ import {
   getCompanyAccentColor,
   getBlackCodersFooterGradient,
   isBlackCoders,
+  sortAssetsByLast5Digits,
 } from '@/lib/pdfGenerator/shared';
 
 const logger = createLogger('AccountabilityForm');
@@ -94,20 +99,32 @@ const debounce = <T extends (...args: T[]) => void>(
 };
 
 // Generate cache key from form data
-const generateCacheKey = (form: AccountabilityForm, currentUser?: any): string => {
+const generateCacheKey = (form: AccountabilityForm, currentUser?: any, intangibleAssets: any[] = []): string => {
   const keyData = {
     formId: form.id,
     formNumber: form.formNumber,
     status: form.status,
     issuerSignature: form.issuerSignature,
     itCopySignature: form.itCopySignature,
-    receivedCopy201FileSignature: form.receivedCopy201FileSignature,
+    receivedCopy201FileSignature: form.receivedCopy201FileSignedAt,
     digitalSignature: form.acknowledgments?.digitalSignature,
     assetCount: form.assets.length,
     assetIds: form.assets.map(a => a.id).join(','),
+    intangibleAssetCount: intangibleAssets.length,
+    intangibleAssetIds: intangibleAssets.map(a => a.id).join(','),
     currentUser: currentUser?.id,
   };
   return JSON.stringify(keyData);
+};
+
+// Helper function to convert Blob to Data URL
+const blobToDataUrl = (blob: Blob): Promise<string> => {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onloadend = () => resolve(reader.result as string);
+    reader.onerror = reject;
+    reader.readAsDataURL(blob);
+  });
 };
 
 // Helper function to add signature to PDF (handles both text and base64 images)
@@ -127,111 +144,101 @@ const addSignatureToPDF = async (
       return;
     }
 
-    // Check if signature is plain text (not a base64 image or Cloudinary URL)
-    // Base64 images start with "data:image/", Cloudinary URLs start with "http://" or "https://"
-    // Plain text is short and doesn't start with these prefixes
-    const isPlainText = !signatureData.startsWith('data:image/') &&
-                        !signatureData.startsWith('http://') &&
-                        !signatureData.startsWith('https://') &&
-                        signatureData.length < 100;
+    const isImageSignature =
+      signatureData.startsWith('data:image/') ||
+      signatureData.startsWith('http://') ||
+      signatureData.startsWith('https://');
 
-    if (isPlainText) {
-      // Render as text initials
-      logger.debug('Rendering signature as text', { text: signatureData });
-      doc.setFontSize(12);
-      doc.setFont('helvetica', 'bold');
-      doc.text(signatureData, x, y);
-      doc.setFont('helvetica', 'normal');
-      doc.setFontSize(10);
-    } else {
-      // Render as base64 image or Cloudinary URL
-      const img = new Image();
-      img.crossOrigin = 'anonymous';
-      
-      // Check if signature is a URL (not base64) and if it's cached
-      if (signatureData.startsWith('http://') || signatureData.startsWith('https://')) {
-        if (imageCache.has(signatureData)) {
-          logger.debug('Using cached signature image');
-          img.src = imageCache.get(signatureData)!;
-        } else {
-          img.src = signatureData;
-        }
+    if (!isImageSignature) {
+      logger.debug('Skipping non-image signature data');
+      return;
+    }
+
+    const img = new Image();
+    img.crossOrigin = 'anonymous';
+    
+    // Check if signature is a URL (not base64) and if it's cached
+    if (signatureData.startsWith('http://') || signatureData.startsWith('https://')) {
+      if (imageCache.has(signatureData)) {
+        logger.debug('Using cached signature image');
+        img.src = imageCache.get(signatureData)!;
       } else {
         img.src = signatureData;
       }
-      
-      await new Promise<void>((resolve, reject) => {
-        img.onload = () => {
-          logger.debug('Signature image loaded', { width: img.width, height: img.height });
+    } else {
+      img.src = signatureData;
+    }
+    
+    await new Promise<void>((resolve, reject) => {
+      img.onload = () => {
+        logger.debug('Signature image loaded', { width: img.width, height: img.height });
+        
+        // Process image to remove white background and make it transparent
+        const canvas = document.createElement('canvas');
+        canvas.width = img.width;
+        canvas.height = img.height;
+        const ctx = canvas.getContext('2d');
+        if (ctx) {
+          ctx.drawImage(img, 0, 0);
+          const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
+          const data = imageData.data;
           
-          // Convert image to black using canvas
-          const canvas = document.createElement('canvas');
-          canvas.width = img.width;
-          canvas.height = img.height;
-          const ctx = canvas.getContext('2d');
-          if (ctx) {
-            ctx.drawImage(img, 0, 0);
-            const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
-            const data = imageData.data;
+          // Make white/near-white pixels transparent
+          for (let i = 0; i < data.length; i += 4) {
+            const r = data[i];
+            const g = data[i + 1];
+            const b = data[i + 2];
+            const a = data[i + 3];
             
-            // Convert to black and white, keeping black pixels black, others transparent
-            for (let i = 0; i < data.length; i += 4) {
-              const r = data[i];
-              const g = data[i + 1];
-              const b = data[i + 2];
-              const a = data[i + 3];
-              
-              // If pixel is not transparent
-              if (a > 0) {
-                // Make it black
-                data[i] = 0;     // R
-                data[i + 1] = 0; // G
-                data[i + 2] = 0; // B
-                data[i + 3] = a; // Keep original alpha
-              }
-            }
-            
-            ctx.putImageData(imageData, 0, 0);
-            // Cache the processed signature image if it's a URL
-            if (signatureData.startsWith('http://') || signatureData.startsWith('https://')) {
-              const processedDataUrl = canvas.toDataURL();
-              imageCache.set(signatureData, processedDataUrl);
-              img.src = processedDataUrl;
-            } else {
-              img.src = canvas.toDataURL();
+            // Check if pixel is white or near-white
+            const brightness = (r + g + b) / 3;
+            if (brightness > 240 && a > 0) {
+              // Make transparent
+              data[i + 3] = 0;
             }
           }
           
-          resolve();
-        };
-        img.onerror = () => {
-          logger.debug('Failed to load signature image');
-          reject(new Error('Failed to load signature image'));
-        };
-      });
+          ctx.putImageData(imageData, 0, 0);
+          
+          // Cache the processed signature image if it's a URL
+          if (signatureData.startsWith('http://') || signatureData.startsWith('https://')) {
+            const processedDataUrl = canvas.toDataURL();
+            imageCache.set(signatureData, processedDataUrl);
+            img.src = processedDataUrl;
+          } else {
+            img.src = canvas.toDataURL();
+          }
+        }
+        
+        resolve();
+      };
+      img.onerror = () => {
+        logger.debug('Failed to load signature image');
+        reject(new Error('Failed to load signature image'));
+      };
+    });
 
-      const pixelsToMm = 0.264583;
-      const sigWidth = img.width * pixelsToMm;
-      const sigHeight = img.height * pixelsToMm;
-      
-      let finalSigWidth = sigWidth;
-      let finalSigHeight = sigHeight;
-      
-      if (sigWidth > maxWidth) {
-        const scale = maxWidth / sigWidth;
-        finalSigWidth = maxWidth;
-        finalSigHeight = sigHeight * scale;
-      }
-      
-      if (finalSigHeight > maxHeight) {
-        const scale = maxHeight / finalSigHeight;
-        finalSigHeight = maxHeight;
-        finalSigWidth = finalSigWidth * scale;
-      }
-      
-      logger.debug('Adding signature image to PDF', { finalSigWidth, finalSigHeight, x, y });
-      doc.addImage(img.src, 'PNG', x, y, finalSigWidth, finalSigHeight);
+    const pixelsToMm = 0.264583;
+    const sigWidth = img.width * pixelsToMm;
+    const sigHeight = img.height * pixelsToMm;
+    
+    let finalSigWidth = sigWidth;
+    let finalSigHeight = sigHeight;
+    
+    if (sigWidth > maxWidth) {
+      const scale = maxWidth / sigWidth;
+      finalSigWidth = maxWidth;
+      finalSigHeight = sigHeight * scale;
     }
+    
+    if (finalSigHeight > maxHeight) {
+      const scale = maxHeight / finalSigHeight;
+      finalSigHeight = maxHeight;
+      finalSigWidth = finalSigWidth * scale;
+    }
+    
+    logger.debug('Adding signature image to PDF', { finalSigWidth, finalSigHeight, x, y });
+    doc.addImage(img.src, 'PNG', x, y, finalSigWidth, finalSigHeight);
   } catch (error) {
     logger.debug('Failed to add signature to PDF', error as Record<string, unknown>);
   }
@@ -373,12 +380,15 @@ interface AccountabilityFormProps {
   onReceive?: (form: AccountabilityForm) => void;
   /** Show download button in card footer */
   showDownloadButton?: boolean;
+  /** Show "Pending Receiver Signature" badge (only in AccountabilityFormsPage) */
+  showPendingReceiverSignatureBadge?: boolean;
 }
 
 // Reusable PDF generation function (exported for issuer decline notification dialog)
 export const generateAccountabilityFormPDF = async (
   form: AccountabilityForm,
-  currentUser?: any
+  currentUser?: any,
+  intangibleAssets: any[] = []
 ): Promise<Blob> => {
   // 8.5 x 13 inches is approximately 215.9 mm x 330.2 mm
   const doc = new jsPDF({
@@ -485,10 +495,11 @@ export const generateAccountabilityFormPDF = async (
   y += 10;
 
   // Categorize assets based on IT/Admin scope classification
-  const itAssets = form.assets.filter(
+  const sortedAssets = sortAssetsByLast5Digits(form.assets);
+  const itAssets = sortedAssets.filter(
     asset => getAssetScopeType(asset, form) === 'IT'
   );
-  const adminAssets = form.assets.filter(
+  const adminAssets = sortedAssets.filter(
     asset => getAssetScopeType(asset, form) === 'Admin'
   );
 
@@ -652,17 +663,22 @@ I agree that if any of the items are damaged or lost due to my negligence, I sha
         'Good',
       ]);
 
+      // Show table header on first batch or when batch starts at top of page (one header per page)
+      const showTableHead = isFirstBatch || currentY <= 80;
+
+      // Reduce empty rows if intangible assets will be displayed
+      const hasITIntangibleAssets = intangibleAssets.some(
+        (asset: any) => asset.type === 'IT scope'
+      );
+      const adjustedMaxRowsFirstPage = hasITIntangibleAssets ? 5 : 10;
+
       // On first page only: add empty rows when there are few assets; cap so table does not overflow to next page
-      const maxRowsFirstPage = 10;
-      if (isFirstBatch && itAssetRows.length < maxRowsFirstPage) {
-        const emptyRowsNeeded = maxRowsFirstPage - itAssetRows.length;
+      if (isFirstBatch && itAssetRows.length < adjustedMaxRowsFirstPage) {
+        const emptyRowsNeeded = adjustedMaxRowsFirstPage - itAssetRows.length;
         for (let i = 0; i < emptyRowsNeeded; i++) {
           itAssetRows.push(['', '', '', '', '', '']);
         }
       }
-
-      // Show table header on first batch or when batch starts at top of page (one header per page)
-      const showTableHead = isFirstBatch || currentY <= 80;
 
       autoTable(doc, {
         startY: currentY,
@@ -739,17 +755,22 @@ I agree that if any of the items are damaged or lost due to my negligence, I sha
         'Good',
       ]);
 
+      // Show table header on first batch or when batch starts at top of page (one header per page)
+      const showTableHead = isFirstBatch || currentY <= 80;
+
+      // Reduce empty rows if intangible assets will be displayed
+      const hasAdminIntangibleAssets = intangibleAssets.some(
+        (asset: any) => asset.type === 'Admin scope'
+      );
+      const adjustedMaxRowsFirstPage = hasAdminIntangibleAssets ? 5 : 10;
+
       // On first page only: add empty rows when there are few assets; cap so table does not overflow to next page
-      const maxRowsFirstPage = 10;
-      if (isFirstBatch && adminAssetRows.length < maxRowsFirstPage) {
-        const emptyRowsNeeded = maxRowsFirstPage - adminAssetRows.length;
+      if (isFirstBatch && adminAssetRows.length < adjustedMaxRowsFirstPage) {
+        const emptyRowsNeeded = adjustedMaxRowsFirstPage - adminAssetRows.length;
         for (let i = 0; i < emptyRowsNeeded; i++) {
           adminAssetRows.push(['', '', '', '', '', '']);
         }
       }
-
-      // Show table header on first batch or when batch starts at top of page (one header per page)
-      const showTableHead = isFirstBatch || currentY <= 80;
 
       autoTable(doc, {
         startY: currentY,
@@ -798,6 +819,117 @@ I agree that if any of the items are damaged or lost due to my negligence, I sha
     }
 
     y = currentY;
+  }
+
+  // IT Intangible Assets - font size 12 bold
+  const itIntangibleAssets = intangibleAssets.filter(
+    (asset: any) => asset.type === 'IT scope'
+  );
+  if (itIntangibleAssets.length > 0) {
+    y += 10; // Add spacing before IT Intangible Assets title
+    doc.setFontSize(12);
+    doc.setFont('helvetica', 'bold');
+    doc.text('IT Intangible Assets', 20, y);
+
+    // Intangible asset table columns
+    const intangibleTableHead = ['Asset Name', 'Description', 'Type', 'Status'];
+    const intangibleTableColumnStyles = {
+      0: { cellWidth: 80 },
+      1: { cellWidth: 60 },
+      2: { cellWidth: 30 },
+      3: { cellWidth: 25.9 },
+    };
+
+    const intangibleRows = itIntangibleAssets.map((asset: any) => [
+      asset.name,
+      asset.description || '',
+      asset.type,
+      asset.status,
+    ]);
+
+    autoTable(doc, {
+      startY: y + 5,
+      tableWidth,
+      margin: { ...tableMargin, top: 45 },
+      head: [intangibleTableHead],
+      body: intangibleRows,
+      theme: 'grid',
+      styles: {
+        fontSize: 12,
+        cellPadding: 1,
+        lineWidth: 0.1,
+        lineColor: [0, 0, 0],
+      },
+      headStyles: { fillColor: headerFillColor, textColor: headerTextColor },
+      columnStyles: intangibleTableColumnStyles,
+      didDrawPage: data => {
+        if (
+          data.pageNumber >= 2 &&
+          !continuationHeaderDrawnPages.has(data.pageNumber)
+        ) {
+          doc.setPage(data.pageNumber);
+          drawContinuationHeader();
+          continuationHeaderDrawnPages.add(data.pageNumber);
+        }
+      },
+    });
+
+    y = (doc as any).lastAutoTable.finalY + 1;
+  }
+
+  // Admin Intangible Assets - font size 12 bold
+  const adminIntangibleAssets = intangibleAssets.filter(
+    (asset: any) => asset.type === 'Admin scope'
+  );
+  if (adminIntangibleAssets.length > 0) {
+    y += 10; // Add spacing before Admin Intangible Assets title
+    doc.setFontSize(12);
+    doc.setFont('helvetica', 'bold');
+    doc.text('Admin Intangible Assets', 20, y);
+
+    const intangibleTableHead = ['Asset Name', 'Description', 'Type', 'Status'];
+    const intangibleTableColumnStyles = {
+      0: { cellWidth: 80 },
+      1: { cellWidth: 60 },
+      2: { cellWidth: 30 },
+      3: { cellWidth: 25.9 },
+    };
+
+    const intangibleRows = adminIntangibleAssets.map((asset: any) => [
+      asset.name,
+      asset.description || '',
+      asset.type,
+      asset.status,
+    ]);
+
+    autoTable(doc, {
+      startY: y + 5,
+      tableWidth,
+      margin: { ...tableMargin, top: 45 },
+      head: [intangibleTableHead],
+      body: intangibleRows,
+      theme: 'grid',
+      styles: {
+        fontSize: 12,
+        cellPadding: 1,
+        lineWidth: 0.1,
+        lineColor: [0, 0, 0],
+      },
+      headStyles: { fillColor: headerFillColor, textColor: headerTextColor },
+      columnStyles: intangibleTableColumnStyles,
+      didDrawPage: data => {
+        if (
+          data.pageNumber >= 2 &&
+          !continuationHeaderDrawnPages.has(data.pageNumber)
+        ) {
+          doc.setPage(data.pageNumber);
+          drawContinuationHeader();
+          continuationHeaderDrawnPages.add(data.pageNumber);
+        }
+      },
+    });
+
+    y = (doc as any).lastAutoTable.finalY + 1;
   }
 
   // Last page number that has table content (table continuation pages only; agreement/signature pages come after)
@@ -961,7 +1093,7 @@ I agree that if any of the items are damaged or lost due to my negligence, I sha
     hasIssuerSignature: !!form.issuerSignature, 
     signatureLength: form.issuerSignature?.length 
   });
-  await addSignatureToPDF(doc, form.issuerSignature, 20, signatureY + 22, 40, 15);
+  await addSignatureToPDF(doc, form.issuerSignature, -20, signatureY, 122, 74);
   
   doc.setLineWidth(0.2);
   doc.line(20, signatureY + 30, 80, signatureY + 30);
@@ -987,7 +1119,7 @@ I agree that if any of the items are damaged or lost due to my negligence, I sha
       signaturePrefix: digitalSignature?.substring(0, 50)
     });
     if (digitalSignature) {
-      await addSignatureToPDF(doc, digitalSignature, 125, signatureY + 22, 40, 25);
+      await addSignatureToPDF(doc, digitalSignature, 90, signatureY, 122, 74);
     }
     
     doc.setLineWidth(0.2);
@@ -1018,7 +1150,7 @@ I agree that if any of the items are damaged or lost due to my negligence, I sha
     hasITCopySignature: !!form.itCopySignature, 
     signatureLength: form.itCopySignature?.length 
   });
-  await addSignatureToPDF(doc, form.itCopySignature, 20, signatureY + 82, 40, 15);
+  await addSignatureToPDF(doc, form.itCopySignature, -20, signatureY + 60, 122, 74);
   
   doc.setLineWidth(0.2);
   doc.line(20, signatureY + 90, 80, signatureY + 90);
@@ -1042,9 +1174,9 @@ I agree that if any of the items are damaged or lost due to my negligence, I sha
         : '') ||
       '';
     doc.text(rcSignerName, 130, signatureY + 88);
-    // Display digital initials (supports both drawn images and typed text)
+    // Display digital initials
     if (form.receivedCopy201FileSignature) {
-      await addSignatureToPDF(doc, form.receivedCopy201FileSignature, 130, signatureY + 82, 50, 30);
+      await addSignatureToPDF(doc, form.receivedCopy201FileSignature, 90, signatureY + 60, 122, 74);
     }
     doc.setLineWidth(0.2);
     doc.line(130, signatureY + 90, 190, signatureY + 90);
@@ -1066,6 +1198,86 @@ I agree that if any of the items are damaged or lost due to my negligence, I sha
   return doc.output('blob');
 };
 
+type FormChecklistEntry = AssetChecklistData & {
+  asset?: { id: string; code: string | null; name: string | null } | null;
+};
+
+function getChecklistTabKey(checklist: FormChecklistEntry): string {
+  return checklist.assignment_id || checklist.id;
+}
+
+function getChecklistAssetLabel(
+  checklist: FormChecklistEntry,
+  formAssets: AccountabilityForm['assets']
+): string {
+  const checklistAsset = checklist.asset;
+  const fallback =
+    formAssets.find(a => a.id === checklistAsset?.id) ?? formAssets[0];
+  const name = checklistAsset?.name || fallback?.name || 'Asset';
+  const code = checklistAsset?.code || fallback?.code || '—';
+  return `${name} (${code})`;
+}
+
+function ChecklistSummaryCard({ checklist }: { checklist: FormChecklistEntry }) {
+  return (
+    <div className="space-y-3 rounded-xl border border-red-100 bg-gradient-to-br from-red-50/80 via-white to-slate-50 p-4 shadow-sm">
+      <div className="flex items-start justify-between gap-3 border-b border-red-100 pb-3">
+        <div>
+          <p className="text-xs font-medium uppercase tracking-wide text-red-600">
+            Asset Checklist
+          </p>
+          <p className="mt-1 font-mono text-sm font-semibold text-slate-900">
+            {checklist.form_number || `CHK-${checklist.assignment_id}`}
+          </p>
+        </div>
+        <div className="flex flex-wrap justify-end gap-1.5">
+          {checklist.type_onboarding && (
+            <Badge className="bg-emerald-100 text-emerald-800 hover:bg-emerald-100">
+              Onboarding
+            </Badge>
+          )}
+          {checklist.type_offboarding && (
+            <Badge className="bg-blue-100 text-blue-800 hover:bg-blue-100">
+              Offboarding
+            </Badge>
+          )}
+          {checklist.employee_signed_at && (
+            <Badge className="bg-green-100 text-green-800 hover:bg-green-100">
+              Signed
+            </Badge>
+          )}
+        </div>
+      </div>
+
+      <div className="grid gap-3 text-sm sm:grid-cols-2">
+        <div className="rounded-lg border border-slate-200 bg-white/80 p-3">
+          <p className="text-xs font-medium uppercase tracking-wide text-slate-500">
+            Date Created
+          </p>
+          <p className="mt-1 font-medium text-slate-900">
+            {new Date(checklist.created_at).toLocaleDateString()}
+          </p>
+        </div>
+        <div className="rounded-lg border border-slate-200 bg-white/80 p-3">
+          <p className="text-xs font-medium uppercase tracking-wide text-slate-500">
+            Employee
+          </p>
+          <p className="mt-1 font-medium text-slate-900">{checklist.employee_name}</p>
+        </div>
+      </div>
+
+      <div className="rounded-lg border border-slate-200 bg-white/80 p-3 text-sm">
+        <p className="text-xs font-medium uppercase tracking-wide text-slate-500">
+          Received By
+        </p>
+        <p className="mt-1 font-medium text-slate-900">
+          {checklist.received_by || 'N/A'}
+        </p>
+      </div>
+    </div>
+  );
+}
+
 export function AccountabilityFormCard({
   form,
   onSign,
@@ -1080,6 +1292,7 @@ export function AccountabilityFormCard({
   showReceiveButton = false,
   onReceive,
   showDownloadButton = false,
+  showPendingReceiverSignatureBadge = false,
 }: AccountabilityFormProps) {
   const { user: currentUser } = useCurrentUser();
   const displayedStatus =
@@ -1102,6 +1315,7 @@ export function AccountabilityFormCard({
   const isAssignedUser = currentUser?.id === form.user.id;
   const canSign = isAssignedUser && form.status === 'Pending';
   const [pdfUrl, setPdfUrl] = useState<string>('');
+  const [isPdfGenerating, setIsPdfGenerating] = useState(false);
   const [isSigning, setIsSigning] = useState(false);
   const [localForm, setLocalForm] = useState<AccountabilityForm>(form);
   const [showConfirmDialog, setShowConfirmDialog] = useState(false);
@@ -1112,24 +1326,44 @@ export function AccountabilityFormCard({
   const [declineReasonDraft, setDeclineReasonDraft] = useState('');
   const [isDeclining, setIsDeclining] = useState(false);
   const [activeCardTab, setActiveCardTab] = useState<'accountability' | 'checklist'>('accountability');
-  const [checklistData, setChecklistData] = useState<any>(null);
+  const [checklists, setChecklists] = useState<FormChecklistEntry[]>([]);
+  const [activeChecklistKey, setActiveChecklistKey] = useState<string>('');
   const [checklistLoading, setChecklistLoading] = useState(false);
   const [showChecklistDialog, setShowChecklistDialog] = useState(false);
-  const [hasChecklist, setHasChecklist] = useState(false);
+  const [showChecklistSignDialog, setShowChecklistSignDialog] = useState(false);
+  const [agreeChecklist, setAgreeChecklist] = useState(false);
   const [checklistPdfUrl, setChecklistPdfUrl] = useState<string>('');
-  const checklistAsset = checklistData?.asset;
-  const fallbackChecklistAsset =
-    form.assets.find(asset => asset.id === checklistAsset?.id) ?? form.assets[0];
-  const checklistAssetName =
-    checklistAsset?.name || fallbackChecklistAsset?.name || 'Asset';
-  const checklistAssetCode =
-    checklistAsset?.code || fallbackChecklistAsset?.code || '—';
-  const checklistAssetLabel = `${checklistAssetName} (${checklistAssetCode})`;
+  const hasChecklist = checklists.length > 0;
+  const hasUnsignedChecklists = checklists.some(c => !c.employee_signed_at);
+  const unsignedChecklistCount = checklists.filter(c => !c.employee_signed_at).length;
+  const allChecklistsSigned = hasChecklist && !hasUnsignedChecklists;
+  const canSignChecklist = canSign && hasChecklist && hasUnsignedChecklists;
+  const showCardSignButton =
+    showSignButton && (activeCardTab !== 'checklist' ? canSign : canSignChecklist);
+  const showChecklistTabDownload =
+    activeCardTab === 'checklist' && allChecklistsSigned;
+  const showFooterDownload = showDownloadButton || showChecklistTabDownload;
+  const showFooterDecline =
+    showDeclineButton &&
+    canSign &&
+    !!onDecline &&
+    !(activeCardTab === 'checklist' && allChecklistsSigned);
+  const activeChecklist =
+    checklists.find(c => getChecklistTabKey(c) === activeChecklistKey) ??
+    checklists[0] ??
+    null;
+  const checklistAssetLabel = activeChecklist
+    ? getChecklistAssetLabel(activeChecklist, form.assets)
+    : '';
+  const [intangibleAssets, setIntangibleAssets] = useState<any[]>([]);
+  const [intangibleAssetsLoading, setIntangibleAssetsLoading] = useState(false);
 
   // OTP verification state
   const [showOtpDialog, setShowOtpDialog] = useState(false);
   const [otpExpiryFromSettings, setOtpExpiryFromSettings] = useState(300);
-  const [pendingActionType, setPendingActionType] = useState<'sign' | 'decline' | null>(null);
+  const [pendingActionType, setPendingActionType] = useState<
+    'sign' | 'decline' | 'signChecklist' | null
+  >(null);
   const pendingActionRef = useRef<(() => Promise<void>) | null>(null);
 
   useEffect(() => {
@@ -1151,36 +1385,100 @@ export function AccountabilityFormCard({
     fetchOtpExpiry();
   }, []);
 
-  // Fetch checklist data when checklist tab is selected
+  // Fetch all checklists linked to this accountability form
   useEffect(() => {
-    const fetchChecklist = async () => {
-      if (form.assignment?.id) {
-        try {
-          setChecklistLoading(true);
-          const response = await api.get(`/asset-assignments/checklist/${form.assignment.id}`);
-          setChecklistData(response);
-          setHasChecklist(!!response);
-        } catch (error) {
-          console.error('Failed to fetch checklist:', error);
-          setChecklistData(null);
-          setHasChecklist(false);
-        } finally {
-          setChecklistLoading(false);
+    const fetchChecklists = async () => {
+      try {
+        setChecklistLoading(true);
+        const response = await api.get<{ checklists: FormChecklistEntry[] }>(
+          `/accountability-forms/${form.id}/checklists`
+        );
+        let list = response?.checklists ?? [];
+
+        // Fallback for older forms: single checklist by primary assignment id
+        if (list.length === 0 && form.assignment?.id) {
+          try {
+            const legacy = await api.get<FormChecklistEntry>(
+              `/asset-assignments/checklist/${form.assignment.id}`
+            );
+            if (legacy?.id) {
+              list = [legacy];
+            }
+          } catch (legacyError: unknown) {
+            const status = (legacyError as { response?: { status?: number } })
+              ?.response?.status;
+            if (status !== 404) {
+              console.error('Failed to fetch legacy checklist:', legacyError);
+            }
+          }
         }
-      } else {
-        setHasChecklist(false);
+
+        setChecklists(list);
+        if (list.length > 0) {
+          setActiveChecklistKey(getChecklistTabKey(list[0]!));
+        } else {
+          setActiveChecklistKey('');
+        }
+      } catch (error) {
+        console.error('Failed to fetch checklists:', error);
+        setChecklists([]);
+        setActiveChecklistKey('');
+      } finally {
+        setChecklistLoading(false);
       }
     };
-    fetchChecklist();
+    fetchChecklists();
+  }, [form.id, form.assignment?.id]);
+
+  // Fetch intangible assets for the assignment
+  useEffect(() => {
+    const fetchIntangibleAssets = async () => {
+      if (form.assignment?.id) {
+        try {
+          setIntangibleAssetsLoading(true);
+          const response = await api.get('/intangible-assets');
+          // Filter intangible assets that are assigned to this assignment
+          const assignmentIntangibleAssets = (response || []).filter(
+            (asset: any) => asset.assignment_id === form.assignment?.id
+          );
+          setIntangibleAssets(assignmentIntangibleAssets);
+        } catch (error) {
+          console.error('Failed to fetch intangible assets:', error);
+          setIntangibleAssets([]);
+        } finally {
+          setIntangibleAssetsLoading(false);
+        }
+      } else {
+        setIntangibleAssets([]);
+      }
+    };
+    fetchIntangibleAssets();
   }, [form.assignment?.id]);
 
-  // Generate checklist PDF when dialog opens
+  const refreshFormChecklists = async () => {
+    try {
+      const response = await api.get<{ checklists: FormChecklistEntry[] }>(
+        `/accountability-forms/${form.id}/checklists`
+      );
+      const list = response?.checklists ?? [];
+      setChecklists(list);
+      if (list.length > 0) {
+        const keepKey = activeChecklistKey || getChecklistTabKey(list[0]);
+        const stillExists = list.some(c => getChecklistTabKey(c) === keepKey);
+        setActiveChecklistKey(stillExists ? keepKey : getChecklistTabKey(list[0]));
+      }
+    } catch (error) {
+      console.error('Failed to refresh checklists:', error);
+    }
+  };
+
+  // Generate checklist PDF when view or sign dialog opens
   useEffect(() => {
     const generateChecklistPdf = async () => {
-      if (showChecklistDialog && checklistData) {
+      if ((showChecklistDialog || showChecklistSignDialog) && activeChecklist) {
         try {
           const pdfBlob = await generateAssetChecklistPDF({
-            ...checklistData,
+            ...activeChecklist,
             asset_label: checklistAssetLabel,
           });
           const url = URL.createObjectURL(pdfBlob);
@@ -1189,33 +1487,112 @@ export function AccountabilityFormCard({
           console.error('Failed to generate checklist PDF:', error);
           toast.error('Failed to generate checklist PDF');
         }
-      } else if (!showChecklistDialog && checklistPdfUrl) {
-        // Cleanup URL when dialog closes
+      } else if (
+        !showChecklistDialog &&
+        !showChecklistSignDialog &&
+        checklistPdfUrl
+      ) {
         URL.revokeObjectURL(checklistPdfUrl);
         setChecklistPdfUrl('');
       }
     };
     generateChecklistPdf();
-  }, [showChecklistDialog, checklistData, checklistAssetLabel]);
+  }, [
+    showChecklistDialog,
+    showChecklistSignDialog,
+    activeChecklist,
+    checklistAssetLabel,
+  ]);
 
+  // Generate PDF only when preview modal opens
   useEffect(() => {
+    if (!showPreviewModal) return;
+
     const generatePdf = async () => {
       try {
+        console.log('Starting PDF generation for preview...');
+        setIsPdfGenerating(true);
+        console.log('Set isPdfGenerating to true');
+        
         // Check cache first
-        const cacheKey = generateCacheKey(localForm, currentUser);
+        const cacheKey = generateCacheKey(localForm, currentUser, intangibleAssets);
         const cachedPdf = pdfCache.get(cacheKey);
         
         if (cachedPdf) {
-          logger.debug('Using cached PDF');
+          console.log('Using cached PDF');
           const url = URL.createObjectURL(cachedPdf);
+          console.log('Created blob URL from cache:', url);
           setPdfUrl(url);
+          setIsPdfGenerating(false);
+          console.log('Set isPdfGenerating to false (cached)');
           return;
         }
 
+        console.log('Generating new PDF...');
         // Generate new PDF
         const pdfBlob = await generateAccountabilityFormPDF(
           localForm,
-          currentUser
+          currentUser,
+          intangibleAssets
+        );
+        
+        console.log('PDF generated, size:', pdfBlob.size, 'bytes');
+        
+        // Cache the generated PDF
+        pdfCache.set(cacheKey, pdfBlob);
+        
+        const url = URL.createObjectURL(pdfBlob);
+        console.log('Created blob URL:', url);
+        setPdfUrl(url);
+        setIsPdfGenerating(false);
+        console.log('Set isPdfGenerating to false (generated)');
+      } catch (error) {
+        console.error('Error generating PDF:', error);
+        setIsPdfGenerating(false);
+        console.log('Set isPdfGenerating to false (error)');
+        toast.error('Failed to generate PDF preview');
+      }
+    };
+
+    generatePdf();
+
+    return () => {
+      if (pdfUrl) {
+        console.log('Revoking blob URL:', pdfUrl);
+        URL.revokeObjectURL(pdfUrl);
+        setPdfUrl('');
+      }
+      setIsPdfGenerating(false);
+    };
+  }, [showPreviewModal, localForm, currentUser, intangibleAssets]);
+
+  // Generate PDF when decline dialog opens (to ensure preview is available)
+  useEffect(() => {
+    if (!showDeclineDialog) return;
+
+    const generatePdf = async () => {
+      try {
+        console.log('Starting PDF generation for decline dialog...');
+        setIsPdfGenerating(true);
+        
+        // Check cache first
+        const cacheKey = generateCacheKey(localForm, currentUser, intangibleAssets);
+        const cachedPdf = pdfCache.get(cacheKey);
+        
+        if (cachedPdf) {
+          console.log('Using cached PDF for decline dialog');
+          const url = URL.createObjectURL(cachedPdf);
+          setPdfUrl(url);
+          setIsPdfGenerating(false);
+          return;
+        }
+
+        console.log('Generating new PDF for decline dialog...');
+        // Generate new PDF
+        const pdfBlob = await generateAccountabilityFormPDF(
+          localForm,
+          currentUser,
+          intangibleAssets
         );
         
         // Cache the generated PDF
@@ -1223,33 +1600,94 @@ export function AccountabilityFormCard({
         
         const url = URL.createObjectURL(pdfBlob);
         setPdfUrl(url);
+        setIsPdfGenerating(false);
       } catch (error) {
-        console.error('Error generating PDF:', error);
+        console.error('Error generating PDF for decline dialog:', error);
+        setIsPdfGenerating(false);
+        toast.error('Failed to generate PDF preview');
       }
     };
 
-    // Debounce PDF generation to avoid rapid regeneration
-    const debouncedGenerate = debounce(generatePdf, 500);
-    debouncedGenerate();
+    generatePdf();
+  }, [showDeclineDialog, localForm, currentUser, intangibleAssets]);
 
-    return () => {
-      if (pdfUrl) {
-        URL.revokeObjectURL(pdfUrl);
+  // Generate PDF when confirm dialog opens (to ensure preview is available)
+  useEffect(() => {
+    if (!showConfirmDialog) return;
+
+    const generatePdf = async () => {
+      try {
+        console.log('Starting PDF generation for confirm dialog...');
+        setIsPdfGenerating(true);
+        
+        // Check cache first
+        const cacheKey = generateCacheKey(localForm, currentUser, intangibleAssets);
+        const cachedPdf = pdfCache.get(cacheKey);
+        
+        if (cachedPdf) {
+          console.log('Using cached PDF for confirm dialog');
+          const url = URL.createObjectURL(cachedPdf);
+          setPdfUrl(url);
+          setIsPdfGenerating(false);
+          return;
+        }
+
+        console.log('Generating new PDF for confirm dialog...');
+        // Generate new PDF
+        const pdfBlob = await generateAccountabilityFormPDF(
+          localForm,
+          currentUser,
+          intangibleAssets
+        );
+        
+        // Cache the generated PDF
+        pdfCache.set(cacheKey, pdfBlob);
+        
+        const url = URL.createObjectURL(pdfBlob);
+        setPdfUrl(url);
+        setIsPdfGenerating(false);
+      } catch (error) {
+        console.error('Error generating PDF for confirm dialog:', error);
+        setIsPdfGenerating(false);
+        toast.error('Failed to generate PDF preview');
       }
     };
-  }, [localForm, currentUser]);
+
+    generatePdf();
+  }, [showConfirmDialog, localForm, currentUser, intangibleAssets]);
+
+  const downloadChecklistPdfs = async (entries: FormChecklistEntry[]) => {
+    if (entries.length === 0) {
+      return;
+    }
+    const baseName = (entries[0]?.employee_name || 'Employee').replace(/\s+/g, '_');
+    for (let i = 0; i < entries.length; i++) {
+      const entry = entries[i];
+      const assetLabel = getChecklistAssetLabel(entry, form.assets);
+      const pdfBlob = await generateAssetChecklistPDF({
+        ...entry,
+        asset_label: assetLabel,
+        employee_company_logo_url: entry.employee_company_logo_url ?? null,
+      });
+      const assetSlug = assetLabel
+        .replace(/\s+/g, '_')
+        .replace(/[^a-zA-Z0-9_-]/g, '');
+      const suffix =
+        entries.length > 1 ? `_${assetSlug || `asset_${i + 1}`}` : '';
+      const fileName = `Asset_Checklist_${baseName}${suffix}_${Date.now() + i}.pdf`;
+      downloadPDF(pdfBlob, fileName);
+    }
+    toast.success(
+      entries.length > 1
+        ? `Downloaded ${entries.length} checklist PDFs`
+        : 'Checklist PDF downloaded successfully'
+    );
+  };
 
   const handleDownload = async () => {
-    if (activeCardTab === 'checklist' && checklistData) {
+    if (activeCardTab === 'checklist' && checklists.length > 0) {
       try {
-        const pdfBlob = await generateAssetChecklistPDF({
-          ...checklistData,
-          asset_label: checklistAssetLabel,
-          employee_company_logo_url: checklistData.employee_company_logo_url ?? null,
-        });
-        const fileName = `Asset_Checklist_${checklistData.employee_name.replace(/\s+/g, '_')}_${Date.now()}.pdf`;
-        downloadPDF(pdfBlob, fileName);
-        toast.success('Checklist PDF downloaded successfully');
+        await downloadChecklistPdfs(checklists);
       } catch (error) {
         console.error('Failed to download checklist PDF:', error);
         toast.error('Failed to download checklist PDF');
@@ -1259,7 +1697,7 @@ export function AccountabilityFormCard({
 
     try {
       // Check cache first
-      const cacheKey = generateCacheKey(localForm, currentUser);
+      const cacheKey = generateCacheKey(localForm, currentUser, intangibleAssets);
       const cachedPdf = pdfCache.get(cacheKey);
       
       let pdfBlob: Blob;
@@ -1269,7 +1707,8 @@ export function AccountabilityFormCard({
       } else {
         pdfBlob = await generateAccountabilityFormPDF(
           localForm,
-          currentUser
+          currentUser,
+          intangibleAssets
         );
         // Cache the generated PDF
         pdfCache.set(cacheKey, pdfBlob);
@@ -1361,7 +1800,7 @@ export function AccountabilityFormCard({
                 Temporary
               </Badge>
             )}
-            {form.status === 'Pending' && (
+            {showPendingReceiverSignatureBadge && form.status === 'Pending' && (
               <Badge
                 variant="outline"
                 className="border-orange-300 bg-orange-50 text-orange-900 font-medium"
@@ -1376,16 +1815,16 @@ export function AccountabilityFormCard({
       <CardContent className="space-y-4 flex-1">
         {hasChecklist ? (
           <Tabs value={activeCardTab} onValueChange={(v) => setActiveCardTab(v as 'accountability' | 'checklist')} className="w-full">
-            <TabsList className="grid w-full grid-cols-2 mb-4 rounded-xl border bg-white p-1 shadow-sm">
+            <TabsList className={segmentTabsListClassName + ' grid grid-cols-2 mb-4'}>
               <TabsTrigger
                 value="accountability"
-                className="rounded-lg transition-all duration-200 hover:bg-red-50 hover:text-red-700 data-[state=active]:bg-red-600 data-[state=active]:text-white data-[state=active]:shadow"
+                className={segmentTabsTriggerClassName}
               >
                 Accountability
               </TabsTrigger>
               <TabsTrigger
                 value="checklist"
-                className="rounded-lg transition-all duration-200 hover:bg-red-50 hover:text-red-700 data-[state=active]:bg-red-600 data-[state=active]:text-white data-[state=active]:shadow"
+                className={segmentTabsTriggerClassName}
               >
                 Checklist
               </TabsTrigger>
@@ -1512,58 +1951,33 @@ export function AccountabilityFormCard({
               <div className="rounded-xl border border-slate-200 bg-slate-50 px-4 py-8 text-center text-sm text-slate-500">
                 Loading checklist...
               </div>
-            ) : checklistData ? (
-              <div className="space-y-3 rounded-xl border border-red-100 bg-gradient-to-br from-red-50/80 via-white to-slate-50 p-4 shadow-sm">
-                <div className="flex items-start justify-between gap-3 border-b border-red-100 pb-3">
-                  <div>
-                    <p className="text-xs font-medium uppercase tracking-wide text-red-600">
-                      Asset Checklist
-                    </p>
-                    <p className="mt-1 font-mono text-sm font-semibold text-slate-900">
-                      {checklistData.form_number || `CHK-${checklistData.assignment_id}`}
-                    </p>
-                  </div>
-                  <div className="flex flex-wrap justify-end gap-1.5">
-                    {checklistData.type_onboarding && (
-                      <Badge className="bg-emerald-100 text-emerald-800 hover:bg-emerald-100">
-                        Onboarding
-                      </Badge>
-                    )}
-                    {checklistData.type_offboarding && (
-                      <Badge className="bg-blue-100 text-blue-800 hover:bg-blue-100">
-                        Offboarding
-                      </Badge>
-                    )}
-                  </div>
-                </div>
-
-                <div className="grid gap-3 text-sm sm:grid-cols-2">
-                  <div className="rounded-lg border border-slate-200 bg-white/80 p-3">
-                    <p className="text-xs font-medium uppercase tracking-wide text-slate-500">
-                      Date Created
-                    </p>
-                    <p className="mt-1 font-medium text-slate-900">
-                      {new Date(checklistData.created_at).toLocaleDateString()}
-                    </p>
-                  </div>
-                  <div className="rounded-lg border border-slate-200 bg-white/80 p-3">
-                    <p className="text-xs font-medium uppercase tracking-wide text-slate-500">
-                      Employee
-                    </p>
-                    <p className="mt-1 font-medium text-slate-900">
-                      {checklistData.employee_name}
-                    </p>
-                  </div>
-                </div>
-
-                <div className="rounded-lg border border-slate-200 bg-white/80 p-3 text-sm">
-                  <p className="text-xs font-medium uppercase tracking-wide text-slate-500">
-                    Received By
-                  </p>
-                  <p className="mt-1 font-medium text-slate-900">
-                    {checklistData.received_by || 'N/A'}
-                  </p>
-                </div>
+            ) : activeChecklist ? (
+              <div className="space-y-3">
+                {checklists.length > 1 && (
+                  <Tabs
+                    value={activeChecklistKey}
+                    onValueChange={setActiveChecklistKey}
+                    className="w-full"
+                  >
+                    <TabsList
+                      className={
+                        segmentTabsListClassName +
+                        ' flex h-auto w-full flex-wrap justify-start gap-1'
+                      }
+                    >
+                      {checklists.map(entry => (
+                        <TabsTrigger
+                          key={getChecklistTabKey(entry)}
+                          value={getChecklistTabKey(entry)}
+                          className={segmentTabsTriggerClassName + ' text-xs'}
+                        >
+                          {getChecklistAssetLabel(entry, form.assets)}
+                        </TabsTrigger>
+                      ))}
+                    </TabsList>
+                  </Tabs>
+                )}
+                <ChecklistSummaryCard checklist={activeChecklist} />
               </div>
             ) : (
               <div className="rounded-xl border border-dashed border-slate-300 bg-slate-50 px-4 py-8 text-center text-sm text-slate-500">
@@ -1697,7 +2111,7 @@ export function AccountabilityFormCard({
           variant="outline"
           size="sm"
           onClick={() => {
-            if (activeCardTab === 'checklist' && checklistData) {
+            if (activeCardTab === 'checklist' && activeChecklist) {
               setShowChecklistDialog(true);
             } else if (onView) {
               onView(form);
@@ -1711,7 +2125,7 @@ export function AccountabilityFormCard({
           View
         </Button>
 
-        {showDownloadButton && (
+        {showFooterDownload && (
           <Button
             variant="outline"
             size="sm"
@@ -1733,11 +2147,17 @@ export function AccountabilityFormCard({
           </Button>
         )}
 
-        {canSign && showSignButton && (
+        {showCardSignButton && (
           <>
             <Button
               size="sm"
-              onClick={() => setShowConfirmDialog(true)}
+              onClick={() => {
+                if (activeCardTab === 'checklist' && hasChecklist) {
+                  setShowChecklistSignDialog(true);
+                } else {
+                  setShowConfirmDialog(true);
+                }
+              }}
               className="flex-1 bg-green-600 hover:bg-green-700 text-white"
             >
               <CheckCircle2 className="h-4 w-4 mr-2" />
@@ -1751,13 +2171,13 @@ export function AccountabilityFormCard({
             >
               <AppAlertDialogFrame className="flex max-h-[90vh] !max-w-2xl flex-col overflow-hidden !gap-0 !border-0 !p-0">
                 <AppAlertDialogGradientHeader title="Confirm Form Signing" />
-                <AppAlertDialogMessage>
-                  <AlertDialogDescription className="text-base text-gray-600">
+                <div className="px-6 py-4 pb-2">
+                  <p className="text-base text-gray-600">
                     Please review your accountability form below. By signing
                     this form, you agree to all the terms and conditions stated
                     in the document.
-                  </AlertDialogDescription>
-                </AppAlertDialogMessage>
+                  </p>
+                </div>
 
                 <div className="min-h-0 flex-1 overflow-auto">
                   <div className="mx-4 my-4 h-[600px] overflow-hidden rounded-lg border border-slate-200 bg-slate-50 sm:mx-6">
@@ -1856,7 +2276,7 @@ export function AccountabilityFormCard({
                           const generatePdf = async () => {
                             try {
                               // Check cache first
-                              const cacheKey = generateCacheKey(updatedForm, currentUser);
+                              const cacheKey = generateCacheKey(updatedForm, currentUser, intangibleAssets);
                               const cachedPdf = pdfCache.get(cacheKey);
                               
                               let pdfBlob: Blob;
@@ -1866,7 +2286,8 @@ export function AccountabilityFormCard({
                               } else {
                                 pdfBlob = await generateAccountabilityFormPDF(
                                   updatedForm,
-                                  currentUser
+                                  currentUser,
+                                  intangibleAssets
                                 );
                                 // Cache the generated PDF
                                 pdfCache.set(cacheKey, pdfBlob);
@@ -1900,7 +2321,7 @@ export function AccountabilityFormCard({
           </>
         )}
 
-        {showDeclineButton && canSign && onDecline && (
+        {showFooterDecline && (
           <Button
             variant="outline"
             size="sm"
@@ -1921,13 +2342,13 @@ export function AccountabilityFormCard({
       >
         <AppDialogFrame className="flex h-[min(96dvh,calc(100vh-0.5rem))] !max-h-[min(96dvh,calc(100vh-0.5rem))] min-h-0 !max-w-2xl flex-col overflow-hidden !gap-0 !border-0 !p-0">
           <AppDialogGradientHeader title="Decline this Asset Accountability form" />
+          <div className="px-6 py-4 pb-2">
+            <p className="text-sm text-muted-foreground">
+              Declining will release the assets on this form so they can be
+              assigned again. This cannot be undone.
+            </p>
+          </div>
           <AppDialogBody className="min-h-0 flex-1 overflow-auto !p-0">
-            <div className="px-4 pb-4 pt-4 sm:px-6">
-              <p className="text-sm text-muted-foreground">
-                Declining will release the assets on this form so they can be
-                assigned again. This cannot be undone.
-              </p>
-            </div>
             <div className="mx-4 h-[575px] overflow-hidden rounded-lg border border-slate-200 bg-slate-50 sm:mx-6">
               {pdfUrl ? (
                 <PDFViewer pdfUrl={pdfUrl} className="h-full w-full" />
@@ -1968,16 +2389,19 @@ export function AccountabilityFormCard({
               disabled={!declineReasonDraft.trim() || isDeclining}
               onClick={async () => {
                 const r = declineReasonDraft.trim();
-                if (!r || !onDecline) return;
-                
-                // Store the decline action and show OTP dialog
+                if (!r || !onDecline || showOtpDialog || isDeclining) return;
+
                 setPendingActionType('decline');
                 pendingActionRef.current = async () => {
                   try {
                     setIsDeclining(true);
                     await onDecline(form.id, r);
-                    setShowDeclineDialog(false);
                     setDeclineReasonDraft('');
+                    setLocalForm(prev => ({
+                      ...prev,
+                      status: 'Disabled',
+                      declineReason: r,
+                    }));
                   } catch {
                     /* toast from parent */
                   } finally {
@@ -1985,7 +2409,7 @@ export function AccountabilityFormCard({
                   }
                 };
 
-                // Show OTP dialog
+                setShowDeclineDialog(false);
                 setShowOtpDialog(true);
               }}
             >
@@ -2004,20 +2428,28 @@ export function AccountabilityFormCard({
         onVerified={() => {
           if (pendingActionType === 'sign') {
             toast.success('Form signed successfully');
-          } else if (pendingActionType === 'decline') {
-            toast.success('Form declined successfully');
+          } else if (pendingActionType === 'signChecklist') {
+            toast.success(
+              unsignedChecklistCount > 1
+                ? `Signed ${unsignedChecklistCount} checklists successfully`
+                : 'Checklist signed successfully'
+            );
           }
           setPendingActionType(null);
           setShowConfirmDialog(false);
+          setShowChecklistSignDialog(false);
           setAgreeTerms(false);
           setAgreeAgreement(false);
+          setAgreeChecklist(false);
         }}
         onCancel={() => {
           pendingActionRef.current = null;
           setPendingActionType(null);
           setShowConfirmDialog(false);
+          setShowChecklistSignDialog(false);
           setAgreeTerms(false);
           setAgreeAgreement(false);
+          setAgreeChecklist(false);
           setShowDeclineDialog(false);
           setDeclineReasonDraft('');
         }}
@@ -2026,7 +2458,9 @@ export function AccountabilityFormCard({
         title="OTP SMS Verification"
         description="OTP SMS Verification has been sent to your registered mobile number for accountability form signing."
         icon={<ShieldCheck className="h-6 w-6 text-blue-600" />}
-        verifyButtonLabel="Verify & Sign"
+        verifyButtonLabel={
+          pendingActionType === 'decline' ? 'Verify & Decline' : 'Verify & Sign'
+        }
         phoneNumber={currentUser?.contactNumber || undefined}
       />
 
@@ -2037,16 +2471,22 @@ export function AccountabilityFormCard({
             title={`${form.user.first_name} ${form.user.last_name} - ${form.formNumber}`}
             description="Asset Accountability Form Preview"
           />
-          <AppDialogBody className="min-h-0 flex-1 overflow-auto !p-0">
-            <div className="mx-4 my-4 h-[620px] overflow-hidden rounded-lg border border-slate-200 bg-slate-50 sm:mx-6">
-              {pdfUrl ? (
-                <PDFViewer pdfUrl={pdfUrl} className="h-full w-full" />
-              ) : (
-                <div className="flex h-full w-full items-center justify-center text-gray-500">
-                  Loading form preview...
+          <AppDialogBody className="min-h-0 flex-1 overflow-auto !p-0 bg-gray-100">
+            {isPdfGenerating ? (
+              <div className="flex h-full w-full items-center justify-center text-gray-500 bg-gray-100">
+                <div className="flex flex-col items-center gap-4 p-8 bg-white rounded-lg shadow-md">
+                  <div className="h-12 w-12 animate-spin rounded-full border-4 border-gray-200 border-t-blue-600" />
+                  <p className="text-lg font-medium text-gray-700">Generating PDF preview...</p>
+                  <p className="text-sm text-gray-500">This may take a few seconds</p>
                 </div>
-              )}
-            </div>
+              </div>
+            ) : pdfUrl ? (
+              <PDFViewer pdfUrl={pdfUrl} className="w-full" />
+            ) : (
+              <div className="flex h-full w-full items-center justify-center text-gray-500">
+                Loading form preview...
+              </div>
+            )}
           </AppDialogBody>
 
           <AppDialogChromeFooter className="justify-end gap-3">
@@ -2084,15 +2524,53 @@ export function AccountabilityFormCard({
         </AppDialogFrame>
       </Dialog>
 
-      {/* Checklist Dialog */}
-      <Dialog open={showChecklistDialog} onOpenChange={setShowChecklistDialog}>
-        <AppDialogFrame className="max-w-4xl max-h-[90vh] overflow-hidden !flex !flex-col !gap-0 !border-0 !p-0">
-          <AppDialogGradientHeader
-            title={`${checklistData?.employee_name || form.user.first_name + ' ' + form.user.last_name} - Asset Checklist`}
-            description="Asset Checklist Form Preview"
-          />
-          <AppDialogBody className="min-h-0 flex-1 overflow-auto !p-0">
-            <div className="mx-4 my-4 h-[620px] overflow-hidden rounded-lg border border-slate-200 bg-slate-50 sm:mx-6">
+      {/* Checklist sign dialog (profile documents — checklist tab) */}
+      <AlertDialog
+        open={showChecklistSignDialog}
+        onOpenChange={open => {
+          setShowChecklistSignDialog(open);
+          if (!open) setAgreeChecklist(false);
+        }}
+      >
+        <AppAlertDialogFrame className="flex max-h-[90vh] !max-w-2xl flex-col overflow-hidden !gap-0 !border-0 !p-0">
+          <AppAlertDialogGradientHeader title="Confirm Checklist Signing" />
+          <div className="px-6 py-4 pb-2">
+            <p className="text-base text-gray-600">
+              Please review your asset checklist below. By signing, you confirm
+              the checklist information is correct.
+              {unsignedChecklistCount > 1
+                ? ` This will sign all ${unsignedChecklistCount} checklists linked to this form.`
+                : ''}
+            </p>
+          </div>
+          <div className="min-h-0 flex-1 overflow-auto">
+            {checklists.length > 1 && (
+              <div className="px-6 pt-2">
+                <Tabs
+                  value={activeChecklistKey}
+                  onValueChange={setActiveChecklistKey}
+                  className="w-full"
+                >
+                  <TabsList
+                    className={
+                      segmentTabsListClassName +
+                      ' flex h-auto w-full flex-wrap justify-start gap-1'
+                    }
+                  >
+                    {checklists.map(entry => (
+                      <TabsTrigger
+                        key={getChecklistTabKey(entry)}
+                        value={getChecklistTabKey(entry)}
+                        className={segmentTabsTriggerClassName + ' text-xs'}
+                      >
+                        {getChecklistAssetLabel(entry, form.assets)}
+                      </TabsTrigger>
+                    ))}
+                  </TabsList>
+                </Tabs>
+              </div>
+            )}
+            <div className="mx-4 my-4 h-[600px] overflow-hidden rounded-lg border border-slate-200 bg-slate-50 sm:mx-6">
               {checklistPdfUrl ? (
                 <PDFViewer pdfUrl={checklistPdfUrl} className="h-full w-full" />
               ) : (
@@ -2101,19 +2579,105 @@ export function AccountabilityFormCard({
                 </div>
               )}
             </div>
+            <div className="space-y-4 px-6 py-4">
+              <div className="flex items-start space-x-3">
+                <Checkbox
+                  id="agree-checklist"
+                  checked={agreeChecklist}
+                  onCheckedChange={checked => setAgreeChecklist(checked as boolean)}
+                  className="mt-1"
+                />
+                <label
+                  htmlFor="agree-checklist"
+                  className="text-sm font-medium leading-tight peer-disabled:cursor-not-allowed peer-disabled:opacity-70"
+                >
+                  I confirm the asset checklist details are correct
+                </label>
+              </div>
+            </div>
+          </div>
+          <AppAlertDialogChromeFooter>
+            <AlertDialogCancel
+              onClick={() => {
+                setShowChecklistSignDialog(false);
+                setAgreeChecklist(false);
+              }}
+            >
+              Cancel
+            </AlertDialogCancel>
+            <AlertDialogAction
+              onClick={() => {
+                setPendingActionType('signChecklist');
+                pendingActionRef.current = async () => {
+                  const digitalInitials =
+                    (currentUser as { digitalSignature?: string })?.digitalSignature ||
+                    '';
+                  const response = await api.post<{
+                    checklists?: FormChecklistEntry[];
+                    signedCount?: number;
+                  }>(`/accountability-forms/${form.id}/checklists/sign`, {
+                    digitalSignature: digitalInitials || undefined,
+                  });
+                  if (response?.checklists?.length) {
+                    setChecklists(response.checklists);
+                    const first = response.checklists[0];
+                    setActiveChecklistKey(getChecklistTabKey(first));
+                  } else {
+                    await refreshFormChecklists();
+                  }
+                };
+                setShowOtpDialog(true);
+              }}
+              disabled={!agreeChecklist}
+              className="bg-green-600 hover:bg-green-700 text-white disabled:bg-gray-300 disabled:cursor-not-allowed"
+            >
+              Sign Form
+            </AlertDialogAction>
+          </AppAlertDialogChromeFooter>
+        </AppAlertDialogFrame>
+      </AlertDialog>
+
+      {/* Checklist view dialog */}
+      <Dialog open={showChecklistDialog} onOpenChange={setShowChecklistDialog}>
+        <AppDialogFrame className="max-w-4xl max-h-[90vh] overflow-hidden !flex !flex-col !gap-0 !border-0 !p-0">
+          <AppDialogGradientHeader
+            title={`${activeChecklist?.employee_name || form.user.first_name + ' ' + form.user.last_name} - Asset Checklist${checklistAssetLabel ? ` (${checklistAssetLabel})` : ''}`}
+            description="Asset Checklist Form Preview"
+          />
+          <AppDialogBody className="min-h-0 flex-1 overflow-auto !p-0">
+            {checklistPdfUrl ? (
+              <PDFViewer pdfUrl={checklistPdfUrl} className="h-full w-full" />
+            ) : (
+              <div className="flex h-full w-full items-center justify-center text-gray-500">
+                Generating checklist PDF preview...
+              </div>
+            )}
           </AppDialogBody>
           <AppDialogChromeFooter className="justify-end gap-3">
+            {canSignChecklist && (
+              <Button
+                size="sm"
+                onClick={() => {
+                  setShowChecklistDialog(false);
+                  setShowChecklistSignDialog(true);
+                }}
+                className="bg-green-600 hover:bg-green-700 text-white"
+              >
+                <CheckCircle2 className="h-4 w-4 mr-2" />
+                Sign Form
+              </Button>
+            )}
             <Button
               variant="outline"
               size="sm"
               onClick={async () => {
-                if (checklistData) {
+                if (activeChecklist) {
                   try {
                     const pdfBlob = await generateAssetChecklistPDF({
-                      ...checklistData,
+                      ...activeChecklist,
                       asset_label: checklistAssetLabel,
                     });
-                    const fileName = `Asset_Checklist_${checklistData.employee_name.replace(/\s+/g, '_')}_${Date.now()}.pdf`;
+                    const fileName = `Asset_Checklist_${activeChecklist.employee_name.replace(/\s+/g, '_')}_${Date.now()}.pdf`;
                     downloadPDF(pdfBlob, fileName);
                     toast.success('Checklist PDF downloaded successfully');
                   } catch (error) {
@@ -2158,6 +2722,8 @@ interface AccountabilityFormDetailProps {
   /** Profile documents: allow assignee to decline pending form with a reason */
   showDeclineButton?: boolean;
   onDecline?: (formId: string, reason: string) => Promise<void>;
+  /** Callback to notify parent when receive copy action completes */
+  onReceiveCompleted?: () => void;
 }
 
 export function AccountabilityFormDetail({
@@ -2174,6 +2740,7 @@ export function AccountabilityFormDetail({
   embedded = false,
   showDeclineButton = false,
   onDecline,
+  onReceiveCompleted,
 }: AccountabilityFormDetailProps) {
   const { user: currentUser } = useCurrentUser();
   const [pdfUrl, setPdfUrl] = useState<string>('');
@@ -2195,6 +2762,8 @@ export function AccountabilityFormDetail({
   const [pendingDigitalInitials, setPendingDigitalInitials] = useState<string | null>(null);
   const pendingActionRef = useRef<(() => Promise<void>) | null>(null);
   const pendingReceiveActionRef = useRef<(() => Promise<void>) | null>(null);
+  const [intangibleAssets, setIntangibleAssets] = useState<any[]>([]);
+  const [intangibleAssetsLoading, setIntangibleAssetsLoading] = useState(false);
 
   const isAssignedUser = currentUser?.id === form.user.id;
   const canSign = !readOnly && isAssignedUser && form.status === 'Pending';
@@ -2215,11 +2784,36 @@ export function AccountabilityFormDetail({
     setLocalForm(form);
   }, [form]);
 
+  // Fetch intangible assets for the assignment
+  useEffect(() => {
+    const fetchIntangibleAssets = async () => {
+      if (form.assignment?.id) {
+        try {
+          setIntangibleAssetsLoading(true);
+          const response = await api.get('/intangible-assets');
+          // Filter intangible assets that are assigned to this assignment
+          const assignmentIntangibleAssets = (response || []).filter(
+            (asset: any) => asset.assignment_id === form.assignment?.id
+          );
+          setIntangibleAssets(assignmentIntangibleAssets);
+        } catch (error) {
+          console.error('Failed to fetch intangible assets:', error);
+          setIntangibleAssets([]);
+        } finally {
+          setIntangibleAssetsLoading(false);
+        }
+      } else {
+        setIntangibleAssets([]);
+      }
+    };
+    fetchIntangibleAssets();
+  }, [form.assignment?.id]);
+
   useEffect(() => {
     const generatePdf = async () => {
       try {
         // Check cache first
-        const cacheKey = generateCacheKey(localForm, currentUser);
+        const cacheKey = generateCacheKey(localForm, currentUser, intangibleAssets);
         const cachedPdf = pdfCache.get(cacheKey);
         
         if (cachedPdf) {
@@ -2232,7 +2826,8 @@ export function AccountabilityFormDetail({
         // Generate new PDF
         const pdfBlob = await generateAccountabilityFormPDF(
           localForm,
-          currentUser
+          currentUser,
+          intangibleAssets
         );
         
         // Cache the generated PDF
@@ -2256,7 +2851,7 @@ export function AccountabilityFormDetail({
         URL.revokeObjectURL(pdfUrl);
       }
     };
-  }, [localForm, currentUser]);
+  }, [localForm, currentUser, intangibleAssets]);
 
   const hrWorkflowActions = viewContext === 'hrCopy';
   const containerClassName = embedded
@@ -2270,9 +2865,7 @@ export function AccountabilityFormDetail({
     ? 'w-full min-h-0 flex-1 overflow-auto rounded-none border-0 bg-transparent px-4 sm:px-6'
     : headerInParentChrome
       ? 'flex min-h-0 w-full min-w-0 flex-1 flex-col overflow-auto border-0 bg-transparent'
-      : hrViewMode
-        ? 'flex w-full min-h-[70vh] flex-1 flex-col overflow-auto rounded-lg border border-slate-200/80 bg-slate-50/50'
-        : 'w-full h-[85vh] border rounded-lg mx-auto overflow-auto';
+      : 'flex w-full h-[85vh] flex-1 flex-col overflow-auto';
   const showHrReceive = false;
   const showActionBar =
     canSign || showSignReceivedCopy || showHrReceive || !embedded;
@@ -2294,8 +2887,8 @@ export function AccountabilityFormDetail({
       : 'flex min-h-0 flex-1 flex-col gap-2 p-2 sm:p-3';
 
   const previewPaneClass =
-    headerInParentChrome && hrViewMode
-      ? 'h-[70vh] w-full min-w-0 overflow-auto border-0 bg-white'
+    headerInParentChrome
+      ? 'h-[70vh] w-full min-w-0 overflow-auto border-0 bg-gray-100'
       : 'h-[70vh] w-full overflow-auto rounded-md border border-slate-200 bg-slate-50';
 
   const actionBar = (
@@ -2326,13 +2919,13 @@ export function AccountabilityFormDetail({
           >
             <AppAlertDialogFrame className="flex max-h-[90vh] !max-w-2xl flex-col overflow-hidden !gap-0 !border-0 !p-0">
               <AppAlertDialogGradientHeader title="Confirm Form Signing" />
-              <AppAlertDialogMessage>
-                <AlertDialogDescription className="text-base text-gray-600">
+              <div className="px-6 py-4 pb-2">
+                <p className="text-base text-gray-600">
                   Please review your accountability form below. By signing
                   this form, you agree to all the terms and conditions stated in
                   the document.
-                </AlertDialogDescription>
-              </AppAlertDialogMessage>
+                </p>
+              </div>
 
               <div className="min-h-0 flex-1 overflow-auto">
                 <div className="mx-4 my-4 h-[500px] overflow-hidden rounded-lg border border-slate-200 bg-slate-50 sm:mx-6">
@@ -2433,13 +3026,13 @@ export function AccountabilityFormDetail({
         >
           <AppDialogFrame className="max-h-[90vh] max-w-5xl overflow-hidden !flex !flex-col !gap-0 !border-0 !p-0">
             <AppDialogGradientHeader title="Decline this Asset Accountability form" />
+            <div className="px-6 py-4 pb-2">
+              <p className="text-sm text-muted-foreground">
+                Declining will release the assets on this form so they can be
+                assigned again. This cannot be undone.
+              </p>
+            </div>
             <AppDialogBody className="min-h-0 flex-1 overflow-auto !p-0">
-              <div className="px-4 pb-4 pt-4 sm:px-6">
-                <p className="text-sm text-muted-foreground">
-                  Declining will release the assets on this form so they can be
-                  assigned again. This cannot be undone.
-                </p>
-              </div>
               <div className="mx-4 h-[420px] overflow-hidden rounded-lg border border-slate-200 bg-slate-50 sm:mx-6">
                 {pdfUrl ? (
                   <PDFViewer pdfUrl={pdfUrl} className="h-full w-full" />
@@ -2480,19 +3073,17 @@ export function AccountabilityFormDetail({
                 disabled={!declineReasonDraft.trim() || isDeclining}
                 onClick={async () => {
                   const r = declineReasonDraft.trim();
-                  if (!r || !onDecline) return;
+                  if (!r || !onDecline || showOtpDialog || isDeclining) return;
 
-                  // Store the decline action and show OTP dialog
                   setPendingActionType('decline');
                   pendingActionRef.current = async () => {
                     try {
                       setIsDeclining(true);
                       await onDecline(form.id, r);
-                      setShowDeclineDialog(false);
                       setDeclineReasonDraft('');
                       setLocalForm(prev => ({
                         ...prev,
-                        status: 'Declined',
+                        status: 'Disabled',
                         declineReason: r,
                       }));
                     } catch {
@@ -2502,7 +3093,7 @@ export function AccountabilityFormDetail({
                     }
                   };
 
-                  // Show OTP dialog
+                  setShowDeclineDialog(false);
                   setShowOtpDialog(true);
                 }}
               >
@@ -2522,8 +3113,6 @@ export function AccountabilityFormDetail({
         onVerified={() => {
           if (pendingActionType === 'sign') {
             toast.success('Form signed successfully');
-          } else if (pendingActionType === 'decline') {
-            toast.success('Form declined successfully');
           }
           setPendingActionType(null);
           setShowConfirmDialog(false);
@@ -2544,7 +3133,9 @@ export function AccountabilityFormDetail({
         title="OTP SMS Verification"
         description="OTP SMS Verification has been sent to your registered mobile number for accountability form signing."
         icon={<ShieldCheck className="h-6 w-6 text-blue-600" />}
-        verifyButtonLabel="Verify & Sign"
+        verifyButtonLabel={
+          pendingActionType === 'decline' ? 'Verify & Decline' : 'Verify & Sign'
+        }
         phoneNumber={currentUser?.contactNumber || undefined}
       />
 
@@ -2718,7 +3309,7 @@ export function AccountabilityFormDetail({
               ) : null}
             </div>
           )}
-          <div className="mx-0 my-2 flex h-[70vh] flex-1 flex-col overflow-hidden rounded-lg border border-slate-200 bg-slate-50 sm:my-3">
+          <div className="flex h-[70vh] flex-1 flex-col overflow-hidden">
             {pdfUrl ? (
               <PDFViewer pdfUrl={pdfUrl} className="h-full w-full" />
             ) : (
@@ -2769,6 +3360,7 @@ export function AccountabilityFormDetail({
           setShowReceiveOtpDialog(false);
           setPendingDigitalInitials(null);
           pendingReceiveActionRef.current = null;
+          onReceiveCompleted?.();
         }}
         onCancel={() => {
           pendingReceiveActionRef.current = null;

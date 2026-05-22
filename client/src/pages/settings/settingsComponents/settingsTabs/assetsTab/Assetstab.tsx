@@ -43,7 +43,8 @@ export function AssetsTab({ isActive }: { isActive?: boolean }) {
   const { suppliers, fetchSuppliers } = useSuppliers();
   const { types, fetchTypes } = useAssetTypes();
   const { brands, fetchBrands } = useAssetBrands();
-  const { fetchAssetIdFormatSettings } = useSmartIdFormat(activeCompany);
+  const smartIdFormatState = useSmartIdFormat(activeCompany);
+  const { fetchAssetIdFormatSettings } = smartIdFormatState;
 
   // Determine user's role scope
   const userRoleScope = useMemo(() => {
@@ -105,14 +106,16 @@ export function AssetsTab({ isActive }: { isActive?: boolean }) {
     if (isActive) fetchActiveCompany();
   }, [isActive]);
 
-  useEffect(() => {
-    if (isActive && activeCompany) fetchAssetIdFormatSettings();
-  }, [isActive, activeCompany]);
-
   const fetchActiveCompany = async () => {
     try {
-      const data = await api.get('/companies/active');
-      setActiveCompany(data?.data?.[0] || null);
+      // Align with server getScopedActiveCompany: user's company first, then global active.
+      const myData = await api.get('/companies/my');
+      let company = myData?.data?.[0] || null;
+      if (!company) {
+        const activeData = await api.get('/companies/active');
+        company = activeData?.data?.[0] || null;
+      }
+      setActiveCompany(company);
     } catch (error) {
       console.error('Failed to fetch active company:', error);
     }
@@ -396,7 +399,15 @@ export function AssetsTab({ isActive }: { isActive?: boolean }) {
       </div>
 
       <div className="mb-12">
-        <SmartAssetIdFormat activeCompany={activeCompany} />
+        <SmartAssetIdFormat
+          activeCompany={activeCompany}
+          smartIdFormat={smartIdFormatState.smartIdFormat}
+          setSmartIdFormat={smartIdFormatState.setSmartIdFormat}
+          settingsLoading={smartIdFormatState.settingsLoading}
+          hasUnsavedChanges={smartIdFormatState.hasUnsavedChanges}
+          save={smartIdFormatState.save}
+          cancel={smartIdFormatState.cancel}
+        />
       </div>
     </TabsContent>
   );

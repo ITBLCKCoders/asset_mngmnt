@@ -16,7 +16,6 @@ import {
   DollarSign,
   Recycle,
   Archive,
-  RefreshCw,
 } from 'lucide-react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { PageHeader } from '@/components/common/PageHeader';
@@ -428,15 +427,6 @@ export default function AssetsDisposal() {
           title="Assets Disposal"
           description="Permanently dispose of assets and track disposal records"
         >
-          <Button
-            variant="ghost"
-            size="sm"
-            onClick={() => fetchAssets()}
-            className="flex items-center gap-2"
-          >
-            <RefreshCw className="h-4 w-4" />
-            Refresh
-          </Button>
         </PageHeader>
 
         <div className="grid grid-cols-1 xl:grid-cols-3 gap-8">

@@ -1,6 +1,6 @@
 export interface ModuleTreeNode {
   name: string;
-  children: string[];
+  children: (string | ModuleTreeNode)[];
 }
 
 /** Same hierarchy as the Users → Permissions tab. */
@@ -27,16 +27,25 @@ export const USER_MODULE_TREE: ModuleTreeNode[] = [
       'Asset Assignment',
       'Asset Request',
       'Request Management',
+      {
+        name: 'Asset Borrowing',
+        children: ['Borrow Request Management'],
+      },
       'Asset Tagging',
-      'Asset Transfer',
+      {
+        name: 'Asset Transfer',
+        children: ['Asset Transfer'],
+      },
       'Asset Maintenance',
       'Asset Repair',
-      'Asset Return',
+      {
+        name: 'Asset Return',
+        children: ['Asset Return'],
+      },
       'Return Request',
       'Transfer Request',
       'Asset Disposal',
-      'Asset Borrowing',
-      'Borrow Request Management',
+      'Gate Pass',
     ],
   },
   { name: 'Audit Trail', children: [] },
@@ -75,6 +84,15 @@ export function moduleChildLabel(parentName: string, child: string): string {
   }
   if (parentName === 'Forms' && child === 'Transfer Form') {
     return 'Transfer forms';
+  }
+  if (parentName === 'Asset Borrowing' && child === 'Borrow Request Management') {
+    return 'Requests';
+  }
+  if (parentName === 'Asset Transfer' && child === 'Asset Transfer') {
+    return 'Requests';
+  }
+  if (parentName === 'Asset Return' && child === 'Asset Return') {
+    return 'Requests';
   }
   return child;
 }

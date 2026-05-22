@@ -5,6 +5,13 @@ import { api } from '@/lib/api';
 
 export const pdfLogger = createLogger('PDFGenerator');
 
+/** Cache processed signature data URLs (keyed by remote URL) for PDF generation */
+const signatureImageCache = new Map<string, string>();
+
+/** Digital signature max size (mm) — matches asset accountability form PDF */
+export const PDF_SIGNATURE_MAX_WIDTH_MM = 122;
+export const PDF_SIGNATURE_MAX_HEIGHT_MM = 74;
+
 export { autoTable };
 
 export interface PdfCompanyBranding {
@@ -59,6 +66,36 @@ export const getBlackCodersFooterGradient = (): { start: string; end: string } =
   start: '#DC2626', // red-600
   end: '#000000', // black
 });
+
+/** Sort assets by the last 5 digits of asset_code in ascending order */
+export const sortAssetsByLast5Digits = <T extends { code: string }>(assets: T[]): T[] => {
+  return [...assets].sort((a, b) => {
+    const aLast5 = a.code.slice(-5);
+    const bLast5 = b.code.slice(-5);
+    const aNum = parseInt(aLast5, 10);
+    const bNum = parseInt(bLast5, 10);
+    return aNum - bNum;
+  });
+};
+
+/** Format builder items for display: parent first, then indented children */
+export const formatBuilderItems = <T extends { is_parent?: boolean }>(items: T[]): T[] => {
+  const parent = items.find(item => item.is_parent);
+  const children = items.filter(item => !item.is_parent);
+  
+  // Sort children by last 5 digits of code if they have a code property
+  const sortedChildren = children.sort((a, b) => {
+    const aCode = (a as any).code || '';
+    const bCode = (b as any).code || '';
+    const aLast5 = aCode.slice(-5);
+    const bLast5 = bCode.slice(-5);
+    const aNum = parseInt(aLast5, 10);
+    const bNum = parseInt(bLast5, 10);
+    return aNum - bNum;
+  });
+  
+  return parent ? [parent, ...sortedChildren] : sortedChildren;
+};
 
 export const fetchCompanyBrandingByName = async (
   companyName?: string | null
@@ -124,8 +161,19 @@ export const addCompanyLogoToPDF = async (
     await new Promise<void>(resolve => {
       const img = new Image();
       img.onload = () => {
-        // Force exact dimensions for uniformity across all forms
-        doc.addImage(dataUrl, format, x, y, maxWidth, maxHeight);
+        // Calculate dimensions maintaining aspect ratio
+        const aspectRatio = img.width / img.height;
+        let imgWidth = maxWidth;
+        let imgHeight = maxWidth / aspectRatio;
+
+        // If height exceeds maxHeight, scale down
+        if (imgHeight > maxHeight) {
+          imgHeight = maxHeight;
+          imgWidth = maxHeight * aspectRatio;
+        }
+
+        // Add image with proper aspect ratio to prevent distortion
+        doc.addImage(dataUrl, format, x, y, imgWidth, imgHeight);
         resolve();
       };
       img.onerror = () => resolve();
@@ -136,114 +184,107 @@ export const addCompanyLogoToPDF = async (
   }
 };
 
-/**
- * Add a signature to the PDF. Signature can be either plain text initials
- * (rendered as bold helvetica) or a base64/HTTP image (rendered after
- * compositing the source to pure black via canvas).
- */
 export const addSignatureToPDF = async (
   doc: jsPDF,
   signatureData: string | undefined,
   x: number,
   y: number,
   maxWidth: number = 50,
-  maxHeight: number = 20
+  maxHeight: number = 20,
+  /** When set, bottom edge of the image aligns to this Y (mm) instead of using `y` as top */
+  anchorBottomY?: number
 ): Promise<void> => {
   try {
-    pdfLogger.debug('addSignatureToPDF called', {
-      hasSignature: !!signatureData,
-      x,
-      y,
-    });
-
     if (!signatureData) {
-      pdfLogger.debug('No signature data provided');
       return;
     }
 
-    const isPlainText =
-      !signatureData.startsWith('data:image/') &&
-      !signatureData.startsWith('http://') &&
-      !signatureData.startsWith('https://') &&
-      signatureData.length < 100;
+    const isImageSignature =
+      signatureData.startsWith('data:image/') ||
+      signatureData.startsWith('http://') ||
+      signatureData.startsWith('https://');
 
-    if (isPlainText) {
-      pdfLogger.debug('Rendering signature as text', { text: signatureData });
-      doc.setFontSize(12);
-      doc.setFont('helvetica', 'bold');
-      doc.text(signatureData, x, y);
-      doc.setFont('helvetica', 'normal');
-      doc.setFontSize(10);
+    if (!isImageSignature) {
+      pdfLogger.debug('Skipping non-image signature data');
+      return;
+    }
+
+    const img = new Image();
+    img.crossOrigin = 'anonymous';
+
+    if (signatureData.startsWith('http://') || signatureData.startsWith('https://')) {
+      const cached = signatureImageCache.get(signatureData);
+      img.src = cached ?? signatureData;
     } else {
-      const img = new Image();
-      img.crossOrigin = 'anonymous';
       img.src = signatureData;
+    }
 
-      await new Promise<void>((resolve, reject) => {
-        img.onload = () => {
-          pdfLogger.debug('Signature image loaded', {
-            width: img.width,
-            height: img.height,
-          });
+    await new Promise<void>((resolve, reject) => {
+      img.onload = () => {
+        const canvas = document.createElement('canvas');
+        canvas.width = img.width;
+        canvas.height = img.height;
+        const ctx = canvas.getContext('2d');
+        if (ctx) {
+          ctx.drawImage(img, 0, 0);
+          const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
+          const data = imageData.data;
 
-          const canvas = document.createElement('canvas');
-          canvas.width = img.width;
-          canvas.height = img.height;
-          const ctx = canvas.getContext('2d');
-          if (ctx) {
-            ctx.drawImage(img, 0, 0);
-            const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
-            const data = imageData.data;
-
-            for (let i = 0; i < data.length; i += 4) {
-              const a = data[i + 3];
-              if (a > 0) {
-                data[i] = 0;
-                data[i + 1] = 0;
-                data[i + 2] = 0;
-                data[i + 3] = a;
-              }
+          // Match accountability form PDF: remove white background, keep ink colors
+          for (let i = 0; i < data.length; i += 4) {
+            const r = data[i];
+            const g = data[i + 1];
+            const b = data[i + 2];
+            const a = data[i + 3];
+            const brightness = (r + g + b) / 3;
+            if (brightness > 240 && a > 0) {
+              data[i + 3] = 0;
             }
-
-            ctx.putImageData(imageData, 0, 0);
-            img.src = canvas.toDataURL();
           }
 
-          resolve();
-        };
-        img.onerror = () => {
-          pdfLogger.debug('Failed to load signature image');
-          reject(new Error('Failed to load signature image'));
-        };
-      });
+          ctx.putImageData(imageData, 0, 0);
+          const processedDataUrl = canvas.toDataURL('image/png');
 
-      const pixelsToMm = 0.264583;
-      const sigWidth = img.width * pixelsToMm;
-      const sigHeight = img.height * pixelsToMm;
+          if (
+            signatureData.startsWith('http://') ||
+            signatureData.startsWith('https://')
+          ) {
+            signatureImageCache.set(signatureData, processedDataUrl);
+          }
+          img.src = processedDataUrl;
+        }
 
-      let finalSigWidth = sigWidth;
-      let finalSigHeight = sigHeight;
+        resolve();
+      };
+      img.onerror = () => {
+        pdfLogger.debug('Failed to load signature image');
+        reject(new Error('Failed to load signature image'));
+      };
+    });
 
-      if (sigWidth > maxWidth) {
-        const scale = maxWidth / sigWidth;
-        finalSigWidth = maxWidth;
-        finalSigHeight = sigHeight * scale;
-      }
+    const pixelsToMm = 0.264583;
+    const sigWidth = img.width * pixelsToMm;
+    const sigHeight = img.height * pixelsToMm;
 
-      if (finalSigHeight > maxHeight) {
-        const scale = maxHeight / finalSigHeight;
-        finalSigHeight = maxHeight;
-        finalSigWidth = finalSigWidth * scale;
-      }
+    let finalSigWidth = sigWidth;
+    let finalSigHeight = sigHeight;
 
-      pdfLogger.debug('Adding signature image to PDF', {
-        finalSigWidth,
-        finalSigHeight,
-        x,
-        y,
-      });
-      doc.addImage(img.src, 'PNG', x, y, finalSigWidth, finalSigHeight);
+    if (sigWidth > maxWidth) {
+      const scale = maxWidth / sigWidth;
+      finalSigWidth = maxWidth;
+      finalSigHeight = sigHeight * scale;
     }
+
+    if (finalSigHeight > maxHeight) {
+      const scale = maxHeight / finalSigHeight;
+      finalSigHeight = maxHeight;
+      finalSigWidth = finalSigWidth * scale;
+    }
+
+    const format = img.src.startsWith('data:image/jpeg') ? 'JPEG' : 'PNG';
+    const drawY =
+      anchorBottomY != null ? anchorBottomY - finalSigHeight : y;
+    doc.addImage(img.src, format, x, drawY, finalSigWidth, finalSigHeight);
   } catch (error) {
     pdfLogger.debug(
       'Failed to add signature to PDF',

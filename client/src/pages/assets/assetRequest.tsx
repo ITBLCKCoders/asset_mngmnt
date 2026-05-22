@@ -8,7 +8,6 @@ import {
   CheckCircle2,
   AlertTriangle,
   PlusCircle,
-  RefreshCw,
 } from 'lucide-react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { PageHeader } from '@/components/common/PageHeader';
@@ -265,15 +264,6 @@ export default function AssetDepartment() {
           title="Asset Request"
           description="Request specific types of assets for your needs"
         >
-          <Button
-            variant="ghost"
-            size="sm"
-            onClick={() => fetchAssetRequests()}
-            className="flex items-center gap-2"
-          >
-            <RefreshCw className="h-4 w-4" />
-            Refresh
-          </Button>
         </PageHeader>
 
         <div className="grid grid-cols-1 xl:grid-cols-3 gap-8">

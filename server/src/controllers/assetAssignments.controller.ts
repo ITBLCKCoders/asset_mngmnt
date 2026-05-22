@@ -8,6 +8,7 @@ import { handleAccountabilityFormOnAssetReturn } from '../utils/accountabilityFo
 import {
   getAssetScope,
   classifyDepartmentScopeByName,
+  getDepartmentIdsForScope,
 } from '../utils/assetScope.js';
 import { emitNotification } from '../sockets/socketHandlers.js';
 import { getIoInstance } from '../utils/socketManager.js';
@@ -695,12 +696,34 @@ export async function getFilteredAssetAssignmentsHandler(
       return res.json({ assignments: [] });
     }
 
-    const { companyId, departmentIds } = await getAssetScope(
+    // Accept optional scope query param for IT/Admin tab switching
+    const scopeParam = req.query.scope as string | undefined;
+    const scopeOverride =
+      scopeParam === 'it' || scopeParam === 'admin' ? scopeParam : undefined;
+
+    const { companyId, departmentIds: scopeDeptIds, isSuperAdmin } = await getAssetScope(
       pool,
       currentUserId
     );
     if (!companyId) {
       return res.json({ assignments: [] });
+    }
+
+    let departmentIds = scopeDeptIds;
+
+    // For Super Admin, Admin, and overallManager: apply scope override if provided
+    if (scopeOverride) {
+      const [userRows] = (await pool.execute(
+        `SELECT r.manager_role FROM users u
+         LEFT JOIN asset_mngmnt_roles r ON u.role_id = r.roleID AND r.deleted_at IS NULL
+         WHERE u.userID = ?`,
+        [currentUserId]
+      )) as any[];
+      const managerRole = String(userRows?.[0]?.manager_role ?? '').trim();
+      const isAdmin = permissions['Asset List']?.create && permissions['Asset List']?.edit && permissions['Asset List']?.delete;
+      if (isSuperAdmin || isAdmin || managerRole === 'overallManager') {
+        departmentIds = await getDepartmentIdsForScope(pool, scopeOverride, companyId);
+      }
     }
 
     let where = '';

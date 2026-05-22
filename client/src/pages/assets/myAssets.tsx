@@ -22,7 +22,6 @@ import { api } from '@/lib/api';
 import { toast } from 'sonner';
 import { useCurrentUser } from '@/hooks/useCurrentUser';
 import { useUserPermissions } from '@/hooks/useUserPermissions';
-import { useDelayedLoading } from '@/hooks/useDelayedLoading';
 import { Shimmer } from '@/components/ui/shimmer';
 
 interface ApiAsset {
@@ -285,40 +284,69 @@ export default function MyAssetsPage() {
     }).format(amount);
   };
 
-  const displayLoading = useDelayedLoading(userLoading || loading, 2000);
+  const displayLoading = userLoading || loading;
   if (displayLoading) {
     return (
       <div className="flex flex-col min-h-screen">
         <main className="flex-1 p-4 sm:p-6 space-y-6">
-          <Card>
-            <CardContent className="p-6">
-              <div className="flex justify-between items-center w-full">
-                <div className="flex items-center gap-3">
-                  <Shimmer className="h-10 w-10 rounded-lg" />
-                  <div className="space-y-2">
-                    <Shimmer className="h-6 w-32" />
-                    <Shimmer className="h-3 w-48" />
-                  </div>
-                </div>
-                <div className="flex items-center gap-3 hidden sm:flex">
-                  <Shimmer className="h-9 w-24 rounded-md" />
-                  <Shimmer className="h-9 w-52 rounded-md" />
+          <Card className="border-0 shadow-md bg-gradient-to-r from-red-600 to-red-800">
+            <CardContent className="p-5 sm:p-6">
+              <div className="flex items-center gap-4">
+                <Shimmer className="h-14 w-14 rounded-2xl bg-white/20" />
+                <div className="space-y-2">
+                  <Shimmer className="h-8 w-48 rounded bg-white/20" />
+                  <Shimmer className="h-4 w-64 rounded bg-white/20" />
                 </div>
               </div>
             </CardContent>
           </Card>
 
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
-            {[...Array(6)].map((_, i) => (
-              <Card key={i}>
+            {[...Array(8)].map((_, i) => (
+              <Card key={i} className="border border-gray-200 shadow-sm rounded-lg min-h-[420px] flex flex-col">
                 <CardHeader className="pb-3">
-                  <Shimmer className="h-4 w-3/4 rounded" />
-                  <Shimmer className="h-3 w-1/2 rounded mt-1" />
+                  <div className="flex items-start justify-between gap-2">
+                    <div className="flex-1 min-w-0">
+                      <div className="flex items-center gap-2 mb-1">
+                        <Shimmer className="h-5 w-16 rounded-full bg-blue-50" />
+                        <Shimmer className="h-5 w-16 rounded-full bg-blue-50" />
+                      </div>
+                      <Shimmer className="h-6 w-3/4 rounded" />
+                    </div>
+                  </div>
+                  <Shimmer className="h-3 w-full rounded mt-1" />
                 </CardHeader>
-                <CardContent className="space-y-3">
-                  <Shimmer className="h-32 w-full rounded" />
-                  <Shimmer className="h-3 w-full rounded" />
-                  <Shimmer className="h-3 w-2/3 rounded" />
+
+                <CardContent className="flex-1 flex flex-col justify-between space-y-4">
+                  <Shimmer className="w-full h-32 rounded-lg" />
+
+                  <div className="space-y-2">
+                    <div className="flex items-center gap-2">
+                      <Shimmer className="h-4 w-4 rounded" />
+                      <Shimmer className="h-4 w-32 rounded" />
+                    </div>
+
+                    <Shimmer className="h-3 w-24 rounded" />
+
+                    <div className="flex items-center gap-2">
+                      <Shimmer className="h-4 w-4 rounded" />
+                      <Shimmer className="h-4 w-40 rounded" />
+                    </div>
+
+                    <Shimmer className="h-4 w-24 rounded" />
+
+                    <div className="flex items-center gap-2">
+                      <Shimmer className="h-5 w-20 rounded-full" />
+                      <Shimmer className="h-5 w-20 rounded-full" />
+                    </div>
+
+                    <div className="flex items-center gap-2">
+                      <Shimmer className="h-4 w-4 rounded" />
+                      <Shimmer className="h-4 w-28 rounded" />
+                    </div>
+                  </div>
+
+                  <Shimmer className="h-9 w-full rounded-lg" />
                 </CardContent>
               </Card>
             ))}
@@ -387,20 +415,9 @@ export default function MyAssetsPage() {
           description={`Assets assigned to ${user.name} • ${assets.length} items`}
         >
           <Button
-            variant="ghost"
+            variant="header"
             size="sm"
-            onClick={fetchMyAssets}
-            disabled={loading}
-            className="flex items-center gap-2"
-          >
-            <RefreshCw className={`h-4 w-4 ${loading ? 'animate-spin' : ''}`} />
-            Refresh
-          </Button>
-          <Button
-            size="sm"
-            variant="outline"
             onClick={() => navigate('/profile?tab=documents')}
-            className="border-red-200 text-red-600 hover:bg-red-50"
             aria-label="View My Accountability Forms"
           >
             <FileText className="mr-2 h-4 w-4" />

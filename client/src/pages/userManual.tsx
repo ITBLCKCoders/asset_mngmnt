@@ -2,7 +2,6 @@ import { useState, useMemo } from 'react';
 import { Button } from '@/components/ui/button';
 import {
   BookOpen,
-  RefreshCw,
   CheckCircle2,
   ChevronLeft,
   ChevronRight,
@@ -549,9 +548,7 @@ const DIGITAL_SIGNATURE_CONTENT = (
         <strong>Edit Profile</strong>.
       </li>
       <li>
-        Choose <strong>Type Initials</strong> to enter your initials as text
-        (e.g. J.D.), or <strong>Draw Initials</strong> to hand-draw them on the
-        canvas.
+        Use the drawing canvas to hand-draw your initials.
       </li>
       <li>
         Click <strong>Save</strong>. A consent dialog will appear — read and
@@ -1513,15 +1510,6 @@ export default function UserManual() {
           title="User Manual"
           description="Asset Management System - Complete Guide"
         >
-          <Button
-            variant="ghost"
-            size="sm"
-            onClick={() => window.location.reload()}
-            className="flex items-center gap-2"
-          >
-            <RefreshCw className="h-4 w-4" />
-            Refresh
-          </Button>
         </PageHeader>
 
         <div className="flex flex-col gap-6 xl:flex-row">

@@ -2,7 +2,7 @@
 
 import { useState, useMemo, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Package, X, Check, ArrowLeft, Trash2, RefreshCw, Crown } from 'lucide-react';
+import { Package, X, Check, ArrowLeft, Trash2, Crown } from 'lucide-react';
 import {
   Card,
   CardContent,
@@ -25,12 +25,23 @@ import { toast } from 'sonner';
 import { useAssetsData } from './assets-list/useAssetsData';
 import { createLogger } from '@/lib/logger';
 import { useCompanyContext } from '@/context/CompanyContext';
+import { useUserPermissions } from '@/hooks/useUserPermissions';
+import { useCurrentUser } from '@/hooks/useCurrentUser';
+import { Tabs, TabsList, TabsTrigger, segmentTabsListClassName, segmentTabsTriggerClassName } from '@/components/ui/tabs';
 
 const logger = createLogger('AssetBuilder');
 
 export default function AssetBuilderPage() {
   const navigate = useNavigate();
   const { activeCompany } = useCompanyContext();
+  const { hasPermission, roleCustodian } = useUserPermissions();
+  const { user: currentUser } = useCurrentUser();
+
+  const isSuperAdmin = currentUser?.role?.name?.toLowerCase() === 'super admin';
+  const isAdmin = currentUser?.role?.name?.toLowerCase() === 'admin';
+  const isOverallManager = roleCustodian?.managerRole === 'overallManager';
+  const showScopeTabs = isSuperAdmin || isAdmin || isOverallManager;
+  const [scope, setScope] = useState<'it' | 'admin'>('it');
   const [builderName, setBuilderName] = useState('');
   const [builderDescription, setBuilderDescription] = useState('');
   const [selectedAssetIds, setSelectedAssetIds] = useState<Set<string>>(
@@ -53,12 +64,15 @@ export default function AssetBuilderPage() {
     []
   );
 
-  const { assets, loading } = useAssetsData(activeCompany?.id);
+  const { assets, loading } = useAssetsData(activeCompany?.id, showScopeTabs ? scope : null);
 
   useEffect(() => {
     const fetchGroupedAssets = async () => {
       try {
-        const response = await api.get('/asset-builders', {
+        const builderUrl = showScopeTabs
+          ? `/asset-builders?scope=${scope}`
+          : '/asset-builders';
+        const response = await api.get(builderUrl, {
           headers: {
             'Cache-Control': 'no-cache',
             Pragma: 'no-cache',
@@ -406,15 +420,6 @@ export default function AssetBuilderPage() {
           >
             <ArrowLeft className="h-4 w-4" />
             Back
-          </Button>
-          <Button
-            variant="ghost"
-            size="sm"
-            onClick={() => window.location.reload()}
-            className="flex items-center gap-2"
-          >
-            <RefreshCw className="h-4 w-4" />
-            Refresh
           </Button>
         </PageHeader>
 

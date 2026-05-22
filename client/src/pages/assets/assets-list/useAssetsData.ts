@@ -44,6 +44,8 @@ interface ApiAsset {
   last_maintenance_date?: string;
   next_maintenance_date?: string;
   status?: string;
+  transferred_out?: boolean;
+  transferred_to_company_name?: string | null;
   created_at: string;
   created_by?: string;
   created_by_name?: string;
@@ -126,7 +128,7 @@ interface Company {
   is_main?: boolean;
 }
 
-export const useAssetsData = (companyFilter?: string | null) => {
+export const useAssetsData = (companyFilter?: string | null, scope?: string | null) => {
   const [assets, setAssets] = useState<Asset[]>([]);
   const [loading, setLoading] = useState(true);
   const [meta, setMeta] = useState<{
@@ -140,8 +142,18 @@ export const useAssetsData = (companyFilter?: string | null) => {
     try {
       setLoading(true);
       let url = '/assets';
+      const params = new URLSearchParams();
       if (companyFilter) {
-        url += `?companyId=${encodeURIComponent(companyFilter)}`;
+        params.append('companyId', companyFilter);
+      }
+      if (scope) {
+        params.append('scope', scope);
+      }
+      // Add cache-busting parameter
+      params.append('_t', Date.now().toString());
+      const queryString = params.toString();
+      if (queryString) {
+        url += `?${queryString}`;
       }
       const response = await api.get<{
         assets: ApiAsset[];
@@ -181,17 +193,15 @@ export const useAssetsData = (companyFilter?: string | null) => {
           image: asset.image_url || '',
           description: asset.description || '',
           category: asset.category_name || asset.category_id || '',
+          categoryId: asset.category_id || '',
           type: asset.type_name || asset.type_id || '',
+          typeId: asset.type_id || '',
           serialNo: asset.serial || '',
           modelNo: asset.model || '',
           brand: asset.brand || '',
-          status:
-            (asset.status === 'In Use'
-              ? 'Assigned'
-              : (asset.status as
-                  | 'Available'
-                  | 'Assigned'
-                  | 'In Maintenance')) || 'Available',
+          status: asset.status === 'In Use' ? 'Assigned' : asset.status || 'Available',
+          transferred_out: Boolean(asset.transferred_out),
+          transferred_to_company_name: asset.transferred_to_company_name ?? null,
           assignedTo: asset.currentAssignment?.user?.name || '',
           department:
             asset.currentAssignment?.department ||
@@ -299,7 +309,7 @@ export const useAssetsData = (companyFilter?: string | null) => {
 
   useEffect(() => {
     fetchAssets();
-  }, [companyFilter]);
+  }, [companyFilter, scope]);
 
   useEffect(() => {
     const handleAssetsUpdate = () => {

@@ -3,7 +3,11 @@ import { pool } from '../db.js';
 import type { AuthRequest } from '../middleware/authenticate.js';
 import logger from '../logger.js';
 import { createAuditLog } from '../utils/audit.js';
-import { getAssetScope } from '../utils/assetScope.js';
+import { getAssetScope, getDepartmentIdsForScope } from '../utils/assetScope.js';
+import {
+  getTransferredOutBuildersForCompany,
+  setAssetBuilderOriginatingCompany,
+} from '../utils/companyTransferVisibility.js';
 
 export async function createAssetBuilderHandler(
   req: AuthRequest,
@@ -71,6 +75,12 @@ export async function createAssetBuilderHandler(
     )) as any[];
 
     const builder = builderRows[0][0];
+
+    await setAssetBuilderOriginatingCompany(
+      pool,
+      String(builder.builderID),
+      companyId ?? builder.company_id ?? null
+    );
 
     // Create asset builder items using the actual assetIDs
     // First item or parentAssetId becomes the parent
@@ -165,16 +175,38 @@ export async function getAssetBuildersHandler(req: AuthRequest, res: Response) {
     const userId = req.user!.userID;
     logger.info(`Getting asset builders for user: ${userId}`);
 
+    // Accept optional scope query param for IT/Admin tab switching
+    const scopeParam = req.query.scope as string | undefined;
+    const scopeOverride =
+      scopeParam === 'it' || scopeParam === 'admin' ? scopeParam : undefined;
+
     // Get asset scope (company + optional department-based filtering)
-    const { companyId, departmentIds } = await getAssetScope(pool, userId);
+    const { companyId, departmentIds: scopeDeptIds, isSuperAdmin } = await getAssetScope(pool, userId);
 
     logger.info(`User company ID from asset scope: ${companyId}`, {
-      departmentIdsCount: departmentIds?.length ?? 0,
+      departmentIdsCount: scopeDeptIds?.length ?? 0,
     });
 
     if (!companyId) {
       logger.warn(`User ${userId} has no company_id in scope`);
       return res.json({ builders: [] });
+    }
+
+    let departmentIds = scopeDeptIds;
+
+    // For Super Admin, Admin, and overallManager: apply scope override if provided
+    if (scopeOverride) {
+      const [userRows] = (await pool.execute(
+        `SELECT r.manager_role FROM users u
+         LEFT JOIN asset_mngmnt_roles r ON u.role_id = r.roleID AND r.deleted_at IS NULL
+         WHERE u.userID = ?`,
+        [userId]
+      )) as any[];
+      const managerRole = String(userRows?.[0]?.manager_role ?? '').trim();
+      const isAdmin = String(userRows?.[0]?.role_name ?? '').trim().toLowerCase() === 'admin';
+      if (isSuperAdmin || isAdmin || managerRole === 'overallManager') {
+        departmentIds = await getDepartmentIdsForScope(pool, scopeOverride, companyId);
+      }
     }
 
     // Get asset builders for the company using stored procedure
@@ -186,6 +218,17 @@ export async function getAssetBuildersHandler(req: AuthRequest, res: Response) {
     let builderRows =
       (Array.isArray(builderResult?.[0]) ? builderResult[0] : builderResult) ??
       [];
+
+    // Add transferred-out builders to the list
+    const transferredOutBuilders = await getTransferredOutBuildersForCompany(
+      pool,
+      companyId
+    );
+    const currentBuilderIds = new Set(builderRows.map((b: any) => String(b.builderID)));
+    builderRows = [
+      ...builderRows,
+      ...transferredOutBuilders.filter((b: any) => !currentBuilderIds.has(String(b.builderID))),
+    ];
 
     logger.info(
       `Found ${builderRows.length} asset builders for company ${companyId} before loading items`
@@ -273,6 +316,9 @@ export async function getAssetBuildersHandler(req: AuthRequest, res: Response) {
         const allowedDeptSet = new Set(departmentIds.map(String));
 
         builderRows = builderRows.filter(builder => {
+          if (builder.transferred_out === true) {
+            return true;
+          }
           if (!Array.isArray(builder.items) || builder.items.length === 0) {
             return false;
           }

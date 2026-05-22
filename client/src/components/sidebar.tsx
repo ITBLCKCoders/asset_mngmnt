@@ -658,7 +658,8 @@ export default function Sidebar({ onLogout }: SidebarProps) {
                 hasPermission('Transfer Request', 'view') ||
                 hasPermission('Asset Disposal', 'view') ||
                 hasPermission('Asset Borrowing', 'view') ||
-                hasPermission('Borrow Request Management', 'view')) && (
+                hasPermission('Borrow Request Management', 'view') ||
+                hasPermission('Gate Pass', 'view')) && (
                 <li>
                   <SidebarHoverItem
                     active={
@@ -1047,6 +1048,28 @@ export default function Sidebar({ onLogout }: SidebarProps) {
                           >
                             <HandHelping className="h-4 w-4 flex-shrink-0" />
                             <span>Borrow History</span>
+                          </button>
+                        </SidebarHoverItem>
+                      )}
+                      {hasPermission('Reports', 'view') && (
+                        <SidebarHoverItem
+                          active={
+                            location.pathname === '/reports' &&
+                            reportSection === 'finance'
+                          }
+                        >
+                          <button
+                            onClick={() => navigate('/reports?section=finance')}
+                            className={cn(
+                              'flex items-center gap-3 px-3 py-2 rounded-lg text-sm w-full transition-all duration-200',
+                              location.pathname === '/reports' &&
+                                reportSection === 'finance'
+                                ? 'bg-white/15 text-white font-medium'
+                                : 'text-white/70 hover:bg-white/10 hover:text-white'
+                            )}
+                          >
+                            <BarChart3 className="h-4 w-4 flex-shrink-0" />
+                            <span>Finance Reports</span>
                           </button>
                         </SidebarHoverItem>
                       )}

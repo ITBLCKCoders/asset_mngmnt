@@ -1,9 +1,10 @@
 'use client';
 
-import { useEffect, useState, useMemo } from 'react';
+import { useEffect, useState, useMemo, useRef, useCallback } from 'react';
 import {
   Package,
   Boxes,
+  Layers,
   User,
   MapPin,
   Building,
@@ -19,16 +20,16 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { PageHeader } from '@/components/common/PageHeader';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
-import { useCompanyContext } from '@/context/CompanyContext';
 import { Input } from '@/components/ui/input';
+import { Checkbox } from '@/components/ui/checkbox';
 import { Shimmer } from '@/components/ui/shimmer';
-import { useDelayedLoading } from '@/hooks/useDelayedLoading';
 import { api } from '@/lib/api';
 import { toast } from 'sonner';
 import { useCurrentUser } from '@/hooks/useCurrentUser';
 import { useUserPermissions } from '@/hooks/useUserPermissions';
+import { useCompanyContext } from '@/context/CompanyContext';
 import { createLogger } from '@/lib/logger';
-import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
+import { Tabs, TabsContent, TabsList, TabsTrigger, segmentTabsListClassName, segmentTabsTriggerClassName } from '@/components/ui/tabs';
 import { AssetSelectionPanel } from './components/AssetSelectionPanel';
 import { AssignmentDetailsPanel } from './components/AssignmentDetailsPanel';
 import {
@@ -36,8 +37,15 @@ import {
   type AssetAssignment,
 } from './components/AssignedAssetsTable';
 import { ConfirmationModal } from './components/ConfirmationModal';
-import { AssetChecklistDialog } from './components/AssetChecklistDialog';
-import { hasComputerTypeAssets, isComputerTypeAsset } from '@/utils/assetTypeDetection';
+import {
+  AssetChecklistDialog,
+  type AssetChecklistSubmitPayload,
+} from './components/AssetChecklistDialog';
+import {
+  filterComputerTypeAssets,
+  hasComputerTypeAssets,
+} from '@/utils/assetTypeDetection';
+import type { AssetChecklistItemData } from '../../../../../shared/types/dtos/asset.dtos';
 
 const logger = createLogger('AssetsIssuance');
 
@@ -107,15 +115,50 @@ export default function AssetsAssignment() {
   const [userSearchTerm, setUserSearchTerm] = useState('');
   const [confirmModalOpen, setConfirmModalOpen] = useState(false);
   const [checklistDialogOpen, setChecklistDialogOpen] = useState(false);
-  const [pendingAssignmentData, setPendingAssignmentData] = useState<any>(null);
+  const [checklistStepIndex, setChecklistStepIndex] = useState(0);
+  type PendingChecklistEntry = {
+    assetId: string;
+    checklistData: AssetChecklistItemData;
+    typeOnboarding: boolean;
+    typeOffboarding: boolean;
+    receivedBy: string;
+    remarks: string;
+  };
+  const [pendingChecklists, setPendingChecklists] = useState<
+    PendingChecklistEntry[]
+  >([]);
+  const pendingChecklistsRef = useRef<PendingChecklistEntry[]>([]);
+  /** When true, closing the checklist dialog must not wipe the queued checklists */
+  const checklistCloseAfterSubmitRef = useRef(false);
+
+  const syncPendingChecklists = (next: PendingChecklistEntry[]) => {
+    pendingChecklistsRef.current = next;
+    setPendingChecklists(next);
+  };
+
+  const computerAssetsForChecklist = useMemo(() => {
+    const selected = assets.filter(a => selectedAssets.includes(a.id));
+    return filterComputerTypeAssets(selected);
+  }, [assets, selectedAssets]);
   const [assetBuilders, setAssetBuilders] = useState<any[]>([]);
   const [buildersLoading, setBuildersLoading] = useState(false);
+  const [intangibleAssets, setIntangibleAssets] = useState<any[]>([]);
+  const [intangibleAssetsLoading, setIntangibleAssetsLoading] = useState(false);
   const [groupedAssetIds, setGroupedAssetIds] = useState<Set<string>>(
     new Set()
   );
   const [buildersPage, setBuildersPage] = useState(1);
   const buildersPerPage = 9; // 3x3 grid
-  const displayLoading = useDelayedLoading(loading, 2000);
+  const [loadingMoreBuilders, setLoadingMoreBuilders] = useState(false);
+  const sentinelRef = useRef<HTMLDivElement>(null);
+  const [activeTab, setActiveTab] = useState('select-assets');
+  const [tabLoading, setTabLoading] = useState(false);
+  const displayLoading = loading;
+
+  const isSuperAdmin = currentUser?.role?.name?.toLowerCase() === 'super admin';
+  const isAdmin = currentUser?.role?.name?.toLowerCase() === 'admin';
+  const showScopeTabs = isSuperAdmin || isAdmin;
+  const [scope, setScope] = useState<'it' | 'admin'>('it');
 
   const fetchAssets = async () => {
     try {
@@ -134,6 +177,9 @@ export default function AssetsAssignment() {
       queryParams.append('limit', '-1');
       if (companyId) {
         queryParams.append('companyId', companyId);
+      }
+      if (showScopeTabs) {
+        queryParams.append('scope', scope);
       }
       const url = `/assets?${queryParams.toString()}`;
       const response = await api.get(url);
@@ -210,7 +256,10 @@ export default function AssetsAssignment() {
     try {
       setBuildersLoading(true);
       logger.debug('Fetching asset builders...');
-      const response = await api.get('/asset-builders', {
+      const builderUrl = showScopeTabs
+        ? `/asset-builders?scope=${scope}`
+        : '/asset-builders';
+      const response = await api.get(builderUrl, {
         headers: {
           'Cache-Control': 'no-cache',
           Pragma: 'no-cache',
@@ -237,23 +286,33 @@ export default function AssetsAssignment() {
         setAssetBuilders(response.builders);
       } else if (response && Object.keys(response).length === 0) {
         // 304 Not Modified or empty response, keep existing data
-        logger.debug(
-          'Received empty response for grouped assets, keeping existing'
-        );
-        setGroupedAssetIds(new Set());
-        setAssetBuilders([]);
       } else {
-        logger.warn('Invalid response structure for asset builders');
-        setGroupedAssetIds(new Set());
         setAssetBuilders([]);
+        setGroupedAssetIds(new Set());
       }
     } catch (error) {
+      logger.error('Failed to fetch asset builders', error);
       console.error('Failed to fetch asset builders:', error);
       // Keep empty set if API fails
       setGroupedAssetIds(new Set());
       setAssetBuilders([]);
     } finally {
       setBuildersLoading(false);
+    }
+  };
+
+  const fetchIntangibleAssets = async () => {
+    try {
+      setIntangibleAssetsLoading(true);
+      const response = await api.get('/intangible-assets');
+      // Filter to show only available intangible assets (not assigned)
+      const availableAssets = (response || []).filter((asset: any) => asset.status === 'available');
+      setIntangibleAssets(availableAssets);
+    } catch (error) {
+      console.error('Failed to fetch intangible assets:', error);
+      setIntangibleAssets([]);
+    } finally {
+      setIntangibleAssetsLoading(false);
     }
   };
 
@@ -267,11 +326,17 @@ export default function AssetsAssignment() {
         fetchUsers(),
         fetchAssignments(),
         fetchAssetBuilders(),
+        fetchIntangibleAssets(),
       ]);
       setLoading(false);
     };
     fetchData();
-  }, [activeCompany?.id]);
+  }, [activeCompany?.id, scope]);
+
+  useEffect(() => {
+    if (!showScopeTabs) return;
+    setSelectedAssets([]);
+  }, [scope, showScopeTabs]);
 
   // Reset selections based on hierarchical dependencies
   useEffect(() => {
@@ -342,30 +407,46 @@ export default function AssetsAssignment() {
     const hasComputerAssets = hasComputerTypeAssets(assets, selectedAssets);
 
     if (hasComputerAssets) {
-      // Open checklist dialog for computer-type assets
+      setChecklistStepIndex(0);
+      syncPendingChecklists([]);
       setChecklistDialogOpen(true);
     } else {
-      // Proceed directly to confirmation modal for non-computer assets
       setConfirmModalOpen(true);
     }
   };
 
-  const handleChecklistSubmit = async (
-    checklistData: any,
-    typeOnboarding: boolean,
-    typeOffboarding: boolean,
-    receivedBy: string,
-    remarks: string
-  ) => {
-    // Save checklist data (will be saved after assignment is created)
-    setPendingAssignmentData({
-      checklistData,
-      typeOnboarding,
-      typeOffboarding,
-      receivedBy,
-      remarks,
-    });
+  const buildPendingEntry = (
+    payload: AssetChecklistSubmitPayload,
+    assetId: string
+  ): PendingChecklistEntry => ({
+    assetId,
+    checklistData: payload.checklistData,
+    typeOnboarding: payload.typeOnboarding,
+    typeOffboarding: payload.typeOffboarding,
+    receivedBy: payload.receivedBy,
+    remarks: payload.remarks,
+  });
+
+  const handleChecklistNext = async (payload: AssetChecklistSubmitPayload) => {
+    const currentAsset = computerAssetsForChecklist[checklistStepIndex];
+    if (!currentAsset) return;
+    syncPendingChecklists([
+      ...pendingChecklistsRef.current,
+      buildPendingEntry(payload, currentAsset.id),
+    ]);
+    setChecklistStepIndex(prev => prev + 1);
+  };
+
+  const handleChecklistFinalSubmit = async (payload: AssetChecklistSubmitPayload) => {
+    const currentAsset = computerAssetsForChecklist[checklistStepIndex];
+    if (!currentAsset) return;
+    syncPendingChecklists([
+      ...pendingChecklistsRef.current,
+      buildPendingEntry(payload, currentAsset.id),
+    ]);
+    checklistCloseAfterSubmitRef.current = true;
     setChecklistDialogOpen(false);
+    setChecklistStepIndex(0);
     setConfirmModalOpen(true);
   };
 
@@ -387,21 +468,61 @@ export default function AssetsAssignment() {
 
     setAssigning(true);
     try {
-      // Send all selected assets in a single API call to create one assignment with multiple assets
-      const assignmentData = {
-        assetId: selectedAssets, // Array of asset IDs
-        userId: selectedUser,
-        departmentId: selectedDepartment || undefined,
-        locationId: selectedLocation || undefined,
-        locationRoomId: selectedRoom || undefined,
-        assignmentNotes: `Assigned via asset issuance`,
-        signAsIssuer: signAsIssuer,
-        issuerSignature: signAsIssuer ? currentUser?.digitalSignature || null : null,
-        signITCopy: signITCopy,
-        itCopySignature: signITCopy ? currentUser?.digitalSignature || null : null,
-      };
+      // Separate tangible and intangible assets
+      const tangibleAssets = selectedAssets.filter(id => !intangibleAssets.some(ia => ia.id === id));
+      const selectedIntangibleAssets = selectedAssets.filter(id => intangibleAssets.some(ia => ia.id === id));
 
-      const assignmentResponse = await api.post('/asset-assignments', assignmentData);
+      let assignmentResponse: any = null;
+
+      // Handle tangible assets assignment
+      if (tangibleAssets.length > 0) {
+        const assignmentData = {
+          assetId: tangibleAssets, // Array of tangible asset IDs
+          userId: selectedUser,
+          departmentId: selectedDepartment || undefined,
+          locationId: selectedLocation || undefined,
+          locationRoomId: selectedRoom || undefined,
+          assignmentNotes: `Assigned via asset issuance`,
+          signAsIssuer: signAsIssuer,
+          issuerSignature: signAsIssuer ? currentUser?.digitalSignature || null : null,
+          signITCopy: signITCopy,
+          itCopySignature: signITCopy ? currentUser?.digitalSignature || null : null,
+        };
+
+        assignmentResponse = await api.post('/asset-assignments', assignmentData);
+      }
+
+      // Handle intangible assets assignment
+      if (selectedIntangibleAssets.length > 0 && assignmentResponse) {
+        // Use the assignment ID from the tangible assets assignment
+        const assignmentId = assignmentResponse.assignments?.[0]?.assignmentID;
+        
+        for (const intangibleAssetId of selectedIntangibleAssets) {
+          try {
+            await api.post(`/intangible-assets/${intangibleAssetId}/assign`, {
+              assignedTo: selectedUser,
+              assignmentId: assignmentId,
+            });
+          } catch (error) {
+            console.error('Failed to assign intangible asset:', error);
+            toast.error(`Failed to assign intangible asset ${intangibleAssetId}`);
+          }
+        }
+      } else if (selectedIntangibleAssets.length > 0 && !assignmentResponse) {
+        // If only intangible assets are selected, create a simple assignment ID
+        const assignmentId = crypto.randomUUID();
+        for (const intangibleAssetId of selectedIntangibleAssets) {
+          try {
+            await api.post(`/intangible-assets/${intangibleAssetId}/assign`, {
+              assignedTo: selectedUser,
+              assignmentId: assignmentId,
+            });
+          } catch (error) {
+            console.error('Failed to assign intangible asset:', error);
+            toast.error(`Failed to assign intangible asset ${intangibleAssetId}`);
+          }
+        }
+      }
 
       // Update builders if any are selected - DO NOT REMOVE ASSETS FROM BUILDERS
       if (selectedBuilders.length > 0) {
@@ -421,26 +542,37 @@ export default function AssetsAssignment() {
         }
       }
 
-      // Save checklist data if it exists (for computer-type assets)
-      if (pendingAssignmentData && assignmentResponse.assignments && assignmentResponse.assignments.length > 0) {
-        const checklistAsset = assets.find(
-          asset => selectedAssets.includes(asset.id) && isComputerTypeAsset(asset)
+      // Save one checklist per computer asset assignment (use ref for latest queue)
+      const checklistQueue = pendingChecklistsRef.current;
+      if (
+        checklistQueue.length > 0 &&
+        assignmentResponse?.assignments?.length > 0
+      ) {
+        const assigneeUser = users.find(u => u.userID === selectedUser);
+        const assigneeName = assigneeUser
+          ? `${assigneeUser.first_name} ${assigneeUser.last_name}`
+          : '';
+        const department = departments.find(
+          d => d.departmentID === selectedDepartment
         );
-        const checklistAssignment =
-          assignmentResponse.assignments.find(
-            (assignment: any) =>
-              assignment.asset_code === checklistAsset?.id ||
-              assignment.asset_id === checklistAsset?.id
-          ) || assignmentResponse.assignments[0];
-        const assignmentId = checklistAssignment?.assignmentID;
-        if (assignmentId) {
-          try {
-            const assigneeUser = users.find(u => u.userID === selectedUser);
-            const assigneeName = assigneeUser
-              ? `${assigneeUser.first_name} ${assigneeUser.last_name}`
-              : '';
-            const department = departments.find(d => d.departmentID === selectedDepartment);
 
+        let savedCount = 0;
+        for (const pending of checklistQueue) {
+          const checklistAssignment = assignmentResponse.assignments.find(
+            (assignment: { assignmentID: string; asset_id?: string; asset_code?: string }) =>
+              assignment.asset_id === pending.assetId ||
+              assignment.asset_code === pending.assetId
+          );
+          const assignmentId = checklistAssignment?.assignmentID;
+          if (!assignmentId) {
+            console.error(
+              'No assignment found for checklist asset:',
+              pending.assetId
+            );
+            toast.error('Failed to save asset checklist: assignment not found');
+            continue;
+          }
+          try {
             await api.post('/asset-assignments/checklist', {
               assignmentId,
               employeeId: selectedUser,
@@ -448,26 +580,41 @@ export default function AssetsAssignment() {
               employeeDesignation: assigneeUser?.position || null,
               employeeDepartment: department?.name || null,
               employeeCompany: assigneeUser?.company?.name || null,
-              typeOnboarding: pendingAssignmentData.typeOnboarding,
-              typeOffboarding: pendingAssignmentData.typeOffboarding,
-              receivedBy: pendingAssignmentData.receivedBy,
-              checklistData: pendingAssignmentData.checklistData,
-              remarks: pendingAssignmentData.remarks,
+              typeOnboarding: pending.typeOnboarding,
+              typeOffboarding: pending.typeOffboarding,
+              receivedBy: pending.receivedBy,
+              checklistData: pending.checklistData,
+              remarks: pending.remarks,
             });
+            savedCount += 1;
           } catch (error) {
             console.error('Failed to save checklist:', error);
             toast.error('Failed to save asset checklist');
           }
         }
-        setPendingAssignmentData(null);
+        if (savedCount > 0 && savedCount < checklistQueue.length) {
+          toast.warning(
+            `Saved ${savedCount} of ${checklistQueue.length} asset checklists`
+          );
+        } else if (savedCount === 0 && checklistQueue.length > 0) {
+          toast.error('Asset checklists were not saved');
+        }
+        syncPendingChecklists([]);
+        setChecklistStepIndex(0);
       }
 
       // The server automatically creates one accountability form for all assets
       // No need to create separate accountability forms here
 
-      toast.success(
-        `Assigned ${selectedAssets.length} asset(s) to ${assigneeDisplayName || 'user'}`
-      );
+      const tangibleCount = tangibleAssets.length;
+      const intangibleCount = selectedIntangibleAssets.length;
+      const message = tangibleCount > 0 && intangibleCount > 0
+        ? `Assigned ${tangibleCount} tangible asset(s) and ${intangibleCount} intangible asset(s) to ${assigneeDisplayName || 'user'}`
+        : tangibleCount > 0
+          ? `Assigned ${tangibleCount} tangible asset(s) to ${assigneeDisplayName || 'user'}`
+          : `Assigned ${intangibleCount} intangible asset(s) to ${assigneeDisplayName || 'user'}`;
+
+      toast.success(message);
 
       // Dispatch event to refetch assets in other components
       window.dispatchEvent(new CustomEvent('assetsUpdated'));
@@ -480,10 +627,11 @@ export default function AssetsAssignment() {
       setSelectedRoom('');
       setSelectedUser('');
 
-      // Refresh assets, assignments, and asset builders
+      // Refresh assets, assignments, asset builders, and intangible assets
       await fetchAssets();
       await fetchAssignments();
       await fetchAssetBuilders();
+      await fetchIntangibleAssets();
     } catch (error: unknown) {
       console.error('Failed to assign assets:', error);
       toast.error('Failed to assign assets');
@@ -621,6 +769,12 @@ export default function AssetsAssignment() {
     );
   }, [filteredAssets]);
 
+  const scopedIntangibleAssets = useMemo(() => {
+    if (!showScopeTabs) return intangibleAssets;
+    const targetType = scope === 'it' ? 'IT scope' : 'Admin scope';
+    return intangibleAssets.filter((asset: { type?: string }) => asset.type === targetType);
+  }, [intangibleAssets, showScopeTabs, scope]);
+
   const availableBuilders = useMemo(() => {
     return assetBuilders.filter((builder: any) => {
       return (
@@ -654,6 +808,36 @@ export default function AssetsAssignment() {
   }, [filteredBuilders, buildersPage, buildersPerPage]);
 
   const hasMoreBuilders = filteredBuilders.length > paginatedBuilders.length;
+
+  // Infinite scroll for asset builders
+  useEffect(() => {
+    const observer = new IntersectionObserver(
+      (entries) => {
+        if (entries[0].isIntersecting && hasMoreBuilders && !loadingMoreBuilders && !buildersLoading) {
+          setLoadingMoreBuilders(true);
+          setBuildersPage(prev => prev + 1);
+          setTimeout(() => setLoadingMoreBuilders(false), 500);
+        }
+      },
+      { threshold: 0.1 }
+    );
+
+    const currentSentinel = sentinelRef.current;
+    if (currentSentinel) {
+      observer.observe(currentSentinel);
+    }
+
+    return () => {
+      if (currentSentinel) {
+        observer.unobserve(currentSentinel);
+      }
+    };
+  }, [hasMoreBuilders, loadingMoreBuilders, buildersLoading]);
+
+  // Reset builders page when search term changes
+  useEffect(() => {
+    setBuildersPage(1);
+  }, [builderSearchTerm]);
 
   const selectedBuilders = useMemo(() => {
     return availableBuilders.filter((builder: any) => {
@@ -723,40 +907,116 @@ export default function AssetsAssignment() {
   if (displayLoading) {
     return (
       <div className="min-h-screen">
-        <main className="flex-1 p-6 space-y-6">
-          <Card className="border-0 shadow-sm">
+        <main className="flex-1 p-4 sm:p-6 space-y-6">
+          <Card className="border-0 shadow-md bg-gradient-to-r from-red-600 to-red-800">
             <CardContent className="p-5 sm:p-6">
               <div className="flex items-center gap-4">
-                <Shimmer className="h-14 w-14 rounded-2xl bg-red-100/80" />
+                <Shimmer className="h-14 w-14 rounded-2xl bg-white/20" />
                 <div className="space-y-2">
-                  <Shimmer className="h-8 w-48 rounded bg-red-100/80" />
-                  <Shimmer className="h-4 w-64 rounded bg-red-100/80" />
+                  <Shimmer className="h-8 w-48 rounded bg-white/20" />
+                  <Shimmer className="h-4 w-64 rounded bg-white/20" />
                 </div>
               </div>
             </CardContent>
           </Card>
-          <div className="grid grid-cols-1 xl:grid-cols-3 gap-8">
-            <div className="xl:col-span-2 space-y-4">
-              <Shimmer className="h-10 w-full max-w-md rounded-lg" />
-              <div className="space-y-3">
-                {[1, 2, 3, 4, 5].map(i => (
-                  <div key={i} className="flex gap-3 p-3 border rounded-lg">
-                    <Shimmer className="h-10 w-10 rounded flex-shrink-0" />
-                    <div className="flex-1 space-y-2">
-                      <Shimmer className="h-4 w-3/4 rounded" />
-                      <Shimmer className="h-3 w-1/2 rounded" />
-                    </div>
-                  </div>
-                ))}
-              </div>
+          <div className="grid grid-cols-1 gap-6 xl:grid-cols-3 xl:gap-8">
+            {/* Asset Selection / Asset Built Tabs skeleton */}
+            <div className="xl:col-span-2">
+              <Tabs defaultValue="select-assets" className="w-full">
+                <div className="grid grid-cols-2 gap-2 mb-4 rounded-xl border border-slate-200 bg-slate-100/90 p-1">
+                  <Shimmer className="h-10 w-full rounded-lg bg-red-600" />
+                  <Shimmer className="h-10 w-full rounded-lg" />
+                </div>
+                <div className="mt-4">
+                  <Card className="shadow-xl border-0 bg-white/80 backdrop-blur-sm h-[592px] flex flex-col">
+                    <CardHeader className="pb-4 flex-shrink-0">
+                      <div className="flex flex-wrap items-center gap-3">
+                        <Shimmer className="h-10 w-10 rounded-lg bg-red-100/80" />
+                        <Shimmer className="h-6 w-32 rounded" />
+                        <Shimmer className="h-6 w-16 rounded-full ml-auto" />
+                      </div>
+                      <div className="relative mt-4">
+                        <Shimmer className="h-10 w-full rounded-lg" />
+                      </div>
+                    </CardHeader>
+                    <CardContent className="pt-0 flex-1 flex flex-col overflow-hidden">
+                      <div className="space-y-3 overflow-y-auto flex-1 pr-1">
+                        {[1, 2, 3, 4, 5].map(i => (
+                          <div key={i} className="flex gap-3 p-4 border-2 rounded-xl">
+                            <Shimmer className="h-5 w-5 rounded flex-shrink-0 mt-1" />
+                            <div className="flex-1 space-y-2">
+                              <Shimmer className="h-5 w-3/4 rounded" />
+                              <div className="flex gap-2">
+                                <Shimmer className="h-4 w-20 rounded" />
+                                <Shimmer className="h-4 w-16 rounded" />
+                                <Shimmer className="h-4 w-24 rounded" />
+                              </div>
+                              <div className="flex gap-2">
+                                <Shimmer className="h-6 w-16 rounded-full" />
+                                <Shimmer className="h-6 w-20 rounded-full" />
+                              </div>
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    </CardContent>
+                  </Card>
+                </div>
+              </Tabs>
             </div>
-            <div className="space-y-4">
-              <Shimmer className="h-10 w-full rounded-lg" />
-              <Shimmer className="h-10 w-full rounded-lg" />
-              <Shimmer className="h-24 w-full rounded-lg" />
-              <Shimmer className="h-10 w-32 rounded-lg" />
+            {/* Assignment Details Panel skeleton */}
+            <div className="xl:col-span-1">
+              <Card className="shadow-xl border-0 bg-white/80 backdrop-blur-sm">
+                <CardHeader>
+                  <div className="flex flex-wrap items-center gap-3">
+                    <Shimmer className="h-10 w-10 rounded-lg bg-green-100/80" />
+                    <Shimmer className="h-6 w-40 rounded" />
+                  </div>
+                </CardHeader>
+                <CardContent className="space-y-4">
+                  <Shimmer className="h-10 w-full rounded-lg" />
+                  <Shimmer className="h-10 w-full rounded-lg" />
+                  <Shimmer className="h-10 w-full rounded-lg" />
+                  <Shimmer className="h-10 w-full rounded-lg" />
+                  <Shimmer className="h-24 w-full rounded-lg" />
+                  <Shimmer className="h-10 w-32 rounded-lg" />
+                </CardContent>
+              </Card>
             </div>
           </div>
+          {/* Currently Assigned Assets table skeleton */}
+          <Card className="shadow-xl border-0 bg-white/80 backdrop-blur-sm">
+            <CardHeader>
+              <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
+                <Shimmer className="h-10 w-10 rounded-lg bg-blue-100/80" />
+                <Shimmer className="h-6 w-48 rounded" />
+                <Shimmer className="h-6 w-20 rounded-full sm:ml-auto" />
+              </div>
+            </CardHeader>
+            <CardContent>
+              <div className="space-y-3">
+                {[1, 2, 3, 4, 5].map(i => (
+                <div key={i} className="flex gap-4 p-4 border rounded-lg">
+                  <div className="flex-1 space-y-2">
+                    <Shimmer className="h-4 w-32 rounded" />
+                    <Shimmer className="h-3 w-24 rounded" />
+                  </div>
+                  <div className="flex-1 space-y-2">
+                    <Shimmer className="h-4 w-28 rounded" />
+                    <Shimmer className="h-3 w-20 rounded" />
+                  </div>
+                  <div className="flex-1 space-y-2">
+                    <Shimmer className="h-4 w-28 rounded" />
+                    <Shimmer className="h-3 w-20 rounded" />
+                  </div>
+                  <div className="w-24">
+                    <Shimmer className="h-6 w-20 rounded-full" />
+                  </div>
+                </div>
+                ))}
+              </div>
+            </CardContent>
+          </Card>
         </main>
       </div>
     );
@@ -770,25 +1030,32 @@ export default function AssetsAssignment() {
           title="Assets Assignment"
           description="Issue and assign assets to users"
         >
-          <Button
-            variant="ghost"
-            size="sm"
-            onClick={() => fetchAssets()}
-            className="flex items-center gap-2"
-          >
-            <RefreshCw className="h-4 w-4" />
-            Refresh
-          </Button>
+          {showScopeTabs && (
+            <Tabs
+              value={scope}
+              onValueChange={v => setScope(v as 'it' | 'admin')}
+              className="w-full sm:w-auto"
+            >
+              <TabsList className={segmentTabsListClassName + ' grid grid-cols-2 max-w-full sm:max-w-[280px]'}>
+                <TabsTrigger value="it" className={segmentTabsTriggerClassName}>
+                  IT Asset
+                </TabsTrigger>
+                <TabsTrigger value="admin" className={segmentTabsTriggerClassName}>
+                  Admin Asset
+                </TabsTrigger>
+              </TabsList>
+            </Tabs>
+          )}
         </PageHeader>
 
         <div className="grid grid-cols-1 gap-6 xl:grid-cols-3 xl:gap-8">
           {/* Asset Selection / Asset Built Tabs */}
           <div className="xl:col-span-2">
-            <Tabs defaultValue="select-assets" className="w-full">
-              <TabsList className="grid h-auto w-full grid-cols-1 rounded-xl bg-gray-100 p-1.5 sm:grid-cols-2">
+            <Tabs value={activeTab} onValueChange={(value) => { setActiveTab(value); setTabLoading(true); setTimeout(() => setTabLoading(false), 300); }} className="w-full">
+              <TabsList className={segmentTabsListClassName + ' grid grid-cols-3'}>
                 <TabsTrigger
                   value="select-assets"
-                  className="flex items-center gap-2 px-3 py-2 text-xs sm:text-sm data-[state=active]:bg-red-500 data-[state=active]:text-white data-[state=active]:shadow-sm"
+                  className={segmentTabsTriggerClassName + ' flex items-center gap-2'}
                 >
                   <Package className="h-4 w-4" />
                   Select Assets
@@ -798,12 +1065,22 @@ export default function AssetsAssignment() {
                 </TabsTrigger>
                 <TabsTrigger
                   value="asset-built"
-                  className="flex items-center gap-2 px-3 py-2 text-xs sm:text-sm data-[state=active]:bg-red-500 data-[state=active]:text-white data-[state=active]:shadow-sm"
+                  className={segmentTabsTriggerClassName + ' flex items-center gap-2'}
                 >
                   <Boxes className="h-4 w-4" />
                   Asset Built
                   <Badge variant="secondary" className="ml-1 text-xs">
                     {availableBuilders.length}
+                  </Badge>
+                </TabsTrigger>
+                <TabsTrigger
+                  value="intangible-assets"
+                  className={segmentTabsTriggerClassName + ' flex items-center gap-2'}
+                >
+                  <Layers className="h-4 w-4" />
+                  Intangible Assets
+                  <Badge variant="secondary" className="ml-1 text-xs">
+                    {scopedIntangibleAssets.length}
                   </Badge>
                 </TabsTrigger>
               </TabsList>
@@ -813,7 +1090,7 @@ export default function AssetsAssignment() {
                   assets={availableAssets}
                   selectedAssets={selectedAssets}
                   searchTerm={searchTerm}
-                  loading={loading || buildersLoading}
+                  loading={loading || buildersLoading || tabLoading}
                   hasPermission={hasPermission}
                   onSearchChange={setSearchTerm}
                   onAssetSelection={handleAssetSelection}
@@ -822,8 +1099,8 @@ export default function AssetsAssignment() {
               </TabsContent>
 
               <TabsContent value="asset-built" className="mt-4">
-                <Card className="shadow-xl border-0 bg-white/80 backdrop-blur-sm min-h-[500px]">
-                  <CardHeader className="pb-4">
+                <Card className="shadow-xl border-0 bg-white/80 backdrop-blur-sm h-[592px] flex flex-col">
+                  <CardHeader className="pb-4 flex-shrink-0">
                     <CardTitle className="flex flex-wrap items-center gap-3 text-xl">
                       <div className="p-2 bg-red-100 rounded-lg flex-shrink-0">
                         <Boxes className="h-5 w-5 text-red-600" />
@@ -848,16 +1125,16 @@ export default function AssetsAssignment() {
                       />
                     </div>
                   </CardHeader>
-                  <CardContent className="pt-0">
-                    {buildersLoading ? (
+                  <CardContent className="pt-0 flex-1 flex flex-col overflow-hidden">
+                    {buildersLoading || tabLoading ? (
                       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
                         {Array.from({ length: 6 }).map((_, index) => (
                           <BuilderCardSkeleton key={index} />
                         ))}
                       </div>
                     ) : paginatedBuilders.length > 0 ? (
-                      <div className="space-y-4">
-                        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 max-h-96 overflow-y-auto scrollbar-thin scrollbar-thumb-gray-300 scrollbar-track-gray-100 p-1">
+                      <div className="flex flex-col h-full overflow-hidden">
+                        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 overflow-y-auto flex-1 p-1 scrollbar-thin scrollbar-thumb-gray-300 scrollbar-track-gray-100">
                           {paginatedBuilders.map((builder: any) => {
                             const isAvailable = builder.status === 'Available';
                             const builderAssets =
@@ -952,36 +1229,34 @@ export default function AssetsAssignment() {
                                               Assets in this builder (asset code
                                               · name):
                                             </div>
-                                            <ul className="space-y-1.5 max-h-[8.5rem] overflow-y-auto overflow-x-hidden scrollbar-thin scrollbar-thumb-gray-300 scrollbar-track-gray-100 pl-5 list-disc">
+                                            <div className="space-y-1 max-h-[8.5rem] overflow-y-auto scrollbar-thin scrollbar-thumb-gray-300 scrollbar-track-gray-100">
                                               {builder.items.map(
                                                 (item: any, index: number) => (
-                                                  <li
+                                                  <div
                                                     key={index}
-                                                    className={`flex items-center gap-2 text-xs rounded px-3 py-2 border -ml-1 pl-3 ${
-                                                      item.is_parent ? 'bg-amber-50 border-amber-200' : 'bg-gray-50 border-gray-200'
+                                                    className={`flex items-center gap-2 text-xs rounded-lg px-2 py-1.5 ${
+                                                      item.is_parent ? 'bg-amber-50 border border-amber-200' : 'bg-muted/30'
                                                     }`}
                                                   >
-                                                    <div className="flex items-center gap-2">
-                                                      {item.is_parent && (
-                                                        <Crown className="h-3 w-3 text-amber-600 shrink-0" />
-                                                      )}
-                                                      <span
-                                                        className={`font-mono font-medium shrink-0 ${item.is_parent ? 'text-amber-900' : 'text-gray-900'}`}
-                                                        title="Asset code"
-                                                      >
-                                                        {item.asset_code}
-                                                      </span>
-                                                    </div>
+                                                    {item.is_parent && (
+                                                      <Crown className="h-3 w-3 text-amber-600 shrink-0" />
+                                                    )}
                                                     <span
-                                                      className={`truncate ${item.is_parent ? 'text-amber-700' : 'text-gray-600'}`}
+                                                      className={`font-mono font-medium shrink-0 ${item.is_parent ? 'text-amber-900' : 'text-gray-900'}`}
+                                                      title="Asset code"
+                                                    >
+                                                      {item.asset_code}
+                                                    </span>
+                                                    <span
+                                                      className={`truncate flex-1 min-w-0 ${item.is_parent ? 'text-amber-700' : 'text-gray-600'}`}
                                                       title={item.asset_name}
                                                     >
                                                       {item.asset_name}
                                                     </span>
-                                                  </li>
+                                                  </div>
                                                 )
                                               )}
-                                            </ul>
+                                            </div>
                                           </div>
                                         )}
                                     </div>
@@ -991,16 +1266,9 @@ export default function AssetsAssignment() {
                             );
                           })}
                         </div>
+                        {/* Sentinel element for infinite scroll */}
                         {hasMoreBuilders && (
-                          <div className="flex justify-center pt-4">
-                            <Button
-                              onClick={() => setBuildersPage(prev => prev + 1)}
-                              variant="outline"
-                              className="px-6"
-                            >
-                              Load More Builders
-                            </Button>
-                          </div>
+                          <div ref={sentinelRef} className="flex-shrink-0 h-1" />
                         )}
                       </div>
                     ) : (
@@ -1015,6 +1283,131 @@ export default function AssetsAssignment() {
                           {builderSearchTerm
                             ? 'Try adjusting your search terms or clear the search to see all available builders.'
                             : 'All asset builders have been assigned or are currently unavailable.'}
+                        </p>
+                      </div>
+                    )}
+                  </CardContent>
+                </Card>
+              </TabsContent>
+
+              <TabsContent value="intangible-assets" className="mt-4">
+                <Card className="shadow-xl border-0 bg-white/80 backdrop-blur-sm h-[592px] flex flex-col">
+                  <CardHeader className="pb-4 flex-shrink-0">
+                    <CardTitle className="flex flex-wrap items-center gap-3 text-xl">
+                      <div className="p-2 bg-red-100 rounded-lg flex-shrink-0">
+                        <Layers className="h-5 w-5 text-red-600" />
+                      </div>
+                      <span>Intangible Assets</span>
+                      <Badge variant="secondary" className="w-fit">
+                        {scopedIntangibleAssets.length} available
+                      </Badge>
+                    </CardTitle>
+                  </CardHeader>
+                  <CardContent className="pt-0 flex-1 flex flex-col overflow-hidden">
+                    {intangibleAssetsLoading || tabLoading ? (
+                      <div className="text-center py-12">
+                        <div className="inline-flex items-center justify-center w-20 h-20 rounded-full bg-gradient-to-br from-blue-100 to-blue-200 mb-4">
+                          <Layers className="h-10 w-10 text-blue-600" />
+                        </div>
+                        <h3 className="text-lg font-semibold text-gray-900 mb-2">
+                          Loading intangible assets...
+                        </h3>
+                      </div>
+                    ) : scopedIntangibleAssets.length > 0 ? (
+                      <div className="space-y-3 overflow-y-auto flex-1 pr-1 sm:-mr-6 sm:pr-6 scrollbar-thin scrollbar-thumb-gray-300 scrollbar-track-gray-100">
+                        {scopedIntangibleAssets.map((asset: any) => {
+                          const isSelected = selectedAssets.includes(asset.id);
+                          const typeColor = asset.type === 'IT scope' 
+                            ? 'bg-red-100 text-red-800 border-red-200' 
+                            : 'bg-orange-100 text-orange-800 border-orange-200';
+                          return (
+                            <div
+                              key={asset.id}
+                              className={`group relative p-4 border-2 rounded-xl transition-all duration-200 cursor-pointer ${
+                                isSelected
+                                  ? 'border-red-500 bg-gradient-to-r from-red-50 to-orange-50 shadow-md'
+                                  : 'border-gray-200 bg-white hover:border-red-300 hover:shadow-sm'
+                              }`}
+                              onClick={() => {
+                                if (isSelected) {
+                                  setSelectedAssets(prev => prev.filter(id => id !== asset.id));
+                                } else {
+                                  setSelectedAssets(prev => [...prev, asset.id]);
+                                }
+                              }}
+                            >
+                              <div className="flex items-start gap-3 sm:gap-4">
+                                <div className="flex-shrink-0 mt-1">
+                                  <Checkbox
+                                    id={asset.id}
+                                    checked={isSelected}
+                                    onCheckedChange={(checked: boolean | string) => {
+                                      if (checked) {
+                                        setSelectedAssets(prev => [...prev, asset.id]);
+                                      } else {
+                                        setSelectedAssets(prev => prev.filter(id => id !== asset.id));
+                                      }
+                                    }}
+                                    className="pointer-events-none data-[state=checked]:bg-red-600 data-[state=checked]:border-red-600"
+                                  />
+                                </div>
+
+                                <div className="flex-1 min-w-0">
+                                  <div className="flex items-center justify-between mb-2">
+                                    <div className="flex items-center gap-2 flex-wrap">
+                                      <h3 className="truncate text-base font-bold text-gray-900 sm:text-lg">
+                                        {asset.name}
+                                      </h3>
+                                      <Badge
+                                        variant="outline"
+                                        className={`text-xs font-semibold ${typeColor} px-2.5 py-1`}
+                                      >
+                                        {asset.type}
+                                      </Badge>
+                                      <Badge
+                                        variant="secondary"
+                                        className={`text-xs font-semibold ${
+                                          asset.status === 'available'
+                                            ? 'bg-green-100 text-green-800 border-green-200'
+                                            : 'bg-blue-100 text-blue-800 border-blue-200'
+                                        } px-2.5 py-1`}
+                                      >
+                                        {asset.status}
+                                      </Badge>
+                                    </div>
+                                    <div className="flex items-center gap-2">
+                                      {isSelected && (
+                                        <CheckCircle2 className="h-5 w-5 text-red-600 flex-shrink-0" />
+                                      )}
+                                    </div>
+                                  </div>
+
+                                  <div className="text-sm">
+                                    {asset.description && (
+                                      <p className="text-gray-600 line-clamp-1 mb-1">
+                                        {asset.description}
+                                      </p>
+                                    )}
+                                    {asset.remarks && (
+                                      <p className="text-gray-500 italic truncate">
+                                        {asset.remarks}
+                                      </p>
+                                    )}
+                                  </div>
+                                </div>
+                              </div>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    ) : (
+                      <div className="text-center py-12">
+                        <Layers className="mx-auto h-12 w-12 text-gray-400 mb-4" />
+                        <h3 className="text-lg font-medium text-gray-900 mb-2">
+                          No Available Intangible Assets
+                        </h3>
+                        <p className="text-sm text-gray-500">
+                          All intangible assets have been assigned or are currently unavailable.
                         </p>
                       </div>
                     )}
@@ -1080,14 +1473,32 @@ export default function AssetsAssignment() {
         {/* Asset Checklist Dialog */}
         <AssetChecklistDialog
           isOpen={checklistDialogOpen}
-          onOpenChange={setChecklistDialogOpen}
+          onOpenChange={open => {
+            setChecklistDialogOpen(open);
+            if (!open) {
+              if (checklistCloseAfterSubmitRef.current) {
+                checklistCloseAfterSubmitRef.current = false;
+              } else {
+                setChecklistStepIndex(0);
+                syncPendingChecklists([]);
+              }
+            }
+          }}
+          onCancel={() => {
+            checklistCloseAfterSubmitRef.current = false;
+            setChecklistStepIndex(0);
+            syncPendingChecklists([]);
+          }}
           selectedAssets={selectedAssets}
           assets={assets}
+          computerAssets={computerAssetsForChecklist}
+          currentIndex={checklistStepIndex}
           selectedUser={selectedUser}
           users={users}
           departments={departments}
           currentUserPosition={currentUser?.position || ''}
-          onSubmit={handleChecklistSubmit}
+          onNext={handleChecklistNext}
+          onFinalSubmit={handleChecklistFinalSubmit}
         />
 
       </main>

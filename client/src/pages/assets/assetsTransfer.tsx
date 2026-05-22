@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState, useMemo } from 'react';
+import { useEffect, useState, useMemo, useRef } from 'react';
 import {
   Package,
   Boxes,
@@ -41,7 +41,7 @@ import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
 import { api } from '@/lib/api';
 import { cn } from '@/lib/utils';
-import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
+import { Tabs, TabsContent, TabsList, TabsTrigger, segmentTabsListClassName, segmentTabsTriggerClassName } from '@/components/ui/tabs';
 import { Dialog } from '@/components/ui/dialog';
 import {
   AppDialogFrame,
@@ -54,21 +54,8 @@ import { useCurrentUser } from '@/hooks/useCurrentUser';
 import { useUserPermissions } from '@/hooks/useUserPermissions';
 import { DataTable } from '@/components/ui/dataTable';
 import type { ColumnDef } from '@tanstack/react-table';
-import {
-  generateAccountabilityFormPDF,
-  type AccountabilityForm,
-} from '@/pages/assets/accountability/accountabilityForm';
-import {
-  buildReturnDataForPDFFromBatch,
-  buildTransferDataForPDFFromBatch,
-  type AssetReturnFormBatch,
-  type AssetTransferFormBatch,
-} from '@/pages/profile/profileComponents/tabs/documentsTab';
-import {
-  downloadPDF,
-  generateAssetReturnPDF,
-  generateAssetTransferPDF,
-} from '@/lib/pdfGenerator';
+import { Shimmer } from '@/components/ui/shimmer';
+import SmsOtpDialog from '@/components/auth/SmsOtpDialog';
 
 interface Asset {
   id: string;
@@ -125,6 +112,23 @@ interface User {
   last_name: string;
   department_id: string;
   company: any;
+}
+
+interface CompanyOption {
+  companyID?: string;
+  id?: string;
+  name: string;
+}
+
+interface CompanyTransferAsset {
+  assetId: string;
+  assetCode: string;
+  assetName: string;
+  status: string;
+  categoryName?: string | null;
+  typeName?: string | null;
+  source: 'available' | 'temporary_custody';
+  assignedUser?: { id: string; name: string } | null;
 }
 
 interface AssetAssignment {
@@ -184,7 +188,7 @@ interface TransferHistoryRecord {
 
 export default function AssetsTransfer() {
   const { user: currentUser } = useCurrentUser();
-  const { hasPermission } = useUserPermissions();
+  const { hasPermission, roleCustodian } = useUserPermissions();
   const { activeCompany } = useCompanyContext();
   const [assignments, setAssignments] = useState<AssetAssignment[]>([]);
   const [departments, setDepartments] = useState<Department[]>([]);
@@ -229,23 +233,28 @@ export default function AssetsTransfer() {
   const [expandedBuilderForSelect, setExpandedBuilderForSelect] = useState<
     string | null
   >(null);
-  const [showNextStepsDialog, setShowNextStepsDialog] = useState(false);
-  const [nextStepsAssigneeUserId, setNextStepsAssigneeUserId] = useState<
-    string | null
-  >(null);
-  const [downloadingNextAccountability, setDownloadingNextAccountability] =
-    useState(false);
-  const [downloadingProcessorReturnForm, setDownloadingProcessorReturnForm] =
-    useState(false);
-  const [downloadingProcessorTransferForm, setDownloadingProcessorTransferForm] =
-    useState(false);
-  const [downloadingAllForms, setDownloadingAllForms] = useState(false);
-  const [nextStepsTransferFormId, setNextStepsTransferFormId] = useState<
-    string | null
-  >(null);
-  const [nextStepsReturnFormId, setNextStepsReturnFormId] = useState<
-    string | null
-  >(null);
+  const [activeTab, setActiveTab] = useState('select-assets');
+  const [tabLoading, setTabLoading] = useState(false);
+  const [companies, setCompanies] = useState<CompanyOption[]>([]);
+  const [companyTransferAssets, setCompanyTransferAssets] = useState<
+    CompanyTransferAsset[]
+  >([]);
+  const [companyAssetsLoading, setCompanyAssetsLoading] = useState(false);
+  const [companyTransferSearchTerm, setCompanyTransferSearchTerm] = useState('');
+  const [selectedCompanyAssetIds, setSelectedCompanyAssetIds] = useState<string[]>(
+    []
+  );
+  const [targetCompanyId, setTargetCompanyId] = useState('');
+  const [companyTransferring, setCompanyTransferring] = useState(false);
+  const [companyTransferTab, setCompanyTransferTab] = useState<'asset' | 'built'>('asset');
+  const [smsOtpDialogOpen, setSmsOtpDialogOpen] = useState(false);
+  const pendingTransferActionRef = useRef<(() => Promise<void>) | null>(null);
+
+  const isSuperAdmin = currentUser?.role?.name?.toLowerCase() === 'super admin';
+  const isAdmin = currentUser?.role?.name?.toLowerCase() === 'admin';
+  const isOverallManager = roleCustodian?.managerRole === 'overallManager';
+  const showScopeTabs = isSuperAdmin || isAdmin || isOverallManager;
+  const [scope, setScope] = useState<'it' | 'admin'>('it');
 
   const fetchDepartments = async () => {
     try {
@@ -282,6 +291,35 @@ export default function AssetsTransfer() {
     }
   };
 
+  const fetchCompanies = async () => {
+    try {
+      const response = await api.get('/companies');
+      setCompanies(response.companies || []);
+    } catch (error) {
+      console.error('Failed to fetch companies:', error);
+      setCompanies([]);
+    }
+  };
+
+  const fetchCompanyTransferAssets = async () => {
+    try {
+      setCompanyAssetsLoading(true);
+      const queryParams = new URLSearchParams();
+      if (showScopeTabs) {
+        queryParams.append('scope', scope);
+      }
+      const companyAssetsUrl = queryParams.toString()
+        ? `/asset-transfers/company-assets?${queryParams.toString()}`
+        : '/asset-transfers/company-assets';
+      const response = await api.get(companyAssetsUrl);
+      setCompanyTransferAssets(response.assets || []);
+    } catch (error) {
+      console.error('Failed to fetch company transfer assets:', error);
+      setCompanyTransferAssets([]);
+    } finally {
+      setCompanyAssetsLoading(false);
+    }
+  };
 
   const fetchAssignments = async () => {
     try {
@@ -300,6 +338,9 @@ export default function AssetsTransfer() {
       queryParams.append('limit', '-1');
       if (companyId) {
         queryParams.append('companyId', companyId);
+      }
+      if (showScopeTabs) {
+        queryParams.append('scope', scope);
       }
       const response = await api.get(`/asset-assignments/filtered?${queryParams.toString()}`);
       setAssignments(response.assignments || []);
@@ -326,7 +367,10 @@ export default function AssetsTransfer() {
   const fetchAssetBuilders = async () => {
     try {
       setBuildersLoading(true);
-      const response = await api.get('/asset-builders', {
+      const builderUrl = showScopeTabs
+        ? `/asset-builders?scope=${scope}`
+        : '/asset-builders';
+      const response = await api.get(builderUrl, {
         headers: { 'Cache-Control': 'no-cache', Pragma: 'no-cache' },
       });
       if (response?.builders) {
@@ -349,14 +393,23 @@ export default function AssetsTransfer() {
         fetchDepartments(),
         fetchLocations(),
         fetchUsers(),
+        fetchCompanies(),
         fetchAssignments(),
         fetchAssetBuilders(),
+        fetchCompanyTransferAssets(),
         fetchTransferHistory(),
       ]);
       setLoading(false);
     };
     fetchData();
-  }, [activeCompany?.id]);
+  }, [activeCompany?.id, scope]);
+
+  useEffect(() => {
+    if (!showScopeTabs) return;
+    setSelectedAssignments([]);
+    setSelectedCompanyAssetIds([]);
+    setExpandedBuilderForSelect(null);
+  }, [scope, showScopeTabs]);
 
   const assignedBuilders = useMemo(() => {
     return assetBuilders.filter(
@@ -516,6 +569,95 @@ export default function AssetsTransfer() {
     setNewAssignmentRoom('');
     setNewAssignmentUser('');
     setShowTransferDialog(true);
+  };
+
+  const validateTransferForm = (): boolean => {
+    if (!transferTypeTransfer && !transferTypeOffboarding) {
+      toast.error(
+        'Please select Transfer Type (Transfer or Transfer Offboarding)'
+      );
+      return false;
+    }
+    if (!newAssignmentUser) {
+      toast.error('Please select New Assigned User');
+      return false;
+    }
+    if (!receivedBy) {
+      toast.error('Please select who received the assets');
+      return false;
+    }
+    const hasMissingCondition = assetTransferData.some(item => !item.condition);
+    if (hasMissingCondition) {
+      toast.error('Please select a condition for all selected assets');
+      return false;
+    }
+    if (
+      !verificationTag ||
+      !verificationCondition ||
+      !verificationConfirmSign
+    ) {
+      toast.error('Please complete all verification checkboxes');
+      return false;
+    }
+    return true;
+  };
+
+  const submitTransferRequest = async () => {
+    setTransferring(true);
+    try {
+      const transferType = transferTypeOffboarding
+        ? 'Transfer Offboarding'
+        : 'Transfer';
+      const processDigitalSignature =
+        (currentUser as { digitalSignature?: string | null })?.digitalSignature ??
+        null;
+      const payload: Record<string, unknown> = {
+        assetTransfers: assetTransferData.map(d => ({
+          assignmentId: d.assignmentId,
+          condition: d.condition,
+          notes: d.notes || '',
+          imageUrls: d.imageUrls ?? [],
+        })),
+        transferType,
+        receivedBy,
+        newAssignment: {
+          userId: newAssignmentUser,
+          departmentId: newAssignmentDepartment || null,
+          locationId: newAssignmentLocation || null,
+          roomId: null,
+          roomName: newAssignmentRoom || null,
+        },
+      };
+      if (verificationConfirmSign) {
+        payload.processSignature = {
+          signed_at: new Date().toISOString(),
+          digital_signature: processDigitalSignature || undefined,
+        };
+      }
+      await api.post('/asset-transfers/create-held', payload);
+
+      toast.success(
+        'Transfer has been processed. It will appear in Transfer History below.'
+      );
+      setShowTransferDialog(false);
+      setSelectedAssignments([]);
+      await Promise.all([fetchAssignments(), fetchTransferHistory()]);
+    } catch (err: any) {
+      const data = err?.data ?? err?.response?.data;
+      toast.error(
+        data?.message || data?.error || 'Failed to create held transfer'
+      );
+    } finally {
+      setTransferring(false);
+    }
+  };
+
+  const handleTransferSubmit = () => {
+    if (!validateTransferForm()) return;
+    pendingTransferActionRef.current = async () => {
+      await submitTransferRequest();
+    };
+    setSmsOtpDialogOpen(true);
   };
 
   const toggleTransferAssetExpansion = (assetId: string) => {
@@ -733,83 +875,6 @@ export default function AssetsTransfer() {
     []
   );
 
-  const handleTransferSubmit = async () => {
-    if (!transferTypeTransfer && !transferTypeOffboarding) {
-      toast.error(
-        'Please select Transfer Type (Transfer or Transfer Offboarding)'
-      );
-      return;
-    }
-    if (!newAssignmentUser) {
-      toast.error('Please select New Assigned User');
-      return;
-    }
-    if (!receivedBy) {
-      toast.error('Please select who received the assets');
-      return;
-    }
-    const hasMissingCondition = assetTransferData.some(item => !item.condition);
-    if (hasMissingCondition) {
-      toast.error('Please select a condition for all selected assets');
-      return;
-    }
-    if (
-      !verificationTag ||
-      !verificationCondition ||
-      !verificationConfirmSign
-    ) {
-      toast.error('Please complete all verification checkboxes');
-      return;
-    }
-    setTransferring(true);
-    try {
-      const transferType = transferTypeOffboarding
-        ? 'Transfer Offboarding'
-        : 'Transfer';
-      const payload: Record<string, unknown> = {
-        assetTransfers: assetTransferData.map(d => ({
-          assignmentId: d.assignmentId,
-          condition: d.condition,
-          notes: d.notes || '',
-          imageUrls: d.imageUrls ?? [],
-        })),
-        transferType,
-        receivedBy,
-        newAssignment: {
-          userId: newAssignmentUser,
-          departmentId: newAssignmentDepartment || null,
-          locationId: newAssignmentLocation || null,
-          roomId: null,
-          roomName: newAssignmentRoom || null,
-        },
-      };
-      if (verificationConfirmSign) {
-        payload.processSignature = {
-          signed_at: new Date().toISOString(),
-        };
-      }
-      const res = await api.post('/asset-transfers/create-held', payload);
-
-      toast.success(
-        'Transfer has been processed. It will appear in Transfer History below.'
-      );
-      setShowTransferDialog(false);
-      setNextStepsAssigneeUserId(newAssignmentUser || null);
-      setNextStepsTransferFormId(res?.formID ?? res?.data?.formID ?? null);
-      setNextStepsReturnFormId(res?.returnFormID ?? res?.data?.returnFormID ?? null);
-      setShowNextStepsDialog(true);
-      setSelectedAssignments([]);
-      await Promise.all([fetchAssignments(), fetchTransferHistory()]);
-    } catch (err: any) {
-      const data = err?.data ?? err?.response?.data;
-      toast.error(
-        data?.message || data?.error || 'Failed to create held transfer'
-      );
-    } finally {
-      setTransferring(false);
-    }
-  };
-
   const filteredLocationsForTransfer = (locations || []).filter(
     loc =>
       (!newAssignmentBuilding || loc.building === newAssignmentBuilding) &&
@@ -870,160 +935,6 @@ export default function AssetsTransfer() {
     },
   ];
 
-  const handleDownloadNextAccountability = async () => {
-    if (!nextStepsAssigneeUserId) {
-      toast.error('Unable to resolve transfer receiver for accountability download');
-      return;
-    }
-    try {
-      setDownloadingNextAccountability(true);
-      const listRes = await api.get<{ forms?: AccountabilityForm[] }>(
-        `/accountability-forms?userId=${nextStepsAssigneeUserId}`
-      );
-      const forms = Array.isArray(listRes?.forms) ? listRes.forms : [];
-      const activeForms = forms.filter(
-        f => f.status !== 'Disabled' && f.status !== 'Declined'
-      );
-      if (activeForms.length === 0) {
-        toast.error('No active accountability form found for the receiver');
-        return;
-      }
-      activeForms.sort(
-        (a, b) =>
-          new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
-      );
-      const target = activeForms[0];
-      if (!target?.id) {
-        toast.error('Could not determine accountability form to download');
-        return;
-      }
-      const formRes = await api.get<{ form?: AccountabilityForm }>(
-        `/accountability-forms/${target.id}`
-      );
-      const form = formRes?.form;
-      if (!form) {
-        toast.error('Could not load accountability form details');
-        return;
-      }
-      const pdfBlob = await generateAccountabilityFormPDF(form, currentUser);
-      const fileName = `Asset_Accountability_Form_${form.formNumber || form.id}_${Date.now()}.pdf`;
-      const url = URL.createObjectURL(pdfBlob);
-      const a = document.createElement('a');
-      a.href = url;
-      a.download = fileName;
-      document.body.appendChild(a);
-      a.click();
-      a.remove();
-      URL.revokeObjectURL(url);
-      toast.success('Accountability form downloaded successfully');
-    } catch (error) {
-      console.error('Failed to download accountability form:', error);
-      toast.error('Failed to download accountability form');
-    } finally {
-      setDownloadingNextAccountability(false);
-    }
-  };
-
-  const handleDownloadProcessorReturnForm = async () => {
-    const processorId = currentUser?.id;
-    if (!processorId) {
-      toast.error('Unable to resolve processor account for return form download');
-      return;
-    }
-    try {
-      setDownloadingProcessorReturnForm(true);
-      const response = await api.get<{ assetReturnForms?: AssetReturnFormBatch[] }>(
-        '/asset-returns'
-      );
-      const batches = Array.isArray(response?.assetReturnForms)
-        ? response.assetReturnForms
-        : [];
-      if (batches.length === 0) {
-        toast.error('No return forms found for processor');
-        return;
-      }
-      const exact = nextStepsReturnFormId
-        ? batches.find(b => b.formID === nextStepsReturnFormId)
-        : null;
-      const sorted = [...batches].sort(
-        (a, b) =>
-          new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
-      );
-      const target = exact ?? sorted[0];
-      const data = buildReturnDataForPDFFromBatch(target);
-      if (!data) {
-        toast.error('Cannot generate PDF for the selected return form');
-        return;
-      }
-      const blob = await generateAssetReturnPDF(data);
-      const fileName = `return-form-${target.form_number ?? 'processor'}.pdf`;
-      downloadPDF(blob, fileName);
-      toast.success('Return form downloaded successfully');
-    } catch (error) {
-      console.error('Failed to download processor return form:', error);
-      toast.error('Failed to download processor return form');
-    } finally {
-      setDownloadingProcessorReturnForm(false);
-    }
-  };
-
-  const handleDownloadProcessorTransferForm = async () => {
-    const processorId = currentUser?.id;
-    if (!processorId) {
-      toast.error('Unable to resolve processor account for transfer form download');
-      return;
-    }
-    try {
-      setDownloadingProcessorTransferForm(true);
-      const response = await api.get<{
-        assetTransferForms?: AssetTransferFormBatch[];
-        data?: { assetTransferForms?: AssetTransferFormBatch[] };
-      }>(`/asset-transfers/user/${processorId}`);
-      const batches =
-        response?.assetTransferForms ?? response?.data?.assetTransferForms ?? [];
-      if (!Array.isArray(batches) || batches.length === 0) {
-        toast.error('No transfer forms found for processor');
-        return;
-      }
-      const exact = nextStepsTransferFormId
-        ? batches.find(b => b.formID === nextStepsTransferFormId)
-        : null;
-      const sorted = [...batches].sort(
-        (a, b) =>
-          new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
-      );
-      const target = exact ?? sorted[0];
-      const data = buildTransferDataForPDFFromBatch(target);
-      if (!data) {
-        toast.error('Cannot generate PDF for the selected transfer form');
-        return;
-      }
-      const blob = await generateAssetTransferPDF(data);
-      const fileName = target.form_number
-        ? `Asset_Transfer_Form_${target.form_number}_${Date.now()}.pdf`
-        : `Asset_Transfer_Form_${Date.now()}.pdf`;
-      downloadPDF(blob, fileName);
-      toast.success('Transfer form downloaded successfully');
-    } catch (error) {
-      console.error('Failed to download processor transfer form:', error);
-      toast.error('Failed to download processor transfer form');
-    } finally {
-      setDownloadingProcessorTransferForm(false);
-    }
-  };
-
-  const handleDownloadAllForms = async () => {
-    try {
-      setDownloadingAllForms(true);
-      await handleDownloadNextAccountability();
-      await handleDownloadProcessorReturnForm();
-      await handleDownloadProcessorTransferForm();
-      toast.success('Download all actions completed');
-    } finally {
-      setDownloadingAllForms(false);
-    }
-  };
-
   const filteredAssignments = useMemo(() => {
     const q = searchTerm.trim().toLowerCase();
     const base = !q
@@ -1059,37 +970,164 @@ export default function AssetsTransfer() {
     );
   }
 
+  const currentCompanyId = activeCompany?.id || currentUser?.company_id || '';
+  const targetCompanyOptions = companies.filter(c => {
+    const id = c.companyID ?? c.id ?? '';
+    return id && id !== currentCompanyId;
+  });
+
+  const filteredCompanyTransferAssets = useMemo(() => {
+    const builderAssetCodes = new Set(
+      assetBuilders.flatMap((builder: any) =>
+        (builder.items || [])
+          .map((item: any) => String(item.asset_code || '').trim())
+          .filter(Boolean)
+      )
+    );
+    const q = companyTransferSearchTerm.trim().toLowerCase();
+    const nonBuilderAssets = companyTransferAssets.filter(
+      asset => !builderAssetCodes.has(String(asset.assetCode || '').trim())
+    );
+    const base = !q
+      ? nonBuilderAssets
+      : nonBuilderAssets.filter(
+          asset =>
+            asset.assetName?.toLowerCase().includes(q) ||
+            asset.assetCode?.toLowerCase().includes(q) ||
+            asset.categoryName?.toLowerCase().includes(q) ||
+            asset.typeName?.toLowerCase().includes(q) ||
+            asset.assignedUser?.name?.toLowerCase().includes(q)
+        );
+    return [...base].sort((a, b) => {
+      const aTemp = a.source === 'temporary_custody' ? 1 : 0;
+      const bTemp = b.source === 'temporary_custody' ? 1 : 0;
+      return bTemp - aTemp;
+    });
+  }, [assetBuilders, companyTransferAssets, companyTransferSearchTerm]);
+
+  const companyTransferBuiltAssets = useMemo(() => {
+    const eligibleByCode = new Map(
+      companyTransferAssets.map(asset => [asset.assetCode?.trim(), asset])
+    );
+    const q = companyTransferSearchTerm.trim().toLowerCase();
+    return assetBuilders
+      .map((builder: any) => {
+        const eligibleItems = (builder.items || [])
+          .map((item: any) => eligibleByCode.get((item.asset_code || '').trim()))
+          .filter(Boolean) as CompanyTransferAsset[];
+        return { builder, assets: eligibleItems };
+      })
+      .filter(({ builder, assets }: any) => {
+        if (assets.length === 0) return false;
+        if (!q) return true;
+        return (
+          builder.name?.toLowerCase().includes(q) ||
+          builder.description?.toLowerCase().includes(q) ||
+          assets.some((asset: CompanyTransferAsset) =>
+            `${asset.assetName} ${asset.assetCode} ${asset.categoryName ?? ''} ${asset.typeName ?? ''}`
+              .toLowerCase()
+              .includes(q)
+          )
+        );
+      });
+  }, [assetBuilders, companyTransferAssets, companyTransferSearchTerm]);
+
+  const handleCompanyBuilderTransferWhole = (builderId: string) => {
+    const entry = companyTransferBuiltAssets.find(
+      ({ builder }: any) => builder.builderID === builderId
+    );
+    if (!entry) return;
+    const ids = entry.assets.map((asset: CompanyTransferAsset) => asset.assetId);
+    setSelectedCompanyAssetIds(prev => [...new Set([...prev, ...ids])]);
+  };
+
+  const handleCompanyBuilderDeselectAll = (builderId: string) => {
+    const entry = companyTransferBuiltAssets.find(
+      ({ builder }: any) => builder.builderID === builderId
+    );
+    if (!entry) return;
+    const ids = new Set(
+      entry.assets.map((asset: CompanyTransferAsset) => asset.assetId)
+    );
+    setSelectedCompanyAssetIds(prev => prev.filter(id => !ids.has(id)));
+  };
+
+  const isCompanyBuilderFullySelected = (builderId: string) => {
+    const entry = companyTransferBuiltAssets.find(
+      ({ builder }: any) => builder.builderID === builderId
+    );
+    if (!entry || entry.assets.length === 0) return false;
+    return entry.assets.every((asset: CompanyTransferAsset) =>
+      selectedCompanyAssetIds.includes(asset.assetId)
+    );
+  };
+
+  const handleCompanyAssetSelection = (
+    assetId: string,
+    checked: boolean | string
+  ) => {
+    const isChecked = Boolean(checked);
+    if (isChecked) {
+      setSelectedCompanyAssetIds(prev => [...new Set([...prev, assetId])]);
+    } else {
+      setSelectedCompanyAssetIds(prev => prev.filter(id => id !== assetId));
+    }
+  };
+
+  const handleCompanyTransferSubmit = async () => {
+    if (selectedCompanyAssetIds.length === 0) {
+      toast.error('Please select at least one asset for company transfer');
+      return;
+    }
+    if (!targetCompanyId) {
+      toast.error('Please select target company');
+      return;
+    }
+    setCompanyTransferring(true);
+    try {
+      const response = await api.post('/asset-transfers/company-transfer', {
+        assetIds: selectedCompanyAssetIds,
+        targetCompanyId,
+      });
+      toast.success(response?.message || 'Assets transferred to company');
+      setSelectedCompanyAssetIds([]);
+      setTargetCompanyId('');
+      await Promise.all([
+        fetchCompanyTransferAssets(),
+        fetchAssignments(),
+        fetchAssetBuilders(),
+        fetchTransferHistory(),
+      ]);
+    } catch (err: any) {
+      const data = err?.data ?? err?.response?.data;
+      toast.error(data?.message || data?.error || 'Failed to transfer assets to company');
+    } finally {
+      setCompanyTransferring(false);
+    }
+  };
+
   return (
     <div className="flex flex-col min-h-screen">
       <main className="flex-1 p-4 sm:p-6 space-y-6">
-        <PageHeader
-          icon={ArrowRightLeft}
-          title="Assets Transfer"
-          description="Transfer assets between users, departments, and locations"
-        >
-          <Button
-            variant="ghost"
-            size="sm"
-            onClick={() => {
-              fetchAssignments();
-              fetchAssetBuilders();
-              fetchTransferHistory();
-            }}
-            className="flex items-center gap-2"
-          >
-            <RefreshCw className="h-4 w-4" />
-            Refresh
-          </Button>
+        <PageHeader icon={ArrowRightLeft} title="Assets Transfer">
+          {showScopeTabs && (
+            <Tabs value={scope} onValueChange={v => setScope(v as 'it' | 'admin')} className="w-full sm:w-auto">
+              <TabsList className={segmentTabsListClassName + ' grid grid-cols-2 max-w-full sm:max-w-[280px]'}>
+                <TabsTrigger value="it" className={segmentTabsTriggerClassName}>IT Asset</TabsTrigger>
+                <TabsTrigger value="admin" className={segmentTabsTriggerClassName}>Admin Asset</TabsTrigger>
+              </TabsList>
+            </Tabs>
+          )}
         </PageHeader>
 
         <div className="grid grid-cols-1 xl:grid-cols-3 gap-8">
           {/* Asset Selection / Asset Built Tabs */}
           <div className="xl:col-span-2">
-            <Tabs defaultValue="select-assets" className="w-full">
-              <TabsList className="grid w-full grid-cols-2 rounded-xl bg-gray-100 p-1.5 h-auto">
+            <Tabs value={activeTab} onValueChange={(value) => { setActiveTab(value); setTabLoading(true); setTimeout(() => setTabLoading(false), 300); }} className="w-full">
+              <TabsList className={segmentTabsListClassName + ' grid grid-cols-3'}>
                 <TabsTrigger
                   value="select-assets"
-                  className="flex items-center gap-2 data-[state=active]:bg-red-500 data-[state=active]:text-white data-[state=active]:shadow-sm"
+                  className={segmentTabsTriggerClassName + ' flex items-center gap-2'}
                 >
                   <Package className="h-4 w-4" />
                   Select Assets
@@ -1099,12 +1137,22 @@ export default function AssetsTransfer() {
                 </TabsTrigger>
                 <TabsTrigger
                   value="asset-built"
-                  className="flex items-center gap-2 data-[state=active]:bg-red-500 data-[state=active]:text-white data-[state=active]:shadow-sm"
+                  className={segmentTabsTriggerClassName + ' flex items-center gap-2'}
                 >
                   <Boxes className="h-4 w-4" />
                   Asset Built
                   <Badge variant="secondary" className="ml-1 text-xs">
                     {filteredAssignedBuilders.length}
+                  </Badge>
+                </TabsTrigger>
+                <TabsTrigger
+                  value="company"
+                  className={segmentTabsTriggerClassName + ' flex items-center gap-2'}
+                >
+                  <Building2 className="h-4 w-4" />
+                  Company
+                  <Badge variant="secondary" className="ml-1 text-xs">
+                    {filteredCompanyTransferAssets.length}
                   </Badge>
                 </TabsTrigger>
               </TabsList>
@@ -1135,12 +1183,38 @@ export default function AssetsTransfer() {
 
                   <CardContent className="pt-0">
                     <div className="space-y-3 max-h-96 overflow-y-auto scrollbar-thin scrollbar-thumb-gray-300 scrollbar-track-gray-100 -mr-6 pr-6">
-                      {loading ? (
-                        <div className="flex items-center justify-center py-12">
-                          <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-red-600"></div>
-                          <span className="ml-3 text-gray-600">
-                            Loading assignments...
-                          </span>
+                      {loading || tabLoading ? (
+                        <div className="space-y-3">
+                          {Array.from({ length: 5 }).map((_, index) => (
+                            <div
+                              key={index}
+                              className="group relative p-4 border-2 rounded-xl border-gray-200"
+                            >
+                              <div className="flex items-start gap-4">
+                                <div className="flex-shrink-0 mt-1">
+                                  <Shimmer className="h-5 w-5 rounded" />
+                                </div>
+                                <div className="flex-1 min-w-0">
+                                  <div className="mb-2">
+                                    <div className="flex items-center justify-between">
+                                      <Shimmer className="h-6 w-40 rounded" />
+                                      <Shimmer className="h-5 w-20 rounded ml-2" />
+                                    </div>
+                                  </div>
+                                  <div className="mb-3">
+                                    <Shimmer className="h-4 w-24 rounded" />
+                                    <Shimmer className="h-4 w-32 rounded ml-2" />
+                                    <Shimmer className="h-4 w-24 rounded ml-2" />
+                                  </div>
+                                  <div className="flex flex-wrap gap-2">
+                                    <Shimmer className="h-5 w-28 rounded-full" />
+                                    <Shimmer className="h-5 w-16 rounded-full" />
+                                    <Shimmer className="h-5 w-24 rounded-full" />
+                                  </div>
+                                </div>
+                              </div>
+                            </div>
+                          ))}
                         </div>
                       ) : filteredAssignments.length === 0 ? (
                         <div className="text-center py-12">
@@ -1328,6 +1402,289 @@ export default function AssetsTransfer() {
                 </Card>
               </TabsContent>
 
+              <TabsContent value="company" className="mt-4">
+                <Card className="shadow-xl border-0 bg-white/80 backdrop-blur-sm">
+                  <CardHeader className="pb-4">
+                    <CardTitle className="flex items-center gap-3 text-xl">
+                      <div className="p-2 bg-red-100 rounded-lg">
+                        <Building2 className="h-5 w-5 text-red-600" />
+                      </div>
+                      Company Transfer
+                      <Badge variant="secondary" className="ml-auto">
+                        {filteredCompanyTransferAssets.length} eligible
+                      </Badge>
+                    </CardTitle>
+                    <p className="text-sm text-gray-500 mt-1">
+                      Transfer available assets or temporary custody assets to another company immediately.
+                    </p>
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-3 mt-4">
+                      <div className="relative w-full">
+                        <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-gray-400" />
+                        <Input
+                          placeholder="Search company transfer assets..."
+                          value={companyTransferSearchTerm}
+                          onChange={e => setCompanyTransferSearchTerm(e.target.value)}
+                          className="pl-10 w-full border-gray-200 focus:border-red-500 focus:ring-red-500"
+                        />
+                      </div>
+                      <Select
+                        value={targetCompanyId}
+                        onValueChange={setTargetCompanyId}
+                      >
+                        <SelectTrigger>
+                          <SelectValue placeholder="Select target company" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          {targetCompanyOptions.map(company => {
+                            const id = company.companyID ?? company.id ?? '';
+                            return (
+                              <SelectItem key={id} value={id}>
+                                {company.name}
+                              </SelectItem>
+                            );
+                          })}
+                        </SelectContent>
+                      </Select>
+                    </div>
+                  </CardHeader>
+                  <CardContent className="pt-0">
+                    <Tabs
+                      value={companyTransferTab}
+                      onValueChange={value =>
+                        setCompanyTransferTab(value as 'asset' | 'built')
+                      }
+                      className="w-full"
+                    >
+                      <TabsList className={segmentTabsListClassName + ' grid grid-cols-2 mb-4'}>
+                        <TabsTrigger value="asset" className={segmentTabsTriggerClassName}>
+                          Asset
+                          <Badge variant="secondary" className="ml-2 text-xs">
+                            {filteredCompanyTransferAssets.length}
+                          </Badge>
+                        </TabsTrigger>
+                        <TabsTrigger value="built" className={segmentTabsTriggerClassName}>
+                          Built Asset
+                          <Badge variant="secondary" className="ml-2 text-xs">
+                            {companyTransferBuiltAssets.length}
+                          </Badge>
+                        </TabsTrigger>
+                      </TabsList>
+
+                      <TabsContent value="asset" className="mt-0">
+                        <div className="space-y-3 max-h-96 overflow-y-auto scrollbar-thin scrollbar-thumb-gray-300 scrollbar-track-gray-100 -mr-6 pr-6">
+                          {companyAssetsLoading || tabLoading ? (
+                            <div className="space-y-3">
+                              {Array.from({ length: 5 }).map((_, index) => (
+                                <div key={index} className="p-4 border-2 rounded-xl border-gray-200">
+                                  <Shimmer className="h-6 w-48 rounded mb-3" />
+                                  <Shimmer className="h-4 w-64 rounded" />
+                                </div>
+                              ))}
+                            </div>
+                          ) : filteredCompanyTransferAssets.length === 0 ? (
+                            <div className="text-center py-12">
+                              <Building2 className="h-16 w-16 text-gray-300 mx-auto mb-4" />
+                              <p className="text-gray-500 text-lg">
+                                No company-transfer eligible assets found
+                              </p>
+                              <p className="text-gray-400 text-sm mt-1">
+                                Available and temporary custody assets will appear here
+                              </p>
+                            </div>
+                          ) : (
+                            filteredCompanyTransferAssets.map(asset => (
+                              <div
+                                key={asset.assetId}
+                                className={cn(
+                                  'group relative p-4 border-2 rounded-xl transition-all duration-200 cursor-pointer',
+                                  selectedCompanyAssetIds.includes(asset.assetId)
+                                    ? 'border-red-500 bg-red-50 shadow-md'
+                                    : 'border-gray-200 hover:border-gray-300 hover:shadow-sm'
+                                )}
+                                onClick={() =>
+                                  handleCompanyAssetSelection(
+                                    asset.assetId,
+                                    !selectedCompanyAssetIds.includes(asset.assetId)
+                                  )
+                                }
+                              >
+                                <div className="flex items-start gap-4">
+                                  <Checkbox
+                                    checked={selectedCompanyAssetIds.includes(asset.assetId)}
+                                    onCheckedChange={checked =>
+                                      handleCompanyAssetSelection(asset.assetId, checked)
+                                    }
+                                    className="mt-1 pointer-events-none"
+                                  />
+                                  <div className="flex-1 min-w-0">
+                                    <div className="flex items-start justify-between gap-3">
+                                      <div>
+                                        <h3 className="font-semibold text-lg text-gray-900 truncate">
+                                          {asset.assetName}
+                                          <span className="text-sm text-gray-500 font-mono ml-2">
+                                            {asset.assetCode}
+                                          </span>
+                                        </h3>
+                                        <p className="text-sm text-gray-600 mt-1">
+                                          {[asset.categoryName, asset.typeName].filter(Boolean).join(' • ') || '—'}
+                                        </p>
+                                      </div>
+                                      {selectedCompanyAssetIds.includes(asset.assetId) && (
+                                        <CheckCircle2 className="h-5 w-5 text-red-600 flex-shrink-0" />
+                                      )}
+                                    </div>
+                                    <div className="flex flex-wrap gap-2 mt-3">
+                                      <Badge
+                                        variant="outline"
+                                        className={
+                                          asset.source === 'temporary_custody'
+                                            ? 'text-xs border-amber-300 bg-amber-50 text-amber-800'
+                                            : 'text-xs border-green-300 bg-green-50 text-green-800'
+                                        }
+                                      >
+                                        {asset.source === 'temporary_custody'
+                                          ? 'Temporary Custody'
+                                          : 'Available'}
+                                      </Badge>
+                                      {asset.assignedUser?.name && (
+                                        <Badge variant="outline" className="text-xs border-gray-300">
+                                          {asset.assignedUser.name}
+                                        </Badge>
+                                      )}
+                                    </div>
+                                  </div>
+                                </div>
+                              </div>
+                            ))
+                          )}
+                        </div>
+                      </TabsContent>
+
+                      <TabsContent value="built" className="mt-0">
+                        <div className="space-y-4 max-h-96 overflow-y-auto scrollbar-thin scrollbar-thumb-gray-300 scrollbar-track-gray-100 p-1">
+                          {companyAssetsLoading || buildersLoading || tabLoading ? (
+                            <div className="space-y-3">
+                              {Array.from({ length: 4 }).map((_, index) => (
+                                <div key={index} className="p-4 border-2 rounded-xl border-gray-200">
+                                  <Shimmer className="h-6 w-48 rounded mb-3" />
+                                  <Shimmer className="h-4 w-72 rounded" />
+                                </div>
+                              ))}
+                            </div>
+                          ) : companyTransferBuiltAssets.length === 0 ? (
+                            <div className="text-center py-12">
+                              <Boxes className="h-16 w-16 text-gray-300 mx-auto mb-4" />
+                              <p className="text-gray-500 text-lg">
+                                No built assets eligible for company transfer
+                              </p>
+                              <p className="text-gray-400 text-sm mt-1">
+                                Built assets with available or temporary custody items will appear here
+                              </p>
+                            </div>
+                          ) : (
+                            companyTransferBuiltAssets.map(({ builder, assets }: any) => {
+                              const fullySelected = isCompanyBuilderFullySelected(
+                                builder.builderID
+                              );
+                              return (
+                                <Card
+                                  key={builder.builderID}
+                                  className={cn(
+                                    'border shadow-sm',
+                                    fullySelected
+                                      ? 'border-2 border-red-500 bg-red-50/50'
+                                      : 'border-gray-200'
+                                  )}
+                                >
+                                  <CardContent className="p-4">
+                                    <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-4">
+                                      <div className="flex-1 min-w-0">
+                                        <h3 className="font-semibold text-gray-900 mb-1 truncate">
+                                          {builder.name || 'Unnamed Builder'}
+                                        </h3>
+                                        {builder.description && (
+                                          <p className="text-sm text-gray-600 mb-2 line-clamp-2">
+                                            {builder.description}
+                                          </p>
+                                        )}
+                                        <Badge variant="secondary" className="text-xs bg-blue-100 text-blue-800">
+                                          {assets.length} eligible asset
+                                          {assets.length !== 1 ? 's' : ''}
+                                        </Badge>
+                                        <ul className="text-xs text-gray-500 mt-3 font-mono space-y-1.5 max-h-[8.5rem] overflow-y-auto scrollbar-thin scrollbar-thumb-gray-300 scrollbar-track-gray-100">
+                                          {assets.map((asset: CompanyTransferAsset) => (
+                                            <li
+                                              key={asset.assetId}
+                                              className="flex items-center gap-2 border rounded px-2 py-1 bg-gray-50 border-gray-200"
+                                            >
+                                              {asset.assetCode}
+                                              <Badge
+                                                variant="outline"
+                                                className={
+                                                  asset.source === 'temporary_custody'
+                                                    ? 'text-[10px] border-amber-300 bg-amber-50 text-amber-800'
+                                                    : 'text-[10px] border-green-300 bg-green-50 text-green-800'
+                                                }
+                                              >
+                                                {asset.source === 'temporary_custody'
+                                                  ? 'Temp'
+                                                  : 'Available'}
+                                              </Badge>
+                                            </li>
+                                          ))}
+                                        </ul>
+                                      </div>
+                                      <Button
+                                        size="sm"
+                                        variant={fullySelected ? 'outline' : 'default'}
+                                        className={
+                                          fullySelected
+                                            ? 'border-red-500 text-red-600 hover:bg-red-50'
+                                            : 'bg-red-500 hover:bg-red-600 text-white'
+                                        }
+                                        onClick={() =>
+                                          fullySelected
+                                            ? handleCompanyBuilderDeselectAll(
+                                                builder.builderID
+                                              )
+                                            : handleCompanyBuilderTransferWhole(
+                                                builder.builderID
+                                              )
+                                        }
+                                      >
+                                        {fullySelected ? 'Deselect All' : 'Transfer Whole'}
+                                      </Button>
+                                    </div>
+                                  </CardContent>
+                                </Card>
+                              );
+                            })
+                          )}
+                        </div>
+                      </TabsContent>
+                    </Tabs>
+                    {selectedCompanyAssetIds.length > 0 && (
+                      <div className="mt-6 p-4 bg-gradient-to-r from-red-50 to-red-100 border border-red-200 rounded-xl">
+                        <div className="flex items-center justify-between gap-3">
+                          <span className="font-semibold text-red-900">
+                            {selectedCompanyAssetIds.length} asset
+                            {selectedCompanyAssetIds.length !== 1 ? 's' : ''} selected for company transfer
+                          </span>
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            onClick={() => setSelectedCompanyAssetIds([])}
+                            className="text-red-600 border-red-300 hover:bg-red-50"
+                          >
+                            Clear All
+                          </Button>
+                        </div>
+                      </div>
+                    )}
+                  </CardContent>
+                </Card>
+              </TabsContent>
+
               <TabsContent value="asset-built" className="mt-4">
                 <Card className="shadow-xl border-0 bg-white/80 backdrop-blur-sm min-h-[500px]">
                   <CardHeader className="pb-4">
@@ -1356,12 +1713,32 @@ export default function AssetsTransfer() {
                     </div>
                   </CardHeader>
                   <CardContent className="pt-0">
-                    {buildersLoading ? (
-                      <div className="flex items-center justify-center py-12">
-                        <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-red-600" />
-                        <span className="ml-3 text-gray-600">
-                          Loading builders...
-                        </span>
+                    {buildersLoading || tabLoading ? (
+                      <div className="space-y-4">
+                        {Array.from({ length: 4 }).map((_, index) => (
+                          <div
+                            key={index}
+                            className="border-2 rounded-xl border-gray-200 p-4"
+                          >
+                            <div className="flex items-center justify-between mb-2">
+                              <Shimmer className="h-6 w-40 rounded" />
+                              <Shimmer className="h-5 w-20 rounded-full" />
+                            </div>
+                            <Shimmer className="h-4 w-64 rounded mb-3" />
+                            <div className="space-y-2">
+                              {Array.from({ length: 2 }).map((_, idx) => (
+                                <div
+                                  key={idx}
+                                  className="flex items-center gap-3 p-2 border rounded-lg"
+                                >
+                                  <Shimmer className="h-5 w-5 rounded" />
+                                  <Shimmer className="h-4 w-32 rounded" />
+                                  <Shimmer className="h-4 w-24 rounded" />
+                                </div>
+                              ))}
+                            </div>
+                          </div>
+                        ))}
                       </div>
                     ) : filteredAssignedBuilders.length === 0 ? (
                       <div className="text-center py-12">
@@ -1613,30 +1990,63 @@ export default function AssetsTransfer() {
                 </CardTitle>
               </CardHeader>
               <CardContent className="space-y-6">
-                <div className="text-sm text-gray-600">
-                  Select assets above, then click Transfer Asset to confirm and
-                  complete the transfer flow.
-                </div>
-                <Button
-                  onClick={handleTransferClick}
-                  disabled={
-                    transferring ||
-                    selectedAssignments.length === 0 ||
-                    !hasPermission('Asset Transfer', 'create') ||
-                    !hasPermission('Asset Transfer', 'edit')
-                  }
-                  className="w-full bg-gradient-to-r from-red-500 to-red-600 hover:from-red-600 hover:to-red-700 text-white font-semibold py-3 rounded-xl shadow-lg hover:shadow-xl transition-all duration-200 disabled:opacity-50 disabled:cursor-not-allowed"
-                >
-                  <div className="flex items-center gap-2">
-                    <ArrowRightLeft className="h-5 w-5" />
-                    Transfer {selectedAssignments.length} Asset
-                    {selectedAssignments.length !== 1 ? 's' : ''}
-                  </div>
-                </Button>
-                {selectedAssignments.length === 0 && (
-                  <p className="text-sm text-gray-500 text-center">
-                    Select asset assignments above to enable transfer
-                  </p>
+                {activeTab === 'company' ? (
+                  <>
+                    <div className="text-sm text-gray-600">
+                      Select eligible assets and a target company. Assets moved back to any past company are re-enabled as Available.
+                    </div>
+                    <Button
+                      onClick={handleCompanyTransferSubmit}
+                      disabled={
+                        companyTransferring ||
+                        selectedCompanyAssetIds.length === 0 ||
+                        !targetCompanyId ||
+                        !hasPermission('Asset Transfer', 'create') ||
+                        !hasPermission('Asset Transfer', 'edit')
+                      }
+                      className="w-full bg-gradient-to-r from-red-500 to-red-600 hover:from-red-600 hover:to-red-700 text-white font-semibold py-3 rounded-xl shadow-lg hover:shadow-xl transition-all duration-200 disabled:opacity-50 disabled:cursor-not-allowed"
+                    >
+                      <div className="flex items-center gap-2">
+                        <Building2 className="h-5 w-5" />
+                        {companyTransferring
+                          ? 'Transferring...'
+                          : `Transfer ${selectedCompanyAssetIds.length} Asset${selectedCompanyAssetIds.length !== 1 ? 's' : ''} to Company`}
+                      </div>
+                    </Button>
+                    {selectedCompanyAssetIds.length === 0 && (
+                      <p className="text-sm text-gray-500 text-center">
+                        Select company-transfer assets above to enable transfer
+                      </p>
+                    )}
+                  </>
+                ) : (
+                  <>
+                    <div className="text-sm text-gray-600">
+                      Select assets above, then click Transfer Asset to confirm and
+                      complete the transfer flow.
+                    </div>
+                    <Button
+                      onClick={handleTransferClick}
+                      disabled={
+                        transferring ||
+                        selectedAssignments.length === 0 ||
+                        !hasPermission('Asset Transfer', 'create') ||
+                        !hasPermission('Asset Transfer', 'edit')
+                      }
+                      className="w-full bg-gradient-to-r from-red-500 to-red-600 hover:from-red-600 hover:to-red-700 text-white font-semibold py-3 rounded-xl shadow-lg hover:shadow-xl transition-all duration-200 disabled:opacity-50 disabled:cursor-not-allowed"
+                    >
+                      <div className="flex items-center gap-2">
+                        <ArrowRightLeft className="h-5 w-5" />
+                        Transfer {selectedAssignments.length} Asset
+                        {selectedAssignments.length !== 1 ? 's' : ''}
+                      </div>
+                    </Button>
+                    {selectedAssignments.length === 0 && (
+                      <p className="text-sm text-gray-500 text-center">
+                        Select asset assignments above to enable transfer
+                      </p>
+                    )}
+                  </>
                 )}
               </CardContent>
             </Card>
@@ -1647,8 +2057,8 @@ export default function AssetsTransfer() {
         <Card className="shadow-xl border-0 bg-white/80 backdrop-blur-sm">
           <CardHeader>
             <CardTitle className="flex items-center gap-3 text-xl">
-              <div className="p-2 bg-purple-100 rounded-lg">
-                <ArrowRightLeft className="h-5 w-5 text-purple-600" />
+              <div className="p-2 bg-red-100 rounded-lg">
+                <ArrowRightLeft className="h-5 w-5 text-red-600" />
               </div>
               Transfer History
               <Badge variant="secondary" className="ml-auto">
@@ -1659,19 +2069,45 @@ export default function AssetsTransfer() {
 
           <CardContent>
             {transferHistoryLoading ? (
-              <div className="text-center py-12">
-                <div className="animate-spin h-10 w-10 border-2 border-purple-500 border-t-transparent rounded-full mx-auto mb-4" />
-                <p className="text-gray-500 text-lg">
-                  Loading transfer history...
-                </p>
+              <div className="border border-gray-200 rounded-lg overflow-hidden">
+                <div className="bg-gray-50 p-3 space-y-2">
+                  <div className="flex gap-4">
+                    <Shimmer className="h-5 w-32 rounded" />
+                    <Shimmer className="h-5 w-24 rounded" />
+                    <Shimmer className="h-5 w-24 rounded" />
+                    <Shimmer className="h-5 w-28 rounded" />
+                    <Shimmer className="h-5 w-20 rounded" />
+                    <Shimmer className="h-5 w-24 rounded" />
+                    <Shimmer className="h-5 w-32 rounded" />
+                    <Shimmer className="h-5 w-24 rounded" />
+                    <Shimmer className="h-5 w-20 rounded" />
+                  </div>
+                </div>
+                {[...Array(5)].map((_, index) => (
+                  <div key={index} className="border-t border-gray-200 p-3 space-y-2">
+                    <div className="flex gap-4">
+                      <Shimmer className="h-5 w-32 rounded" />
+                      <Shimmer className="h-5 w-24 rounded" />
+                      <Shimmer className="h-5 w-24 rounded" />
+                      <Shimmer className="h-5 w-28 rounded" />
+                      <Shimmer className="h-5 w-20 rounded" />
+                      <Shimmer className="h-5 w-24 rounded" />
+                      <Shimmer className="h-5 w-32 rounded" />
+                      <Shimmer className="h-5 w-24 rounded" />
+                      <Shimmer className="h-5 w-20 rounded" />
+                    </div>
+                  </div>
+                ))}
               </div>
             ) : transferHistory.length === 0 ? (
               <div className="text-center py-12">
-                <ArrowRightLeft className="h-16 w-16 text-gray-300 mx-auto mb-4" />
-                <p className="text-gray-500 text-lg">
+                <div className="inline-flex items-center justify-center w-20 h-20 rounded-full bg-gradient-to-br from-red-100 to-red-200 mb-4">
+                  <ArrowRightLeft className="h-10 w-10 text-red-600" />
+                </div>
+                <h3 className="text-lg font-semibold text-gray-900 mb-2">
                   No transfer history found
-                </p>
-                <p className="text-gray-400 text-sm mt-1">
+                </h3>
+                <p className="text-gray-500 text-sm">
                   Completed transfers will appear here
                 </p>
               </div>
@@ -1732,6 +2168,7 @@ export default function AssetsTransfer() {
         <Dialog
           open={showTransferDialog}
           onOpenChange={open => {
+            if (smsOtpDialogOpen && !open) return;
             setShowTransferDialog(open);
             if (!open) {
               setVerificationTag(false);
@@ -1743,7 +2180,9 @@ export default function AssetsTransfer() {
             }
           }}
         >
-          <AppDialogFrame className="max-w-2xl w-[85vw] sm:w-[90vw] md:w-full max-h-[90vh] overflow-hidden !flex !flex-col">
+          <AppDialogFrame
+            className={`max-w-2xl w-[85vw] sm:w-[90vw] md:w-full max-h-[90vh] overflow-hidden !flex !flex-col${smsOtpDialogOpen ? ' !overflow-hidden' : ''}`}
+          >
             <AppDialogGradientHeader
               title={
                 <span className="flex items-center gap-3">
@@ -1754,7 +2193,9 @@ export default function AssetsTransfer() {
               description="Assess condition and complete transfer details for each asset."
             />
 
-            <AppDialogBody className="max-h-[min(50vh,520px)] min-h-0 flex-1 space-y-4 overflow-y-auto overflow-x-hidden sm:space-y-6">
+            <AppDialogBody
+              className={`max-h-[min(50vh,520px)] min-h-0 flex-1 space-y-4 overflow-y-auto overflow-x-hidden sm:space-y-6${smsOtpDialogOpen ? ' !overflow-hidden' : ''}`}
+            >
               <div className="inline-block rounded-full border border-slate-200 bg-slate-50 px-3 py-1 text-sm font-semibold text-slate-800">
                 Selected Assets: {assetTransferData.length}
               </div>
@@ -2083,6 +2524,21 @@ export default function AssetsTransfer() {
                 />
               </div>
 
+              <div className="rounded-xl border border-slate-200 bg-white p-5 shadow-sm space-y-2">
+                <Label className="text-sm font-semibold text-slate-800 tracking-tight uppercase">
+                  Processor position
+                </Label>
+                <p className="text-sm text-slate-700">
+                  {currentUser?.position?.trim()
+                    ? currentUser.position
+                    : '— (add a position on your profile if missing)'}
+                </p>
+                <p className="text-xs text-slate-500">
+                  Shown on the transfer form PDF in IT Staff / IT Inventory Manager
+                  after you sign.
+                </p>
+              </div>
+
               {/* Verification */}
               <div className="rounded-xl border border-slate-200 bg-white p-5 shadow-sm space-y-4">
                 <Label className="text-sm font-semibold text-slate-800 uppercase block">
@@ -2128,12 +2584,14 @@ export default function AssetsTransfer() {
               <Button
                 variant="outline"
                 onClick={() => setShowTransferDialog(false)}
+                disabled={smsOtpDialogOpen || transferring}
               >
                 Cancel
               </Button>
               <Button
-                onClick={handleTransferSubmit}
+                onClick={() => handleTransferSubmit()}
                 disabled={
+                  smsOtpDialogOpen ||
                   transferring ||
                   !newAssignmentUser ||
                   !receivedBy ||
@@ -2161,62 +2619,32 @@ export default function AssetsTransfer() {
           </AppDialogFrame>
         </Dialog>
 
-        <Dialog open={showNextStepsDialog} onOpenChange={setShowNextStepsDialog}>
-          <AppDialogFrame className="max-w-xl w-[92vw] sm:w-full">
-            <AppDialogGradientHeader
-              title="Next Steps"
-              description="Transfer processed successfully."
-            />
-            <AppDialogBody className="space-y-3">
-              <ol className="list-decimal pl-5 space-y-2 text-sm text-slate-700">
-                <li>
-                  Download this new accountability of the receiver of the asset
-                  and make the user sign it.
-                </li>
-                <li>
-                  Download the processor return form, make the Department Head
-                  sign it, then upload it to the system after signing.
-                </li>
-                <li>
-                  Download the processor transfer form, make the Department Head
-                  sign it, then upload it to the system after signing.
-                </li>
-                <li>
-                  After the user signs it, make sure the user also signs the
-                  accountability form in Asset Management.
-                </li>
-                <li>
-                  After your Department Head approves, upload both scanned wet
-                  signed forms in the corresponding Forms menu pages: Return
-                  Form and Transfer Form.
-                </li>
-                <li>
-                  After that, go to HR and give the user asset accountability
-                  for 201 file copy.
-                </li>
-              </ol>
-            </AppDialogBody>
-            <AppDialogChromeFooter className="justify-end">
-              <Button
-                variant="outline"
-                onClick={handleDownloadAllForms}
-                disabled={downloadingAllForms}
-              >
-                {downloadingAllForms ? 'Downloading all...' : 'Download All Forms'}
-              </Button>
-              <Button
-                onClick={() => {
-                  setShowNextStepsDialog(false);
-                  setNextStepsAssigneeUserId(null);
-                  setNextStepsTransferFormId(null);
-                  setNextStepsReturnFormId(null);
-                }}
-              >
-                Continue
-              </Button>
-            </AppDialogChromeFooter>
-          </AppDialogFrame>
-        </Dialog>
+        <SmsOtpDialog
+          isOpen={smsOtpDialogOpen}
+          onOpenChange={open => {
+            if (!open) {
+              pendingTransferActionRef.current = null;
+            }
+            setSmsOtpDialogOpen(open);
+          }}
+          sendOtpEndpoint="/auth/initials/send-otp"
+          verifyOtpEndpoint="/auth/initials/verify-otp"
+          onVerified={() => {
+            setSmsOtpDialogOpen(false);
+            pendingTransferActionRef.current = null;
+          }}
+          onCancel={() => {
+            setSmsOtpDialogOpen(false);
+            pendingTransferActionRef.current = null;
+          }}
+          pendingActionRef={pendingTransferActionRef}
+          title="OTP SMS Verification"
+          description="OTP SMS Verification has been sent to your registered mobile number for asset transfer confirmation."
+          verifyButtonLabel="Verify & Process Transfer"
+          phoneNumber={
+            (currentUser as { contactNumber?: string })?.contactNumber
+          }
+        />
       </main>
     </div>
   );

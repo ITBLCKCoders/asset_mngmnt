@@ -48,6 +48,7 @@ import { api } from '@/lib/api';
 import { toast } from 'sonner';
 import { useCurrentUser } from '@/hooks/useCurrentUser';
 import { useUserPermissions } from '@/hooks/useUserPermissions';
+import { useCompanyContext } from '@/context/CompanyContext';
 
 interface EditAssetModalProps {
   isOpen: boolean;
@@ -114,6 +115,7 @@ export function EditAssetModal({
   onSubmit,
 }: EditAssetModalProps) {
   const { user } = useCurrentUser();
+  const { activeCompany } = useCompanyContext();
   const [currentStep, setCurrentStep] = useState(0);
   const [formData, setFormData] = useState<AssetFormData>(initialAssetFormData);
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -163,7 +165,6 @@ export function EditAssetModal({
   const [suppliers, setSuppliers] = useState<any[]>([]);
   const [brands, setBrands] = useState<any[]>([]);
   const [locations, setLocations] = useState<any[]>([]);
-  const [activeCompany, setActiveCompany] = useState<any>(null);
   const [departments, setDepartments] = useState<any[]>([]);
   const [users, setUsers] = useState<any[]>([]);
 
@@ -333,16 +334,24 @@ export function EditAssetModal({
       }
     }
 
-    // Try to match category, type, and brand by name
+    // Prefer stable IDs from the asset row, then fall back to name matching
     const matchedCategory =
       categories.length > 0
-        ? categories.find(
+        ? (asset.categoryId
+            ? categories.find(
+                cat => String(cat.id) === String(asset.categoryId)
+              )
+            : null) ||
+          categories.find(
             cat => cat.name.toLowerCase() === asset.category.toLowerCase()
           )
         : null;
     const matchedType =
       types.length > 0
-        ? types.find(
+        ? (asset.typeId
+            ? types.find(type => String(type.id) === String(asset.typeId))
+            : null) ||
+          types.find(
             type => type.name.toLowerCase() === asset.type.toLowerCase()
           )
         : null;
@@ -399,9 +408,12 @@ export function EditAssetModal({
       name: asset.name,
       description: asset.description,
       category: asset.category,
-      categoryId: matchedCategory?.id?.toString() || '',
+      categoryId:
+        asset.categoryId ||
+        matchedCategory?.id?.toString() ||
+        '',
       type: asset.type,
-      typeId: matchedType?.id?.toString() || '',
+      typeId: asset.typeId || matchedType?.id?.toString() || '',
       brand: asset.brand || matchedBrand?.name || '',
       brandId: matchedBrand?.id?.toString() || '',
       model: asset.modelNo,
@@ -418,7 +430,8 @@ export function EditAssetModal({
       depreciationStartDate: asset.depreciationStartDate
         ? asset.depreciationStartDate.toISOString()
         : undefined,
-      company: asset.company,
+      company: asset.company || activeCompany?.name || '',
+      companyId: asset.company_id || activeCompany?.id || '',
       locationSite: matchedLocation?.locationID || matchedLocation?.id || '', // Use matched location ID or empty string
       locationSiteName: matchedLocation?.name || site,
       locationBuilding: asset.building,
@@ -455,15 +468,6 @@ export function EditAssetModal({
       const newValue = typeof value === 'function' ? value(prev) : value;
       return { ...prev, [key]: newValue };
     });
-  };
-
-  const fetchActiveCompany = async () => {
-    try {
-      const data = await api.get('/companies/active');
-      setActiveCompany(data?.data?.[0] || null);
-    } catch (error) {
-      console.error('Failed to fetch active company:', error);
-    }
   };
 
   const fetchDepartments = async () => {
@@ -549,7 +553,6 @@ export function EditAssetModal({
 
   useEffect(() => {
     if (isOpen && asset) {
-      fetchActiveCompany();
       fetchDepartments();
       fetchUsers();
       setCurrentStep(0);
@@ -635,17 +638,15 @@ export function EditAssetModal({
   }, [activeCompany]);
 
   useEffect(() => {
-    if (user && isOpen) {
-      setFormData(prev => {
-        const newCompany =
-          prev.company || user.company || activeCompany?.name || '';
-        return {
-          ...prev,
-          company: newCompany,
-        };
-      });
+    if (isOpen && asset) {
+      setFormData(prev => ({
+        ...prev,
+        company: asset.company || activeCompany?.name || prev.company || '',
+        companyId:
+          asset.company_id || activeCompany?.id || prev.companyId || '',
+      }));
     }
-  }, [user, isOpen, activeCompany, departments]);
+  }, [isOpen, asset, activeCompany?.id, activeCompany?.name]);
 
   // Function to check if any changes were made to the asset
   const checkForChanges = (

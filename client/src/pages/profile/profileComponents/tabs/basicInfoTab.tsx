@@ -14,13 +14,17 @@ import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
 import { Checkbox } from '@/components/ui/checkbox';
 import {
-  Dialog,
-  DialogContent,
-  DialogHeader,
-  DialogTitle,
-  DialogDescription,
-  DialogFooter,
-} from '@/components/ui/dialog';
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogDescription,
+} from '@/components/ui/alert-dialog';
+import {
+  AppAlertDialogChromeFooter,
+  AppAlertDialogFrame,
+  AppAlertDialogGradientHeader,
+  AppAlertDialogMessage,
+} from '@/components/common/appDialogChrome';
 import SignatureCanvas from 'react-signature-canvas';
 import { User, MapPin, Mail, Phone, Building, Calendar, ShieldCheck } from 'lucide-react';
 import { useCurrentUser } from '@/hooks/useCurrentUser';
@@ -29,18 +33,6 @@ import { api } from '@/lib/api';
 import { useAvatarPreview } from '@/hooks/avatarPreview';
 import { Shimmer } from '@/components/ui/shimmer';
 import { toast } from 'sonner';
-
-function useDelayedLoading(loading: boolean, minDelayMs = 2000) {
-  const [show, setShow] = useState(true);
-  useEffect(() => {
-    if (loading) setShow(true);
-    else {
-      const t = setTimeout(() => setShow(false), minDelayMs);
-      return () => clearTimeout(t);
-    }
-  }, [loading, minDelayMs]);
-  return loading || show;
-}
 
 interface BasicInfoTabProps {
   isEditing: boolean;
@@ -55,14 +47,12 @@ const BasicInfoTab = forwardRef<BasicInfoTabHandle, BasicInfoTabProps>(
     const { user, loading: userLoading, refetch } = useCurrentUser();
     const [formData, setFormData] = useState<any>({});
     const [isSaving, setIsSaving] = useState(false);
-    const [signatureSaved, setSignatureSaved] = useState(false);
+    const [signatureReadyToSave, setSignatureReadyToSave] = useState<string | null>(null);
     const [signatureMarkedDone, setSignatureMarkedDone] = useState(false);
+    const [signatureSaved, setSignatureSaved] = useState(false);
     const [showSignaturePreview, setShowSignaturePreview] = useState(false);
-    const [signatureReadyToSave, setSignatureReadyToSave] = useState<
-      string | null
-    >(null);
-    const [initialsMode, setInitialsMode] = useState<'type' | 'draw'>('type');
-    const [typedInitials, setTypedInitials] = useState('');
+    const [canvasKey, setCanvasKey] = useState(0);
+    const [canvasRef, setCanvasRef] = useState<SignatureCanvas | null>(null);
     const sigCanvas = useRef<SignatureCanvas>(null);
 
     const [showConsentDialog, setShowConsentDialog] = useState(false);
@@ -130,7 +120,12 @@ const BasicInfoTab = forwardRef<BasicInfoTabHandle, BasicInfoTabProps>(
 
     const { pendingFile, clearPreview } = useAvatarPreview();
 
-    const isLoading = useDelayedLoading(userLoading, 2000);
+    const isLoading = userLoading;
+    const isImageSignature = (signature?: string | null) =>
+      !!signature &&
+      (signature.startsWith('data:image') ||
+        signature.startsWith('http://') ||
+        signature.startsWith('https://'));
 
     useEffect(() => {
       if (user && !isEditing) {
@@ -152,19 +147,12 @@ const BasicInfoTab = forwardRef<BasicInfoTabHandle, BasicInfoTabProps>(
           digitalSignature: user.digitalSignature || '',
         });
 
-        if (user.digitalSignature) {
+        if (isImageSignature(user.digitalSignature)) {
           setSignatureSaved(true);
           setShowSignaturePreview(true);
-          const isImage = user.digitalSignature.startsWith('data:image') ||
-                          user.digitalSignature.startsWith('http://') ||
-                          user.digitalSignature.startsWith('https://');
-          setInitialsMode(isImage ? 'draw' : 'type');
-          if (!isImage) setTypedInitials(user.digitalSignature);
         } else {
           setSignatureSaved(false);
           setShowSignaturePreview(false);
-          setInitialsMode('type');
-          setTypedInitials('');
         }
         setSignatureMarkedDone(false);
 
@@ -177,34 +165,29 @@ const BasicInfoTab = forwardRef<BasicInfoTabHandle, BasicInfoTabProps>(
     useEffect(() => {
       if (!isEditing) return;
 
+      console.log('Edit mode useEffect triggered, digitalSignature:', user?.digitalSignature ? 'YES' : 'NO');
+
       setShowSignaturePreview(false);
       setSignatureMarkedDone(false);
 
-      if (user?.digitalSignature) {
-        const isImage = user.digitalSignature.startsWith('data:image') ||
-                        user.digitalSignature.startsWith('http://') ||
-                        user.digitalSignature.startsWith('https://');
-        setInitialsMode(isImage ? 'draw' : 'type');
-        if (!isImage) {
-          setTypedInitials(user.digitalSignature);
-          setSignatureSaved(true);
-        }
+      if (isImageSignature(user?.digitalSignature)) {
+        setSignatureSaved(true);
       } else {
-        setInitialsMode('type');
-        setTypedInitials('');
         setSignatureSaved(false);
+        setShowSignaturePreview(false);
       }
 
       const t = window.setTimeout(() => {
-        const canvas = sigCanvas.current;
+        const canvas = canvasRef || sigCanvas.current;
+        const existingSignature = user?.digitalSignature;
+        console.log('Loading signature onto canvas, hasCanvas:', !!canvas, 'hasSignature:', !!existingSignature);
         if (!canvas) return;
         canvas.clear();
-        if (user?.digitalSignature?.startsWith('data:image') ||
-            user?.digitalSignature?.startsWith('http://') ||
-            user?.digitalSignature?.startsWith('https://')) {
+        if (isImageSignature(existingSignature)) {
           try {
-            (canvas as any).fromDataURL(user.digitalSignature);
+            (canvas as any).fromDataURL(existingSignature);
             setSignatureSaved(true);
+            console.log('Signature loaded onto canvas successfully');
           } catch (err) {
             console.error('Failed to load initials for editing:', err);
             canvas.clear();
@@ -220,20 +203,12 @@ const BasicInfoTab = forwardRef<BasicInfoTabHandle, BasicInfoTabProps>(
 
     const initialsChanged = (): boolean => {
       const existing = user?.digitalSignature || null;
-      if (initialsMode === 'type') {
-        const typed = typedInitials.trim();
-        return typed !== '' && typed !== existing;
-      } else {
-        return !!(signatureReadyToSave && signatureReadyToSave !== existing);
-      }
+      return !!(signatureReadyToSave && signatureReadyToSave !== existing);
     };
 
     const isSettingInitials = (): boolean => {
-      if (initialsMode === 'type') {
-        return typedInitials.trim() !== '';
-      } else {
-        return !!(signatureReadyToSave || (sigCanvas.current && !sigCanvas.current.isEmpty()));
-      }
+      const canvas = canvasRef || sigCanvas.current;
+      return !!(signatureReadyToSave || (canvas && !canvas.isEmpty()));
     };
 
     const sendOtp = async () => {
@@ -297,70 +272,120 @@ const BasicInfoTab = forwardRef<BasicInfoTabHandle, BasicInfoTabProps>(
     };
 
     const getInitialsToSave = (): string | null => {
-      if (initialsMode === 'type') {
-        return typedInitials.trim() || null;
-      } else {
-        if (signatureReadyToSave) {
-          return signatureReadyToSave;
-        } else if (sigCanvas.current && !sigCanvas.current.isEmpty()) {
-          let signatureDataURL: string | null = null;
+      if (signatureReadyToSave) {
+        return signatureReadyToSave;
+      }
+      const canvas = canvasRef || sigCanvas.current;
+      if (canvas && !canvas.isEmpty()) {
+        let signatureDataURL: string | null = null;
+        try {
+          const signatureData = canvas.toData();
+          if (signatureData && signatureData.length > 0) {
+            // Get actual canvas dimensions from editing canvas
+            const canvasEl = canvas.getCanvas();
+            const canvasWidth = canvasEl?.width || 500;
+            const canvasHeight = canvasEl?.height || 500;
+
+            // Use larger canvas size for saving (double the editing canvas)
+            const saveCanvasWidth = canvasWidth * 2;
+            const saveCanvasHeight = canvasHeight * 2;
+
+            // Calculate bounding box of the signature
+            let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+            signatureData.forEach((stroke: any) => {
+              if (stroke && stroke.length > 0) {
+                stroke.forEach((point: any) => {
+                  if (point.x < minX) minX = point.x;
+                  if (point.y < minY) minY = point.y;
+                  if (point.x > maxX) maxX = point.x;
+                  if (point.y > maxY) maxY = point.y;
+                });
+              }
+            });
+            const signatureWidth = maxX - minX;
+            const signatureHeight = maxY - minY;
+            const padding = 100;
+            const availableWidth = saveCanvasWidth - (padding * 2);
+            const availableHeight = saveCanvasHeight - (padding * 2);
+            const scale = Math.min(availableWidth / signatureWidth, availableHeight / signatureHeight, 1);
+            const scaledWidth = signatureWidth * scale;
+            const scaledHeight = signatureHeight * scale;
+            const offsetX = (saveCanvasWidth - scaledWidth) / 2 - (minX * scale);
+            const offsetY = (saveCanvasHeight - scaledHeight) / 2 - (minY * scale);
+
+            const tempCanvas = document.createElement('canvas');
+            const tempCtx = tempCanvas.getContext('2d');
+            if (tempCtx) {
+              tempCanvas.width = saveCanvasWidth;
+              tempCanvas.height = saveCanvasHeight;
+              tempCtx.fillStyle = 'white';
+              tempCtx.fillRect(0, 0, tempCanvas.width, tempCanvas.height);
+              tempCtx.strokeStyle = 'black';
+              signatureData.forEach((stroke: any) => {
+                if (stroke && stroke.length > 0) {
+                  tempCtx.beginPath();
+                  tempCtx.lineWidth = 5;
+                  tempCtx.lineCap = 'round';
+                  tempCtx.lineJoin = 'round';
+                  tempCtx.moveTo(stroke[0].x * scale + offsetX, stroke[0].y * scale + offsetY);
+                  for (let i = 1; i < stroke.length; i++) {
+                    tempCtx.lineTo(
+                      stroke[i].x * scale + offsetX,
+                      stroke[i].y * scale + offsetY
+                    );
+                  }
+                  tempCtx.stroke();
+                }
+              });
+              signatureDataURL = tempCanvas.toDataURL('image/png');
+            }
+          }
+        } catch {
+          /* try fallback */
+        }
+        if (!signatureDataURL) {
           try {
-            const trimmedCanvas = sigCanvas.current.getTrimmedCanvas();
+            const trimmedCanvas = canvas.getTrimmedCanvas();
             if (trimmedCanvas) {
-              signatureDataURL = trimmedCanvas.toDataURL('image/png');
+              const tempCanvas = document.createElement('canvas');
+              const tempCtx = tempCanvas.getContext('2d');
+              if (tempCtx) {
+                tempCanvas.width = 500;
+                tempCanvas.height = 500;
+                tempCtx.fillStyle = 'white';
+                tempCtx.fillRect(0, 0, tempCanvas.width, tempCanvas.height);
+                tempCtx.drawImage(trimmedCanvas, 0, 0);
+                signatureDataURL = tempCanvas.toDataURL('image/png');
+              }
             }
           } catch {
             /* try fallback */
           }
-          if (!signatureDataURL) {
-            try {
-              const canvas = sigCanvas.current.getCanvas();
-              if (canvas) {
-                signatureDataURL = canvas.toDataURL('image/png');
-              }
-            } catch {
-              /* ignore */
-            }
-          }
-          if (!signatureDataURL) {
-            try {
-              const signatureData = sigCanvas.current.toData();
-              if (signatureData && signatureData.length > 0) {
-                const tempCanvas = document.createElement('canvas');
-                const tempCtx = tempCanvas.getContext('2d');
-                if (tempCtx) {
-                  tempCanvas.width = 500;
-                  tempCanvas.height = 200;
-                  tempCtx.fillStyle = 'white';
-                  tempCtx.fillRect(0, 0, tempCanvas.width, tempCanvas.height);
-                  tempCtx.strokeStyle = 'black';
-                  tempCtx.lineWidth = 2;
-                  signatureData.forEach((stroke: any) => {
-                    if (stroke.points && stroke.points.length > 0) {
-                      tempCtx.beginPath();
-                      tempCtx.moveTo(stroke.points[0].x, stroke.points[0].y);
-                      for (let i = 1; i < stroke.points.length; i++) {
-                        tempCtx.lineTo(
-                          stroke.points[i].x,
-                          stroke.points[i].y
-                        );
-                      }
-                      tempCtx.stroke();
-                    }
-                  });
-                  signatureDataURL = tempCanvas.toDataURL('image/png');
-                }
-              }
-            } catch {
-              /* ignore */
-            }
-          }
-          return signatureDataURL && signatureDataURL !== 'data:,'
-            ? signatureDataURL
-            : null;
         }
-        return null;
+        if (!signatureDataURL) {
+          try {
+            const canvasEl = canvas.getCanvas();
+            if (canvasEl) {
+              const tempCanvas = document.createElement('canvas');
+              const tempCtx = tempCanvas.getContext('2d');
+              if (tempCtx) {
+                tempCanvas.width = canvasEl.width;
+                tempCanvas.height = canvasEl.height;
+                tempCtx.fillStyle = 'white';
+                tempCtx.fillRect(0, 0, tempCanvas.width, tempCanvas.height);
+                tempCtx.drawImage(canvasEl, 0, 0);
+                signatureDataURL = tempCanvas.toDataURL('image/png');
+              }
+            }
+          } catch {
+            /* ignore */
+          }
+        }
+        return signatureDataURL && signatureDataURL !== 'data:,'
+          ? signatureDataURL
+          : null;
       }
+      return null;
     };
 
     const checkInitialsAvailability = async (
@@ -400,59 +425,113 @@ const BasicInfoTab = forwardRef<BasicInfoTabHandle, BasicInfoTabProps>(
           payload.avatarUrl = url;
         }
 
-        if (initialsMode === 'type') {
-          if (typedInitials.trim()) {
-            payload.digitalSignature = typedInitials.trim();
-          }
+        if (signatureReadyToSave) {
+          payload.digitalSignature = signatureReadyToSave;
+          console.log('Using signatureReadyToSave:', signatureReadyToSave ? 'YES' : 'NO');
+          console.log('signatureReadyToSave dataURL length:', signatureReadyToSave?.length);
+          console.log('signatureReadyToSave first 50 chars:', signatureReadyToSave?.substring(0, 50));
         } else {
-          if (signatureReadyToSave) {
-            payload.digitalSignature = signatureReadyToSave;
-          } else if (sigCanvas.current && !sigCanvas.current.isEmpty()) {
+          const canvas = canvasRef || sigCanvas.current;
+          console.log('Canvas ref exists:', !!canvas);
+          console.log('Canvas isEmpty:', canvas?.isEmpty());
+          if (canvas && !canvas.isEmpty()) {
             let signatureDataURL: string | null = null;
             try {
-              const trimmedCanvas = sigCanvas.current.getTrimmedCanvas();
-              if (trimmedCanvas) {
-                signatureDataURL = trimmedCanvas.toDataURL('image/png');
+              const signatureData = canvas.toData();
+              if (signatureData && signatureData.length > 0) {
+                // Get actual canvas dimensions from editing canvas
+                const canvasEl = canvas.getCanvas();
+                const canvasWidth = canvasEl?.width || 500;
+                const canvasHeight = canvasEl?.height || 500;
+
+                // Use larger canvas size for saving (double the editing canvas)
+                const saveCanvasWidth = canvasWidth * 2;
+                const saveCanvasHeight = canvasHeight * 2;
+
+                // Calculate bounding box of the signature
+                let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+                signatureData.forEach((stroke: any) => {
+                  if (stroke && stroke.length > 0) {
+                    stroke.forEach((point: any) => {
+                      if (point.x < minX) minX = point.x;
+                      if (point.y < minY) minY = point.y;
+                      if (point.x > maxX) maxX = point.x;
+                      if (point.y > maxY) maxY = point.y;
+                    });
+                  }
+                });
+                const signatureWidth = maxX - minX;
+                const signatureHeight = maxY - minY;
+                const padding = 100;
+                const availableWidth = saveCanvasWidth - (padding * 2);
+                const availableHeight = saveCanvasHeight - (padding * 2);
+                const scale = Math.min(availableWidth / signatureWidth, availableHeight / signatureHeight, 1);
+                const scaledWidth = signatureWidth * scale;
+                const scaledHeight = signatureHeight * scale;
+                const offsetX = (saveCanvasWidth - scaledWidth) / 2 - (minX * scale);
+                const offsetY = (saveCanvasHeight - scaledHeight) / 2 - (minY * scale);
+
+                const tempCanvas = document.createElement('canvas');
+                const tempCtx = tempCanvas.getContext('2d');
+                if (tempCtx) {
+                  tempCanvas.width = saveCanvasWidth;
+                  tempCanvas.height = saveCanvasHeight;
+                  tempCtx.fillStyle = 'white';
+                  tempCtx.fillRect(0, 0, tempCanvas.width, tempCanvas.height);
+                  tempCtx.strokeStyle = 'black';
+                  signatureData.forEach((stroke: any) => {
+                    if (stroke && stroke.length > 0) {
+                      tempCtx.beginPath();
+                      tempCtx.lineWidth = 5;
+                      tempCtx.lineCap = 'round';
+                      tempCtx.lineJoin = 'round';
+                      tempCtx.moveTo(stroke[0].x * scale + offsetX, stroke[0].y * scale + offsetY);
+                      for (let i = 1; i < stroke.length; i++) {
+                        tempCtx.lineTo(
+                          stroke[i].x * scale + offsetX,
+                          stroke[i].y * scale + offsetY
+                        );
+                      }
+                      tempCtx.stroke();
+                    }
+                  });
+                  signatureDataURL = tempCanvas.toDataURL('image/png');
+                }
               }
             } catch {
               /* try fallback */
             }
             if (!signatureDataURL) {
               try {
-                const canvas = sigCanvas.current.getCanvas();
-                if (canvas) {
-                  signatureDataURL = canvas.toDataURL('image/png');
-                }
-              } catch {
-                /* ignore */
-              }
-            }
-            if (!signatureDataURL) {
-              try {
-                const signatureData = sigCanvas.current.toData();
-                if (signatureData && signatureData.length > 0) {
+                const trimmedCanvas = canvas.getTrimmedCanvas();
+                if (trimmedCanvas) {
                   const tempCanvas = document.createElement('canvas');
                   const tempCtx = tempCanvas.getContext('2d');
                   if (tempCtx) {
                     tempCanvas.width = 500;
-                    tempCanvas.height = 200;
+                    tempCanvas.height = 500;
                     tempCtx.fillStyle = 'white';
                     tempCtx.fillRect(0, 0, tempCanvas.width, tempCanvas.height);
-                    tempCtx.strokeStyle = 'black';
-                    tempCtx.lineWidth = 2;
-                    signatureData.forEach((stroke: any) => {
-                      if (stroke.points && stroke.points.length > 0) {
-                        tempCtx.beginPath();
-                        tempCtx.moveTo(stroke.points[0].x, stroke.points[0].y);
-                        for (let i = 1; i < stroke.points.length; i++) {
-                          tempCtx.lineTo(
-                            stroke.points[i].x,
-                            stroke.points[i].y
-                          );
-                        }
-                        tempCtx.stroke();
-                      }
-                    });
+                    tempCtx.drawImage(trimmedCanvas, 0, 0);
+                    signatureDataURL = tempCanvas.toDataURL('image/png');
+                  }
+                }
+              } catch {
+                /* try fallback */
+              }
+            }
+            if (!signatureDataURL) {
+              try {
+                const canvasEl = canvas.getCanvas();
+                if (canvasEl) {
+                  const tempCanvas = document.createElement('canvas');
+                  const tempCtx = tempCanvas.getContext('2d');
+                  if (tempCtx) {
+                    tempCanvas.width = canvasEl.width;
+                    tempCanvas.height = canvasEl.height;
+                    tempCtx.fillStyle = 'white';
+                    tempCtx.fillRect(0, 0, tempCanvas.width, tempCanvas.height);
+                    tempCtx.drawImage(canvasEl, 0, 0);
                     signatureDataURL = tempCanvas.toDataURL('image/png');
                   }
                 }
@@ -462,21 +541,26 @@ const BasicInfoTab = forwardRef<BasicInfoTabHandle, BasicInfoTabProps>(
             }
             if (signatureDataURL && signatureDataURL !== 'data:,') {
               payload.digitalSignature = signatureDataURL;
+              console.log('Captured signature from canvas:', signatureDataURL.substring(0, 50) + '...');
             }
           }
         }
 
+        console.log('Final payload digitalSignature:', payload.digitalSignature ? 'YES' : 'NO');
+        console.log('Payload keys:', Object.keys(payload));
+
         await api.patch('/auth/profile', payload);
+
+        console.log('Profile saved, refetching user data...');
 
         await refetch();
 
+        console.log('User data refetched, new digitalSignature:', user?.digitalSignature ? 'YES' : 'NO');
+
         clearPreview();
 
-        const didSaveInitials =
-          initialsMode === 'type'
-            ? !!typedInitials.trim()
-            : !!(signatureReadyToSave ||
-                (sigCanvas.current && !sigCanvas.current.isEmpty()));
+        const didSaveInitials = !!(signatureReadyToSave ||
+          ((canvasRef || sigCanvas.current) && !(canvasRef || sigCanvas.current)?.isEmpty()));
 
         if (didSaveInitials) {
           setSignatureSaved(true);
@@ -846,225 +930,220 @@ const BasicInfoTab = forwardRef<BasicInfoTabHandle, BasicInfoTabProps>(
                   </p>
                 </div>
                 <div className="p-6 bg-white flex items-center justify-center min-h-[80px]">
-                  {user?.digitalSignature &&
-                    (user.digitalSignature.startsWith('data:image') ||
-                    user.digitalSignature.startsWith('http://') ||
-                    user.digitalSignature.startsWith('https://') ? (
-                      <img
-                        src={user.digitalSignature}
-                        alt="Digital Initials"
-                        className="max-w-full h-32 object-contain mx-auto"
-                      />
-                    ) : (
-                      <span
-                        className="text-5xl font-bold tracking-widest text-gray-800"
-                        style={{ fontFamily: 'Georgia, serif' }}
-                      >
-                        {user.digitalSignature}
-                      </span>
-                    ))}
+                  {isImageSignature(user?.digitalSignature) && (
+                    <img
+                      src={user.digitalSignature || undefined}
+                      alt="Digital Initials"
+                      className="max-w-full h-32 object-contain mx-auto"
+                    />
+                  )}
                 </div>
               </div>
             )}
 
             {isEditing && (
               <div className="rounded-xl border-2 border-red-200 overflow-hidden bg-white shadow-sm">
-                {/* Mode toggle */}
-                <div className="flex border-b">
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setInitialsMode('type');
-                      setSignatureReadyToSave(null);
-                      setSignatureMarkedDone(false);
-                      if (sigCanvas.current) {
-                        sigCanvas.current.clear();
-                      }
+                <div className={signatureMarkedDone ? 'pointer-events-none opacity-50' : ''}>
+                  <SignatureCanvas
+                    key={canvasKey}
+                    ref={(ref) => {
+                      sigCanvas.current = ref;
+                      setCanvasRef(ref);
                     }}
-                    className={`flex-1 py-3 text-sm font-medium transition-colors ${
-                      initialsMode === 'type'
-                        ? 'bg-red-600 text-white'
-                        : 'bg-gray-50 text-gray-600 hover:bg-gray-100'
-                    }`}
-                  >
-                    Type Initials
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setInitialsMode('draw');
-                      setTypedInitials('');
-                    }}
-                    className={`flex-1 py-3 text-sm font-medium transition-colors ${
-                      initialsMode === 'draw'
-                        ? 'bg-red-600 text-white'
-                        : 'bg-gray-50 text-gray-600 hover:bg-gray-100'
-                    }`}
-                  >
-                    Draw Initials
-                  </button>
+                    penColor="black"
+                    minWidth={2.5}
+                    maxWidth={5}
+                    canvasProps={{ className: 'w-full h-[500px] bg-gray-50' }}
+                  />
                 </div>
-
-                {/* Type mode */}
-                {initialsMode === 'type' && (
-                  <div className="p-6 space-y-4">
-                    <div>
-                      <Label className="text-sm text-gray-600 mb-1 block">
-                        Enter your initials (e.g. J.D., JDC, M.A.)
-                      </Label>
-                      <Input
-                        value={typedInitials}
-                        onChange={e => {
-                          if (e.target.value.length <= 10)
-                            setTypedInitials(e.target.value.toUpperCase());
-                        }}
-                        maxLength={10}
-                        placeholder="e.g. J.D."
-                        className="text-center text-2xl font-bold tracking-widest uppercase h-14 border-red-200 focus-visible:ring-red-400"
-                        style={{ fontFamily: 'Georgia, serif' }}
-                      />
-                    </div>
-                    {typedInitials.trim() && (
-                      <div className="rounded-xl border border-red-100 bg-red-50 p-4 flex items-center justify-center">
-                        <span
-                          className="text-5xl font-bold tracking-widest text-gray-800"
-                          style={{ fontFamily: 'Georgia, serif' }}
-                        >
-                          {typedInitials}
-                        </span>
-                      </div>
-                    )}
-                    {!typedInitials.trim() && (
-                      <p className="text-xs text-gray-400 text-center italic">
-                        Preview will appear here as you type.
-                      </p>
-                    )}
-                  </div>
-                )}
-
-                {/* Draw mode */}
-                {initialsMode === 'draw' && (
-                  <div>
-                    <SignatureCanvas
-                      ref={sigCanvas}
-                      penColor="black"
-                      canvasProps={{ className: 'w-full h-[500px] bg-gray-50' }}
-                    />
-                    <div className="flex flex-col gap-3 border-t bg-gray-100 p-4 sm:flex-row sm:items-center sm:justify-between">
-                      <p className="text-sm text-gray-600">
-                        {signatureReadyToSave
-                          ? 'Initials captured and ready to save!'
-                          : signatureMarkedDone
-                            ? 'Initials marked as done!'
-                            : 'Draw your initials above'}
-                      </p>
-                      <div className="flex flex-col gap-2 sm:flex-row">
-                        <Button
-                          variant="outline"
-                          size="sm"
-                          onClick={() => {
-                            sigCanvas.current?.clear();
-                            setSignatureSaved(false);
-                            setSignatureMarkedDone(false);
-                            setSignatureReadyToSave(null);
-                          }}
-                          className="border-red-600 text-red-600 hover:bg-red-50"
-                        >
-                          Clear
-                        </Button>
-                        <Button
-                          size="sm"
-                          onClick={() => {
-                            try {
-                              if (!sigCanvas.current) {
-                                toast.error('Canvas not ready. Please try again.');
-                                return;
-                              }
-                              if (sigCanvas.current.isEmpty()) {
-                                toast.error('Please draw your initials before clicking Mark as Done.');
-                                return;
-                              }
-                              setTimeout(async () => {
+                <div className="flex flex-col gap-3 border-t bg-gray-100 p-4 sm:flex-row sm:items-center sm:justify-between relative z-10">
+                  <p className="text-sm text-gray-600">
+                    {signatureReadyToSave
+                      ? 'Initials captured and ready to save!'
+                      : signatureMarkedDone
+                        ? 'Initials marked as done!'
+                        : 'Draw your initials above'}
+                  </p>
+                  <div className="flex flex-col gap-2 sm:flex-row">
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() => {
+                        setCanvasKey(prev => prev + 1);
+                        setCanvasRef(null);
+                        setSignatureSaved(false);
+                        setSignatureMarkedDone(false);
+                        setSignatureReadyToSave(null);
+                      }}
+                      className="border-red-600 text-red-600 hover:bg-red-50"
+                    >
+                      Clear
+                    </Button>
+                    <Button
+                      size="sm"
+                      onClick={() => {
+                          console.log('Mark as Done clicked, signatureReadyToSave before:', signatureReadyToSave ? 'YES' : 'NO');
+                          try {
+                            if (!(canvasRef || sigCanvas.current)) {
+                              toast.error('Canvas not ready. Please try again.');
+                              return;
+                            }
+                            if ((canvasRef || sigCanvas.current)?.isEmpty()) {
+                              toast.error('Please draw your initials before clicking Mark as Done.');
+                              return;
+                            }
+                            console.log('Canvas is not empty, proceeding to capture');
+                            setTimeout(async () => {
+                              try {
+                                let signatureDataURL: string | null = null;
+                                const canvas = canvasRef || sigCanvas.current;
+                                if (!canvas) {
+                                  toast.error('Canvas not ready. Please try again.');
+                                  return;
+                                }
+                                console.log('Capturing signature from canvas, canvasRef:', !!canvasRef, 'sigCanvas.current:', !!sigCanvas.current);
                                 try {
-                                  let signatureDataURL: string | null = null;
+                                  const signatureData = canvas.toData();
+                                  console.log('toData result:', signatureData ? 'YES' : 'NO', 'stroke count:', signatureData?.length);
+                                  if (signatureData && signatureData.length > 0) {
+                                    // Get actual canvas dimensions from editing canvas
+                                    const canvasEl = canvas.getCanvas();
+                                    const canvasWidth = canvasEl?.width || 500;
+                                    const canvasHeight = canvasEl?.height || 500;
+                                    console.log('Canvas dimensions:', { canvasWidth, canvasHeight });
+
+                                    // Use larger canvas size for saving (double the editing canvas)
+                                    const saveCanvasWidth = canvasWidth * 2;
+                                    const saveCanvasHeight = canvasHeight * 2;
+                                    console.log('Save canvas dimensions:', { saveCanvasWidth, saveCanvasHeight });
+
+                                    // Calculate bounding box of the signature
+                                    let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+                                    signatureData.forEach((stroke: any) => {
+                                      if (stroke && stroke.length > 0) {
+                                        stroke.forEach((point: any) => {
+                                          if (point.x < minX) minX = point.x;
+                                          if (point.y < minY) minY = point.y;
+                                          if (point.x > maxX) maxX = point.x;
+                                          if (point.y > maxY) maxY = point.y;
+                                        });
+                                      }
+                                    });
+                                    const signatureWidth = maxX - minX;
+                                    const signatureHeight = maxY - minY;
+                                    const padding = 100;
+                                    const availableWidth = saveCanvasWidth - (padding * 2);
+                                    const availableHeight = saveCanvasHeight - (padding * 2);
+                                    const scale = Math.min(availableWidth / signatureWidth, availableHeight / signatureHeight, 1);
+                                    const scaledWidth = signatureWidth * scale;
+                                    const scaledHeight = signatureHeight * scale;
+                                    const offsetX = (saveCanvasWidth - scaledWidth) / 2 - (minX * scale);
+                                    const offsetY = (saveCanvasHeight - scaledHeight) / 2 - (minY * scale);
+
+                                    console.log('Signature bounds:', { minX, minY, maxX, maxY, signatureWidth, signatureHeight, scale, offsetX, offsetY });
+
+                                    const tempCanvas = document.createElement('canvas');
+                                    const tempCtx = tempCanvas.getContext('2d');
+                                    if (tempCtx) {
+                                      tempCanvas.width = saveCanvasWidth;
+                                      tempCanvas.height = saveCanvasHeight;
+                                      tempCtx.fillStyle = 'white';
+                                      tempCtx.fillRect(0, 0, tempCanvas.width, tempCanvas.height);
+                                      tempCtx.strokeStyle = 'black';
+                                      signatureData.forEach((stroke: any) => {
+                                        if (stroke && stroke.length > 0) {
+                                          tempCtx.beginPath();
+                                          tempCtx.lineWidth = 5;
+                                          tempCtx.lineCap = 'round';
+                                          tempCtx.lineJoin = 'round';
+                                          tempCtx.moveTo(stroke[0].x * scale + offsetX, stroke[0].y * scale + offsetY);
+                                          for (let i = 1; i < stroke.length; i++) {
+                                            tempCtx.lineTo(
+                                              stroke[i].x * scale + offsetX,
+                                              stroke[i].y * scale + offsetY
+                                            );
+                                          }
+                                          tempCtx.stroke();
+                                        }
+                                      });
+                                      signatureDataURL = tempCanvas.toDataURL('image/png');
+                                      console.log('Signature captured successfully, dataURL length:', signatureDataURL?.length);
+                                    }
+                                  } else {
+                                    console.log('No signature data found');
+                                  }
+                                } catch (err) {
+                                  console.error('toData failed:', err);
+                                  /* try fallback */
+                                }
+                                if (!signatureDataURL) {
+                                  console.log('Primary capture failed, trying fallback methods');
                                   try {
-                                    const trimmedCanvas =
-                                      sigCanvas.current!.getTrimmedCanvas();
+                                    const trimmedCanvas = canvas.getTrimmedCanvas();
                                     if (trimmedCanvas) {
-                                      signatureDataURL =
-                                        trimmedCanvas.toDataURL('image/png');
+                                      const tempCanvas = document.createElement('canvas');
+                                      const tempCtx = tempCanvas.getContext('2d');
+                                      if (tempCtx) {
+                                        tempCanvas.width = 500;
+                                        tempCanvas.height = 500;
+                                        tempCtx.fillStyle = 'white';
+                                        tempCtx.fillRect(0, 0, tempCanvas.width, tempCanvas.height);
+                                        tempCtx.drawImage(trimmedCanvas, 0, 0);
+                                        signatureDataURL = tempCanvas.toDataURL('image/png');
+                                        console.log('Signature captured via trimmedCanvas');
+                                      }
                                     }
                                   } catch {
                                     /* try fallback */
                                   }
-                                  if (!signatureDataURL) {
-                                    try {
-                                      const canvas =
-                                        sigCanvas.current!.getCanvas();
-                                      if (canvas) {
-                                        signatureDataURL =
-                                          canvas.toDataURL('image/png');
-                                      }
-                                    } catch {
-                                      /* ignore */
-                                    }
-                                  }
-                                  if (!signatureDataURL) {
-                                    try {
-                                      const signatureData = sigCanvas.current?.toData();
-                                      if (signatureData && signatureData.length > 0) {
-                                        const tempCanvas = document.createElement('canvas');
-                                        const tempCtx = tempCanvas.getContext('2d');
-                                        if (tempCtx) {
-                                          tempCanvas.width = 500;
-                                          tempCanvas.height = 200;
-                                          tempCtx.fillStyle = 'white';
-                                          tempCtx.fillRect(0, 0, tempCanvas.width, tempCanvas.height);
-                                          tempCtx.strokeStyle = 'black';
-                                          tempCtx.lineWidth = 2;
-                                          signatureData.forEach((stroke: any) => {
-                                            if (stroke.points && stroke.points.length > 0) {
-                                              tempCtx.beginPath();
-                                              tempCtx.moveTo(stroke.points[0].x, stroke.points[0].y);
-                                              for (let i = 1; i < stroke.points.length; i++) {
-                                                tempCtx.lineTo(
-                                                  stroke.points[i].x,
-                                                  stroke.points[i].y
-                                                );
-                                              }
-                                              tempCtx.stroke();
-                                            }
-                                          });
-                                          signatureDataURL = tempCanvas.toDataURL('image/png');
-                                        }
-                                      }
-                                    } catch {
-                                      /* ignore */
-                                    }
-                                  }
-                                  if (signatureDataURL && signatureDataURL !== 'data:,') {
-                                    setSignatureReadyToSave(signatureDataURL);
-                                    setSignatureMarkedDone(true);
-                                  } else {
-                                    toast.error('Failed to capture initials. Try drawing again.');
-                                  }
-                                } catch {
-                                  toast.error('Failed to capture initials.');
                                 }
-                              }, 100);
-                            } catch {
-                              toast.error('Failed to capture initials.');
-                            }
-                          }}
-                          disabled={sigCanvas.current?.isEmpty()}
-                          className="bg-red-600 hover:bg-red-700 text-white"
-                        >
-                          Mark as Done
-                        </Button>
-                      </div>
+                                if (!signatureDataURL) {
+                                  console.log('TrimmedCanvas failed, trying getCanvas');
+                                  try {
+                                    const canvasEl = canvas.getCanvas();
+                                    if (canvasEl) {
+                                      const tempCanvas = document.createElement('canvas');
+                                      const tempCtx = tempCanvas.getContext('2d');
+                                      if (tempCtx) {
+                                        tempCanvas.width = canvasEl.width;
+                                        tempCanvas.height = canvasEl.height;
+                                        tempCtx.fillStyle = 'white';
+                                        tempCtx.fillRect(0, 0, tempCanvas.width, tempCanvas.height);
+                                        tempCtx.drawImage(canvasEl, 0, 0);
+                                        signatureDataURL = tempCanvas.toDataURL('image/png');
+                                        console.log('Signature captured via getCanvas');
+                                      }
+                                    }
+                                  } catch {
+                                    /* ignore */
+                                  }
+                                }
+                                if (signatureDataURL && signatureDataURL !== 'data:,') {
+                                  setSignatureReadyToSave(signatureDataURL);
+                                  setSignatureMarkedDone(true);
+                                  toast.success('Initials marked as done! Click Save to save your profile.');
+                                  console.log('signatureReadyToSave set successfully');
+                                } else {
+                                  toast.error('Failed to capture initials. Please try again.');
+                                  console.error('Failed to capture signature, signatureDataURL is null or invalid');
+                                }
+                              } catch (err) {
+                                console.error('Mark as Done error:', err);
+                                toast.error('Failed to mark initials as done. Please try again.');
+                              }
+                            }, 100);
+                          } catch (err) {
+                            console.error('Mark as Done outer error:', err);
+                            toast.error('Failed to mark initials as done. Please try again.');
+                          }
+                        }}
+                        disabled={signatureMarkedDone}
+                        className="bg-red-600 hover:bg-red-700 text-white"
+                      >
+                        Mark as Done
+                      </Button>
                     </div>
                   </div>
-                )}
               </div>
             )}
 
@@ -1073,11 +1152,7 @@ const BasicInfoTab = forwardRef<BasicInfoTabHandle, BasicInfoTabProps>(
                 ? 'Your digital initials are saved on your profile.'
                 : !isEditing
                   ? 'No initials added yet.'
-                  : initialsMode === 'type'
-                    ? typedInitials.trim()
-                      ? 'Initials will be saved when you save profile changes.'
-                      : 'Type your initials above, then save your profile.'
-                    : signatureReadyToSave
+                  : signatureReadyToSave
                       ? 'Initials will be saved when you save profile changes.'
                       : signatureMarkedDone
                         ? 'Click Save on the profile page to store your initials.'
@@ -1088,23 +1163,16 @@ const BasicInfoTab = forwardRef<BasicInfoTabHandle, BasicInfoTabProps>(
       </Card>
 
       {/* Digital Initials Consent Dialog */}
-      <Dialog open={showConsentDialog} onOpenChange={setShowConsentDialog}>
-        <DialogContent showCloseButton={false} className="max-w-lg">
-          <DialogHeader>
-            <div className="flex items-center gap-3 mb-1">
-              <div className="rounded-xl bg-red-100 p-2">
-                <ShieldCheck className="h-6 w-6 text-red-600" />
-              </div>
-              <DialogTitle className="text-lg font-bold text-gray-900">
-                Digital Initials — Consent & Agreement
-              </DialogTitle>
-            </div>
-            <DialogDescription className="text-sm text-gray-600 leading-relaxed pt-1">
+      <AlertDialog open={showConsentDialog} onOpenChange={setShowConsentDialog}>
+        <AppAlertDialogFrame className="max-w-lg">
+          <AppAlertDialogGradientHeader title="Digital Initials — Consent & Agreement" />
+          <AppAlertDialogMessage>
+            <AlertDialogDescription className="text-base text-gray-600 leading-relaxed">
               Before saving your digital initials, please read and acknowledge each of the following statements. All boxes must be checked to proceed.
-            </DialogDescription>
-          </DialogHeader>
+            </AlertDialogDescription>
+          </AppAlertDialogMessage>
 
-          <div className="space-y-4 py-2">
+          <div className="space-y-4 py-4 px-6">
             {/* Consent 1 */}
             <label className="flex items-start gap-3 cursor-pointer group">
               <Checkbox
@@ -1155,14 +1223,13 @@ const BasicInfoTab = forwardRef<BasicInfoTabHandle, BasicInfoTabProps>(
           </div>
 
           {!allConsentsChecked && (
-            <p className="text-xs text-red-500 text-center font-medium">
+            <p className="text-xs text-red-500 text-center font-medium px-6 pb-2">
               Please check all boxes above to enable the Confirm button.
             </p>
           )}
 
-          <DialogFooter className="gap-2 pt-2">
-            <Button
-              variant="outline"
+          <AppAlertDialogChromeFooter>
+            <AlertDialogCancel
               onClick={() => {
                 setShowConsentDialog(false);
                 pendingSaveRef.current = null;
@@ -1181,8 +1248,8 @@ const BasicInfoTab = forwardRef<BasicInfoTabHandle, BasicInfoTabProps>(
               className="border-gray-300 text-gray-600 hover:bg-gray-50"
             >
               Cancel
-            </Button>
-            <Button
+            </AlertDialogCancel>
+            <AlertDialogAction
               disabled={!allConsentsChecked}
               onClick={async () => {
                 setShowConsentDialog(false);
@@ -1199,29 +1266,27 @@ const BasicInfoTab = forwardRef<BasicInfoTabHandle, BasicInfoTabProps>(
               className="bg-red-600 hover:bg-red-700 text-white disabled:opacity-50"
             >
               I Agree &amp; Save Initials
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
+            </AlertDialogAction>
+          </AppAlertDialogChromeFooter>
+        </AppAlertDialogFrame>
+      </AlertDialog>
 
       {/* OTP Verification Dialog */}
-      <Dialog open={showOtpDialog} onOpenChange={setShowOtpDialog}>
-        <DialogContent showCloseButton={false} className="max-w-md">
-          <DialogHeader>
-            <div className="flex items-center gap-3 mb-1">
-              <div className="rounded-xl bg-blue-100 p-2">
-                <ShieldCheck className="h-6 w-6 text-blue-600" />
-              </div>
-              <DialogTitle className="text-lg font-bold text-gray-900">
-                OTP SMS Verification
-              </DialogTitle>
-            </div>
-            <DialogDescription className="text-sm text-gray-600 leading-relaxed pt-1">
+      <AlertDialog open={showOtpDialog} onOpenChange={(open) => {
+        if (!open) {
+          setShowOtpDialog(false);
+          setOtpCode(['', '', '', '', '', '']);
+        }
+      }}>
+        <AppAlertDialogFrame className="max-w-md">
+          <AppAlertDialogGradientHeader title="OTP SMS Verification" />
+          <AppAlertDialogMessage>
+            <AlertDialogDescription className="text-base text-gray-600 leading-relaxed">
               OTP SMS Verification has been sent to your registered mobile number: <span className="font-semibold text-gray-900">{user?.contactNumber || 'N/A'}</span>
-            </DialogDescription>
-          </DialogHeader>
+            </AlertDialogDescription>
+          </AppAlertDialogMessage>
 
-          <div className="space-y-4 py-4">
+          <div className="space-y-4 py-4 px-6">
             <div>
               <Label className="text-sm text-gray-600 mb-2 block">
                 Enter the 6-digit code sent to{' '}
@@ -1252,9 +1317,8 @@ const BasicInfoTab = forwardRef<BasicInfoTabHandle, BasicInfoTabProps>(
             </div>
           </div>
 
-          <DialogFooter className="gap-2 flex-col sm:flex-row">
-            <Button
-              variant="outline"
+          <AppAlertDialogChromeFooter>
+            <AlertDialogCancel
               onClick={() => {
                 setShowOtpDialog(false);
                 setOtpCode(['', '', '', '', '', '']);
@@ -1269,7 +1333,7 @@ const BasicInfoTab = forwardRef<BasicInfoTabHandle, BasicInfoTabProps>(
               className="border-gray-300 text-gray-600 hover:bg-gray-50"
             >
               Cancel
-            </Button>
+            </AlertDialogCancel>
             <Button
               variant="outline"
               onClick={async () => {
@@ -1320,11 +1384,11 @@ const BasicInfoTab = forwardRef<BasicInfoTabHandle, BasicInfoTabProps>(
               }
               className="bg-red-600 hover:bg-red-700 text-white disabled:opacity-50"
             >
-              Verify
+              {isVerifyingOtp ? 'Verifying...' : 'Verify'}
             </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
+          </AppAlertDialogChromeFooter>
+        </AppAlertDialogFrame>
+      </AlertDialog>
       </>
     );
   }

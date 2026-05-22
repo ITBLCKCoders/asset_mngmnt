@@ -22,20 +22,6 @@ const Shimmer = ({ className }: { className?: string }) => (
   <div className={cn('animate-shimmer rounded bg-gray-200/80', className)} />
 );
 
-function useDelayedLoading(loading: boolean, minDelayMs: number = 2000) {
-  const [isDelayedLoading, setIsDelayedLoading] = useState(true);
-
-  useEffect(() => {
-    if (loading) {
-      setIsDelayedLoading(true);
-    } else {
-      const timer = setTimeout(() => setIsDelayedLoading(false), minDelayMs);
-      return () => clearTimeout(timer);
-    }
-  }, [loading, minDelayMs]);
-
-  return loading || isDelayedLoading;
-}
 
 interface ProfileHeaderProps {
   user: any;
@@ -45,7 +31,7 @@ interface ProfileHeaderProps {
   isSaving?: boolean;
   onStartEdit: () => void;
   onCancel: () => void;
-  onSave: () => Promise<void>;
+  onSave: () => void;
 }
 
 export default function ProfileHeader({
@@ -60,10 +46,9 @@ export default function ProfileHeader({
 }: ProfileHeaderProps) {
   const fileInputRef = useRef<HTMLInputElement>(null);
 
-  const { previewUrl, setPreviewUrl, setPendingFile, clearPreview } =
-    useAvatarPreview();
+  const { previewUrl, setPreviewUrl, setPendingFile } = useAvatarPreview();
 
-  const isLoading = useDelayedLoading(externalLoading, 2000);
+  const isLoading = externalLoading;
 
   const getInitials = (name: string) => {
     return name
@@ -94,7 +79,6 @@ export default function ProfileHeader({
   };
 
   const handleCancel = () => {
-    clearPreview();
     onCancel();
   };
 
@@ -198,9 +182,10 @@ export default function ProfileHeader({
             <div className="flex w-full flex-col gap-3 sm:w-auto sm:flex-row">
               {!isEditing ? (
                 <Button
+                  variant="header"
                   size="lg"
                   onClick={onStartEdit}
-                  className="w-full bg-red-600 text-white shadow-lg hover:bg-red-700 sm:w-auto"
+                  className="w-full sm:w-auto"
                 >
                   <UserCheck className="w-5 h-5 mr-2" />
                   Edit Profile
@@ -208,21 +193,22 @@ export default function ProfileHeader({
               ) : (
                 <>
                   <Button
-                    variant="outline"
+                    variant="header"
                     size="lg"
                     onClick={handleCancel}
                     disabled={isSaving}
-                    className="w-full border-red-600 text-red-600 hover:bg-red-50 sm:w-auto"
+                    className="w-full sm:w-auto"
                   >
                     <X className="w-5 h-5 mr-2" />
                     Cancel
                   </Button>
 
                   <Button
+                    variant="header"
                     size="lg"
                     onClick={onSave}
                     disabled={isSaving}
-                    className="w-full bg-red-600 text-white shadow-lg hover:bg-red-700 sm:w-auto"
+                    className="w-full sm:w-auto"
                   >
                     {isSaving ? (
                       <>

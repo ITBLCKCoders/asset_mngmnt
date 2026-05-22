@@ -64,7 +64,6 @@ const COMPONENT_KEYWORDS = [
 export function isComputerTypeAsset(asset: Asset): boolean {
   const searchFields = [
     asset.type || '',
-    asset.category || '',
   ].join(' ').toLowerCase();
 
   // First check if it's a component (exclude these)

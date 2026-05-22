@@ -2,7 +2,7 @@
 
 import { type AccountabilityForm } from '@/pages/assets/accountability/accountabilityForm';
 
-export type AssetStatus = 'Assigned' | 'Available' | 'In Maintenance';
+export type AssetStatus = string;
 export type AssetCondition =
   | 'Excellent'
   | 'Good'
@@ -59,11 +59,15 @@ export interface Asset {
   image: string;
   description: string;
   category: string;
+  categoryId?: string;
   type: string;
+  typeId?: string;
   serialNo: string;
   modelNo: string;
   brand: string;
   status: AssetStatus;
+  transferred_out?: boolean;
+  transferred_to_company_name?: string | null;
   assignedTo: string;
   department: string;
   location: string;

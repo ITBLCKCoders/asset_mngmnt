@@ -8,7 +8,6 @@ import {
   CheckCircle2,
   AlertTriangle,
   ArrowRightLeft,
-  RefreshCw,
   FileText,
   Boxes,
   Download,
@@ -29,7 +28,7 @@ import { Badge } from '@/components/ui/badge';
 import { Checkbox } from '@/components/ui/checkbox';
 import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
-import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
+import { Tabs, TabsContent, TabsList, TabsTrigger, segmentTabsListClassName, segmentTabsTriggerClassName } from '@/components/ui/tabs';
 import { Dialog } from '@/components/ui/dialog';
 import {
   AppDialogBody,
@@ -53,13 +52,13 @@ import {
   formatTransferFormUiStatus,
   type TransferFormUiStatus,
 } from '@/utils/transferFormStatus';
-import {
-  downloadPDF,
+import { downloadPDF,
   generateAssetReturnPDF,
   generateAssetTransferPDF,
 } from '@/lib/pdfGenerator';
 import { DataTable } from '@/components/ui/dataTable';
 import type { ColumnDef } from '@tanstack/react-table';
+import { Shimmer } from '@/components/ui/shimmer';
 
 interface AssetAssignment {
   assignmentID: string;
@@ -818,31 +817,15 @@ export default function AssetTransferRequest() {
           title="Transfer asset"
           description="Request to transfer your assigned assets to another user"
         >
-          <Button
-            variant="ghost"
-            size="sm"
-            onClick={() => {
-              fetchAssignments();
-              fetchTransferRequests();
-              fetchReturnRequests();
-              fetchUsers();
-              fetchAssetBuilders();
-            }}
-            disabled={loading}
-            className="flex items-center gap-2"
-          >
-            <RefreshCw className={`h-4 w-4 ${loading ? 'animate-spin' : ''}`} />
-            Refresh
-          </Button>
         </PageHeader>
 
         <div className="grid grid-cols-1 xl:grid-cols-3 gap-8">
           <div className="xl:col-span-2">
             <Tabs defaultValue="select-assets" className="w-full">
-              <TabsList className="grid w-full grid-cols-2 rounded-xl bg-gray-100 p-1.5 h-auto mb-4">
+              <TabsList className={segmentTabsListClassName + ' grid grid-cols-2 mb-4'}>
                 <TabsTrigger
                   value="select-assets"
-                  className="flex items-center gap-2 data-[state=active]:bg-red-500 data-[state=active]:text-white data-[state=active]:shadow-sm"
+                  className={segmentTabsTriggerClassName + ' flex items-center gap-2'}
                 >
                   <Package className="h-4 w-4" />
                   Asset
@@ -852,7 +835,7 @@ export default function AssetTransferRequest() {
                 </TabsTrigger>
                 <TabsTrigger
                   value="asset-built"
-                  className="flex items-center gap-2 data-[state=active]:bg-red-500 data-[state=active]:text-white data-[state=active]:shadow-sm"
+                  className={segmentTabsTriggerClassName + ' flex items-center gap-2'}
                 >
                   <Boxes className="h-4 w-4" />
                   Asset Built
@@ -951,11 +934,19 @@ export default function AssetTransferRequest() {
                     {viewMode === 'list' ? (
                       <div className="space-y-3 max-h-96 overflow-y-auto scrollbar-thin scrollbar-thumb-gray-300 scrollbar-track-gray-100">
                         {loading ? (
-                          <div className="flex items-center justify-center py-12">
-                            <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-red-600"></div>
-                            <span className="ml-3 text-gray-600">
-                              Loading assignments...
-                            </span>
+                          <div className="space-y-3">
+                            {[1, 2, 3, 4, 5].map(i => (
+                              <div key={i} className="p-4 border-2 rounded-xl">
+                                <div className="flex items-start gap-4">
+                                  <Shimmer className="h-5 w-5 rounded" />
+                                  <div className="flex-1 space-y-2">
+                                    <Shimmer className="h-5 w-48 rounded" />
+                                    <Shimmer className="h-4 w-32 rounded" />
+                                    <Shimmer className="h-4 w-24 rounded" />
+                                  </div>
+                                </div>
+                              </div>
+                            ))}
                           </div>
                         ) : filteredAssignments.length === 0 ? (
                           <div className="text-center py-12">
@@ -1103,11 +1094,19 @@ export default function AssetTransferRequest() {
                     ) : (
                       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 max-h-96 overflow-y-auto scrollbar-thin scrollbar-thumb-gray-300 scrollbar-track-gray-100">
                         {loading ? (
-                          <div className="col-span-full flex items-center justify-center py-12">
-                            <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-red-600"></div>
-                            <span className="ml-3 text-gray-600">
-                              Loading assignments...
-                            </span>
+                          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+                            {[1, 2, 3, 4, 5, 6].map(i => (
+                              <div key={i} className="p-4 border-2 rounded-xl">
+                                <div className="flex items-start gap-4">
+                                  <Shimmer className="h-5 w-5 rounded" />
+                                  <div className="flex-1 space-y-2">
+                                    <Shimmer className="h-5 w-32 rounded" />
+                                    <Shimmer className="h-4 w-24 rounded" />
+                                    <Shimmer className="h-4 w-20 rounded" />
+                                  </div>
+                                </div>
+                              </div>
+                            ))}
                           </div>
                         ) : filteredAssignments.length === 0 ? (
                           <div className="col-span-full text-center py-12">
@@ -1309,11 +1308,18 @@ export default function AssetTransferRequest() {
                   </CardHeader>
                   <CardContent className="pt-0">
                     {buildersLoading ? (
-                      <div className="flex items-center justify-center py-12">
-                        <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-red-600" />
-                        <span className="ml-3 text-gray-600">
-                          Loading builders...
-                        </span>
+                      <div className="space-y-3">
+                        {[1, 2, 3].map(i => (
+                          <div key={i} className="p-4 border-2 rounded-xl">
+                            <div className="flex items-start gap-4">
+                              <Shimmer className="h-5 w-5 rounded" />
+                              <div className="flex-1 space-y-2">
+                                <Shimmer className="h-5 w-40 rounded" />
+                                <Shimmer className="h-4 w-28 rounded" />
+                              </div>
+                            </div>
+                          </div>
+                        ))}
                       </div>
                     ) : filteredAssignedBuilders.length === 0 ? (
                       <div className="text-center py-12">
@@ -2006,11 +2012,18 @@ export default function AssetTransferRequest() {
 
             <CardContent>
               {loading ? (
-                <div className="flex items-center justify-center py-12">
-                  <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-red-600"></div>
-                  <span className="ml-3 text-gray-600">
-                    Loading requests...
-                  </span>
+                <div className="space-y-3">
+                  {[1, 2, 3, 4, 5].map(i => (
+                    <div key={i} className="p-4 border-2 rounded-xl">
+                      <div className="flex items-start gap-4">
+                        <div className="flex-1 space-y-2">
+                          <Shimmer className="h-5 w-32 rounded" />
+                          <Shimmer className="h-4 w-24 rounded" />
+                          <Shimmer className="h-4 w-20 rounded" />
+                        </div>
+                      </div>
+                    </div>
+                  ))}
                 </div>
               ) : transferRequests.length === 0 ? (
                 <div className="text-center py-12">

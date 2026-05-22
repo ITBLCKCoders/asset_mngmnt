@@ -2,12 +2,12 @@
 
 import { useEffect, useState } from 'react';
 import { useParams } from 'react-router-dom';
-import { Package, Clock, RefreshCw, FileText } from 'lucide-react';
+import { Package, Clock, FileText } from 'lucide-react';
 import { Card, CardContent } from '@/components/ui/card';
 import { PageHeader } from '@/components/common/PageHeader';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
-import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
+import { Tabs, TabsContent, TabsList, TabsTrigger, segmentTabsListClassName, segmentTabsTriggerClassName } from '@/components/ui/tabs';
 import { AssetDetailsPageSkeleton } from '@/components/common/pageSkeletons';
 import { AssetTimeline } from './assets-list/assetsComponents/assetTimeline';
 import { Step4Review } from './assets-list/assetsComponents/modalSteps/step4AssetsReview';
@@ -318,15 +318,6 @@ export default function AssetDetails() {
           title="Asset Details"
           description={`${asset.name} - ${asset.id}`}
         >
-          <Button
-            variant="ghost"
-            size="sm"
-            onClick={() => fetchAsset()}
-            className="flex items-center gap-2"
-          >
-            <RefreshCw className="h-4 w-4" />
-            Refresh
-          </Button>
         </PageHeader>
 
         {/* Asset Status Badge */}
@@ -359,10 +350,10 @@ export default function AssetDetails() {
         <Card className="border-0 shadow-sm w-full min-w-0 overflow-hidden">
           <CardContent className="p-0 w-full min-w-0">
             <Tabs defaultValue="details" className="w-full min-w-0">
-              <TabsList className="grid w-full min-w-0 grid-cols-3 bg-red-50 h-auto p-1 gap-1">
+              <TabsList className={segmentTabsListClassName + ' grid grid-cols-3 w-full min-w-0'}>
                 <TabsTrigger
                   value="details"
-                  className="flex items-center justify-center gap-1 sm:gap-2 px-2 py-2.5 sm:px-4 sm:py-3 text-xs sm:text-sm data-[state=active]:bg-red-600 data-[state=active]:text-white data-[state=active]:shadow-md transition-all min-w-0"
+                  className={segmentTabsTriggerClassName + ' flex items-center justify-center gap-1 sm:gap-2 px-2 py-2.5 sm:px-4 sm:py-3 text-xs sm:text-sm min-w-0'}
                 >
                   <Package className="h-3.5 w-3.5 sm:h-4 sm:w-4 shrink-0" />
                   <span className="hidden sm:inline truncate">Details</span>
@@ -370,7 +361,7 @@ export default function AssetDetails() {
                 </TabsTrigger>
                 <TabsTrigger
                   value="timeline"
-                  className="flex items-center justify-center gap-1 sm:gap-2 px-2 py-2.5 sm:px-4 sm:py-3 text-xs sm:text-sm data-[state=active]:bg-red-600 data-[state=active]:text-white data-[state=active]:shadow-md transition-all min-w-0"
+                  className={segmentTabsTriggerClassName + ' flex items-center justify-center gap-1 sm:gap-2 px-2 py-2.5 sm:px-4 sm:py-3 text-xs sm:text-sm min-w-0'}
                 >
                   <Clock className="h-3.5 w-3.5 sm:h-4 sm:w-4 shrink-0" />
                   <span className="hidden sm:inline truncate">Timeline</span>
@@ -378,7 +369,7 @@ export default function AssetDetails() {
                 </TabsTrigger>
                 <TabsTrigger
                   value="forms"
-                  className="flex items-center justify-center gap-1 sm:gap-2 px-2 py-2.5 sm:px-4 sm:py-3 text-xs sm:text-sm data-[state=active]:bg-red-600 data-[state=active]:text-white data-[state=active]:shadow-md transition-all min-w-0"
+                  className={segmentTabsTriggerClassName + ' flex items-center justify-center gap-1 sm:gap-2 px-2 py-2.5 sm:px-4 sm:py-3 text-xs sm:text-sm min-w-0'}
                 >
                   <FileText className="h-3.5 w-3.5 sm:h-4 sm:w-4 shrink-0" />
                   <span className="hidden sm:inline truncate">Forms</span>

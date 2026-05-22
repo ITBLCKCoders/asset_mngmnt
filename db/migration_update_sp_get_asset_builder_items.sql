@@ -1,6 +1,7 @@
 -- Update sp_get_asset_builder_items to include is_parent column
 -- This allows the API to return parent asset information
 -- Parent asset is ordered first in the list
+-- Remaining items are sorted by the last 5 digits of asset_code in ascending order
 
 DROP PROCEDURE IF EXISTS sp_get_asset_builder_items;
 
@@ -25,7 +26,7 @@ BEGIN
     LEFT JOIN asset_categories ac ON a.category_id = ac.categoryID
     LEFT JOIN asset_types at ON a.type_id = at.typeID
     WHERE abi.builder_id = p_builder_id
-    ORDER BY abi.is_parent DESC, abi.created_at;
+    ORDER BY abi.is_parent DESC, CAST(RIGHT(a.asset_code, 5) AS UNSIGNED) ASC;
 END ;;
 
 DELIMITER ;

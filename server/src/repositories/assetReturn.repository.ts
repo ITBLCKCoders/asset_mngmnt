@@ -184,6 +184,19 @@ export async function fetchUserPosition(userId: string): Promise<string | null> 
   return s || null;
 }
 
+export async function fetchUserDigitalSignature(
+  userId: string
+): Promise<string | null> {
+  const [rows] = (await pool.execute(
+    'SELECT digital_signature FROM users WHERE userID = ?',
+    [userId]
+  )) as any[];
+  const sig = rows?.[0]?.digital_signature;
+  if (sig == null) return null;
+  const s = String(sig).trim();
+  return s || null;
+}
+
 export type ProcessorReturnTarget = {
   processorName: string;
   departmentId: string | null;

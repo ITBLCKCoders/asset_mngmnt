@@ -16,6 +16,7 @@ import locationsRoutes from './routes/locations.routes.js';
 import rolesRoutes from './routes/roles.routes.js';
 import assetsRoutes from './routes/assets.routes.js';
 import assetAssignmentsRoutes from './routes/assetAssignments.routes.js';
+import assetChecklistsRoutes from './routes/assetChecklists.routes.js';
 import assetReturnsRoutes from './routes/assetReturns.routes.js';
 import assetTransfersRoutes from './routes/assetTransfers.routes.js';
 import accountabilityFormsRoutes from './routes/accountabilityForms.routes.js';
@@ -29,6 +30,8 @@ import assetBuildersRoutes from './routes/assetBuilders.routes.js';
 import notificationsRoutes from './routes/notifications.routes.js';
 import assetRequestsRoutes from './routes/assetRequests.routes.js';
 import assetBorrowRequestsRoutes from './routes/assetBorrowRequests.routes.js';
+import gatePassRoutes from './routes/gatePass.routes.js';
+import intangibleAssetsRoutes from './routes/intangibleAssets.routes.js';
 import dashboardRoutes from './routes/dashboard.routes.js';
 import reportsRoutes from './routes/reports.routes.js';
 import { cleanupExpiredSessions } from './auth/cleanup.js';
@@ -152,6 +155,7 @@ app.use('/api/locations', locationsRoutes); // NEW: Locations routes mounted
 app.use('/api/roles', rolesRoutes); // NEW: Roles routes mounted
 app.use('/api/assets', assetsRoutes); // NEW: Assets routes mounted
 app.use('/api/asset-assignments', assetAssignmentsRoutes); // NEW: Asset assignments routes mounted
+app.use('/api/asset-checklists', assetChecklistsRoutes);
 app.use('/api/asset-returns', assetReturnsRoutes);
 app.use('/api/asset-transfers', assetTransfersRoutes); // NEW: Asset returns routes mounted
 app.use('/api/accountability-forms', accountabilityFormsRoutes); // NEW: Accountability forms routes mounted
@@ -165,6 +169,8 @@ app.use('/api/asset-builders', assetBuildersRoutes); // NEW: Asset builders rout
 app.use('/api/notifications', notificationsRoutes); // NEW: Notifications routes mounted
 app.use('/api/asset-requests', assetRequestsRoutes); // NEW: Asset requests routes mounted
 app.use('/api/asset-borrow-requests', assetBorrowRequestsRoutes);
+app.use('/api/intangible-assets', intangibleAssetsRoutes);
+app.use('/api/gate-passes', gatePassRoutes);
 app.use('/api/dashboard', dashboardRoutes);
 app.use('/api/reports', reportsRoutes);
 app.get('/api/hello', (_req: Request, res: Response) =>

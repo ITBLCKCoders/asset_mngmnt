@@ -11,7 +11,6 @@ import {
   Activity,
   Clock,
   Search,
-  RefreshCw,
   UserCheck,
   AlertCircle,
   UserX,
@@ -45,7 +44,6 @@ import {
 import { Label } from '@/components/ui/label';
 import { toast } from 'sonner';
 import type { Role } from '@/types/assets';
-import { useDelayedLoading } from '@/hooks/useDelayedLoading';
 import { Shimmer } from '@/components/ui/shimmer';
 import { ModulePermissionsMatrix } from '@/components/common/ModulePermissionsMatrix';
 
@@ -117,7 +115,7 @@ function UserPermissions() {
     manager_approver_2: false,
     manager_approver_3: false,
   });
-  const displayLoading = useDelayedLoading(loading, 2000);
+  const displayLoading = loading;
 
   const custodianFormHasChanges = React.useMemo(() => {
     if (!selectedUser) return false;
@@ -377,15 +375,6 @@ function UserPermissions() {
           title="User Management"
           description="Manage module access and assign roles to users"
         >
-          <Button
-            variant="ghost"
-            size="sm"
-            onClick={() => window.location.reload()}
-            className="flex items-center gap-2"
-          >
-            <RefreshCw className="h-4 w-4" />
-            Refresh
-          </Button>
         </PageHeader>
 
         <div className="grid grid-cols-2 gap-4 px-0 lg:grid-cols-4">

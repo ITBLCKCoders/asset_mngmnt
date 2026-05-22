@@ -217,20 +217,22 @@ export default function SmsOtpDialog({
 
   const handleVerify = async () => {
     const verified = await verifyOtp();
-    if (verified) {
-      onOpenChange(false);
-      setOtpCode(['', '', '', '', '', '']);
-      // Execute the pending action after successful verification
-      if (pendingActionRef.current) {
-        try {
-          await pendingActionRef.current();
-          onVerified();
-        } catch (err: any) {
-          toast.error(err.message || 'Failed to complete action');
-          throw err;
-        }
-        pendingActionRef.current = null;
-      }
+    if (!verified) return;
+
+    const action = pendingActionRef.current;
+    pendingActionRef.current = null;
+
+    onOpenChange(false);
+    setOtpCode(['', '', '', '', '', '']);
+
+    if (!action) return;
+
+    try {
+      await action();
+      onVerified();
+    } catch (err: any) {
+      toast.error(err.message || 'Failed to complete action');
+      throw err;
     }
   };
 
@@ -242,11 +244,12 @@ export default function SmsOtpDialog({
   };
 
   return (
-    <Dialog open={isOpen} onOpenChange={onOpenChange} modal={false}>
-      <DialogContent 
-        showCloseButton={false} 
-        disableScroll 
+    <Dialog open={isOpen} onOpenChange={onOpenChange}>
+      <DialogContent
+        showCloseButton={false}
+        disableScroll
         className="max-w-md !overflow-hidden !p-6"
+        overlayClassName="fixed inset-0 z-50 !bg-gray-500/50 !backdrop-blur-sm data-[state=open]:animate-in data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=open]:fade-in-0 overflow-hidden"
         onInteractOutside={(e) => e.preventDefault()}
         onEscapeKeyDown={(e) => e.preventDefault()}
       >

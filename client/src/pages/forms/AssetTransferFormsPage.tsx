@@ -4,7 +4,7 @@ import { useState, useEffect, useMemo } from 'react';
 import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
 import { PageHeader } from '@/components/common/PageHeader';
-import { Search, RefreshCw, ArrowRightLeft } from 'lucide-react';
+import { Search, ArrowRightLeft } from 'lucide-react';
 import { api } from '@/lib/api';
 import { toast } from 'sonner';
 import { useCurrentUser } from '@/hooks/useCurrentUser';
@@ -21,7 +21,6 @@ import {
   AppDialogGradientHeader,
   AppDialogChromeFooter,
 } from '@/components/common/appDialogChrome';
-import { useDelayedLoading } from '@/hooks/useDelayedLoading';
 import { Shimmer } from '@/components/ui/shimmer';
 import { Download } from 'lucide-react';
 import { matchesFormListSearch } from '@/utils/formListSearch';
@@ -38,6 +37,9 @@ import {
   collectDepartmentOptionsFromTransferBatches,
   transferBatchMatchesOrgFilters,
 } from '@/utils/formBatchOrgFilters';
+import { classifyDepartmentScopeByName } from '@/lib/assetScope';
+
+type AssetTypeFilter = 'all' | 'it' | 'admin';
 
 export default function AssetTransferFormsPage() {
   const { user: currentUser } = useCurrentUser();
@@ -46,6 +48,7 @@ export default function AssetTransferFormsPage() {
   const [searchQuery, setSearchQuery] = useState('');
   const [companyFilterId, setCompanyFilterId] = useState('');
   const [departmentFilterId, setDepartmentFilterId] = useState('');
+  const [assetTypeFilter, setAssetTypeFilter] = useState<AssetTypeFilter>('all');
   
   // Auto-set company filter to user's company if they have one
   const userCompanyScope = currentUser?.company_id || '';
@@ -62,7 +65,7 @@ export default function AssetTransferFormsPage() {
   const [selectedBatch, setSelectedBatch] =
     useState<AssetTransferFormBatch | null>(null);
   const [showDetail, setShowDetail] = useState(false);
-  const displayLoading = useDelayedLoading(loading, 2000);
+  const displayLoading = loading;
 
   const fetchTransferForms = async () => {
     try {
@@ -102,11 +105,24 @@ export default function AssetTransferFormsPage() {
   );
 
   const orgFilteredBatches = useMemo(
-    () =>
-      batches.filter(b =>
+    () => {
+      let result = batches.filter(b =>
         transferBatchMatchesOrgFilters(b, companyFilterId, departmentFilterId)
-      ),
-    [batches, companyFilterId, departmentFilterId]
+      );
+
+      // Apply asset type filter
+      if (assetTypeFilter !== 'all') {
+        const targetScope = assetTypeFilter === 'it' ? 'IT' : 'Admin';
+        result = result.filter(batch => {
+          const deptCandidate = batch.new_assigned_user?.department || '';
+          const assetScope = classifyDepartmentScopeByName(deptCandidate);
+          return assetScope === targetScope;
+        });
+      }
+
+      return result;
+    },
+    [batches, companyFilterId, departmentFilterId, assetTypeFilter]
   );
 
   const filteredBatches = useMemo(() => {
@@ -147,16 +163,6 @@ export default function AssetTransferFormsPage() {
           description="View and manage all asset transfer forms"
           loading={displayLoading}
         >
-          <Button
-            variant="ghost"
-            size="sm"
-            onClick={fetchTransferForms}
-            disabled={loading}
-            className="flex items-center gap-2"
-          >
-            <RefreshCw className={`h-4 w-4 ${loading ? 'animate-spin' : ''}`} />
-            Refresh
-          </Button>
         </PageHeader>
 
         <div>
@@ -227,6 +233,44 @@ export default function AssetTransferFormsPage() {
                   </Select>
                 </div>
               </div>
+            </div>
+            <div className="flex gap-2 flex-wrap">
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => setAssetTypeFilter('all')}
+                className={
+                  assetTypeFilter === 'all'
+                    ? 'bg-red-600 text-white hover:bg-red-700 hover:text-white border-red-600'
+                    : ''
+                }
+              >
+                All Assets
+              </Button>
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => setAssetTypeFilter('it')}
+                className={
+                  assetTypeFilter === 'it'
+                    ? 'bg-red-600 text-white hover:bg-red-700 hover:text-white border-red-600'
+                    : ''
+                }
+              >
+                IT Assets
+              </Button>
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => setAssetTypeFilter('admin')}
+                className={
+                  assetTypeFilter === 'admin'
+                    ? 'bg-red-600 text-white hover:bg-red-700 hover:text-white border-red-600'
+                    : ''
+                }
+              >
+                Admin Assets
+              </Button>
             </div>
           </div>
 

@@ -12,7 +12,6 @@ import {
 } from '@/components/common/appDialogChrome';
 import { Dialog } from '@/components/ui/dialog';
 import { Shimmer } from '@/components/ui/shimmer';
-import { useDelayedLoading } from '@/hooks/useDelayedLoading';
 import { api } from '@/lib/api';
 import { downloadPDF, generateAssetBorrowingPDF } from '@/lib/pdfGenerator';
 import {
@@ -24,7 +23,6 @@ import {
 import { matchesFormListSearch } from '@/utils/formListSearch';
 import {
   HandHelping,
-  RefreshCw,
   Search,
   Download,
 } from 'lucide-react';
@@ -37,6 +35,9 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select';
+import { classifyDepartmentScopeByName } from '@/lib/assetScope';
+
+type AssetTypeFilter = 'all' | 'it' | 'admin';
 
 type ActiveCompany = {
   id: string;
@@ -56,6 +57,7 @@ export default function BorrowFormsPage() {
   const [searchQuery, setSearchQuery] = useState('');
   const [companyFilterId, setCompanyFilterId] = useState('');
   const [departmentFilterId, setDepartmentFilterId] = useState('');
+  const [assetTypeFilter, setAssetTypeFilter] = useState<AssetTypeFilter>('all');
   const [activeCompany, setActiveCompany] = useState<ActiveCompany | null>(null);
   
   // Auto-set company filter to user's company if they have one
@@ -73,7 +75,7 @@ export default function BorrowFormsPage() {
   const [selectedBatch, setSelectedBatch] =
     useState<AssetBorrowFormBatch | null>(null);
   const [showDetail, setShowDetail] = useState(false);
-  const displayLoading = useDelayedLoading(loading, 2000);
+  const displayLoading = loading;
 
   const fetchBorrowForms = async () => {
     try {
@@ -145,7 +147,7 @@ export default function BorrowFormsPage() {
   }, [activeCompany, batches, companyFilterId]);
 
   const orgFilteredBatches = useMemo(() => {
-    return batches.filter(batch => {
+    let result = batches.filter(batch => {
       if (companyFilterId) {
         if (!activeCompany || companyFilterId !== activeCompany.id) {
           return false;
@@ -161,7 +163,15 @@ export default function BorrowFormsPage() {
 
       return true;
     });
-  }, [activeCompany, batches, companyFilterId, departmentFilterId]);
+
+    // Apply asset type filter
+    if (assetTypeFilter !== 'all') {
+      const targetScope = assetTypeFilter === 'it' ? 'it' : 'admin';
+      result = result.filter(batch => batch.borrow_scope === targetScope);
+    }
+
+    return result;
+  }, [activeCompany, batches, companyFilterId, departmentFilterId, assetTypeFilter]);
 
   const filteredBatches = useMemo(() => {
     if (!searchQuery.trim()) return orgFilteredBatches;
@@ -201,16 +211,6 @@ export default function BorrowFormsPage() {
           description="View and manage all borrow forms"
           loading={displayLoading}
         >
-          <Button
-            variant="ghost"
-            size="sm"
-            onClick={() => void fetchBorrowForms()}
-            disabled={loading}
-            className="flex items-center gap-2"
-          >
-            <RefreshCw className={`h-4 w-4 ${loading ? 'animate-spin' : ''}`} />
-            Refresh
-          </Button>
         </PageHeader>
 
         <div>
@@ -281,6 +281,44 @@ export default function BorrowFormsPage() {
                   </Select>
                 </div>
               </div>
+            </div>
+            <div className="flex gap-2 flex-wrap">
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => setAssetTypeFilter('all')}
+                className={
+                  assetTypeFilter === 'all'
+                    ? 'bg-red-600 text-white hover:bg-red-700 hover:text-white border-red-600'
+                    : ''
+                }
+              >
+                All Assets
+              </Button>
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => setAssetTypeFilter('it')}
+                className={
+                  assetTypeFilter === 'it'
+                    ? 'bg-red-600 text-white hover:bg-red-700 hover:text-white border-red-600'
+                    : ''
+                }
+              >
+                IT Assets
+              </Button>
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => setAssetTypeFilter('admin')}
+                className={
+                  assetTypeFilter === 'admin'
+                    ? 'bg-red-600 text-white hover:bg-red-700 hover:text-white border-red-600'
+                    : ''
+                }
+              >
+                Admin Assets
+              </Button>
             </div>
           </div>
 

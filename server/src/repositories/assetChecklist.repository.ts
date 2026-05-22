@@ -1,6 +1,133 @@
 import { pool } from '../db.js';
 import logger from '../logger.js';
 
+let employeeSignColumnsAvailable: boolean | null = null;
+let deptHeadSignColumnsAvailable: boolean | null = null;
+let itManagerSignColumnsAvailable: boolean | null = null;
+
+async function columnExists(columnName: string): Promise<boolean> {
+  const [rows] = (await pool.query(
+    `SELECT COUNT(*) AS cnt
+     FROM information_schema.COLUMNS
+     WHERE TABLE_SCHEMA = DATABASE()
+       AND TABLE_NAME = 'asset_checklists'
+       AND COLUMN_NAME = ?`,
+    [columnName]
+  )) as [{ cnt: number }[], unknown];
+  return Number(rows[0]?.cnt ?? 0) > 0;
+}
+
+/** Cached check — asset_checklists employee sign columns (migration_add_asset_checklist_employee_sign.sql) */
+export async function hasEmployeeSignColumns(): Promise<boolean> {
+  if (employeeSignColumnsAvailable === null) {
+    try {
+      employeeSignColumnsAvailable = await columnExists('employee_signed_at');
+    } catch {
+      employeeSignColumnsAvailable = false;
+    }
+  }
+  return employeeSignColumnsAvailable;
+}
+
+export async function hasDeptHeadSignColumns(): Promise<boolean> {
+  if (deptHeadSignColumnsAvailable === null) {
+    try {
+      deptHeadSignColumnsAvailable = await columnExists('dept_head_signed_at');
+    } catch {
+      deptHeadSignColumnsAvailable = false;
+    }
+  }
+  return deptHeadSignColumnsAvailable;
+}
+
+export async function hasItManagerSignColumns(): Promise<boolean> {
+  if (itManagerSignColumnsAvailable === null) {
+    try {
+      itManagerSignColumnsAvailable = await columnExists('it_manager_signed_at');
+    } catch {
+      itManagerSignColumnsAvailable = false;
+    }
+  }
+  return itManagerSignColumnsAvailable;
+}
+
+function buildChecklistSelect(options: {
+  includeEmployeeSign: boolean;
+  includeDeptHeadSign: boolean;
+  includeItManagerSign: boolean;
+}): string {
+  const { includeEmployeeSign, includeDeptHeadSign, includeItManagerSign } =
+    options;
+  const employeeSignFields = includeEmployeeSign
+    ? `ac.employee_signed_at,
+    ac.employee_digital_signature,`
+    : `NULL AS employee_signed_at,
+    NULL AS employee_digital_signature,`;
+  const deptHeadSignFields = includeDeptHeadSign
+    ? `ac.dept_head_signed_at,
+    ac.dept_head_signed_by,
+    ac.dept_head_digital_signature,
+    dh.name AS dept_head_name,`
+    : `NULL AS dept_head_signed_at,
+    NULL AS dept_head_signed_by,
+    NULL AS dept_head_digital_signature,
+    NULL AS dept_head_name,`;
+  const itManagerSignFields = includeItManagerSign
+    ? `ac.it_manager_signed_at,
+    ac.it_manager_signed_by,
+    ac.it_manager_digital_signature,
+    im.name AS it_manager_name,`
+    : `NULL AS it_manager_signed_at,
+    NULL AS it_manager_signed_by,
+    NULL AS it_manager_digital_signature,
+    NULL AS it_manager_name,`;
+
+  return `
+  SELECT 
+    ac.id,
+    ac.form_number,
+    ac.assignment_id,
+    ac.employee_id,
+    ac.employee_name,
+    ac.employee_designation,
+    ac.employee_department,
+    ac.employee_company,
+    ac.type_onboarding,
+    ac.type_offboarding,
+    ac.received_by,
+    ac.checklist_data,
+    ac.remarks,
+    ac.created_at,
+    ac.created_by,
+    ${employeeSignFields}
+    ${deptHeadSignFields}
+    ${itManagerSignFields}
+    u.name AS creator_name,
+    u.digital_signature AS creator_digital_signature,
+    c.logo_url AS employee_company_logo_url,
+    aa.asset_id,
+    a.asset_code,
+    a.name AS asset_name
+  FROM asset_checklists ac
+  LEFT JOIN users u ON ac.created_by = u.userID
+  LEFT JOIN users dh ON ac.dept_head_signed_by = dh.userID
+  LEFT JOIN users im ON ac.it_manager_signed_by = im.userID
+  LEFT JOIN companies c ON ac.employee_company = c.name AND c.deleted_at IS NULL
+  LEFT JOIN asset_assignments aa ON ac.assignment_id = aa.assignmentID
+  LEFT JOIN assets a ON aa.asset_id = a.assetID AND a.deleted_at IS NULL
+`;
+}
+
+async function checklistSelectFlags() {
+  const [includeEmployeeSign, includeDeptHeadSign, includeItManagerSign] =
+    await Promise.all([
+      hasEmployeeSignColumns(),
+      hasDeptHeadSignColumns(),
+      hasItManagerSignColumns(),
+    ]);
+  return { includeEmployeeSign, includeDeptHeadSign, includeItManagerSign };
+}
+
 export async function createAssetChecklist(data: {
   id: string;
   formNumber: string;
@@ -80,30 +207,52 @@ export async function createAssetChecklist(data: {
   }
 }
 
-export async function getChecklistByAssignmentId(assignmentId: string) {
+function mapChecklistRow(checklist: any) {
+  return {
+    ...checklist,
+    type_onboarding: checklist.type_onboarding === 1,
+    type_offboarding: checklist.type_offboarding === 1,
+    checklist_data:
+      typeof checklist.checklist_data === 'string'
+        ? JSON.parse(checklist.checklist_data)
+        : checklist.checklist_data,
+    asset: checklist.asset_id
+      ? {
+          id: checklist.asset_id,
+          code: checklist.asset_code ?? null,
+          name: checklist.asset_name ?? null,
+        }
+      : null,
+  };
+}
+
+export async function getChecklistsByAssignmentIds(assignmentIds: string[]) {
+  const ids = [...new Set(assignmentIds.filter(id => id != null && String(id).trim() !== ''))];
+  if (ids.length === 0) {
+    return [];
+  }
+
+  const flags = await checklistSelectFlags();
+  const placeholders = ids.map(() => '?').join(',');
   const query = `
-    SELECT 
-      ac.id,
-      ac.form_number,
-      ac.assignment_id,
-      ac.employee_id,
-      ac.employee_name,
-      ac.employee_designation,
-      ac.employee_department,
-      ac.employee_company,
-      ac.type_onboarding,
-      ac.type_offboarding,
-      ac.received_by,
-      ac.checklist_data,
-      ac.remarks,
-      ac.created_at,
-      ac.created_by,
-      u.name AS creator_name,
-      u.digital_signature AS creator_digital_signature,
-      c.logo_url AS employee_company_logo_url
-    FROM asset_checklists ac
-    LEFT JOIN users u ON ac.created_by = u.userID
-    LEFT JOIN companies c ON ac.employee_company = c.name AND c.deleted_at IS NULL
+    ${buildChecklistSelect(flags)}
+    WHERE ac.assignment_id IN (${placeholders})
+    ORDER BY ac.created_at ASC
+  `;
+
+  try {
+    const [rows] = await pool.query(query, ids);
+    return (rows as any[]).map(mapChecklistRow);
+  } catch (error) {
+    logger.error('Failed to get checklists by assignment IDs:', error);
+    throw error;
+  }
+}
+
+export async function getChecklistByAssignmentId(assignmentId: string) {
+  const flags = await checklistSelectFlags();
+  const query = `
+    ${buildChecklistSelect(flags)}
     WHERE ac.assignment_id = ?
     ORDER BY ac.created_at DESC
     LIMIT 1
@@ -112,22 +261,314 @@ export async function getChecklistByAssignmentId(assignmentId: string) {
   try {
     const [rows] = await pool.query(query, [assignmentId]);
     const checklists = rows as any[];
-    
+
     if (checklists.length === 0) {
       return null;
     }
 
-    const checklist = checklists[0];
-    return {
-      ...checklist,
-      type_onboarding: checklist.type_onboarding === 1,
-      type_offboarding: checklist.type_offboarding === 1,
-      checklist_data: typeof checklist.checklist_data === 'string' 
-        ? JSON.parse(checklist.checklist_data) 
-        : checklist.checklist_data,
-    };
+    return mapChecklistRow(checklists[0]);
   } catch (error) {
     logger.error('Failed to get checklist by assignment ID:', error);
+    throw error;
+  }
+}
+
+export async function signChecklistsAsEmployee(params: {
+  checklistIds: string[];
+  employeeId: string;
+  digitalSignature: string | null;
+}): Promise<number> {
+  const includeEmployeeSign = await hasEmployeeSignColumns();
+  if (!includeEmployeeSign) {
+    const err = new Error(
+      'employee_signed_at column missing — run db/migration_add_asset_checklist_employee_sign.sql'
+    );
+    (err as Error & { code?: string }).code = 'SCHEMA_MISSING_EMPLOYEE_SIGN';
+    throw err;
+  }
+
+  const { checklistIds, employeeId, digitalSignature } = params;
+  const ids = [...new Set(checklistIds.filter(id => id?.trim()))];
+  if (ids.length === 0) {
+    return 0;
+  }
+
+  const placeholders = ids.map(() => '?').join(',');
+  const query = `
+    UPDATE asset_checklists
+    SET employee_signed_at = NOW(),
+        employee_digital_signature = ?
+    WHERE id IN (${placeholders})
+      AND employee_id = ?
+      AND employee_signed_at IS NULL
+  `;
+
+  try {
+    const [result] = await pool.query(query, [
+      digitalSignature,
+      ...ids,
+      employeeId,
+    ]);
+    return (result as { affectedRows?: number }).affectedRows ?? 0;
+  } catch (error) {
+    logger.error('Failed to sign asset checklists as employee:', error);
+    throw error;
+  }
+}
+
+const PENDING_DEPT_HEAD_CHECKLIST_SQL = `
+  SELECT
+    ac.id,
+    ac.form_number,
+    ac.assignment_id,
+    ac.employee_id,
+    ac.employee_name,
+    ac.employee_designation,
+    ac.employee_department,
+    ac.employee_company,
+    ac.type_onboarding,
+    ac.type_offboarding,
+    ac.received_by,
+    ac.checklist_data,
+    ac.remarks,
+    ac.created_at,
+    ac.created_by,
+    ac.employee_signed_at,
+    ac.employee_digital_signature,
+    ac.dept_head_signed_at,
+    ac.dept_head_signed_by,
+    ac.dept_head_digital_signature,
+    u.name AS creator_name,
+    u.digital_signature AS creator_digital_signature,
+    c.logo_url AS employee_company_logo_url,
+    aa.asset_id,
+    a.asset_code,
+    a.name AS asset_name,
+    emp.department_id AS employee_department_id,
+    d.name AS employee_department_name
+  FROM asset_checklists ac
+  INNER JOIN users emp ON ac.employee_id = emp.userID
+  LEFT JOIN asset_mngmnt_departments d ON emp.department_id = d.departmentID
+  LEFT JOIN users u ON ac.created_by = u.userID
+  LEFT JOIN companies c ON ac.employee_company = c.name AND c.deleted_at IS NULL
+  LEFT JOIN asset_assignments aa ON ac.assignment_id = aa.assignmentID
+  LEFT JOIN assets a ON aa.asset_id = a.assetID AND a.deleted_at IS NULL
+  WHERE ac.employee_signed_at IS NOT NULL
+    AND ac.dept_head_signed_at IS NULL
+    AND emp.department_id <=> ?
+    AND emp.company_id = ?
+  ORDER BY ac.created_at DESC
+`;
+
+export async function findPendingDeptHeadApprovalChecklists(
+  approverDepartmentId: string,
+  companyId: string
+) {
+  if (!(await hasDeptHeadSignColumns()) || !(await hasEmployeeSignColumns())) {
+    return [];
+  }
+  try {
+    const [rows] = await pool.query(PENDING_DEPT_HEAD_CHECKLIST_SQL, [
+      approverDepartmentId,
+      companyId,
+    ]);
+    return (rows as any[]).map(mapChecklistRow);
+  } catch (error) {
+    logger.error('Failed to find pending dept head approval checklists:', error);
+    throw error;
+  }
+}
+
+export async function findChecklistsApprovedByDeptHead(
+  companyId: string,
+  approverUserId: string
+) {
+  if (!(await hasDeptHeadSignColumns())) {
+    return [];
+  }
+  const flags = await checklistSelectFlags();
+  const query = `
+    ${buildChecklistSelect(flags)}
+    INNER JOIN users emp ON ac.employee_id = emp.userID
+    WHERE ac.dept_head_signed_by = ?
+      AND ac.dept_head_signed_at IS NOT NULL
+      AND emp.company_id = ?
+    ORDER BY ac.dept_head_signed_at DESC
+  `;
+  try {
+    const [rows] = await pool.query(query, [approverUserId, companyId]);
+    return (rows as any[]).map(mapChecklistRow);
+  } catch (error) {
+    logger.error('Failed to find checklists approved by dept head:', error);
+    throw error;
+  }
+}
+
+export async function approveChecklistsAsDeptHead(params: {
+  checklistIds: string[];
+  approverUserId: string;
+  approverDepartmentId: string;
+  companyId: string;
+  digitalSignature: string | null;
+}): Promise<number> {
+  if (!(await hasDeptHeadSignColumns())) {
+    const err = new Error(
+      'dept_head_signed_at column missing — run db/migration_add_asset_checklist_dept_head_sign.sql'
+    );
+    (err as Error & { code?: string }).code = 'SCHEMA_MISSING_DEPT_HEAD_SIGN';
+    throw err;
+  }
+
+  const {
+    checklistIds,
+    approverUserId,
+    approverDepartmentId,
+    companyId,
+    digitalSignature,
+  } = params;
+  const ids = [...new Set(checklistIds.filter(id => id?.trim()))];
+  if (ids.length === 0) {
+    return 0;
+  }
+
+  const placeholders = ids.map(() => '?').join(',');
+  const query = `
+    UPDATE asset_checklists ac
+    INNER JOIN users emp ON ac.employee_id = emp.userID
+    SET ac.dept_head_signed_at = NOW(),
+        ac.dept_head_signed_by = ?,
+        ac.dept_head_digital_signature = ?
+    WHERE ac.id IN (${placeholders})
+      AND ac.employee_signed_at IS NOT NULL
+      AND ac.dept_head_signed_at IS NULL
+      AND emp.department_id <=> ?
+      AND emp.company_id = ?
+  `;
+
+  try {
+    const [result] = await pool.query(query, [
+      approverUserId,
+      digitalSignature,
+      ...ids,
+      approverDepartmentId,
+      companyId,
+    ]);
+    return (result as { affectedRows?: number }).affectedRows ?? 0;
+  } catch (error) {
+    logger.error('Failed to approve checklists as dept head:', error);
+    throw error;
+  }
+}
+
+const PENDING_IT_RECEIVE_CHECKLIST_SQL = `
+  SELECT
+    ac.id,
+    ac.form_number,
+    ac.assignment_id,
+    ac.employee_id,
+    ac.employee_name,
+    ac.employee_designation,
+    ac.employee_department,
+    ac.employee_company,
+    ac.type_onboarding,
+    ac.type_offboarding,
+    ac.received_by,
+    ac.checklist_data,
+    ac.remarks,
+    ac.created_at,
+    ac.created_by,
+    ac.employee_signed_at,
+    ac.employee_digital_signature,
+    ac.dept_head_signed_at,
+    ac.dept_head_signed_by,
+    ac.dept_head_digital_signature,
+    ac.it_manager_signed_at,
+    ac.it_manager_signed_by,
+    ac.it_manager_digital_signature,
+    u.name AS creator_name,
+    u.digital_signature AS creator_digital_signature,
+    c.logo_url AS employee_company_logo_url,
+    aa.asset_id,
+    a.asset_code,
+    a.name AS asset_name,
+    d.name AS employee_department_name
+  FROM asset_checklists ac
+  INNER JOIN users emp ON ac.employee_id = emp.userID
+  LEFT JOIN asset_mngmnt_departments d ON emp.department_id = d.departmentID
+  LEFT JOIN users u ON ac.created_by = u.userID
+  LEFT JOIN companies c ON ac.employee_company = c.name AND c.deleted_at IS NULL
+  LEFT JOIN asset_assignments aa ON ac.assignment_id = aa.assignmentID
+  LEFT JOIN assets a ON aa.asset_id = a.assetID AND a.deleted_at IS NULL
+  WHERE ac.employee_signed_at IS NOT NULL
+    AND ac.dept_head_signed_at IS NOT NULL
+    AND ac.it_manager_signed_at IS NULL
+    AND emp.company_id = ?
+  ORDER BY ac.created_at DESC
+`;
+
+export async function findPendingItManagerReceiveChecklists(companyId: string) {
+  if (
+    !(await hasItManagerSignColumns()) ||
+    !(await hasDeptHeadSignColumns()) ||
+    !(await hasEmployeeSignColumns())
+  ) {
+    return [];
+  }
+  try {
+    const [rows] = await pool.query(PENDING_IT_RECEIVE_CHECKLIST_SQL, [
+      companyId,
+    ]);
+    return (rows as any[]).map(mapChecklistRow);
+  } catch (error) {
+    logger.error('Failed to find pending IT receive checklists:', error);
+    throw error;
+  }
+}
+
+export async function receiveChecklistsAsItManager(params: {
+  checklistIds: string[];
+  approverUserId: string;
+  companyId: string;
+  digitalSignature: string | null;
+}): Promise<number> {
+  if (!(await hasItManagerSignColumns())) {
+    const err = new Error(
+      'it_manager_signed_at column missing — run db/migration_add_asset_checklist_it_manager_sign.sql'
+    );
+    (err as Error & { code?: string }).code = 'SCHEMA_MISSING_IT_MANAGER_SIGN';
+    throw err;
+  }
+
+  const { checklistIds, approverUserId, companyId, digitalSignature } = params;
+  const ids = [...new Set(checklistIds.filter(id => id?.trim()))];
+  if (ids.length === 0) {
+    return 0;
+  }
+
+  const placeholders = ids.map(() => '?').join(',');
+  const query = `
+    UPDATE asset_checklists ac
+    INNER JOIN users emp ON ac.employee_id = emp.userID
+    SET ac.it_manager_signed_at = NOW(),
+        ac.it_manager_signed_by = ?,
+        ac.it_manager_digital_signature = ?
+    WHERE ac.id IN (${placeholders})
+      AND ac.employee_signed_at IS NOT NULL
+      AND ac.dept_head_signed_at IS NOT NULL
+      AND ac.it_manager_signed_at IS NULL
+      AND emp.company_id = ?
+  `;
+
+  try {
+    const [result] = await pool.query(query, [
+      approverUserId,
+      digitalSignature,
+      ...ids,
+      companyId,
+    ]);
+    return (result as { affectedRows?: number }).affectedRows ?? 0;
+  } catch (error) {
+    logger.error('Failed to receive checklists as IT manager:', error);
     throw error;
   }
 }

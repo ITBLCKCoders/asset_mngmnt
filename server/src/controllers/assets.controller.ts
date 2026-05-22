@@ -24,7 +24,12 @@ import { getActiveCompany } from '../utils/activeCompany.js';
 import {
   getAssetScope,
   classifyDepartmentScopeByName,
+  getDepartmentIdsForScope,
 } from '../utils/assetScope.js';
+import {
+  getTransferredOutAssetsForCompany,
+  setAssetOriginatingCompany,
+} from '../utils/companyTransferVisibility.js';
 
 /** Matches `sp_create_asset` / `sp_update_asset` `p_status` ENUM (excludes UI-only `Assigned`). */
 const STORED_PROC_ASSET_STATUSES = new Set([
@@ -328,7 +333,10 @@ export async function getAssetsHandler(req: AuthRequest, res: Response) {
       ? String(req.query.search).toLowerCase()
       : '';
 
+    logger.info(`getAssetsHandler called with search: "${search}", companyId: ${req.query.companyId}, scope: ${req.query.scope}`);
+
     let assets = await assetRepo.callGetAllAssets();
+    logger.info(`Stored procedure returned ${assets.length} total assets`);
 
     // Filter by search term if provided
     if (search) {
@@ -359,23 +367,37 @@ export async function getAssetsHandler(req: AuthRequest, res: Response) {
     const normalizedRoleName = String(user?.role_name ?? '').trim().toLowerCase();
     const isSuperAdmin = normalizedRoleName === 'super admin';
     const isAdmin = normalizedRoleName === 'admin';
+    const isOverallManager = String(user?.manager_role ?? '').trim() === 'overallManager';
 
     // Use companyId from query parameter if provided and user is Super Admin or Admin
     const queryCompanyId = req.query.companyId
       ? String(req.query.companyId)
       : null;
 
+    // Accept optional scope query param for IT/Admin tab switching
+    const scopeParam = req.query.scope as string | undefined;
+    const scopeOverride =
+      scopeParam === 'it' || scopeParam === 'admin' ? scopeParam : undefined;
+
     let companyId: string | null = null;
     let departmentIds: string[] | null = null;
 
-    if (isSuperAdmin || isAdmin) {
-      // For Super Admin and Admin, use query parameter if provided, otherwise show all companies
+    if (isSuperAdmin || isAdmin || isOverallManager) {
+      // For Super Admin, Admin, and overallManager, use query parameter if provided
       if (queryCompanyId) {
         companyId = queryCompanyId;
-        departmentIds = null; // Show all departments when filtering by company
+      } else if (!isSuperAdmin && !isAdmin) {
+        // overallManager: use their company
+        companyId = user?.company_id ?? null;
+      }
+      // else Super Admin/Admin with no companyId: show all companies (companyId stays null)
+
+      // Apply scope override if provided
+      if (scopeOverride && companyId) {
+        departmentIds = await getDepartmentIdsForScope(pool, scopeOverride, companyId);
+      } else if (scopeOverride && !companyId) {
+        departmentIds = await getDepartmentIdsForScope(pool, scopeOverride);
       } else {
-        // No company filter selected - show assets from all companies
-        companyId = null;
         departmentIds = null;
       }
     } else {
@@ -386,23 +408,58 @@ export async function getAssetsHandler(req: AuthRequest, res: Response) {
     }
 
     if (companyId) {
-      assets = assets.filter((a: any) => a.company_id === companyId);
+      const currentCompanyAssets = assets.filter(
+        (a: any) => a.company_id === companyId
+      );
+      logger.info(`Found ${currentCompanyAssets.length} assets with company_id = ${companyId}`);
+      const transferredOutAssets =
+        await getTransferredOutAssetsForCompany(pool, companyId);
+      logger.info(`Found ${transferredOutAssets.length} transferred-out assets for company ${companyId}`);
+      const currentAssetIds = new Set(
+        currentCompanyAssets.map((a: any) => String(a.assetID))
+      );
+      assets = [
+        ...currentCompanyAssets,
+        ...(transferredOutAssets.filter(
+          (a: any) => !currentAssetIds.has(String(a.assetID))
+        ) as any[]),
+      ];
+      logger.info(`Total assets after merging: ${assets.length}`);
     } else if (!isSuperAdmin && !isAdmin) {
       // If no company is associated and user is not Super Admin or Admin, show nothing
       assets = [];
     }
     // For Super Admin and Admin, when companyId is null, show all assets (no filtering)
 
+    // Separate transferred-out assets before scope filtering (they should always be visible in source company)
+    const transferredOutAssetIds = new Set(
+      assets
+        .filter((a: any) => a.transferred_out === true)
+        .map((a: any) => String(a.assetID))
+    );
+    const nonTransferredOutAssets = assets.filter(
+      (a: any) => !transferredOutAssetIds.has(String(a.assetID))
+    );
+
     if (departmentIds && departmentIds.length > 0) {
-      // Filter assets solely by the department of their category
+      // Filter assets solely by the department of their category (exclude transferred-out assets)
       const categoryIds = await assetRepo.getCategoryIdsByDepartmentIds(departmentIds);
 
-      assets = assets
+      const filteredNonTransferredOut = nonTransferredOutAssets
         .filter((asset: any) => categoryIds.includes(asset.category_id))
         .map((asset: any) => ({
           ...asset,
           asset_scope_type: classifyDepartmentScopeByName(asset.department),
         }));
+
+      // Merge filtered assets with transferred-out assets (they bypass scope filtering)
+      assets = [
+        ...filteredNonTransferredOut,
+        ...assets.filter((a: any) => transferredOutAssetIds.has(String(a.assetID))).map((a: any) => ({
+          ...a,
+          asset_scope_type: classifyDepartmentScopeByName(a.department),
+        })),
+      ];
     } else {
       // Still expose a scope type for clients even when departmentIds is null
       assets = assets.map((asset: any) => ({
@@ -737,6 +794,12 @@ export async function createAssetHandler(req: AuthRequest, res: Response) {
     )) as any[];
 
     const asset = rows[0][0];
+
+    await setAssetOriginatingCompany(
+      pool,
+      String(asset.assetID),
+      validCompanyId ?? asset.company_id ?? null
+    );
 
     // Create audit log for asset creation
     await createAuditLog({
@@ -1227,6 +1290,20 @@ export async function updateAssetHandler(req: AuthRequest, res: Response) {
   const oldAsset = await assetRepo.getAssetForUpdateById(asset.assetID);
   if (!oldAsset) {
     return res.status(404).json({ error: 'Asset not found' });
+  }
+
+  // Preserve FKs when client omits or fails to resolve them (sp_update_asset overwrites with NULL)
+  if (!validCompanyId) {
+    validCompanyId = oldAsset.company_id ?? null;
+  }
+  if (!validLocationId) {
+    validLocationId = oldAsset.location_id ?? null;
+  }
+  if (!validLocationRoomId) {
+    validLocationRoomId = oldAsset.location_room_id ?? null;
+  }
+  if (!validDepartmentId) {
+    validDepartmentId = oldAsset.department_id ?? null;
   }
 
   // Handle image upload if provided

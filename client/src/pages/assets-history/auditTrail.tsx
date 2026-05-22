@@ -36,14 +36,12 @@ import {
   Search,
   ChevronLeft,
   ChevronRight,
-  RefreshCw,
   Download,
   AlertTriangle,
   CheckCircle,
 } from 'lucide-react';
 import { format, formatDistanceToNow } from 'date-fns';
 import { api } from '@/lib/api';
-import { useDelayedLoading } from '@/hooks/useDelayedLoading';
 import { Shimmer } from '@/components/ui/shimmer';
 import {
   AuditFieldChanges,
@@ -209,7 +207,7 @@ export default function AuditTrail() {
     totalPages: 0,
   });
 
-  const displayLoading = useDelayedLoading(loading, 2000);
+  const displayLoading = loading;
 
   // Fetch companies and departments for filters
   useEffect(() => {
@@ -448,7 +446,7 @@ export default function AuditTrail() {
           description="Track all system activities and changes"
         >
           <Button
-            variant="outline"
+            variant="header"
             size="sm"
             onClick={() => exportCurrentView('csv')}
             className="flex items-center gap-2"
@@ -464,15 +462,6 @@ export default function AuditTrail() {
           >
             <Download className="h-4 w-4" />
             Export JSON
-          </Button>
-          <Button
-            variant="ghost"
-            size="sm"
-            onClick={() => setCurrentPage(1)}
-            className="flex items-center gap-2"
-          >
-            <RefreshCw className="h-4 w-4" />
-            Refresh
           </Button>
         </PageHeader>
 

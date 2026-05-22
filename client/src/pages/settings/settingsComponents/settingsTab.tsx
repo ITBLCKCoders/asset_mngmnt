@@ -2,7 +2,13 @@
 
 import { useState, useEffect } from 'react';
 import { useSearchParams } from 'react-router-dom';
-import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
+import {
+  Tabs,
+  TabsList,
+  TabsTrigger,
+  segmentTabsListClassName,
+  segmentTabsTriggerClassName,
+} from '@/components/ui/tabs';
 import {
   Package,
   Tag,
@@ -84,7 +90,7 @@ export function SettingsTabs({ children }: SettingsTabsProps) {
         onValueChange={setActiveTab}
         className="space-y-6"
       >
-        <TabsList className="flex h-auto w-full gap-2 rounded-xl border bg-white p-2 shadow-sm overflow-x-auto scrollbar-hide">
+        <TabsList className={cn(segmentTabsListClassName, 'flex w-full overflow-x-auto scrollbar-hide')}>
           {filteredTabs.map(tab => (
             <div
               key={tab.value}
@@ -103,12 +109,12 @@ export function SettingsTabs({ children }: SettingsTabsProps) {
 
   return (
     <Tabs value={activeTab} onValueChange={setActiveTab} className="space-y-6">
-      <TabsList className="flex h-auto w-full gap-2 rounded-xl border bg-white p-2 shadow-sm overflow-x-auto scrollbar-hide">
+      <TabsList className={cn(segmentTabsListClassName, 'flex w-full overflow-x-auto scrollbar-hide')}>
         {filteredTabs.map(({ value, label, icon: Icon }) => (
           <TabsTrigger
             key={value}
             value={value}
-            className="flex items-center justify-center gap-2 rounded-lg px-3 py-2 font-medium data-[state=active]:bg-red-600 data-[state=active]:text-white hover:bg-gray-100 data-[state=active]:hover:bg-red-700 transition-all whitespace-nowrap flex-1"
+            className={cn(segmentTabsTriggerClassName, 'flex items-center justify-center gap-2 whitespace-nowrap flex-1')}
           >
             <Icon className="w-4 h-4" />
             <span className="text-xs font-normal sm:text-sm">{label}</span>

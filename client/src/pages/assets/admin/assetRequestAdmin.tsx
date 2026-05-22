@@ -328,15 +328,6 @@ export default function AssetRequestAdmin() {
           title="Asset Request Management"
           description="Manage and process asset requests from users"
         >
-          <Button
-            variant="ghost"
-            size="sm"
-            onClick={() => fetchAllAssetRequests()}
-            className="flex items-center gap-2"
-          >
-            <RefreshCw className="h-4 w-4" />
-            Refresh
-          </Button>
         </PageHeader>
 
         <div className="grid grid-cols-1 gap-8">

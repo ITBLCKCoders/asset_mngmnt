@@ -13,7 +13,7 @@ import {
 import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
 import { PageHeader } from '@/components/common/PageHeader';
-import { Search, FileCheck, RefreshCw, ClipboardList } from 'lucide-react';
+import { Search, FileCheck, ClipboardList } from 'lucide-react';
 import { api } from '@/lib/api';
 import { toast } from 'sonner';
 import { useUserPermissions } from '@/hooks/useUserPermissions';
@@ -29,7 +29,6 @@ import {
   AccountabilityFormDetail,
   AccountabilityForm,
 } from '@/pages/assets/accountability/accountabilityForm';
-import { useDelayedLoading } from '@/hooks/useDelayedLoading';
 import { Shimmer } from '@/components/ui/shimmer';
 import { Label } from '@/components/ui/label';
 import {
@@ -44,6 +43,7 @@ import { cn } from '@/lib/utils';
 import { classifyDepartmentScopeByName } from '@/lib/assetScope';
 
 type StatusFilter = 'all' | 'active' | 'disabled';
+type AssetTypeFilter = 'all' | 'it' | 'admin';
 
 export default function AccountabilityFormsPage() {
   const { hasPermission } = useUserPermissions();
@@ -63,6 +63,7 @@ export default function AccountabilityFormsPage() {
   const [searchQuery, setSearchQuery] = useState('');
   const [companyFilterId, setCompanyFilterId] = useState('');
   const [departmentFilterId, setDepartmentFilterId] = useState('');
+  const [assetTypeFilter, setAssetTypeFilter] = useState<AssetTypeFilter>('all');
   
   // Auto-set company filter to user's company if they have one
   const userCompanyScope = currentUser?.company_id || '';
@@ -87,7 +88,7 @@ export default function AccountabilityFormsPage() {
   const [viewDetailContext, setViewDetailContext] = useState<'all' | 'hrCopy'>(
     'all'
   );
-  const displayLoading = useDelayedLoading(loading, 2000);
+  const displayLoading = loading;
 
   const fetchForms = async (): Promise<AccountabilityForm[]> => {
     try {
@@ -172,12 +173,12 @@ export default function AccountabilityFormsPage() {
   };
   
   const filterByAssetType = (list: AccountabilityForm[]) => {
-    if (userRoleAssetType === 'none') return list;
+    if (assetTypeFilter === 'all') return list;
     
-    const targetScope = userRoleAssetType === 'it' ? 'IT' : 'Admin';
+    const targetScope = assetTypeFilter === 'it' ? 'IT' : 'Admin';
     
     return list.filter((f: AccountabilityForm) => {
-      // Check if any asset in the form matches the user's asset type scope
+      // Check if any asset in the form matches the selected asset type
       return f.assets.some(asset => {
         const deptCandidate =
           asset.categoryDepartment ||
@@ -249,14 +250,14 @@ export default function AccountabilityFormsPage() {
           )
         )
       ),
-    [forms, searchQuery, statusFilter, companyFilterId, departmentFilterId, userRoleAssetType]
+    [forms, searchQuery, statusFilter, companyFilterId, departmentFilterId, assetTypeFilter]
   );
   const filteredHrCopy = useMemo(
     () =>
       applyStatusFilter(
         filterBySearch(filterByAssetType(filterByCompanyAndDepartment(hrCopyForms)))
       ),
-    [hrCopyForms, searchQuery, statusFilter, companyFilterId, departmentFilterId, userRoleAssetType]
+    [hrCopyForms, searchQuery, statusFilter, companyFilterId, departmentFilterId, assetTypeFilter]
   );
 
   const hasActiveOrgFilters = Boolean(companyFilterId || departmentFilterId);
@@ -365,6 +366,7 @@ export default function AccountabilityFormsPage() {
             showReceiveButton={isHrList && hasHrCopyAccess}
             onReceive={handleReceiveCopy}
             showDownloadButton={!isHrList}
+            showPendingReceiverSignatureBadge
           />
         ))}
       </div>
@@ -380,18 +382,6 @@ export default function AccountabilityFormsPage() {
           description="View and manage all asset accountability forms"
           loading={displayLoading}
         >
-          <Button
-            variant="ghost"
-            size="sm"
-            onClick={() => fetchForms()}
-            disabled={displayLoading}
-            className="flex items-center gap-2"
-          >
-            <RefreshCw
-              className={`h-4 w-4 ${displayLoading ? 'animate-spin' : ''}`}
-            />
-            Refresh
-          </Button>
         </PageHeader>
 
         <div>
@@ -538,6 +528,44 @@ export default function AccountabilityFormsPage() {
                     Disabled
                   </Button>
                 </div>
+                <div className="flex gap-2 flex-wrap">
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => setAssetTypeFilter('all')}
+                    className={
+                      assetTypeFilter === 'all'
+                        ? 'bg-red-600 text-white hover:bg-red-700 hover:text-white border-red-600'
+                        : ''
+                    }
+                  >
+                    All Assets
+                  </Button>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => setAssetTypeFilter('it')}
+                    className={
+                      assetTypeFilter === 'it'
+                        ? 'bg-red-600 text-white hover:bg-red-700 hover:text-white border-red-600'
+                        : ''
+                    }
+                  >
+                    IT Assets
+                  </Button>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => setAssetTypeFilter('admin')}
+                    className={
+                      assetTypeFilter === 'admin'
+                        ? 'bg-red-600 text-white hover:bg-red-700 hover:text-white border-red-600'
+                        : ''
+                    }
+                  >
+                    Admin Assets
+                  </Button>
+                </div>
               </div>
 
               <TabsContent value="all" className="mt-0">
@@ -667,6 +695,44 @@ export default function AccountabilityFormsPage() {
                     Disabled
                   </Button>
                 </div>
+                <div className="flex gap-2 flex-wrap">
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => setAssetTypeFilter('all')}
+                    className={
+                      assetTypeFilter === 'all'
+                        ? 'bg-red-600 text-white hover:bg-red-700 hover:text-white border-red-600'
+                        : ''
+                    }
+                  >
+                    All Assets
+                  </Button>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => setAssetTypeFilter('it')}
+                    className={
+                      assetTypeFilter === 'it'
+                        ? 'bg-red-600 text-white hover:bg-red-700 hover:text-white border-red-600'
+                        : ''
+                    }
+                  >
+                    IT Assets
+                  </Button>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => setAssetTypeFilter('admin')}
+                    className={
+                      assetTypeFilter === 'admin'
+                        ? 'bg-red-600 text-white hover:bg-red-700 hover:text-white border-red-600'
+                        : ''
+                    }
+                  >
+                    Admin Assets
+                  </Button>
+                </div>
               </div>
 
               <div className="flex items-center gap-2 mb-4">
@@ -705,12 +771,14 @@ export default function AccountabilityFormsPage() {
                   onClose={() => {
                     setShowFormDetail(false);
                     setSelectedForm(null);
-                    fetchForms();
                   }}
                   onSign={handleSignForm}
                   headerInParentChrome
                   viewContext={viewDetailContext}
                   hrViewMode
+                  onReceiveCompleted={async () => {
+                    await fetchForms();
+                  }}
                 />
               )}
             </AppDialogBody>

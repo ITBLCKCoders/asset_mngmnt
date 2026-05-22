@@ -77,6 +77,29 @@ describe('dashboard.service', () => {
       expect(result.requestPipeline).toEqual(expect.any(Array));
     });
 
+    it('should count assets owned or originated in company scope', async () => {
+      (getAssetScope as jest.Mock).mockResolvedValue({
+        companyId: 'company-1',
+        departmentIds: null,
+        isSuperAdmin: false,
+      });
+      (getDepartmentIdsForScope as jest.Mock).mockResolvedValue([]);
+
+      (pool.execute as jest.Mock).mockResolvedValue([[{ cnt: 0 }], []]);
+
+      await getDashboardData(pool as any, 'user-1');
+
+      const totalAssetsCall = (pool.execute as jest.Mock).mock.calls.find(
+        (call: unknown[]) =>
+          String(call[0]).includes('COUNT(*)') &&
+          String(call[0]).includes('originating_company_id')
+      );
+      expect(totalAssetsCall).toBeDefined();
+      expect(totalAssetsCall?.[1]).toEqual(
+        expect.arrayContaining(['company-1', 'company-1'])
+      );
+    });
+
     it('should call getDepartmentIdsForScope when super admin with scope override', async () => {
       (getAssetScope as jest.Mock).mockResolvedValue({
         companyId: 'company-1',

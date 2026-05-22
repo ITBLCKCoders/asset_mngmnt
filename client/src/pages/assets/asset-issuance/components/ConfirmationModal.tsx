@@ -282,7 +282,7 @@ export function ConfirmationModal({
                 // Check if the receiving user has unsigned accountability forms
                 if (selectedUser) {
                   const checkResult = await checkUnsignedAccountabilityForms(selectedUser);
-                  
+
                   if (checkResult.hasUnsignedForms && checkResult.unsignedForms.length > 0) {
                     // Send notification to the receiving user
                     try {
@@ -293,13 +293,13 @@ export function ConfirmationModal({
                     } catch (err: any) {
                       console.error('Failed to send notification:', err);
                     }
-                    
+
                     // Show message to current user and close modal
                     const receivingUser = users?.find(u => u.userID === selectedUser);
-                    const userName = receivingUser 
+                    const userName = receivingUser
                       ? `${receivingUser.first_name} ${receivingUser.last_name}`
                       : 'the user';
-                    
+
                     toast.error(
                       `Assignment blocked`,
                       {
@@ -307,19 +307,19 @@ export function ConfirmationModal({
                         duration: 6000,
                       }
                     );
-                    
+
                     onOpenChange(false);
                     return;
                   }
                 }
-                
+
                 // Store the confirm action for SmsOtpDialog
                 pendingActionRef.current = async () => {
                   await onConfirm(signAsIssuer, signITCopy);
-                  onOpenChange(false);
                 };
-                
-                // Show OTP dialog
+
+                // Close confirmation modal and show OTP dialog
+                onOpenChange(false);
                 setShowOtpDialog(true);
               }}
               disabled={!canConfirmAssignment}
@@ -344,11 +344,14 @@ export function ConfirmationModal({
       {/* OTP Verification Dialog */}
       <SmsOtpDialog
         isOpen={showOtpDialog}
-        onOpenChange={setShowOtpDialog}
+        onOpenChange={(otpDialogOpen) => {
+          setShowOtpDialog(otpDialogOpen);
+          // Don't clear pendingActionRef here - SmsOtpDialog handles it after execution
+        }}
         sendOtpEndpoint='/auth/initials/send-otp'
         verifyOtpEndpoint='/auth/initials/verify-otp'
         onVerified={() => {
-          pendingActionRef.current = null;
+          // SmsOtpDialog already handles setting pendingActionRef.current = null after execution
         }}
         onCancel={() => {
           pendingActionRef.current = null;
