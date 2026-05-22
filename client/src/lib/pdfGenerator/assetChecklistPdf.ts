@@ -377,7 +377,11 @@ export const generateAssetChecklistPDF = async (
     : '';
 
   /** Fixed approval row height — digital signature is drawn last and may overlap */
-  const approvalSignatureRowHeight = 32;
+  const approvalSignatureRowHeight = 40;
+  /** Push digital signatures lower within each approval cell (mm) */
+  const approvalSignatureDownOffsetMm = 8;
+  const signatureAnchorBottomY = (nameY: number) =>
+    nameY - 2 + approvalSignatureDownOffsetMm;
 
   const employeeName = checklistData.employee_name || '';
   const employeeDigitalSignature =
@@ -514,16 +518,16 @@ export const generateAssetChecklistPDF = async (
         if (itManagerDigitalSignature) {
           pendingSignatures.push({
             data: itManagerDigitalSignature,
-            x: cell.x + 1,
-            y: yTop,
-            anchorBottomY: nameY - 2,
+            x: cell.x + 1 - 30,
+            y: yTop + 25,
+            anchorBottomY: signatureAnchorBottomY(nameY),
             maxWidth: PDF_SIGNATURE_MAX_WIDTH_MM,
             maxHeight: PDF_SIGNATURE_MAX_HEIGHT_MM,
           });
         } else if (itManagerInitial) {
           doc.setFontSize(14);
           doc.setFont('helvetica', 'bold');
-          doc.text(itManagerInitial, xMin, yTop + 10);
+          doc.text(itManagerInitial, xMin, yTop + 10 + approvalSignatureDownOffsetMm);
         }
 
         if (displayItManagerName) {
@@ -560,16 +564,16 @@ export const generateAssetChecklistPDF = async (
         if (creatorDigitalSignature) {
           pendingSignatures.push({
             data: creatorDigitalSignature,
-            x: cell.x + 1,
-            y: yTop,
-            anchorBottomY: nameY - 2,
+            x: cell.x + 1 - 30,
+            y: yTop + 25,
+            anchorBottomY: signatureAnchorBottomY(nameY),
             maxWidth: PDF_SIGNATURE_MAX_WIDTH_MM,
             maxHeight: PDF_SIGNATURE_MAX_HEIGHT_MM,
           });
         } else if (creatorInitial) {
           doc.setFontSize(14);
           doc.setFont('helvetica', 'bold');
-          doc.text(creatorInitial, xMin, yTop + 10);
+          doc.text(creatorInitial, xMin, yTop + 10 + approvalSignatureDownOffsetMm);
         }
 
         if (creatorName) {
@@ -604,16 +608,16 @@ export const generateAssetChecklistPDF = async (
         if (deptHeadDigitalSignature) {
           pendingSignatures.push({
             data: deptHeadDigitalSignature,
-            x: cell.x + 1,
-            y: yTop,
-            anchorBottomY: nameY - 2,
+            x: cell.x + 1 - 30,
+            y: yTop + 25,
+            anchorBottomY: signatureAnchorBottomY(nameY),
             maxWidth: PDF_SIGNATURE_MAX_WIDTH_MM,
             maxHeight: PDF_SIGNATURE_MAX_HEIGHT_MM,
           });
         } else if (deptHeadInitial) {
           doc.setFontSize(14);
           doc.setFont('helvetica', 'bold');
-          doc.text(deptHeadInitial, xMin, yTop + 10);
+          doc.text(deptHeadInitial, xMin, yTop + 10 + approvalSignatureDownOffsetMm);
         }
 
         if (displayDeptHeadName) {
@@ -647,16 +651,16 @@ export const generateAssetChecklistPDF = async (
         if (employeeDigitalSignature) {
           pendingSignatures.push({
             data: employeeDigitalSignature,
-            x: cell.x + 1,
-            y: yTop,
-            anchorBottomY: nameY - 2,
+            x: cell.x + 1 - 30,
+            y: yTop + 25,
+            anchorBottomY: signatureAnchorBottomY(nameY),
             maxWidth: PDF_SIGNATURE_MAX_WIDTH_MM,
             maxHeight: PDF_SIGNATURE_MAX_HEIGHT_MM,
           });
         } else if (employeeInitial) {
           doc.setFontSize(14);
           doc.setFont('helvetica', 'bold');
-          doc.text(employeeInitial, xMin, yTop + 10);
+          doc.text(employeeInitial, xMin, yTop + 10 + approvalSignatureDownOffsetMm);
         }
 
         doc.setFontSize(8);

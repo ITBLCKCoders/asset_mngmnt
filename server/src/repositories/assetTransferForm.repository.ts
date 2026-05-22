@@ -181,7 +181,7 @@ export async function getBuilderItemsByAssetIds(
   const [rows] = await pool.execute<BuilderItemRow[]>(
     `SELECT abi.builder_id, abi.asset_id
      FROM asset_builder_items abi
-     WHERE abi.asset_id IN (${placeholders}) AND abi.deleted_at IS NULL`,
+     WHERE abi.asset_id IN (${placeholders})`,
     assetIds
   );
   return rows;
@@ -397,7 +397,9 @@ export async function getTransferFormByReturnFormId(
   const [rows] = (await pool.execute(
     `SELECT created_by,
             DATE_FORMAT(process_signed_at, '%Y-%m-%d %H:%i:%s') AS process_signed_at,
-            process_digital_signature
+            process_digital_signature,
+            DATE_FORMAT(processor_pending_signed_at, '%Y-%m-%d %H:%i:%s') AS processor_pending_signed_at,
+            processor_pending_signature
      FROM asset_transfer_forms
      WHERE return_form_id = ? AND deleted_at IS NULL
      LIMIT 1`,

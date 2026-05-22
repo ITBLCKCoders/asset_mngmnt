@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState, useMemo } from 'react';
+import { useEffect, useState, useMemo, useRef } from 'react';
 import {
   Package,
   Boxes,
@@ -54,18 +54,8 @@ import { useCurrentUser } from '@/hooks/useCurrentUser';
 import { useUserPermissions } from '@/hooks/useUserPermissions';
 import { DataTable } from '@/components/ui/dataTable';
 import type { ColumnDef } from '@tanstack/react-table';
-import {
-  generateAccountabilityFormPDF,
-  type AccountabilityForm,
-} from '@/pages/assets/accountability/accountabilityForm';
-import {
-  buildReturnDataForPDFFromBatch,
-  buildTransferDataForPDFFromBatch,
-  type AssetReturnFormBatch,
-  type AssetTransferFormBatch,
-} from '@/pages/profile/profileComponents/tabs/documentsTab';
-import { downloadPDF, generateAssetReturnPDF, generateAssetTransferPDF } from '@/lib/pdfGenerator';
 import { Shimmer } from '@/components/ui/shimmer';
+import SmsOtpDialog from '@/components/auth/SmsOtpDialog';
 
 interface Asset {
   id: string;
@@ -245,23 +235,6 @@ export default function AssetsTransfer() {
   >(null);
   const [activeTab, setActiveTab] = useState('select-assets');
   const [tabLoading, setTabLoading] = useState(false);
-  const [showNextStepsDialog, setShowNextStepsDialog] = useState(false);
-  const [nextStepsAssigneeUserId, setNextStepsAssigneeUserId] = useState<
-    string | null
-  >(null);
-  const [downloadingNextAccountability, setDownloadingNextAccountability] =
-    useState(false);
-  const [downloadingProcessorReturnForm, setDownloadingProcessorReturnForm] =
-    useState(false);
-  const [downloadingProcessorTransferForm, setDownloadingProcessorTransferForm] =
-    useState(false);
-  const [downloadingAllForms, setDownloadingAllForms] = useState(false);
-  const [nextStepsTransferFormId, setNextStepsTransferFormId] = useState<
-    string | null
-  >(null);
-  const [nextStepsReturnFormId, setNextStepsReturnFormId] = useState<
-    string | null
-  >(null);
   const [companies, setCompanies] = useState<CompanyOption[]>([]);
   const [companyTransferAssets, setCompanyTransferAssets] = useState<
     CompanyTransferAsset[]
@@ -274,6 +247,8 @@ export default function AssetsTransfer() {
   const [targetCompanyId, setTargetCompanyId] = useState('');
   const [companyTransferring, setCompanyTransferring] = useState(false);
   const [companyTransferTab, setCompanyTransferTab] = useState<'asset' | 'built'>('asset');
+  const [smsOtpDialogOpen, setSmsOtpDialogOpen] = useState(false);
+  const pendingTransferActionRef = useRef<(() => Promise<void>) | null>(null);
 
   const isSuperAdmin = currentUser?.role?.name?.toLowerCase() === 'super admin';
   const isAdmin = currentUser?.role?.name?.toLowerCase() === 'admin';
@@ -596,6 +571,95 @@ export default function AssetsTransfer() {
     setShowTransferDialog(true);
   };
 
+  const validateTransferForm = (): boolean => {
+    if (!transferTypeTransfer && !transferTypeOffboarding) {
+      toast.error(
+        'Please select Transfer Type (Transfer or Transfer Offboarding)'
+      );
+      return false;
+    }
+    if (!newAssignmentUser) {
+      toast.error('Please select New Assigned User');
+      return false;
+    }
+    if (!receivedBy) {
+      toast.error('Please select who received the assets');
+      return false;
+    }
+    const hasMissingCondition = assetTransferData.some(item => !item.condition);
+    if (hasMissingCondition) {
+      toast.error('Please select a condition for all selected assets');
+      return false;
+    }
+    if (
+      !verificationTag ||
+      !verificationCondition ||
+      !verificationConfirmSign
+    ) {
+      toast.error('Please complete all verification checkboxes');
+      return false;
+    }
+    return true;
+  };
+
+  const submitTransferRequest = async () => {
+    setTransferring(true);
+    try {
+      const transferType = transferTypeOffboarding
+        ? 'Transfer Offboarding'
+        : 'Transfer';
+      const processDigitalSignature =
+        (currentUser as { digitalSignature?: string | null })?.digitalSignature ??
+        null;
+      const payload: Record<string, unknown> = {
+        assetTransfers: assetTransferData.map(d => ({
+          assignmentId: d.assignmentId,
+          condition: d.condition,
+          notes: d.notes || '',
+          imageUrls: d.imageUrls ?? [],
+        })),
+        transferType,
+        receivedBy,
+        newAssignment: {
+          userId: newAssignmentUser,
+          departmentId: newAssignmentDepartment || null,
+          locationId: newAssignmentLocation || null,
+          roomId: null,
+          roomName: newAssignmentRoom || null,
+        },
+      };
+      if (verificationConfirmSign) {
+        payload.processSignature = {
+          signed_at: new Date().toISOString(),
+          digital_signature: processDigitalSignature || undefined,
+        };
+      }
+      await api.post('/asset-transfers/create-held', payload);
+
+      toast.success(
+        'Transfer has been processed. It will appear in Transfer History below.'
+      );
+      setShowTransferDialog(false);
+      setSelectedAssignments([]);
+      await Promise.all([fetchAssignments(), fetchTransferHistory()]);
+    } catch (err: any) {
+      const data = err?.data ?? err?.response?.data;
+      toast.error(
+        data?.message || data?.error || 'Failed to create held transfer'
+      );
+    } finally {
+      setTransferring(false);
+    }
+  };
+
+  const handleTransferSubmit = () => {
+    if (!validateTransferForm()) return;
+    pendingTransferActionRef.current = async () => {
+      await submitTransferRequest();
+    };
+    setSmsOtpDialogOpen(true);
+  };
+
   const toggleTransferAssetExpansion = (assetId: string) => {
     setExpandedTransferAssets(prev => {
       const next = new Set(prev);
@@ -811,83 +875,6 @@ export default function AssetsTransfer() {
     []
   );
 
-  const handleTransferSubmit = async () => {
-    if (!transferTypeTransfer && !transferTypeOffboarding) {
-      toast.error(
-        'Please select Transfer Type (Transfer or Transfer Offboarding)'
-      );
-      return;
-    }
-    if (!newAssignmentUser) {
-      toast.error('Please select New Assigned User');
-      return;
-    }
-    if (!receivedBy) {
-      toast.error('Please select who received the assets');
-      return;
-    }
-    const hasMissingCondition = assetTransferData.some(item => !item.condition);
-    if (hasMissingCondition) {
-      toast.error('Please select a condition for all selected assets');
-      return;
-    }
-    if (
-      !verificationTag ||
-      !verificationCondition ||
-      !verificationConfirmSign
-    ) {
-      toast.error('Please complete all verification checkboxes');
-      return;
-    }
-    setTransferring(true);
-    try {
-      const transferType = transferTypeOffboarding
-        ? 'Transfer Offboarding'
-        : 'Transfer';
-      const payload: Record<string, unknown> = {
-        assetTransfers: assetTransferData.map(d => ({
-          assignmentId: d.assignmentId,
-          condition: d.condition,
-          notes: d.notes || '',
-          imageUrls: d.imageUrls ?? [],
-        })),
-        transferType,
-        receivedBy,
-        newAssignment: {
-          userId: newAssignmentUser,
-          departmentId: newAssignmentDepartment || null,
-          locationId: newAssignmentLocation || null,
-          roomId: null,
-          roomName: newAssignmentRoom || null,
-        },
-      };
-      if (verificationConfirmSign) {
-        payload.processSignature = {
-          signed_at: new Date().toISOString(),
-        };
-      }
-      const res = await api.post('/asset-transfers/create-held', payload);
-
-      toast.success(
-        'Transfer has been processed. It will appear in Transfer History below.'
-      );
-      setShowTransferDialog(false);
-      setNextStepsAssigneeUserId(newAssignmentUser || null);
-      setNextStepsTransferFormId(res?.formID ?? res?.data?.formID ?? null);
-      setNextStepsReturnFormId(res?.returnFormID ?? res?.data?.returnFormID ?? null);
-      setShowNextStepsDialog(true);
-      setSelectedAssignments([]);
-      await Promise.all([fetchAssignments(), fetchTransferHistory()]);
-    } catch (err: any) {
-      const data = err?.data ?? err?.response?.data;
-      toast.error(
-        data?.message || data?.error || 'Failed to create held transfer'
-      );
-    } finally {
-      setTransferring(false);
-    }
-  };
-
   const filteredLocationsForTransfer = (locations || []).filter(
     loc =>
       (!newAssignmentBuilding || loc.building === newAssignmentBuilding) &&
@@ -947,160 +934,6 @@ export default function AssetsTransfer() {
       color: 'text-red-600',
     },
   ];
-
-  const handleDownloadNextAccountability = async () => {
-    if (!nextStepsAssigneeUserId) {
-      toast.error('Unable to resolve transfer receiver for accountability download');
-      return;
-    }
-    try {
-      setDownloadingNextAccountability(true);
-      const listRes = await api.get<{ forms?: AccountabilityForm[] }>(
-        `/accountability-forms?userId=${nextStepsAssigneeUserId}`
-      );
-      const forms = Array.isArray(listRes?.forms) ? listRes.forms : [];
-      const activeForms = forms.filter(
-        f => f.status !== 'Disabled' && f.status !== 'Declined'
-      );
-      if (activeForms.length === 0) {
-        toast.error('No active accountability form found for the receiver');
-        return;
-      }
-      activeForms.sort(
-        (a, b) =>
-          new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
-      );
-      const target = activeForms[0];
-      if (!target?.id) {
-        toast.error('Could not determine accountability form to download');
-        return;
-      }
-      const formRes = await api.get<{ form?: AccountabilityForm }>(
-        `/accountability-forms/${target.id}`
-      );
-      const form = formRes?.form;
-      if (!form) {
-        toast.error('Could not load accountability form details');
-        return;
-      }
-      const pdfBlob = await generateAccountabilityFormPDF(form, currentUser);
-      const fileName = `Asset_Accountability_Form_${form.formNumber || form.id}_${Date.now()}.pdf`;
-      const url = URL.createObjectURL(pdfBlob);
-      const a = document.createElement('a');
-      a.href = url;
-      a.download = fileName;
-      document.body.appendChild(a);
-      a.click();
-      a.remove();
-      URL.revokeObjectURL(url);
-      toast.success('Accountability form downloaded successfully');
-    } catch (error) {
-      console.error('Failed to download accountability form:', error);
-      toast.error('Failed to download accountability form');
-    } finally {
-      setDownloadingNextAccountability(false);
-    }
-  };
-
-  const handleDownloadProcessorReturnForm = async () => {
-    const processorId = currentUser?.id;
-    if (!processorId) {
-      toast.error('Unable to resolve processor account for return form download');
-      return;
-    }
-    try {
-      setDownloadingProcessorReturnForm(true);
-      const response = await api.get<{ assetReturnForms?: AssetReturnFormBatch[] }>(
-        '/asset-returns'
-      );
-      const batches = Array.isArray(response?.assetReturnForms)
-        ? response.assetReturnForms
-        : [];
-      if (batches.length === 0) {
-        toast.error('No return forms found for processor');
-        return;
-      }
-      const exact = nextStepsReturnFormId
-        ? batches.find(b => b.formID === nextStepsReturnFormId)
-        : null;
-      const sorted = [...batches].sort(
-        (a, b) =>
-          new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
-      );
-      const target = exact ?? sorted[0];
-      const data = buildReturnDataForPDFFromBatch(target);
-      if (!data) {
-        toast.error('Cannot generate PDF for the selected return form');
-        return;
-      }
-      const blob = await generateAssetReturnPDF(data);
-      const fileName = `return-form-${target.form_number ?? 'processor'}.pdf`;
-      downloadPDF(blob, fileName);
-      toast.success('Return form downloaded successfully');
-    } catch (error) {
-      console.error('Failed to download processor return form:', error);
-      toast.error('Failed to download processor return form');
-    } finally {
-      setDownloadingProcessorReturnForm(false);
-    }
-  };
-
-  const handleDownloadProcessorTransferForm = async () => {
-    const processorId = currentUser?.id;
-    if (!processorId) {
-      toast.error('Unable to resolve processor account for transfer form download');
-      return;
-    }
-    try {
-      setDownloadingProcessorTransferForm(true);
-      const response = await api.get<{
-        assetTransferForms?: AssetTransferFormBatch[];
-        data?: { assetTransferForms?: AssetTransferFormBatch[] };
-      }>(`/asset-transfers/user/${processorId}`);
-      const batches =
-        response?.assetTransferForms ?? response?.data?.assetTransferForms ?? [];
-      if (!Array.isArray(batches) || batches.length === 0) {
-        toast.error('No transfer forms found for processor');
-        return;
-      }
-      const exact = nextStepsTransferFormId
-        ? batches.find(b => b.formID === nextStepsTransferFormId)
-        : null;
-      const sorted = [...batches].sort(
-        (a, b) =>
-          new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
-      );
-      const target = exact ?? sorted[0];
-      const data = buildTransferDataForPDFFromBatch(target);
-      if (!data) {
-        toast.error('Cannot generate PDF for the selected transfer form');
-        return;
-      }
-      const blob = await generateAssetTransferPDF(data);
-      const fileName = target.form_number
-        ? `Asset_Transfer_Form_${target.form_number}_${Date.now()}.pdf`
-        : `Asset_Transfer_Form_${Date.now()}.pdf`;
-      downloadPDF(blob, fileName);
-      toast.success('Transfer form downloaded successfully');
-    } catch (error) {
-      console.error('Failed to download processor transfer form:', error);
-      toast.error('Failed to download processor transfer form');
-    } finally {
-      setDownloadingProcessorTransferForm(false);
-    }
-  };
-
-  const handleDownloadAllForms = async () => {
-    try {
-      setDownloadingAllForms(true);
-      await handleDownloadNextAccountability();
-      await handleDownloadProcessorReturnForm();
-      await handleDownloadProcessorTransferForm();
-      toast.success('Download all actions completed');
-    } finally {
-      setDownloadingAllForms(false);
-    }
-  };
 
   const filteredAssignments = useMemo(() => {
     const q = searchTerm.trim().toLowerCase();
@@ -1276,11 +1109,7 @@ export default function AssetsTransfer() {
   return (
     <div className="flex flex-col min-h-screen">
       <main className="flex-1 p-4 sm:p-6 space-y-6">
-        <PageHeader
-          icon={ArrowRightLeft}
-          title="Assets Transfer"
-          description="Transfer assets between users, departments, and locations"
-        >
+        <PageHeader icon={ArrowRightLeft} title="Assets Transfer">
           {showScopeTabs && (
             <Tabs value={scope} onValueChange={v => setScope(v as 'it' | 'admin')} className="w-full sm:w-auto">
               <TabsList className={segmentTabsListClassName + ' grid grid-cols-2 max-w-full sm:max-w-[280px]'}>
@@ -2339,6 +2168,7 @@ export default function AssetsTransfer() {
         <Dialog
           open={showTransferDialog}
           onOpenChange={open => {
+            if (smsOtpDialogOpen && !open) return;
             setShowTransferDialog(open);
             if (!open) {
               setVerificationTag(false);
@@ -2350,7 +2180,9 @@ export default function AssetsTransfer() {
             }
           }}
         >
-          <AppDialogFrame className="max-w-2xl w-[85vw] sm:w-[90vw] md:w-full max-h-[90vh] overflow-hidden !flex !flex-col">
+          <AppDialogFrame
+            className={`max-w-2xl w-[85vw] sm:w-[90vw] md:w-full max-h-[90vh] overflow-hidden !flex !flex-col${smsOtpDialogOpen ? ' !overflow-hidden' : ''}`}
+          >
             <AppDialogGradientHeader
               title={
                 <span className="flex items-center gap-3">
@@ -2361,7 +2193,9 @@ export default function AssetsTransfer() {
               description="Assess condition and complete transfer details for each asset."
             />
 
-            <AppDialogBody className="max-h-[min(50vh,520px)] min-h-0 flex-1 space-y-4 overflow-y-auto overflow-x-hidden sm:space-y-6">
+            <AppDialogBody
+              className={`max-h-[min(50vh,520px)] min-h-0 flex-1 space-y-4 overflow-y-auto overflow-x-hidden sm:space-y-6${smsOtpDialogOpen ? ' !overflow-hidden' : ''}`}
+            >
               <div className="inline-block rounded-full border border-slate-200 bg-slate-50 px-3 py-1 text-sm font-semibold text-slate-800">
                 Selected Assets: {assetTransferData.length}
               </div>
@@ -2690,6 +2524,21 @@ export default function AssetsTransfer() {
                 />
               </div>
 
+              <div className="rounded-xl border border-slate-200 bg-white p-5 shadow-sm space-y-2">
+                <Label className="text-sm font-semibold text-slate-800 tracking-tight uppercase">
+                  Processor position
+                </Label>
+                <p className="text-sm text-slate-700">
+                  {currentUser?.position?.trim()
+                    ? currentUser.position
+                    : '— (add a position on your profile if missing)'}
+                </p>
+                <p className="text-xs text-slate-500">
+                  Shown on the transfer form PDF in IT Staff / IT Inventory Manager
+                  after you sign.
+                </p>
+              </div>
+
               {/* Verification */}
               <div className="rounded-xl border border-slate-200 bg-white p-5 shadow-sm space-y-4">
                 <Label className="text-sm font-semibold text-slate-800 uppercase block">
@@ -2735,12 +2584,14 @@ export default function AssetsTransfer() {
               <Button
                 variant="outline"
                 onClick={() => setShowTransferDialog(false)}
+                disabled={smsOtpDialogOpen || transferring}
               >
                 Cancel
               </Button>
               <Button
-                onClick={handleTransferSubmit}
+                onClick={() => handleTransferSubmit()}
                 disabled={
+                  smsOtpDialogOpen ||
                   transferring ||
                   !newAssignmentUser ||
                   !receivedBy ||
@@ -2768,62 +2619,32 @@ export default function AssetsTransfer() {
           </AppDialogFrame>
         </Dialog>
 
-        <Dialog open={showNextStepsDialog} onOpenChange={setShowNextStepsDialog}>
-          <AppDialogFrame className="max-w-xl w-[92vw] sm:w-full">
-            <AppDialogGradientHeader
-              title="Next Steps"
-              description="Transfer processed successfully."
-            />
-            <AppDialogBody className="space-y-3">
-              <ol className="list-decimal pl-5 space-y-2 text-sm text-slate-700">
-                <li>
-                  Download this new accountability of the receiver of the asset
-                  and make the user sign it.
-                </li>
-                <li>
-                  Download the processor return form, make the Department Head
-                  sign it, then upload it to the system after signing.
-                </li>
-                <li>
-                  Download the processor transfer form, make the Department Head
-                  sign it, then upload it to the system after signing.
-                </li>
-                <li>
-                  After the user signs it, make sure the user also signs the
-                  accountability form in Asset Management.
-                </li>
-                <li>
-                  After your Department Head approves, upload both scanned wet
-                  signed forms in the corresponding Forms menu pages: Return
-                  Form and Transfer Form.
-                </li>
-                <li>
-                  After that, go to HR and give the user asset accountability
-                  for 201 file copy.
-                </li>
-              </ol>
-            </AppDialogBody>
-            <AppDialogChromeFooter className="justify-end">
-              <Button
-                variant="outline"
-                onClick={handleDownloadAllForms}
-                disabled={downloadingAllForms}
-              >
-                {downloadingAllForms ? 'Downloading all...' : 'Download All Forms'}
-              </Button>
-              <Button
-                onClick={() => {
-                  setShowNextStepsDialog(false);
-                  setNextStepsAssigneeUserId(null);
-                  setNextStepsTransferFormId(null);
-                  setNextStepsReturnFormId(null);
-                }}
-              >
-                Continue
-              </Button>
-            </AppDialogChromeFooter>
-          </AppDialogFrame>
-        </Dialog>
+        <SmsOtpDialog
+          isOpen={smsOtpDialogOpen}
+          onOpenChange={open => {
+            if (!open) {
+              pendingTransferActionRef.current = null;
+            }
+            setSmsOtpDialogOpen(open);
+          }}
+          sendOtpEndpoint="/auth/initials/send-otp"
+          verifyOtpEndpoint="/auth/initials/verify-otp"
+          onVerified={() => {
+            setSmsOtpDialogOpen(false);
+            pendingTransferActionRef.current = null;
+          }}
+          onCancel={() => {
+            setSmsOtpDialogOpen(false);
+            pendingTransferActionRef.current = null;
+          }}
+          pendingActionRef={pendingTransferActionRef}
+          title="OTP SMS Verification"
+          description="OTP SMS Verification has been sent to your registered mobile number for asset transfer confirmation."
+          verifyButtonLabel="Verify & Process Transfer"
+          phoneNumber={
+            (currentUser as { contactNumber?: string })?.contactNumber
+          }
+        />
       </main>
     </div>
   );

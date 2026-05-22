@@ -29,6 +29,7 @@ import {
   buildReturnDataForPDFFromBatch,
   buildTransferDataForPDFFromBatch,
   buildBorrowDataForPDFFromBatch,
+  clearReturnPdfCacheForFormNumber,
   type AssetReturnFormBatch,
   type AssetTransferFormBatch,
   type AssetBorrowFormBatch,
@@ -640,10 +641,43 @@ export default function ApprovalsPage() {
           : 'Return form approved successfully';
       try {
         setApproving(true);
-        await api.post(`${base}/forms/${formBatch.formID}/approve`, { digitalSignature });
+        const sig =
+          (typeof digitalSignature === 'string' && digitalSignature.trim()) ||
+          (currentUser as { digitalSignature?: string })?.digitalSignature ||
+          '';
+        await api.post(`${base}/forms/${formBatch.formID}/approve`, {
+          digitalSignature: sig || undefined,
+        });
         toast.success(successMsg);
-        setShowDetail(false);
-        setSelectedBatch(null);
+        if (formBatch.form_number) {
+          const now = new Date();
+          const pad = (n: number) => String(n).padStart(2, '0');
+          const deptHeadSignedAt = `${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())} ${pad(now.getHours())}:${pad(now.getMinutes())}:${pad(now.getSeconds())}`;
+          const approverName = [currentUser?.first_name, currentUser?.last_name]
+            .filter(Boolean)
+            .join(' ')
+            .trim();
+          if (formBatch.formType === 'return') {
+            clearReturnPdfCacheForFormNumber(formBatch.form_number);
+            setSelectedBatch({
+              ...(selectedBatch as AssetReturnFormBatch),
+              dept_head_signed_at: deptHeadSignedAt,
+              dept_head_digital_signature: sig || null,
+              dept_head_signed_by: currentUser?.id ?? null,
+              dept_head_user_name: approverName || null,
+            } as FormApprovalBatch);
+          } else {
+            setSelectedBatch({
+              ...(selectedBatch as AssetTransferFormBatch),
+              dept_head_signed_at: deptHeadSignedAt,
+              dept_head_digital_signature: sig || null,
+              dept_head_user_name: approverName || null,
+            } as FormApprovalBatch);
+          }
+        } else {
+          setShowDetail(false);
+          setSelectedBatch(null);
+        }
         await refreshAll();
       } catch (error: any) {
         const msg =
@@ -806,10 +840,41 @@ export default function ApprovalsPage() {
           : 'Return form received successfully';
       try {
         setReceiving(true);
-        await api.post(`${base}/forms/${formBatch.formID}/receive`, {});
+        const sig =
+          (currentUser as { digitalSignature?: string })?.digitalSignature ||
+          '';
+        await api.post(`${base}/forms/${formBatch.formID}/receive`, {
+          digitalSignature: sig || undefined,
+        });
         toast.success(successMsg);
-        setShowDetail(false);
-        setSelectedBatch(null);
+        const now = new Date();
+        const pad = (n: number) => String(n).padStart(2, '0');
+        const itManagerSignedAt = `${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())} ${pad(now.getHours())}:${pad(now.getMinutes())}:${pad(now.getSeconds())}`;
+        const receiverName = [currentUser?.first_name, currentUser?.last_name]
+          .filter(Boolean)
+          .join(' ')
+          .trim();
+        if (formBatch.formType === 'return' && formBatch.form_number) {
+          clearReturnPdfCacheForFormNumber(formBatch.form_number);
+          setSelectedBatch({
+            ...(selectedBatch as AssetReturnFormBatch),
+            it_manager_signed_at: itManagerSignedAt,
+            it_manager_digital_signature: sig || null,
+            it_manager_signed_by: currentUser?.id ?? null,
+            it_manager_user_name: receiverName || null,
+          } as FormApprovalBatch);
+        } else if (formBatch.formType === 'transfer') {
+          setSelectedBatch({
+            ...(selectedBatch as AssetTransferFormBatch),
+            it_manager_signed_at: itManagerSignedAt,
+            it_manager_digital_signature: sig || null,
+            it_manager_signed_by: currentUser?.id ?? null,
+            it_manager_user_name: receiverName || null,
+          } as FormApprovalBatch);
+        } else {
+          setShowDetail(false);
+          setSelectedBatch(null);
+        }
         await refreshAll();
       } catch (error: unknown) {
         const msg =
@@ -834,7 +899,9 @@ export default function ApprovalsPage() {
       ? !!(selectedBatch as ChecklistApprovalBatch).dept_head_signed_at &&
         !(selectedBatch as ChecklistApprovalBatch).it_manager_signed_at
       : !!(selectedBatch as FormApprovalBatch).dept_head_signed_at &&
-        !!(selectedBatch as FormApprovalBatch).process_signed_at &&
+        (!!(selectedBatch as FormApprovalBatch).process_signed_at ||
+          !!(selectedBatch as AssetTransferFormBatch).processor_pending_signed_at ||
+          !!(selectedBatch as AssetReturnFormBatch).processor_pending_signed_at) &&
         !(selectedBatch as FormApprovalBatch).it_manager_signed_at);
 
   const handleDownloadCurrent = async () => {

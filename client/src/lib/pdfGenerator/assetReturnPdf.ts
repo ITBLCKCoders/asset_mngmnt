@@ -12,7 +12,10 @@ import {
   isBlackCoders,
   pdfLogger as logger,
   resolveCompanyBranding,
+  fetchActiveCompanyForAssetReturnForm,
   sortAssetsByLast5Digits,
+  PDF_SIGNATURE_MAX_HEIGHT_MM,
+  PDF_SIGNATURE_MAX_WIDTH_MM,
 } from './shared';
 
 export interface AssetReturnData {
@@ -116,10 +119,17 @@ export const generateAssetReturnPDF = async (
     creator: 'Asset Management System',
   });
 
-  const companyBranding = await resolveCompanyBranding({
+  let companyBranding = await resolveCompanyBranding({
     name: returnData.user.companyName,
     logo_url: returnData.user.companyLogoUrl,
   });
+  if (!companyBranding?.logo_url) {
+    const myCompany = await fetchActiveCompanyForAssetReturnForm();
+    companyBranding = await resolveCompanyBranding({
+      name: myCompany?.name ?? returnData.user.companyName ?? null,
+      logo_url: myCompany?.logo_url ?? null,
+    });
+  }
   const accentColor = getCompanyAccentColor(companyBranding?.name);
   const isBlackCodersCompany = isBlackCoders(companyBranding?.name);
   const headerFillColor: [number, number, number] = isBlackCodersCompany ? [0, 0, 0] : [accentColor.r, accentColor.g, accentColor.b];
@@ -231,7 +241,8 @@ export const generateAssetReturnPDF = async (
         ).trim() || '—'
       : '',
   ]);
-  while (assetRows.length < 10) {
+  const minAssetTableRows = Math.max(sortedAssets.length, 4);
+  while (assetRows.length < minAssetTableRows) {
     assetRows.push(['', '', '']);
   }
 
@@ -241,12 +252,20 @@ export const generateAssetReturnPDF = async (
   // Table 1: Current user | Date filed only - 2 equal columns
   doc.setDrawColor(0, 0, 0);
   doc.setLineWidth(tableLineWidth);
+  const compactTableStyles = {
+    fontSize: 9,
+    cellPadding: 2,
+    overflow: 'linebreak' as const,
+  };
+
   autoTable(doc, {
     startY,
     margin: tableMargin,
     body: [['Current user: ' + currentUserName, 'Date filed: ' + dateFiled]],
     theme: 'grid',
-    styles: { fontSize: 9, cellPadding: 3 },
+    styles: compactTableStyles,
+    rowPageBreak: 'avoid',
+    pageBreak: 'avoid',
     columnStyles: {
       0: { cellWidth: halfWidth },
       1: { cellWidth: halfWidth },
@@ -285,7 +304,9 @@ export const generateAssetReturnPDF = async (
     margin: tableMargin,
     body: tableBodyLabels,
     theme: 'grid',
-    styles: { fontSize: 9, cellPadding: 3 },
+    styles: compactTableStyles,
+    rowPageBreak: 'avoid',
+    pageBreak: 'avoid',
     columnStyles: {
       0: { cellWidth: labelColWidth },
       1: { cellWidth: labelTableCol1Width },
@@ -367,7 +388,9 @@ export const generateAssetReturnPDF = async (
     margin: tableMargin,
     body: tableBodyItemAssetCondition,
     theme: 'grid',
-    styles: { fontSize: 9, cellPadding: 3 },
+    styles: compactTableStyles,
+    rowPageBreak: 'avoid',
+    pageBreak: 'avoid',
     columnStyles: {
       0: { cellWidth: itemAssetWidth },
       1: { cellWidth: itemAssetWidth },
@@ -393,6 +416,24 @@ export const generateAssetReturnPDF = async (
   const hasDeptHeadSignature = !!returnData.dept_head_signed_at;
   const hasItManagerSignature = !!returnData.it_manager_signed_at;
   const showProcessorSignatureBlock = !!returnData.showProcessorSignatureBlock;
+  const processUserNameForCell = (returnData.process_user_name ?? '').trim();
+  const processInitial = processUserNameForCell
+    ? processUserNameForCell.charAt(0).toUpperCase()
+    : '';
+  const approvalSignatureRowHeight = 40;
+  const approvalSignatureDownOffsetMm = 8;
+  const signatureAnchorBottomY = (nameY: number) =>
+    nameY - 2 + approvalSignatureDownOffsetMm;
+  type PendingReturnSignature = {
+    data: string;
+    x: number;
+    y: number;
+    maxWidth: number;
+    maxHeight: number;
+    anchorBottomY?: number;
+    pageNumber: number;
+  };
+  const pendingReturnSignatures: PendingReturnSignature[] = [];
   const sectionBManagerLabel = isAdminScope
     ? 'Admin Manager / Admin Head'
     : 'IT Manager / IT Department Head';
@@ -415,7 +456,9 @@ export const generateAssetReturnPDF = async (
     margin: tableMargin,
     body: tableBodySectionB,
     theme: 'grid',
-    styles: { fontSize: 9, cellPadding: 3 },
+    styles: compactTableStyles,
+    rowPageBreak: 'avoid',
+    pageBreak: 'avoid',
     columnStyles: {
       0: { cellWidth: sectionBHalfWidth },
       1: { cellWidth: sectionBHalfWidth },
@@ -427,10 +470,8 @@ export const generateAssetReturnPDF = async (
         data.cell.styles.fontStyle = 'bold';
         data.cell.styles.halign = 'center';
       }
-      // Uniform height for every approval signature row so layout stays even when unsigned
-      const signatureRowHeight = 32;
       if (data.row.index === 1 || data.row.index === 3) {
-        data.cell.styles.minCellHeight = signatureRowHeight;
+        data.cell.styles.minCellHeight = approvalSignatureRowHeight;
       }
     },
     willDrawCell: () => {
@@ -448,7 +489,7 @@ export const generateAssetReturnPDF = async (
       const contentWidth = Math.max(20, xMax - xMin);
       const contentHeight = Math.max(10, yMax - yMin);
 
-      // Row 1, column 0: IT Manager / IT Department Head signature
+      // Row 1, column 0: IT Manager / IT Department Head (matches checklist IT manager cell)
       if (
         hasItManagerSignature &&
         data.row.index === 1 &&
@@ -456,19 +497,27 @@ export const generateAssetReturnPDF = async (
       ) {
         const yTop = yMin;
         const dateTimeReserved = 20;
-        const gap = 2;
-        const maxSigWidth = contentWidth - dateTimeReserved - gap;
-        const sigWidthClamped = Math.min(88, Math.max(30, maxSigWidth));
         const sigHeight = Math.min(50, Math.max(28, contentHeight - 2));
-        const xLeft = xMin;
-        const dateTimeX = xLeft + sigWidthClamped + gap;
+        const dateTimeX = xMax - dateTimeReserved;
         const nameY = yTop + sigHeight - 6;
 
         doc.setFontSize(8);
         doc.setFont('helvetica', 'normal');
         doc.setTextColor(0, 0, 0);
 
-        const itManagerName = returnData.it_manager_user_name || '';
+        const itManagerName = (returnData.it_manager_user_name || '').trim();
+        if (returnData.it_manager_digital_signature) {
+          pendingReturnSignatures.push({
+            data: returnData.it_manager_digital_signature,
+            x: cell.x + 1 - 30,
+            y: yTop + 25,
+            anchorBottomY: signatureAnchorBottomY(nameY),
+            maxWidth: PDF_SIGNATURE_MAX_WIDTH_MM,
+            maxHeight: PDF_SIGNATURE_MAX_HEIGHT_MM,
+            pageNumber: data.pageNumber,
+          });
+        }
+
         if (itManagerName) {
           const nameMaxWidth = Math.max(15, contentWidth - 6);
           const nameLines = doc.splitTextToSize(itManagerName, nameMaxWidth);
@@ -493,58 +542,60 @@ export const generateAssetReturnPDF = async (
           minute: '2-digit',
           hour12: true,
         });
-        const dateTimeXClamped = Math.min(dateTimeX, xMax - 18);
-        doc.text(dateStr, dateTimeXClamped, yTop + 4);
-        doc.text(timeStr, dateTimeXClamped, yTop + 9);
+        doc.setFontSize(7);
+        doc.setFont('helvetica', 'normal');
+        doc.text(dateStr, dateTimeX, yTop + 4);
+        doc.text(timeStr, dateTimeX, yTop + 9);
         return;
       }
 
-      // Row 1, column 1: process user (IT staff) - only draw when showProcessorSignatureBlock (after Dept Head has signed)
+      // Row 1, column 1: IT Staff / IT Inventory Manager (matches checklist creator cell)
       if (
         showProcessorSignatureBlock &&
+        processUserNameForCell &&
         data.row.index === 1 &&
         data.column.index === 1
       ) {
         const yTop = yMin;
         const dateTimeReserved = 20;
-        const gap = 2;
-        const maxSigWidth = contentWidth - dateTimeReserved - gap;
-        const sigWidthClamped = Math.min(88, Math.max(30, maxSigWidth));
         const sigHeight = Math.min(50, Math.max(28, contentHeight - 2));
-        const xLeft = xMin;
-        const dateTimeX = xLeft + sigWidthClamped + gap;
+        const dateTimeX = xMax - dateTimeReserved;
         const nameY = yTop + sigHeight - 6;
 
         doc.setFontSize(8);
         doc.setFont('helvetica', 'normal');
         doc.setTextColor(0, 0, 0);
 
-        // Display digital initials above processor name if available
         if (returnData.process_digital_signature) {
-          const initialsY = yTop + 10;
-          const initialsX = xMin;
-          const initialsWidth = Math.min(40, contentWidth - 6);
-          const initialsHeight = 16;
-          try {
-            const imgData = returnData.process_digital_signature;
-            if (imgData.startsWith('data:')) {
-              doc.addImage(imgData, 'PNG', initialsX, initialsY, initialsWidth, initialsHeight);
-            }
-          } catch (err) {
-            logger.error('Failed to add processor digital initials to PDF:', err);
-          }
+          pendingReturnSignatures.push({
+            data: returnData.process_digital_signature,
+            x: cell.x + 1 - 30,
+            y: yTop + 25,
+            anchorBottomY: signatureAnchorBottomY(nameY),
+            maxWidth: PDF_SIGNATURE_MAX_WIDTH_MM,
+            maxHeight: PDF_SIGNATURE_MAX_HEIGHT_MM,
+            pageNumber: data.pageNumber,
+          });
+        } else if (processInitial) {
+          doc.setFontSize(14);
+          doc.setFont('helvetica', 'bold');
+          doc.text(
+            processInitial,
+            xMin,
+            yTop + 10 + approvalSignatureDownOffsetMm
+          );
         }
 
-        const processName = returnData.process_user_name || '';
-        if (processName) {
-          const nameMaxWidth = Math.max(15, contentWidth - 6);
-          const nameLines = doc.splitTextToSize(processName, nameMaxWidth);
-          const adjustedNameY = returnData.process_digital_signature ? nameY + 8 : nameY;
-          doc.text(nameLines, xMin, adjustedNameY);
-        }
+        doc.setFontSize(8);
+        doc.setFont('helvetica', 'normal');
+        const nameMaxWidth = Math.max(15, contentWidth - 6);
+        const nameLines = doc.splitTextToSize(
+          processUserNameForCell,
+          nameMaxWidth
+        );
+        doc.text(nameLines, xMin, nameY);
 
         if (hasProcessSignature) {
-          // process_signed_at is stored as UTC in DB (no timezone in string). Parse as UTC so local time displays correctly (e.g. 06:07 PM not 10:07 AM).
           const raw = returnData.process_signed_at?.trim() ?? '';
           const processSignedDate = raw
             ? new Date(
@@ -563,14 +614,15 @@ export const generateAssetReturnPDF = async (
             minute: '2-digit',
             hour12: true,
           });
-          const dateTimeXClamped = Math.min(dateTimeX, xMax - 18);
-          doc.text(dateStr, dateTimeXClamped, yTop + 4);
-          doc.text(timeStr, dateTimeXClamped, yTop + 9);
+          doc.setFontSize(7);
+          doc.setFont('helvetica', 'normal');
+          doc.text(dateStr, dateTimeX, yTop + 4);
+          doc.text(timeStr, dateTimeX, yTop + 9);
         }
         return;
       }
 
-      // Row 3, column 0: Returner's Department Head signature, date, time, name
+      // Row 3, column 0: Returner's Department Head (matches checklist dept-head cell)
       if (
         hasDeptHeadSignature &&
         data.row.index === 3 &&
@@ -578,42 +630,31 @@ export const generateAssetReturnPDF = async (
       ) {
         const yTop = yMin;
         const dateTimeReserved = 20;
-        const gap = 2;
-        const maxSigWidth = contentWidth - dateTimeReserved - gap;
-        const sigWidthClamped = Math.min(88, Math.max(30, maxSigWidth));
         const sigHeight = Math.min(50, Math.max(28, contentHeight - 2));
-        const xLeft = xMin;
-        const dateTimeX = xLeft + sigWidthClamped + gap;
+        const dateTimeX = xMax - dateTimeReserved;
         const nameY = yTop + sigHeight - 6;
 
         doc.setFontSize(8);
         doc.setFont('helvetica', 'normal');
         doc.setTextColor(0, 0, 0);
 
-        // Display digital initials above department head name if available
+        const deptHeadName = (returnData.dept_head_user_name || '').trim();
         if (returnData.dept_head_digital_signature) {
-          // Position initials at same Y position as returner's initials (yTop + 10)
-          const initialsY = yTop + 10;
-          const initialsX = xMin;
-          const initialsWidth = Math.min(40, contentWidth - 6);
-          const initialsHeight = 16;
-          // Add signature synchronously using doc.addImage for better reliability
-          try {
-            const imgData = returnData.dept_head_digital_signature;
-            if (imgData.startsWith('data:')) {
-              doc.addImage(imgData, 'PNG', initialsX, initialsY, initialsWidth, initialsHeight);
-            }
-          } catch (err) {
-            logger.error('Failed to add department head digital initials to PDF:', err);
-          }
+          pendingReturnSignatures.push({
+            data: returnData.dept_head_digital_signature,
+            x: cell.x + 1 - 30,
+            y: yTop + 25,
+            anchorBottomY: signatureAnchorBottomY(nameY),
+            maxWidth: PDF_SIGNATURE_MAX_WIDTH_MM,
+            maxHeight: PDF_SIGNATURE_MAX_HEIGHT_MM,
+            pageNumber: data.pageNumber,
+          });
         }
 
-        const deptHeadName = returnData.dept_head_user_name || '';
         if (deptHeadName) {
           const nameMaxWidth = Math.max(15, contentWidth - 6);
           const nameLines = doc.splitTextToSize(deptHeadName, nameMaxWidth);
-          const adjustedNameY = returnData.dept_head_digital_signature ? nameY + 8 : nameY;
-          doc.text(nameLines, xMin, adjustedNameY);
+          doc.text(nameLines, xMin, nameY);
         }
 
         const rawDept = returnData.dept_head_signed_at?.trim() ?? '';
@@ -634,72 +675,95 @@ export const generateAssetReturnPDF = async (
           minute: '2-digit',
           hour12: true,
         });
-        const dateTimeXClamped = Math.min(dateTimeX, xMax - 18);
-        doc.text(dateStr, dateTimeXClamped, yTop + 4);
-        doc.text(timeStr, dateTimeXClamped, yTop + 9);
+        doc.setFontSize(7);
+        doc.setFont('helvetica', 'normal');
+        doc.text(dateStr, dateTimeX, yTop + 4);
+        doc.text(timeStr, dateTimeX, yTop + 9);
         return;
       }
 
-      // Row 3, column 1: Returner signature, date, time, name
+      // Row 3, column 1: Returner (matches checklist employee cell)
       if (
-        !hasReturnerSignature ||
-        data.row.index !== 3 ||
-        data.column.index !== 1
+        hasReturnerSignature &&
+        data.row.index === 3 &&
+        data.column.index === 1
       ) {
-        return;
-      }
-      const yTop = yMin;
-      const dateTimeReserved = 20;
-      const gap = 2;
-      const maxSigWidth = contentWidth - dateTimeReserved - gap;
-      const sigWidthClamped = Math.min(88, Math.max(30, maxSigWidth));
-      const sigHeight = Math.min(50, Math.max(28, contentHeight - 2));
-      const xLeft = xMin;
-      const dateTimeX = xLeft + sigWidthClamped + gap;
-      const nameY = yTop + sigHeight - 6;
+        const yTop = yMin;
+        const dateTimeReserved = 20;
+        const sigHeight = Math.min(50, Math.max(28, contentHeight - 2));
+        const dateTimeX = xMax - dateTimeReserved;
+        const nameY = yTop + sigHeight - 6;
+        const fullName = [returnData.user.first_name, returnData.user.last_name]
+          .filter(Boolean)
+          .join(' ');
+        const returnerInitial = fullName
+          ? fullName.charAt(0).toUpperCase()
+          : '';
 
-      doc.setFontSize(8);
-      doc.setFont('helvetica', 'normal');
-      doc.setTextColor(0, 0, 0);
+        doc.setFontSize(8);
+        doc.setFont('helvetica', 'normal');
+        doc.setTextColor(0, 0, 0);
 
-      // Display digital initials above user name if available
-      if (returnData.digital_signature) {
-        // Handle asynchronously without await since didDrawCell is not async
-        addSignatureToPDF(doc, returnData.digital_signature, xMin, yTop + 10, Math.min(30, contentWidth - 6), 12).catch(err => {
-          logger.error('Failed to add digital initials to PDF:', err);
-          console.error('Failed to add digital initials to PDF:', err);
+        if (returnData.digital_signature) {
+          pendingReturnSignatures.push({
+            data: returnData.digital_signature,
+            x: cell.x + 1 - 30,
+            y: yTop + 25,
+            anchorBottomY: signatureAnchorBottomY(nameY),
+            maxWidth: PDF_SIGNATURE_MAX_WIDTH_MM,
+            maxHeight: PDF_SIGNATURE_MAX_HEIGHT_MM,
+            pageNumber: data.pageNumber,
+          });
+        } else if (returnerInitial) {
+          doc.setFontSize(14);
+          doc.setFont('helvetica', 'bold');
+          doc.text(
+            returnerInitial,
+            xMin,
+            yTop + 10 + approvalSignatureDownOffsetMm
+          );
+        }
+
+        if (fullName) {
+          const nameMaxWidth = Math.max(15, contentWidth - 6);
+          const nameLines = doc.splitTextToSize(fullName, nameMaxWidth);
+          doc.text(nameLines, xMin, nameY);
+        }
+
+        const signedDate = returnData.signed_at
+          ? new Date(returnData.signed_at)
+          : new Date();
+        const dateStr = signedDate.toLocaleDateString('en-US', {
+          year: 'numeric',
+          month: '2-digit',
+          day: '2-digit',
         });
+        const timeStr = signedDate.toLocaleTimeString('en-US', {
+          hour: '2-digit',
+          minute: '2-digit',
+          hour12: true,
+        });
+        doc.setFontSize(7);
+        doc.setFont('helvetica', 'normal');
+        doc.text(dateStr, dateTimeX, yTop + 4);
+        doc.text(timeStr, dateTimeX, yTop + 9);
       }
-
-      const fullName = [returnData.user.first_name, returnData.user.last_name]
-        .filter(Boolean)
-        .join(' ');
-      if (fullName) {
-        const nameMaxWidth = Math.max(15, contentWidth - 6);
-        const nameLines = doc.splitTextToSize(fullName, nameMaxWidth);
-        // Adjust nameY position to account for digital initials
-        const adjustedNameY = returnData.digital_signature ? nameY + 8 : nameY;
-        doc.text(nameLines, xMin, adjustedNameY);
-      }
-
-      const signedDate = returnData.signed_at
-        ? new Date(returnData.signed_at)
-        : new Date();
-      const dateStr = signedDate.toLocaleDateString('en-US', {
-        year: 'numeric',
-        month: '2-digit',
-        day: '2-digit',
-      });
-      const timeStr = signedDate.toLocaleTimeString('en-US', {
-        hour: '2-digit',
-        minute: '2-digit',
-        hour12: true,
-      });
-      const dateTimeXClamped = Math.min(dateTimeX, xMax - 18);
-      doc.text(dateStr, dateTimeXClamped, yTop + 4);
-      doc.text(timeStr, dateTimeXClamped, yTop + 9);
     },
   });
+
+  for (const sig of pendingReturnSignatures) {
+    doc.setPage(sig.pageNumber);
+    await addSignatureToPDF(
+      doc,
+      sig.data,
+      sig.x,
+      sig.y,
+      sig.maxWidth,
+      sig.maxHeight,
+      sig.anchorBottomY
+    );
+  }
+  doc.setPage(1);
 
   // Document No under the table
   const docNoY = (doc as any).lastAutoTable.finalY + 8;

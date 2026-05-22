@@ -62,10 +62,14 @@ import {
   type AssetTransferData,
   type AssetBorrowingData,
 } from '@/lib/pdfGenerator';
+import SmsOtpDialog from '@/components/auth/SmsOtpDialog';
 
 export function buildReturnDataForPDFFromBatch(
   batch: AssetReturnFormBatch,
-  signature?: { signed_at: string } | null
+  signature?: {
+    signed_at: string;
+    digital_signature?: string | null;
+  } | null
 ): AssetReturnData | null {
   if (!batch.returns?.length) return null;
   const first = batch.returns[0];
@@ -147,16 +151,26 @@ export function buildReturnDataForPDFFromBatch(
           signed_at: returnerSignature.signed_at,
         }
       : {}),
-    digital_signature: batch.signed_digital_signature ?? undefined,
-    showProcessorSignatureBlock: !!batch.process_signed_at,
-    ...(batch.dept_head_signed_at
-      ? {
-          process_signed_at: batch.process_signed_at ?? undefined,
-          process_digital_signature:
-            batch.process_digital_signature ?? undefined,
-          process_user_name: batch.processed_by ?? undefined,
-        }
-      : {}),
+    digital_signature:
+      signature?.digital_signature ??
+      batch.signed_digital_signature ??
+      undefined,
+    ...(() => {
+      const processSignedAt =
+        batch.process_signed_at ?? batch.processor_pending_signed_at ?? null;
+      const processDigitalSignature =
+        batch.process_digital_signature ?? batch.processor_pending_signature ?? null;
+      const showProcessor =
+        !!processSignedAt || !!processDigitalSignature;
+      return showProcessor
+        ? {
+            showProcessorSignatureBlock: true,
+            process_signed_at: processSignedAt ?? undefined,
+            process_digital_signature: processDigitalSignature ?? undefined,
+            process_user_name: batch.processed_by ?? undefined,
+          }
+        : { showProcessorSignatureBlock: false };
+    })(),
     returnType: batch.return_type ?? undefined,
     processorPosition: batch.process_user_position?.trim() || undefined,
     receivedBy: batch.process_user_position?.trim()
@@ -174,7 +188,10 @@ export function buildReturnDataForPDFFromBatch(
 
 export function buildTransferDataForPDFFromBatch(
   batch: AssetTransferFormBatch,
-  signature?: { signed_at: string } | null
+  signature?: {
+    signed_at: string;
+    digital_signature?: string | null;
+  } | null
 ): AssetTransferData | null {
   if (!batch.returns?.length) return null;
   const first = batch.returns[0];
@@ -184,6 +201,7 @@ export function buildTransferDataForPDFFromBatch(
     (batch.signed_at
       ? {
           signed_at: batch.signed_at,
+          digital_signature: batch.signed_digital_signature ?? null,
         }
       : undefined);
   const assets = batch.returns.map(r => {
@@ -241,15 +259,24 @@ export function buildTransferDataForPDFFromBatch(
         }
       : null,
     created_at: batch.created_at || new Date().toISOString(),
-    showProcessorSignatureBlock: !!batch.dept_head_signed_at,
-    process_user_name: batch.processed_by ?? undefined,
-    ...(batch.dept_head_signed_at
-      ? {
-          process_signed_at: batch.process_signed_at ?? undefined,
-          process_digital_signature:
-            batch.process_digital_signature ?? undefined,
-        }
-      : {}),
+    ...(() => {
+      const processSignedAt =
+        batch.process_signed_at ?? batch.processor_pending_signed_at ?? null;
+      const processDigitalSignature =
+        batch.process_digital_signature ??
+        batch.processor_pending_signature ??
+        null;
+      const showProcessor =
+        !!processSignedAt || !!processDigitalSignature;
+      return showProcessor
+        ? {
+            showProcessorSignatureBlock: true,
+            process_signed_at: processSignedAt ?? undefined,
+            process_digital_signature: processDigitalSignature ?? undefined,
+            process_user_name: batch.processed_by ?? undefined,
+          }
+        : { showProcessorSignatureBlock: false };
+    })(),
     transferType: batch.transfer_type ?? undefined,
     receivedBy: batch.received_by ?? undefined,
     ...(transferrerSignature?.signed_at
@@ -257,6 +284,11 @@ export function buildTransferDataForPDFFromBatch(
           signed_at: transferrerSignature.signed_at,
         }
       : {}),
+    digital_signature:
+      signature?.digital_signature ??
+      transferrerSignature?.digital_signature ??
+      batch.signed_digital_signature ??
+      undefined,
     new_assigned_user: batch.new_assigned_user
       ? {
           first_name: batch.new_assigned_user.first_name,
@@ -308,6 +340,19 @@ function setCachedReturnPdfUrl(formNumber: string | null, url: string) {
   }
 }
 
+/** Drop cached PDF previews for a form so signature/approval updates regenerate. */
+export function clearReturnPdfCacheForFormNumber(formNumber: string | null) {
+  if (!formNumber) return;
+  for (const key of [...returnFormPdfCache.keys()]) {
+    if (!key.startsWith(formNumber)) continue;
+    const u = returnFormPdfCache.get(key);
+    if (u) URL.revokeObjectURL(u);
+    returnFormPdfCache.delete(key);
+    const idx = returnFormPdfCacheOrder.indexOf(key);
+    if (idx !== -1) returnFormPdfCacheOrder.splice(idx, 1);
+  }
+}
+
 // Return Form Detail Component (accepts a batch = one return form with one or more assets)
 // When contentOnly is true, only the PDF body is rendered (caller provides DialogHeader/Footer).
 export const ReturnFormDetail: React.FC<{
@@ -336,9 +381,12 @@ export const ReturnFormDetail: React.FC<{
   const cacheKey = formNumber
     ? formNumber +
       (returnFormBatch.signed_at ? '-signed' : '') +
+      (returnFormBatch.signed_digital_signature ? '-rsig' : '') +
       (returnFormBatch.process_signed_at ? '-process' : '') +
       (returnFormBatch.dept_head_signed_at ? '-depthead' : '') +
-      (returnFormBatch.it_manager_signed_at ? '-itmanager' : '')
+      (returnFormBatch.dept_head_digital_signature ? '-dhsig' : '') +
+      (returnFormBatch.it_manager_signed_at ? '-itmanager' : '') +
+      (returnFormBatch.it_manager_digital_signature ? '-itsig' : '')
     : null;
 
   useEffect(() => {
@@ -355,6 +403,8 @@ export const ReturnFormDetail: React.FC<{
       currentUser?.id === returnFormBatch.user_id
         ? {
             signed_at: returnFormBatch.signed_at,
+            digital_signature:
+              returnFormBatch.signed_digital_signature ?? null,
           }
         : undefined;
     const generatePdf = async () => {
@@ -743,7 +793,10 @@ export const ReturnFormCard: React.FC<{
   batch: AssetReturnFormBatch;
   onView: () => void;
   onDownload: () => void;
-  onSign?: (formId: string) => Promise<void>;
+  onSign?: (
+    formId: string,
+    options?: { digitalSignature?: string | null }
+  ) => Promise<void>;
   viewOnly?: boolean;
 }> = ({
   batch,
@@ -759,9 +812,11 @@ export const ReturnFormCard: React.FC<{
     !!batch.formID &&
     !batch.signed_at;
   const [showConfirmDialog, setShowConfirmDialog] = useState(false);
+  const [showOtpDialog, setShowOtpDialog] = useState(false);
   const [agreeReturn, setAgreeReturn] = useState(false);
   const [signDialogPdfUrl, setSignDialogPdfUrl] = useState<string>('');
   const signDialogPdfUrlRef = useRef<string>('');
+  const pendingSignActionRef = useRef<(() => Promise<void>) | null>(null);
 
   useEffect(() => {
     if (!showConfirmDialog || !canSign) return;
@@ -1068,15 +1123,19 @@ export const ReturnFormCard: React.FC<{
                     Cancel
                   </AlertDialogCancel>
                   <AlertDialogAction
-                    onClick={async () => {
+                    onClick={() => {
                       if (!batch.formID) return;
-                      try {
-                        await onSign?.(batch.formID);
+                      const digitalSignature =
+                        currentUser?.digitalSignature ?? null;
+                      pendingSignActionRef.current = async () => {
+                        await onSign?.(batch.formID!, {
+                          digitalSignature,
+                        });
                         setShowConfirmDialog(false);
                         setAgreeReturn(false);
-                      } catch (e) {
-                        // Error handled by parent
-                      }
+                      };
+                      setShowConfirmDialog(false);
+                      setShowOtpDialog(true);
                     }}
                     disabled={!agreeReturn}
                     className="bg-green-600 hover:bg-green-700 text-white disabled:bg-gray-300 disabled:cursor-not-allowed"
@@ -1086,6 +1145,25 @@ export const ReturnFormCard: React.FC<{
                 </AppAlertDialogChromeFooter>
               </AppAlertDialogFrame>
             </AlertDialog>
+            <SmsOtpDialog
+              isOpen={showOtpDialog}
+              onOpenChange={setShowOtpDialog}
+              sendOtpEndpoint="/auth/initials/send-otp"
+              verifyOtpEndpoint="/auth/initials/verify-otp"
+              onVerified={() => {
+                setShowOtpDialog(false);
+                pendingSignActionRef.current = null;
+              }}
+              onCancel={() => {
+                setShowOtpDialog(false);
+                pendingSignActionRef.current = null;
+              }}
+              pendingActionRef={pendingSignActionRef}
+              title="OTP SMS Verification"
+              description="OTP SMS Verification has been sent to your registered mobile number for return form signing."
+              verifyButtonLabel="Verify & Sign Form"
+              phoneNumber={currentUser?.contactNumber ?? undefined}
+            />
           </>
         )}
         <Button
@@ -1107,7 +1185,10 @@ export const TransferFormCard: React.FC<{
   batch: AssetTransferFormBatch;
   onView: () => void;
   onDownload: () => void;
-  onSign?: (formId: string) => Promise<void>;
+  onSign?: (
+    formId: string,
+    options?: { digitalSignature?: string | null }
+  ) => Promise<void>;
   viewOnly?: boolean;
 }> = ({ batch, onView, onDownload, onSign, viewOnly = false }) => {
   const { user: currentUser } = useCurrentUser();
@@ -1117,9 +1198,11 @@ export const TransferFormCard: React.FC<{
     !!batch.formID &&
     !batch.signed_at;
   const [showConfirmDialog, setShowConfirmDialog] = useState(false);
+  const [showOtpDialog, setShowOtpDialog] = useState(false);
   const [agreeTransfer, setAgreeTransfer] = useState(false);
   const [signDialogPdfUrl, setSignDialogPdfUrl] = useState<string>('');
   const signDialogPdfUrlRef = useRef<string>('');
+  const pendingSignActionRef = useRef<(() => Promise<void>) | null>(null);
 
   useEffect(() => {
     if (!showConfirmDialog || !canSign) return;
@@ -1404,13 +1487,19 @@ export const TransferFormCard: React.FC<{
                   </AlertDialogCancel>
                   <AlertDialogAction
                     disabled={!agreeTransfer}
-                    onClick={async () => {
+                    onClick={() => {
                       if (!batch.formID) return;
-                      try {
-                        await onSign?.(batch.formID);
+                      const digitalSignature =
+                        currentUser?.digitalSignature ?? null;
+                      pendingSignActionRef.current = async () => {
+                        await onSign?.(batch.formID!, {
+                          digitalSignature,
+                        });
                         setShowConfirmDialog(false);
                         setAgreeTransfer(false);
-                      } catch {}
+                      };
+                      setShowConfirmDialog(false);
+                      setShowOtpDialog(true);
                     }}
                     className="bg-green-600 hover:bg-green-700"
                   >
@@ -1419,6 +1508,25 @@ export const TransferFormCard: React.FC<{
                 </AppAlertDialogChromeFooter>
               </AppAlertDialogFrame>
             </AlertDialog>
+            <SmsOtpDialog
+              isOpen={showOtpDialog}
+              onOpenChange={setShowOtpDialog}
+              sendOtpEndpoint="/auth/initials/send-otp"
+              verifyOtpEndpoint="/auth/initials/verify-otp"
+              onVerified={() => {
+                setShowOtpDialog(false);
+                pendingSignActionRef.current = null;
+              }}
+              onCancel={() => {
+                setShowOtpDialog(false);
+                pendingSignActionRef.current = null;
+              }}
+              pendingActionRef={pendingSignActionRef}
+              title="OTP SMS Verification"
+              description="OTP SMS Verification has been sent to your registered mobile number for transfer form signing."
+              verifyButtonLabel="Verify & Sign Form"
+              phoneNumber={currentUser?.contactNumber ?? undefined}
+            />
           </>
         )}
         <Button
@@ -2038,6 +2146,8 @@ export interface AssetTransferFormBatch {
   signed_digital_signature?: string | null;
   process_signed_at?: string | null;
   process_digital_signature?: string | null;
+  processor_pending_signature?: string | null;
+  processor_pending_signed_at?: string | null;
   transfer_type?: string | null;
   received_by?: string | null;
   dept_head_signed_at?: string | null;
@@ -2120,6 +2230,8 @@ export interface AssetReturnFormBatch {
   signed_digital_signature?: string | null;
   process_signed_at?: string | null;
   process_digital_signature?: string | null;
+  processor_pending_signature?: string | null;
+  processor_pending_signed_at?: string | null;
   return_type?: string | null;
   received_by?: string | null;
   process_user_position?: string | null;
@@ -2430,9 +2542,14 @@ export default function DocumentsTab({
     }
   };
 
-  const handleSignTransferForm = async (formId: string) => {
+  const handleSignTransferForm = async (
+    formId: string,
+    options?: { digitalSignature?: string | null }
+  ) => {
     try {
-      await api.post(`/asset-transfers/forms/${formId}/sign`, {});
+      await api.post(`/asset-transfers/forms/${formId}/sign`, {
+        digitalSignature: options?.digitalSignature ?? undefined,
+      });
       await fetchAssetTransferForms();
       toast.success('Transfer form signed successfully');
     } catch (error) {
@@ -2442,9 +2559,14 @@ export default function DocumentsTab({
     }
   };
 
-  const handleSignReturnForm = async (formId: string) => {
+  const handleSignReturnForm = async (
+    formId: string,
+    options?: { digitalSignature?: string | null }
+  ) => {
     try {
-      await api.post(`/asset-returns/forms/${formId}/sign`, {});
+      await api.post(`/asset-returns/forms/${formId}/sign`, {
+        digitalSignature: options?.digitalSignature ?? undefined,
+      });
       await fetchAssetReturnForms();
       toast.success('Return form signed successfully');
     } catch (error) {
