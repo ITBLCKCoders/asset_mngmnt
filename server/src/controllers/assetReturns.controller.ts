@@ -43,6 +43,7 @@ import {
   fetchAssetReturnFormsRowsForUserList,
   fetchPendingDeptHeadApprovalFormRows,
   fetchUserPosition,
+  fetchUserDigitalSignature,
   resolveProcessorReturnTarget,
   type ProcessorReturnTarget,
 } from '../repositories/assetReturn.repository.js';
@@ -95,6 +96,83 @@ function formatItManagerSignedAtForApi(
   val: string | Date | null | undefined
 ): string | null {
   return formatProcessSignedAtForApi(val);
+}
+
+/** Resolve IT Staff processor fields for return PDFs (incl. transfer-linked forms). */
+async function resolveReturnProcessorFieldsForBatchDisplay(
+  form: {
+    formID?: string | null;
+    created_by?: string | null;
+    process_signed_at?: string | Date | null;
+    process_digital_signature?: string | null;
+  },
+  processorNames?: Map<string, string>
+): Promise<{
+  processed_by: string;
+  process_signed_at: string | null;
+  process_digital_signature: string | null;
+  processor_pending_signed_at: string | null;
+  processor_pending_signature: string | null;
+}> {
+  let processorUserId = form.created_by ?? null;
+  let processSignedAt = formatProcessSignedAtForApi(form.process_signed_at);
+  let processDigitalSignature =
+    (form.process_digital_signature != null &&
+      String(form.process_digital_signature).trim()) ||
+    null;
+  let processorPendingSignedAt: string | null = null;
+  let processorPendingSignature: string | null = null;
+
+  if (form.formID) {
+    const tf = await getTransferFormByReturnFormId(form.formID);
+    if (tf) {
+      if (tf.created_by) processorUserId = tf.created_by;
+      if (tf.process_signed_at != null) {
+        processSignedAt = formatProcessSignedAtForApi(tf.process_signed_at);
+        processDigitalSignature =
+          (tf.process_digital_signature != null &&
+            String(tf.process_digital_signature).trim()) ||
+          null;
+      } else if (tf.processor_pending_signed_at != null) {
+        processSignedAt = formatProcessSignedAtForApi(
+          tf.processor_pending_signed_at
+        );
+        processDigitalSignature =
+          (tf.processor_pending_signature != null &&
+            String(tf.processor_pending_signature).trim()) ||
+          null;
+        processorPendingSignedAt = processSignedAt;
+        processorPendingSignature = processDigitalSignature;
+      }
+    }
+  }
+
+  const effectiveSignedAt = processSignedAt ?? processorPendingSignedAt;
+  if (!processDigitalSignature && effectiveSignedAt && processorUserId) {
+    processDigitalSignature = await fetchUserDigitalSignature(processorUserId);
+  }
+
+  let processed_by = 'Unknown';
+  if (processorUserId) {
+    if (processorNames?.has(processorUserId)) {
+      processed_by = processorNames.get(processorUserId)!;
+    } else {
+      const procNames = await getUserNamesById(processorUserId);
+      processed_by =
+        procNames?.first_name && procNames?.last_name
+          ? `${procNames.first_name} ${procNames.last_name}`.trim() ||
+            'Unknown'
+          : 'Unknown';
+    }
+  }
+
+  return {
+    processed_by,
+    process_signed_at: processSignedAt,
+    process_digital_signature: processDigitalSignature,
+    processor_pending_signed_at: processorPendingSignedAt,
+    processor_pending_signature: processorPendingSignature,
+  };
 }
 
 /** Department sort order for return forms: IT department first, admin department second, then others. */
@@ -463,6 +541,11 @@ export async function createAssetReturnHandler(
           })()
         : null;
     const processorPosition = await fetchUserPosition(req.user!.userID);
+    const processDigitalSignature =
+      processSignature?.digital_signature?.trim() ||
+      (processSignedAtForDb
+        ? await fetchUserDigitalSignature(req.user!.userID)
+        : null);
     const returnForm = await AssetReturnFormModel.create({
       form_number,
       user_id: firstAssignment.user_id,
@@ -471,7 +554,7 @@ export async function createAssetReturnHandler(
       location_room_id: firstAssignment.location_room_id ?? null,
       created_by: req.user!.userID,
       process_signed_at: processSignedAtForDb,
-      process_digital_signature: processSignature?.digital_signature ?? null,
+      process_digital_signature: processDigitalSignature,
       return_type: normalizeReturnTypeString(returnType) ?? null,
       // Required for manager-approval execution path (processor-initiated hold flow).
       received_by: assignToProcessor ? req.user!.userID : null,
@@ -1083,6 +1166,9 @@ async function runAfterReturnAccountabilityAndProcessorAssign(
     let formsCreatedCount = 0;
 
     const actingUserId = req.user?.userID ?? processorId;
+    const processorDigitalSignature =
+      processSignature?.digital_signature?.trim() ||
+      (await fetchUserDigitalSignature(processorId));
 
     for (const [deptKey, assetIdsInBucket] of buckets) {
       if (assetIdsInBucket.length === 0) continue;
@@ -1218,12 +1304,15 @@ async function runAfterReturnAccountabilityAndProcessorAssign(
       const loc = firstAssignment?.[0];
       const accountabilityFormReq = {
         ...req,
+        user: { userID: processorId },
         body: {
           assets: departmentAssets,
           userId: processorId,
           departmentId: deptKey !== 'other' ? deptKey : null,
           locationId: loc?.location_id || null,
           formOrigin: 'processor_return',
+          issuerSignature: processorDigitalSignature,
+          itCopySignature: processorDigitalSignature,
         },
       } as AuthRequest;
       const accountabilityFormRes = {
@@ -1632,6 +1721,9 @@ async function executeReturnFormAfterApproval(
       processSignature: form.process_signed_at
         ? {
             signed_at: form.process_signed_at,
+            ...(form.process_digital_signature?.trim()
+              ? { digital_signature: form.process_digital_signature }
+              : {}),
           }
         : null,
       assignToProcessor,
@@ -2101,30 +2193,15 @@ export async function getAssetReturnsHandler(req: AuthRequest, res: Response) {
       const deptHeadSignedBy = formWithProcess.dept_head_signed_by ?? null;
       const itManagerSignedBy = formWithProcess.it_manager_signed_by ?? null;
 
-      let batchProcessedBy =
-        processorNames.get(form.created_by ?? '') ?? 'Unknown';
-      let batchProcessSignedAt = formatProcessSignedAtForApi(
-        formWithProcess.process_signed_at
+      const processorFields = await resolveReturnProcessorFieldsForBatchDisplay(
+        {
+          formID: form.formID,
+          created_by: form.created_by ?? null,
+          process_signed_at: formWithProcess.process_signed_at,
+          process_digital_signature: formWithProcess.process_digital_signature,
+        },
+        processorNames
       );
-      let batchProcessDigitalSignature =
-        formWithProcess.process_digital_signature ?? null;
-      const tf = await getTransferFormByReturnFormId(form.formID);
-      if (tf) {
-        if (tf.created_by) {
-          const procNames = await getUserNamesById(tf.created_by);
-          batchProcessedBy =
-            procNames?.first_name && procNames?.last_name
-              ? `${procNames.first_name} ${procNames.last_name}`.trim() ||
-                'Unknown'
-              : 'Unknown';
-        }
-        if (tf.process_signed_at != null) {
-          batchProcessSignedAt = formatProcessSignedAtForApi(
-            tf.process_signed_at
-          );
-          batchProcessDigitalSignature = tf.process_digital_signature ?? null;
-        }
-      }
 
       const linkedForStatus = form.formID
         ? transferByReturnFormId.get(form.formID)
@@ -2137,7 +2214,7 @@ export async function getAssetReturnsHandler(req: AuthRequest, res: Response) {
           .processor_declined_at
       );
       const submitterStatus = getSubmitterStatus(
-        batchProcessSignedAt,
+        processorFields.process_signed_at,
         deptHeadApproved,
         processorDeclinedAt
       );
@@ -2148,13 +2225,15 @@ export async function getAssetReturnsHandler(req: AuthRequest, res: Response) {
         return_batch_id: null,
         created_at: form.created_at,
         user_id: form.user_id,
-        processed_by: batchProcessedBy,
+        processed_by: processorFields.processed_by,
         signed_at: (form as { signed_at?: string | null }).signed_at ?? null,
         signed_by: (form as { signed_by?: string | null }).signed_by ?? null,
         signed_digital_signature:
           formWithProcess.signed_digital_signature ?? null,
-        process_signed_at: batchProcessSignedAt,
-        process_digital_signature: batchProcessDigitalSignature,
+        process_signed_at: processorFields.process_signed_at,
+        process_digital_signature: processorFields.process_digital_signature,
+        processor_pending_signed_at: processorFields.processor_pending_signed_at,
+        processor_pending_signature: processorFields.processor_pending_signature,
         return_type: formWithProcess.return_type ?? null,
         received_by: formWithProcess.received_by ?? null,
         process_user_position:
@@ -2401,11 +2480,24 @@ export async function signAssetReturnFormHandler(
         .json({ error: 'This return form is already signed' });
     }
 
+    const body = req.body as {
+      digitalSignature?: string | null;
+      digital_signature?: string | null;
+    };
+    const returnerDigitalSignature =
+      (typeof body.digitalSignature === 'string'
+        ? body.digitalSignature.trim()
+        : '') ||
+      (typeof body.digital_signature === 'string'
+        ? body.digital_signature.trim()
+        : '') ||
+      (await fetchUserDigitalSignature(userId));
+
     await executeRawWrite(
       `UPDATE asset_return_forms
-       SET signed_at = NOW(), signed_by = ?, signed_digital_signature = NULL, updated_at = NOW()
+       SET signed_at = NOW(), signed_by = ?, signed_digital_signature = ?, updated_at = NOW()
        WHERE formID = ?`,
-      [userId, formId]
+      [userId, returnerDigitalSignature, formId]
     );
 
     await createAuditLog({
@@ -2647,29 +2739,15 @@ export async function getPendingApprovalsHandler(
       }
       if (returns.length === 0) continue;
 
-      let batchProcessedBy =
-        processorNames.get(form.created_by ?? '') ?? 'Unknown';
-      let batchProcessSignedAt = formatProcessSignedAtForApi(
-        form.process_signed_at
+      const processorFields = await resolveReturnProcessorFieldsForBatchDisplay(
+        {
+          formID: form.formID,
+          created_by: form.created_by ?? null,
+          process_signed_at: form.process_signed_at,
+          process_digital_signature: form.process_digital_signature,
+        },
+        processorNames
       );
-      let batchProcessDigitalSignature = form.process_digital_signature ?? null;
-      const tf = await getTransferFormByReturnFormId(form.formID);
-      if (tf) {
-        if (tf.created_by) {
-          const procNames = await getUserNamesById(tf.created_by);
-          batchProcessedBy =
-            procNames?.first_name && procNames?.last_name
-              ? `${procNames.first_name} ${procNames.last_name}`.trim() ||
-                'Unknown'
-              : 'Unknown';
-        }
-        if (tf.process_signed_at != null) {
-          batchProcessSignedAt = formatProcessSignedAtForApi(
-            tf.process_signed_at
-          );
-          batchProcessDigitalSignature = tf.process_digital_signature ?? null;
-        }
-      }
 
       assetReturnForms.push({
         formID: form.formID,
@@ -2677,12 +2755,14 @@ export async function getPendingApprovalsHandler(
         return_batch_id: null,
         created_at: form.created_at,
         user_id: form.user_id,
-        processed_by: batchProcessedBy,
+        processed_by: processorFields.processed_by,
         signed_at: form.signed_at ?? null,
         signed_by: form.signed_by ?? null,
         signed_digital_signature: form.signed_digital_signature ?? null,
-        process_signed_at: batchProcessSignedAt,
-        process_digital_signature: batchProcessDigitalSignature,
+        process_signed_at: processorFields.process_signed_at,
+        process_digital_signature: processorFields.process_digital_signature,
+        processor_pending_signed_at: processorFields.processor_pending_signed_at,
+        processor_pending_signature: processorFields.processor_pending_signature,
         return_type: form.return_type ?? null,
         received_by: form.received_by ?? null,
         dept_head_signed_at: null,
@@ -2815,18 +2895,29 @@ export async function getApprovedByMeHandler(req: AuthRequest, res: Response) {
     for (const form of formRows) {
       const returns = returnsByFormId.get(form.formID) ?? [];
       if (returns.length === 0) continue;
+      const processorFields = await resolveReturnProcessorFieldsForBatchDisplay(
+        {
+          formID: form.formID,
+          created_by: form.created_by ?? null,
+          process_signed_at: form.process_signed_at,
+          process_digital_signature: form.process_digital_signature,
+        },
+        processorNames
+      );
       assetReturnForms.push({
         formID: form.formID,
         form_number: form.form_number,
         return_batch_id: null,
         created_at: form.created_at,
         user_id: form.user_id,
-        processed_by: processorNames.get(form.created_by ?? '') ?? 'Unknown',
+        processed_by: processorFields.processed_by,
         signed_at: form.signed_at ?? null,
         signed_by: form.signed_by ?? null,
         signed_digital_signature: form.signed_digital_signature ?? null,
-        process_signed_at: formatProcessSignedAtForApi(form.process_signed_at),
-        process_digital_signature: form.process_digital_signature ?? null,
+        process_signed_at: processorFields.process_signed_at,
+        process_digital_signature: processorFields.process_digital_signature,
+        processor_pending_signed_at: processorFields.processor_pending_signed_at,
+        processor_pending_signature: processorFields.processor_pending_signature,
         return_type: form.return_type ?? null,
         received_by: form.received_by ?? null,
         dept_head_signed_at: formatDeptHeadSignedAtForApi(
@@ -3136,18 +3227,29 @@ export async function getReceivePendingApprovalsHandler(
       const returns = returnsByFormId.get(form.formID) ?? [];
       if (returns.length === 0) continue;
       const deptHeadSignedBy = form.dept_head_signed_by ?? null;
+      const processorFields = await resolveReturnProcessorFieldsForBatchDisplay(
+        {
+          formID: form.formID,
+          created_by: form.created_by ?? null,
+          process_signed_at: form.process_signed_at,
+          process_digital_signature: form.process_digital_signature,
+        },
+        processorNames
+      );
       assetReturnForms.push({
         formID: form.formID,
         form_number: form.form_number,
         return_batch_id: null,
         created_at: form.created_at,
         user_id: form.user_id,
-        processed_by: processorNames.get(form.created_by ?? '') ?? 'Unknown',
+        processed_by: processorFields.processed_by,
         signed_at: form.signed_at ?? null,
         signed_by: form.signed_by ?? null,
         signed_digital_signature: form.signed_digital_signature ?? null,
-        process_signed_at: formatProcessSignedAtForApi(form.process_signed_at),
-        process_digital_signature: form.process_digital_signature ?? null,
+        process_signed_at: processorFields.process_signed_at,
+        process_digital_signature: processorFields.process_digital_signature,
+        processor_pending_signed_at: processorFields.processor_pending_signed_at,
+        processor_pending_signature: processorFields.processor_pending_signature,
         return_type: form.return_type ?? null,
         received_by: form.received_by ?? null,
         dept_head_signed_at: formatDeptHeadSignedAtForApi(
@@ -3187,6 +3289,7 @@ export async function receiveReturnFormHandler(
   try {
     const { formId } = req.params;
     const userId = req.user!.userID;
+    const { digitalSignature } = req.body as { digitalSignature?: string };
 
     if (!formId) {
       return res.status(400).json({ error: 'Form ID is required' });
@@ -3229,11 +3332,15 @@ export async function receiveReturnFormHandler(
       });
     }
 
+    const itManagerDigitalSignature =
+      (typeof digitalSignature === 'string' && digitalSignature.trim()) ||
+      (await fetchUserDigitalSignature(userId));
+
     await executeRawWrite(
       `UPDATE asset_return_forms
-       SET it_manager_signed_at = NOW(), it_manager_digital_signature = NULL, it_manager_signed_by = ?, updated_at = NOW()
+       SET it_manager_signed_at = NOW(), it_manager_digital_signature = ?, it_manager_signed_by = ?, updated_at = NOW()
        WHERE formID = ?`,
-      [userId, formId]
+      [itManagerDigitalSignature, userId, formId]
     );
 
     await createAuditLog({
@@ -3372,6 +3479,9 @@ export async function processReturnFormHandler(
           })();
 
     const processorPosition = await fetchUserPosition(userId);
+    const processDigitalSignature =
+      processSignature?.digital_signature?.trim() ||
+      (await fetchUserDigitalSignature(userId));
     const returnTypeForDb =
       normalizeReturnTypeString(returnType) ?? form.return_type ?? null;
 
@@ -3386,10 +3496,11 @@ export async function processReturnFormHandler(
 
     await executeRawWrite(
       `UPDATE asset_return_forms
-       SET process_signed_at = ?, process_digital_signature = NULL, received_by = ?, return_type = ?, process_user_position = ?, updated_at = NOW()
+       SET process_signed_at = ?, process_digital_signature = ?, received_by = ?, return_type = ?, process_user_position = ?, updated_at = NOW()
        WHERE formID = ?`,
       [
         processSignedAtForDb,
+        processDigitalSignature,
         receivedByForDb,
         returnTypeForDb,
         processorPosition,
@@ -4015,12 +4126,15 @@ export async function approveReturnFormHandler(
         .json({ error: 'You do not have permission to approve this form' });
     }
 
+    const deptHeadDigitalSignature =
+      (typeof digitalSignature === 'string' && digitalSignature.trim()) ||
+      (await fetchUserDigitalSignature(userId));
 
     await executeRawWrite(
       `UPDATE asset_return_forms
        SET dept_head_signed_at = NOW(), dept_head_digital_signature = ?, dept_head_signed_by = ?, updated_at = NOW()
        WHERE formID = ?`,
-      [digitalSignature || null, userId, formId]
+      [deptHeadDigitalSignature, userId, formId]
     );
 
     await createAuditLog({
@@ -4037,7 +4151,7 @@ export async function approveReturnFormHandler(
 
     let hadLinkedTransfer = false;
     const [linkedTfRows] = (await pool.execute(
-      `SELECT formID, process_signed_at, process_digital_signature, processor_pending_signature, processor_pending_signed_at, executed_at,
+      `SELECT formID, dept_head_signed_at, process_signed_at, process_digital_signature, processor_pending_signature, processor_pending_signed_at, executed_at,
               new_assigned_user_id, department_id, location_id, location_room_id, transfer_type, received_by
        FROM asset_transfer_forms WHERE return_form_id = ? AND deleted_at IS NULL LIMIT 1`,
       [formId]
@@ -4045,32 +4159,26 @@ export async function approveReturnFormHandler(
     const linkedTf = linkedTfRows?.[0];
     if (linkedTf) {
       hadLinkedTransfer = true;
-      await executeRawWrite(
-        `UPDATE asset_transfer_forms SET dept_head_signed_at = NOW(), dept_head_digital_signature = ?, dept_head_signed_by = ?, updated_at = NOW() WHERE formID = ?`,
-        [digitalSignature || null, userId, linkedTf.formID]
-      );
-      if (!linkedTf.executed_at) {
-        let processSig: {
-          digital_signature: string | null;
-          signed_at?: string;
-        } | null = null;
-        if (linkedTf.process_signed_at != null) {
-          processSig = {
-            digital_signature: null,
-            signed_at:
-              linkedTf.process_signed_at instanceof Date
-                ? linkedTf.process_signed_at.toISOString()
-                : String(linkedTf.process_signed_at),
-          };
-        } else if (linkedTf.processor_pending_signed_at != null) {
-          processSig = {
-            digital_signature: null,
-            signed_at:
-              linkedTf.processor_pending_signed_at instanceof Date
-                ? linkedTf.processor_pending_signed_at.toISOString()
-                : String(linkedTf.processor_pending_signed_at),
-          };
-        }
+      if (linkedTf.dept_head_signed_at && !linkedTf.executed_at) {
+        const processDigitalSig =
+          (linkedTf.process_digital_signature != null &&
+            String(linkedTf.process_digital_signature).trim()) ||
+          (linkedTf.processor_pending_signature != null &&
+            String(linkedTf.processor_pending_signature).trim()) ||
+          null;
+        const processSignedAtRaw =
+          linkedTf.process_signed_at != null
+            ? linkedTf.process_signed_at
+            : linkedTf.processor_pending_signed_at;
+        const processSig = processSignedAtRaw
+          ? {
+              digital_signature: processDigitalSig,
+              signed_at:
+                processSignedAtRaw instanceof Date
+                  ? processSignedAtRaw.toISOString()
+                  : String(processSignedAtRaw),
+            }
+          : null;
         if (processSig) {
           const [tfaRows] = (await pool.execute(
             `SELECT assignment_id, transfer_condition, transfer_notes, condition_images FROM transfer_form_assignments WHERE form_id = ?`,

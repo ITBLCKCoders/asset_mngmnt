@@ -9,9 +9,7 @@ import {
   AlertTriangle,
   ArrowRightLeft,
   RefreshCw,
-  FileText,
   Boxes,
-  Download,
   Crown,
 } from 'lucide-react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
@@ -42,22 +40,15 @@ import { cn } from '@/lib/utils';
 import { toast } from 'sonner';
 import { useCurrentUser } from '@/hooks/useCurrentUser';
 import { useUserPermissions } from '@/hooks/useUserPermissions';
-import {
-  buildReturnDataForPDFFromBatch,
-  buildTransferDataForPDFFromBatch,
-  type AssetReturnFormBatch,
-  type AssetTransferFormBatch,
+import type {
+  AssetReturnFormBatch,
+  AssetTransferFormBatch,
 } from '@/pages/profile/profileComponents/tabs/documentsTab';
 import {
   getTransferFormUiStatus,
   formatTransferFormUiStatus,
   type TransferFormUiStatus,
 } from '@/utils/transferFormStatus';
-import {
-  downloadPDF,
-  generateAssetReturnPDF,
-  generateAssetTransferPDF,
-} from '@/lib/pdfGenerator';
 import { DataTable } from '@/components/ui/dataTable';
 import type { ColumnDef } from '@tanstack/react-table';
 
@@ -110,14 +101,6 @@ interface TransferRequestRow {
   asset_count: number;
   /** Comma-separated asset names (same pattern as My return requests). */
   assets_label: string;
-}
-
-interface SubmitTransferRequestResponse {
-  message: string;
-  formID: string;
-  form_number?: string | null;
-  returnFormID?: string | null;
-  return_form_number?: string | null;
 }
 
 function isTransferBatchInProgress(batch: AssetTransferFormBatch): boolean {
@@ -272,17 +255,6 @@ export default function AssetTransferRequest() {
   const [expandedBuilderForSelect, setExpandedBuilderForSelect] = useState<
     string | null
   >(null);
-  const [showNextStepsDialog, setShowNextStepsDialog] = useState(false);
-  const [submittedReturnFormBatch, setSubmittedReturnFormBatch] =
-    useState<AssetReturnFormBatch | null>(null);
-  const [submittedTransferFormBatch, setSubmittedTransferFormBatch] =
-    useState<AssetTransferFormBatch | null>(null);
-  const [submittedReturnFormNumber, setSubmittedReturnFormNumber] = useState<
-    string | null
-  >(null);
-  const [submittedTransferFormNumber, setSubmittedTransferFormNumber] =
-    useState<string | null>(null);
-  const [downloadingForms, setDownloadingForms] = useState(false);
   const [confirmTransferWhenApproved, setConfirmTransferWhenApproved] =
     useState(false);
   const [confirmSigningTransfer, setConfirmSigningTransfer] = useState(false);
@@ -511,115 +483,16 @@ export default function AssetTransferRequest() {
     setShowConfirmDialog(true);
   };
 
-  const fetchSubmittedFormBatches = async (
-    transferFormId: string,
-    returnFormId?: string | null
-  ) => {
-    if (!currentUser?.id) {
-      return {
-        transferBatch: null as AssetTransferFormBatch | null,
-        returnBatch: null as AssetReturnFormBatch | null,
-      };
-    }
-
-    const [transferResponse, returnResponse] = await Promise.all([
-      api.get<{
-        assetTransferForms?: AssetTransferFormBatch[];
-        data?: { assetTransferForms?: AssetTransferFormBatch[] };
-      }>(`/asset-transfers/user/${currentUser.id}`),
-      api.get<{
-        assetReturnForms?: AssetReturnFormBatch[];
-        data?: { assetReturnForms?: AssetReturnFormBatch[] };
-      }>(`/asset-returns/user/${currentUser.id}`),
-    ]);
-
-    const transferBatches =
-      transferResponse.assetTransferForms ??
-      transferResponse.data?.assetTransferForms ??
-      [];
-    const returnBatches =
-      returnResponse.assetReturnForms ??
-      returnResponse.data?.assetReturnForms ??
-      [];
-
-    return {
-      transferBatch:
-        transferBatches.find(batch => batch.formID === transferFormId) ?? null,
-      returnBatch:
-        returnBatches.find(batch => batch.formID === returnFormId) ?? null,
-    };
-  };
-
-  const handleDownloadSubmittedForms = async () => {
-    if (!submittedReturnFormBatch || !submittedTransferFormBatch) return;
-
-    setDownloadingForms(true);
-    try {
-      const returnData = buildReturnDataForPDFFromBatch(submittedReturnFormBatch);
-      if (!returnData) {
-        throw new Error('Return form data is missing or incomplete');
-      }
-
-      const transferData = buildTransferDataForPDFFromBatch(
-        submittedTransferFormBatch
-      );
-      if (!transferData) {
-        throw new Error('Transfer form data is missing or incomplete');
-      }
-
-      const [returnPdfBlob, transferPdfBlob] = await Promise.all([
-        generateAssetReturnPDF(returnData),
-        generateAssetTransferPDF(transferData),
-      ]);
-
-      downloadPDF(
-        returnPdfBlob,
-        `Asset_Return_Form_${submittedReturnFormBatch.form_number ?? 'return'}_${Date.now()}.pdf`
-      );
-      downloadPDF(
-        transferPdfBlob,
-        `Asset_Transfer_Form_${submittedTransferFormBatch.form_number ?? 'transfer'}_${Date.now()}.pdf`
-      );
-      toast.success('Return form and transfer form downloaded successfully');
-    } catch (error) {
-      console.error('Failed to download submitted forms:', error);
-      toast.error(
-        error instanceof Error ? error.message : 'Failed to download forms'
-      );
-    } finally {
-      setDownloadingForms(false);
-    }
-  };
-
   const handleConfirmSubmitRequest = async () => {
     setSubmitting(true);
     try {
-      const response = await api.post<SubmitTransferRequestResponse>(
-        '/asset-transfers/submit-request',
-        {
-          assignmentIds: selectedAssignments,
-          departmentId: selectedDepartmentId,
-          transferToUserId: targetUser,
-          notes: transferNotes,
-          transferType,
-        }
-      );
-
-      let transferBatch: AssetTransferFormBatch | null = null;
-      let returnBatch: AssetReturnFormBatch | null = null;
-
-      try {
-        if (response.formID) {
-          const submittedBatches = await fetchSubmittedFormBatches(
-            response.formID,
-            response.returnFormID
-          );
-          transferBatch = submittedBatches.transferBatch;
-          returnBatch = submittedBatches.returnBatch;
-        }
-      } catch (fetchError) {
-        console.error('Failed to load submitted transfer request forms:', fetchError);
-      }
+      await api.post('/asset-transfers/submit-request', {
+        assignmentIds: selectedAssignments,
+        departmentId: selectedDepartmentId,
+        transferToUserId: targetUser,
+        notes: transferNotes,
+        transferType,
+      });
 
       toast.success(
         `Transfer request submitted for ${selectedAssignments.length} asset(s). It will be sent to your department head for approval.`
@@ -629,15 +502,6 @@ export default function AssetTransferRequest() {
       setTransferNotes('');
       setTargetUser('');
       setSelectedDepartmentId('');
-      setSubmittedTransferFormBatch(transferBatch);
-      setSubmittedReturnFormBatch(returnBatch);
-      setSubmittedTransferFormNumber(
-        response.form_number ?? transferBatch?.form_number ?? null
-      );
-      setSubmittedReturnFormNumber(
-        response.return_form_number ?? returnBatch?.form_number ?? null
-      );
-      setShowNextStepsDialog(true);
       await Promise.all([fetchAssignments(), fetchTransferRequests()]);
     } catch (error: any) {
       console.error('Failed to submit transfer request:', error);
@@ -1888,104 +1752,6 @@ export default function AssetTransferRequest() {
                   </>
                 )}
               </Button>
-            </AppDialogChromeFooter>
-          </AppDialogFrame>
-        </Dialog>
-
-        <Dialog
-          open={showNextStepsDialog}
-          onOpenChange={open => {
-            setShowNextStepsDialog(open);
-            if (!open) {
-              setSubmittedReturnFormBatch(null);
-              setSubmittedTransferFormBatch(null);
-              setSubmittedReturnFormNumber(null);
-              setSubmittedTransferFormNumber(null);
-              setDownloadingForms(false);
-            }
-          }}
-        >
-          <AppDialogFrame className="sm:max-w-lg">
-            <AppDialogGradientHeader
-              title={
-                <span className="flex items-center gap-3">
-                  <span className="rounded-xl bg-white/20 p-2.5">
-                    <FileText className="h-5 w-5 text-white" />
-                  </span>
-                  Transfer request - next steps
-                </span>
-              }
-              description={
-                submittedTransferFormNumber || submittedReturnFormNumber
-                  ? [
-                      submittedTransferFormNumber
-                        ? `Transfer Form ${submittedTransferFormNumber}`
-                        : null,
-                      submittedReturnFormNumber
-                        ? `Return Form ${submittedReturnFormNumber}`
-                        : null,
-                    ]
-                      .filter(Boolean)
-                      .join(' | ')
-                  : 'Your transfer request is on file.'
-              }
-            />
-            <AppDialogBody className="space-y-4">
-              <div className="rounded-lg border border-slate-200 bg-slate-50 p-4">
-                <p className="text-sm font-semibold text-slate-900">
-                  What to do next
-                </p>
-                <ol className="mt-2 list-decimal space-y-2 pl-5 text-sm text-slate-700">
-                  <li>Download the return form and transfer form.</li>
-                  <li>Make your Department Head sign the two forms.</li>
-                  <li>
-                    Make sure your Department Head also approves the return form
-                    and transfer form in the Asset Management System.
-                  </li>
-                  <li>
-                    Go to the IT/Admin department for processing of the
-                    transfer.
-                  </li>
-                </ol>
-              </div>
-              {(!submittedReturnFormBatch || !submittedTransferFormBatch) && (
-                <p className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-sm leading-snug text-amber-900">
-                  One or both forms could not be loaded for download
-                  automatically. Refresh this page and download them from
-                  Profile - Documents if needed.
-                </p>
-              )}
-            </AppDialogBody>
-            <AppDialogChromeFooter className="flex-col gap-2 sm:flex-row sm:justify-end sm:gap-2">
-              <Button
-                type="button"
-                variant="outline"
-                onClick={() => setShowNextStepsDialog(false)}
-                disabled={downloadingForms}
-                className="w-full order-2 rounded-xl border-gray-300 hover:bg-gray-100 sm:w-auto sm:order-1"
-              >
-                Close
-              </Button>
-              {submittedReturnFormBatch && submittedTransferFormBatch ? (
-                <Button
-                  type="button"
-                  onClick={() => void handleDownloadSubmittedForms()}
-                  disabled={downloadingForms}
-                  className="w-full order-1 rounded-xl bg-gradient-to-r from-red-500 to-red-600 font-semibold text-white shadow-md hover:from-red-600 hover:to-red-700 sm:w-auto sm:order-2"
-                >
-                  {downloadingForms ? (
-                    <span className="flex items-center gap-2">
-                      <span className="inline-block h-4 w-4 animate-spin rounded-full border-2 border-white border-t-transparent" />
-                      Preparing...
-                    </span>
-                  ) : (
-                    <span className="flex items-center gap-2">
-                      <Download className="h-4 w-4 shrink-0" />
-                      Download forms
-                    </span>
-                  )}
-                </Button>
-              ) : null}
             </AppDialogChromeFooter>
           </AppDialogFrame>
         </Dialog>

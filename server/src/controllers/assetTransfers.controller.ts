@@ -30,7 +30,8 @@ import {
   generateTransferFormNumber,
   generateTransferFormNumberFallback,
 } from '../utils/transferFormNumber.js';
-import { getAssetScope } from '../utils/assetScope.js';
+import { getAssetScope, getDepartmentIdsForScope } from '../utils/assetScope.js';
+import { fetchUserDigitalSignature } from '../repositories/assetReturn.repository.js';
 import { createAccountabilityFormHandler } from './accountabilityForms.controller.js';
 import {
   toBind,
@@ -56,6 +57,448 @@ import {
   getApprovedTransferFormsByCompanyId,
   executeRawWrite,
 } from '../repositories/assetTransferForm.repository.js';
+
+async function getCompanyNameById(companyId: string): Promise<string | null> {
+  const [rows] = (await pool.execute(
+    'SELECT name FROM companies WHERE companyID = ? AND deleted_at IS NULL LIMIT 1',
+    [companyId]
+  )) as any[];
+  return rows?.[0]?.name ?? null;
+}
+
+async function userCanAccessCompanyTransfer(userId: string): Promise<boolean> {
+  const [rows] = (await pool.execute(
+    `SELECT r.asset_type, r.manager_role, r.name as role_name
+       FROM users u
+       LEFT JOIN asset_mngmnt_roles r ON u.role_id = r.roleID AND r.deleted_at IS NULL
+      WHERE u.userID = ?
+      LIMIT 1`,
+    [userId]
+  )) as any[];
+  const row = rows?.[0];
+  const roleName = String(row?.role_name ?? '').trim().toLowerCase();
+  const assetType = String(row?.asset_type ?? '').trim().toLowerCase();
+  const managerRole = String(row?.manager_role ?? '').trim();
+  return (
+    roleName === 'super admin' ||
+    roleName === 'admin' ||
+    managerRole === 'overallManager' ||
+    assetType === 'it' ||
+    assetType === 'admin'
+  );
+}
+
+function formatProcessSignedAtForDb(
+  signedAt: string | undefined | null
+): string | null {
+  if (signedAt == null) return null;
+  const d = new Date(signedAt);
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, '0');
+  const day = String(d.getDate()).padStart(2, '0');
+  const h = String(d.getHours()).padStart(2, '0');
+  const min = String(d.getMinutes()).padStart(2, '0');
+  const s = String(d.getSeconds()).padStart(2, '0');
+  return `${y}-${m}-${day} ${h}:${min}:${s}`;
+}
+
+async function resolveProcessSignatureForDb(
+  processSignature:
+    | {
+        signed_at?: string | null;
+        digital_signature?: string | null;
+        digitalSignature?: string | null;
+      }
+    | undefined,
+  processorUserId: string
+): Promise<{
+  processSignedAtForDb: string | null;
+  processDigitalSignature: string | null;
+}> {
+  const processSignedAtForDb = formatProcessSignedAtForDb(
+    processSignature?.signed_at ?? null
+  );
+  const fromBody =
+    (typeof processSignature?.digital_signature === 'string'
+      ? processSignature.digital_signature.trim()
+      : '') ||
+    (typeof processSignature?.digitalSignature === 'string'
+      ? processSignature.digitalSignature.trim()
+      : '') ||
+    '';
+  const processDigitalSignature =
+    fromBody ||
+    (processSignedAtForDb
+      ? await fetchUserDigitalSignature(processorUserId)
+      : null);
+  return { processSignedAtForDb, processDigitalSignature };
+}
+
+/** Resolve IT Staff processor signature for PDF/display (matches profile documents tab). */
+async function resolveProcessorSignatureForBatchDisplay(form: {
+  created_by?: string | null;
+  process_signed_at?: string | null;
+  process_digital_signature?: string | null;
+  processor_pending_signed_at?: string | null;
+  processor_pending_signature?: string | null;
+}): Promise<{
+  process_signed_at: string | null;
+  process_digital_signature: string | null;
+  processor_pending_signed_at: string | null;
+  processor_pending_signature: string | null;
+}> {
+  const processSignedAt =
+    form.process_signed_at ?? form.processor_pending_signed_at ?? null;
+  let processDigitalSignature =
+    (form.process_digital_signature != null &&
+      String(form.process_digital_signature).trim()) ||
+    (form.processor_pending_signature != null &&
+      String(form.processor_pending_signature).trim()) ||
+    null;
+  if (!processDigitalSignature && processSignedAt && form.created_by) {
+    processDigitalSignature = await fetchUserDigitalSignature(form.created_by);
+  }
+  return {
+    process_signed_at: form.process_signed_at ?? null,
+    process_digital_signature: processDigitalSignature,
+    processor_pending_signed_at: form.processor_pending_signed_at ?? null,
+    processor_pending_signature: form.processor_pending_signature ?? null,
+  };
+}
+
+export async function getCompanyTransferEligibleAssetsHandler(
+  req: AuthRequest,
+  res: Response
+) {
+  try {
+    const currentUserId = req.user!.userID;
+    if (!(await userCanAccessCompanyTransfer(currentUserId))) {
+      return res.status(403).json({ error: 'Not allowed to transfer assets by company' });
+    }
+
+    const scopeParam = req.query.scope as string | undefined;
+    const scopeOverride =
+      scopeParam === 'it' || scopeParam === 'admin' ? scopeParam : undefined;
+
+    const { companyId, departmentIds: scopeDeptIds, isSuperAdmin } =
+      await getAssetScope(pool, currentUserId);
+    if (!companyId) return res.json({ assets: [] });
+
+    let departmentIds = scopeDeptIds;
+
+    if (scopeOverride) {
+      const [userRows] = (await pool.execute(
+        `SELECT r.manager_role, r.name as role_name FROM users u
+         LEFT JOIN asset_mngmnt_roles r ON u.role_id = r.roleID AND r.deleted_at IS NULL
+         WHERE u.userID = ?`,
+        [currentUserId]
+      )) as any[];
+      const managerRole = String(userRows?.[0]?.manager_role ?? '').trim();
+      const roleName = String(userRows?.[0]?.role_name ?? '').trim().toLowerCase();
+      if (isSuperAdmin || roleName === 'admin' || managerRole === 'overallManager') {
+        departmentIds = await getDepartmentIdsForScope(pool, scopeOverride, companyId);
+      }
+    }
+
+    const params: unknown[] = [companyId];
+    let departmentFilter = '';
+    if (departmentIds && departmentIds.length > 0) {
+      departmentFilter = ` AND ac.department_id IN (${departmentIds.map(() => '?').join(',')})`;
+      params.push(...departmentIds);
+    }
+
+    const [rows] = (await pool.execute(
+      `SELECT
+          a.assetID as assetId,
+          a.asset_code as assetCode,
+          a.name as assetName,
+          a.status,
+          a.company_id as companyId,
+          ac.name as categoryName,
+          at.name as typeName,
+          aa.assignmentID as assignmentId,
+          aa.assignment_notes as assignmentNotes,
+          aa.user_id as assignedUserId,
+          u.first_name,
+          u.last_name
+       FROM assets a
+       LEFT JOIN asset_categories ac ON a.category_id = ac.categoryID
+       LEFT JOIN asset_types at ON a.type_id = at.typeID
+       LEFT JOIN asset_assignments aa
+         ON aa.asset_id = a.assetID
+        AND aa.status = 'Active'
+        AND aa.deleted_at IS NULL
+       LEFT JOIN users u ON aa.user_id = u.userID
+       WHERE a.deleted_at IS NULL
+         AND a.company_id = ?
+         ${departmentFilter}
+         AND (
+           (a.status = 'Available' AND aa.assignmentID IS NULL)
+           OR LOWER(COALESCE(aa.assignment_notes, '')) LIKE '%assigned via asset return (assign to processor)%'
+         )
+       ORDER BY a.asset_code ASC`,
+      params as never[]
+    )) as any[];
+
+    return res.json({
+      assets: (rows as any[]).map(row => ({
+        assetId: row.assetId,
+        assetCode: row.assetCode,
+        assetName: row.assetName,
+        status: row.status,
+        companyId: row.companyId,
+        categoryName: row.categoryName,
+        typeName: row.typeName,
+        assignmentId: row.assignmentId ?? null,
+        assignmentNotes: row.assignmentNotes ?? null,
+        source:
+          row.assignmentId &&
+          String(row.assignmentNotes ?? '')
+            .toLowerCase()
+            .includes('assigned via asset return (assign to processor)')
+            ? 'temporary_custody'
+            : 'available',
+        assignedUser:
+          row.assignedUserId != null
+            ? {
+                id: row.assignedUserId,
+                name: `${row.first_name ?? ''} ${row.last_name ?? ''}`.trim(),
+              }
+            : null,
+      })),
+    });
+  } catch (error: any) {
+    logger.error('Get company transfer eligible assets failed:', error);
+    return res.status(500).json({ error: 'Failed to fetch company transfer assets' });
+  }
+}
+
+export async function createCompanyTransferHandler(
+  req: AuthRequest,
+  res: Response
+) {
+  try {
+    const currentUserId = req.user!.userID;
+    if (!(await userCanAccessCompanyTransfer(currentUserId))) {
+      return res.status(403).json({ error: 'Not allowed to transfer assets by company' });
+    }
+
+    const body = req.body as {
+      assetIds?: unknown[];
+      targetCompanyId?: string;
+      notes?: string;
+    };
+    const assetIds = Array.isArray(body.assetIds)
+      ? body.assetIds.map(id => String(id)).filter(Boolean)
+      : [];
+    const targetCompanyId = body.targetCompanyId ? String(body.targetCompanyId) : '';
+    if (assetIds.length === 0) {
+      return res.status(400).json({ error: 'assetIds array is required' });
+    }
+    if (!targetCompanyId) {
+      return res.status(400).json({ error: 'targetCompanyId is required' });
+    }
+
+    const targetCompanyName = await getCompanyNameById(targetCompanyId);
+    if (!targetCompanyName) {
+      return res.status(404).json({ error: 'Target company not found' });
+    }
+
+    const { companyId, departmentIds } = await getAssetScope(pool, currentUserId);
+    if (!companyId) return res.status(403).json({ error: 'Company scope not found' });
+    if (companyId === targetCompanyId) {
+      return res.status(400).json({ error: 'Target company must be different' });
+    }
+
+    const placeholders = assetIds.map(() => '?').join(',');
+    const params: unknown[] = [...assetIds, companyId];
+    let departmentFilter = '';
+    if (departmentIds && departmentIds.length > 0) {
+      departmentFilter = ` AND ac.department_id IN (${departmentIds.map(() => '?').join(',')})`;
+      params.push(...departmentIds);
+    }
+
+    const [rows] = (await pool.execute(
+      `SELECT
+          a.assetID, a.asset_code, a.name, a.status, a.company_id,
+          aa.assignmentID, aa.assignment_notes, aa.status as assignment_status
+       FROM assets a
+       LEFT JOIN asset_categories ac ON a.category_id = ac.categoryID
+       LEFT JOIN asset_assignments aa
+         ON aa.asset_id = a.assetID
+        AND aa.status = 'Active'
+        AND aa.deleted_at IS NULL
+       WHERE a.assetID IN (${placeholders})
+         AND a.deleted_at IS NULL
+         AND a.company_id = ?
+         ${departmentFilter}`,
+      params as never[]
+    )) as any[];
+
+    const uniqueRowsByAsset = new Map<string, any>();
+    for (const row of rows as any[]) uniqueRowsByAsset.set(String(row.assetID), row);
+    if (uniqueRowsByAsset.size !== assetIds.length) {
+      return res.status(404).json({ error: 'One or more assets are not available in your company scope' });
+    }
+
+    for (const row of uniqueRowsByAsset.values()) {
+      const isAvailable = row.status === 'Available' && !row.assignmentID;
+      const isTemp =
+        row.assignmentID &&
+        String(row.assignment_notes ?? '')
+          .toLowerCase()
+          .includes('assigned via asset return (assign to processor)');
+      if (!isAvailable && !isTemp) {
+        return res.status(400).json({
+          error: `Asset ${row.asset_code ?? row.assetID} is not eligible for company transfer`,
+        });
+      }
+    }
+
+    const transferredAssets: any[] = [];
+    const transferredAssetIdSet = new Set(assetIds.map(String));
+    for (const row of uniqueRowsByAsset.values()) {
+      const assetId = String(row.assetID);
+      const assetCode = row.asset_code ?? assetId;
+      const isTemp =
+        row.assignmentID &&
+        String(row.assignment_notes ?? '')
+          .toLowerCase()
+          .includes('assigned via asset return (assign to processor)');
+
+      if (isTemp) {
+        await pool.execute('CALL sp_mark_assignment_returned(?, ?, ?)', [
+          row.assignmentID,
+          `Returned for company transfer to ${targetCompanyName}`,
+          'Good',
+        ]);
+      }
+
+      // Find IT department in target company for scope compatibility
+      const [itDeptRows] = (await pool.execute(
+        `SELECT departmentID FROM asset_mngmnt_departments
+         WHERE company_id = ? AND (name LIKE '%IT%' OR name LIKE '%Information Technology%')
+         AND deleted_at IS NULL LIMIT 1`,
+        [targetCompanyId]
+      )) as any[];
+      const targetItDepartmentId = itDeptRows.length > 0 ? itDeptRows[0].departmentID : null;
+
+      let targetCategoryId = null;
+      if (targetItDepartmentId) {
+        // Find a category belonging to the IT department
+        const [catRows] = (await pool.execute(
+          `SELECT categoryID FROM asset_categories
+           WHERE department_id = ? AND deleted_at IS NULL LIMIT 1`,
+          [targetItDepartmentId]
+        )) as any[];
+        targetCategoryId = catRows.length > 0 ? catRows[0].categoryID : null;
+      }
+
+      logger.info(`Updating asset ${assetCode} (ID: ${assetId}) company_id from ${companyId} to ${targetCompanyId}, IT department: ${targetItDepartmentId || 'not found'}, IT category: ${targetCategoryId || 'not found'}`);
+
+      // Preserve home company: set origin from source if missing (never overwrite existing origin)
+      await pool.execute(
+        `UPDATE assets SET originating_company_id = ?
+         WHERE assetID = ? AND originating_company_id IS NULL`,
+        [companyId, assetId]
+      );
+
+      const updateFields = ['company_id = ?', 'status = ?', 'updated_by = ?', 'updated_at = NOW()'];
+      const updateValues = [targetCompanyId, 'Available', currentUserId];
+      
+      if (targetItDepartmentId) {
+        updateFields.push('department_id = ?');
+        updateValues.push(targetItDepartmentId);
+      }
+      
+      if (targetCategoryId) {
+        updateFields.push('category_id = ?');
+        updateValues.push(targetCategoryId);
+      }
+      
+      await pool.execute(
+        `UPDATE assets SET ${updateFields.join(', ')} WHERE assetID = ?`,
+        [...updateValues, assetId]
+      );
+      logger.info(`Updated asset ${assetCode} company_id to ${targetCompanyId}${targetItDepartmentId ? ' and department_id to IT department' : ''}${targetCategoryId ? ' and category_id to IT category' : ''}`);
+
+      await createAuditLog({
+        userId: currentUserId,
+        action: 'Transferred Asset to Company',
+        resourceType: 'asset',
+        resourceId: assetId,
+        resourceName: `Asset ${assetCode}`,
+        details: `Asset ${assetCode} transferred to ${targetCompanyName}${targetItDepartmentId ? ' and assigned to IT department' : ''}${targetCategoryId ? ' with IT category' : ''}. If transferred back to a past company, it is re-enabled as Available.`,
+        oldValues: { company_id: companyId, status: row.status, department_id: row.department_id, category_id: row.category_id },
+        newValues: { company_id: targetCompanyId, status: 'Available', ...(targetItDepartmentId && { department_id: targetItDepartmentId }), ...(targetCategoryId && { category_id: targetCategoryId }) },
+        ipAddress: req.ip,
+        userAgent: req.get ? req.get('User-Agent') : 'Unknown',
+      });
+
+      transferredAssets.push({ assetId, assetCode, targetCompanyName });
+    }
+
+    const [builderRows] = (await pool.execute(
+      `SELECT DISTINCT ab.builderID, ab.name, ab.status, ab.company_id
+         FROM asset_builders ab
+         JOIN asset_builder_items abi ON abi.builder_id = ab.builderID
+        WHERE abi.asset_id IN (${placeholders})
+          AND ab.deleted_at IS NULL`,
+      assetIds as never[]
+    )) as any[];
+
+    for (const builder of builderRows as any[]) {
+      const [itemRows] = (await pool.execute(
+        `SELECT asset_id FROM asset_builder_items WHERE builder_id = ?`,
+        [builder.builderID]
+      )) as any[];
+      const allBuilderAssetIds = (itemRows as any[]).map(row =>
+        String(row.asset_id)
+      );
+      const isWholeBuilderTransferred =
+        allBuilderAssetIds.length > 0 &&
+        allBuilderAssetIds.every(id => transferredAssetIdSet.has(id));
+      if (!isWholeBuilderTransferred) continue;
+
+      await pool.execute(
+        `UPDATE asset_builders SET originating_company_id = ?
+         WHERE builderID = ? AND originating_company_id IS NULL`,
+        [companyId, builder.builderID]
+      );
+
+      await pool.execute(
+        `UPDATE asset_builders
+            SET company_id = ?,
+                status = 'Available',
+                updated_by = ?,
+                updated_at = NOW()
+          WHERE builderID = ?`,
+        [targetCompanyId, currentUserId, builder.builderID]
+      );
+
+      await createAuditLog({
+        userId: currentUserId,
+        action: 'Transferred Asset Builder to Company',
+        resourceType: 'asset_builder',
+        resourceId: builder.builderID,
+        resourceName: builder.name,
+        details: `Asset builder "${builder.name}" transferred to ${targetCompanyName}`,
+        oldValues: { company_id: companyId, status: builder.status },
+        newValues: { company_id: targetCompanyId, status: 'Available' },
+        ipAddress: req.ip,
+        userAgent: req.get ? req.get('User-Agent') : 'Unknown',
+      });
+    }
+
+    return res.json({
+      message: `Transferred ${transferredAssets.length} asset${transferredAssets.length === 1 ? '' : 's'} to ${targetCompanyName}`,
+      transferredAssets,
+    });
+  } catch (error: any) {
+    logger.error('Create company transfer failed:', error);
+    return res.status(500).json({ error: 'Failed to transfer assets to company' });
+  }
+}
 
 export async function createAssetTransferHandler(
   req: AuthRequest,
@@ -152,19 +595,11 @@ export async function createAssetTransferHandler(
       }
     }
 
-    const processSignedAtForDb =
-      processSignature?.signed_at != null
-        ? (() => {
-            const d = new Date(processSignature.signed_at);
-            const y = d.getFullYear();
-            const m = String(d.getMonth() + 1).padStart(2, '0');
-            const day = String(d.getDate()).padStart(2, '0');
-            const h = String(d.getHours()).padStart(2, '0');
-            const min = String(d.getMinutes()).padStart(2, '0');
-            const s = String(d.getSeconds()).padStart(2, '0');
-            return `${y}-${m}-${day} ${h}:${min}:${s}`;
-          })()
-        : null;
+    const { processSignedAtForDb, processDigitalSignature } =
+      await resolveProcessSignatureForDb(
+        processSignature,
+        req.user!.userID
+      );
 
     // Create asset_return_form first (for audit/history)
     const returnFormNumber =
@@ -179,7 +614,7 @@ export async function createAssetTransferHandler(
       location_room_id: newRoomId,
       created_by: req.user!.userID,
       process_signed_at: processSignedAtForDb,
-      process_digital_signature: processSignature?.digital_signature ?? null,
+      process_digital_signature: processDigitalSignature,
       return_type: transferType ?? null,
       received_by: receivedBy ?? null,
     });
@@ -199,7 +634,7 @@ export async function createAssetTransferHandler(
       new_assigned_user_id: newAssignment.userId,
       created_by: req.user!.userID,
       process_signed_at: processSignedAtForDb,
-      process_digital_signature: processSignature?.digital_signature ?? null,
+      process_digital_signature: processDigitalSignature,
       transfer_type: transferType ?? null,
       received_by: receivedBy ?? null,
     });
@@ -701,24 +1136,11 @@ export async function createHeldTransferHandler(
     const categoryDeptRows = await getCategoryDepartmentsByAssetIds(transferredAssetIds);
     const categoryDeptId = (categoryDeptRows[0] as any)?.departmentID ?? null;
 
-    const processSignedAtForDb =
-      processSignature?.signed_at != null
-        ? (() => {
-            const d = new Date(processSignature.signed_at);
-            const y = d.getFullYear();
-            const m = String(d.getMonth() + 1).padStart(2, '0');
-            const day = String(d.getDate()).padStart(2, '0');
-            const h = String(d.getHours()).padStart(2, '0');
-            const min = String(d.getMinutes()).padStart(2, '0');
-            const s = String(d.getSeconds()).padStart(2, '0');
-            return `${y}-${m}-${day} ${h}:${min}:${s}`;
-          })()
-        : null;
-    const processDigitalSignature =
-      processSignature?.digital_signature != null &&
-      String(processSignature.digital_signature).trim()
-        ? processSignature.digital_signature
-        : null;
+    const { processSignedAtForDb, processDigitalSignature } =
+      await resolveProcessSignatureForDb(
+        processSignature,
+        req.user!.userID
+      );
 
     const returnFormNumber =
       companyId != null
@@ -820,10 +1242,22 @@ export async function createHeldTransferHandler(
       );
     }
 
-    if (processSignedAtForDb != null && processDigitalSignature != null) {
+    if (processSignedAtForDb != null) {
       await executeRawWrite(
-        `UPDATE asset_transfer_forms SET process_signed_at = ?, process_digital_signature = ?, updated_at = NOW() WHERE formID = ?`,
-        [processSignedAtForDb, processDigitalSignature, form_id]
+        `UPDATE asset_transfer_forms
+         SET process_signed_at = ?,
+             process_digital_signature = ?,
+             processor_pending_signature = ?,
+             processor_pending_signed_at = ?,
+             updated_at = NOW()
+         WHERE formID = ?`,
+        [
+          processSignedAtForDb,
+          processDigitalSignature,
+          processDigitalSignature,
+          processSignedAtForDb,
+          form_id,
+        ]
       );
     }
 
@@ -1913,6 +2347,10 @@ export async function runTransferFormExecution(
           });
         }
 
+        const processorDigitalSignature =
+          processSignature?.digital_signature?.trim() ||
+          (await fetchUserDigitalSignature(processorId));
+
         for (const group of groupedByDept.values()) {
           if (group.assets.length === 0) continue;
           const tempFormReq = {
@@ -1925,6 +2363,8 @@ export async function runTransferFormExecution(
               locationId: group.locationId,
               locationRoomId: group.locationRoomId,
               formOrigin: 'processor_return',
+              issuerSignature: processorDigitalSignature,
+              itCopySignature: processorDigitalSignature,
             },
           } as AuthRequest;
           const tempFormRes = {
@@ -2589,6 +3029,15 @@ export async function getAssetTransferFormsByUserHandler(
         (form as { user_id?: string }).user_id ??
         (form as { userId?: string }).userId ??
         '';
+      const processorFields = await resolveProcessorSignatureForBatchDisplay(
+        form as {
+          created_by?: string | null;
+          process_signed_at?: string | null;
+          process_digital_signature?: string | null;
+          processor_pending_signed_at?: string | null;
+          processor_pending_signature?: string | null;
+        }
+      );
       batches.push({
         formID: formId,
         form_number: form.form_number,
@@ -2601,8 +3050,10 @@ export async function getAssetTransferFormsByUserHandler(
         signed_at: form.signed_at,
         signed_by: form.signed_by,
         signed_digital_signature: form.signed_digital_signature,
-        process_signed_at: form.process_signed_at,
-        process_digital_signature: form.process_digital_signature,
+        process_signed_at: processorFields.process_signed_at,
+        process_digital_signature: processorFields.process_digital_signature,
+        processor_pending_signature: processorFields.processor_pending_signature,
+        processor_pending_signed_at: processorFields.processor_pending_signed_at,
         transfer_type: form.transfer_type,
         received_by: form.received_by,
         dept_head_signed_at: (form as any).dept_head_signed_at ?? null,
@@ -2866,6 +3317,15 @@ async function buildTransferFormBatches(forms: any[]): Promise<any[]> {
       (form as { user_id?: string }).user_id ??
       (form as { userId?: string }).userId ??
       '';
+    const processorFields = await resolveProcessorSignatureForBatchDisplay(
+      form as {
+        created_by?: string | null;
+        process_signed_at?: string | null;
+        process_digital_signature?: string | null;
+        processor_pending_signed_at?: string | null;
+        processor_pending_signature?: string | null;
+      }
+    );
     batches.push({
       formID: formId,
       form_number: form.form_number,
@@ -2878,8 +3338,10 @@ async function buildTransferFormBatches(forms: any[]): Promise<any[]> {
       signed_at: form.signed_at,
       signed_by: form.signed_by,
       signed_digital_signature: form.signed_digital_signature,
-      process_signed_at: form.process_signed_at,
-      process_digital_signature: form.process_digital_signature,
+      process_signed_at: processorFields.process_signed_at,
+      process_digital_signature: processorFields.process_digital_signature,
+      processor_pending_signed_at: processorFields.processor_pending_signed_at,
+      processor_pending_signature: processorFields.processor_pending_signature,
       transfer_type: form.transfer_type,
       received_by: form.received_by,
       dept_head_signed_at: form.dept_head_signed_at ?? null,
@@ -3029,7 +3491,10 @@ export async function getTransferPendingApprovalsHandler(
         `SELECT atf.formID, atf.form_number, atf.user_id, atf.department_id, atf.location_id, atf.location_room_id,
                 atf.new_assigned_user_id, atf.created_by, atf.created_at, atf.signed_at, atf.signed_by, atf.signed_digital_signature,
                 DATE_FORMAT(atf.process_signed_at, '%Y-%m-%d %H:%i:%s') AS process_signed_at,
-                atf.process_digital_signature, atf.transfer_type, atf.received_by,
+                atf.process_digital_signature,
+                DATE_FORMAT(atf.processor_pending_signed_at, '%Y-%m-%d %H:%i:%s') AS processor_pending_signed_at,
+                atf.processor_pending_signature,
+                atf.transfer_type, atf.received_by,
                 d.company_id AS form_company_id
          FROM asset_transfer_forms atf
          LEFT JOIN asset_mngmnt_departments d ON atf.department_id = d.departmentID
@@ -3081,7 +3546,10 @@ export async function getTransferReceivePendingApprovalsHandler(
         `SELECT atf.formID, atf.form_number, atf.user_id, atf.department_id, atf.location_id, atf.location_room_id,
                 atf.new_assigned_user_id, atf.created_by, atf.created_at, atf.signed_at, atf.signed_by, atf.signed_digital_signature,
                 DATE_FORMAT(atf.process_signed_at, '%Y-%m-%d %H:%i:%s') AS process_signed_at,
-                atf.process_digital_signature, atf.transfer_type, atf.received_by,
+                atf.process_digital_signature,
+                DATE_FORMAT(atf.processor_pending_signed_at, '%Y-%m-%d %H:%i:%s') AS processor_pending_signed_at,
+                atf.processor_pending_signature,
+                atf.transfer_type, atf.received_by,
                 DATE_FORMAT(atf.dept_head_signed_at, '%Y-%m-%d %H:%i:%s') AS dept_head_signed_at,
                 atf.dept_head_digital_signature, atf.dept_head_signed_by,
                 d.company_id AS form_company_id
@@ -3131,7 +3599,10 @@ export async function getTransferApprovedByMeHandler(
       `SELECT atf.formID, atf.form_number, atf.user_id, atf.department_id, atf.location_id, atf.location_room_id,
               atf.new_assigned_user_id, atf.created_by, atf.created_at, atf.signed_at, atf.signed_by, atf.signed_digital_signature,
               DATE_FORMAT(atf.process_signed_at, '%Y-%m-%d %H:%i:%s') AS process_signed_at,
-              atf.process_digital_signature, atf.transfer_type, atf.received_by,
+              atf.process_digital_signature,
+              DATE_FORMAT(atf.processor_pending_signed_at, '%Y-%m-%d %H:%i:%s') AS processor_pending_signed_at,
+              atf.processor_pending_signature,
+              atf.transfer_type, atf.received_by,
               DATE_FORMAT(atf.dept_head_signed_at, '%Y-%m-%d %H:%i:%s') AS dept_head_signed_at,
               atf.dept_head_digital_signature, atf.dept_head_signed_by,
               DATE_FORMAT(atf.it_manager_signed_at, '%Y-%m-%d %H:%i:%s') AS it_manager_signed_at,
@@ -3197,17 +3668,24 @@ export async function approveTransferFormHandler(
         .status(403)
         .json({ error: 'You do not have permission to approve this form' });
     }
+    const body = req.body as {
+      digitalSignature?: string | null;
+      digital_signature?: string | null;
+    };
+    const deptHeadDigitalSignature =
+      (typeof body.digitalSignature === 'string'
+        ? body.digitalSignature.trim()
+        : '') ||
+      (typeof body.digital_signature === 'string'
+        ? body.digital_signature.trim()
+        : '') ||
+      (await fetchUserDigitalSignature(userId));
+
     await pool.execute(
-      `UPDATE asset_transfer_forms SET dept_head_signed_at = NOW(), dept_head_digital_signature = NULL, dept_head_signed_by = ?, updated_at = NOW() WHERE formID = ?`,
-      [userId, formId]
+      `UPDATE asset_transfer_forms SET dept_head_signed_at = NOW(), dept_head_digital_signature = ?, dept_head_signed_by = ?, updated_at = NOW() WHERE formID = ?`,
+      [deptHeadDigitalSignature || null, userId, formId]
     );
     const returnFormId = formAny.return_form_id ?? null;
-    if (returnFormId) {
-      await pool.execute(
-        `UPDATE asset_return_forms SET dept_head_signed_at = NOW(), dept_head_digital_signature = NULL, dept_head_signed_by = ?, updated_at = NOW() WHERE formID = ?`,
-        [userId, returnFormId]
-      );
-    }
     await createAuditLog({
       userId,
       action: 'Approved Asset Transfer Form (Dept Head)',
@@ -3220,6 +3698,20 @@ export async function approveTransferFormHandler(
     });
 
     if (returnFormId) {
+      const [returnDhRows] = (await pool.execute(
+        `SELECT dept_head_signed_at FROM asset_return_forms WHERE formID = ? AND deleted_at IS NULL`,
+        [returnFormId]
+      )) as any[];
+      if (!returnDhRows?.[0]?.dept_head_signed_at) {
+        return res.json({
+          message:
+            'Transfer form approved. Approve the linked return form separately before the transfer can be executed.',
+          formID: formId,
+          linkedReturnFormID: returnFormId,
+          pendingLinkedReturnApproval: true,
+        });
+      }
+
       const [formRows] = (await pool.execute(
         `SELECT process_signed_at, process_digital_signature, processor_pending_signature, processor_pending_signed_at, executed_at,
                 new_assigned_user_id, department_id, location_id, location_room_id, transfer_type, received_by
@@ -3261,24 +3753,25 @@ export async function approveTransferFormHandler(
           roomId: row.location_room_id ?? null,
           roomName: null as string | null,
         };
-        const processSignature =
+        const processDigitalSig =
+          (row.process_digital_signature != null &&
+            String(row.process_digital_signature).trim()) ||
+          (row.processor_pending_signature != null &&
+            String(row.processor_pending_signature).trim()) ||
+          null;
+        const processSignedAtRaw =
           row.process_signed_at != null
-            ? {
-                digital_signature: null,
-                signed_at:
-                  row.process_signed_at instanceof Date
-                    ? row.process_signed_at.toISOString()
-                    : String(row.process_signed_at),
-              }
-            : {
-                digital_signature: null,
-                signed_at:
-                  row.processor_pending_signed_at != null
-                    ? row.processor_pending_signed_at instanceof Date
-                      ? row.processor_pending_signed_at.toISOString()
-                      : String(row.processor_pending_signed_at)
-                    : undefined,
-              };
+            ? row.process_signed_at
+            : row.processor_pending_signed_at;
+        const processSignature = processSignedAtRaw
+          ? {
+              digital_signature: processDigitalSig,
+              signed_at:
+                processSignedAtRaw instanceof Date
+                  ? processSignedAtRaw.toISOString()
+                  : String(processSignedAtRaw),
+            }
+          : undefined;
         try {
           await runTransferFormExecution(
             formId,
@@ -3416,6 +3909,7 @@ export async function receiveTransferFormHandler(
   try {
     const { formId } = req.params;
     const userId = req.user!.userID;
+    const { digitalSignature } = req.body as { digitalSignature?: string };
     if (!formId) return res.status(400).json({ error: 'Form ID is required' });
     const isManagerApprover2 = await isUserManagerApprover2(userId);
     if (!isManagerApprover2) {
@@ -3442,9 +3936,13 @@ export async function receiveTransferFormHandler(
         .status(400)
         .json({ error: 'This transfer form is already received' });
     }
+    const itManagerDigitalSignature =
+      (typeof digitalSignature === 'string' && digitalSignature.trim()) ||
+      (await fetchUserDigitalSignature(userId));
+
     await pool.execute(
-      `UPDATE asset_transfer_forms SET it_manager_signed_at = NOW(), it_manager_digital_signature = NULL, it_manager_signed_by = ?, updated_at = NOW() WHERE formID = ?`,
-      [userId, formId]
+      `UPDATE asset_transfer_forms SET it_manager_signed_at = NOW(), it_manager_digital_signature = ?, it_manager_signed_by = ?, updated_at = NOW() WHERE formID = ?`,
+      [itManagerDigitalSignature, userId, formId]
     );
     await createAuditLog({
       userId,
@@ -3505,10 +4003,23 @@ export async function signAssetTransferFormHandler(
         .json({ error: 'This transfer form is already signed' });
     }
 
+    const body = req.body as {
+      digitalSignature?: string | null;
+      digital_signature?: string | null;
+    };
+    const transferrerDigitalSignature =
+      (typeof body.digitalSignature === 'string'
+        ? body.digitalSignature.trim()
+        : '') ||
+      (typeof body.digital_signature === 'string'
+        ? body.digital_signature.trim()
+        : '') ||
+      (await fetchUserDigitalSignature(req.user!.userID));
+
     await pool.execute('CALL sp_sign_asset_transfer_form(?, ?, ?)', [
       formId,
       req.user!.userID,
-      null,
+      transferrerDigitalSignature || null,
     ]);
 
     await createAuditLog({

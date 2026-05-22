@@ -7,9 +7,36 @@ import { fileURLToPath } from 'url';
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
+const notificationsContextPath = path.resolve(
+  __dirname,
+  './src/context/notificationsContext.ts'
+);
+
+/** Redirect stale HMR URLs for the removed notificationContext.ts (Windows-safe). */
+function legacyNotificationContextShim() {
+  return {
+    name: 'legacy-notification-context-shim',
+    enforce: 'pre' as const,
+    resolveId(source: string) {
+      const normalized = source.replace(/\\/g, '/');
+      const isLegacy =
+        normalized.endsWith('/src/context/notificationContext.ts') ||
+        normalized.endsWith('/src/context/notificationContext') ||
+        (normalized.includes('notificationContext') &&
+          !normalized.includes('notificationsContext') &&
+          !normalized.includes('NotificationContext'));
+      if (isLegacy) {
+        return notificationsContextPath;
+      }
+      return null;
+    },
+  };
+}
+
 export default defineConfig({
-  plugins: [react()],
+  plugins: [react(), legacyNotificationContextShim()],
   resolve: {
+    dedupe: ['react', 'react-dom'],
     alias: {
       '@': path.resolve(__dirname, './src'),
     },

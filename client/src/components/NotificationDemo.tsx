@@ -11,7 +11,7 @@ import {
 } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { useAssetAssignmentNotifications } from '@/hooks/useAssetAssignmentNotifications';
-import { useNotifications } from '@/context/NotificationContext';
+import { useNotifications } from '@/context/notificationsContext';
 import { Package, Wrench, AlertTriangle, Bell } from 'lucide-react';
 
 export default function NotificationDemo() {

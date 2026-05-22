@@ -3,7 +3,6 @@
 
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
 import { SonnerToaster } from '@/components/ui/sonner';
-import { NotificationProvider } from '@/context/NotificationContext';
 import { AuthProvider } from '@/context/AuthContext';
 
 // Public Pages
@@ -68,8 +67,7 @@ import ReportsPage from './pages/reports/reportsPage';
 export default function App() {
   return (
     <AuthProvider>
-      <NotificationProvider>
-        <BrowserRouter>
+      <BrowserRouter>
         <Routes>
           {/* Public Routes */}
           <Route
@@ -553,7 +551,6 @@ export default function App() {
 
         <SonnerToaster />
       </BrowserRouter>
-    </NotificationProvider>
     </AuthProvider>
   );
 }

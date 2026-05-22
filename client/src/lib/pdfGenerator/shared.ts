@@ -136,6 +136,41 @@ export const addCompanyLogoToPDF = async (
   }
 };
 
+/** Max signature image size (mm) for Section B approval cells — aligned with return form PDF. */
+export const PDF_SIGNATURE_MAX_WIDTH_MM = 88;
+export const PDF_SIGNATURE_MAX_HEIGHT_MM = 50;
+
+/** Sort asset rows by the numeric value of the last five digits in `code` (stable for PDF tables). */
+export function sortAssetsByLast5Digits<T extends { code?: string | null }>(
+  assets: T[]
+): T[] {
+  const tailKey = (code: string | null | undefined): number => {
+    const digits = String(code ?? '').replace(/\D/g, '');
+    const tail = digits.slice(-5);
+    return tail.length > 0 ? Number.parseInt(tail, 10) : 0;
+  };
+  return [...assets].sort((a, b) => tailKey(a.code) - tailKey(b.code));
+}
+
+/** Normalize stored signature values for PDF rendering. */
+export const normalizeSignatureData = (
+  signatureData: string | undefined | null
+): string | undefined => {
+  const trimmed = signatureData?.trim();
+  if (!trimmed) return undefined;
+  if (
+    trimmed.startsWith('data:image/') ||
+    trimmed.startsWith('http://') ||
+    trimmed.startsWith('https://')
+  ) {
+    return trimmed;
+  }
+  if (/^[A-Za-z0-9+/=]+$/.test(trimmed) && trimmed.length >= 100) {
+    return `data:image/png;base64,${trimmed}`;
+  }
+  return trimmed;
+};
+
 /**
  * Add a signature to the PDF. Signature can be either plain text initials
  * (rendered as bold helvetica) or a base64/HTTP image (rendered after
@@ -156,10 +191,12 @@ export const addSignatureToPDF = async (
       y,
     });
 
-    if (!signatureData) {
+    const normalized = normalizeSignatureData(signatureData);
+    if (!normalized) {
       pdfLogger.debug('No signature data provided');
       return;
     }
+    signatureData = normalized;
 
     const isPlainText =
       !signatureData.startsWith('data:image/') &&

@@ -1,14 +1,13 @@
 'use client';
 
 import React, {
-  createContext,
-  useContext,
   useReducer,
   useEffect,
   useState,
   ReactNode,
   useRef,
 } from 'react';
+import { NotificationsReactContext } from '@/context/notificationsContext';
 import { io, Socket } from 'socket.io-client';
 import { toast } from 'sonner';
 import {
@@ -100,11 +99,6 @@ function notificationReducer(
       return state;
   }
 }
-
-// Create context
-const NotificationContext = createContext<NotificationContextType | undefined>(
-  undefined
-);
 
 // Provider component
 interface NotificationProviderProps {
@@ -489,19 +483,10 @@ export function NotificationProvider({ children }: NotificationProviderProps) {
   };
 
   return (
-    <NotificationContext.Provider value={contextValue}>
+    <NotificationsReactContext.Provider value={contextValue}>
       {children}
-    </NotificationContext.Provider>
+    </NotificationsReactContext.Provider>
   );
 }
 
-// Hook to use notification context
-export function useNotifications() {
-  const context = useContext(NotificationContext);
-  if (context === undefined) {
-    throw new Error(
-      'useNotifications must be used within a NotificationProvider'
-    );
-  }
-  return context;
-}
+export { useNotifications } from '@/context/notificationsContext';

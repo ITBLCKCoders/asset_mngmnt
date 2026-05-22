@@ -4,14 +4,13 @@ import { useState, useEffect, useRef, useCallback } from 'react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
-import {
-  DialogContent,
-  DialogHeader,
-  DialogTitle,
-  DialogDescription,
-  DialogFooter,
-} from '@/components/ui/dialog';
 import { Dialog } from '@/components/ui/dialog';
+import {
+  AppDialogFrame,
+  AppDialogGradientHeader,
+  AppDialogBody,
+  AppDialogChromeFooter,
+} from '@/components/common/appDialogChrome';
 import { ShieldCheck } from 'lucide-react';
 import { api } from '@/lib/api';
 import { toast } from 'sonner';
@@ -43,7 +42,7 @@ export default function SmsOtpDialog({
   expirySeconds = 300,
   title = 'OTP SMS Verification',
   description,
-  icon = <ShieldCheck className="h-6 w-6 text-blue-600" />,
+  icon = <ShieldCheck className="h-6 w-6 shrink-0 text-white" />,
   verifyButtonLabel = 'Verify & Sign',
   phoneNumber,
 }: SmsOtpDialogProps) {
@@ -242,27 +241,27 @@ export default function SmsOtpDialog({
   };
 
   return (
-    <Dialog open={isOpen} onOpenChange={onOpenChange} modal={false}>
-      <DialogContent 
-        showCloseButton={false} 
-        disableScroll 
-        className="max-w-md !overflow-hidden !p-6"
-        onInteractOutside={(e) => e.preventDefault()}
-        onEscapeKeyDown={(e) => e.preventDefault()}
+    <Dialog open={isOpen} onOpenChange={onOpenChange}>
+      <AppDialogFrame
+        showCloseButton={false}
+        disableScroll
+        className="w-[min(96vw,28rem)] max-w-md"
+        onInteractOutside={e => e.preventDefault()}
+        onEscapeKeyDown={e => e.preventDefault()}
       >
-        <DialogHeader>
-          <div className="flex items-center gap-3 mb-1">
-            <div className="rounded-xl bg-blue-100 p-2">{icon}</div>
-            <DialogTitle className="text-lg font-bold text-gray-900">
+        <AppDialogGradientHeader
+          title={
+            <span className="flex items-center gap-2 [&_svg]:h-6 [&_svg]:w-6 [&_svg]:shrink-0 [&_svg]:text-white">
+              {icon}
               {title}
-            </DialogTitle>
-          </div>
-          <DialogDescription className="text-sm text-gray-600 leading-relaxed pt-1">
-            {displayDescription}
-          </DialogDescription>
-        </DialogHeader>
+            </span>
+          }
+          description={displayDescription}
+          showCloseButton={false}
+          className="px-4 pt-5 pb-6 sm:px-5 sm:pt-6 sm:pb-7"
+        />
 
-        <div className="space-y-4 py-4">
+        <AppDialogBody className="space-y-4 py-4 sm:py-5">
           <div>
             <Label className="text-sm text-gray-600 mb-2 block">
               Enter the 6-digit code sent to {phoneNumber || 'your registered mobile number'}
@@ -278,11 +277,12 @@ export default function SmsOtpDialog({
               <Input
                 key={i}
                 type="text"
+                inputMode="numeric"
                 maxLength={1}
                 value={otpCode[i]}
                 onChange={e => handleOtpChange(e.target.value, i)}
                 onKeyDown={e => handleOtpKeyDown(e, i)}
-                className="w-12 h-12 text-center text-lg font-bold bg-white border-2 border-gray-300 focus:ring-2 focus:ring-green-500"
+                className="w-12 h-12 text-center text-lg font-bold bg-white border-2 border-gray-300 focus:border-red-500 focus:ring-2 focus:ring-red-200"
                 disabled={isVerifyingOtp || otpExpiry === 0}
                 ref={el => {
                   otpInputsRef.current[i] = el;
@@ -290,9 +290,9 @@ export default function SmsOtpDialog({
               />
             ))}
           </div>
-        </div>
+        </AppDialogBody>
 
-        <DialogFooter className="gap-2 flex-col sm:flex-row">
+        <AppDialogChromeFooter className="gap-2 flex-col sm:flex-row sm:justify-end">
           <Button
             variant="outline"
             onClick={handleCancel}
@@ -304,7 +304,7 @@ export default function SmsOtpDialog({
             variant="outline"
             onClick={handleResend}
             disabled={!canResend || isSendingOtp || otpExpiry === 0}
-            className="border-blue-600 text-blue-600 hover:bg-blue-50"
+            className="border-red-600 text-red-600 hover:bg-red-50"
           >
             {resendCooldown > 0 ? (
               <>Resend in {resendCooldown}s</>
@@ -319,12 +319,12 @@ export default function SmsOtpDialog({
               !otpCode.every(d => d) ||
               otpExpiry === 0
             }
-            className="bg-green-600 hover:bg-green-700 text-white disabled:opacity-50"
+            className="bg-red-600 hover:bg-red-700 text-white disabled:opacity-50"
           >
             {verifyButtonLabel}
           </Button>
-        </DialogFooter>
-      </DialogContent>
+        </AppDialogChromeFooter>
+      </AppDialogFrame>
     </Dialog>
   );
 }

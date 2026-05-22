@@ -5,11 +5,15 @@ import {
 } from '@/lib/assetScope';
 import {
   addCompanyLogoToPDF,
+  addSignatureToPDF,
   autoTable,
   getCompanyAccentColor,
   getBlackCodersFooterGradient,
   isBlackCoders,
   resolveCompanyBranding,
+  sortAssetsByLast5Digits,
+  PDF_SIGNATURE_MAX_HEIGHT_MM,
+  PDF_SIGNATURE_MAX_WIDTH_MM,
 } from './shared';
 
 export interface AssetTransferData {
@@ -187,7 +191,8 @@ export const generateAssetTransferPDF = async (
     : ['IT Staff', 'IT Officer', 'IT Manager', 'IT helpdesk'];
   const transferTypeLabels = ['Transfer', 'Transfer Offboarding'];
 
-  const assetRows = transferData.assets.map(asset => [
+  const sortedAssets = sortAssetsByLast5Digits(transferData.assets);
+  const assetRows = sortedAssets.map(asset => [
     asset.name || '—',
     asset.code || '—',
     asset.transferCondition ?? '—',
@@ -329,6 +334,23 @@ export const generateAssetTransferPDF = async (
   const hasItManagerSignature = !!transferData.it_manager_signed_at;
   const showProcessorSignatureBlock =
     !!transferData.showProcessorSignatureBlock;
+  const processUserNameForCell = (transferData.process_user_name ?? '').trim();
+  const processInitial = processUserNameForCell
+    ? processUserNameForCell.charAt(0).toUpperCase()
+    : '';
+  const approvalSignatureDownOffsetMm = 8;
+  const signatureAnchorBottomY = (nameY: number) =>
+    nameY - 2 + approvalSignatureDownOffsetMm;
+  type PendingTransferSignature = {
+    data: string;
+    x: number;
+    y: number;
+    maxWidth: number;
+    maxHeight: number;
+    anchorBottomY?: number;
+    pageNumber: number;
+  };
+  const pendingTransferSignatures: PendingTransferSignature[] = [];
 
   const sectionBManagerLabel = isAdminScopeTransfer
     ? 'Admin Manager / Admin Head'
@@ -384,7 +406,7 @@ export const generateAssetTransferPDF = async (
       const contentWidth = Math.max(20, xMax - xMin);
       const contentHeight = Math.max(10, yMax - yMin);
 
-      // Row 1, column 0: IT Manager / IT Department Head signature
+      // Row 1, column 0: IT Manager / IT Department Head
       if (
         hasItManagerSignature &&
         data.row.index === 1 &&
@@ -392,19 +414,27 @@ export const generateAssetTransferPDF = async (
       ) {
         const yTop = yMin;
         const dateTimeReserved = 20;
-        const gap = 2;
-        const maxSigWidth = contentWidth - dateTimeReserved - gap;
-        const sigWidthClamped = Math.min(88, Math.max(30, maxSigWidth));
         const sigHeight = Math.min(50, Math.max(28, contentHeight - 2));
-        const xLeft = xMin;
-        const dateTimeX = xLeft + sigWidthClamped + gap;
+        const dateTimeX = xMax - dateTimeReserved;
         const nameY = yTop + sigHeight - 6;
 
         doc.setFontSize(8);
         doc.setFont('helvetica', 'normal');
         doc.setTextColor(0, 0, 0);
 
-        const itManagerName = transferData.it_manager_user_name || '';
+        const itManagerName = (transferData.it_manager_user_name || '').trim();
+        if (transferData.it_manager_digital_signature) {
+          pendingTransferSignatures.push({
+            data: transferData.it_manager_digital_signature,
+            x: xMin,
+            y: yTop + 25,
+            anchorBottomY: signatureAnchorBottomY(nameY),
+            maxWidth: PDF_SIGNATURE_MAX_WIDTH_MM,
+            maxHeight: PDF_SIGNATURE_MAX_HEIGHT_MM,
+            pageNumber: data.pageNumber,
+          });
+        }
+
         if (itManagerName) {
           const nameMaxWidth = Math.max(15, contentWidth - 6);
           const nameLines = doc.splitTextToSize(itManagerName, nameMaxWidth);
@@ -429,36 +459,56 @@ export const generateAssetTransferPDF = async (
           minute: '2-digit',
           hour12: true,
         });
-        const dateTimeXClamped = Math.min(dateTimeX, xMax - 18);
-        doc.text(dateStr, dateTimeXClamped, yTop + 4);
-        doc.text(timeStr, dateTimeXClamped, yTop + 9);
+        doc.setFontSize(7);
+        doc.setFont('helvetica', 'normal');
+        doc.text(dateStr, dateTimeX, yTop + 4);
+        doc.text(timeStr, dateTimeX, yTop + 9);
         return;
       }
 
-      // Row 1, column 1: IT Staff / process signature - only draw when showProcessorSignatureBlock (after Dept Head has signed)
+      // Row 1, column 1: IT Staff / IT Inventory Manager (matches return form processor cell)
       if (
         showProcessorSignatureBlock &&
+        (processUserNameForCell || transferData.process_digital_signature) &&
         data.row.index === 1 &&
         data.column.index === 1
       ) {
         const yTop = yMin;
         const dateTimeReserved = 20;
-        const gap = 2;
-        const maxSigWidth = contentWidth - dateTimeReserved - gap;
-        const sigWidthClamped = Math.min(88, Math.max(30, maxSigWidth));
         const sigHeight = Math.min(50, Math.max(28, contentHeight - 2));
-        const xLeft = xMin;
-        const dateTimeX = xLeft + sigWidthClamped + gap;
+        const dateTimeX = xMax - dateTimeReserved;
         const nameY = yTop + sigHeight - 6;
 
         doc.setFontSize(8);
         doc.setFont('helvetica', 'normal');
         doc.setTextColor(0, 0, 0);
 
-        const processName = transferData.process_user_name || '';
-        if (processName) {
+        if (transferData.process_digital_signature) {
+          pendingTransferSignatures.push({
+            data: transferData.process_digital_signature,
+            x: xMin,
+            y: yTop + 25,
+            anchorBottomY: signatureAnchorBottomY(nameY),
+            maxWidth: PDF_SIGNATURE_MAX_WIDTH_MM,
+            maxHeight: PDF_SIGNATURE_MAX_HEIGHT_MM,
+            pageNumber: data.pageNumber,
+          });
+        } else if (processInitial) {
+          doc.setFontSize(14);
+          doc.setFont('helvetica', 'bold');
+          doc.text(
+            processInitial,
+            xMin,
+            yTop + 10 + approvalSignatureDownOffsetMm
+          );
+        }
+
+        if (processUserNameForCell) {
           const nameMaxWidth = Math.max(15, contentWidth - 6);
-          const nameLines = doc.splitTextToSize(processName, nameMaxWidth);
+          const nameLines = doc.splitTextToSize(
+            processUserNameForCell,
+            nameMaxWidth
+          );
           doc.text(nameLines, xMin, nameY);
         }
 
@@ -481,14 +531,13 @@ export const generateAssetTransferPDF = async (
             minute: '2-digit',
             hour12: true,
           });
-          const dateTimeXClamped = Math.min(dateTimeX, xMax - 18);
-          doc.text(dateStr, dateTimeXClamped, yTop + 4);
-          doc.text(timeStr, dateTimeXClamped, yTop + 9);
+          doc.text(dateStr, dateTimeX, yTop + 4);
+          doc.text(timeStr, dateTimeX, yTop + 9);
         }
         return;
       }
 
-      // Row 3, column 0: Transferrer Department Head signature
+      // Row 3, column 0: Transferrer Department Head (matches return form dept-head cell)
       if (
         hasDeptHeadSignature &&
         data.row.index === 3 &&
@@ -496,19 +545,27 @@ export const generateAssetTransferPDF = async (
       ) {
         const yTop = yMin;
         const dateTimeReserved = 20;
-        const gap = 2;
-        const maxSigWidth = contentWidth - dateTimeReserved - gap;
-        const sigWidthClamped = Math.min(88, Math.max(30, maxSigWidth));
         const sigHeight = Math.min(50, Math.max(28, contentHeight - 2));
-        const xLeft = xMin;
-        const dateTimeX = xLeft + sigWidthClamped + gap;
+        const dateTimeX = xMax - dateTimeReserved;
         const nameY = yTop + sigHeight - 6;
 
         doc.setFontSize(8);
         doc.setFont('helvetica', 'normal');
         doc.setTextColor(0, 0, 0);
 
-        const deptHeadName = transferData.dept_head_user_name || '';
+        const deptHeadName = (transferData.dept_head_user_name || '').trim();
+        if (transferData.dept_head_digital_signature) {
+          pendingTransferSignatures.push({
+            data: transferData.dept_head_digital_signature,
+            x: xMin,
+            y: yTop + 25,
+            anchorBottomY: signatureAnchorBottomY(nameY),
+            maxWidth: PDF_SIGNATURE_MAX_WIDTH_MM,
+            maxHeight: PDF_SIGNATURE_MAX_HEIGHT_MM,
+            pageNumber: data.pageNumber,
+          });
+        }
+
         if (deptHeadName) {
           const nameMaxWidth = Math.max(15, contentWidth - 6);
           const nameLines = doc.splitTextToSize(deptHeadName, nameMaxWidth);
@@ -533,64 +590,103 @@ export const generateAssetTransferPDF = async (
           minute: '2-digit',
           hour12: true,
         });
-        const dateTimeXClamped = Math.min(dateTimeX, xMax - 18);
-        doc.text(dateStr, dateTimeXClamped, yTop + 4);
-        doc.text(timeStr, dateTimeXClamped, yTop + 9);
+        doc.setFontSize(7);
+        doc.setFont('helvetica', 'normal');
+        doc.text(dateStr, dateTimeX, yTop + 4);
+        doc.text(timeStr, dateTimeX, yTop + 9);
         return;
       }
 
-      // Row 3, column 1: Transferrer signature
+      // Row 3, column 1: Transferrer (matches return form returner cell)
       if (
-        !hasTransferrerSignature ||
-        data.row.index !== 3 ||
-        data.column.index !== 1
+        hasTransferrerSignature &&
+        data.row.index === 3 &&
+        data.column.index === 1
       ) {
-        return;
+        const yTop = yMin;
+        const dateTimeReserved = 20;
+        const sigHeight = Math.min(50, Math.max(28, contentHeight - 2));
+        const dateTimeX = xMax - dateTimeReserved;
+        const nameY = yTop + sigHeight - 6;
+        const fullName = [
+          transferData.user.first_name,
+          transferData.user.last_name,
+        ]
+          .filter(Boolean)
+          .join(' ');
+        const transferrerInitial = fullName
+          ? fullName.charAt(0).toUpperCase()
+          : '';
+
+        doc.setFontSize(8);
+        doc.setFont('helvetica', 'normal');
+        doc.setTextColor(0, 0, 0);
+
+        if (transferData.digital_signature) {
+          pendingTransferSignatures.push({
+            data: transferData.digital_signature,
+            x: xMin,
+            y: yTop + 25,
+            anchorBottomY: signatureAnchorBottomY(nameY),
+            maxWidth: PDF_SIGNATURE_MAX_WIDTH_MM,
+            maxHeight: PDF_SIGNATURE_MAX_HEIGHT_MM,
+            pageNumber: data.pageNumber,
+          });
+        } else if (transferrerInitial) {
+          doc.setFontSize(14);
+          doc.setFont('helvetica', 'bold');
+          doc.text(
+            transferrerInitial,
+            xMin,
+            yTop + 10 + approvalSignatureDownOffsetMm
+          );
+        }
+
+        if (fullName) {
+          const nameMaxWidth = Math.max(15, contentWidth - 6);
+          const nameLines = doc.splitTextToSize(fullName, nameMaxWidth);
+          doc.text(nameLines, xMin, nameY);
+        }
+
+        const rawSigned = transferData.signed_at?.trim() ?? '';
+        const signedDate = rawSigned
+          ? new Date(
+              rawSigned.endsWith('Z') || /[+-]\d{2}:?\d{2}$/.test(rawSigned)
+                ? rawSigned
+                : rawSigned.replace(' ', 'T') + 'Z'
+            )
+          : new Date();
+        const dateStr = signedDate.toLocaleDateString('en-US', {
+          year: 'numeric',
+          month: '2-digit',
+          day: '2-digit',
+        });
+        const timeStr = signedDate.toLocaleTimeString('en-US', {
+          hour: '2-digit',
+          minute: '2-digit',
+          hour12: true,
+        });
+        doc.setFontSize(7);
+        doc.setFont('helvetica', 'normal');
+        doc.text(dateStr, dateTimeX, yTop + 4);
+        doc.text(timeStr, dateTimeX, yTop + 9);
       }
-      const yTop = yMin;
-      const dateTimeReserved = 20;
-      const gap = 2;
-      const maxSigWidth = contentWidth - dateTimeReserved - gap;
-      const sigWidthClamped = Math.min(88, Math.max(30, maxSigWidth));
-      const sigHeight = Math.min(50, Math.max(28, contentHeight - 2));
-      const xLeft = xMin;
-      const dateTimeX = xLeft + sigWidthClamped + gap;
-      const nameY = yTop + sigHeight - 6;
-
-      doc.setFontSize(8);
-      doc.setFont('helvetica', 'normal');
-      doc.setTextColor(0, 0, 0);
-
-      const fullName = [
-        transferData.user.first_name,
-        transferData.user.last_name,
-      ]
-        .filter(Boolean)
-        .join(' ');
-      if (fullName) {
-        const nameMaxWidth = Math.max(15, contentWidth - 6);
-        const nameLines = doc.splitTextToSize(fullName, nameMaxWidth);
-        doc.text(nameLines, xMin, nameY);
-      }
-
-      const signedDate = transferData.signed_at
-        ? new Date(transferData.signed_at)
-        : new Date();
-      const dateStr = signedDate.toLocaleDateString('en-US', {
-        year: 'numeric',
-        month: '2-digit',
-        day: '2-digit',
-      });
-      const timeStr = signedDate.toLocaleTimeString('en-US', {
-        hour: '2-digit',
-        minute: '2-digit',
-        hour12: true,
-      });
-      const dateTimeXClamped = Math.min(dateTimeX, xMax - 18);
-      doc.text(dateStr, dateTimeXClamped, yTop + 4);
-      doc.text(timeStr, dateTimeXClamped, yTop + 9);
     },
   });
+
+  for (const sig of pendingTransferSignatures) {
+    doc.setPage(sig.pageNumber);
+    await addSignatureToPDF(
+      doc,
+      sig.data,
+      sig.x,
+      sig.y,
+      sig.maxWidth,
+      sig.maxHeight,
+      sig.anchorBottomY
+    );
+  }
+  doc.setPage(1);
 
   const docNoY = (doc as any).lastAutoTable.finalY + 8;
   const docNoText = `Document No: ${transferData.form_number || 'TRF'} ver1 01Jan2026`;

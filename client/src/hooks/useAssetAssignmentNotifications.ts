@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect, useCallback } from 'react';
-import { useNotifications } from '@/context/NotificationContext';
+import { useNotifications } from '@/context/notificationsContext';
 import { useCurrentUser } from '@/hooks/useCurrentUser';
 import { api } from '@/lib/api';
 

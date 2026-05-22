@@ -184,6 +184,26 @@ export async function fetchUserPosition(userId: string): Promise<string | null> 
   return s || null;
 }
 
+/** Load a user's profile digital signature (base64/data URL) for PDFs and form signing. */
+export async function fetchUserDigitalSignature(
+  userId: string
+): Promise<string | null> {
+  if (!userId) return null;
+  try {
+    const [rows] = (await pool.execute(
+      'SELECT digital_signature FROM users WHERE userID = ?',
+      [userId]
+    )) as any[];
+    const sig = rows?.[0]?.digital_signature;
+    if (sig == null) return null;
+    const s = String(sig).trim();
+    return s || null;
+  } catch (err) {
+    logger.error('Failed to fetch user digital signature:', err);
+    return null;
+  }
+}
+
 export type ProcessorReturnTarget = {
   processorName: string;
   departmentId: string | null;

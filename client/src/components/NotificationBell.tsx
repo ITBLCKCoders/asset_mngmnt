@@ -16,7 +16,7 @@ import {
   PopoverTrigger,
 } from '@/components/ui/popover';
 import { cn } from '@/lib/utils';
-import { useNotifications } from '@/context/NotificationContext';
+import { useNotifications } from '@/context/notificationsContext';
 import { formatDistanceToNow } from 'date-fns';
 import type { Notification } from '@/types/notifications';
 import { AccountabilityDeclinedNotificationDialog } from '@/components/AccountabilityDeclinedNotificationDialog';

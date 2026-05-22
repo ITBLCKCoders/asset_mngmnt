@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import {
   ArrowRightLeft,
@@ -31,10 +31,7 @@ import { api } from '@/lib/api';
 import { cn } from '@/lib/utils';
 import { toast } from 'sonner';
 import { useCurrentUser } from '@/hooks/useCurrentUser';
-import {
-  generateAccountabilityFormPDF,
-  type AccountabilityForm,
-} from '@/pages/assets/accountability/accountabilityForm';
+import SmsOtpDialog from '@/components/auth/SmsOtpDialog';
 
 const MAX_CONDITION_IMAGES = 5;
 const VALID_IMAGE_TYPES = [
@@ -52,10 +49,12 @@ interface ApprovedBatch {
   /** Wet-signed scan on file (`local` or URL), same idea as return forms */
   processor_wet_transfer_pdf_url?: string | null;
   new_assigned_user_id: string;
+  department_id?: string | null;
   new_assigned_user?: {
     first_name: string;
     last_name: string;
     department?: string | null;
+    user_department?: { id: string; name: string };
   };
   returns: Array<{
     assignment_id: string;
@@ -117,12 +116,8 @@ export default function TransferRequestsPage() {
   const [imageUrlsByAssignment, setImageUrlsByAssignment] = useState<
     Record<string, string[]>
   >({});
-  const [showNextStepsDialog, setShowNextStepsDialog] = useState(false);
-  const [nextStepsAssigneeUserId, setNextStepsAssigneeUserId] = useState<
-    string | null
-  >(null);
-  const [downloadingNextAccountability, setDownloadingNextAccountability] =
-    useState(false);
+  const [smsOtpDialogOpen, setSmsOtpDialogOpen] = useState(false);
+  const pendingTransferActionRef = useRef<(() => Promise<void>) | null>(null);
   const [showReturnProcessBlockDialog, setShowReturnProcessBlockDialog] =
     useState(false);
   const [returnProcessBlockMessage, setReturnProcessBlockMessage] = useState('');
@@ -146,6 +141,12 @@ export default function TransferRequestsPage() {
   useEffect(() => {
     fetchApproved();
   }, []);
+
+  useEffect(() => {
+    if (smsOtpDialogOpen) {
+      setShowConfirmDialog(false);
+    }
+  }, [smsOtpDialogOpen]);
 
   const handleView = (batch: ApprovedBatch) => {
     setSelectedBatch(batch);
@@ -190,7 +191,7 @@ export default function TransferRequestsPage() {
     setShowConfirmDialog(true);
   };
 
-  const handleExecuteTransfer = async () => {
+  const handleExecuteTransfer = () => {
     if (!selectedBatch) return;
     if (!receivedBy) {
       toast.error('Please select who received the assets');
@@ -218,65 +219,65 @@ export default function TransferRequestsPage() {
       return;
     }
 
+    const batch = selectedBatch;
     const transferType = transferTypeOffboarding
       ? 'Transfer Offboarding'
       : 'Transfer';
 
-    setTransferring(true);
-    try {
-      await api.post(`/asset-transfers/forms/${selectedBatch.formID}/execute`, {
-        assetTransfers: (selectedBatch.returns || []).map(r => ({
-          assignmentId: r.assignment_id,
-          condition:
-            conditions[r.assignment_id] || r.return_condition || 'Good',
-          notes: notesByAssignment[r.assignment_id] ?? r.return_notes ?? '',
-          imageUrls:
-            imageUrlsByAssignment[r.assignment_id] ??
-            (Array.isArray(r.condition_images) ? r.condition_images : []),
-        })),
-        processSignature: {
-          signed_at: new Date().toISOString(),
-        },
-        transferType,
-        receivedBy,
-        newAssignment: {
-          userId: selectedBatch.new_assigned_user_id,
-          departmentId: null,
-          locationId: null,
-          roomId: null,
-          roomName: null,
-        },
-      });
-      const completedFormId = selectedBatch.formID;
-      const hadWetPdf = Boolean(
-        selectedBatch.processor_wet_transfer_pdf_url?.trim()
-      );
-      toast.success('Transfer completed successfully');
-      setShowConfirmDialog(false);
-      setSelectedBatch(null);
-      await fetchApproved();
-      setNextStepsAssigneeUserId(selectedBatch.new_assigned_user_id);
-      setShowNextStepsDialog(true);
-    } catch (err: any) {
-      const msg =
-        err?.data?.error ||
-        err?.response?.data?.error ||
-        'Failed to execute transfer';
-      if (
-        typeof msg === 'string' &&
-        msg
-          .toLowerCase()
-          .includes(
-            'linked return form is processed by the processor'
-          )
-      ) {
-        setReturnProcessBlockMessage(msg);
-        setShowReturnProcessBlockDialog(true);
+    pendingTransferActionRef.current = async () => {
+      setTransferring(true);
+      try {
+        await api.post(`/asset-transfers/forms/${batch.formID}/execute`, {
+          assetTransfers: (batch.returns || []).map(r => ({
+            assignmentId: r.assignment_id,
+            condition:
+              conditions[r.assignment_id] || r.return_condition || 'Good',
+            notes: notesByAssignment[r.assignment_id] ?? r.return_notes ?? '',
+            imageUrls:
+              imageUrlsByAssignment[r.assignment_id] ??
+              (Array.isArray(r.condition_images) ? r.condition_images : []),
+          })),
+          processSignature: {
+            signed_at: new Date().toISOString(),
+          },
+          transferType,
+          receivedBy,
+          newAssignment: {
+            userId: batch.new_assigned_user_id,
+            departmentId:
+              batch.department_id ??
+              batch.new_assigned_user?.user_department?.id ??
+              null,
+            locationId: null,
+            roomId: null,
+            roomName: null,
+          },
+        });
+        toast.success('Transfer completed successfully');
+        setShowConfirmDialog(false);
+        setSelectedBatch(null);
+        await fetchApproved();
+      } catch (err: any) {
+        const data = err?.data ?? err?.response?.data;
+        const base = data?.error || 'Failed to execute transfer';
+        const msg = data?.details ? `${base}: ${data.details}` : base;
+        if (
+          typeof msg === 'string' &&
+          msg
+            .toLowerCase()
+            .includes(
+              'linked return form is processed by the processor'
+            )
+        ) {
+          setReturnProcessBlockMessage(msg);
+          setShowReturnProcessBlockDialog(true);
+        }
+        toast.error(msg);
+      } finally {
+        setTransferring(false);
       }
-      toast.error(msg);
-    } finally {
-      setTransferring(false);
-    }
+    };
+    setSmsOtpDialogOpen(true);
   };
 
   const handleConditionImageAdd = async (
@@ -327,60 +328,6 @@ export default function TransferRequestsPage() {
     'Needs Repair',
     'Obsolete',
   ];
-
-  const handleDownloadNextAccountability = async () => {
-    if (!nextStepsAssigneeUserId) {
-      toast.error('Unable to resolve transfer receiver for accountability download');
-      return;
-    }
-    try {
-      setDownloadingNextAccountability(true);
-      const listRes = await api.get<{ forms?: AccountabilityForm[] }>(
-        `/accountability-forms?userId=${nextStepsAssigneeUserId}`
-      );
-      const forms = Array.isArray(listRes?.forms) ? listRes.forms : [];
-      const activeForms = forms.filter(
-        f => f.status !== 'Disabled' && f.status !== 'Declined'
-      );
-      if (activeForms.length === 0) {
-        toast.error('No active accountability form found for the receiver');
-        return;
-      }
-      activeForms.sort(
-        (a, b) =>
-          new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
-      );
-      const target = activeForms[0];
-      if (!target?.id) {
-        toast.error('Could not determine accountability form to download');
-        return;
-      }
-      const formRes = await api.get<{ form?: AccountabilityForm }>(
-        `/accountability-forms/${target.id}`
-      );
-      const form = formRes?.form;
-      if (!form) {
-        toast.error('Could not load accountability form details');
-        return;
-      }
-      const pdfBlob = await generateAccountabilityFormPDF(form, currentUser);
-      const fileName = `Asset_Accountability_Form_${form.formNumber || form.id}_${Date.now()}.pdf`;
-      const url = URL.createObjectURL(pdfBlob);
-      const a = document.createElement('a');
-      a.href = url;
-      a.download = fileName;
-      document.body.appendChild(a);
-      a.click();
-      a.remove();
-      URL.revokeObjectURL(url);
-      toast.success('Accountability form downloaded successfully');
-    } catch (error) {
-      console.error('Failed to download accountability form:', error);
-      toast.error('Failed to download accountability form');
-    } finally {
-      setDownloadingNextAccountability(false);
-    }
-  };
 
   return (
     <div className="min-h-screen">
@@ -838,46 +785,23 @@ export default function TransferRequestsPage() {
           </AppDialogFrame>
         </Dialog>
 
-        <Dialog
-          open={showNextStepsDialog}
-          onOpenChange={setShowNextStepsDialog}
-        >
-          <AppDialogFrame className="max-w-xl w-[92vw] sm:w-full">
-            <AppDialogGradientHeader
-              title="Next Steps"
-              description="Transfer processed successfully."
-            />
-            <AppDialogBody className="space-y-3">
-              <ol className="list-decimal pl-5 space-y-2 text-sm text-slate-700">
-                <li>
-                  Please download this new asset accountability form for the
-                  asset receiver of this transfer and make the user sign.
-                </li>
-                <li>
-                  After the new owner of the asset signs, give the accountability
-                  form to HR for 201 file copy.
-                </li>
-              </ol>
-            </AppDialogBody>
-            <AppDialogChromeFooter className="justify-end">
-              <Button
-                variant="outline"
-                onClick={handleDownloadNextAccountability}
-                disabled={downloadingNextAccountability}
-              >
-                {downloadingNextAccountability ? 'Downloading...' : 'Download'}
-              </Button>
-              <Button
-                onClick={() => {
-                  setShowNextStepsDialog(false);
-                  setNextStepsAssigneeUserId(null);
-                }}
-              >
-                Continue
-              </Button>
-            </AppDialogChromeFooter>
-          </AppDialogFrame>
-        </Dialog>
+        <SmsOtpDialog
+          isOpen={smsOtpDialogOpen}
+          onOpenChange={setSmsOtpDialogOpen}
+          sendOtpEndpoint="/auth/initials/send-otp"
+          verifyOtpEndpoint="/auth/initials/verify-otp"
+          onVerified={() => {
+            setSmsOtpDialogOpen(false);
+          }}
+          onCancel={() => {
+            setSmsOtpDialogOpen(false);
+            pendingTransferActionRef.current = null;
+          }}
+          pendingActionRef={pendingTransferActionRef}
+          title="OTP SMS Verification"
+          description="OTP SMS Verification has been sent to your registered mobile number for asset transfer confirmation."
+          verifyButtonLabel="Verify & Transfer"
+        />
       </main>
     </div>
   );

@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState, useMemo } from 'react';
+import { useEffect, useState, useMemo, useRef } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import {
   Package,
@@ -53,9 +53,8 @@ import {
   AppDialogBody,
   AppDialogChromeFooter,
 } from '@/components/common/appDialogChrome';
-import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
+import { Tabs, TabsContent, TabsList, TabsTrigger, segmentTabsListClassName, segmentTabsTriggerClassName } from '@/components/ui/tabs';
 import { Location } from '@/types/assets';
-import { useDelayedLoading } from '@/hooks/useDelayedLoading';
 import { Shimmer } from '@/components/ui/shimmer';
 import { DataTable } from '@/components/ui/dataTable';
 import type { ColumnDef } from '@tanstack/react-table';
@@ -65,6 +64,7 @@ import {
   type AssetReturnData as ReturnPdfData,
 } from '@/lib/pdfGenerator';
 import { FileDown } from 'lucide-react';
+import SmsOtpDialog from '@/components/auth/SmsOtpDialog';
 
 interface AssetAssignment {
   assignmentID: string;
@@ -130,7 +130,7 @@ interface ReturnHistoryRow {
 
 export default function AssetsReturn() {
   const { user: currentUser } = useCurrentUser();
-  const { hasPermission } = useUserPermissions();
+  const { hasPermission, roleCustodian } = useUserPermissions();
   const { activeCompany } = useCompanyContext();
   const [assignments, setAssignments] = useState<AssetAssignment[]>([]);
   const [departments, setDepartments] = useState<any[]>([]);
@@ -163,22 +163,23 @@ export default function AssetsReturn() {
   const [expandedBuilderForSelect, setExpandedBuilderForSelect] = useState<
     string | null
   >(null);
+  const [activeTab, setActiveTab] = useState('select-assets');
+  const [tabLoading, setTabLoading] = useState(false);
   const [sharedReturnDepartmentId, setSharedReturnDepartmentId] =
     useState<string>('');
   const [sharedReturnLocationId, setSharedReturnLocationId] =
     useState<string>('');
   const [sharedReturnAreaId, setSharedReturnAreaId] = useState<string>('');
   const [ownerAbsent, setOwnerAbsent] = useState(false);
-  const [showOwnerAbsentDialog, setShowOwnerAbsentDialog] = useState(false);
-  const [showNextStepsDialog, setShowNextStepsDialog] = useState(false);
-  const [nextStepsFormNumber, setNextStepsFormNumber] = useState<string | null>(
-    null
-  );
-  const [nextStepsPdfData, setNextStepsPdfData] = useState<ReturnPdfData | null>(
-    null
-  );
-  const [nextStepsOwnerAbsent, setNextStepsOwnerAbsent] = useState(false);
-  const displayLoading = useDelayedLoading(loading, 2000);
+  const [smsOtpDialogOpen, setSmsOtpDialogOpen] = useState(false);
+  const pendingReturnActionRef = useRef<(() => Promise<void>) | null>(null);
+
+  const isSuperAdmin = currentUser?.role?.name?.toLowerCase() === 'super admin';
+  const isAdmin = currentUser?.role?.name?.toLowerCase() === 'admin';
+  const isOverallManager = roleCustodian?.managerRole === 'overallManager';
+  const showScopeTabs = isSuperAdmin || isAdmin || isOverallManager;
+  const [scope, setScope] = useState<'it' | 'admin'>('it');
+  const displayLoading = loading;
 
   const flattenedReturnHistory = useMemo((): ReturnHistoryRow[] => {
     return returnHistory.map((returnRecord: any) => {
@@ -426,6 +427,9 @@ export default function AssetsReturn() {
       if (companyId) {
         queryParams.append('companyId', companyId);
       }
+      if (showScopeTabs) {
+        queryParams.append('scope', scope);
+      }
       const response = await api.get(`/asset-assignments/filtered?${queryParams.toString()}`);
       setAssignments(response.assignments || []);
     } catch (error) {
@@ -437,7 +441,10 @@ export default function AssetsReturn() {
   const fetchAssetBuilders = async () => {
     try {
       setBuildersLoading(true);
-      const response = await api.get('/asset-builders', {
+      const builderUrl = showScopeTabs
+        ? `/asset-builders?scope=${scope}`
+        : '/asset-builders';
+      const response = await api.get(builderUrl, {
         headers: { 'Cache-Control': 'no-cache', Pragma: 'no-cache' },
       });
       if (response?.builders) {
@@ -467,8 +474,13 @@ export default function AssetsReturn() {
       setLoading(false);
     };
     fetchData();
-  }, [activeCompany?.id]);
+  }, [activeCompany?.id, scope]);
 
+  useEffect(() => {
+    if (!showScopeTabs) return;
+    setSelectedAssignments([]);
+    setExpandedBuilderForSelect(null);
+  }, [scope, showScopeTabs]);
 
   // Fetch return history
   const fetchReturnHistory = async () => {
@@ -741,6 +753,9 @@ export default function AssetsReturn() {
         .filter(Boolean)
         .join(' ')
         .trim() || currentUser?.name?.trim() || null;
+    const processDigitalSignature =
+      (currentUser as { digitalSignature?: string | null })?.digitalSignature ??
+      null;
     return {
       assignmentID: first.assignmentID,
       assets: details.map(assignment => {
@@ -763,9 +778,28 @@ export default function AssetsReturn() {
         email: first.user.email,
         employeeNumber: first.user.employeeNumber,
         position: first.user.position,
+        companyName:
+          (
+            first.user as {
+              company?: { name?: string | null };
+            }
+          ).company?.name ??
+          activeCompany?.name ??
+          currentUser?.company ??
+          null,
+        companyLogoUrl:
+          (
+            first.user as {
+              company?: { logo_url?: string | null };
+            }
+          ).company?.logo_url ??
+          activeCompany?.logo_url ??
+          null,
       },
       department: first.department,
-      requestorDepartment: null,
+      requestorDepartment: first.department
+        ? { id: first.department.id, name: first.department.name }
+        : null,
       location: returnLoc
         ? {
             id: returnLoc.locationID,
@@ -786,12 +820,15 @@ export default function AssetsReturn() {
       process_signed_at: verificationConfirmSign
         ? new Date().toISOString()
         : null,
+      process_digital_signature: verificationConfirmSign
+        ? processDigitalSignature
+        : null,
       process_user_name: processUserName,
       processorPosition: currentUser?.position?.trim()
         ? currentUser.position
         : null,
       returnType: returnTypeStr || null,
-      showProcessorSignatureBlock: false,
+      showProcessorSignatureBlock: !!verificationConfirmSign,
     };
   };
 
@@ -814,9 +851,13 @@ export default function AssetsReturn() {
         };
       });
 
+      const processDigitalSignature =
+        (currentUser as { digitalSignature?: string | null })?.digitalSignature ??
+        null;
       const processSignature = verificationConfirmSign
         ? {
             signed_at: new Date().toISOString(),
+            digital_signature: processDigitalSignature || undefined,
           }
         : undefined;
 
@@ -849,15 +890,7 @@ export default function AssetsReturn() {
                 `Successfully returned ${selectedAssignments.length} asset(s)`
       );
 
-      // Always show next steps for processor-initiated (assign-to-processor) returns.
-      // Build the PDF data snapshot before we clear local selection state.
-      if (assignAllToMe) {
-        setNextStepsFormNumber(formNum);
-        setNextStepsPdfData(buildReturnPdfPayload(formNum));
-        setNextStepsOwnerAbsent(Boolean(ownerAbsent));
-        setShowNextStepsDialog(true);
-      }
-
+      // Download PDF automatically for processor-initiated returns with owner absent
       if (assignAllToMe && ownerAbsent) {
         try {
           const pdfPayload = buildReturnPdfPayload(formNum);
@@ -906,16 +939,10 @@ export default function AssetsReturn() {
 
   const handleReturnAssets = () => {
     if (!validateReturnForm()) return;
-    if (ownerAbsent) {
-      setShowOwnerAbsentDialog(true);
-      return;
-    }
-    void submitReturnRequest();
-  };
-
-  const handleOwnerAbsentDialogContinue = () => {
-    setShowOwnerAbsentDialog(false);
-    void submitReturnRequest();
+    pendingReturnActionRef.current = async () => {
+      await submitReturnRequest();
+    };
+    setSmsOtpDialogOpen(true);
   };
 
   const assignedBuilders = useMemo(() => {
@@ -1070,29 +1097,24 @@ export default function AssetsReturn() {
           title="Assets Return"
           description="Process asset returns and assess condition"
         >
-          <Button
-            variant="ghost"
-            size="sm"
-            onClick={() => {
-              fetchAssignments();
-              fetchReturnHistory();
-              fetchAssetBuilders();
-            }}
-            className="flex items-center gap-2"
-          >
-            <RefreshCw className="h-4 w-4" />
-            Refresh
-          </Button>
+          {showScopeTabs && (
+            <Tabs value={scope} onValueChange={v => setScope(v as 'it' | 'admin')} className="w-full sm:w-auto">
+              <TabsList className={segmentTabsListClassName + ' grid grid-cols-2 max-w-full sm:max-w-[280px]'}>
+                <TabsTrigger value="it" className={segmentTabsTriggerClassName}>IT Asset</TabsTrigger>
+                <TabsTrigger value="admin" className={segmentTabsTriggerClassName}>Admin Asset</TabsTrigger>
+              </TabsList>
+            </Tabs>
+          )}
         </PageHeader>
 
         <div className="grid grid-cols-1 xl:grid-cols-3 gap-8">
           {/* Asset Selection / Asset Built Tabs */}
           <div className="xl:col-span-2">
-            <Tabs defaultValue="select-assets" className="w-full">
-              <TabsList className="grid w-full grid-cols-2 rounded-xl bg-gray-100 p-1.5 h-auto">
+            <Tabs value={activeTab} onValueChange={(value) => { setActiveTab(value); setTabLoading(true); setTimeout(() => setTabLoading(false), 300); }} className="w-full">
+              <TabsList className={segmentTabsListClassName + ' grid grid-cols-2'}>
                 <TabsTrigger
                   value="select-assets"
-                  className="flex items-center gap-2 data-[state=active]:bg-red-500 data-[state=active]:text-white data-[state=active]:shadow-sm"
+                  className={segmentTabsTriggerClassName + ' flex items-center gap-2'}
                 >
                   <Package className="h-4 w-4" />
                   Select Assets
@@ -1102,7 +1124,7 @@ export default function AssetsReturn() {
                 </TabsTrigger>
                 <TabsTrigger
                   value="asset-built"
-                  className="flex items-center gap-2 data-[state=active]:bg-red-500 data-[state=active]:text-white data-[state=active]:shadow-sm"
+                  className={segmentTabsTriggerClassName + ' flex items-center gap-2'}
                 >
                   <Boxes className="h-4 w-4" />
                   Asset Built
@@ -1138,7 +1160,7 @@ export default function AssetsReturn() {
 
                   <CardContent className="pt-0">
                     <div className="space-y-3 max-h-96 overflow-y-auto scrollbar-thin scrollbar-thumb-gray-300 scrollbar-track-gray-100 -mr-6 pr-6">
-                      {displayLoading ? (
+                      {displayLoading || tabLoading ? (
                         <div className="space-y-3">
                           {[1, 2, 3, 4, 5].map(i => (
                             <div
@@ -1157,11 +1179,13 @@ export default function AssetsReturn() {
                         </div>
                       ) : filteredAssignments.length === 0 ? (
                         <div className="text-center py-12">
-                          <Package className="h-16 w-16 text-gray-300 mx-auto mb-4" />
-                          <p className="text-gray-500 text-lg">
+                          <div className="inline-flex items-center justify-center w-20 h-20 rounded-full bg-gradient-to-br from-red-100 to-red-200 mb-4">
+                            <Package className="h-10 w-10 text-red-600" />
+                          </div>
+                          <h3 className="text-lg font-semibold text-gray-900 mb-2">
                             No active asset assignments found
-                          </p>
-                          <p className="text-gray-400 text-sm mt-1">
+                          </h3>
+                          <p className="text-gray-500 text-sm">
                             Try adjusting your search criteria
                           </p>
                         </div>
@@ -1359,22 +1383,51 @@ export default function AssetsReturn() {
                     </div>
                   </CardHeader>
                   <CardContent className="pt-0">
-                    {buildersLoading ? (
-                      <div className="flex items-center justify-center py-12">
-                        <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-red-600" />
-                        <span className="ml-3 text-gray-600">
-                          Loading builders...
-                        </span>
+                    {buildersLoading || tabLoading ? (
+                      <div className="space-y-4">
+                        {Array.from({ length: 4 }).map((_, index) => (
+                          <Card
+                            key={index}
+                            className="border shadow-sm border-gray-200"
+                          >
+                            <CardContent className="p-4">
+                              <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-4">
+                                <div className="flex-1 min-w-0">
+                                  <Shimmer className="h-6 w-40 rounded mb-1" />
+                                  <Shimmer className="h-4 w-64 rounded mb-2" />
+                                  <div className="flex items-center gap-1.5 mb-2">
+                                    <Shimmer className="h-3.5 w-3.5 rounded" />
+                                    <Shimmer className="h-4 w-32 rounded" />
+                                  </div>
+                                  <Shimmer className="h-5 w-20 rounded-full" />
+                                  <div className="space-y-1.5 mt-2">
+                                    {Array.from({ length: 2 }).map((_, idx) => (
+                                      <div key={idx} className="flex items-center gap-2 border rounded px-2 py-1">
+                                        <Shimmer className="h-3 w-3 rounded" />
+                                        <Shimmer className="h-3.5 w-24 rounded" />
+                                      </div>
+                                    ))}
+                                  </div>
+                                </div>
+                                <div className="flex flex-row sm:flex-col gap-2 flex-shrink-0">
+                                  <Shimmer className="h-9 w-24 rounded-lg" />
+                                  <Shimmer className="h-9 w-24 rounded-lg" />
+                                </div>
+                              </div>
+                            </CardContent>
+                          </Card>
+                        ))}
                       </div>
                     ) : filteredAssignedBuilders.length === 0 ? (
                       <div className="text-center py-12">
-                        <Boxes className="h-16 w-16 text-gray-300 mx-auto mb-4" />
-                        <p className="text-gray-500 text-lg">
+                        <div className="inline-flex items-center justify-center w-20 h-20 rounded-full bg-gradient-to-br from-red-100 to-red-200 mb-4">
+                          <Boxes className="h-10 w-10 text-red-600" />
+                        </div>
+                        <h3 className="text-lg font-semibold text-gray-900 mb-2">
                           No assigned asset builders to return
-                        </p>
-                        <p className="text-gray-400 text-sm mt-1">
-                          Asset builders that have been assigned will appear
-                          here
+                        </h3>
+                        <p className="text-gray-500 text-sm">
+                          Asset builders that have been assigned will appear here
                         </p>
                       </div>
                     ) : (
@@ -1663,17 +1716,45 @@ export default function AssetsReturn() {
 
           <CardContent>
             {returnHistoryLoading ? (
-              <div className="flex items-center justify-center py-12">
-                <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-red-600"></div>
-                <span className="ml-3 text-gray-600">
-                  Loading return history...
-                </span>
+              <div className="border border-gray-200 rounded-lg overflow-hidden">
+                <div className="bg-gray-50 p-3 space-y-2">
+                  <div className="flex gap-4">
+                    <Shimmer className="h-5 w-32 rounded" />
+                    <Shimmer className="h-5 w-24 rounded" />
+                    <Shimmer className="h-5 w-24 rounded" />
+                    <Shimmer className="h-5 w-28 rounded" />
+                    <Shimmer className="h-5 w-20 rounded" />
+                    <Shimmer className="h-5 w-24 rounded" />
+                    <Shimmer className="h-5 w-32 rounded" />
+                    <Shimmer className="h-5 w-24 rounded" />
+                    <Shimmer className="h-5 w-20 rounded" />
+                  </div>
+                </div>
+                {[...Array(5)].map((_, index) => (
+                  <div key={index} className="border-t border-gray-200 p-3 space-y-2">
+                    <div className="flex gap-4">
+                      <Shimmer className="h-5 w-32 rounded" />
+                      <Shimmer className="h-5 w-24 rounded" />
+                      <Shimmer className="h-5 w-24 rounded" />
+                      <Shimmer className="h-5 w-28 rounded" />
+                      <Shimmer className="h-5 w-20 rounded" />
+                      <Shimmer className="h-5 w-24 rounded" />
+                      <Shimmer className="h-5 w-32 rounded" />
+                      <Shimmer className="h-5 w-24 rounded" />
+                      <Shimmer className="h-5 w-20 rounded" />
+                    </div>
+                  </div>
+                ))}
               </div>
             ) : returnHistory.length === 0 ? (
               <div className="text-center py-12">
-                <RotateCcw className="h-16 w-16 text-gray-300 mx-auto mb-4" />
-                <p className="text-gray-500 text-lg">No return history found</p>
-                <p className="text-gray-400 text-sm mt-1">
+                <div className="inline-flex items-center justify-center w-20 h-20 rounded-full bg-gradient-to-br from-red-100 to-red-200 mb-4">
+                  <RotateCcw className="h-10 w-10 text-red-600" />
+                </div>
+                <h3 className="text-lg font-semibold text-gray-900 mb-2">
+                  No return history found
+                </h3>
+                <p className="text-gray-500 text-sm">
                   Completed returns will appear here
                 </p>
               </div>
@@ -1697,6 +1778,7 @@ export default function AssetsReturn() {
         <Dialog
           open={showConditionModal}
           onOpenChange={open => {
+            if (smsOtpDialogOpen && !open) return;
             setShowConditionModal(open);
             if (!open) {
               setVerificationTag(false);
@@ -1706,14 +1788,15 @@ export default function AssetsReturn() {
               setReturnTypeOffboarding(false);
               setAssignAllToMe(false);
               setOwnerAbsent(false);
-              setShowOwnerAbsentDialog(false);
               setSharedReturnDepartmentId('');
               setSharedReturnLocationId('');
               setSharedReturnAreaId('');
             }
           }}
         >
-          <AppDialogFrame className="max-w-2xl w-[85vw] sm:w-[90vw] md:w-full max-h-[90vh] overflow-hidden !flex !flex-col">
+          <AppDialogFrame
+            className={`max-w-2xl w-[85vw] sm:w-[90vw] md:w-full max-h-[90vh] overflow-hidden !flex !flex-col${smsOtpDialogOpen ? ' !overflow-hidden' : ''}`}
+          >
             <AppDialogGradientHeader
               title={
                 <span className="flex items-center gap-3">
@@ -1724,7 +1807,9 @@ export default function AssetsReturn() {
               description="Please assess the condition of each selected asset and add any notes."
             />
 
-            <AppDialogBody className="max-h-[min(50vh,520px)] min-h-0 flex-1 space-y-4 overflow-y-auto overflow-x-hidden sm:space-y-6">
+            <AppDialogBody
+              className={`max-h-[min(50vh,520px)] min-h-0 flex-1 space-y-4 overflow-y-auto overflow-x-hidden sm:space-y-6${smsOtpDialogOpen ? ' !overflow-hidden' : ''}`}
+            >
               <div className="inline-block rounded-full border border-slate-200 bg-slate-50 px-3 py-1 text-sm font-semibold text-slate-800">
                 Selected Assets: {selectedAssignments.length}
               </div>
@@ -2204,7 +2289,7 @@ export default function AssetsReturn() {
                 variant="outline"
                 size="sm"
                 onClick={() => setShowConditionModal(false)}
-                disabled={returning}
+                disabled={returning || smsOtpDialogOpen}
                 className="rounded-lg border-slate-300 hover:bg-slate-100"
               >
                 Cancel
@@ -2212,6 +2297,7 @@ export default function AssetsReturn() {
               <Button
                 onClick={handleReturnAssets}
                 disabled={
+                  smsOtpDialogOpen ||
                   returning ||
                   !allConditionsSelected ||
                   !allLocationsSelected ||
@@ -2241,145 +2327,33 @@ export default function AssetsReturn() {
           </AppDialogFrame>
         </Dialog>
 
-        {/* Next steps (processor-initiated return) */}
-        <Dialog
-          open={showNextStepsDialog}
-          onOpenChange={open => setShowNextStepsDialog(open)}
-        >
-          <AppDialogFrame className="max-w-lg w-[90vw] sm:w-full">
-            <AppDialogGradientHeader
-              title="Next steps"
-              description={
-                nextStepsFormNumber
-                  ? `Return Form No. ${nextStepsFormNumber}`
-                  : 'Asset return form created'
-              }
-            />
-            <AppDialogBody className="space-y-4">
-              <div className="rounded-lg border border-slate-200 bg-slate-50 p-4">
-                <p className="text-sm font-semibold text-slate-900">
-                  What to do next
-                </p>
-                {nextStepsOwnerAbsent ? (
-                  <ol className="mt-2 list-decimal space-y-2 pl-5 text-sm text-slate-700">
-                    <li>Download the return form.</li>
-                    <li>
-                      Since the asset owner is absent, obtain a{' '}
-                      <span className="font-semibold">wet signature</span> on the printed return form from the{' '}
-                      <span className="font-semibold">asset owner’s Department Head</span>.
-                    </li>
-                    <li>
-                      The Department Head must approve the return form in the Asset Management System (Approvals).
-                    </li>
-                    <li>
-                      After approval, the return will be processed as{' '}
-                      <span className="font-semibold">Returned</span> and the assets will be assigned to you temporarily.
-                    </li>
-                  </ol>
-                ) : (
-                  <ol className="mt-2 list-decimal space-y-2 pl-5 text-sm text-slate-700">
-                    <li>Download the return form.</li>
-                    <li>
-                      Make sure the <span className="font-semibold">asset owner</span>{' '}
-                      signs the return form in the Asset Management System (Profile → Documents).
-                    </li>
-                    <li>
-                      The asset owner must route the form to their{' '}
-                      <span className="font-semibold">Department Head</span> to approve it in the
-                      Asset Management System (Approvals).
-                    </li>
-                    <li>
-                      After Department Head approval, the return will be processed as{' '}
-                      <span className="font-semibold">Returned</span> and the assets will be assigned to you temporarily.
-                    </li>
-                  </ol>
-                )}
-              </div>
-              <div className="text-xs text-slate-600">
-                Tip: Keep the wet-signed paper copy. After approval, you’ll be prompted to upload the scanned PDF to attach it to the system-generated return form.
-              </div>
-            </AppDialogBody>
-            <AppDialogChromeFooter className="justify-end gap-2 flex-wrap">
-              <Button
-                type="button"
-                variant="outline"
-                size="sm"
-                onClick={() => setShowNextStepsDialog(false)}
-              >
-                Close
-              </Button>
-              <Button
-                type="button"
-                size="sm"
-                className="bg-green-600 hover:bg-green-700 text-white"
-                disabled={!nextStepsPdfData}
-                onClick={async () => {
-                  try {
-                    if (!nextStepsPdfData) return;
-                    const blob = await generateAssetReturnPDF(nextStepsPdfData);
-                    const safeName = (nextStepsFormNumber || 'asset-return').replace(
-                      /[^a-zA-Z0-9-_]+/g,
-                      '-'
-                    );
-                    downloadPDF(blob, `${safeName}.pdf`);
-                  } catch (e) {
-                    toast.error('Failed to download return form PDF');
-                  }
-                }}
-              >
-                <FileDown className="h-4 w-4 mr-2" />
-                Download return form
-              </Button>
-            </AppDialogChromeFooter>
-          </AppDialogFrame>
-        </Dialog>
-
-        <Dialog
-          open={showOwnerAbsentDialog}
+        {/* SMS OTP Verification Dialog */}
+        <SmsOtpDialog
+          isOpen={smsOtpDialogOpen}
           onOpenChange={open => {
-            if (!returning) setShowOwnerAbsentDialog(open);
+            if (!open) {
+              pendingReturnActionRef.current = null;
+            }
+            setSmsOtpDialogOpen(open);
           }}
-        >
-          <AppDialogFrame className="max-w-lg w-[90vw] sm:w-full">
-            <AppDialogGradientHeader
-              title={
-                <span className="flex items-center gap-2">
-                  <AlertTriangle className="h-6 w-6 shrink-0 text-white" />
-                  Asset owner not in office
-                </span>
-              }
-              description="Return form routing"
-            />
-            <AppDialogBody className="space-y-4">
-              <p className="text-sm text-slate-700 leading-relaxed">
-                Download this return form and sign this form (wet signature) with
-                the <span className="font-semibold">asset owner&apos;s department head</span>{' '}
-                for processing, since the asset owner is not in office anymore.
-                After you continue, the return will be submitted and the PDF will
-                download automatically.
-              </p>
-            </AppDialogBody>
-            <AppDialogChromeFooter className="justify-end gap-2">
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={() => setShowOwnerAbsentDialog(false)}
-                disabled={returning}
-                className="rounded-lg border-slate-300"
-              >
-                Cancel
-              </Button>
-              <Button
-                size="sm"
-                className="rounded-lg bg-red-600 hover:bg-red-700 text-white"
-                onClick={handleOwnerAbsentDialogContinue}
-                disabled={returning}
-              >
-                Continue and submit return
-              </Button>
-            </AppDialogChromeFooter>
-          </AppDialogFrame>
-        </Dialog>
+          sendOtpEndpoint="/auth/initials/send-otp"
+          verifyOtpEndpoint="/auth/initials/verify-otp"
+          onVerified={() => {
+            setSmsOtpDialogOpen(false);
+            pendingReturnActionRef.current = null;
+          }}
+          onCancel={() => {
+            setSmsOtpDialogOpen(false);
+            pendingReturnActionRef.current = null;
+          }}
+          pendingActionRef={pendingReturnActionRef}
+          title="OTP SMS Verification"
+          description="OTP SMS Verification has been sent to your registered mobile number for asset return confirmation."
+          verifyButtonLabel="Verify & Process Return"
+          phoneNumber={
+            (currentUser as { contactNumber?: string })?.contactNumber
+          }
+        />
 
         {/* Return Condition Photos Modal */}
         <Dialog open={showImagesModal} onOpenChange={setShowImagesModal}>
