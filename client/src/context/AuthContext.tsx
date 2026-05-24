@@ -10,6 +10,7 @@ import {
   ReactNode,
 } from 'react';
 import { api, setToken } from '@/lib/api';
+import { clearCurrentUserCache } from '@/hooks/useCurrentUser';
 import { Loader2 } from 'lucide-react';
 
 interface AuthContextType {
@@ -52,10 +53,12 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       const token = (event as CustomEvent<string | null>).detail;
 
       if (token) {
+        clearCurrentUserCache();
         void validateSession();
         return;
       }
 
+      clearCurrentUserCache();
       setIsLoading(false);
       setIsAuthenticated(false);
       setUser(null);

@@ -437,7 +437,11 @@ export function NotificationProvider({ children }: NotificationProviderProps) {
   // Update token state when it changes
   useEffect(() => {
     const handleTokenChange = () => {
-      setToken(getToken());
+      const nextToken = getToken();
+      setToken(nextToken);
+      if (!nextToken) {
+        dispatch({ type: 'CLEAR_NOTIFICATIONS' });
+      }
     };
 
     window.addEventListener('tokenChanged', handleTokenChange);

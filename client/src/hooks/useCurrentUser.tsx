@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { api } from '@/lib/api';
 import { Role } from '@/types/assets';
 import { useAuth } from '@/context/AuthContext';
@@ -48,17 +48,34 @@ const notifyAll = () => {
   listeners.forEach(listener => listener());
 };
 
+export function getAuthUserIdFromPayload(authPayload: unknown): string | null {
+  if (!authPayload || typeof authPayload !== 'object' || !('user' in authPayload)) {
+    return null;
+  }
+  const user = (authPayload as { user?: { id?: string } }).user;
+  return user?.id ?? null;
+}
+
+/** Clear cached profile so the next login does not reuse the previous user. */
+export function clearCurrentUserCache() {
+  cachedUser = null;
+  notifyAll();
+}
+
 export function useCurrentUser() {
-  const { user: authPayload, isLoading: authLoading } = useAuth();
+  const { user: authPayload, isLoading: authLoading, isAuthenticated } =
+    useAuth();
+  const authUserId = getAuthUserIdFromPayload(authPayload);
   const [user, setUser] = useState<CurrentUser | null>(cachedUser);
   const [loading, setLoading] = useState<boolean>(!cachedUser);
 
-  const buildUserObject = (data: any): CurrentUser => {
+  const buildUserObject = (data: Record<string, unknown>): CurrentUser => {
+    const email = String(data.email ?? '');
     const fullName =
       [data.firstName, data.middleName, data.lastName]
         .filter(Boolean)
         .join(' ')
-        .trim() || data.email.split('@')[0];
+        .trim() || email.split('@')[0];
 
     const uploadedAvatarUrl =
       data.avatarUrl &&
@@ -71,9 +88,13 @@ export function useCurrentUser() {
       uploadedAvatarUrl ||
       `http://ui-avatars.com/api/?name=${encodeURIComponent(fullName)}&background=dc2626&color=fff&bold=true&size=256`;
 
-    const role = cachedRoles.find(r => r.roleID === data.role_id) || undefined;
+    const roleId = data.role_id as string | null | undefined;
+    const role = cachedRoles.find(r => r.roleID === roleId) || undefined;
 
-    let department = data.department || data.department_name || null;
+    let department =
+      (data.department as string | null) ||
+      (data.department_name as string | null) ||
+      null;
     if (!department && data.department_id) {
       const dept = cachedDepartments.find(
         d => d.departmentID === data.department_id
@@ -82,29 +103,31 @@ export function useCurrentUser() {
     }
 
     return {
-      id: data.id,
+      id: String(data.id),
       name: fullName,
-      firstName: data.firstName || null,
-      middleName: data.middleName || null,
-      lastName: data.lastName || null,
-      email: data.email,
-      username: data.username || null,
-      contactNumber: data.contactNumber || null,
-      position: data.position || null,
+      firstName: (data.firstName as string | null) || null,
+      middleName: (data.middleName as string | null) || null,
+      lastName: (data.lastName as string | null) || null,
+      email,
+      username: (data.username as string | null) || null,
+      contactNumber: (data.contactNumber as string | null) || null,
+      position: (data.position as string | null) || null,
       department,
-      department_id: data.department_id || null,
-      company: data.company || null,
-      company_id: data.company_id || null,
-      employeeId: data.employeeId || null,
-      role_id: data.role_id || null,
+      department_id: (data.department_id as string | null) || null,
+      company: (data.company as string | null) || null,
+      company_id: (data.company_id as string | null) || null,
+      employeeId: (data.employeeId as string | null) || null,
+      role_id: roleId || null,
       role,
-      verified: data.verified,
-      createdAt: data.createdAt,
+      verified: Boolean(data.verified),
+      createdAt: String(data.createdAt ?? ''),
       avatarUrl: finalAvatarUrl,
-      digitalSignature: data.digitalSignature || null,
-      mfaEnabled: data.mfaEnabled || false,
-      hr_accountability_receiver: data.hr_accountability_receiver,
-      address: data.address || {
+      digitalSignature: (data.digitalSignature as string | null) || null,
+      mfaEnabled: Boolean(data.mfaEnabled),
+      hr_accountability_receiver: data.hr_accountability_receiver as
+        | boolean
+        | undefined,
+      address: (data.address as CurrentUser['address']) || {
         unitNo: '',
         buildingNo: '',
         street: '',
@@ -117,10 +140,9 @@ export function useCurrentUser() {
     };
   };
 
-  const refetch = async () => {
+  const refetch = useCallback(async () => {
     setLoading(true);
     try {
-      // Fetch roles if not cached
       if (cachedRoles.length === 0) {
         try {
           const { roles } = await api.get<{ roles: Role[] }>('/roles');
@@ -131,7 +153,6 @@ export function useCurrentUser() {
         }
       }
 
-      // Fetch departments if not cached
       if (cachedDepartments.length === 0) {
         try {
           const { departments } = await api.get<{ departments: any[] }>(
@@ -163,24 +184,36 @@ export function useCurrentUser() {
       notifyAll();
     } catch (err) {
       console.error('Failed to fetch current user:', err);
-      cachedUser = null;
+      clearCurrentUserCache();
       setUser(null);
     } finally {
       setLoading(false);
     }
-  };
+  }, [authPayload]);
 
   useEffect(() => {
     if (authLoading) {
       return;
     }
-    if (!cachedUser) {
-      void refetch();
-    } else {
-      setUser(cachedUser);
+
+    if (!isAuthenticated) {
+      clearCurrentUserCache();
+      setUser(null);
       setLoading(false);
+      return;
     }
-  }, [authLoading]);
+
+    const cacheMismatch =
+      cachedUser && authUserId && cachedUser.id !== authUserId;
+
+    if (!cachedUser || cacheMismatch) {
+      void refetch();
+      return;
+    }
+
+    setUser(cachedUser);
+    setLoading(false);
+  }, [authLoading, isAuthenticated, authUserId, refetch]);
 
   useEffect(() => {
     const listener = () => {

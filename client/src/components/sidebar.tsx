@@ -31,14 +31,17 @@ import {
   BarChart3,
 } from 'lucide-react';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
-import { useCurrentUser } from '@/hooks/useCurrentUser';
+import {
+  clearCurrentUserCache,
+  useCurrentUser,
+} from '@/hooks/useCurrentUser';
 import { useUserPermissions } from '@/hooks/useUserPermissions';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Badge } from '@/components/ui/badge';
 import { useAvatarPreview } from '@/hooks/avatarPreview';
 import { useEffect, useRef, useState } from 'react';
 import { cn } from '@/lib/utils';
-import { api } from '@/lib/api';
+import { api, setToken } from '@/lib/api';
 import { ASSET_SIDEBAR_ENTRIES } from '@/components/sidebar/sidebarConfig';
 import {
   SidebarHoverItem,
@@ -217,7 +220,7 @@ function SidebarHoverItem({
 export default function Sidebar({ onLogout }: SidebarProps) {
   const navigate = useNavigate();
   const location = useLocation();
-  const { user, loading, refetch } = useCurrentUser();
+  const { user, loading } = useCurrentUser();
   const { hasPermission } = useUserPermissions();
   const { previewUrl, clearPreview } = useAvatarPreview();
 
@@ -319,6 +322,7 @@ export default function Sidebar({ onLogout }: SidebarProps) {
     try {
       await api.post('/auth/logout').catch(() => {});
     } finally {
+      clearCurrentUserCache();
       localStorage.clear();
       sessionStorage.clear();
       document.cookie.split(';').forEach(c => {
@@ -326,11 +330,8 @@ export default function Sidebar({ onLogout }: SidebarProps) {
           .replace(/^ +/, '')
           .replace(/=.*/, '=;expires=' + new Date().toUTCString() + ';path=/');
       });
-
-      await refetch();
-
+      setToken(null);
       onLogout?.();
-
       navigate('/login', { replace: true });
     }
   };

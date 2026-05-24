@@ -1,4 +1,5 @@
-import { setRefreshToken } from './api';
+import { setRefreshToken, setToken } from './api';
+import { clearCurrentUserCache } from '@/hooks/useCurrentUser';
 import { getApiBase } from '@/lib/env';
 
 export const TOKEN_KEY = 'accessToken';
@@ -23,5 +24,9 @@ export const logout = async (isAutoLogout = false) => {
     });
   } catch (err) {
     console.error('Logout request failed:', err);
+  } finally {
+    clearCurrentUserCache();
+    setToken(null);
+    setRefreshToken(null);
   }
 };

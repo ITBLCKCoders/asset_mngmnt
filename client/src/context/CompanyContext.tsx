@@ -10,6 +10,8 @@ import {
   ReactNode,
 } from 'react';
 import { api } from '@/lib/api';
+import { useAuth } from '@/context/AuthContext';
+import { getAuthUserIdFromPayload } from '@/hooks/useCurrentUser';
 import { CompanyResponseDto } from '../../../shared/types/dtos';
 
 interface CompanyContextType {
@@ -26,6 +28,8 @@ const CompanyContext = createContext<CompanyContextType | undefined>(undefined);
 const SELECTED_COMPANY_KEY = 'selectedCompanyId';
 
 export function CompanyProvider({ children }: { children: ReactNode }) {
+  const { user: authPayload, isAuthenticated } = useAuth();
+  const authUserId = getAuthUserIdFromPayload(authPayload);
   const [companies, setCompanies] = useState<CompanyResponseDto[]>([]);
   const [activeCompany, setActiveCompanyState] = useState<CompanyResponseDto | null>(null);
   const [loading, setLoading] = useState(true);
@@ -68,8 +72,14 @@ export function CompanyProvider({ children }: { children: ReactNode }) {
     }
   }, []);
 
-  // Initialize: fetch companies and active company
   useEffect(() => {
+    if (!isAuthenticated || !authUserId) {
+      setCompanies([]);
+      setActiveCompanyState(null);
+      setLoading(false);
+      return;
+    }
+
     const initialize = async () => {
       setLoading(true);
 
@@ -91,7 +101,7 @@ export function CompanyProvider({ children }: { children: ReactNode }) {
     };
 
     void initialize();
-  }, [fetchCompanies, fetchActiveCompany]);
+  }, [isAuthenticated, authUserId, fetchCompanies, fetchActiveCompany]);
 
   const value = useMemo(
     () => ({

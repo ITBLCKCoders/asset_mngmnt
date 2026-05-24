@@ -513,7 +513,7 @@ export default function Dashboard() {
     if (!userLoading && user?.role) {
       fetchDashboardData();
     }
-  }, [userLoading, user?.role?.name, fetchDashboardData]);
+  }, [userLoading, user?.id, user?.role?.name, fetchDashboardData]);
 
   // Check for missing digital initials and MFA after user is loaded
   useEffect(() => {
