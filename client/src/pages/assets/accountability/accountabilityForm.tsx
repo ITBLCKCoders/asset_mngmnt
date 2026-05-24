@@ -1390,9 +1390,8 @@ export function AccountabilityFormCard({
     isAssignedUser && hasChecklist && hasUnsignedChecklists;
   const showCardSignButton =
     showSignButton && (activeCardTab !== 'checklist' ? canSign : canSignChecklist);
-  const showChecklistTabDownload =
-    activeCardTab === 'checklist' && allChecklistsSigned;
-  const showFooterDownload = showDownloadButton || showChecklistTabDownload;
+  const showFooterDownload =
+    showDownloadButton && activeCardTab !== 'checklist';
   const showFooterDecline =
     showDeclineButton &&
     canSign &&
@@ -1712,48 +1711,7 @@ export function AccountabilityFormCard({
     generatePdf();
   }, [showConfirmDialog, localForm, currentUser, intangibleAssets]);
 
-  const downloadChecklistPdfs = async (entries: FormChecklistEntry[]) => {
-    if (entries.length === 0) {
-      return;
-    }
-    const baseName = (entries[0]?.employee_name || 'Employee').replace(/\s+/g, '_');
-    for (let i = 0; i < entries.length; i++) {
-      const entry = entries[i];
-      const assetLabel = getChecklistAssetLabel(entry, form.assets);
-      const pdfBlob = await generateAssetChecklistPDF(
-        buildChecklistPdfPayload(entry, {
-          assetLabel,
-          acknowledgmentsSignature:
-            localForm.acknowledgments?.digitalSignature ?? null,
-          userSignature: currentUser?.digitalSignature ?? null,
-        })
-      );
-      const assetSlug = assetLabel
-        .replace(/\s+/g, '_')
-        .replace(/[^a-zA-Z0-9_-]/g, '');
-      const suffix =
-        entries.length > 1 ? `_${assetSlug || `asset_${i + 1}`}` : '';
-      const fileName = `Asset_Checklist_${baseName}${suffix}_${Date.now() + i}.pdf`;
-      downloadPDF(pdfBlob, fileName);
-    }
-    toast.success(
-      entries.length > 1
-        ? `Downloaded ${entries.length} checklist PDFs`
-        : 'Checklist PDF downloaded successfully'
-    );
-  };
-
   const handleDownload = async () => {
-    if (activeCardTab === 'checklist' && checklists.length > 0) {
-      try {
-        await downloadChecklistPdfs(checklists);
-      } catch (error) {
-        console.error('Failed to download checklist PDF:', error);
-        toast.error('Failed to download checklist PDF');
-      }
-      return;
-    }
-
     try {
       // Check cache first
       const cacheKey = generateCacheKey(localForm, currentUser, intangibleAssets);
@@ -2729,29 +2687,6 @@ export function AccountabilityFormCard({
                 Sign Form
               </Button>
             )}
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={async () => {
-                if (activeChecklist) {
-                  try {
-                    const pdfBlob = await generateAssetChecklistPDF({
-                      ...activeChecklist,
-                      asset_label: checklistAssetLabel,
-                    });
-                    const fileName = `Asset_Checklist_${activeChecklist.employee_name.replace(/\s+/g, '_')}_${Date.now()}.pdf`;
-                    downloadPDF(pdfBlob, fileName);
-                    toast.success('Checklist PDF downloaded successfully');
-                  } catch (error) {
-                    console.error('Failed to download checklist PDF:', error);
-                    toast.error('Failed to download checklist PDF');
-                  }
-                }
-              }}
-            >
-              <Download className="h-4 w-4 mr-2" />
-              Download PDF
-            </Button>
             <Button
               variant="outline"
               size="sm"

@@ -43,6 +43,7 @@ import {
   getRoomByLocationIdAndName,
   getDepartmentById,
   getUserById,
+  getUserDepartmentId,
   getUserNamesById,
   getCategoryDepartmentsByAssetIds,
   getBuilderItemsByAssetIds,
@@ -1294,6 +1295,7 @@ export async function submitTransferRequestHandler(
       transferToUserId?: string;
       notes?: string;
       transferType?: string;
+      digitalSignature?: string;
     };
     const rawAssignmentIds = body.assignmentIds;
     const assignmentIds = Array.isArray(rawAssignmentIds)
@@ -1322,6 +1324,11 @@ export async function submitTransferRequestHandler(
 
     const currentUserId = req.user!.userID;
 
+    const transfererDigitalSignature =
+      (typeof body.digitalSignature === 'string' &&
+        body.digitalSignature.trim()) ||
+      (await fetchUserDigitalSignature(currentUserId));
+
     const assignmentRows = await getActiveAssignmentsByIds(assignmentIds);
 
     if (assignmentRows.length !== assignmentIds.length) {
@@ -1343,8 +1350,9 @@ export async function submitTransferRequestHandler(
     if (!targetUser) {
       return res.status(404).json({ error: 'Transfer-to user not found' });
     }
+    const targetDeptIdRaw = await getUserDepartmentId(transferToUserId);
     const targetDeptId =
-      targetUser.department_id != null ? String(targetUser.department_id) : '';
+      targetDeptIdRaw != null ? String(targetDeptIdRaw) : '';
     if (targetDeptId !== departmentId) {
       return res.status(400).json({
         error: 'Transfer-to user must be in the selected department',
@@ -1382,7 +1390,7 @@ export async function submitTransferRequestHandler(
       location_room_id: firstAssignment.location_room_id ?? null,
       created_by: currentUserId,
       signed_by: currentUserId,
-      signed_digital_signature: null,
+      signed_digital_signature: transfererDigitalSignature || null,
     });
     const returnFormId = returnForm!.formID;
 
@@ -1427,7 +1435,7 @@ export async function submitTransferRequestHandler(
         new_assigned_user_id: transferToUserId,
         created_by: currentUserId,
         signed_by: currentUserId,
-        signed_digital_signature: null,
+        signed_digital_signature: transfererDigitalSignature || null,
         transfer_type: transferTypeValue || null,
         return_form_id: returnFormId,
       } as any);
