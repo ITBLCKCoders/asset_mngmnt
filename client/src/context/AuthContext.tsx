@@ -5,6 +5,7 @@ import {
   useCallback,
   useContext,
   useEffect,
+  useMemo,
   useState,
   ReactNode,
 } from 'react';
@@ -67,10 +68,13 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     };
   }, [validateSession]);
 
+  const value = useMemo(
+    () => ({ isAuthenticated, isLoading, user }),
+    [isAuthenticated, isLoading, user]
+  );
+
   return (
-    <AuthContext.Provider value={{ isAuthenticated, isLoading, user }}>
-      {children}
-    </AuthContext.Provider>
+    <AuthContext.Provider value={value}>{children}</AuthContext.Provider>
   );
 }
 

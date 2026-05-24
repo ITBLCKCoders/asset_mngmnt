@@ -16,14 +16,8 @@ export function CompanyFilter() {
   const { companies, activeCompany, setActiveCompany, loading } =
     useCompanyContext();
   const { user } = useCurrentUser();
-  const [isLocalLoading, setIsLocalLoading] = useState(true);
   const [isOpen, setIsOpen] = useState(false);
-
-  useEffect(() => {
-    // Simulate loading effect to match header shimmer
-    const timer = setTimeout(() => setIsLocalLoading(false), 1400);
-    return () => clearTimeout(timer);
-  }, []);
+  const isLocalLoading = loading;
 
   // Close dropdown when clicking outside
   useEffect(() => {

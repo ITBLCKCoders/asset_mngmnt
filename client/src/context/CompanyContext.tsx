@@ -1,6 +1,14 @@
 'use client';
 
-import { createContext, useContext, useState, useEffect, ReactNode } from 'react';
+import {
+  createContext,
+  useContext,
+  useState,
+  useEffect,
+  useCallback,
+  useMemo,
+  ReactNode,
+} from 'react';
 import { api } from '@/lib/api';
 import { CompanyResponseDto } from '../../../shared/types/dtos';
 
@@ -22,16 +30,16 @@ export function CompanyProvider({ children }: { children: ReactNode }) {
   const [activeCompany, setActiveCompanyState] = useState<CompanyResponseDto | null>(null);
   const [loading, setLoading] = useState(true);
 
-  const fetchCompanies = async () => {
+  const fetchCompanies = useCallback(async () => {
     try {
       const response = await api.get<{ companies: CompanyResponseDto[] }>('/companies');
       setCompanies(response.companies || []);
     } catch (error) {
       console.error('Failed to fetch companies:', error);
     }
-  };
+  }, []);
 
-  const fetchActiveCompany = async () => {
+  const fetchActiveCompany = useCallback(async () => {
     try {
       const response = await api.get<{ data: CompanyResponseDto[] }>('/companies/active');
       const companyData = response.data?.[0] || null;
@@ -39,9 +47,9 @@ export function CompanyProvider({ children }: { children: ReactNode }) {
     } catch (error) {
       console.error('Failed to fetch active company:', error);
     }
-  };
+  }, []);
 
-  const setActiveCompany = async (companyId: string) => {
+  const setActiveCompany = useCallback(async (companyId: string) => {
     try {
       const response = await api.patch(`/companies/${companyId}/active`);
       
@@ -58,25 +66,21 @@ export function CompanyProvider({ children }: { children: ReactNode }) {
       console.error('Failed to set active company:', error);
       throw error;
     }
-  };
+  }, []);
 
   // Initialize: fetch companies and active company
   useEffect(() => {
     const initialize = async () => {
       setLoading(true);
-      
+
       try {
-        // Fetch all companies
         await fetchCompanies();
 
-        // Check localStorage for persisted selection
         const selectedCompanyId = localStorage.getItem(SELECTED_COMPANY_KEY);
-        
-        // If "all" is selected, don't set an active company
+
         if (selectedCompanyId === 'all') {
           setActiveCompanyState(null);
         } else {
-          // Fetch active company from server
           await fetchActiveCompany();
         }
       } catch (error) {
@@ -86,22 +90,30 @@ export function CompanyProvider({ children }: { children: ReactNode }) {
       }
     };
 
-    initialize();
-  }, []);
+    void initialize();
+  }, [fetchCompanies, fetchActiveCompany]);
+
+  const value = useMemo(
+    () => ({
+      companies,
+      activeCompany,
+      loading,
+      fetchCompanies,
+      fetchActiveCompany,
+      setActiveCompany,
+    }),
+    [
+      companies,
+      activeCompany,
+      loading,
+      fetchCompanies,
+      fetchActiveCompany,
+      setActiveCompany,
+    ]
+  );
 
   return (
-    <CompanyContext.Provider
-      value={{
-        companies,
-        activeCompany,
-        loading,
-        fetchCompanies,
-        fetchActiveCompany,
-        setActiveCompany,
-      }}
-    >
-      {children}
-    </CompanyContext.Provider>
+    <CompanyContext.Provider value={value}>{children}</CompanyContext.Provider>
   );
 }
 

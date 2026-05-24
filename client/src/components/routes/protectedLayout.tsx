@@ -1,7 +1,8 @@
 'use client';
 
-import { useLocation, useNavigate } from 'react-router-dom';
-import { ReactNode, useEffect, useState } from 'react';
+import { Outlet, useLocation, useNavigate } from 'react-router-dom';
+import { Suspense, useEffect, useState } from 'react';
+import { RouteContentFallback } from '@/components/common/pageSkeletons';
 import { motion } from 'framer-motion';
 import { useIdleTimer } from '@/hooks/useIdleTimer';
 import { IdleTimerDialog } from '@/components/IdleTimerDialog';
@@ -24,31 +25,24 @@ import NotificationBell from '@/components/NotificationBell';
 import PasswordExpirationWarning from '@/components/auth/PasswordExpirationWarning';
 
 import { AvatarPreviewProvider } from '@/hooks/avatarPreview';
-import { CompanyProvider } from '@/context/CompanyContext';
+import { CompanyProvider, useCompanyContext } from '@/context/CompanyContext';
 import { CompanyFilter } from '@/components/CompanyFilter';
 
 const Shimmer = ({ className }: { className?: string }) => (
   <div className={cn('animate-shimmer rounded bg-gray-200/80', className)} />
 );
 
-interface ProtectedLayoutProps {
-  children?: ReactNode;
-}
-
-export default function ProtectedLayout({ children }: ProtectedLayoutProps) {
+function ProtectedLayoutShell() {
   const navigate = useNavigate();
   const location = useLocation();
   const today = new Date();
+  const { loading: companyLoading } = useCompanyContext();
 
-  const [isHeaderLoading, setIsHeaderLoading] = useState(true);
   const [isCalOpen, setIsCalOpen] = useState(false);
   const [isCalLoading, setIsCalLoading] = useState(false);
   const [mobileNavOpen, setMobileNavOpen] = useState(false);
 
-  useEffect(() => {
-    const timer = setTimeout(() => setIsHeaderLoading(false), 1400);
-    return () => clearTimeout(timer);
-  }, []);
+  const isHeaderLoading = companyLoading;
 
   useEffect(() => {
     setMobileNavOpen(false);
@@ -65,8 +59,6 @@ export default function ProtectedLayout({ children }: ProtectedLayoutProps) {
   };
 
   return (
-    <CompanyProvider>
-      <AvatarPreviewProvider>
         <div className="relative flex h-screen bg-white overflow-hidden">
         <div className="hidden md:flex items-center justify-center fixed bottom-[87vh] left-0 z-20 h-[18vh] min-h-[80px] pl-2 pt-4 w-[260px]">
           <img
@@ -249,7 +241,9 @@ export default function ProtectedLayout({ children }: ProtectedLayoutProps) {
 
         {/* Main Content Area */}
         <main className="flex-1 md:ml-64 pt-20 pb-8 px-0 overflow-auto bg-white">
-          {children}
+          <Suspense fallback={<RouteContentFallback />}>
+            <Outlet />
+          </Suspense>
         </main>
 
         {/* Password Expiration Warning Dialog */}
@@ -264,7 +258,15 @@ export default function ProtectedLayout({ children }: ProtectedLayoutProps) {
           onLogout={onIdleLogout}
         />
       </div>
-    </AvatarPreviewProvider>
+  );
+}
+
+export default function ProtectedLayout() {
+  return (
+    <CompanyProvider>
+      <AvatarPreviewProvider>
+        <ProtectedLayoutShell />
+      </AvatarPreviewProvider>
     </CompanyProvider>
   );
 }

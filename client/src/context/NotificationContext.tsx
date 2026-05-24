@@ -8,6 +8,8 @@ import React, {
   useState,
   ReactNode,
   useRef,
+  useCallback,
+  useMemo,
 } from 'react';
 import { io, Socket } from 'socket.io-client';
 import { toast } from 'sonner';
@@ -120,8 +122,7 @@ export function NotificationProvider({ children }: NotificationProviderProps) {
   // Calculate unread count
   const unreadCount = state.notifications.filter(notif => !notif.read).length;
 
-  // Add notification helper
-  const addNotification = (
+  const addNotification = useCallback((
     notification: Omit<Notification, 'id' | 'timestamp'>
   ) => {
     const newNotification: Notification = {
@@ -150,58 +151,33 @@ export function NotificationProvider({ children }: NotificationProviderProps) {
         }
       );
     }
-  };
+  }, []);
 
-  // Mark as read helper
-  const markAsRead = async (id: string) => {
+  const markAsRead = useCallback(async (id: string) => {
     dispatch({ type: 'MARK_AS_READ', payload: id });
     try {
       await api.patch(`/notifications/${id}/read`);
     } catch (error) {
       handleApiError(error, 'Mark notification as read');
     }
-  };
+  }, []);
 
-  // Mark all as read helper
-  const markAllAsRead = async () => {
+  const markAllAsRead = useCallback(async () => {
     dispatch({ type: 'MARK_ALL_AS_READ' });
     try {
       await api.patch('/notifications/mark-all-read');
     } catch (error) {
       handleApiError(error, 'Mark all notifications as read');
     }
-  };
+  }, []);
 
-  // Clear notifications helper
-  const clearNotifications = async () => {
-    dispatch({ type: 'CLEAR_NOTIFICATIONS' });
-    try {
-      await api.delete('/notifications');
-    } catch (error) {
-      handleApiError(error, 'Clear all notifications');
-      fetchNotifications();
-    }
-  };
-
-  const removeNotification = async (id: string) => {
-    dispatch({ type: 'REMOVE_NOTIFICATION', payload: id });
-    try {
-      await api.delete(`/notifications/${id}`);
-    } catch (error) {
-      handleApiError(error, 'Remove notification');
-      fetchNotifications();
-    }
-  };
-
-  // Fetch notifications from API
-  const fetchNotifications = async () => {
+  const fetchNotifications = useCallback(async () => {
     try {
       logger.info('Fetching notifications from API');
       const response = await api.get('/notifications');
       logger.info('API response received', {
         count: response.notifications?.length || 0,
       });
-      // API returns ORDER BY created_at DESC (newest first)
       const notifications: Notification[] = (response.notifications || []).map(
         (notif: any) => ({
           ...notif,
@@ -215,34 +191,52 @@ export function NotificationProvider({ children }: NotificationProviderProps) {
     } catch (error: any) {
       logger.error('Error fetching notifications', error);
 
-      // Check if the response contains notifications despite the error (fallback mechanism)
       if (error.response?.data?.notifications) {
         logger.info('Using fallback notifications from error response');
-        const fallbackNotifications: Notification[] =
-          error.response.data.notifications.map((notif: any) => ({
+        const fallback: Notification[] = error.response.data.notifications.map(
+          (notif: any) => ({
             ...notif,
             timestamp: new Date(notif.timestamp),
-          }));
+          })
+        );
 
-        dispatch({ type: 'SET_NOTIFICATIONS', payload: fallbackNotifications });
+        dispatch({ type: 'SET_NOTIFICATIONS', payload: fallback });
 
-        // Show warning if there was an error but we have fallback data
         if (error.response.data.warning) {
           logger.warn(error.response.data.warning);
         }
 
-        return; // Skip further error handling since we have fallback data
+        return;
       }
 
       handleApiError(error, 'Notification fetch');
-      // If it's a server error, don't show toast - just log it
       if (error.response?.status >= 500) {
         logger.warn(
           'Server error when fetching notifications, will retry later'
         );
       }
     }
-  };
+  }, []);
+
+  const clearNotifications = useCallback(async () => {
+    dispatch({ type: 'CLEAR_NOTIFICATIONS' });
+    try {
+      await api.delete('/notifications');
+    } catch (error) {
+      handleApiError(error, 'Clear all notifications');
+      void fetchNotifications();
+    }
+  }, [fetchNotifications]);
+
+  const removeNotification = useCallback(async (id: string) => {
+    dispatch({ type: 'REMOVE_NOTIFICATION', payload: id });
+    try {
+      await api.delete(`/notifications/${id}`);
+    } catch (error) {
+      handleApiError(error, 'Remove notification');
+      void fetchNotifications();
+    }
+  }, [fetchNotifications]);
 
   // Initialize socket connection
   useEffect(() => {
@@ -479,19 +473,32 @@ export function NotificationProvider({ children }: NotificationProviderProps) {
       document.removeEventListener('visibilitychange', onVisibilityChange);
       clearInterval(intervalId);
     };
-  }, [token]);
+  }, [token, fetchNotifications]);
 
-  const contextValue: NotificationContextType = {
-    notifications: state.notifications,
-    unreadCount,
-    addNotification,
-    markAsRead,
-    markAllAsRead,
-    clearNotifications,
-    removeNotification,
-    refreshNotifications: fetchNotifications,
-    isConnected: state.isConnected,
-  };
+  const contextValue = useMemo<NotificationContextType>(
+    () => ({
+      notifications: state.notifications,
+      unreadCount,
+      addNotification,
+      markAsRead,
+      markAllAsRead,
+      clearNotifications,
+      removeNotification,
+      refreshNotifications: fetchNotifications,
+      isConnected: state.isConnected,
+    }),
+    [
+      state.notifications,
+      state.isConnected,
+      unreadCount,
+      addNotification,
+      markAsRead,
+      markAllAsRead,
+      clearNotifications,
+      removeNotification,
+      fetchNotifications,
+    ]
+  );
 
   return (
     <NotificationContext.Provider value={contextValue}>

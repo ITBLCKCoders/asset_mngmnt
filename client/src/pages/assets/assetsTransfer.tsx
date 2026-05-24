@@ -1109,7 +1109,11 @@ export default function AssetsTransfer() {
   return (
     <div className="flex flex-col min-h-screen">
       <main className="flex-1 p-4 sm:p-6 space-y-6">
-        <PageHeader icon={ArrowRightLeft} title="Assets Transfer">
+        <PageHeader
+          icon={ArrowRightLeft}
+          title="Assets Transfer"
+          description="Transfer assets between locations and custodians"
+        >
           {showScopeTabs && (
             <Tabs value={scope} onValueChange={v => setScope(v as 'it' | 'admin')} className="w-full sm:w-auto">
               <TabsList className={segmentTabsListClassName + ' grid grid-cols-2 max-w-full sm:max-w-[280px]'}>

@@ -1,6 +1,7 @@
 import { useUserPermissions } from '@/hooks/useUserPermissions';
 import { ReactNode, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
+import { RouteContentFallback } from '@/components/common/pageSkeletons';
 
 interface PermissionRouteProps {
   children: ReactNode;
@@ -23,11 +24,7 @@ export default function PermissionRoute({
   }, [loading, hasPermission, module, permission, navigate]);
 
   if (loading) {
-    return (
-      <div className="flex items-center justify-center h-screen">
-        Loading...
-      </div>
-    );
+    return <RouteContentFallback />;
   }
 
   if (!hasPermission(module, permission)) {

@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState } from 'react';
+import React, { lazy, Suspense, useState } from 'react';
 import { motion } from 'framer-motion';
 import { useNavigate } from 'react-router-dom';
 import { Button } from '@/components/ui/button';
@@ -19,11 +19,20 @@ import { cn } from '@/lib/utils';
 import { useNotifications } from '@/context/NotificationContext';
 import { formatDistanceToNow } from 'date-fns';
 import type { Notification } from '@/types/notifications';
-import { AccountabilityDeclinedNotificationDialog } from '@/components/AccountabilityDeclinedNotificationDialog';
-import { AccountabilityFormPreviewDialog } from '@/components/AccountabilityFormPreviewDialog';
 import { api } from '@/lib/api';
 import { toast } from 'sonner';
-import type { AccountabilityForm } from '@/pages/assets/accountability/accountabilityForm';
+import type { AccountabilityForm } from '@/pages/assets/accountability/accountabilityFormTypes';
+
+const AccountabilityDeclinedNotificationDialog = lazy(() =>
+  import('@/components/AccountabilityDeclinedNotificationDialog').then(m => ({
+    default: m.AccountabilityDeclinedNotificationDialog,
+  }))
+);
+const AccountabilityFormPreviewDialog = lazy(() =>
+  import('@/components/AccountabilityFormPreviewDialog').then(m => ({
+    default: m.AccountabilityFormPreviewDialog,
+  }))
+);
 
 const Shimmer = ({ className }: { className?: string }) => (
   <div className={cn('animate-shimmer rounded bg-gray-200/80', className)} />
@@ -393,20 +402,20 @@ export default function NotificationBell({ className }: NotificationBellProps) {
         )}
       </PopoverContent>
     </Popover>
-    <AccountabilityDeclinedNotificationDialog
-      detail={accountabilityDeclinedDetail}
-      onClose={() => setAccountabilityDeclinedDetail(null)}
-    />
-    <AccountabilityFormPreviewDialog
-      form={accountabilityFormPreview}
-      onClose={() => setAccountabilityFormPreview(null)}
-      onSign={async (formId: string, acknowledgments?: Record<string, unknown>) => {
-        // The AccountabilityFormPreviewDialog handles the complete signing process
-        // including OTP verification and API calls. Just close the dialog after signing.
-        setAccountabilityFormPreview(null);
-      }}
-      onDecline={handleDeclineAccountabilityForm}
-    />
+    <Suspense fallback={null}>
+      <AccountabilityDeclinedNotificationDialog
+        detail={accountabilityDeclinedDetail}
+        onClose={() => setAccountabilityDeclinedDetail(null)}
+      />
+      <AccountabilityFormPreviewDialog
+        form={accountabilityFormPreview}
+        onClose={() => setAccountabilityFormPreview(null)}
+        onSign={async () => {
+          setAccountabilityFormPreview(null);
+        }}
+        onDecline={handleDeclineAccountabilityForm}
+      />
+    </Suspense>
     </>
   );
 }

@@ -1,8 +1,14 @@
 import { renderHook, waitFor } from '@testing-library/react';
+import type { ReactNode } from 'react';
 import { vi, describe, it, expect, beforeEach } from 'vitest';
 import { useUserPermissions } from '@/hooks/useUserPermissions';
+import { PermissionsProvider } from '@/context/PermissionsContext';
 import { api } from '@/lib/api';
 import * as useCurrentUserModule from '@/hooks/useCurrentUser';
+
+function permissionsWrapper({ children }: { children: ReactNode }) {
+  return <PermissionsProvider>{children}</PermissionsProvider>;
+}
 
 vi.mock('@/lib/api', () => ({
   api: { get: vi.fn() },
@@ -31,7 +37,9 @@ describe('useUserPermissions', () => {
       },
     });
 
-    const { result } = renderHook(() => useUserPermissions());
+    const { result } = renderHook(() => useUserPermissions(), {
+      wrapper: permissionsWrapper,
+    });
 
     await waitFor(() => {
       expect(result.current.loading).toBe(false);
@@ -49,7 +57,9 @@ describe('useUserPermissions', () => {
       loading: true,
     });
 
-    const { result } = renderHook(() => useUserPermissions());
+    const { result } = renderHook(() => useUserPermissions(), {
+      wrapper: permissionsWrapper,
+    });
 
     expect(result.current.loading).toBe(true);
     expect(api.get).not.toHaveBeenCalled();
@@ -62,7 +72,9 @@ describe('useUserPermissions', () => {
     });
     (api.get as any).mockResolvedValue({ permissions: {} });
 
-    const { result } = renderHook(() => useUserPermissions());
+    const { result } = renderHook(() => useUserPermissions(), {
+      wrapper: permissionsWrapper,
+    });
 
     await waitFor(() => {
       expect(result.current.loading).toBe(false);

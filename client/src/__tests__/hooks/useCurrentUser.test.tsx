@@ -9,6 +9,14 @@ vi.mock('@/lib/api', () => ({
   },
 }));
 
+vi.mock('@/context/AuthContext', () => ({
+  useAuth: vi.fn(() => ({
+    user: null,
+    isLoading: false,
+    isAuthenticated: false,
+  })),
+}));
+
 describe('useCurrentUser', () => {
   beforeEach(() => {
     vi.clearAllMocks();

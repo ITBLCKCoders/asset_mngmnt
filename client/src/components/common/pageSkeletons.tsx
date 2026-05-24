@@ -467,6 +467,20 @@ export function DashboardAnalyticsGridSkeleton({
   );
 }
 
+export function RouteContentFallback() {
+  return (
+    <div className="p-6 md:p-8 space-y-6 animate-in fade-in duration-200">
+      <Shimmer className="h-10 w-64 rounded-lg" />
+      <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
+        {Array.from({ length: 6 }).map((_, i) => (
+          <Shimmer key={i} className="h-32 rounded-xl" />
+        ))}
+      </div>
+      <Shimmer className="h-64 w-full rounded-xl" />
+    </div>
+  );
+}
+
 export function AssetDetailsPageSkeleton() {
   return (
     <div className="flex flex-col min-h-screen bg-[#FFFFFF]">

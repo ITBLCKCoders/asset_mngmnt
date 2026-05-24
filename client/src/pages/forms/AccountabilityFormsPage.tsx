@@ -358,6 +358,7 @@ export default function AccountabilityFormsPage() {
             form={form}
             onView={handleViewForm}
             showSignButton={false}
+            lazyLoadDetails
             statusPillVariant={isHrList ? 'toReceive' : 'activeDisabled'}
             showReceiveButton={isHrList && hasHrCopyAccess}
             onReceive={handleReceiveCopy}

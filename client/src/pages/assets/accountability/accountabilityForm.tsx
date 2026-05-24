@@ -53,8 +53,7 @@ import SmsOtpDialog from '@/components/auth/SmsOtpDialog';
 import { api } from '@/lib/api';
 import { toast } from 'sonner';
 import { useCurrentUser } from '@/hooks/useCurrentUser';
-import { jsPDF } from 'jspdf';
-import autoTable from 'jspdf-autotable';
+import type { jsPDF } from 'jspdf';
 import { createLogger } from '@/lib/logger';
 import { getApiBase } from '@/lib/env';
 import { cn } from '@/lib/utils';
@@ -77,6 +76,9 @@ import {
   isBlackCoders,
   sortAssetsByLast5Digits,
 } from '@/lib/pdfGenerator/shared';
+import type { AccountabilityForm } from './accountabilityFormTypes';
+
+export type { AccountabilityForm } from './accountabilityFormTypes';
 
 const logger = createLogger('AccountabilityForm');
 
@@ -282,85 +284,6 @@ const getDepartmentName = (form: AccountabilityForm) => {
   return 'Human Resources Department';
 };
 
-export interface AccountabilityForm {
-  id: string;
-  formNumber: string;
-  assets: {
-    id: string;
-    code: string;
-    name: string;
-    category: string;
-    categoryDepartment?: string; // Added category department information
-    type: string;
-    serialNo: string;
-    modelNo?: string;
-    brand?: string;
-    specifications?: any[];
-  }[];
-  user: {
-    id: string;
-    first_name: string;
-    last_name: string;
-    email: string;
-    employeeNumber?: string;
-    position?: string;
-    company?: { id: string; name: string };
-    department?: { id: string; name: string };
-    companyLogoUrl?: string | null;
-  };
-  assignment: {
-    id: string;
-    assigned_date: string;
-    expected_return_date?: string;
-    assignment_notes?: string;
-    assigned_by?: {
-      id: string;
-      first_name: string;
-      last_name: string;
-      email: string;
-    } | null;
-  };
-  issuer?: {
-    id: string;
-    first_name: string;
-    last_name: string;
-    email: string;
-  } | null;
-  department?: {
-    id: string;
-    name: string;
-  };
-  location?: {
-    id: string;
-    name: string;
-    floor_unit: string;
-    building: string;
-  };
-  status:
-    | 'Pending'
-    | 'Signed'
-    | 'Completed'
-    | 'Revoked'
-    | 'Disabled'
-    | 'Declined';
-  declineReason?: string | null;
-  created_at: string;
-  updated_at?: string;
-  signed_at?: string;
-  issuerSignature?: string;
-  itCopySignature?: string;
-  receivedCopy201FileSignature?: string | null;
-  receivedCopy201FileSignedAt?: string | null;
-  receivedCopy201FileSignedById?: string | null;
-  receivedCopy201FileSignedByName?: string | null;
-  acknowledgments?: {
-    digitalSignature?: string;
-    [key: string]: any;
-  };
-  /** Issued when return assigns assets to processor (distinct from normal assignment forms). */
-  formOrigin?: 'processor_return';
-}
-
 interface AccountabilityFormProps {
   form: AccountabilityForm;
   onSign?: (formId: string, acknowledgments?: Record<string, unknown>) => void;
@@ -382,6 +305,8 @@ interface AccountabilityFormProps {
   showDownloadButton?: boolean;
   /** Show "Pending Receiver Signature" badge (only in AccountabilityFormsPage) */
   showPendingReceiverSignatureBadge?: boolean;
+  /** Skip checklist/intangible/OTP fetches on mount (list pages) */
+  lazyLoadDetails?: boolean;
 }
 
 // Reusable PDF generation function (exported for issuer decline notification dialog)
@@ -390,8 +315,14 @@ export const generateAccountabilityFormPDF = async (
   currentUser?: any,
   intangibleAssets: any[] = []
 ): Promise<Blob> => {
+  const [{ jsPDF: JsPDFConstructor }, autoTableModule] = await Promise.all([
+    import('jspdf'),
+    import('jspdf-autotable'),
+  ]);
+  const autoTable = autoTableModule.default;
+
   // 8.5 x 13 inches is approximately 215.9 mm x 330.2 mm
-  const doc = new jsPDF({
+  const doc = new JsPDFConstructor({
     orientation: 'portrait',
     unit: 'mm',
     format: [215.9, 330.2], // 8.5 x 13 inches in millimeters
@@ -1342,6 +1273,7 @@ export function AccountabilityFormCard({
   onReceive,
   showDownloadButton = false,
   showPendingReceiverSignatureBadge = false,
+  lazyLoadDetails = false,
 }: AccountabilityFormProps) {
   const { user: currentUser } = useCurrentUser();
   const displayedStatus =
@@ -1421,6 +1353,9 @@ export function AccountabilityFormCard({
 
   // Fetch OTP expiry from settings
   useEffect(() => {
+    if (lazyLoadDetails) {
+      return;
+    }
     const fetchOtpExpiry = async () => {
       try {
         const response = await api.get<{ settings: { otpExpirySeconds?: number } }>('/settings/security');
@@ -1432,10 +1367,13 @@ export function AccountabilityFormCard({
       }
     };
     fetchOtpExpiry();
-  }, []);
+  }, [lazyLoadDetails]);
 
   // Fetch all checklists linked to this accountability form
   useEffect(() => {
+    if (lazyLoadDetails) {
+      return;
+    }
     const fetchChecklists = async () => {
       try {
         setChecklistLoading(true);
@@ -1477,10 +1415,13 @@ export function AccountabilityFormCard({
       }
     };
     fetchChecklists();
-  }, [form.id, form.assignment?.id]);
+  }, [form.id, form.assignment?.id, lazyLoadDetails]);
 
   // Fetch intangible assets for the assignment
   useEffect(() => {
+    if (lazyLoadDetails) {
+      return;
+    }
     const fetchIntangibleAssets = async () => {
       if (form.assignment?.id) {
         try {
@@ -1502,7 +1443,7 @@ export function AccountabilityFormCard({
       }
     };
     fetchIntangibleAssets();
-  }, [form.assignment?.id]);
+  }, [form.assignment?.id, lazyLoadDetails]);
 
   const refreshFormChecklists = async () => {
     try {

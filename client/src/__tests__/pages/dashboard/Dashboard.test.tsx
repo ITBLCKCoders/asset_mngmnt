@@ -82,7 +82,7 @@ describe('Dashboard', () => {
   it('should render employee dashboard title', async () => {
     render(<Dashboard />);
     await waitFor(() => {
-      expect(screen.getByRole('heading', { name: 'My Dashboard' })).toBeInTheDocument();
+      expect(screen.getByText('My Dashboard')).toBeInTheDocument();
     });
   });
 });

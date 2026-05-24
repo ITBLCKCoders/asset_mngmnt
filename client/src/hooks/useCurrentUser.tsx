@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react';
 import { api } from '@/lib/api';
 import { Role } from '@/types/assets';
+import { useAuth } from '@/context/AuthContext';
 
 export interface CurrentUser {
   id: string;
@@ -48,6 +49,7 @@ const notifyAll = () => {
 };
 
 export function useCurrentUser() {
+  const { user: authPayload, isLoading: authLoading } = useAuth();
   const [user, setUser] = useState<CurrentUser | null>(cachedUser);
   const [loading, setLoading] = useState<boolean>(!cachedUser);
 
@@ -142,7 +144,18 @@ export function useCurrentUser() {
         }
       }
 
-      const { user: data } = await api.get<{ user: any }>('/auth/me');
+      const authUser =
+        authPayload &&
+        typeof authPayload === 'object' &&
+        'user' in authPayload &&
+        authPayload.user
+          ? (authPayload as { user: Record<string, unknown> }).user
+          : null;
+
+      const data = authUser
+        ? authUser
+        : (await api.get<{ user: Record<string, unknown> }>('/auth/me')).user;
+
       const newUser = buildUserObject(data);
 
       cachedUser = newUser;
@@ -158,13 +171,16 @@ export function useCurrentUser() {
   };
 
   useEffect(() => {
+    if (authLoading) {
+      return;
+    }
     if (!cachedUser) {
-      refetch();
+      void refetch();
     } else {
       setUser(cachedUser);
       setLoading(false);
     }
-  }, []);
+  }, [authLoading]);
 
   useEffect(() => {
     const listener = () => {

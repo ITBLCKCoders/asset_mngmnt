@@ -6,9 +6,9 @@ import {
   AppDialogFrame,
   AppDialogGradientHeader,
 } from '@/components/common/appDialogChrome';
+import type { AccountabilityForm } from '@/pages/assets/accountability/accountabilityFormTypes';
 import {
   AccountabilityFormDetail,
-  type AccountabilityForm,
 } from '@/pages/assets/accountability/accountabilityForm';
 import { api } from '@/lib/api';
 import { toast } from 'sonner';

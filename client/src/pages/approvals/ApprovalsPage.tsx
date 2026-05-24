@@ -653,10 +653,12 @@ export default function ApprovalsPage() {
           const now = new Date();
           const pad = (n: number) => String(n).padStart(2, '0');
           const deptHeadSignedAt = `${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())} ${pad(now.getHours())}:${pad(now.getMinutes())}:${pad(now.getSeconds())}`;
-          const approverName = [currentUser?.first_name, currentUser?.last_name]
-            .filter(Boolean)
-            .join(' ')
-            .trim();
+          const approverName =
+            currentUser?.name ||
+            [currentUser?.firstName, currentUser?.lastName]
+              .filter(Boolean)
+              .join(' ')
+              .trim();
           if (formBatch.formType === 'return') {
             clearReturnPdfCacheForFormNumber(formBatch.form_number);
             setSelectedBatch({
@@ -850,10 +852,12 @@ export default function ApprovalsPage() {
         const now = new Date();
         const pad = (n: number) => String(n).padStart(2, '0');
         const itManagerSignedAt = `${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())} ${pad(now.getHours())}:${pad(now.getMinutes())}:${pad(now.getSeconds())}`;
-        const receiverName = [currentUser?.first_name, currentUser?.last_name]
-          .filter(Boolean)
-          .join(' ')
-          .trim();
+        const receiverName =
+          currentUser?.name ||
+          [currentUser?.firstName, currentUser?.lastName]
+            .filter(Boolean)
+            .join(' ')
+            .trim();
         if (formBatch.formType === 'return' && formBatch.form_number) {
           clearReturnPdfCacheForFormNumber(formBatch.form_number);
           setSelectedBatch({

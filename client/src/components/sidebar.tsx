@@ -238,40 +238,27 @@ export default function Sidebar({ onLogout }: SidebarProps) {
   }, [user?.avatarUrl, clearPreview]);
 
   useEffect(() => {
+    const path = location.pathname;
+
     if (
-      location.pathname === '/forms/accountability' ||
-      location.pathname === '/forms/borrow' ||
-      location.pathname === '/forms/checklist' ||
-      location.pathname === '/forms/return' ||
-      location.pathname === '/forms/transfer' ||
-      location.pathname === '/approvals'
+      path === '/forms/accountability' ||
+      path === '/forms/borrow' ||
+      path === '/forms/checklist' ||
+      path === '/forms/return' ||
+      path === '/forms/transfer' ||
+      path === '/approvals'
     ) {
       setFormsOpen(true);
     }
-  }, [location.pathname]);
 
-  useEffect(() => {
-    if (
-      location.pathname.startsWith('/reports') ||
-      location.pathname.startsWith('/history/')
-    ) {
+    if (path.startsWith('/reports') || path.startsWith('/history/')) {
       setReportsOpen(true);
     }
-  }, [location.pathname]);
 
-  useEffect(() => {
-    if (
-      location.pathname === '/user-manual' ||
-      location.pathname === '/flow-diagrams'
-    ) {
-      setUserManualOpen(true);
-    } else {
-      setUserManualOpen(false);
-    }
-  }, [location.pathname]);
+    setUserManualOpen(
+      path === '/user-manual' || path === '/flow-diagrams'
+    );
 
-  useEffect(() => {
-    const path = location.pathname;
     if (path.startsWith('/assets') && path !== '/assets/my-assets') {
       setAssetsOpen(true);
     }

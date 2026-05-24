@@ -1,548 +1,490 @@
 // src/App.tsx
 'use client';
 
+import { lazy, Suspense } from 'react';
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
 import { SonnerToaster } from '@/components/ui/sonner';
 import { NotificationProvider } from '@/context/NotificationContext';
 import { AuthProvider } from '@/context/AuthContext';
+import { PermissionsProvider } from '@/context/PermissionsContext';
 
-// Public Pages
+// Public Pages (eager — first paint)
 import Login from './pages/login';
 import Register from './pages/registration';
 import ForgotPassword from './pages/forgotPassword';
 import ResetMethodSelection from './pages/resetMethodSelection';
 import VerifyResetOTP from './pages/verifyResetOTP';
 import ResetPassword from './pages/resetPassword';
-import SetupMFA from './pages/mfa/SetupMFA';
 
 // Route Components
 import PublicRoute from './components/routes/publicRoute';
 import PrivateRoute from './components/routes/privateRoute';
+import ProtectedLayout from './components/routes/protectedLayout';
 import PermissionRoute from './components/routes/permissionRoute';
 import VerifyOtpRoute from './components/routes/verifyOTPRoute';
 import LandingRedirect from './components/routes/LandingRedirect';
+import { RouteContentFallback } from '@/components/common/pageSkeletons';
 
-// Private Pages (inside ProtectedLayout)
-import Dashboard from './pages/dashboard/dashboard';
-import ProfilePage from './pages/profile/profilePage';
-import Users from './pages/user';
-import Settings from './pages/settings/settings';
-import Assets from './pages/assets/assets-list/assets';
-import AssetsAssignment from './pages/assets/asset-issuance/assetsIssuance';
-import AssetsTransfer from './pages/assets/assetsTransfer';
-import AssetsMaintenance from './pages/assets/assetsMaintenance';
-import AssetsRepair from './pages/assets/assetsRepair';
-import AssetsReturn from './pages/assets/assetsReturn';
-import Assetsdisposal from './pages/assets/assetsDisposal';
-import AssetTagging from './pages/assets/asset-tagging/assetTagging';
-import AssetDetails from './pages/assets/assetDetails';
-import MyAssets from './pages/assets/myAssets';
-import AssetBuilder from './pages/assets/assetBuilder';
-import AssetDepartment from './pages/assets/assetRequest';
-import AssetRequestAdmin from './pages/assets/admin/assetRequestAdmin';
-import AssetBorrowing from './pages/assets/assetBorrowing';
-import BorrowRequestsPage from './pages/assets/borrowRequestsPage';
-import AssetReturnRequest from './pages/assets/assetReturnRequest';
-import ReturnRequestsPage from './pages/assets/returnRequestsPage';
-import AssetTransferRequest from './pages/assets/assetTransferRequest';
-import GatePass from './pages/assets/gatePass';
-import TransferRequestsPage from './pages/assets/transferRequestsPage';
-import AssetsAssignmentHistory from './pages/assets-history/assetsIssuanceHistroy';
-import AssetsTransferHistory from './pages/assets-history/assetsTransferHistory';
-import AssetsMaintenanceHistory from './pages/assets-history/assetsMaintenanceHistory';
-import AssetsRepairHistory from './pages/assets-history/assetsRepairHistory';
-import AssetsReturnHistory from './pages/assets-history/assetsReturnHistory';
-import AssetsDisposalHistory from './pages/assets-history/assetsDisposalHistory';
-import AuditTrail from './pages/assets-history/auditTrail';
-import UserManual from './pages/userManual';
-import FlowDiagrams from './pages/flowDiagrams';
-import AccountabilityFormsPage from './pages/forms/AccountabilityFormsPage';
-import BorrowFormsPage from './pages/forms/BorrowFormsPage';
-import AssetChecklistFormsPage from './pages/forms/AssetChecklistFormsPage';
-import AssetReturnFormsPage from './pages/forms/AssetReturnFormsPage';
-import AssetTransferFormsPage from './pages/forms/AssetTransferFormsPage';
-import ApprovalsPage from './pages/approvals/ApprovalsPage';
-import ReportsPage from './pages/reports/reportsPage';
+// Lazy private pages
+const SetupMFA = lazy(() => import('./pages/mfa/SetupMFA'));
+const Dashboard = lazy(() => import('./pages/dashboard/dashboard'));
+const ProfilePage = lazy(() => import('./pages/profile/profilePage'));
+const Users = lazy(() => import('./pages/user'));
+const Settings = lazy(() => import('./pages/settings/settings'));
+const Assets = lazy(() => import('./pages/assets/assets-list/assets'));
+const AssetsAssignment = lazy(
+  () => import('./pages/assets/asset-issuance/assetsIssuance')
+);
+const AssetsTransfer = lazy(() => import('./pages/assets/assetsTransfer'));
+const AssetsMaintenance = lazy(() => import('./pages/assets/assetsMaintenance'));
+const AssetsRepair = lazy(() => import('./pages/assets/assetsRepair'));
+const AssetsReturn = lazy(() => import('./pages/assets/assetsReturn'));
+const Assetsdisposal = lazy(() => import('./pages/assets/assetsDisposal'));
+const AssetTagging = lazy(() => import('./pages/assets/asset-tagging/assetTagging'));
+const AssetDetails = lazy(() => import('./pages/assets/assetDetails'));
+const MyAssets = lazy(() => import('./pages/assets/myAssets'));
+const AssetBuilder = lazy(() => import('./pages/assets/assetBuilder'));
+const AssetDepartment = lazy(() => import('./pages/assets/assetRequest'));
+const AssetRequestAdmin = lazy(
+  () => import('./pages/assets/admin/assetRequestAdmin')
+);
+const AssetBorrowing = lazy(() => import('./pages/assets/assetBorrowing'));
+const BorrowRequestsPage = lazy(
+  () => import('./pages/assets/borrowRequestsPage')
+);
+const AssetReturnRequest = lazy(
+  () => import('./pages/assets/assetReturnRequest')
+);
+const ReturnRequestsPage = lazy(
+  () => import('./pages/assets/returnRequestsPage')
+);
+const AssetTransferRequest = lazy(
+  () => import('./pages/assets/assetTransferRequest')
+);
+const GatePass = lazy(() => import('./pages/assets/gatePass'));
+const TransferRequestsPage = lazy(
+  () => import('./pages/assets/transferRequestsPage')
+);
+const AssetsAssignmentHistory = lazy(
+  () => import('./pages/assets-history/assetsIssuanceHistroy')
+);
+const AssetsTransferHistory = lazy(
+  () => import('./pages/assets-history/assetsTransferHistory')
+);
+const AssetsMaintenanceHistory = lazy(
+  () => import('./pages/assets-history/assetsMaintenanceHistory')
+);
+const AssetsRepairHistory = lazy(
+  () => import('./pages/assets-history/assetsRepairHistory')
+);
+const AssetsReturnHistory = lazy(
+  () => import('./pages/assets-history/assetsReturnHistory')
+);
+const AssetsDisposalHistory = lazy(
+  () => import('./pages/assets-history/assetsDisposalHistory')
+);
+const AuditTrail = lazy(() => import('./pages/assets-history/auditTrail'));
+const UserManual = lazy(() => import('./pages/userManual'));
+const FlowDiagrams = lazy(() => import('./pages/flowDiagrams'));
+const AccountabilityFormsPage = lazy(
+  () => import('./pages/forms/AccountabilityFormsPage')
+);
+const BorrowFormsPage = lazy(() => import('./pages/forms/BorrowFormsPage'));
+const AssetChecklistFormsPage = lazy(
+  () => import('./pages/forms/AssetChecklistFormsPage')
+);
+const AssetReturnFormsPage = lazy(
+  () => import('./pages/forms/AssetReturnFormsPage')
+);
+const AssetTransferFormsPage = lazy(
+  () => import('./pages/forms/AssetTransferFormsPage')
+);
+const ApprovalsPage = lazy(() => import('./pages/approvals/ApprovalsPage'));
+const ReportsPage = lazy(() => import('./pages/reports/reportsPage'));
 
 export default function App() {
   return (
     <AuthProvider>
       <NotificationProvider>
-        <BrowserRouter>
-        <Routes>
-          {/* Public Routes */}
-          <Route
-            path="/login"
-            element={
-              <PublicRoute>
-                <Login />
-              </PublicRoute>
-            }
-          />
-          <Route
-            path="/register"
-            element={
-              <PublicRoute>
-                <Register />
-              </PublicRoute>
-            }
-          />
-          <Route
-            path="/forgot-password"
-            element={
-              <PublicRoute>
-                <ForgotPassword />
-              </PublicRoute>
-            }
-          />
-          <Route
-            path="/reset-method-selection"
-            element={
-              <PublicRoute>
-                <ResetMethodSelection />
-              </PublicRoute>
-            }
-          />
-          <Route
-            path="/verify-reset-otp"
-            element={
-              <PublicRoute>
-                <VerifyResetOTP />
-              </PublicRoute>
-            }
-          />
-          <Route
-            path="/reset-password"
-            element={
-              <PublicRoute>
-                <ResetPassword />
-              </PublicRoute>
-            }
-          />
-          <Route
-            path="/assets/details/:assetId"
-            element={
-              <PublicRoute>
-                <AssetDetails />
-              </PublicRoute>
-            }
-          />
+        <PermissionsProvider>
+          <BrowserRouter>
+            <Routes>
+              {/* Public Routes */}
+              <Route
+                path="/login"
+                element={
+                  <PublicRoute>
+                    <Login />
+                  </PublicRoute>
+                }
+              />
+              <Route
+                path="/register"
+                element={
+                  <PublicRoute>
+                    <Register />
+                  </PublicRoute>
+                }
+              />
+              <Route
+                path="/forgot-password"
+                element={
+                  <PublicRoute>
+                    <ForgotPassword />
+                  </PublicRoute>
+                }
+              />
+              <Route
+                path="/reset-method-selection"
+                element={
+                  <PublicRoute>
+                    <ResetMethodSelection />
+                  </PublicRoute>
+                }
+              />
+              <Route
+                path="/verify-reset-otp"
+                element={
+                  <PublicRoute>
+                    <VerifyResetOTP />
+                  </PublicRoute>
+                }
+              />
+              <Route
+                path="/reset-password"
+                element={
+                  <PublicRoute>
+                    <ResetPassword />
+                  </PublicRoute>
+                }
+              />
+              <Route
+                path="/assets/details/:assetId"
+                element={
+                  <PublicRoute>
+                    <Suspense fallback={<RouteContentFallback />}>
+                      <AssetDetails />
+                    </Suspense>
+                  </PublicRoute>
+                }
+              />
 
-          {/* Semi-Protected: Only after registration */}
-          <Route path="/verify-otp" element={<VerifyOtpRoute />} />
+              <Route path="/verify-otp" element={<VerifyOtpRoute />} />
+              <Route
+                path="/verify-mfa"
+                element={<Navigate to="/login" replace />}
+              />
 
-          {/* MFA Routes */}
-          {/* /verify-mfa is now handled inline in Login - redirect for backward compatibility */}
-          <Route path="/verify-mfa" element={<Navigate to="/login" replace />} />
-          <Route
-            path="/mfa/setup"
-            element={
-              <PrivateRoute>
-                <SetupMFA />
-              </PrivateRoute>
-            }
-          />
+              {/* Authenticated routes — layout persists across navigation */}
+              <Route element={<PrivateRoute />}>
+                <Route element={<ProtectedLayout />}>
+                  <Route path="/mfa/setup" element={<SetupMFA />} />
+                  <Route
+                    path="/dashboard"
+                    element={
+                      <PermissionRoute module="Dashboard">
+                        <Dashboard />
+                      </PermissionRoute>
+                    }
+                  />
+                  <Route path="/profile" element={<ProfilePage />} />
+                  <Route
+                    path="/user"
+                    element={
+                      <PermissionRoute module="Users">
+                        <Users />
+                      </PermissionRoute>
+                    }
+                  />
+                  <Route
+                    path="/reports"
+                    element={
+                      <PermissionRoute module="Reports">
+                        <ReportsPage />
+                      </PermissionRoute>
+                    }
+                  />
+                  <Route
+                    path="/settings"
+                    element={
+                      <PermissionRoute module="Settings">
+                        <Settings />
+                      </PermissionRoute>
+                    }
+                  />
 
-          {/* Private Routes (with layout) */}
-          <Route
-            path="/dashboard"
-            element={
-              <PrivateRoute>
-                <PermissionRoute module="Dashboard">
-                  <Dashboard />
-                </PermissionRoute>
-              </PrivateRoute>
-            }
-          />
-          <Route
-            path="/profile"
-            element={
-              <PrivateRoute>
-                <ProfilePage />
-              </PrivateRoute>
-            }
-          />
-          <Route
-            path="/user"
-            element={
-              <PrivateRoute>
-                <PermissionRoute module="Users">
-                  <Users />
-                </PermissionRoute>
-              </PrivateRoute>
-            }
-          />
-          <Route
-            path="/reports"
-            element={
-              <PrivateRoute>
-                <PermissionRoute module="Reports">
-                  <ReportsPage />
-                </PermissionRoute>
-              </PrivateRoute>
-            }
-          />
-          <Route
-            path="/settings"
-            element={
-              <PrivateRoute>
-                <PermissionRoute module="Settings">
-                  <Settings />
-                </PermissionRoute>
-              </PrivateRoute>
-            }
-          />
+                  <Route
+                    path="/my-assets"
+                    element={
+                      <PermissionRoute module="My Assets">
+                        <MyAssets />
+                      </PermissionRoute>
+                    }
+                  />
+                  <Route
+                    path="/assets"
+                    element={
+                      <PermissionRoute module="Asset List">
+                        <Assets />
+                      </PermissionRoute>
+                    }
+                  />
+                  <Route
+                    path="/assets/assignment"
+                    element={
+                      <PermissionRoute module="Asset Assignment">
+                        <AssetsAssignment />
+                      </PermissionRoute>
+                    }
+                  />
+                  <Route
+                    path="/assets/transfer"
+                    element={
+                      <PermissionRoute module="Asset Transfer">
+                        <AssetsTransfer />
+                      </PermissionRoute>
+                    }
+                  />
+                  <Route
+                    path="/assets/maintenance"
+                    element={
+                      <PermissionRoute module="Asset Maintenance">
+                        <AssetsMaintenance />
+                      </PermissionRoute>
+                    }
+                  />
+                  <Route
+                    path="/assets/repair"
+                    element={
+                      <PermissionRoute module="Asset Repair">
+                        <AssetsRepair />
+                      </PermissionRoute>
+                    }
+                  />
+                  <Route
+                    path="/assets/return"
+                    element={
+                      <PermissionRoute module="Asset Return">
+                        <AssetsReturn />
+                      </PermissionRoute>
+                    }
+                  />
+                  <Route
+                    path="/assets/return-requests"
+                    element={
+                      <PermissionRoute module="Return Request">
+                        <ReturnRequestsPage />
+                      </PermissionRoute>
+                    }
+                  />
+                  <Route
+                    path="/assets/return-request"
+                    element={
+                      <PermissionRoute module="Return Request">
+                        <AssetReturnRequest />
+                      </PermissionRoute>
+                    }
+                  />
+                  <Route
+                    path="/assets/request"
+                    element={
+                      <PermissionRoute module="Asset Request">
+                        <AssetDepartment />
+                      </PermissionRoute>
+                    }
+                  />
+                  <Route
+                    path="/assets/request-admin"
+                    element={
+                      <PermissionRoute module="Request Management">
+                        <AssetRequestAdmin />
+                      </PermissionRoute>
+                    }
+                  />
+                  <Route
+                    path="/assets/borrow"
+                    element={
+                      <PermissionRoute module="Asset Borrowing">
+                        <AssetBorrowing />
+                      </PermissionRoute>
+                    }
+                  />
+                  <Route
+                    path="/assets/borrow-requests"
+                    element={
+                      <PermissionRoute module="Borrow Request Management">
+                        <BorrowRequestsPage />
+                      </PermissionRoute>
+                    }
+                  />
+                  <Route
+                    path="/assets/transfer-requests"
+                    element={
+                      <PermissionRoute module="Transfer Request">
+                        <TransferRequestsPage />
+                      </PermissionRoute>
+                    }
+                  />
+                  <Route
+                    path="/assets/transfer-request"
+                    element={
+                      <PermissionRoute module="Transfer Request">
+                        <AssetTransferRequest />
+                      </PermissionRoute>
+                    }
+                  />
+                  <Route
+                    path="/assets/disposal"
+                    element={
+                      <PermissionRoute module="Asset Disposal">
+                        <Assetsdisposal />
+                      </PermissionRoute>
+                    }
+                  />
+                  <Route
+                    path="/assets/gate-pass"
+                    element={
+                      <PermissionRoute module="Gate Pass">
+                        <GatePass />
+                      </PermissionRoute>
+                    }
+                  />
+                  <Route
+                    path="/assets/tagging"
+                    element={
+                      <PermissionRoute module="Asset Tagging">
+                        <AssetTagging />
+                      </PermissionRoute>
+                    }
+                  />
+                  <Route
+                    path="/assets/builder"
+                    element={
+                      <PermissionRoute module="Asset List">
+                        <AssetBuilder />
+                      </PermissionRoute>
+                    }
+                  />
 
-          {/* Assets Routes */}
-          <Route
-            path="/my-assets"
-            element={
-              <PrivateRoute>
-                <PermissionRoute module="My Assets">
-                  <MyAssets />
-                </PermissionRoute>
-              </PrivateRoute>
-            }
-          />
-          <Route
-            path="/assets"
-            element={
-              <PrivateRoute>
-                <PermissionRoute module="Asset List">
-                  <Assets />
-                </PermissionRoute>
-              </PrivateRoute>
-            }
-          />
-          <Route
-            path="/assets/assignment"
-            element={
-              <PrivateRoute>
-                <PermissionRoute module="Asset Assignment">
-                  <AssetsAssignment />
-                </PermissionRoute>
-              </PrivateRoute>
-            }
-          />
-          <Route
-            path="/assets/transfer"
-            element={
-              <PrivateRoute>
-                <PermissionRoute module="Asset Transfer">
-                  <AssetsTransfer />
-                </PermissionRoute>
-              </PrivateRoute>
-            }
-          />
-          <Route
-            path="/assets/maintenance"
-            element={
-              <PrivateRoute>
-                <PermissionRoute module="Asset Maintenance">
-                  <AssetsMaintenance />
-                </PermissionRoute>
-              </PrivateRoute>
-            }
-          />
-          <Route
-            path="/assets/repair"
-            element={
-              <PrivateRoute>
-                <PermissionRoute module="Asset Repair">
-                  <AssetsRepair />
-                </PermissionRoute>
-              </PrivateRoute>
-            }
-          />
-          <Route
-            path="/assets/return"
-            element={
-              <PrivateRoute>
-                <PermissionRoute module="Asset Return">
-                  <AssetsReturn />
-                </PermissionRoute>
-              </PrivateRoute>
-            }
-          />
-          <Route
-            path="/assets/return-requests"
-            element={
-              <PrivateRoute>
-                <PermissionRoute module="Return Request">
-                  <ReturnRequestsPage />
-                </PermissionRoute>
-              </PrivateRoute>
-            }
-          />
-          <Route
-            path="/assets/return-request"
-            element={
-              <PrivateRoute>
-                <PermissionRoute module="Return Request">
-                  <AssetReturnRequest />
-                </PermissionRoute>
-              </PrivateRoute>
-            }
-          />
-          <Route
-            path="/assets/request"
-            element={
-              <PrivateRoute>
-                <PermissionRoute module="Asset Request">
-                  <AssetDepartment />
-                </PermissionRoute>
-              </PrivateRoute>
-            }
-          />
-          <Route
-            path="/assets/request-admin"
-            element={
-              <PrivateRoute>
-                <PermissionRoute module="Request Management">
-                  <AssetRequestAdmin />
-                </PermissionRoute>
-              </PrivateRoute>
-            }
-          />
-          <Route
-            path="/assets/borrow"
-            element={
-              <PrivateRoute>
-                <PermissionRoute module="Asset Borrowing">
-                  <AssetBorrowing />
-                </PermissionRoute>
-              </PrivateRoute>
-            }
-          />
-          <Route
-            path="/assets/borrow-requests"
-            element={
-              <PrivateRoute>
-                <PermissionRoute module="Borrow Request Management">
-                  <BorrowRequestsPage />
-                </PermissionRoute>
-              </PrivateRoute>
-            }
-          />
-          <Route
-            path="/assets/transfer-requests"
-            element={
-              <PrivateRoute>
-                <PermissionRoute module="Transfer Request">
-                  <TransferRequestsPage />
-                </PermissionRoute>
-              </PrivateRoute>
-            }
-          />
-          <Route
-            path="/assets/transfer-request"
-            element={
-              <PrivateRoute>
-                <PermissionRoute module="Transfer Request">
-                  <AssetTransferRequest />
-                </PermissionRoute>
-              </PrivateRoute>
-            }
-          />
-          <Route
-            path="/assets/disposal"
-            element={
-              <PrivateRoute>
-                <PermissionRoute module="Asset Disposal">
-                  <Assetsdisposal />
-                </PermissionRoute>
-              </PrivateRoute>
-            }
-          />
-          <Route
-            path="/assets/gate-pass"
-            element={
-              <PrivateRoute>
-                <PermissionRoute module="Gate Pass">
-                  <GatePass />
-                </PermissionRoute>
-              </PrivateRoute>
-            }
-          />
-          <Route
-            path="/assets/tagging"
-            element={
-              <PrivateRoute>
-                <PermissionRoute module="Asset Tagging">
-                  <AssetTagging />
-                </PermissionRoute>
-              </PrivateRoute>
-            }
-          />
-          <Route
-            path="/assets/builder"
-            element={
-              <PrivateRoute>
-                <PermissionRoute module="Asset List">
-                  <AssetBuilder />
-                </PermissionRoute>
-              </PrivateRoute>
-            }
-          />
+                  <Route
+                    path="/history/assignment"
+                    element={
+                      <PermissionRoute module="Assignment History">
+                        <AssetsAssignmentHistory />
+                      </PermissionRoute>
+                    }
+                  />
+                  <Route
+                    path="/history/transfer"
+                    element={
+                      <PermissionRoute module="Transfer History">
+                        <AssetsTransferHistory />
+                      </PermissionRoute>
+                    }
+                  />
+                  <Route
+                    path="/history/maintenance"
+                    element={
+                      <PermissionRoute module="Maintenance History">
+                        <AssetsMaintenanceHistory />
+                      </PermissionRoute>
+                    }
+                  />
+                  <Route
+                    path="/history/repair"
+                    element={
+                      <PermissionRoute module="Repair History">
+                        <AssetsRepairHistory />
+                      </PermissionRoute>
+                    }
+                  />
+                  <Route
+                    path="/history/return"
+                    element={
+                      <PermissionRoute module="Return History">
+                        <AssetsReturnHistory />
+                      </PermissionRoute>
+                    }
+                  />
+                  <Route
+                    path="/history/disposal"
+                    element={
+                      <PermissionRoute module="Disposal History">
+                        <AssetsDisposalHistory />
+                      </PermissionRoute>
+                    }
+                  />
+                  <Route
+                    path="/audit"
+                    element={
+                      <PermissionRoute module="Audit Trail">
+                        <AuditTrail />
+                      </PermissionRoute>
+                    }
+                  />
 
-          {/* History Routes */}
-          <Route
-            path="/history/assignment"
-            element={
-              <PrivateRoute>
-                <PermissionRoute module="Assignment History">
-                  <AssetsAssignmentHistory />
-                </PermissionRoute>
-              </PrivateRoute>
-            }
-          />
-          <Route
-            path="/history/transfer"
-            element={
-              <PrivateRoute>
-                <PermissionRoute module="Transfer History">
-                  <AssetsTransferHistory />
-                </PermissionRoute>
-              </PrivateRoute>
-            }
-          />
-          <Route
-            path="/history/maintenance"
-            element={
-              <PrivateRoute>
-                <PermissionRoute module="Maintenance History">
-                  <AssetsMaintenanceHistory />
-                </PermissionRoute>
-              </PrivateRoute>
-            }
-          />
-          <Route
-            path="/history/repair"
-            element={
-              <PrivateRoute>
-                <PermissionRoute module="Repair History">
-                  <AssetsRepairHistory />
-                </PermissionRoute>
-              </PrivateRoute>
-            }
-          />
-          <Route
-            path="/history/return"
-            element={
-              <PrivateRoute>
-                <PermissionRoute module="Return History">
-                  <AssetsReturnHistory />
-                </PermissionRoute>
-              </PrivateRoute>
-            }
-          />
-          <Route
-            path="/history/disposal"
-            element={
-              <PrivateRoute>
-                <PermissionRoute module="Disposal History">
-                  <AssetsDisposalHistory />
-                </PermissionRoute>
-              </PrivateRoute>
-            }
-          />
-          <Route
-            path="/audit"
-            element={
-              <PrivateRoute>
-                <PermissionRoute module="Audit Trail">
-                  <AuditTrail />
-                </PermissionRoute>
-              </PrivateRoute>
-            }
-          />
+                  <Route
+                    path="/forms/accountability"
+                    element={
+                      <PermissionRoute module="Accountability Form">
+                        <AccountabilityFormsPage />
+                      </PermissionRoute>
+                    }
+                  />
+                  <Route
+                    path="/forms/borrow"
+                    element={
+                      <PermissionRoute module="Borrow Form">
+                        <BorrowFormsPage />
+                      </PermissionRoute>
+                    }
+                  />
+                  <Route
+                    path="/forms/checklist"
+                    element={
+                      <PermissionRoute module="Checklist Form">
+                        <AssetChecklistFormsPage />
+                      </PermissionRoute>
+                    }
+                  />
+                  <Route
+                    path="/forms/return"
+                    element={
+                      <PermissionRoute module="Return Form">
+                        <AssetReturnFormsPage />
+                      </PermissionRoute>
+                    }
+                  />
+                  <Route
+                    path="/forms/transfer"
+                    element={
+                      <PermissionRoute module="Transfer Form">
+                        <AssetTransferFormsPage />
+                      </PermissionRoute>
+                    }
+                  />
+                  <Route
+                    path="/approvals"
+                    element={
+                      <PermissionRoute module="Approvals">
+                        <ApprovalsPage />
+                      </PermissionRoute>
+                    }
+                  />
 
-          <Route
-            path="/forms/accountability"
-            element={
-              <PrivateRoute>
-                <PermissionRoute module="Accountability Form">
-                  <AccountabilityFormsPage />
-                </PermissionRoute>
-              </PrivateRoute>
-            }
-          />
-          <Route
-            path="/forms/borrow"
-            element={
-              <PrivateRoute>
-                <PermissionRoute module="Borrow Form">
-                  <BorrowFormsPage />
-                </PermissionRoute>
-              </PrivateRoute>
-            }
-          />
-          <Route
-            path="/forms/checklist"
-            element={
-              <PrivateRoute>
-                <PermissionRoute module="Checklist Form">
-                  <AssetChecklistFormsPage />
-                </PermissionRoute>
-              </PrivateRoute>
-            }
-          />
-          <Route
-            path="/forms/return"
-            element={
-              <PrivateRoute>
-                <PermissionRoute module="Return Form">
-                  <AssetReturnFormsPage />
-                </PermissionRoute>
-              </PrivateRoute>
-            }
-          />
-          <Route
-            path="/forms/transfer"
-            element={
-              <PrivateRoute>
-                <PermissionRoute module="Transfer Form">
-                  <AssetTransferFormsPage />
-                </PermissionRoute>
-              </PrivateRoute>
-            }
-          />
-          <Route
-            path="/approvals"
-            element={
-              <PrivateRoute>
-                <PermissionRoute module="Approvals">
-                  <ApprovalsPage />
-                </PermissionRoute>
-              </PrivateRoute>
-            }
-          />
+                  <Route path="/user-manual" element={<UserManual />} />
+                  <Route path="/flow-diagrams" element={<FlowDiagrams />} />
+                </Route>
+              </Route>
 
-          <Route
-            path="/user-manual"
-            element={
-              <PrivateRoute>
-                <UserManual />
-              </PrivateRoute>
-            }
-          />
-          <Route
-            path="/flow-diagrams"
-            element={
-              <PrivateRoute>
-                <FlowDiagrams />
-              </PrivateRoute>
-            }
-          />
+              <Route path="/" element={<LandingRedirect />} />
+              <Route path="*" element={<Navigate to="/login" replace />} />
+            </Routes>
 
-          {/* Default Redirects */}
-          <Route path="/" element={<LandingRedirect />} />
-          <Route path="*" element={<Navigate to="/login" replace />} />
-        </Routes>
-
-        <SonnerToaster />
-      </BrowserRouter>
-    </NotificationProvider>
+            <SonnerToaster />
+          </BrowserRouter>
+        </PermissionsProvider>
+      </NotificationProvider>
     </AuthProvider>
   );
 }
