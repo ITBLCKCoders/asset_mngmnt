@@ -316,6 +316,45 @@ export async function signChecklistsAsEmployee(params: {
   }
 }
 
+export async function backfillEmployeeChecklistSignatures(params: {
+  checklistIds: string[];
+  employeeId: string;
+  digitalSignature: string;
+}): Promise<number> {
+  const includeEmployeeSign = await hasEmployeeSignColumns();
+  if (!includeEmployeeSign) {
+    return 0;
+  }
+
+  const { checklistIds, employeeId, digitalSignature } = params;
+  const ids = [...new Set(checklistIds.filter(id => id?.trim()))];
+  if (ids.length === 0 || !digitalSignature.trim()) {
+    return 0;
+  }
+
+  const placeholders = ids.map(() => '?').join(',');
+  const query = `
+    UPDATE asset_checklists
+    SET employee_digital_signature = ?
+    WHERE id IN (${placeholders})
+      AND employee_id = ?
+      AND employee_signed_at IS NOT NULL
+      AND (employee_digital_signature IS NULL OR TRIM(employee_digital_signature) = '')
+  `;
+
+  try {
+    const [result] = await pool.query(query, [
+      digitalSignature.trim(),
+      ...ids,
+      employeeId,
+    ]);
+    return (result as { affectedRows?: number }).affectedRows ?? 0;
+  } catch (error) {
+    logger.error('Failed to backfill employee checklist signatures:', error);
+    throw error;
+  }
+}
+
 const PENDING_DEPT_HEAD_CHECKLIST_SQL = `
   SELECT
     ac.id,

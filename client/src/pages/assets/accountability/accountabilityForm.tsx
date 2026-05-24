@@ -1206,6 +1206,55 @@ function getChecklistTabKey(checklist: FormChecklistEntry): string {
   return checklist.assignment_id || checklist.id;
 }
 
+function isImageDigitalSignature(signature?: string | null): boolean {
+  if (!signature) {
+    return false;
+  }
+  return (
+    signature.startsWith('data:image/') ||
+    signature.startsWith('http://') ||
+    signature.startsWith('https://')
+  );
+}
+
+function resolveEmployeeChecklistSignature(
+  checklist: FormChecklistEntry,
+  options?: {
+    acknowledgmentsSignature?: string | null;
+    userSignature?: string | null;
+  }
+): string | null {
+  if (isImageDigitalSignature(checklist.employee_digital_signature)) {
+    return checklist.employee_digital_signature!.trim();
+  }
+  if (isImageDigitalSignature(options?.acknowledgmentsSignature)) {
+    return options!.acknowledgmentsSignature!.trim();
+  }
+  if (isImageDigitalSignature(options?.userSignature)) {
+    return options!.userSignature!.trim();
+  }
+  return checklist.employee_digital_signature || null;
+}
+
+function buildChecklistPdfPayload(
+  checklist: FormChecklistEntry,
+  options: {
+    assetLabel: string;
+    acknowledgmentsSignature?: string | null;
+    userSignature?: string | null;
+  }
+) {
+  return {
+    ...checklist,
+    asset_label: options.assetLabel,
+    employee_digital_signature: resolveEmployeeChecklistSignature(checklist, {
+      acknowledgmentsSignature: options.acknowledgmentsSignature,
+      userSignature: options.userSignature,
+    }),
+    employee_company_logo_url: checklist.employee_company_logo_url ?? null,
+  };
+}
+
 function getChecklistAssetLabel(
   checklist: FormChecklistEntry,
   formAssets: AccountabilityForm['assets']
@@ -1313,11 +1362,11 @@ export function AccountabilityFormCard({
     ? `${form.issuer.first_name} ${form.issuer.last_name}`
     : 'Administrator';
   const isAssignedUser = currentUser?.id === form.user.id;
-  const canSign = isAssignedUser && form.status === 'Pending';
+  const [localForm, setLocalForm] = useState<AccountabilityForm>(form);
+  const canSign = isAssignedUser && localForm.status === 'Pending';
   const [pdfUrl, setPdfUrl] = useState<string>('');
   const [isPdfGenerating, setIsPdfGenerating] = useState(false);
   const [isSigning, setIsSigning] = useState(false);
-  const [localForm, setLocalForm] = useState<AccountabilityForm>(form);
   const [showConfirmDialog, setShowConfirmDialog] = useState(false);
   const [agreeTerms, setAgreeTerms] = useState(false);
   const [agreeAgreement, setAgreeAgreement] = useState(false);
@@ -1337,7 +1386,8 @@ export function AccountabilityFormCard({
   const hasUnsignedChecklists = checklists.some(c => !c.employee_signed_at);
   const unsignedChecklistCount = checklists.filter(c => !c.employee_signed_at).length;
   const allChecklistsSigned = hasChecklist && !hasUnsignedChecklists;
-  const canSignChecklist = canSign && hasChecklist && hasUnsignedChecklists;
+  const canSignChecklist =
+    isAssignedUser && hasChecklist && hasUnsignedChecklists;
   const showCardSignButton =
     showSignButton && (activeCardTab !== 'checklist' ? canSign : canSignChecklist);
   const showChecklistTabDownload =
@@ -1477,10 +1527,14 @@ export function AccountabilityFormCard({
     const generateChecklistPdf = async () => {
       if ((showChecklistDialog || showChecklistSignDialog) && activeChecklist) {
         try {
-          const pdfBlob = await generateAssetChecklistPDF({
-            ...activeChecklist,
-            asset_label: checklistAssetLabel,
-          });
+          const pdfBlob = await generateAssetChecklistPDF(
+            buildChecklistPdfPayload(activeChecklist, {
+              assetLabel: checklistAssetLabel,
+              acknowledgmentsSignature:
+                localForm.acknowledgments?.digitalSignature ?? null,
+              userSignature: currentUser?.digitalSignature ?? null,
+            })
+          );
           const url = URL.createObjectURL(pdfBlob);
           setChecklistPdfUrl(url);
         } catch (error) {
@@ -1502,6 +1556,8 @@ export function AccountabilityFormCard({
     showChecklistSignDialog,
     activeChecklist,
     checklistAssetLabel,
+    localForm.acknowledgments?.digitalSignature,
+    currentUser?.digitalSignature,
   ]);
 
   // Generate PDF only when preview modal opens
@@ -1664,11 +1720,14 @@ export function AccountabilityFormCard({
     for (let i = 0; i < entries.length; i++) {
       const entry = entries[i];
       const assetLabel = getChecklistAssetLabel(entry, form.assets);
-      const pdfBlob = await generateAssetChecklistPDF({
-        ...entry,
-        asset_label: assetLabel,
-        employee_company_logo_url: entry.employee_company_logo_url ?? null,
-      });
+      const pdfBlob = await generateAssetChecklistPDF(
+        buildChecklistPdfPayload(entry, {
+          assetLabel,
+          acknowledgmentsSignature:
+            localForm.acknowledgments?.digitalSignature ?? null,
+          userSignature: currentUser?.digitalSignature ?? null,
+        })
+      );
       const assetSlug = assetLabel
         .replace(/\s+/g, '_')
         .replace(/[^a-zA-Z0-9_-]/g, '');
@@ -2255,6 +2314,8 @@ export function AccountabilityFormCard({
                           } : form.acknowledgments;
                           
                           await onSign?.(form.id, acknowledgmentsData);
+
+                          await refreshFormChecklists();
                           
                           // Create updated form object for PDF generation
                           const updatedForm = {
@@ -2609,14 +2670,15 @@ export function AccountabilityFormCard({
               onClick={() => {
                 setPendingActionType('signChecklist');
                 pendingActionRef.current = async () => {
-                  const digitalInitials =
-                    (currentUser as { digitalSignature?: string })?.digitalSignature ||
+                  const digitalSignature =
+                    localForm.acknowledgments?.digitalSignature ||
+                    currentUser?.digitalSignature ||
                     '';
                   const response = await api.post<{
                     checklists?: FormChecklistEntry[];
                     signedCount?: number;
                   }>(`/accountability-forms/${form.id}/checklists/sign`, {
-                    digitalSignature: digitalInitials || undefined,
+                    digitalSignature: digitalSignature || undefined,
                   });
                   if (response?.checklists?.length) {
                     setChecklists(response.checklists);

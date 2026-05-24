@@ -243,11 +243,7 @@ export default function AccountabilityFormsPage() {
     () =>
       applyStatusFilter(
         filterBySearch(
-          filterByAssetType(
-            filterByCompanyAndDepartment(
-              forms.filter(f => !(f.status === 'Signed' && !f.receivedCopy201FileSignedAt))
-            )
-          )
+          filterByAssetType(filterByCompanyAndDepartment(forms))
         )
       ),
     [forms, searchQuery, statusFilter, companyFilterId, departmentFilterId, assetTypeFilter]

@@ -7,6 +7,7 @@
     "build": "tsc -p tsconfig.build.json",
     "migrate:received-copy": "node scripts/run-received-copy-migration.js",
     "db:cleanup": "tsx src/scripts/cleanup-db.ts",
+    "db:reset-asset-state": "tsx src/scripts/reset-asset-state.ts",
     "cert": "tsx src/scripts/generateDevCert.ts",
     "start": "node dist/index.js",
     "test": "node --test dist/tests/*.test.js",

@@ -649,15 +649,25 @@ export const generateAssetChecklistPDF = async (
         doc.setTextColor(0, 0, 0);
 
         if (employeeDigitalSignature) {
-          pendingSignatures.push({
-            data: employeeDigitalSignature,
-            x: cell.x + 1 - 30,
-            y: yTop + 25,
-            anchorBottomY: signatureAnchorBottomY(nameY),
-            maxWidth: PDF_SIGNATURE_MAX_WIDTH_MM,
-            maxHeight: PDF_SIGNATURE_MAX_HEIGHT_MM,
-          });
-        } else if (employeeInitial) {
+          const isImageSignature =
+            employeeDigitalSignature.startsWith('data:image/') ||
+            employeeDigitalSignature.startsWith('http://') ||
+            employeeDigitalSignature.startsWith('https://');
+          if (isImageSignature) {
+            pendingSignatures.push({
+              data: employeeDigitalSignature,
+              x: cell.x + 1 - 30,
+              y: yTop + 25,
+              anchorBottomY: signatureAnchorBottomY(nameY),
+              maxWidth: PDF_SIGNATURE_MAX_WIDTH_MM,
+              maxHeight: PDF_SIGNATURE_MAX_HEIGHT_MM,
+            });
+          } else if (employeeInitial && checklistData.employee_signed_at) {
+            doc.setFontSize(14);
+            doc.setFont('helvetica', 'bold');
+            doc.text(employeeInitial, xMin, yTop + 10 + approvalSignatureDownOffsetMm);
+          }
+        } else if (employeeInitial && checklistData.employee_signed_at) {
           doc.setFontSize(14);
           doc.setFont('helvetica', 'bold');
           doc.text(employeeInitial, xMin, yTop + 10 + approvalSignatureDownOffsetMm);
