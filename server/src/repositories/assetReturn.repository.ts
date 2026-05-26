@@ -102,9 +102,8 @@ SELECT arf.formID, arf.form_number, arf.user_id, arf.department_id, arf.location
   d.company_id AS form_company_id, d.name AS form_department_name
  FROM asset_return_forms arf
  LEFT JOIN asset_mngmnt_departments d ON arf.department_id = d.departmentID
- LEFT JOIN users returner ON returner.userID = arf.user_id
  WHERE arf.deleted_at IS NULL AND (arf.declined_at IS NULL) AND (arf.signed_at IS NOT NULL OR arf.owner_absent = 1) AND arf.dept_head_signed_at IS NULL
-   AND returner.department_id <=> ? AND d.company_id = ?`;
+   AND arf.department_id <=> ? AND d.company_id = ?`;
 
 export const PENDING_DH_APPROVAL_FORMS_SQL_NO_OWNER_ABSENT = `
 SELECT arf.formID, arf.form_number, arf.user_id, arf.department_id, arf.location_id, arf.location_room_id, arf.created_by, arf.created_at, arf.updated_at, arf.deleted_at,
@@ -116,9 +115,8 @@ SELECT arf.formID, arf.form_number, arf.user_id, arf.department_id, arf.location
   d.company_id AS form_company_id, d.name AS form_department_name
  FROM asset_return_forms arf
  LEFT JOIN asset_mngmnt_departments d ON arf.department_id = d.departmentID
- LEFT JOIN users returner ON returner.userID = arf.user_id
  WHERE arf.deleted_at IS NULL AND (arf.declined_at IS NULL) AND (arf.signed_at IS NOT NULL) AND arf.dept_head_signed_at IS NULL
-   AND returner.department_id <=> ? AND d.company_id = ?`;
+   AND arf.department_id <=> ? AND d.company_id = ?`;
 
 export const PENDING_DH_APPROVAL_FORMS_SQL_LEGACY_NO_DECLINED = `
 SELECT arf.formID, arf.form_number, arf.user_id, arf.department_id, arf.location_id, arf.location_room_id, arf.created_by, arf.created_at, arf.updated_at, arf.deleted_at,
@@ -130,9 +128,8 @@ SELECT arf.formID, arf.form_number, arf.user_id, arf.department_id, arf.location
   d.company_id AS form_company_id, d.name AS form_department_name
  FROM asset_return_forms arf
  LEFT JOIN asset_mngmnt_departments d ON arf.department_id = d.departmentID
- LEFT JOIN users returner ON returner.userID = arf.user_id
  WHERE arf.deleted_at IS NULL AND (arf.signed_at IS NOT NULL) AND arf.dept_head_signed_at IS NULL
-   AND returner.department_id <=> ? AND d.company_id = ?`;
+   AND arf.department_id <=> ? AND d.company_id = ?`;
 
 export async function fetchPendingDeptHeadApprovalFormRows(
   approverDepartmentId: string,
