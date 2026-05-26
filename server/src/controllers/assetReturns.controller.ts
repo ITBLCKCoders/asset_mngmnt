@@ -3128,11 +3128,12 @@ export async function getReceivePendingApprovalsHandler(
         arf.dept_head_digital_signature, arf.dept_head_signed_by,
         DATE_FORMAT(arf.it_manager_signed_at, '%Y-%m-%d %H:%i:%s') AS it_manager_signed_at,
         arf.it_manager_digital_signature, arf.it_manager_signed_by,
+        arf.owner_absent,
         d.company_id AS form_company_id, d.name AS form_department_name
        FROM asset_return_forms arf
        LEFT JOIN asset_mngmnt_departments d ON arf.department_id = d.departmentID
        WHERE arf.deleted_at IS NULL
-         AND arf.signed_at IS NOT NULL
+         AND (arf.signed_at IS NOT NULL OR arf.owner_absent = 1)
          AND arf.dept_head_signed_at IS NOT NULL
          AND arf.it_manager_signed_at IS NULL
          AND (
