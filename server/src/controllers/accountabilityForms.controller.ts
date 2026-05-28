@@ -273,11 +273,13 @@ type AccountabilityFormOrigin = 'processor_return';
 
 function parseAccountabilityAssetsData(assetsDataRaw: unknown): {
   assets: any[];
+  assignmentIds: string[];
   formOrigin?: AccountabilityFormOrigin;
 } {
   const assets: any[] = [];
+  const assignmentIds: string[] = [];
   if (assetsDataRaw == null || assetsDataRaw === '') {
-    return { assets };
+    return { assets, assignmentIds };
   }
   try {
     const raw =
@@ -298,14 +300,28 @@ function parseAccountabilityAssetsData(assetsDataRaw: unknown): {
         assets.push(a);
       }
     }
+    const rawAssignmentIds = (assetsData as { assignment_ids?: unknown })
+      ?.assignment_ids;
+    if (Array.isArray(rawAssignmentIds)) {
+      for (const id of rawAssignmentIds) {
+        const assignmentId = String(id ?? '').trim();
+        if (assignmentId) {
+          assignmentIds.push(assignmentId);
+        }
+      }
+    }
     const fo = (assetsData as { form_origin?: unknown })?.form_origin;
     if (fo === 'processor_return') {
-      return { assets, formOrigin: 'processor_return' };
+      return {
+        assets,
+        assignmentIds: [...new Set(assignmentIds)],
+        formOrigin: 'processor_return',
+      };
     }
   } catch {
     /* ignore */
   }
-  return { assets };
+  return { assets, assignmentIds: [...new Set(assignmentIds)] };
 }
 
 // Helper function to generate form number based on settings
@@ -886,6 +902,7 @@ export async function getAccountabilityFormsByAssetIdHandler(
         id: row.formID,
         formNumber: row.form_number,
         assets: assets,
+        assignmentIds: parsed.assignmentIds,
         ...(formOrigin ? { formOrigin } : {}),
         user: {
           id: row.user_id,
@@ -1017,6 +1034,7 @@ export async function getAccountabilityFormsHandler(
         id: row.formID,
         formNumber: row.form_number,
         assets: assets,
+        assignmentIds: parsed.assignmentIds,
         ...(formOrigin ? { formOrigin } : {}),
         user: {
           id: row.user_id,
@@ -1848,6 +1866,7 @@ export async function getAccountabilityFormByIdHandler(
       id: row.formID,
       formNumber: row.form_number,
       assets: assets,
+      assignmentIds: parsedSingle.assignmentIds,
       ...(formOriginSingle ? { formOrigin: formOriginSingle } : {}),
       user: {
         id: row.user_id,

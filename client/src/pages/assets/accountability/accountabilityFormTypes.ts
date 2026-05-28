@@ -13,6 +13,7 @@ export interface AccountabilityForm {
     brand?: string;
     specifications?: unknown[];
   }[];
+  assignmentIds?: string[];
   user: {
     id: string;
     first_name: string;

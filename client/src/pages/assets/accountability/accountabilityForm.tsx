@@ -309,12 +309,48 @@ interface AccountabilityFormProps {
   lazyLoadDetails?: boolean;
 }
 
+const getAccountabilityFormAssignmentIds = (form: AccountabilityForm): string[] => {
+  const assignmentIds = new Set<string>();
+  for (const id of form.assignmentIds ?? []) {
+    const assignmentId = String(id ?? '').trim();
+    if (assignmentId) {
+      assignmentIds.add(assignmentId);
+    }
+  }
+  if (form.assignment?.id) {
+    const assignmentId = String(form.assignment.id).trim();
+    if (assignmentId) {
+      assignmentIds.add(assignmentId);
+    }
+  }
+  return [...assignmentIds];
+};
+
+const fetchAssignedIntangibleAssetsForForm = async (
+  form: AccountabilityForm
+): Promise<any[]> => {
+  const assignmentIds = new Set(getAccountabilityFormAssignmentIds(form));
+  if (assignmentIds.size === 0) {
+    return [];
+  }
+
+  const response = await api.get('/intangible-assets');
+  return (response || []).filter((asset: any) =>
+    assignmentIds.has(
+      String(asset.assignment_id ?? asset.assignmentId ?? '').trim()
+    )
+  );
+};
+
 // Reusable PDF generation function (exported for issuer decline notification dialog)
 export const generateAccountabilityFormPDF = async (
   form: AccountabilityForm,
   currentUser?: any,
-  intangibleAssets: any[] = []
+  intangibleAssets?: any[]
 ): Promise<Blob> => {
+  const assignedIntangibleAssets =
+    intangibleAssets ?? (await fetchAssignedIntangibleAssetsForForm(form));
+
   const [{ jsPDF: JsPDFConstructor }, autoTableModule] = await Promise.all([
     import('jspdf'),
     import('jspdf-autotable'),
@@ -568,6 +604,13 @@ I agree that if any of the items are damaged or lost due to my negligence, I sha
     5: { cellWidth: 27.9 }, // Condition
   };
 
+  const itIntangibleAssets = assignedIntangibleAssets.filter(
+    (asset: any) => asset.type === 'IT scope'
+  );
+  const adminIntangibleAssets = assignedIntangibleAssets.filter(
+    (asset: any) => asset.type === 'Admin scope'
+  );
+
   // IT Asset Details - font size 12 bold
   if (itAssets.length > 0) {
     doc.setFontSize(12);
@@ -596,20 +639,6 @@ I agree that if any of the items are damaged or lost due to my negligence, I sha
 
       // Show table header on first batch or when batch starts at top of page (one header per page)
       const showTableHead = isFirstBatch || currentY <= 80;
-
-      // Reduce empty rows if intangible assets will be displayed
-      const hasITIntangibleAssets = intangibleAssets.some(
-        (asset: any) => asset.type === 'IT scope'
-      );
-      const adjustedMaxRowsFirstPage = hasITIntangibleAssets ? 5 : 10;
-
-      // On first page only: add empty rows when there are few assets; cap so table does not overflow to next page
-      if (isFirstBatch && itAssetRows.length < adjustedMaxRowsFirstPage) {
-        const emptyRowsNeeded = adjustedMaxRowsFirstPage - itAssetRows.length;
-        for (let i = 0; i < emptyRowsNeeded; i++) {
-          itAssetRows.push(['', '', '', '', '', '']);
-        }
-      }
 
       autoTable(doc, {
         startY: currentY,
@@ -660,102 +689,7 @@ I agree that if any of the items are damaged or lost due to my negligence, I sha
     y = currentY;
   }
 
-  // Admin Asset Details - font size 12 bold
-  if (adminAssets.length > 0) {
-    doc.setFontSize(12);
-    doc.setFont('helvetica', 'bold');
-    doc.text('Admin Asset Details', 20, y);
-
-    // Process Admin assets in chunks of 15 rows per page
-    const assetsPerPage = 15;
-    let currentY = y + 5;
-    let remainingAssets = [...adminAssets];
-
-    while (remainingAssets.length > 0) {
-      const isFirstBatch = remainingAssets.length === adminAssets.length;
-      const currentBatch = remainingAssets.slice(0, assetsPerPage);
-      remainingAssets = remainingAssets.slice(assetsPerPage);
-
-      // Create rows for current batch
-      const adminAssetRows = currentBatch.map(asset => [
-        asset.name,
-        asset.brand || '',
-        asset.modelNo || '',
-        asset.serialNo,
-        asset.code,
-        'Good',
-      ]);
-
-      // Show table header on first batch or when batch starts at top of page (one header per page)
-      const showTableHead = isFirstBatch || currentY <= 80;
-
-      // Reduce empty rows if intangible assets will be displayed
-      const hasAdminIntangibleAssets = intangibleAssets.some(
-        (asset: any) => asset.type === 'Admin scope'
-      );
-      const adjustedMaxRowsFirstPage = hasAdminIntangibleAssets ? 5 : 10;
-
-      // On first page only: add empty rows when there are few assets; cap so table does not overflow to next page
-      if (isFirstBatch && adminAssetRows.length < adjustedMaxRowsFirstPage) {
-        const emptyRowsNeeded = adjustedMaxRowsFirstPage - adminAssetRows.length;
-        for (let i = 0; i < emptyRowsNeeded; i++) {
-          adminAssetRows.push(['', '', '', '', '', '']);
-        }
-      }
-
-      autoTable(doc, {
-        startY: currentY,
-        tableWidth,
-        margin: { ...tableMargin, top: 45 },
-        head: showTableHead ? [assetTableHead] : [],
-        body: adminAssetRows,
-        theme: 'grid',
-        styles: {
-          fontSize: 12,
-          cellPadding: 1,
-          lineWidth: 0.1,
-          lineColor: [0, 0, 0],
-        },
-        headStyles: { fillColor: headerFillColor, textColor: headerTextColor },
-        columnStyles: assetTableColumnStyles,
-        didDrawPage: data => {
-          if (
-            data.pageNumber >= 2 &&
-            !continuationHeaderDrawnPages.has(data.pageNumber)
-          ) {
-            doc.setPage(data.pageNumber);
-            drawContinuationHeader();
-            continuationHeaderDrawnPages.add(data.pageNumber);
-          }
-        },
-      });
-
-      currentY = (doc as any).lastAutoTable.finalY + 1;
-
-      // If there are more assets and we're approaching the bottom of the page, add a new page
-      if (remainingAssets.length > 0) {
-        const pageHeight = 330.2; // 8.5 x 13 inches in mm
-        const bottomMargin = 30; // Leave some margin at bottom
-
-        if (currentY + 50 > pageHeight - bottomMargin) {
-          doc.addPage();
-          const newPageNum = doc.getNumberOfPages();
-          if (!continuationHeaderDrawnPages.has(newPageNum)) {
-            drawContinuationHeader();
-            continuationHeaderDrawnPages.add(newPageNum);
-          }
-          currentY = 45;
-        }
-      }
-    }
-
-    y = currentY;
-  }
-
   // IT Intangible Assets - font size 12 bold
-  const itIntangibleAssets = intangibleAssets.filter(
-    (asset: any) => asset.type === 'IT scope'
-  );
   if (itIntangibleAssets.length > 0) {
     y += 10; // Add spacing before IT Intangible Assets title
     doc.setFontSize(12);
@@ -808,10 +742,85 @@ I agree that if any of the items are damaged or lost due to my negligence, I sha
     y = (doc as any).lastAutoTable.finalY + 1;
   }
 
+  // Admin Asset Details - font size 12 bold
+  if (adminAssets.length > 0) {
+    doc.setFontSize(12);
+    doc.setFont('helvetica', 'bold');
+    doc.text('Admin Asset Details', 20, y);
+
+    // Process Admin assets in chunks of 15 rows per page
+    const assetsPerPage = 15;
+    let currentY = y + 5;
+    let remainingAssets = [...adminAssets];
+
+    while (remainingAssets.length > 0) {
+      const isFirstBatch = remainingAssets.length === adminAssets.length;
+      const currentBatch = remainingAssets.slice(0, assetsPerPage);
+      remainingAssets = remainingAssets.slice(assetsPerPage);
+
+      // Create rows for current batch
+      const adminAssetRows = currentBatch.map(asset => [
+        asset.name,
+        asset.brand || '',
+        asset.modelNo || '',
+        asset.serialNo,
+        asset.code,
+        'Good',
+      ]);
+
+      // Show table header on first batch or when batch starts at top of page (one header per page)
+      const showTableHead = isFirstBatch || currentY <= 80;
+
+      autoTable(doc, {
+        startY: currentY,
+        tableWidth,
+        margin: { ...tableMargin, top: 45 },
+        head: showTableHead ? [assetTableHead] : [],
+        body: adminAssetRows,
+        theme: 'grid',
+        styles: {
+          fontSize: 12,
+          cellPadding: 1,
+          lineWidth: 0.1,
+          lineColor: [0, 0, 0],
+        },
+        headStyles: { fillColor: headerFillColor, textColor: headerTextColor },
+        columnStyles: assetTableColumnStyles,
+        didDrawPage: data => {
+          if (
+            data.pageNumber >= 2 &&
+            !continuationHeaderDrawnPages.has(data.pageNumber)
+          ) {
+            doc.setPage(data.pageNumber);
+            drawContinuationHeader();
+            continuationHeaderDrawnPages.add(data.pageNumber);
+          }
+        },
+      });
+
+      currentY = (doc as any).lastAutoTable.finalY + 1;
+
+      // If there are more assets and we're approaching the bottom of the page, add a new page
+      if (remainingAssets.length > 0) {
+        const pageHeight = 330.2; // 8.5 x 13 inches in mm
+        const bottomMargin = 30; // Leave some margin at bottom
+
+        if (currentY + 50 > pageHeight - bottomMargin) {
+          doc.addPage();
+          const newPageNum = doc.getNumberOfPages();
+          if (!continuationHeaderDrawnPages.has(newPageNum)) {
+            drawContinuationHeader();
+            continuationHeaderDrawnPages.add(newPageNum);
+          }
+          currentY = 45;
+        }
+      }
+    }
+
+    y = currentY;
+  }
+
   // Admin Intangible Assets - font size 12 bold
-  const adminIntangibleAssets = intangibleAssets.filter(
-    (asset: any) => asset.type === 'Admin scope'
-  );
   if (adminIntangibleAssets.length > 0) {
     y += 10; // Add spacing before Admin Intangible Assets title
     doc.setFontSize(12);
@@ -1423,13 +1432,27 @@ export function AccountabilityFormCard({
       return;
     }
     const fetchIntangibleAssets = async () => {
+      const assignmentIds = new Set<string>();
+      for (const id of form.assignmentIds ?? []) {
+        const assignmentId = String(id ?? '').trim();
+        if (assignmentId) {
+          assignmentIds.add(assignmentId);
+        }
+      }
       if (form.assignment?.id) {
+        assignmentIds.add(String(form.assignment.id).trim());
+      }
+
+      if (assignmentIds.size > 0) {
         try {
           setIntangibleAssetsLoading(true);
           const response = await api.get('/intangible-assets');
           // Filter intangible assets that are assigned to this assignment
           const assignmentIntangibleAssets = (response || []).filter(
-            (asset: any) => asset.assignment_id === form.assignment?.id
+            (asset: any) =>
+              assignmentIds.has(
+                String(asset.assignment_id ?? asset.assignmentId ?? '').trim()
+              )
           );
           setIntangibleAssets(assignmentIntangibleAssets);
         } catch (error) {
@@ -1443,7 +1466,7 @@ export function AccountabilityFormCard({
       }
     };
     fetchIntangibleAssets();
-  }, [form.assignment?.id, lazyLoadDetails]);
+  }, [form.assignment?.id, form.assignmentIds, lazyLoadDetails]);
 
   const refreshFormChecklists = async () => {
     try {
@@ -2725,13 +2748,27 @@ export function AccountabilityFormDetail({
   // Fetch intangible assets for the assignment
   useEffect(() => {
     const fetchIntangibleAssets = async () => {
+      const assignmentIds = new Set<string>();
+      for (const id of form.assignmentIds ?? []) {
+        const assignmentId = String(id ?? '').trim();
+        if (assignmentId) {
+          assignmentIds.add(assignmentId);
+        }
+      }
       if (form.assignment?.id) {
+        assignmentIds.add(String(form.assignment.id).trim());
+      }
+
+      if (assignmentIds.size > 0) {
         try {
           setIntangibleAssetsLoading(true);
           const response = await api.get('/intangible-assets');
           // Filter intangible assets that are assigned to this assignment
           const assignmentIntangibleAssets = (response || []).filter(
-            (asset: any) => asset.assignment_id === form.assignment?.id
+            (asset: any) =>
+              assignmentIds.has(
+                String(asset.assignment_id ?? asset.assignmentId ?? '').trim()
+              )
           );
           setIntangibleAssets(assignmentIntangibleAssets);
         } catch (error) {
@@ -2745,7 +2782,7 @@ export function AccountabilityFormDetail({
       }
     };
     fetchIntangibleAssets();
-  }, [form.assignment?.id]);
+  }, [form.assignment?.id, form.assignmentIds]);
 
   useEffect(() => {
     const generatePdf = async () => {
