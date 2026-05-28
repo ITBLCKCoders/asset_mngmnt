@@ -27,6 +27,11 @@ export function mapTransferredOutAssetRow(row: RowDataPacket & Record<string, un
     'Company';
   return {
     ...row,
+    // Keep parity with sp_get_assets shape where department display text is `department`.
+    department:
+      (row.department as string) ||
+      (row.department_name as string) ||
+      null,
     status: `Transferred to ${targetName}`,
     transferred_out: true,
     transferred_to_company_name:

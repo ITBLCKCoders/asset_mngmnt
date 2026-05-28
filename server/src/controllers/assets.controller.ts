@@ -431,34 +431,36 @@ export async function getAssetsHandler(req: AuthRequest, res: Response) {
     }
     // For Super Admin and Admin, when companyId is null, show all assets (no filtering)
 
-    // Separate transferred-out assets before scope filtering (they should always be visible in source company)
-    const transferredOutAssetIds = new Set(
-      assets
-        .filter((a: any) => a.transferred_out === true)
-        .map((a: any) => String(a.assetID))
+    // Separate transferred-out assets before scope filtering so both groups can be
+    // evaluated consistently against active scope/category filters.
+    const transferredOutAssets = assets.filter(
+      (a: any) => a.transferred_out === true
     );
     const nonTransferredOutAssets = assets.filter(
-      (a: any) => !transferredOutAssetIds.has(String(a.assetID))
+      (a: any) => a.transferred_out !== true
     );
 
     if (departmentIds && departmentIds.length > 0) {
-      // Filter assets solely by the department of their category (exclude transferred-out assets)
+      // Filter assets solely by the department of their category.
       const categoryIds = await assetRepo.getCategoryIdsByDepartmentIds(departmentIds);
+
+      const toScopedAsset = (asset: any) => ({
+        ...asset,
+        asset_scope_type: classifyDepartmentScopeByName(asset.department),
+      });
 
       const filteredNonTransferredOut = nonTransferredOutAssets
         .filter((asset: any) => categoryIds.includes(asset.category_id))
-        .map((asset: any) => ({
-          ...asset,
-          asset_scope_type: classifyDepartmentScopeByName(asset.department),
-        }));
+        .map(toScopedAsset);
 
-      // Merge filtered assets with transferred-out assets (they bypass scope filtering)
+      // Apply same scope/category filtering to transferred-out assets.
+      const filteredTransferredOut = transferredOutAssets
+        .filter((asset: any) => categoryIds.includes(asset.category_id))
+        .map(toScopedAsset);
+
       assets = [
         ...filteredNonTransferredOut,
-        ...assets.filter((a: any) => transferredOutAssetIds.has(String(a.assetID))).map((a: any) => ({
-          ...a,
-          asset_scope_type: classifyDepartmentScopeByName(a.department),
-        })),
+        ...filteredTransferredOut,
       ];
     } else {
       // Still expose a scope type for clients even when departmentIds is null
