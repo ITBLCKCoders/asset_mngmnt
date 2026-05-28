@@ -109,10 +109,10 @@ type LinkedTransferProcessorSource = {
 /** IT Staff processor fields for return PDFs; uses linked transfer form when return has none. */
 async function resolveReturnProcessorFieldsForBatch(
   form: {
-    formID?: string | null;
-    created_by?: string | null;
-    process_signed_at?: string | null;
-    process_digital_signature?: string | null;
+    formID?: string | null | undefined;
+    created_by?: string | null | undefined;
+    process_signed_at?: string | null | undefined;
+    process_digital_signature?: string | null | undefined;
   },
   options: {
     processorNames?: Map<string, string>;
@@ -2051,6 +2051,8 @@ export async function getAssetReturnsHandler(req: AuthRequest, res: Response) {
       signed_digital_signature?: string | null;
       process_signed_at?: string | null;
       process_digital_signature?: string | null;
+      processor_pending_signed_at?: string | null;
+      processor_pending_signature?: string | null;
       return_type?: string | null;
       received_by?: string | null;
       process_user_position?: string | null;
@@ -2619,6 +2621,8 @@ export async function getPendingApprovalsHandler(
       signed_digital_signature?: string | null;
       process_signed_at?: string | null;
       process_digital_signature?: string | null;
+      processor_pending_signed_at?: string | null;
+      processor_pending_signature?: string | null;
       return_type?: string | null;
       received_by?: string | null;
       dept_head_signed_at?: string | null;
@@ -2886,6 +2890,8 @@ export async function getApprovedByMeHandler(req: AuthRequest, res: Response) {
       signed_digital_signature?: string | null;
       process_signed_at?: string | null;
       process_digital_signature?: string | null;
+      processor_pending_signed_at?: string | null;
+      processor_pending_signature?: string | null;
       return_type?: string | null;
       received_by?: string | null;
       dept_head_signed_at?: string | null;
@@ -3056,6 +3062,8 @@ export async function getPendingStaffHandler(req: AuthRequest, res: Response) {
       signed_digital_signature?: string | null;
       process_signed_at?: string | null;
       process_digital_signature?: string | null;
+      processor_pending_signed_at?: string | null;
+      processor_pending_signature?: string | null;
       return_type?: string | null;
       received_by?: string | null;
       dept_head_signed_at?: string | null;
@@ -3215,6 +3223,8 @@ export async function getReceivePendingApprovalsHandler(
       signed_digital_signature?: string | null;
       process_signed_at?: string | null;
       process_digital_signature?: string | null;
+      processor_pending_signed_at?: string | null;
+      processor_pending_signature?: string | null;
       return_type?: string | null;
       received_by?: string | null;
       dept_head_signed_at?: string | null;

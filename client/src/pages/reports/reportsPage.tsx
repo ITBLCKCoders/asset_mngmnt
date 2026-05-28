@@ -1174,7 +1174,9 @@ export default function ReportsPage() {
         );
 
         const transfers =
-          transfersRes.status === 'fulfilled' ? transfersRes.value.records ?? [] : [];
+          transfersRes.status === 'fulfilled'
+            ? ((transfersRes.value as any)?.data?.records ?? (transfersRes.value as any)?.records ?? [])
+            : [];
         setTransferRows(
           transfers.map((row: any) => ({
             id: String(row.recordId ?? row.formId ?? Math.random()),
@@ -1184,6 +1186,7 @@ export default function ReportsPage() {
             person: row.from?.name ?? 'Unknown',
             transferee: row.to?.name ?? 'Unknown',
             processor:
+              row.processor ||
               row.processed_by ||
               formatUserName(row.assignment?.assigned_by) ||
               row.dept_head_user_name ||
