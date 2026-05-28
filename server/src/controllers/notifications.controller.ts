@@ -205,24 +205,28 @@ export async function markAsReadHandler(req: AuthRequest, res: Response) {
 export async function markAllAsReadHandler(req: AuthRequest, res: Response) {
   try {
     const userId = req.user!.userID;
-    const { notificationId } = req.params;
 
-    await pool.execute(
-      'UPDATE notifications SET read_at = NOW() WHERE notification_id = ? AND user_id = ?',
-      [notificationId, userId]
-    );
+    const [result] = (await pool.execute(
+      "UPDATE notifications SET read_at = NOW(), status = 'read' WHERE user_id = ? AND status = 'unread' AND deleted_at IS NULL",
+      [userId]
+    )) as any[];
+
+    const updatedCount = result?.affectedRows ?? 0;
 
     await createAuditLog({
       userId,
-      action: 'mark_notification_as_read',
+      action: 'mark_all_notifications_as_read',
       resourceType: 'notification',
-      resourceId: String(notificationId),
-      details: `Marked notification as read: ${notificationId}`,
+      resourceId: 'all',
+      details: `Marked ${updatedCount} notification(s) as read`,
       ipAddress: req.ip,
       userAgent: req.get('User-Agent'),
     });
 
-    return res.json({ message: 'Notification marked as read' });
+    return res.json({
+      message: 'All notifications marked as read',
+      updatedCount,
+    });
   } catch (error: any) {
     logger.error('Mark all as read failed:', error);
     return res

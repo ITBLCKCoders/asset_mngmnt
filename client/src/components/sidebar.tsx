@@ -39,7 +39,7 @@ import { useUserPermissions } from '@/hooks/useUserPermissions';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Badge } from '@/components/ui/badge';
 import { useAvatarPreview } from '@/hooks/avatarPreview';
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useRef, useState, useTransition } from 'react';
 import { cn } from '@/lib/utils';
 import { api, setToken } from '@/lib/api';
 import { ASSET_SIDEBAR_ENTRIES } from '@/components/sidebar/sidebarConfig';
@@ -47,6 +47,10 @@ import {
   SidebarHoverItem,
   SIDEBAR_HOVER_TRANSITION,
 } from '@/components/sidebar/SidebarHoverItem';
+import {
+  prefetchRoute,
+  prefetchRoutes,
+} from '@/components/sidebar/routePrefetch';
 
 // ASSET_SIDEBAR_ENTRIES, AssetSidebarEntry / AssetSidebarChild types, the
 // SIDEBAR_HOVER_TRANSITION constant and the SidebarHoverItem helper now live
@@ -223,6 +227,30 @@ export default function Sidebar({ onLogout }: SidebarProps) {
   const { user, loading } = useCurrentUser();
   const { hasPermission } = useUserPermissions();
   const { previewUrl, clearPreview } = useAvatarPreview();
+  const [, startTransition] = useTransition();
+
+  /**
+   * Wraps `navigate` in a transition so the previous page stays visible while
+   * the next lazy chunk loads, eliminating the `RouteContentFallback` flash.
+   */
+  const go = (path: string) => {
+    startTransition(() => navigate(path));
+  };
+
+  /**
+   * Hover/focus handlers that warm-load a route's JS chunk before the click.
+   * Spread onto navigable buttons via `{...prefetch(path)}`.
+   */
+  const prefetch = (path: string) => ({
+    onMouseEnter: () => prefetchRoute(path),
+    onFocus: () => prefetchRoute(path),
+  });
+
+  /** Same as `prefetch` but for parent toggle buttons that gate a submenu. */
+  const prefetchMany = (paths: readonly string[]) => ({
+    onMouseEnter: () => prefetchRoutes(paths),
+    onFocus: () => prefetchRoutes(paths),
+  });
 
   const [assetsOpen, setAssetsOpen] = useState(false);
   const [formsOpen, setFormsOpen] = useState(false);
@@ -426,7 +454,7 @@ export default function Sidebar({ onLogout }: SidebarProps) {
                 <li>
                   <SidebarHoverItem active={matchesPath('/dashboard')}>
                     <button
-                      onClick={() => navigate('/dashboard')}
+                      onClick={() => go('/dashboard')} {...prefetch('/dashboard')}
                       className={cn(
                         'flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium w-full transition-all duration-200 justify-start',
                         matchesPath('/dashboard')
@@ -449,7 +477,7 @@ export default function Sidebar({ onLogout }: SidebarProps) {
                     }
                   >
                     <button
-                      onClick={() => navigate('/my-assets')}
+                      onClick={() => go('/my-assets')} {...prefetch('/my-assets')}
                       className={cn(
                         'flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium w-full transition-all duration-200 justify-start',
                         matchesPath('/my-assets')
@@ -483,7 +511,7 @@ export default function Sidebar({ onLogout }: SidebarProps) {
                     }
                   >
                     <button
-                      onClick={() => setFormsOpen(!formsOpen)}
+                      onClick={() => setFormsOpen(!formsOpen)} {...prefetchMany(['/forms/accountability', '/forms/checklist', '/forms/borrow', '/forms/return', '/forms/transfer', '/approvals'])}
                       className={cn(
                         'flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium w-full transition-all duration-200 justify-between',
                         location.pathname === '/forms/accountability' ||
@@ -524,7 +552,7 @@ export default function Sidebar({ onLogout }: SidebarProps) {
                           active={location.pathname === '/forms/accountability'}
                         >
                           <button
-                            onClick={() => navigate('/forms/accountability')}
+                            onClick={() => go('/forms/accountability')} {...prefetch('/forms/accountability')}
                             className={cn(
                               'flex items-center gap-3 px-3 py-2 rounded-lg text-sm w-full transition-all duration-200',
                               location.pathname === '/forms/accountability'
@@ -542,7 +570,7 @@ export default function Sidebar({ onLogout }: SidebarProps) {
                           active={location.pathname === '/forms/checklist'}
                         >
                           <button
-                            onClick={() => navigate('/forms/checklist')}
+                            onClick={() => go('/forms/checklist')} {...prefetch('/forms/checklist')}
                             className={cn(
                               'flex items-center gap-3 px-3 py-2 rounded-lg text-sm w-full transition-all duration-200',
                               location.pathname === '/forms/checklist'
@@ -560,7 +588,7 @@ export default function Sidebar({ onLogout }: SidebarProps) {
                           active={location.pathname === '/forms/borrow'}
                         >
                           <button
-                            onClick={() => navigate('/forms/borrow')}
+                            onClick={() => go('/forms/borrow')} {...prefetch('/forms/borrow')}
                             className={cn(
                               'flex items-center gap-3 px-3 py-2 rounded-lg text-sm w-full transition-all duration-200',
                               location.pathname === '/forms/borrow'
@@ -578,7 +606,7 @@ export default function Sidebar({ onLogout }: SidebarProps) {
                           active={location.pathname === '/forms/return'}
                         >
                           <button
-                            onClick={() => navigate('/forms/return')}
+                            onClick={() => go('/forms/return')} {...prefetch('/forms/return')}
                             className={cn(
                               'flex items-center gap-3 px-3 py-2 rounded-lg text-sm w-full transition-all duration-200',
                               location.pathname === '/forms/return'
@@ -596,7 +624,7 @@ export default function Sidebar({ onLogout }: SidebarProps) {
                           active={location.pathname === '/forms/transfer'}
                         >
                           <button
-                            onClick={() => navigate('/forms/transfer')}
+                            onClick={() => go('/forms/transfer')} {...prefetch('/forms/transfer')}
                             className={cn(
                               'flex items-center gap-3 px-3 py-2 rounded-lg text-sm w-full transition-all duration-200',
                               location.pathname === '/forms/transfer'
@@ -614,7 +642,7 @@ export default function Sidebar({ onLogout }: SidebarProps) {
                           active={location.pathname === '/approvals'}
                         >
                           <button
-                            onClick={() => navigate('/approvals')}
+                            onClick={() => go('/approvals')} {...prefetch('/approvals')}
                             className={cn(
                               'flex items-center gap-3 px-3 py-2 rounded-lg text-sm w-full transition-all duration-200',
                               location.pathname === '/approvals'
@@ -657,7 +685,7 @@ export default function Sidebar({ onLogout }: SidebarProps) {
                     }
                   >
                     <button
-                      onClick={() => setAssetsOpen(!assetsOpen)}
+                      onClick={() => setAssetsOpen(!assetsOpen)} {...prefetchMany(ASSET_SIDEBAR_ENTRIES.flatMap(e => [e.path, ...(e.children?.map(c => c.path) ?? [])]))}
                       className={cn(
                         'flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium w-full transition-all duration-200 justify-between',
                         (location.pathname.startsWith('/assets') &&
@@ -721,7 +749,7 @@ export default function Sidebar({ onLogout }: SidebarProps) {
                             >
                               <button
                                 type="button"
-                                onClick={() => navigate(child.path)}
+                                onClick={() => go(child.path)} {...prefetch(child.path)}
                                 className={linkClass(child.path)}
                               >
                                 <child.icon className="h-4 w-4 flex-shrink-0" />
@@ -739,7 +767,7 @@ export default function Sidebar({ onLogout }: SidebarProps) {
                             >
                               <button
                                 type="button"
-                                onClick={() => navigate(entry.path)}
+                                onClick={() => go(entry.path)} {...prefetch(entry.path)}
                                 className={linkClass(entry.path)}
                               >
                                 <entry.icon className="h-4 w-4 flex-shrink-0" />
@@ -760,7 +788,7 @@ export default function Sidebar({ onLogout }: SidebarProps) {
                               >
                                 <button
                                   type="button"
-                                  onClick={() => navigate(entry.path)}
+                                  onClick={() => go(entry.path)} {...prefetch(entry.path)}
                                   className={cn(
                                     'flex min-w-0 flex-1 items-center gap-3 px-3 py-2 rounded-lg text-sm transition-all duration-200 text-left',
                                     entryActive
@@ -817,7 +845,7 @@ export default function Sidebar({ onLogout }: SidebarProps) {
                                   >
                                     <button
                                       type="button"
-                                      onClick={() => navigate(child.path)}
+                                      onClick={() => go(child.path)} {...prefetch(child.path)}
                                       className={linkClass(child.path, 'pl-2')}
                                     >
                                       <child.icon className="h-4 w-4 flex-shrink-0" />
@@ -839,7 +867,7 @@ export default function Sidebar({ onLogout }: SidebarProps) {
                 <li>
                   <SidebarHoverItem active={matchesPath('/user')}>
                     <button
-                      onClick={() => navigate('/user')}
+                      onClick={() => go('/user')} {...prefetch('/user')}
                       className={cn(
                         'flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium w-full transition-all duration-200 justify-start',
                         matchesPath('/user')
@@ -864,7 +892,7 @@ export default function Sidebar({ onLogout }: SidebarProps) {
                   >
                     <div className="flex w-full items-stretch gap-0.5">
                       <button
-                        onClick={() => navigate('/reports')}
+                        onClick={() => go('/reports')} {...prefetch('/reports')}
                         className={cn(
                           'flex min-w-0 flex-1 items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-all duration-200 text-left',
                           matchesPath('/reports') ||
@@ -881,7 +909,7 @@ export default function Sidebar({ onLogout }: SidebarProps) {
                         type="button"
                         aria-expanded={reportsOpen}
                         aria-label={reportsOpen ? 'Collapse reports submenu' : 'Expand reports submenu'}
-                        onClick={() => setReportsOpen(!reportsOpen)}
+                        onClick={() => setReportsOpen(!reportsOpen)} {...prefetch('/reports')}
                         className={cn(
                           'flex shrink-0 items-center justify-center rounded-lg px-2 text-white/80 transition-colors hover:bg-white/10 hover:text-white',
                           reportsOpen && 'text-white'
@@ -914,7 +942,7 @@ export default function Sidebar({ onLogout }: SidebarProps) {
                           }
                         >
                           <button
-                            onClick={() => navigate('/reports?section=assignment')}
+                            onClick={() => go('/reports?section=assignment')} {...prefetch('/reports')}
                             className={cn(
                               'flex items-center gap-3 px-3 py-2 rounded-lg text-sm w-full transition-all duration-200',
                               location.pathname === '/reports' &&
@@ -936,7 +964,7 @@ export default function Sidebar({ onLogout }: SidebarProps) {
                           }
                         >
                           <button
-                            onClick={() => navigate('/reports?section=return')}
+                            onClick={() => go('/reports?section=return')} {...prefetch('/reports')}
                             className={cn(
                               'flex items-center gap-3 px-3 py-2 rounded-lg text-sm w-full transition-all duration-200',
                               location.pathname === '/reports' &&
@@ -958,7 +986,7 @@ export default function Sidebar({ onLogout }: SidebarProps) {
                           }
                         >
                           <button
-                            onClick={() => navigate('/reports?section=transfer')}
+                            onClick={() => go('/reports?section=transfer')} {...prefetch('/reports')}
                             className={cn(
                               'flex items-center gap-3 px-3 py-2 rounded-lg text-sm w-full transition-all duration-200',
                               location.pathname === '/reports' &&
@@ -980,7 +1008,7 @@ export default function Sidebar({ onLogout }: SidebarProps) {
                           }
                         >
                           <button
-                            onClick={() => navigate('/reports?section=maintenance')}
+                            onClick={() => go('/reports?section=maintenance')} {...prefetch('/reports')}
                             className={cn(
                               'flex items-center gap-3 px-3 py-2 rounded-lg text-sm w-full transition-all duration-200',
                               location.pathname === '/reports' &&
@@ -1002,7 +1030,7 @@ export default function Sidebar({ onLogout }: SidebarProps) {
                           }
                         >
                           <button
-                            onClick={() => navigate('/reports?section=repair')}
+                            onClick={() => go('/reports?section=repair')} {...prefetch('/reports')}
                             className={cn(
                               'flex items-center gap-3 px-3 py-2 rounded-lg text-sm w-full transition-all duration-200',
                               location.pathname === '/reports' &&
@@ -1025,7 +1053,7 @@ export default function Sidebar({ onLogout }: SidebarProps) {
                           }
                         >
                           <button
-                            onClick={() => navigate('/reports?section=borrow')}
+                            onClick={() => go('/reports?section=borrow')} {...prefetch('/reports')}
                             className={cn(
                               'flex items-center gap-3 px-3 py-2 rounded-lg text-sm w-full transition-all duration-200',
                               location.pathname === '/reports' &&
@@ -1047,7 +1075,7 @@ export default function Sidebar({ onLogout }: SidebarProps) {
                           }
                         >
                           <button
-                            onClick={() => navigate('/reports?section=finance')}
+                            onClick={() => go('/reports?section=finance')} {...prefetch('/reports')}
                             className={cn(
                               'flex items-center gap-3 px-3 py-2 rounded-lg text-sm w-full transition-all duration-200',
                               location.pathname === '/reports' &&
@@ -1070,7 +1098,7 @@ export default function Sidebar({ onLogout }: SidebarProps) {
                           }
                         >
                           <button
-                            onClick={() => navigate('/reports?section=assetRequest')}
+                            onClick={() => go('/reports?section=assetRequest')} {...prefetch('/reports')}
                             className={cn(
                               'flex items-center gap-3 px-3 py-2 rounded-lg text-sm w-full transition-all duration-200',
                               location.pathname === '/reports' &&
@@ -1094,7 +1122,7 @@ export default function Sidebar({ onLogout }: SidebarProps) {
                     active={matchesPath('/audit')}
                   >
                     <button
-                      onClick={() => navigate('/audit')}
+                      onClick={() => go('/audit')} {...prefetch('/audit')}
                       className={cn(
                         'flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium w-full transition-all duration-200 justify-start',
                         matchesPath('/audit')
@@ -1113,7 +1141,7 @@ export default function Sidebar({ onLogout }: SidebarProps) {
                 <li>
                   <SidebarHoverItem active={matchesPath('/settings')}>
                     <button
-                      onClick={() => navigate('/settings')}
+                      onClick={() => go('/settings')} {...prefetch('/settings')}
                       className={cn(
                         'flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium w-full transition-all duration-200 justify-start',
                         matchesPath('/settings')
@@ -1137,7 +1165,7 @@ export default function Sidebar({ onLogout }: SidebarProps) {
                 >
                   <button
                     type="button"
-                    onClick={() => setUserManualOpen(!userManualOpen)}
+                    onClick={() => setUserManualOpen(!userManualOpen)} {...prefetchMany(['/user-manual', '/flow-diagrams'])}
                     className={cn(
                       'flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium w-full transition-all duration-200 justify-between',
                       location.pathname === '/user-manual' ||
@@ -1172,7 +1200,7 @@ export default function Sidebar({ onLogout }: SidebarProps) {
                       active={location.pathname === '/user-manual'}
                     >
                       <button
-                        onClick={() => navigate('/user-manual')}
+                        onClick={() => go('/user-manual')} {...prefetch('/user-manual')}
                         className={cn(
                           'flex items-center gap-3 px-3 py-2 rounded-lg text-sm w-full transition-all duration-200',
                           location.pathname === '/user-manual'
@@ -1188,7 +1216,7 @@ export default function Sidebar({ onLogout }: SidebarProps) {
                       active={location.pathname === '/flow-diagrams'}
                     >
                       <button
-                        onClick={() => navigate('/flow-diagrams')}
+                        onClick={() => go('/flow-diagrams')} {...prefetch('/flow-diagrams')}
                         className={cn(
                           'flex items-center gap-3 px-3 py-2 rounded-lg text-sm w-full transition-all duration-200',
                           location.pathname === '/flow-diagrams'

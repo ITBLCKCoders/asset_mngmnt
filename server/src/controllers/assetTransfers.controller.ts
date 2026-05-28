@@ -2683,6 +2683,7 @@ export async function getTransferHistoryHandler(
     }
 
     // 1) Executed transfers (from asset_transfer)
+    // Show transfers where asset is currently in company OR transfer was initiated from this company
     const query = `
       SELECT
         atr.record_id,
@@ -2708,14 +2709,15 @@ export async function getTransferHistoryHandler(
       JOIN asset_transfer_forms atf ON atr.form_id = atf.formID AND atf.deleted_at IS NULL
       JOIN asset_assignments aa ON atr.assignment_id = aa.assignmentID AND aa.deleted_at IS NULL
       JOIN assets a ON aa.asset_id = a.assetID AND a.deleted_at IS NULL
+      LEFT JOIN asset_mngmnt_departments d ON atf.department_id = d.departmentID AND d.deleted_at IS NULL
       LEFT JOIN users past_owner ON atf.user_id = past_owner.userID
       LEFT JOIN users recipient ON atf.new_assigned_user_id = recipient.userID
       LEFT JOIN users processor ON atf.created_by = processor.userID
-      WHERE atr.deleted_at IS NULL AND a.company_id = ?
+      WHERE atr.deleted_at IS NULL AND (a.company_id = ? OR d.company_id = ?)
       ORDER BY atr.created_at DESC
     `;
 
-    const [rows] = (await pool.execute(query, [companyId])) as any[];
+    const [rows] = (await pool.execute(query, [companyId, companyId])) as any[];
 
     const executedRecords = (rows as any[]).map((r: any) => {
       const pastOwnerName =
@@ -2769,6 +2771,7 @@ export async function getTransferHistoryHandler(
     });
 
     // 2) Held/pending forms (have transfer_form_assignments but no asset_transfer yet)
+    // Show pending transfers where asset is currently in company OR transfer was initiated from this company
     const pendingQuery = `
       SELECT
         atf.formID as form_id,
@@ -2794,15 +2797,17 @@ export async function getTransferHistoryHandler(
       JOIN asset_transfer_forms atf ON tfa.form_id = atf.formID AND atf.deleted_at IS NULL
       JOIN asset_assignments aa ON tfa.assignment_id = aa.assignmentID AND aa.deleted_at IS NULL
       JOIN assets a ON aa.asset_id = a.assetID AND a.deleted_at IS NULL
+      LEFT JOIN asset_mngmnt_departments d ON atf.department_id = d.departmentID AND d.deleted_at IS NULL
       LEFT JOIN asset_transfer atr ON atr.form_id = atf.formID AND atr.assignment_id = tfa.assignment_id AND atr.deleted_at IS NULL
       LEFT JOIN users past_owner ON atf.user_id = past_owner.userID
       LEFT JOIN users recipient ON atf.new_assigned_user_id = recipient.userID
       LEFT JOIN users processor ON atf.created_by = processor.userID
-      WHERE atr.record_id IS NULL AND a.company_id = ?
+      WHERE atr.record_id IS NULL AND (a.company_id = ? OR d.company_id = ?)
       ORDER BY atf.created_at DESC
     `;
 
     const [pendingRows] = (await pool.execute(pendingQuery, [
+      companyId,
       companyId,
     ])) as any[];
 
