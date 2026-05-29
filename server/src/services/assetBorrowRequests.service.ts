@@ -101,6 +101,7 @@ export class AssetBorrowRequestsService {
       formNumber,
       expectedReturnAt: expectedMysql,
       purpose: body.purpose.trim(),
+      requestedBySignature: body.requested_by_signature ?? null,
     });
 
     return { id };
@@ -354,6 +355,8 @@ export class AssetBorrowRequestsService {
       preUsageCondition: string;
       processorRemarks?: string;
       conditionImages?: string[];
+      processorSignature?: string;
+      processorSignedAt?: string;
     }
   ): Promise<{ ok: true } | { error: string; status: number }> {
     const row = await getBorrowRequestById(pool, params.borrowRequestId);
@@ -368,9 +371,6 @@ export class AssetBorrowRequestsService {
     }
     if (borrowScope !== null && borrowScope !== row.borrow_scope) {
       return { error: 'Not authorized for this scope', status: 403 };
-    }
-    if (!row.dept_head_signed_at) {
-      return { error: 'Borrow request is not approved by department head yet', status: 400 };
     }
     if (row.declined_at) {
       return { error: 'Borrow request was declined', status: 400 };
@@ -415,8 +415,10 @@ export class AssetBorrowRequestsService {
       approvedBy: userId,
       assetId: asset.assetID,
       preUsageCondition: params.preUsageCondition,
-      processorRemarks: params.processorRemarks,
-      preUsageConditionImages: params.conditionImages,
+      processorRemarks: params.processorRemarks ?? null,
+      preUsageConditionImages: params.conditionImages ?? null,
+      processorSignature: params.processorSignature ?? null,
+      processorSignedAt: params.processorSignedAt ?? null,
     });
     if (!updated) {
       return { error: 'Could not process borrow request', status: 409 };
@@ -491,7 +493,7 @@ export class AssetBorrowRequestsService {
     const updated = await updateBorrowRequestReturnProcess(pool, {
       borrowRequestId: params.borrowRequestId,
       returnCondition: params.returnCondition,
-      returnRemarks: params.returnRemarks,
+      returnRemarks: params.returnRemarks ?? null,
       returnConditionImages: params.returnConditionImages,
     });
     if (!updated) return { error: 'Could not process borrow return', status: 409 };

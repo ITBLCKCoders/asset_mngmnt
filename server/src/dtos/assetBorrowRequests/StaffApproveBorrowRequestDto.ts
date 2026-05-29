@@ -12,6 +12,10 @@ export const StaffApproveBorrowRequestDtoSchema = z.object({
     .optional(),
   /** Optional photo URLs (from upload-condition-photo), max 5 */
   condition_images: z.array(z.string().min(1)).max(5).optional(),
+  /** Optional digital signature of the processor (base64 or URL) */
+  processor_signature: z.string().optional(),
+  /** Optional timestamp when the processor signed */
+  processor_signed_at: z.string().optional(),
 });
 
 export type StaffApproveBorrowRequestDto = z.infer<

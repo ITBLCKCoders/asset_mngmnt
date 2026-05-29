@@ -29,6 +29,10 @@ export interface AssetBorrowingData {
   postUsageCondition: string;
   borrowerCompanyName?: string | null;
   borrowerCompanyLogoUrl?: string | null;
+  /** Digital signature of the requester (base64 data URL) */
+  requestedBySignature?: string | null;
+  /** When the request was submitted */
+  requestedAt?: string | null;
 }
 
 export const generateAssetBorrowingPDF = async (
@@ -59,7 +63,7 @@ export const generateAssetBorrowingPDF = async (
   const pageMargin = 15;
   const tableWidth = 215.9 - pageMargin * 2;
   const tableLineWidth = 0.35;
-  const headerBoxHeight = 40;
+  const headerBoxHeight = 30;
   const headerBoxY = 8;
 
   // Header box
@@ -95,14 +99,14 @@ export const generateAssetBorrowingPDF = async (
   );
   doc.setDrawColor(255, 0, 0);
   doc.setFillColor(255, 255, 255);
-  doc.rect(145, 20, 55, 8, 'FD');
+  doc.rect(internalBoxX, headerBoxY + 12, internalBoxW, 8, 'FD');
   doc.setTextColor(255, 0, 0);
   doc.setFontSize(10);
   doc.setFont('helvetica', 'bold');
   doc.text(
     borrowData.formNumber || 'Borrow Form',
     internalBoxX + internalBoxW / 2,
-    headerBoxY + 19,
+    headerBoxY + 18,
     { align: 'center' }
   );
   doc.setTextColor(0, 0, 0);
@@ -134,12 +138,18 @@ export const generateAssetBorrowingPDF = async (
     theme: 'grid',
     styles: {
       fontSize: 9,
-      cellPadding: 3,
+      cellPadding: 2,
       fontStyle: 'bold',
       halign: 'center',
       valign: 'middle',
     },
     columnStyles: { 0: { cellWidth: twoColW }, 1: { cellWidth: twoColW } },
+    didParseCell: data => {
+      if (data.row.index === 0) {
+        data.cell.styles.fillColor = headerFillColor;
+        data.cell.styles.textColor = headerTextColor;
+      }
+    },
     willDrawCell: () => {
       doc.setDrawColor(0, 0, 0);
       doc.setLineWidth(tableLineWidth);
@@ -150,10 +160,10 @@ export const generateAssetBorrowingPDF = async (
 
   // Body (mostly 2 columns, with some full-width rows and 3-column signature rows)
   const rows: (string | { content: string; colSpan: number })[][] = [
-    ['Borrower Information', ''],
+    [{ content: 'Borrower Information', colSpan: 2 }],
     ['Name:', borrowData.borrowerName || '—'],
     ['Department', borrowData.borrowerDepartment || '—'],
-    ['Equipment details', ''],
+    [{ content: 'Equipment details', colSpan: 2 }],
     ['Equipment name', borrowData.equipmentName || '—'],
     ['Serial Number', borrowData.serialNumber || ''],
     ['Condition of the Equipment (Pre -usage)', borrowData.preUsageCondition || ''],
@@ -182,19 +192,37 @@ export const generateAssetBorrowingPDF = async (
     styles: { fontSize: 9, cellPadding: 3, valign: 'middle' },
     columnStyles: { 0: { cellWidth: twoColW }, 1: { cellWidth: twoColW } },
     didParseCell: data => {
-      // Make "Borrower Information", "Equipment details" label rows look like section headers
-      const labelRows = new Set([0, 3]);
-      if (labelRows.has(data.row.index)) {
+      // Make "Borrower Information", "Equipment details" single-column headers
+      const headerRows = new Set([0, 3]);
+      if (headerRows.has(data.row.index)) {
         data.cell.styles.fontStyle = 'bold';
-        if (data.column.index === 1) {
-          data.cell.text = [''];
-        }
+        data.cell.styles.fillColor = headerFillColor;
+        data.cell.styles.textColor = headerTextColor;
+      }
+      // Make all label rows (first column) bold
+      const labelRows = new Set([1, 2, 4, 5, 6, 7, 8]);
+      if (labelRows.has(data.row.index) && data.column.index === 0) {
+        data.cell.styles.fontStyle = 'bold';
       }
       // Full-width rows (Purpose / Terms etc.)
       const fullWidthRows = new Set([9, 10, 11, 12]);
       if (fullWidthRows.has(data.row.index)) {
         data.cell.styles.fontStyle =
           data.row.index === 9 || data.row.index === 11 ? 'bold' : 'normal';
+        // Add color to Purpose header row
+        if (data.row.index === 9) {
+          data.cell.styles.fillColor = headerFillColor;
+          data.cell.styles.textColor = headerTextColor;
+        }
+        // Add color to Terms and Condition header row
+        if (data.row.index === 11) {
+          data.cell.styles.fillColor = headerFillColor;
+          data.cell.styles.textColor = headerTextColor;
+        }
+        // Increase height of Purpose content row
+        if (data.row.index === 10) {
+          data.cell.styles.minCellHeight = 20;
+        }
       }
     },
     willDrawCell: () => {
@@ -203,9 +231,21 @@ export const generateAssetBorrowingPDF = async (
     },
   });
 
+  // Pre-load signature image if available
+  let sigImg: HTMLImageElement | null = null;
+  if (borrowData.requestedBySignature) {
+    sigImg = await new Promise<HTMLImageElement | null>(resolve => {
+      const img = new Image();
+      img.onload = () => resolve(img);
+      img.onerror = () => resolve(null);
+      img.src = borrowData.requestedBySignature!;
+    });
+  }
+
   // Signature area (3 columns) per spec
   const sigStartY = (doc as any).lastAutoTable.finalY;
   const sigColW = tableWidth / 3;
+  const sigRowHeight = borrowData.requestedBySignature ? 30 : 22;
   autoTable(doc, {
     startY: sigStartY,
     margin: tableMargin,
@@ -213,7 +253,6 @@ export const generateAssetBorrowingPDF = async (
       ['Requested by', 'IT received BY:', 'IT approved by:'],
       ['', '', ''],
       ['Requestor', 'End User Support', 'IT Officer / Dept Head'],
-      [{ content: 'Upon Return', colSpan: 3 }],
     ],
     theme: 'grid',
     styles: { fontSize: 9, cellPadding: 3 },
@@ -225,16 +264,15 @@ export const generateAssetBorrowingPDF = async (
     didParseCell: data => {
       // Big empty row
       if (data.row.index === 1) {
-        data.cell.styles.minCellHeight = 22;
+        data.cell.styles.minCellHeight = sigRowHeight;
+      }
+      // Label row - make it smaller
+      if (data.row.index === 2) {
+        data.cell.styles.minCellHeight = 8;
       }
       if (data.row.index === 0) {
         data.cell.styles.fillColor = headerFillColor;
         data.cell.styles.textColor = headerTextColor;
-      }
-      // Upon Return row
-      if (data.row.index === 3) {
-        data.cell.styles.fontStyle = 'bold';
-        data.cell.styles.halign = 'left';
       }
     },
     willDrawCell: () => {
@@ -242,9 +280,54 @@ export const generateAssetBorrowingPDF = async (
       doc.setLineWidth(tableLineWidth);
     },
     didDrawCell: data => {
-      // Put names on the empty signature space row (row index 1) under each heading.
       if (data.row.index !== 1) return;
       const cell = data.cell;
+
+      if (data.column.index === 0 && sigImg) {
+        // Draw signature image in the top-left portion of the cell
+        const sigMaxH = 35;
+        const aspectRatio = sigImg.width / sigImg.height;
+        let sigW = sigMaxH * aspectRatio;
+        let sigH = sigMaxH;
+        if (sigW > cell.width - 4) {
+          sigW = cell.width - 4;
+          sigH = sigW / aspectRatio;
+        }
+        const sigX = cell.x - 3;
+        const sigY = cell.y + 12;
+
+        // Date/time above signature
+        const reqDate = borrowData.requestedAt
+          ? new Date(borrowData.requestedAt)
+          : null;
+        if (reqDate) {
+          const dateStr = reqDate.toLocaleDateString();
+          const timeStr = reqDate.toLocaleTimeString();
+          
+          doc.setFontSize(7);
+          doc.setTextColor(100, 100, 100);
+          doc.text(dateStr, cell.x + 45, sigY - 5, {
+            align: 'left',
+          });
+          doc.text(timeStr, cell.x + 45, sigY - 2, {
+            align: 'left',
+          });
+        }
+
+        doc.addImage(sigImg, 'PNG', sigX, sigY, sigW, sigH);
+
+        // Name below signature (moved up)
+        doc.setFontSize(9);
+        doc.setFont('helvetica', 'normal');
+        doc.setTextColor(0, 0, 0);
+        doc.text(borrowData.requestedBy, cell.x + 3, sigY + sigH + 5, {
+          align: 'left',
+        });
+
+        return;
+      }
+
+      // Put names on the empty signature space row (row index 1) under each heading.
       doc.setFontSize(8);
       doc.setFont('helvetica', 'normal');
       doc.setTextColor(0, 0, 0);
@@ -266,6 +349,7 @@ export const generateAssetBorrowingPDF = async (
     startY: uponReturnStartY,
     margin: tableMargin,
     body: [
+      [{ content: 'Upon Return', colSpan: 2 }],
       ['Condition of Equipment (Post Usage)', borrowData.postUsageCondition || ''],
       ['Comments / Notes', ''],
       ['Return date', ''],
@@ -276,6 +360,20 @@ export const generateAssetBorrowingPDF = async (
     theme: 'grid',
     styles: { fontSize: 9, cellPadding: 3 },
     columnStyles: { 0: { cellWidth: twoColW }, 1: { cellWidth: twoColW } },
+    didParseCell: data => {
+      // Upon Return header row - add color
+      if (data.row.index === 0) {
+        data.cell.styles.fontStyle = 'bold';
+        data.cell.styles.halign = 'left';
+        data.cell.styles.fillColor = headerFillColor;
+        data.cell.styles.textColor = headerTextColor;
+      }
+      // Make all post-usage label rows bold (first column)
+      const postUsageLabelRows = new Set([1, 2, 3, 4, 6]);
+      if (postUsageLabelRows.has(data.row.index) && data.column.index === 0) {
+        data.cell.styles.fontStyle = 'bold';
+      }
+    },
     willDrawCell: () => {
       doc.setDrawColor(0, 0, 0);
       doc.setLineWidth(tableLineWidth);

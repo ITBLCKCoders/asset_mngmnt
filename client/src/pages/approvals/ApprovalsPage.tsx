@@ -24,20 +24,15 @@ import {
   ReturnFormDetail,
   TransferFormCard,
   TransferFormDetail,
-  BorrowFormCard,
-  BorrowFormDetail,
   buildReturnDataForPDFFromBatch,
   buildTransferDataForPDFFromBatch,
-  buildBorrowDataForPDFFromBatch,
   clearReturnPdfCacheForFormNumber,
   type AssetReturnFormBatch,
   type AssetTransferFormBatch,
-  type AssetBorrowFormBatch,
 } from '@/pages/profile/profileComponents/tabs/documentsTab';
 import {
   generateAssetReturnPDF,
   generateAssetTransferPDF,
-  generateAssetBorrowingPDF,
   generateAssetChecklistPDF,
   downloadPDF,
 } from '@/lib/pdfGenerator';
@@ -54,35 +49,11 @@ import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs';
 import SmsOtpDialog from '@/components/auth/SmsOtpDialog';
 import { useRef } from 'react';
 
-/** Borrow request pending department head (Manager Approver 1), same department as requester. */
-export type BorrowApprovalBatch = {
-  formType: 'borrow';
-  formID: string;
-  borrow_request_id: string;
-  created_at: string;
-  form_number?: string;
-  borrow_scope: 'it' | 'admin';
-  category_name?: string;
-  type_name?: string;
-  purpose: string;
-  expected_return_at: string;
-  requester_first_name?: string | null;
-  requester_last_name?: string | null;
-  requester_email?: string | null;
-  requester_department_name?: string | null;
-  dept_head_signed_at?: string | null;
-  approved_at?: string | null;
-  pre_usage_condition?: string | null;
-  asset_name?: string | null;
-  asset_serial?: string | null;
-  approved_by_name?: string | null;
-};
-
 type FormApprovalBatch = (AssetReturnFormBatch | AssetTransferFormBatch) & {
   formType?: 'return' | 'transfer';
 };
 
-type ApprovalBatch = FormApprovalBatch | BorrowApprovalBatch | ChecklistApprovalBatch;
+type ApprovalBatch = FormApprovalBatch | ChecklistApprovalBatch;
 
 function mapChecklistApiBatches(
   rows: ChecklistApprovalBatch[],
@@ -95,82 +66,6 @@ function mapChecklistApiBatches(
       ? (b.checklists[0]?.dept_head_signed_at ?? new Date().toISOString())
       : null,
   }));
-}
-
-function toAssetBorrowFormBatch(b: BorrowApprovalBatch): AssetBorrowFormBatch {
-  return {
-    borrow_request_id: b.borrow_request_id,
-    form_number: b.form_number ?? null,
-    created_at: b.created_at,
-    borrow_scope: b.borrow_scope,
-    category_name: b.category_name ?? null,
-    type_name: b.type_name ?? null,
-    purpose: b.purpose,
-    expected_return_at: b.expected_return_at,
-    requester_first_name: b.requester_first_name ?? null,
-    requester_last_name: b.requester_last_name ?? null,
-    requester_email: b.requester_email ?? null,
-    requester_department_name: b.requester_department_name ?? null,
-    dept_head_signed_at: b.dept_head_signed_at ?? null,
-    approved_at: b.approved_at ?? null,
-    pre_usage_condition: b.pre_usage_condition ?? null,
-    asset_name: b.asset_name ?? null,
-    asset_serial: b.asset_serial ?? null,
-    approved_by_name: b.approved_by_name ?? null,
-  };
-}
-
-function unwrapBorrowRequests(res: unknown): unknown[] {
-  if (
-    res &&
-    typeof res === 'object' &&
-    'success' in res &&
-    (res as { success?: boolean }).success === true &&
-    'data' in res
-  ) {
-    const d = (res as { data?: { borrowRequests?: unknown[] } }).data;
-    return d?.borrowRequests ?? [];
-  }
-  return (res as { borrowRequests?: unknown[] })?.borrowRequests ?? [];
-}
-
-function mapBorrowRowsToBatches(
-  rows: unknown[],
-  options: { withDeptHeadSigned?: boolean } = {}
-): BorrowApprovalBatch[] {
-  return (rows as Record<string, unknown>[]).map(r => {
-    const id = String(r.borrow_request_id ?? '');
-    const fn = r.form_number != null && String(r.form_number).trim()
-      ? String(r.form_number).trim()
-      : `Borrow ${id.slice(0, 8)}`;
-    return {
-      formType: 'borrow' as const,
-      formID: id,
-      borrow_request_id: id,
-      form_number: fn,
-      created_at: String(r.created_at ?? ''),
-      borrow_scope: r.borrow_scope as 'it' | 'admin',
-      category_name: r.category_name as string | undefined,
-      type_name: r.type_name as string | undefined,
-      purpose: String(r.purpose ?? ''),
-      expected_return_at: String(r.expected_return_at ?? ''),
-      requester_first_name: r.requester_first_name as string | null | undefined,
-      requester_last_name: r.requester_last_name as string | null | undefined,
-      requester_email: r.requester_email as string | null | undefined,
-      requester_department_name:
-        (r.requester_department_name as string | null | undefined) ?? null,
-      dept_head_signed_at: options.withDeptHeadSigned
-        ? ((r.dept_head_signed_at as string | null | undefined) ?? null)
-        : null,
-      approved_at: (r.approved_at as string | null | undefined) ?? null,
-      pre_usage_condition:
-        (r.pre_usage_condition as string | null | undefined) ?? null,
-      asset_name: (r.asset_name as string | null | undefined) ?? null,
-      asset_serial: (r.asset_serial as string | null | undefined) ?? null,
-      approved_by_name:
-        (r.approved_by_name as string | null | undefined) ?? null,
-    };
-  });
 }
 
 export default function ApprovalsPage() {
@@ -231,14 +126,13 @@ export default function ApprovalsPage() {
   const fetchPendingApprovals = async () => {
     try {
       setLoading(true);
-      const [returnRes, transferRes, borrowRes, checklistRes] = await Promise.all([
+      const [returnRes, transferRes, checklistRes] = await Promise.all([
         api.get<{ assetReturnForms?: AssetReturnFormBatch[] }>(
           '/asset-returns/forms/pending-approvals'
         ),
         api.get<{ assetTransferForms?: AssetTransferFormBatch[] }>(
           '/asset-transfers/forms/pending-approvals'
         ),
-        api.get<unknown>('/asset-borrow-requests/pending-dept-approvals'),
         api.get<{ checklistBatches?: ChecklistApprovalBatch[] }>(
           '/asset-checklists/pending-approvals'
         ),
@@ -251,13 +145,12 @@ export default function ApprovalsPage() {
         ...b,
         formType: 'transfer' as const,
       })) as FormApprovalBatch[];
-      const borrows = mapBorrowRowsToBatches(unwrapBorrowRequests(borrowRes));
       const checklists = mapChecklistApiBatches(
         checklistRes.checklistBatches ?? [],
         false
       );
       setBatches(
-        ([...returns, ...transfers, ...borrows, ...checklists] as ApprovalBatch[]).sort(
+        ([...returns, ...transfers, ...checklists] as ApprovalBatch[]).sort(
           (a, b) =>
             new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
         )
@@ -274,14 +167,13 @@ export default function ApprovalsPage() {
   const fetchApprovedByMe = async () => {
     try {
       setApprovedLoading(true);
-      const [returnRes, transferRes, borrowRes, checklistRes] = await Promise.all([
+      const [returnRes, transferRes, checklistRes] = await Promise.all([
         api.get<{ assetReturnForms?: AssetReturnFormBatch[] }>(
           '/asset-returns/forms/approved-by-me'
         ),
         api.get<{ assetTransferForms?: AssetTransferFormBatch[] }>(
           '/asset-transfers/forms/approved-by-me'
         ),
-        api.get<unknown>('/asset-borrow-requests/approved-by-dept-head-me'),
         api.get<{ checklistBatches?: ChecklistApprovalBatch[] }>(
           '/asset-checklists/approved-by-dept-head-me'
         ),
@@ -294,15 +186,12 @@ export default function ApprovalsPage() {
         ...b,
         formType: 'transfer' as const,
       })) as FormApprovalBatch[];
-      const borrows = mapBorrowRowsToBatches(unwrapBorrowRequests(borrowRes), {
-        withDeptHeadSigned: true,
-      });
       const checklists = mapChecklistApiBatches(
         checklistRes.checklistBatches ?? [],
         true
       );
       setApprovedBatches(
-        ([...returns, ...transfers, ...borrows, ...checklists] as ApprovalBatch[]).sort(
+        ([...returns, ...transfers, ...checklists] as ApprovalBatch[]).sort(
           (a, b) =>
             new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
         )
@@ -400,21 +289,6 @@ export default function ApprovalsPage() {
       );
       return name.includes(q) || dept.includes(q) || assets;
     }
-    if (batch.formType === 'borrow') {
-      const b = batch as BorrowApprovalBatch;
-      const name =
-        `${b.requester_first_name || ''} ${b.requester_last_name || ''}`
-          .trim()
-          .toLowerCase();
-      return (
-        name.includes(q) ||
-        (b.purpose || '').toLowerCase().includes(q) ||
-        (b.category_name || '').toLowerCase().includes(q) ||
-        (b.type_name || '').toLowerCase().includes(q) ||
-        (b.form_number || '').toLowerCase().includes(q) ||
-        (b.borrow_scope || '').toLowerCase().includes(q)
-      );
-    }
     const base =
       batch.returns?.some(
         r =>
@@ -509,23 +383,6 @@ export default function ApprovalsPage() {
         await downloadChecklistBatch(batch as ChecklistApprovalBatch);
         return;
       }
-      if (batch.formType === 'borrow') {
-        const data = buildBorrowDataForPDFFromBatch(
-          toAssetBorrowFormBatch(batch as BorrowApprovalBatch)
-        );
-        if (!data) {
-          toast.error('Cannot generate PDF for this borrow request');
-          return;
-        }
-        const blob = await generateAssetBorrowingPDF(data);
-        const b = batch as BorrowApprovalBatch;
-        const fileName = b.form_number
-          ? `Equipment_Borrowing_${b.form_number}_${Date.now()}.pdf`
-          : `Equipment_Borrowing_${Date.now()}.pdf`;
-        downloadPDF(blob, fileName);
-        toast.success('Download started');
-        return;
-      }
       if (batch.formType === 'transfer') {
         const data = buildTransferDataForPDFFromBatch(
           batch as AssetTransferFormBatch
@@ -586,29 +443,6 @@ export default function ApprovalsPage() {
           );
           if (checklistPreviewUrl) URL.revokeObjectURL(checklistPreviewUrl);
           setChecklistPreviewUrl('');
-          setShowDetail(false);
-          setSelectedBatch(null);
-          await refreshAll();
-        } catch (error: unknown) {
-          const msg =
-            (error as { data?: { error?: string } })?.data?.error ||
-            (error as Error)?.message ||
-            'Failed to approve';
-          toast.error(msg);
-        } finally {
-          setApproving(false);
-        }
-        return;
-      }
-      if (selectedBatch.formType === 'borrow') {
-        if (!(selectedBatch as BorrowApprovalBatch).borrow_request_id) return;
-        try {
-          setApproving(true);
-          await api.post(
-            `/asset-borrow-requests/${selectedBatch.borrow_request_id}/dept-head-approve`,
-            {}
-          );
-          toast.success('Borrow request approved — forwarded to IT/Admin');
           setShowDetail(false);
           setSelectedBatch(null);
           await refreshAll();
@@ -726,29 +560,6 @@ export default function ApprovalsPage() {
     // Set up the actual decline action as a pending action
     pendingActionRef.current = async () => {
       if (!selectedBatch) return;
-      if (selectedBatch.formType === 'borrow') {
-        if (!(selectedBatch as BorrowApprovalBatch).borrow_request_id) return;
-        try {
-          setDeclining(true);
-          await api.post(
-            `/asset-borrow-requests/${selectedBatch.borrow_request_id}/dept-head-decline`,
-            { reason: declineReason }
-          );
-          toast.success('Borrow request declined');
-          setShowDetail(false);
-          setSelectedBatch(null);
-          await refreshAll();
-        } catch (error: unknown) {
-          const msg =
-            (error as { data?: { error?: string } })?.data?.error ||
-            (error as Error)?.message ||
-            'Failed to decline';
-          toast.error(msg);
-        } finally {
-          setDeclining(false);
-        }
-        return;
-      }
       if (
         selectedBatch.formType !== 'transfer' &&
         selectedBatch.formType !== 'return'
@@ -786,7 +597,7 @@ export default function ApprovalsPage() {
   };
 
   const handleReceive = () => {
-    if (!selectedBatch || selectedBatch.formType === 'borrow') {
+    if (!selectedBatch) {
       return;
     }
 
@@ -898,7 +709,6 @@ export default function ApprovalsPage() {
   const showReceiveButton =
     canReceive &&
     selectedBatch != null &&
-    selectedBatch.formType !== 'borrow' &&
     (selectedBatch.formType === 'checklist'
       ? !!(selectedBatch as ChecklistApprovalBatch).dept_head_signed_at &&
         !(selectedBatch as ChecklistApprovalBatch).it_manager_signed_at
@@ -941,9 +751,7 @@ export default function ApprovalsPage() {
         const key =
           batch.formType === 'checklist'
             ? (batch as ChecklistApprovalBatch).batchKey
-            : batch.formType === 'borrow'
-              ? (batch as BorrowApprovalBatch).borrow_request_id
-              : batch.formID ??
+            : batch.formID ??
                 batch.return_batch_id ??
                 batch.returns?.[0]?.return_id ??
                 '';
@@ -960,20 +768,6 @@ export default function ApprovalsPage() {
                 void loadChecklistPreview(cb, 0);
               }}
               onDownload={() => void downloadChecklistBatch(cb)}
-            />
-          );
-        }
-        if (batch.formType === 'borrow') {
-          const b = batch as BorrowApprovalBatch;
-          return (
-            <BorrowFormCard
-              key={b.borrow_request_id}
-              batch={toAssetBorrowFormBatch(b)}
-              onView={() => {
-                setSelectedBatch(batch);
-                setShowDetail(true);
-              }}
-              onDownload={() => handleDownload(batch)}
             />
           );
         }
@@ -1095,7 +889,7 @@ export default function ApprovalsPage() {
                 ? renderEmpty(
                     <CheckSquare className="w-16 h-16 text-gray-300 mx-auto mb-4" />,
                     'No pending approvals',
-                    'Return, transfer, borrow, and asset checklist forms that need Department Head (Manager Approver 1) approval will appear here.',
+                    'Return, transfer, and asset checklist forms that need Department Head (Manager Approver 1) approval will appear here.',
                     searchQuery
                   )
                 : renderCardGrid(filteredBatches)}
@@ -1173,8 +967,6 @@ export default function ApprovalsPage() {
                   <>
                     {selectedBatch.formType === 'checklist'
                       ? `${(selectedBatch as ChecklistApprovalBatch).employee_name} — Asset Checklist (${(selectedBatch as ChecklistApprovalBatch).checklist_count} asset${(selectedBatch as ChecklistApprovalBatch).checklist_count !== 1 ? 's' : ''})`
-                      : selectedBatch.formType === 'borrow'
-                      ? `${`${(selectedBatch as BorrowApprovalBatch).requester_first_name || ''} ${(selectedBatch as BorrowApprovalBatch).requester_last_name || ''}`.trim() || 'Employee'} — Borrow request`
                       : selectedBatch.returns?.[0]?.assignment?.user
                         ? `${selectedBatch.returns[0].assignment.user.first_name || ''} ${selectedBatch.returns[0].assignment.user.last_name || ''}`.trim() ||
                           (selectedBatch.formType === 'transfer'
@@ -1183,8 +975,7 @@ export default function ApprovalsPage() {
                         : selectedBatch.formType === 'transfer'
                           ? 'Transfer'
                           : 'Return'}{' '}
-                    {selectedBatch.formType !== 'borrow' &&
-                      selectedBatch.formType !== 'checklist' && (
+                    {selectedBatch.formType !== 'checklist' && (
                       <>
                         -{' '}
                         {selectedBatch.form_number ??
@@ -1196,8 +987,6 @@ export default function ApprovalsPage() {
                 description={
                   selectedBatch.formType === 'checklist'
                     ? 'Asset Checklist Form Preview'
-                    : selectedBatch.formType === 'borrow'
-                    ? 'Equipment Borrowing Form Preview'
                     : selectedBatch.formType === 'transfer'
                       ? 'Asset Transfer Form Preview'
                       : 'Asset Return Form Preview'
@@ -1239,19 +1028,6 @@ export default function ApprovalsPage() {
                     )}
                   </div>
                 </div>
-              ) : selectedBatch.formType === 'borrow' ? (
-                <BorrowFormDetail
-                  key={(selectedBatch as BorrowApprovalBatch).borrow_request_id}
-                  borrowFormBatch={toAssetBorrowFormBatch(
-                    selectedBatch as BorrowApprovalBatch
-                  )}
-                  onClose={() => {
-                    setShowDetail(false);
-                    setSelectedBatch(null);
-                  }}
-                  onDownload={handleDownloadCurrent}
-                  contentOnly
-                />
               ) : selectedBatch.formType === 'transfer' ? (
                 <TransferFormDetail
                   key={

@@ -1,7 +1,7 @@
 'use client';
 
-import { useCallback, useEffect, useMemo, useState } from 'react';
-import { HandHelping, LayoutGrid, Table, Calendar } from 'lucide-react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { HandHelping, LayoutGrid, Table, Calendar, Package, User, FileText, Building2, Eye } from 'lucide-react';
 import { PageHeader } from '@/components/common/PageHeader';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
@@ -28,11 +28,8 @@ import { Input } from '@/components/ui/input';
 import { api } from '@/lib/api';
 import { toast } from 'sonner';
 import { useUserPermissions } from '@/hooks/useUserPermissions';
+import { useCurrentUser } from '@/hooks/useCurrentUser';
 import { downloadPDF, generateAssetBorrowingPDF } from '@/lib/pdfGenerator';
-import {
-  buildBorrowDataForPDFFromBatch,
-  type AssetBorrowFormBatch,
-} from '@/pages/profile/profileComponents/tabs/documentsTab';
 import {
   classifyDepartmentScopeByName,
   parseCategoryDepartment,
@@ -41,7 +38,9 @@ import {
   borrowRequestStatusLabel,
   type BorrowRequestRow,
 } from './borrowRequestsPage';
+import { ProcessBorrowRequestSummary } from './borrowRequestsPage';
 import { Shimmer } from '@/components/ui/shimmer';
+import SmsOtpDialog from '@/components/auth/SmsOtpDialog';
 
 type BorrowScope = 'it' | 'admin';
 
@@ -138,9 +137,10 @@ const myBorrowRequestColumns: ColumnDef<BorrowRequestRow>[] = [
 
 export default function AssetBorrowing() {
   const { hasPermission } = useUserPermissions();
+  const { user: currentUser } = useCurrentUser();
   const [formOpen, setFormOpen] = useState(false);
   const [termsOpen, setTermsOpen] = useState(false);
-  const [nextStepsOpen, setNextStepsOpen] = useState(false);
+  const [showOtpDialog, setShowOtpDialog] = useState(false);
   const [categories, setCategories] = useState<CategoryRow[]>([]);
   const [types, setTypes] = useState<TypeRow[]>([]);
   const [loadingMeta, setLoadingMeta] = useState(false);
@@ -151,8 +151,12 @@ export default function AssetBorrowing() {
   const [returnGuideOpen, setReturnGuideOpen] = useState(false);
   const [selectedReturnRequest, setSelectedReturnRequest] =
     useState<BorrowRequestRow | null>(null);
+  const [selectedViewRequest, setSelectedViewRequest] =
+    useState<BorrowRequestRow | null>(null);
+  const [viewDialogOpen, setViewDialogOpen] = useState(false);
   const [viewMode, setViewMode] = useState<'table' | 'card'>('table');
   const [viewSwitchingLoading, setViewSwitchingLoading] = useState(false);
+  const pendingActionRef = useRef<(() => Promise<void>) | null>(null);
 
   const [borrowScope, setBorrowScope] = useState<BorrowScope | ''>('');
   const [categoryId, setCategoryId] = useState('');
@@ -275,75 +279,40 @@ export default function AssetBorrowing() {
   };
 
   const submitBorrowRequest = async () => {
-    setSubmitting(true);
-    try {
-      const iso = new Date(expectedReturn);
-      if (Number.isNaN(iso.getTime())) {
-        toast.error('Invalid return date');
-        return;
-      }
-      await api.post<unknown>('/asset-borrow-requests', {
-        borrow_scope: borrowScope,
-        category_id: categoryId,
-        type_id: typeId,
-        expected_return_at: iso.toISOString(),
-        purpose: purpose.trim(),
-      });
-      toast.success('Borrow request submitted');
-      setTermsOpen(false);
-      setFormOpen(false);
-      setNextStepsOpen(true);
-      resetForm();
-      void loadMyRequests();
-    } catch (e: unknown) {
-      const msg =
-        (e as { data?: { error?: string } })?.data?.error ||
-        (e as Error)?.message ||
-        'Failed to submit';
-      toast.error(msg);
-    } finally {
-      setSubmitting(false);
+    const iso = new Date(expectedReturn);
+    if (Number.isNaN(iso.getTime())) {
+      toast.error('Invalid return date');
+      return;
     }
-  };
-
-  const handleDownloadLatestBorrowForm = async () => {
-    try {
-      const res = await api.get<unknown>('/asset-borrow-requests/mine');
-      const payload =
-        res &&
-        typeof res === 'object' &&
-        'success' in res &&
-        (res as { success?: boolean }).success === true &&
-        'data' in res
-          ? (res as { data: { borrowRequests?: AssetBorrowFormBatch[] } }).data
-          : (res as { borrowRequests?: AssetBorrowFormBatch[] });
-      const list = payload?.borrowRequests ?? [];
-      if (!Array.isArray(list) || list.length === 0) {
-        toast.error('No borrow form found to download yet');
-        return;
+    pendingActionRef.current = async () => {
+      setSubmitting(true);
+      try {
+        const digitalSignature = (currentUser as any)?.digitalSignature || '';
+        await api.post<unknown>('/asset-borrow-requests', {
+          borrow_scope: borrowScope,
+          category_id: categoryId,
+          type_id: typeId,
+          expected_return_at: iso.toISOString(),
+          purpose: purpose.trim(),
+          requested_by_signature: digitalSignature || undefined,
+        });
+        toast.success('Borrow request submitted');
+        setFormOpen(false);
+        resetForm();
+        void loadMyRequests();
+      } catch (e: unknown) {
+        const msg =
+          (e as { data?: { error?: string } })?.data?.error ||
+          (e as Error)?.message ||
+          'Failed to submit';
+        toast.error(msg);
+        throw e;
+      } finally {
+        setSubmitting(false);
       }
-
-      const latest = [...list].sort((a, b) => {
-        const aTime = new Date(a.created_at ?? 0).getTime();
-        const bTime = new Date(b.created_at ?? 0).getTime();
-        return bTime - aTime;
-      })[0];
-
-      const data = buildBorrowDataForPDFFromBatch(latest);
-      if (!data) {
-        toast.error('Cannot generate PDF for this borrow form');
-        return;
-      }
-
-      const blob = await generateAssetBorrowingPDF(data);
-      const fileName = latest.form_number?.trim()
-        ? `Borrow_Form_${latest.form_number}_${Date.now()}.pdf`
-        : `Borrow_Form_${Date.now()}.pdf`;
-      downloadPDF(blob, fileName);
-      toast.success('Borrow form downloaded successfully');
-    } catch {
-      toast.error('Failed to download borrow form PDF');
-    }
+    };
+    setTermsOpen(false);
+    setShowOtpDialog(true);
   };
 
   const handleDownloadBorrowForm = async (row: BorrowRequestRow) => {
@@ -376,6 +345,8 @@ export default function AssetBorrowing() {
         postUsageCondition: row.return_condition || '',
         borrowerCompanyName: row.requester_company_name ?? null,
         borrowerCompanyLogoUrl: row.requester_company_logo_url ?? null,
+        requestedBySignature: row.requested_by_signature ?? null,
+        requestedAt: row.created_at ?? null,
       });
       downloadPDF(blob, `Borrow_Form_${row.form_number ?? row.borrow_request_id}.pdf`);
       toast.success('Borrow form downloaded');
@@ -505,6 +476,9 @@ export default function AssetBorrowing() {
                     if (request.status === 'approved') {
                       setSelectedReturnRequest(request);
                       setReturnGuideOpen(true);
+                    } else {
+                      setSelectedViewRequest(request);
+                      setViewDialogOpen(true);
                     }
                   }}
                   titleBadge={
@@ -646,11 +620,11 @@ export default function AssetBorrowing() {
                       </Button>
                     </div>
                   ) : (
-                    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
                       {myRequests.map((request) => (
-                        <Card
+                        <div
                           key={request.borrow_request_id}
-                          className="gborder border-gray-200 shadow-sm hover:shadow-md transition-shadow cursor-pointer"
+                          className="hover:shadow-md transition-shadow flex flex-col bg-white border border-slate-200 rounded-lg p-4 cursor-pointer"
                           onClick={() => {
                             if (request.status === 'approved') {
                               setSelectedReturnRequest(request);
@@ -658,58 +632,108 @@ export default function AssetBorrowing() {
                             }
                           }}
                         >
-                          <CardHeader className="pb-3">
-                            <div className="flex items-start justify-between gap-2 mb-2">
-                              <div className="flex gap-2">
-                                <Badge variant="outline" className="text-xs font-mono bg-blue-50 text-blue-700 border-blue-200">
-                                  {request.form_number?.trim() || '—'}
-                                </Badge>
-                                <Badge variant="outline" className="text-xs uppercase">
-                                  {request.borrow_scope}
-                                </Badge>
+                          <div className="flex items-start justify-between mb-4">
+                            <div className="flex items-center gap-3">
+                              <div className="p-2 bg-red-100 rounded-lg">
+                                <HandHelping className="h-5 w-5 text-red-700" />
                               </div>
-                              <Badge variant="outline" className="text-xs">
-                                {borrowRequestStatusLabel(request)}
-                              </Badge>
+                              <div>
+                                <p className="text-lg font-semibold">
+                                  {request.form_number ?? request.borrow_request_id.slice(0, 8)}
+                                </p>
+                                <p className="text-sm text-gray-500">
+                                  Created {request.created_at ? new Date(request.created_at).toLocaleString() : '—'}
+                                </p>
+                              </div>
                             </div>
-                            <CardTitle className="text-lg font-semibold text-gray-900 line-clamp-2">
-                              {request.category_name} - {request.type_name}
-                            </CardTitle>
-                          </CardHeader>
-                          <CardContent className="space-y-3">
-                            <div className="flex items-center gap-2 text-sm text-gray-600">
-                              <Calendar className="h-4 w-4" />
-                              <span className="text-xs text-gray-500">Expected return:</span>
-                              <span className="truncate">
-                                {request.expected_return_at
-                                  ? new Date(request.expected_return_at).toLocaleString()
-                                  : '—'}
-                              </span>
+                            <Badge variant="secondary" className="bg-amber-100 text-amber-800">
+                              {borrowRequestStatusLabel(request)}
+                            </Badge>
+                          </div>
+
+                          <div className="space-y-4 flex-1">
+                            <div className="flex items-start gap-3">
+                              <Package className="h-4 w-4 text-gray-400 mt-0.5 flex-shrink-0" />
+                              <div className="flex-1 min-w-0">
+                                <p className="font-medium text-sm">Requested equipment</p>
+                                <ul className="text-xs text-gray-600 mt-1 space-y-0.5 list-none">
+                                  <li className="flex items-center">
+                                    <span className="w-1.5 h-1.5 bg-gray-400 rounded-full mr-2 flex-shrink-0" />
+                                    <span className="truncate">
+                                      {request.category_name ?? '—'}
+                                      {request.type_name ? (
+                                        <span className="text-gray-400 ml-1">
+                                          — {request.type_name}
+                                        </span>
+                                      ) : null}
+                                    </span>
+                                  </li>
+                                </ul>
+                              </div>
                             </div>
-                            <p className="text-sm text-gray-500 line-clamp-2">
-                              {request.purpose}
-                            </p>
-                            <div className="flex items-center gap-2 text-xs text-gray-400">
-                              <span>
-                                Requested: {request.created_at ? new Date(request.created_at).toLocaleString() : '—'}
-                              </span>
+
+                            <div className="flex items-start gap-3">
+                              <User className="h-4 w-4 text-gray-400 mt-0.5 flex-shrink-0" />
+                              <div className="flex-1 min-w-0">
+                                <p className="font-medium text-sm">Requested by: {`${request.requester_first_name || ''} ${request.requester_last_name || ''}`.trim() || request.requester_username || request.requester_email || '—'}</p>
+                                {request.requester_department_name?.trim() ? (
+                                  <p className="text-xs text-gray-600 mt-0.5">
+                                    Department: {request.requester_department_name}
+                                  </p>
+                                ) : null}
+                              </div>
                             </div>
-                            {request.status === 'approved' && (
-                              <Button
-                                variant="outline"
-                                size="sm"
-                                className="w-full mt-2"
-                                onClick={(e) => {
-                                  e.stopPropagation();
+
+                            <div className="flex items-start gap-3">
+                              <Calendar className="h-4 w-4 text-gray-400 mt-0.5 flex-shrink-0" />
+                              <div className="flex-1 min-w-0">
+                                <p className="text-sm text-gray-600">
+                                  Expected return:{' '}
+                                  {request.expected_return_at
+                                    ? new Date(request.expected_return_at).toLocaleString()
+                                    : '—'}
+                                </p>
+                              </div>
+                            </div>
+
+                            <div className="flex items-start gap-3">
+                              <FileText className="h-4 w-4 text-gray-400 mt-0.5 flex-shrink-0" />
+                              <div className="flex-1 min-w-0">
+                                <p className="text-sm text-gray-600 line-clamp-3">
+                                  Purpose: {request.purpose || '—'}
+                                </p>
+                              </div>
+                            </div>
+
+                            <div className="flex items-start gap-3">
+                              <Building2 className="h-4 w-4 text-gray-400 mt-0.5 flex-shrink-0" />
+                              <div className="flex-1 min-w-0">
+                                <p className="text-sm text-gray-600">
+                                  Scope: {request.borrow_scope === 'it' ? 'IT' : 'Admin'}
+                                </p>
+                              </div>
+                            </div>
+                          </div>
+
+                          <div className="flex gap-2 mt-4">
+                            <Button
+                              className="flex-1 bg-red-600 text-white hover:bg-white hover:text-red-600 hover:border-red-600 border-2 border-red-600"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                if (request.status === 'approved') {
                                   setSelectedReturnRequest(request);
                                   setReturnGuideOpen(true);
-                                }}
-                              >
-                                Return
-                              </Button>
-                            )}
-                          </CardContent>
-                        </Card>
+                                } else {
+                                  setSelectedViewRequest(request);
+                                  setViewDialogOpen(true);
+                                }
+                              }}
+                            >
+                              <Eye className="h-4 w-4 mr-2" />
+                              {request.status === 'approved' ? 'Return' : 'View'}
+                            </Button>
+                          </div>
+                        </div>
                       ))}
                     </div>
                   )}
@@ -732,93 +756,95 @@ export default function AssetBorrowing() {
             />
 
             <AppDialogBody className="min-h-0 flex-1 space-y-4 overflow-y-auto py-2">
-              <div className="space-y-2">
-                <Label>IT Asset or Admin Asset *</Label>
-                <Select
-                  value={borrowScope === '' ? undefined : borrowScope}
-                  onValueChange={(v: BorrowScope) => {
-                    setBorrowScope(v);
-                    setCategoryId('');
-                    setTypeId('');
-                  }}
-                  disabled={!canCreate}
-                >
-                  <SelectTrigger>
-                    <SelectValue placeholder="Select scope" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="it">IT Asset</SelectItem>
-                    <SelectItem value="admin">Admin Asset</SelectItem>
-                  </SelectContent>
-                </Select>
-              </div>
+              <div className="space-y-4">
+                <div className="space-y-1.5">
+                  <p className="text-[11px] font-bold uppercase tracking-widest text-slate-400">Scope <span className="text-red-600">*</span></p>
+                  <Select
+                    value={borrowScope === '' ? undefined : borrowScope}
+                    onValueChange={(v: BorrowScope) => {
+                      setBorrowScope(v);
+                      setCategoryId('');
+                      setTypeId('');
+                    }}
+                    disabled={!canCreate}
+                  >
+                    <SelectTrigger className="h-10 w-full rounded-xl border-slate-200 bg-white text-slate-900 shadow-sm hover:bg-white focus:ring-2 focus:ring-red-500/20">
+                      <SelectValue placeholder="Select scope" />
+                    </SelectTrigger>
+                    <SelectContent className="rounded-xl border-slate-200 bg-white shadow-lg z-[10000]">
+                      <SelectItem value="it" className="rounded-lg">IT Asset</SelectItem>
+                      <SelectItem value="admin" className="rounded-lg">Admin Asset</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
 
-              <div className="space-y-2">
-                <Label>Asset category *</Label>
-                <Select
-                  value={categoryId}
-                  onValueChange={v => {
-                    setCategoryId(v);
-                    setTypeId('');
-                  }}
-                  disabled={!borrowScope || !canCreate}
-                >
-                  <SelectTrigger>
-                    <SelectValue placeholder="Select category" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {filteredCategories.map(c => (
-                      <SelectItem key={c.id} value={c.id!}>
-                        {c.name}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </div>
+                <div className="space-y-1.5">
+                  <p className="text-[11px] font-bold uppercase tracking-widest text-slate-400">Category <span className="text-red-600">*</span></p>
+                  <Select
+                    value={categoryId}
+                    onValueChange={v => {
+                      setCategoryId(v);
+                      setTypeId('');
+                    }}
+                    disabled={!borrowScope || !canCreate}
+                  >
+                    <SelectTrigger className="h-10 w-full rounded-xl border-slate-200 bg-white text-slate-900 shadow-sm hover:bg-white focus:ring-2 focus:ring-red-500/20">
+                      <SelectValue placeholder="Select category" />
+                    </SelectTrigger>
+                    <SelectContent className="rounded-xl border-slate-200 bg-white shadow-lg z-[10000]">
+                      {filteredCategories.map(c => (
+                        <SelectItem key={c.id} value={c.id!} className="rounded-lg">
+                          {c.name}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
 
-              <div className="space-y-2">
-                <Label>Asset type *</Label>
-                <Select
-                  value={typeId}
-                  onValueChange={setTypeId}
-                  disabled={!categoryId || !canCreate}
-                >
-                  <SelectTrigger>
-                    <SelectValue placeholder="Select type" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {filteredTypes.map(t => (
-                      <SelectItem key={t.id} value={t.id!}>
-                        {t.name}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </div>
+                <div className="space-y-1.5">
+                  <p className="text-[11px] font-bold uppercase tracking-widest text-slate-400">Type <span className="text-red-600">*</span></p>
+                  <Select
+                    value={typeId}
+                    onValueChange={setTypeId}
+                    disabled={!categoryId || !canCreate}
+                  >
+                    <SelectTrigger className="h-10 w-full rounded-xl border-slate-200 bg-white text-slate-900 shadow-sm hover:bg-white focus:ring-2 focus:ring-red-500/20">
+                      <SelectValue placeholder="Select type" />
+                    </SelectTrigger>
+                    <SelectContent className="rounded-xl border-slate-200 bg-white shadow-lg z-[10000]">
+                      {filteredTypes.map(t => (
+                        <SelectItem key={t.id} value={t.id!} className="rounded-lg">
+                          {t.name}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
 
-              <div className="space-y-2">
-                <Label htmlFor="expected-return">
-                  Expected return date and time *
-                </Label>
-                <Input
-                  id="expected-return"
-                  type="datetime-local"
-                  value={expectedReturn}
-                  onChange={e => setExpectedReturn(e.target.value)}
-                  disabled={!canCreate}
-                />
-              </div>
+                <div className="space-y-1.5">
+                  <p className="text-[11px] font-bold uppercase tracking-widest text-slate-400">Expected return <span className="text-red-600">*</span></p>
+                  <Input
+                    id="expected-return"
+                    type="datetime-local"
+                    value={expectedReturn}
+                    onChange={e => setExpectedReturn(e.target.value)}
+                    disabled={!canCreate}
+                    className="h-10 w-full rounded-xl border-slate-200 bg-white text-slate-900 shadow-sm hover:bg-white focus:ring-2 focus:ring-red-500/20"
+                  />
+                </div>
 
-              <div className="space-y-2">
-                <Label htmlFor="purpose">Purpose *</Label>
-                <Textarea
-                  id="purpose"
-                  value={purpose}
-                  onChange={e => setPurpose(e.target.value)}
-                  rows={3}
-                  disabled={!canCreate}
-                  placeholder="Describe why you need this equipment"
-                />
+                <div className="space-y-1.5">
+                  <p className="text-[11px] font-bold uppercase tracking-widest text-slate-400">Purpose <span className="text-red-600">*</span></p>
+                  <Textarea
+                    id="purpose"
+                    value={purpose}
+                    onChange={e => setPurpose(e.target.value)}
+                    rows={3}
+                    disabled={!canCreate}
+                    placeholder="Describe why you need this equipment"
+                    className="min-h-[88px] rounded-xl border-slate-200 bg-white"
+                  />
+                </div>
               </div>
 
               {!isBorrowFormValid ? (
@@ -832,6 +858,7 @@ export default function AssetBorrowing() {
               <Button
                 type="button"
                 variant="outline"
+                className="hover:bg-red-600 hover:text-white hover:border-red-600"
                 onClick={() => {
                   setFormOpen(false);
                   resetForm();
@@ -841,6 +868,7 @@ export default function AssetBorrowing() {
               </Button>
               <Button
                 type="button"
+                className="bg-red-600 text-white hover:bg-white hover:text-red-600 hover:border-red-600 border-2 border-red-600"
                 onClick={openTermsFromForm}
                 disabled={!canCreate || loadingMeta || !isBorrowFormValid}
               >
@@ -896,45 +924,22 @@ export default function AssetBorrowing() {
           </AppDialogFrame>
         </Dialog>
 
-        <Dialog open={nextStepsOpen} onOpenChange={setNextStepsOpen}>
-          <AppDialogFrame className="max-w-lg overflow-hidden !flex !flex-col">
-            <AppDialogGradientHeader
-              title="Next steps"
-              description="Complete these steps so your borrow request can be processed."
-            />
-            <AppDialogBody className="min-h-0 flex-1 space-y-3 overflow-y-auto text-sm text-gray-700">
-              <ol className="list-decimal space-y-2 pl-5">
-                <li>Download this equipment borrow form and sign it.</li>
-                <li>
-                  Make your department head sign it and ensure they also approve
-                  it in the Asset Management System.
-                </li>
-                <li>
-                  After your department head approves it, go to IT/Admin and
-                  submit the borrow form for processing.
-                </li>
-              </ol>
-            </AppDialogBody>
-            <AppDialogChromeFooter className="gap-2 sm:gap-0">
-              <Button
-                type="button"
-                variant="outline"
-                onClick={() => setNextStepsOpen(false)}
-              >
-                Close
-              </Button>
-              <Button
-                type="button"
-                onClick={() => {
-                  setNextStepsOpen(false);
-                  void handleDownloadLatestBorrowForm();
-                }}
-              >
-                Download Borrow Form PDF
-              </Button>
-            </AppDialogChromeFooter>
-          </AppDialogFrame>
-        </Dialog>
+        <SmsOtpDialog
+          isOpen={showOtpDialog}
+          onOpenChange={setShowOtpDialog}
+          sendOtpEndpoint="/auth/initials/send-otp"
+          verifyOtpEndpoint="/auth/initials/verify-otp"
+          onVerified={() => {
+            toast.success('Borrow request submitted');
+          }}
+          onCancel={() => {
+            pendingActionRef.current = null;
+          }}
+          pendingActionRef={pendingActionRef}
+          title="OTP SMS Verification"
+          description="OTP SMS Verification has been sent to your registered mobile number for borrow request submission."
+          verifyButtonLabel="Verify & Submit"
+        />
 
         <Dialog open={returnGuideOpen} onOpenChange={setReturnGuideOpen}>
           <AppDialogFrame className="max-w-lg overflow-hidden !flex !flex-col">
@@ -963,6 +968,33 @@ export default function AssetBorrowing() {
                 disabled={!selectedReturnRequest}
               >
                 Return
+              </Button>
+            </AppDialogChromeFooter>
+          </AppDialogFrame>
+        </Dialog>
+
+        <Dialog open={viewDialogOpen} onOpenChange={setViewDialogOpen}>
+          <AppDialogFrame className="max-w-lg max-h-[85vh]">
+            <AppDialogGradientHeader
+              title="Borrow Request Details"
+              description="View your borrow request information"
+            />
+            <AppDialogBody className="space-y-4">
+              {selectedViewRequest && <ProcessBorrowRequestSummary row={selectedViewRequest} />}
+            </AppDialogBody>
+            <AppDialogChromeFooter className="gap-2 sm:gap-0">
+              <Button variant="outline" onClick={() => setViewDialogOpen(false)}>
+                Close
+              </Button>
+              <Button
+                onClick={() =>
+                  selectedViewRequest
+                    ? void handleDownloadBorrowForm(selectedViewRequest)
+                    : null
+                }
+                disabled={!selectedViewRequest}
+              >
+                Download PDF
               </Button>
             </AppDialogChromeFooter>
           </AppDialogFrame>

@@ -1574,6 +1574,11 @@ export interface AssetBorrowFormBatch {
   returned_at?: string | null;
   return_condition?: string | null;
   return_remarks?: string | null;
+  requested_by_signature?: string | null;
+  /** Processor's digital signature when approving the borrow request */
+  processor_signature?: string | null;
+  /** Timestamp when the processor signed the borrow request */
+  processor_signed_at?: string | null;
 }
 
 function parseMyBorrowRequestsResponse(res: unknown): AssetBorrowFormBatch[] {
@@ -1645,10 +1650,14 @@ export function buildBorrowDataForPDFFromBatch(
     purpose: batch.purpose || '',
     requestedBy: borrowerName,
     itReceivedBy: batch.approved_by_name?.trim() || '—',
+    itReceivedBySignature: batch.processor_signature ?? null,
+    itReceivedBySignedAt: batch.processor_signed_at ?? null,
     itApprovedBy: batch.approved_by_name?.trim() || '—',
     postUsageCondition: post,
     borrowerCompanyName: batch.requester_company_name ?? null,
     borrowerCompanyLogoUrl: batch.requester_company_logo_url ?? null,
+    requestedBySignature: batch.requested_by_signature ?? null,
+    requestedAt: batch.created_at ?? null,
   };
 }
 
@@ -1869,8 +1878,8 @@ export const BorrowFormCard: React.FC<{
       <CardHeader className="pb-3">
         <div className="flex items-start justify-between">
           <div className="flex items-center gap-3">
-            <div className="p-2 bg-amber-100 rounded-lg">
-              <HandHelping className="h-5 w-5 text-amber-700" />
+            <div className="p-2 bg-red-100 rounded-lg">
+              <HandHelping className="h-5 w-5 text-red-700" />
             </div>
             <div>
               <CardTitle className="text-lg">{formNumber}</CardTitle>
@@ -1978,7 +1987,7 @@ export const BorrowFormCard: React.FC<{
           variant="outline"
           size="sm"
           onClick={onView}
-          className="flex-1 hover:bg-amber-600 hover:text-white"
+          className="flex-1 hover:bg-red-600 hover:text-white"
         >
           <Eye className="h-4 w-4 mr-2" />
           View
@@ -1987,7 +1996,7 @@ export const BorrowFormCard: React.FC<{
           variant="outline"
           size="sm"
           onClick={onDownload}
-          className="hover:bg-green-600 hover:text-white"
+          className="hover:bg-red-600 hover:text-white"
         >
           <Download className="h-4 w-4 mr-2" />
           Download
@@ -2058,15 +2067,13 @@ export const BorrowFormDetail: React.FC<{
 
   const pdfBody = (
     <div className="flex-1 min-h-0 flex flex-col py-2 overflow-hidden">
-      <div className="w-full flex-1 min-h-0 border rounded-lg overflow-hidden bg-gray-50">
+      <div className="w-full flex-1 min-h-0 border rounded-lg overflow-hidden bg-gray-50 relative">
         {pdfUrl ? (
           <iframe
             src={pdfUrl}
-            className="w-full h-full min-h-0"
+            className="absolute inset-0 w-full h-full"
             title="Equipment Borrowing Form PDF Preview"
             style={{
-              width: '100%',
-              height: '100%',
               border: 'none',
               display: 'block',
             }}
