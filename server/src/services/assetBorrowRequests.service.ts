@@ -1,6 +1,7 @@
 import { randomUUID } from 'crypto';
 import type { Pool } from 'mysql2/promise';
 import { getScopedActiveCompany } from '../utils/activeCompany.js';
+import type { AssetBorrowRequestRow } from '../repositories/assetBorrowRequests.repository.js';
 import {
   classifyDepartmentScopeByName,
   getAssetScope,
@@ -10,6 +11,7 @@ import {
 import { isUserManagerApprover1 } from '../utils/approverNotifications.js';
 import { generateBorrowFormNumber } from '../utils/borrowFormNumber.js';
 import {
+  findApprovedBorrowRequestsForReceive,
   findBorrowRequestsApprovedByDeptHeadMe,
   findAvailableAssetsForBorrowStaffPool,
   findBorrowRequestsForList,
@@ -450,6 +452,17 @@ export class AssetBorrowRequestsService {
     if (!updated) return { error: 'Could not decline borrow request', status: 409 };
     // Intentionally no in-app / socket notification to the borrower on processor decline.
     return { ok: true };
+  }
+
+  static async getApprovedBorrowRequestsForReceive(
+    pool: Pool,
+    userId: string
+  ): Promise<{ borrowRequests: AssetBorrowRequestRow[] } | { error: string; status: number }> {
+    const { companyId, borrowScope } = await getBorrowRequestListScope(pool, userId);
+    if (!companyId) return { error: 'Company context required', status: 400 };
+
+    const borrowRequests = await findApprovedBorrowRequestsForReceive(pool, companyId, borrowScope);
+    return { borrowRequests };
   }
 
   static async processBorrowReturn(

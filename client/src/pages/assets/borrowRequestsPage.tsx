@@ -4,6 +4,7 @@ import {
   useCallback,
   useEffect,
   useMemo,
+  useRef,
   useState,
   type ComponentType,
   type ReactNode,
@@ -70,6 +71,7 @@ import {
 import { Label } from '@/components/ui/label';
 import { cn } from '@/lib/utils';
 import { Shimmer } from '@/components/ui/shimmer';
+import SmsOtpDialog from '@/components/auth/SmsOtpDialog';
 
 const MAX_BORROW_CONDITION_PHOTOS = 5;
 const VALID_CONDITION_IMAGE_TYPES = [
@@ -118,6 +120,7 @@ export interface BorrowRequestRow {
   return_condition?: string | null;
   processor_wet_borrow_pdf_url?: string | null;
   dept_head_signed_at?: string | null;
+  dept_head_name?: string | null;
   processor_declined_at?: string | null;
   /** Staff decline remarks (processor), when applicable */
   processor_decline_reason?: string | null;
@@ -125,6 +128,10 @@ export interface BorrowRequestRow {
   /** JSON array of image URLs from processor at borrow time */
   pre_usage_condition_images?: string | null;
   requested_by_signature?: string | null;
+  /** Processor's digital signature when approving the borrow request */
+  processor_signature?: string | null;
+  /** Timestamp when the processor signed the borrow request */
+  processor_signed_at?: string | null;
 }
 
 /** Request is finished on the staff queue: no approve/decline/processing. */
@@ -132,6 +139,7 @@ export function isBorrowRequestStaffReadOnly(r: BorrowRequestRow): boolean {
   return (
     r.status === 'declined' ||
     r.status === 'returned' ||
+    r.status === 'approved' ||
     Boolean(r.declined_at) ||
     Boolean(r.processor_declined_at) ||
     Boolean(r.returned_at)
@@ -152,9 +160,9 @@ export function borrowRequestStatusLabel(r: BorrowRequestRow): string {
     case 'pending':
       return 'Pending';
     case 'approved':
-      return 'Approved';
+      return 'Processed';
     default:
-      return r.status.replace(/_/g, ' ');
+      return r.status?.replace(/_/g, ' ') || r.status || 'Unknown';
   }
 }
 
@@ -220,6 +228,45 @@ function SummarySectionTitle({ children }: { children: ReactNode }) {
 export function ProcessBorrowRequestSummary({ row }: { row: BorrowRequestRow }) {
   const email = row.requester_email?.trim();
   const purpose = row.purpose?.trim() || '—';
+  const borrower = requesterName(row);
+  const department = row.requester_department_name?.trim() || '—';
+  const category = row.category_name?.trim() || '—';
+  const type = row.type_name?.trim() || '—';
+
+  // Check if we have meaningful data to display
+  const hasData = borrower !== '—' || department !== '—' || category !== '—' || type !== '—';
+
+  if (!hasData) {
+    return (
+      <div className="overflow-hidden rounded-2xl border border-slate-200/90 bg-white shadow-md ring-1 ring-slate-900/[0.04]">
+        <div className="flex flex-col gap-2 border-b border-slate-100 bg-gradient-to-r from-slate-50 via-white to-red-50/30 px-3 py-2.5 sm:flex-row sm:items-center sm:justify-between">
+          <div className="flex min-w-0 items-center gap-2.5">
+            <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-gradient-to-br from-red-600 to-rose-600 text-white shadow-lg shadow-red-600/25">
+              <User className="h-4 w-4" aria-hidden />
+            </div>
+            <div className="min-w-0">
+              <p className="text-sm font-bold tracking-tight text-slate-900">
+                Borrower &amp; request
+              </p>
+              <p className="text-[11px] text-slate-500">Details from the borrowing form</p>
+            </div>
+          </div>
+          <Badge
+            variant="outline"
+            className={cn(
+              'w-fit shrink-0 border-red-200 bg-red-50/80 text-red-800 font-semibold',
+              'px-2 py-0.5 text-[11px]'
+            )}
+          >
+            {borrowScopeLabel(row.borrow_scope)} scope
+          </Badge>
+        </div>
+        <div className="p-3 sm:p-4">
+          <p className="text-sm text-slate-500">Loading request details...</p>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="overflow-hidden rounded-2xl border border-slate-200/90 bg-white shadow-md ring-1 ring-slate-900/[0.04]">
@@ -250,11 +297,11 @@ export function ProcessBorrowRequestSummary({ row }: { row: BorrowRequestRow }) 
         <div className="space-y-1.5">
           <SummarySectionTitle>Contact</SummarySectionTitle>
           <div className="grid gap-2 sm:grid-cols-2">
-            <SummaryField icon={User} label="Borrower" value={requesterName(row)} className="sm:col-span-2" />
+            <SummaryField icon={User} label="Borrower" value={borrower} className="sm:col-span-2" />
             <SummaryField
               icon={Building2}
               label="Department"
-              value={row.requester_department_name?.trim() || '—'}
+              value={department}
               className={email ? undefined : 'sm:col-span-2'}
             />
             {email ? <SummaryField icon={Mail} label="Contact email" value={email} /> : null}
@@ -267,11 +314,48 @@ export function ProcessBorrowRequestSummary({ row }: { row: BorrowRequestRow }) 
             <SummaryField
               icon={Layers}
               label="Category"
-              value={row.category_name?.trim() || '—'}
+              value={category}
             />
-            <SummaryField icon={Package} label="Type" value={row.type_name?.trim() || '—'} />
+            <SummaryField icon={Package} label="Type" value={type} />
           </div>
         </div>
+
+        {row.asset_code && (
+          <div className="space-y-1.5">
+            <SummarySectionTitle>Assigned asset</SummarySectionTitle>
+            <div className="grid gap-2 sm:grid-cols-2">
+              <SummaryField
+                icon={Package}
+                label="Asset code"
+                value={row.asset_code}
+              />
+              <SummaryField
+                icon={Package}
+                label="Asset name"
+                value={row.asset_name || '—'}
+              />
+              {row.asset_serial && (
+                <SummaryField
+                  icon={FileText}
+                  label="Serial number"
+                  value={row.asset_serial}
+                  className="sm:col-span-2"
+                />
+              )}
+            </div>
+          </div>
+        )}
+
+        {row.pre_usage_condition && (
+          <div className="space-y-1.5">
+            <SummarySectionTitle>Pre-usage condition</SummarySectionTitle>
+            <SummaryField
+              icon={ClipboardList}
+              label="Condition"
+              value={row.pre_usage_condition}
+            />
+          </div>
+        )}
 
         <div className="space-y-1.5">
           <SummarySectionTitle>Schedule</SummarySectionTitle>
@@ -335,7 +419,7 @@ export default function BorrowRequestsPage() {
   const [assetsLoading, setAssetsLoading] = useState(false);
   const [availableAssets, setAvailableAssets] = useState<BorrowStaffPoolAsset[]>([]);
   const [selectedAssetCode, setSelectedAssetCode] = useState('');
-  const [preUsageCondition, setPreUsageCondition] = useState('Good');
+  const [preUsageCondition, setPreUsageCondition] = useState('');
   const [processorRemarks, setProcessorRemarks] = useState('');
   const [declineReason, setDeclineReason] = useState('');
   const [returnCondition, setReturnCondition] = useState('Good');
@@ -344,6 +428,8 @@ export default function BorrowRequestsPage() {
   const [verificationSameCondition, setVerificationSameCondition] = useState(false);
   const [processorConditionImages, setProcessorConditionImages] = useState<string[]>([]);
   const [returnConditionImages, setReturnConditionImages] = useState<string[]>([]);
+  const [smsOtpDialogOpen, setSmsOtpDialogOpen] = useState(false);
+  const pendingProcessBorrowActionRef = useRef<(() => Promise<void>) | null>(null);
 
   const assetsByDepartment = useMemo(() => {
     const map = new Map<string, BorrowStaffPoolAsset[]>();
@@ -425,6 +511,13 @@ export default function BorrowRequestsPage() {
     setVerificationSameCondition(false);
   }, [returnOpen]);
 
+  // Close parent dialog when SMS OTP dialog opens to prevent scrollbar issues
+  useEffect(() => {
+    if (smsOtpDialogOpen) {
+      setProcessOpen(false);
+    }
+  }, [smsOtpDialogOpen]);
+
   useEffect(() => {
     const id = searchParams.get('openBorrowRequestId');
     if (!id || loading) return;
@@ -446,10 +539,11 @@ export default function BorrowRequestsPage() {
     setProcessorConditionImages([]);
     setSelectedAssetCode('');
     setProcessorRemarks('');
-    setPreUsageCondition('Good');
+    setPreUsageCondition('');
     setAvailableAssets([]);
 
-    if (row.status === 'approved' && !isBorrowRequestStaffReadOnly(row)) {
+    // Only open return dialog if in pending tab and request is approved and not read-only
+    if (activeTab === 'request' && row.status === 'approved' && !isBorrowRequestStaffReadOnly(row)) {
       setProcessOpen(false);
       setReturnOpen(true);
       return;
@@ -510,25 +604,38 @@ export default function BorrowRequestsPage() {
 
   const handleProcessBorrow = async () => {
     if (!selected || !selectedAssetCode) return;
-    try {
-      await api.post(`/asset-borrow-requests/${selected.borrow_request_id}/staff-approve`, {
-        asset_code: selectedAssetCode,
-        pre_usage_condition: preUsageCondition,
-        processor_remarks: processorRemarks.trim() || undefined,
-        condition_images:
-          processorConditionImages.length > 0 ? processorConditionImages : undefined,
-      });
-      toast.success('Borrow request processed');
-      setProcessOpen(false);
-      setProcessorConditionImages([]);
-      await load();
-    } catch (e: unknown) {
-      const msg =
-        (e as { data?: { error?: string } })?.data?.error ||
-        (e as Error)?.message ||
-        'Failed to process borrow request';
-      toast.error(msg);
-    }
+
+    // Set up the pending action to be executed after OTP verification
+    pendingProcessBorrowActionRef.current = async () => {
+      try {
+        // Get user's digital signature from profile
+        const digitalSignature = (user as any)?.digitalSignature || '';
+        const signedAt = new Date().toISOString();
+
+        await api.post(`/asset-borrow-requests/${selected.borrow_request_id}/staff-approve`, {
+          asset_code: selectedAssetCode,
+          pre_usage_condition: preUsageCondition,
+          processor_remarks: processorRemarks.trim() || undefined,
+          condition_images:
+            processorConditionImages.length > 0 ? processorConditionImages : undefined,
+          processor_signature: digitalSignature || undefined,
+          processor_signed_at: signedAt,
+        });
+        toast.success('Borrow request processed');
+        setProcessorConditionImages([]);
+        await load();
+      } catch (e: unknown) {
+        const msg =
+          (e as { data?: { error?: string } })?.data?.error ||
+          (e as Error)?.message ||
+          'Failed to process borrow request';
+        toast.error(msg);
+        throw e;
+      }
+    };
+
+    // Open SMS OTP dialog
+    setSmsOtpDialogOpen(true);
   };
 
   const handleDecline = async () => {
@@ -692,6 +799,26 @@ export default function BorrowRequestsPage() {
         ),
       },
       {
+        accessorKey: 'approved_by_name',
+        header: 'Processed By',
+        size: 150,
+        cell: ({ row }) => (
+          <span className="text-sm text-slate-600">
+            {row.original.approved_by_name || '—'}
+          </span>
+        ),
+      },
+      {
+        accessorKey: 'dept_head_name',
+        header: 'Approved By',
+        size: 150,
+        cell: ({ row }) => (
+          <span className="text-sm text-slate-600">
+            {row.original.dept_head_name || '—'}
+          </span>
+        ),
+      },
+      {
         accessorKey: 'expected_return_at',
         header: 'Expected Return',
         size: 150,
@@ -735,6 +862,120 @@ export default function BorrowRequestsPage() {
                 ? 'Process Return'
                 : 'View / Process'}
           </Button>
+        ),
+      },
+    ],
+    []
+  );
+
+  const tabTableColumns: ColumnDef<BorrowRequestRow>[] = useMemo(
+    () => [
+      {
+        accessorKey: 'form_number',
+        header: 'Form Number',
+        size: 140,
+        cell: ({ row }) => (
+          <span className="font-medium text-slate-900">
+            {row.original.form_number ?? row.original.borrow_request_id.slice(0, 8)}
+          </span>
+        ),
+      },
+      {
+        accessorKey: 'status',
+        header: 'Status',
+        size: 160,
+        cell: ({ row }) => {
+          const status = borrowRequestStatusLabel(row.original);
+          const isDeclined = status.toLowerCase().includes('declined');
+          const isApproved = status.toLowerCase().includes('approved');
+          const isReturned = status.toLowerCase().includes('returned');
+          const isPending = status.toLowerCase().includes('awaiting') || status.toLowerCase().includes('pending');
+          
+          const badgeClass = isDeclined
+            ? 'bg-red-100 text-red-800 border border-red-200'
+            : isApproved
+              ? 'bg-green-100 text-green-800 border border-green-200'
+              : isReturned
+                ? 'bg-blue-100 text-blue-800 border border-blue-200'
+                : isPending
+                  ? 'bg-amber-100 text-amber-800 border border-amber-200'
+                  : 'bg-gray-100 text-gray-800 border border-gray-200';
+          
+          return (
+            <Badge variant="secondary" className={badgeClass}>
+              {status}
+            </Badge>
+          );
+        },
+      },
+      {
+        accessorKey: 'requester',
+        header: 'Requester',
+        size: 180,
+        cell: ({ row }) => (
+          <span className="text-sm text-slate-700">
+            {requesterName(row.original)}
+          </span>
+        ),
+      },
+      {
+        accessorKey: 'requester_department_name',
+        header: 'Department',
+        size: 150,
+        cell: ({ row }) => (
+          <span className="text-sm text-slate-600">
+            {row.original.requester_department_name || '—'}
+          </span>
+        ),
+      },
+      {
+        accessorKey: 'category_type',
+        header: 'Category/Type',
+        size: 180,
+        cell: ({ row }) => (
+          <span className="text-sm text-slate-600">
+            {[row.original.category_name, row.original.type_name].filter(Boolean).join(' · ') || '—'}
+          </span>
+        ),
+      },
+      {
+        accessorKey: 'approved_by_name',
+        header: 'Processed By',
+        size: 150,
+        cell: ({ row }) => (
+          <span className="text-sm text-slate-600">
+            {row.original.approved_by_name || '—'}
+          </span>
+        ),
+      },
+      {
+        accessorKey: 'dept_head_name',
+        header: 'Approved By',
+        size: 150,
+        cell: ({ row }) => (
+          <span className="text-sm text-slate-600">
+            {row.original.dept_head_name || '—'}
+          </span>
+        ),
+      },
+      {
+        accessorKey: 'expected_return_at',
+        header: 'Expected Return',
+        size: 150,
+        cell: ({ row }) => (
+          <span className="text-sm text-slate-600">
+            {formatBorrowDateTime(row.original.expected_return_at)}
+          </span>
+        ),
+      },
+      {
+        accessorKey: 'created_at',
+        header: 'Created At',
+        size: 150,
+        cell: ({ row }) => (
+          <span className="text-sm text-slate-600">
+            {formatBorrowDateTime(row.original.created_at)}
+          </span>
         ),
       },
     ],
@@ -820,6 +1061,20 @@ export default function BorrowRequestsPage() {
             </div>
 
             <div className="flex items-start gap-3">
+              <CheckCircle2 className="h-4 w-4 text-gray-400 mt-0.5 flex-shrink-0" />
+              <div className="flex-1 min-w-0">
+                <p className="font-medium text-sm">Processed by: {r.approved_by_name || '—'}</p>
+              </div>
+            </div>
+
+            <div className="flex items-start gap-3">
+              <CheckCircle2 className="h-4 w-4 text-gray-400 mt-0.5 flex-shrink-0" />
+              <div className="flex-1 min-w-0">
+                <p className="font-medium text-sm">Approved by: {r.dept_head_name || '—'}</p>
+              </div>
+            </div>
+
+            <div className="flex items-start gap-3">
               <Building2 className="h-4 w-4 text-gray-400 mt-0.5 flex-shrink-0" />
               <div className="flex-1 min-w-0">
                 <p className="text-sm text-gray-600">
@@ -833,20 +1088,28 @@ export default function BorrowRequestsPage() {
             <Button
               className="flex-1 bg-red-600 text-white hover:bg-white hover:text-red-600 hover:border-red-600 border-2 border-red-600"
               onClick={() => {
-                if (r.status === 'approved' && !isBorrowRequestStaffReadOnly(r)) {
-                  setSelected(r);
-                  setReturnOpen(true);
-                } else {
+                // For approved and declined tabs, always show details dialog
+                if (activeTab === 'approved' || activeTab === 'declined') {
                   void openProcessDialog(r);
+                } else {
+                  // For pending tab, show return dialog if approved and not read-only
+                  if (r.status === 'approved' && !isBorrowRequestStaffReadOnly(r)) {
+                    setSelected(r);
+                    setReturnOpen(true);
+                  } else {
+                    void openProcessDialog(r);
+                  }
                 }
               }}
             >
               <Eye className="h-4 w-4 mr-2" />
-              {isBorrowRequestStaffReadOnly(r)
+              {activeTab === 'approved' || activeTab === 'declined'
                 ? 'View details'
-                : r.status === 'approved'
-                  ? 'Process Return'
-                  : 'View / Process'}
+                : isBorrowRequestStaffReadOnly(r)
+                  ? 'View details'
+                  : r.status === 'approved'
+                    ? 'Process Return'
+                    : 'View / Process'}
             </Button>
             <Button variant="outline" className="flex-1 hover:bg-red-600 hover:text-white hover:border-red-600" onClick={() => void handleDownload(r)}>
               Download PDF
@@ -877,7 +1140,7 @@ export default function BorrowRequestsPage() {
         <Tabs value={activeTab} onValueChange={setActiveTab}>
           <TabsList className={segmentTabsListClassName + ' grid grid-cols-3 w-full'}>
             <TabsTrigger value="request" className={segmentTabsTriggerClassName}>Request</TabsTrigger>
-            <TabsTrigger value="approved" className={segmentTabsTriggerClassName}>Approved</TabsTrigger>
+            <TabsTrigger value="approved" className={segmentTabsTriggerClassName}>Processed</TabsTrigger>
             <TabsTrigger value="declined" className={segmentTabsTriggerClassName}>Declined</TabsTrigger>
           </TabsList>
           <TabsContent value="request" className="space-y-4 mt-4">
@@ -936,14 +1199,66 @@ export default function BorrowRequestsPage() {
                   <p className="text-sm font-medium text-slate-900 mb-1">No pending requests</p>
                   <p className="text-xs text-slate-500 text-center">Borrow requests awaiting processing will appear here.</p>
                 </div>
-              ) : (
+              ) : viewMode === 'card' ? (
                 <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-3">{cards}</div>
+              ) : (
+                <DataTable<BorrowRequestRow>
+                  tableId="request-tab"
+                  data={filteredRows}
+                  columns={tabTableColumns}
+                  searchPlaceholder="Search pending requests..."
+                  title="Pending Requests"
+                  titleBadge={`${filteredRows.length} requests`}
+                  isLoading={loading}
+                  onRowClick={(row) => {
+                    const rowData = row.original || row;
+                    if (rowData.status === 'approved' && !isBorrowRequestStaffReadOnly(rowData)) {
+                      setSelected(rowData);
+                      setReturnOpen(true);
+                    } else {
+                      void openProcessDialog(rowData);
+                    }
+                  }}
+                  mobileCardClassName="overflow-hidden rounded-2xl border border-red-100 bg-gradient-to-br from-white via-white to-red-50/40 p-4 shadow-sm shadow-red-100/40"
+                  mobileCardFields={[
+                    {
+                      key: 'form_number',
+                      label: 'Form Number',
+                      render: (row) => row.form_number ?? row.borrow_request_id.slice(0, 8),
+                    },
+                    {
+                      key: 'status',
+                      label: 'Status',
+                      render: (row) => borrowRequestStatusLabel(row),
+                    },
+                    {
+                      key: 'requester',
+                      label: 'Requester',
+                      render: (row) => requesterName(row),
+                    },
+                    {
+                      key: 'approved_by_name',
+                      label: 'Processed By',
+                      render: (row) => row.approved_by_name || '—',
+                    },
+                    {
+                      key: 'dept_head_name',
+                      label: 'Approved By',
+                      render: (row) => row.dept_head_name || '—',
+                    },
+                    {
+                      key: 'expected_return_at',
+                      label: 'Expected Return',
+                      render: (row) => formatBorrowDateTime(row.expected_return_at),
+                    },
+                  ]}
+                />
               )}
             </div>
           </TabsContent>
           <TabsContent value="approved" className="space-y-4 mt-4">
             <div className="flex items-center justify-between">
-              <p className="text-sm text-slate-600">Approved borrow requests</p>
+              <p className="text-sm text-slate-600">Processed borrow requests</p>
               <div className="flex items-center gap-2">
                 <Button
                   variant={viewMode === 'card' ? 'default' : 'outline'}
@@ -994,11 +1309,59 @@ export default function BorrowRequestsPage() {
                   <div className="flex h-16 w-16 items-center justify-center rounded-full bg-green-100 mb-4">
                     <CheckCircle2 className="h-8 w-8 text-green-500" />
                   </div>
-                  <p className="text-sm font-medium text-slate-900 mb-1">No approved requests</p>
-                  <p className="text-xs text-slate-500 text-center">Approved borrow requests ready for return processing will appear here.</p>
+                  <p className="text-sm font-medium text-slate-900 mb-1">No processed requests</p>
+                  <p className="text-xs text-slate-500 text-center">Processed borrow requests ready for return processing will appear here.</p>
                 </div>
-              ) : (
+              ) : viewMode === 'card' ? (
                 <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-3">{cards}</div>
+              ) : (
+                <DataTable<BorrowRequestRow>
+                  tableId="approved-tab"
+                  data={filteredRows}
+                  columns={tabTableColumns}
+                  searchPlaceholder="Search processed requests..."
+                  title="Processed Requests"
+                  titleBadge={`${filteredRows.length} requests`}
+                  isLoading={loading}
+                  onRowClick={(row) => {
+                    const rowData = row.original || row;
+                    // For approved tab, always show details dialog
+                    void openProcessDialog(rowData);
+                  }}
+                  mobileCardClassName="overflow-hidden rounded-2xl border border-red-100 bg-gradient-to-br from-white via-white to-red-50/40 p-4 shadow-sm shadow-red-100/40"
+                  mobileCardFields={[
+                    {
+                      key: 'form_number',
+                      label: 'Form Number',
+                      render: (row) => row.form_number ?? row.borrow_request_id.slice(0, 8),
+                    },
+                    {
+                      key: 'status',
+                      label: 'Status',
+                      render: (row) => borrowRequestStatusLabel(row),
+                    },
+                    {
+                      key: 'requester',
+                      label: 'Requester',
+                      render: (row) => requesterName(row),
+                    },
+                    {
+                      key: 'approved_by_name',
+                      label: 'Processed By',
+                      render: (row) => row.approved_by_name || '—',
+                    },
+                    {
+                      key: 'dept_head_name',
+                      label: 'Approved By',
+                      render: (row) => row.dept_head_name || '—',
+                    },
+                    {
+                      key: 'expected_return_at',
+                      label: 'Expected Return',
+                      render: (row) => formatBorrowDateTime(row.expected_return_at),
+                    },
+                  ]}
+                />
               )}
             </div>
           </TabsContent>
@@ -1058,14 +1421,63 @@ export default function BorrowRequestsPage() {
                   <p className="text-sm font-medium text-slate-900 mb-1">No declined requests</p>
                   <p className="text-xs text-slate-500 text-center">Declined borrow requests will appear here.</p>
                 </div>
-              ) : (
+              ) : viewMode === 'card' ? (
                 <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-3">{cards}</div>
+              ) : (
+                <DataTable<BorrowRequestRow>
+                  tableId="declined-tab"
+                  data={filteredRows}
+                  columns={tabTableColumns}
+                  searchPlaceholder="Search declined requests..."
+                  title="Declined Requests"
+                  titleBadge={`${filteredRows.length} requests`}
+                  isLoading={loading}
+                  onRowClick={(row) => {
+                    const rowData = row.original || row;
+                    // For declined tab, always show details dialog
+                    void openProcessDialog(rowData);
+                  }}
+                  mobileCardClassName="overflow-hidden rounded-2xl border border-red-100 bg-gradient-to-br from-white via-white to-red-50/40 p-4 shadow-sm shadow-red-100/40"
+                  mobileCardFields={[
+                    {
+                      key: 'form_number',
+                      label: 'Form Number',
+                      render: (row) => row.form_number ?? row.borrow_request_id.slice(0, 8),
+                    },
+                    {
+                      key: 'status',
+                      label: 'Status',
+                      render: (row) => borrowRequestStatusLabel(row),
+                    },
+                    {
+                      key: 'requester',
+                      label: 'Requester',
+                      render: (row) => requesterName(row),
+                    },
+                    {
+                      key: 'approved_by_name',
+                      label: 'Processed By',
+                      render: (row) => row.approved_by_name || '—',
+                    },
+                    {
+                      key: 'dept_head_name',
+                      label: 'Approved By',
+                      render: (row) => row.dept_head_name || '—',
+                    },
+                    {
+                      key: 'expected_return_at',
+                      label: 'Expected Return',
+                      render: (row) => formatBorrowDateTime(row.expected_return_at),
+                    },
+                  ]}
+                />
               )}
             </div>
           </TabsContent>
         </Tabs>
 
-        <DataTable<BorrowRequestRow>
+        <div className="mt-12">
+          <DataTable<BorrowRequestRow>
           tableId="borrow-history"
           data={loading ? [] : rows}
           columns={borrowHistoryColumns}
@@ -1095,15 +1507,26 @@ export default function BorrowRequestsPage() {
               label: 'Expected Return',
               render: (row) => formatBorrowDateTime(row.expected_return_at),
             },
+            {
+              key: 'approved_by_name',
+              label: 'Processed By',
+              render: (row) => row.approved_by_name || '—',
+            },
+            {
+              key: 'dept_head_name',
+              label: 'Approved By',
+              render: (row) => row.dept_head_name || '—',
+            },
           ]}
         />
+        </div>
 
         <Dialog open={processOpen} onOpenChange={setProcessOpen}>
           <AppDialogFrame className="max-w-lg max-h-[85vh]">
             <AppDialogGradientHeader
               title={
                 selected && isBorrowRequestStaffReadOnly(selected)
-                  ? 'Borrow request (view only)'
+                  ? 'Borrow Details'
                   : 'Process borrow request'
               }
               description={
@@ -1166,7 +1589,7 @@ export default function BorrowRequestsPage() {
                         <SelectTrigger
                           id="borrow-asset-select"
                           className={cn(
-                            'h-10 w-full rounded-xl border-slate-200 bg-slate-50/80 text-left text-slate-900 shadow-sm',
+                            'h-10 w-full rounded-xl border-slate-200 bg-white text-left text-slate-900 shadow-sm',
                             'hover:bg-white focus:ring-2 focus:ring-red-500/20',
                             assetsLoading && 'opacity-60'
                           )}
@@ -1264,7 +1687,7 @@ export default function BorrowRequestsPage() {
                         <Select value={preUsageCondition} onValueChange={setPreUsageCondition}>
                           <SelectTrigger
                             id="borrow-pre-usage-condition"
-                            className="h-10 w-full rounded-xl border-slate-200 bg-slate-50/80 text-slate-900 shadow-sm hover:bg-white focus:ring-2 focus:ring-red-500/20"
+                            className="h-10 w-full rounded-xl border-slate-200 bg-white text-slate-900 shadow-sm hover:bg-white focus:ring-2 focus:ring-red-500/20"
                           >
                             <SelectValue placeholder="Select condition" />
                           </SelectTrigger>
@@ -1571,6 +1994,31 @@ export default function BorrowRequestsPage() {
             </AppDialogChromeFooter>
           </AppDialogFrame>
         </Dialog>
+
+        <SmsOtpDialog
+          isOpen={smsOtpDialogOpen}
+          onOpenChange={open => {
+            if (!open) {
+              pendingProcessBorrowActionRef.current = null;
+            }
+            setSmsOtpDialogOpen(open);
+          }}
+          sendOtpEndpoint="/auth/initials/send-otp"
+          verifyOtpEndpoint="/auth/initials/verify-otp"
+          onVerified={() => {
+            setSmsOtpDialogOpen(false);
+            pendingProcessBorrowActionRef.current = null;
+          }}
+          onCancel={() => {
+            setSmsOtpDialogOpen(false);
+            pendingProcessBorrowActionRef.current = null;
+          }}
+          pendingActionRef={pendingProcessBorrowActionRef}
+          title="Verify Borrow Processing"
+          description="Please verify your identity to process this borrow request."
+          verifyButtonLabel="Verify & Process Borrow"
+          phoneNumber={user?.contactNumber || undefined}
+        />
       </main>
     </div>
   );

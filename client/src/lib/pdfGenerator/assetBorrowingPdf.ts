@@ -24,6 +24,10 @@ export interface AssetBorrowingData {
   purpose: string;
   requestedBy: string;
   itReceivedBy: string;
+  /** Digital signature of the IT receiver (base64 data URL) */
+  itReceivedBySignature?: string | null;
+  /** Timestamp when the IT receiver signed */
+  itReceivedBySignedAt?: string | null;
   itApprovedBy: string;
   /** Upon return section */
   postUsageCondition: string;
@@ -33,6 +37,32 @@ export interface AssetBorrowingData {
   requestedBySignature?: string | null;
   /** When the request was submitted */
   requestedAt?: string | null;
+}
+
+/** Remove white/light background from signature image */
+function removeSignatureBackground(img: HTMLImageElement): string {
+  const canvas = document.createElement('canvas');
+  canvas.width = img.width;
+  canvas.height = img.height;
+  const ctx = canvas.getContext('2d');
+  if (!ctx) return img.src;
+
+  ctx.drawImage(img, 0, 0);
+  const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
+  const data = imageData.data;
+
+  for (let i = 0; i < data.length; i += 4) {
+    const r = data[i];
+    const g = data[i + 1];
+    const b = data[i + 2];
+    // Make white/light pixels transparent
+    if (r > 240 && g > 240 && b > 240) {
+      data[i + 3] = 0; // Set alpha to 0 (transparent)
+    }
+  }
+
+  ctx.putImageData(imageData, 0, 0);
+  return canvas.toDataURL('image/png');
 }
 
 export const generateAssetBorrowingPDF = async (
@@ -231,14 +261,38 @@ export const generateAssetBorrowingPDF = async (
     },
   });
 
-  // Pre-load signature image if available
+  // Pre-load signature images if available
   let sigImg: HTMLImageElement | null = null;
   if (borrowData.requestedBySignature) {
     sigImg = await new Promise<HTMLImageElement | null>(resolve => {
       const img = new Image();
-      img.onload = () => resolve(img);
+      img.crossOrigin = 'anonymous';
+      img.onload = () => {
+        const processedSrc = removeSignatureBackground(img);
+        const processedImg = new Image();
+        processedImg.onload = () => resolve(processedImg);
+        processedImg.onerror = () => resolve(null);
+        processedImg.src = processedSrc;
+      };
       img.onerror = () => resolve(null);
       img.src = borrowData.requestedBySignature!;
+    });
+  }
+
+  let itReceivedSigImg: HTMLImageElement | null = null;
+  if (borrowData.itReceivedBySignature) {
+    itReceivedSigImg = await new Promise<HTMLImageElement | null>(resolve => {
+      const img = new Image();
+      img.crossOrigin = 'anonymous';
+      img.onload = () => {
+        const processedSrc = removeSignatureBackground(img);
+        const processedImg = new Image();
+        processedImg.onload = () => resolve(processedImg);
+        processedImg.onerror = () => resolve(null);
+        processedImg.src = processedSrc;
+      };
+      img.onerror = () => resolve(null);
+      img.src = borrowData.itReceivedBySignature!;
     });
   }
 
@@ -303,7 +357,7 @@ export const generateAssetBorrowingPDF = async (
         if (reqDate) {
           const dateStr = reqDate.toLocaleDateString();
           const timeStr = reqDate.toLocaleTimeString();
-          
+
           doc.setFontSize(7);
           doc.setTextColor(100, 100, 100);
           doc.text(dateStr, cell.x + 45, sigY - 5, {
@@ -321,6 +375,56 @@ export const generateAssetBorrowingPDF = async (
         doc.setFont('helvetica', 'normal');
         doc.setTextColor(0, 0, 0);
         doc.text(borrowData.requestedBy, cell.x + 3, sigY + sigH + 5, {
+          align: 'left',
+        });
+
+        return;
+      }
+
+      if (data.column.index === 1) {
+        // Draw IT received by signature image if available
+        let sigY = cell.y + 5;
+        let sigH = 0;
+        if (itReceivedSigImg) {
+          const sigMaxH = 35;
+          const aspectRatio = itReceivedSigImg.width / itReceivedSigImg.height;
+          let sigW = sigMaxH * aspectRatio;
+          sigH = sigMaxH;
+          if (sigW > cell.width - 4) {
+            sigW = cell.width - 4;
+            sigH = sigW / aspectRatio;
+          }
+          const sigX = cell.x - 3;
+
+          // Date on the right of signature, time below the date
+          const signedDate = borrowData.itReceivedBySignedAt
+            ? new Date(borrowData.itReceivedBySignedAt)
+            : null;
+          if (signedDate) {
+            const dateStr = signedDate.toLocaleDateString();
+            const timeStr = signedDate.toLocaleTimeString();
+
+            doc.setFontSize(7);
+            doc.setTextColor(100, 100, 100);
+            // Date to the right of signature
+            doc.text(dateStr, cell.x + 45, sigY + 3, {
+              align: 'left',
+            });
+            // Time below the date
+            doc.text(timeStr, cell.x + 45, sigY + 6, {
+              align: 'left',
+            });
+          }
+
+          doc.addImage(itReceivedSigImg, 'PNG', sigX, sigY, sigW, sigH);
+        }
+
+        // Name below signature (or at bottom if no signature)
+        const nameY = itReceivedSigImg ? sigY + sigH + 5 : cell.y + 25;
+        doc.setFontSize(9);
+        doc.setFont('helvetica', 'normal');
+        doc.setTextColor(0, 0, 0);
+        doc.text(borrowData.itReceivedBy, cell.x + 3, nameY, {
           align: 'left',
         });
 

@@ -345,6 +345,12 @@ export async function staffApproveBorrowRequest(
     if (body.processor_remarks) {
       params.processorRemarks = body.processor_remarks;
     }
+    if (body.processor_signature) {
+      params.processorSignature = body.processor_signature;
+    }
+    if (body.processor_signed_at) {
+      params.processorSignedAt = body.processor_signed_at;
+    }
     const result = await AssetBorrowRequestsService.staffApprove(pool, userId, params);
     if ('error' in result) {
       return createErrorResponse(res, result.error, [], result.status);
@@ -366,6 +372,33 @@ export async function staffApproveBorrowRequest(
     return createErrorResponse(
       res,
       'Failed to process borrow request',
+      [],
+      500
+    );
+  }
+}
+
+export async function getApprovedBorrowRequestsForReceive(
+  req: AuthRequest,
+  res: Response
+): Promise<Response> {
+  try {
+    const userId = req.user?.userID;
+    if (!userId) {
+      return createErrorResponse(res, 'UNAUTHORIZED', [], 401);
+    }
+
+    const result = await AssetBorrowRequestsService.getApprovedBorrowRequestsForReceive(pool, userId);
+    if ('error' in result) {
+      return createErrorResponse(res, result.error, [], result.status);
+    }
+
+    return createSuccessResponse(res, { borrowRequests: result.borrowRequests });
+  } catch (err) {
+    logger.error('[assetBorrowRequests] get approved for receive failed', err);
+    return createErrorResponse(
+      res,
+      'Failed to fetch approved borrow requests',
       [],
       500
     );

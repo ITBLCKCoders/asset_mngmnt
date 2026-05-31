@@ -170,7 +170,12 @@ export default function AssetBorrowing() {
     Boolean(categoryId) &&
     Boolean(typeId) &&
     Boolean(expectedReturn.trim()) &&
-    Boolean(purpose.trim());
+    Boolean(purpose.trim()) &&
+    (() => {
+      const selectedDate = new Date(expectedReturn);
+      const now = new Date();
+      return !Number.isNaN(selectedDate.getTime()) && selectedDate >= now;
+    })();
 
   const loadMeta = useCallback(async () => {
     setLoadingMeta(true);
@@ -269,6 +274,12 @@ export default function AssetBorrowing() {
     }
     if (!expectedReturn.trim()) {
       toast.error('Expected return date and time is required');
+      return;
+    }
+    const selectedDate = new Date(expectedReturn);
+    const now = new Date();
+    if (selectedDate < now) {
+      toast.error('Expected return date and time cannot be in the past');
       return;
     }
     if (!purpose.trim()) {
@@ -829,6 +840,7 @@ export default function AssetBorrowing() {
                     value={expectedReturn}
                     onChange={e => setExpectedReturn(e.target.value)}
                     disabled={!canCreate}
+                    min={new Date().toISOString().slice(0, 16)}
                     className="h-10 w-full rounded-xl border-slate-200 bg-white text-slate-900 shadow-sm hover:bg-white focus:ring-2 focus:ring-red-500/20"
                   />
                 </div>
@@ -910,6 +922,7 @@ export default function AssetBorrowing() {
                 variant="outline"
                 onClick={() => setTermsOpen(false)}
                 disabled={submitting}
+                className="hover:bg-red-600 hover:text-white"
               >
                 Cancel
               </Button>
@@ -917,6 +930,7 @@ export default function AssetBorrowing() {
                 type="button"
                 onClick={() => void submitBorrowRequest()}
                 disabled={submitting}
+                className="bg-red-600 text-white hover:bg-white hover:text-red-600 hover:border-red-600 border-2 border-red-600"
               >
                 Submit
               </Button>

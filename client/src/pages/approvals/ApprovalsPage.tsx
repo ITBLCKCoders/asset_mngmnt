@@ -24,6 +24,7 @@ import {
   ReturnFormDetail,
   TransferFormCard,
   TransferFormDetail,
+  BorrowRequestCard,
   buildReturnDataForPDFFromBatch,
   buildTransferDataForPDFFromBatch,
   clearReturnPdfCacheForFormNumber,
@@ -50,7 +51,7 @@ import SmsOtpDialog from '@/components/auth/SmsOtpDialog';
 import { useRef } from 'react';
 
 type FormApprovalBatch = (AssetReturnFormBatch | AssetTransferFormBatch) & {
-  formType?: 'return' | 'transfer';
+  formType?: 'return' | 'transfer' | 'borrow';
 };
 
 type ApprovalBatch = FormApprovalBatch | ChecklistApprovalBatch;
@@ -209,7 +210,7 @@ export default function ApprovalsPage() {
     if (!canReceive) return;
     try {
       setReceiveLoading(true);
-      const [returnRes, transferRes, checklistRes] = await Promise.all([
+      const [returnRes, transferRes, checklistRes, borrowRes] = await Promise.all([
         api.get<{ assetReturnForms?: AssetReturnFormBatch[] }>(
           '/asset-returns/forms/receive-pending-approvals'
         ),
@@ -218,6 +219,9 @@ export default function ApprovalsPage() {
         ),
         api.get<{ checklistBatches?: ChecklistApprovalBatch[] }>(
           '/asset-checklists/receive-pending-approvals'
+        ),
+        api.get<{ success: boolean; data: { borrowRequests?: any[] } }>(
+          '/asset-borrow-requests/receive-pending-approvals'
         ),
       ]);
       const returns = (returnRes.assetReturnForms ?? []).map(b => ({
@@ -242,8 +246,12 @@ export default function ApprovalsPage() {
             null,
         })
       );
+      const borrowRequests = (borrowRes.data?.borrowRequests ?? []).map(b => ({
+        ...b,
+        formType: 'borrow' as const,
+      })) as ApprovalBatch[];
       setReceiveBatches(
-        ([...returns, ...transfers, ...checklists] as ApprovalBatch[]).sort(
+        ([...returns, ...transfers, ...checklists, ...borrowRequests] as ApprovalBatch[]).sort(
           (a, b) =>
             new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
         )
@@ -782,6 +790,18 @@ export default function ApprovalsPage() {
               }}
               onDownload={() => handleDownload(batch)}
               viewOnly
+            />
+          );
+        }
+        if (batch.formType === 'borrow') {
+          return (
+            <BorrowRequestCard
+              key={key}
+              batch={batch}
+              onView={() => {
+                setSelectedBatch(batch);
+                setShowDetail(true);
+              }}
             />
           );
         }

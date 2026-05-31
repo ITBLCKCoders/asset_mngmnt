@@ -6,6 +6,7 @@ import {
   approveDeptHeadBorrowRequest,
   createAssetBorrowRequest,
   declineDeptHeadBorrowRequest,
+  getApprovedBorrowRequestsForReceive,
   listBorrowRequestAvailableAssets,
   listApprovedByDeptHeadMeBorrowRequests,
   listAssetBorrowRequests,
@@ -58,6 +59,12 @@ router.get(
   '/:borrowRequestId/available-assets',
   authenticate,
   listBorrowRequestAvailableAssets
+);
+
+router.get(
+  '/receive-pending-approvals',
+  authenticate,
+  getApprovedBorrowRequestsForReceive
 );
 
 router.post(

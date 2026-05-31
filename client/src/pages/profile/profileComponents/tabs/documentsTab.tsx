@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect, useRef, useState } from 'react';
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { Card, CardContent, CardHeader, CardTitle, CardDescription, CardFooter } from '@/components/ui/card';
 import { Separator } from '@/components/ui/separator';
 import { Dialog } from '@/components/ui/dialog';
 import {
@@ -1180,6 +1180,130 @@ export const ReturnFormCard: React.FC<{
   );
 };
 
+// Borrow Request Card Component for Approvals Page
+export const BorrowRequestCard: React.FC<{
+  batch: any;
+  onView: () => void;
+}> = ({ batch, onView }) => {
+  const formNumber =
+    batch.form_number ?? `Borrow ${new Date(batch.created_at).toLocaleDateString()}`;
+  const borrowerName =
+    `${batch.requester_first_name || ''} ${batch.requester_last_name || ''}`.trim() ||
+    batch.requester_email ||
+    '—';
+  const scope = batch.borrow_scope === 'it' ? 'IT Equipment' : 'Admin Equipment';
+
+  const formatBorrowDateTime = (dateStr: string | null) => {
+    if (!dateStr) return '—';
+    const date = new Date(dateStr);
+    return date.toLocaleDateString('en-US', {
+      month: 'short',
+      day: 'numeric',
+      year: 'numeric',
+      hour: '2-digit',
+      minute: '2-digit',
+    });
+  };
+
+  return (
+    <div
+      className="hover:shadow-md transition-shadow flex flex-col bg-white border border-slate-200 rounded-lg p-4"
+    >
+      <div className="flex items-start justify-between mb-4">
+        <div className="flex items-center gap-3">
+          <div className="p-2 bg-red-100 rounded-lg">
+            <HandHelping className="h-5 w-5 text-red-700" />
+          </div>
+          <div>
+            <p className="text-lg font-semibold">
+              {formNumber}
+            </p>
+            <p className="text-sm text-gray-500">
+              Created {formatBorrowDateTime(batch.created_at)}
+            </p>
+          </div>
+        </div>
+        <Badge variant="secondary" className="bg-green-100 text-green-800">
+          Processed
+        </Badge>
+      </div>
+
+      <div className="space-y-4 flex-1">
+        <div className="flex items-start gap-3">
+          <Package className="h-4 w-4 text-gray-400 mt-0.5 flex-shrink-0" />
+          <div className="flex-1 min-w-0">
+            <p className="font-medium text-sm">Requested equipment</p>
+            <ul className="text-xs text-gray-600 mt-1 space-y-0.5 list-none">
+              <li className="flex items-center">
+                <span className="w-1.5 h-1.5 bg-gray-400 rounded-full mr-2 flex-shrink-0" />
+                <span className="truncate">
+                  {batch.category_name ?? '—'}
+                  {batch.type_name ? (
+                    <span className="text-gray-400 ml-1">
+                      — {batch.type_name}
+                    </span>
+                  ) : null}
+                </span>
+              </li>
+            </ul>
+          </div>
+        </div>
+
+        <div className="flex items-start gap-3">
+          <User className="h-4 w-4 text-gray-400 mt-0.5 flex-shrink-0" />
+          <div className="flex-1 min-w-0">
+            <p className="font-medium text-sm">Requested by: {borrowerName}</p>
+            {batch.requester_department_name?.trim() ? (
+              <p className="text-xs text-gray-600 mt-0.5">
+                Department: {batch.requester_department_name}
+              </p>
+            ) : null}
+          </div>
+        </div>
+
+        <div className="flex items-start gap-3">
+          <Calendar className="h-4 w-4 text-gray-400 mt-0.5 flex-shrink-0" />
+          <div className="flex-1 min-w-0">
+            <p className="text-sm text-gray-600">
+              Expected return:{' '}
+              {formatBorrowDateTime(batch.expected_return_at)}
+            </p>
+          </div>
+        </div>
+
+        <div className="flex items-start gap-3">
+          <FileText className="h-4 w-4 text-gray-400 mt-0.5 flex-shrink-0" />
+          <div className="flex-1 min-w-0">
+            <p className="text-sm text-gray-600 line-clamp-3">
+              Purpose: {batch.purpose || '—'}
+            </p>
+          </div>
+        </div>
+
+        <div className="flex items-start gap-3">
+          <CheckCircle2 className="h-4 w-4 text-gray-400 mt-0.5 flex-shrink-0" />
+          <div className="flex-1 min-w-0">
+            <p className="font-medium text-sm">Processed by: {batch.approved_by_name || '—'}</p>
+          </div>
+        </div>
+
+        <div className="flex items-start gap-3">
+          <CheckCircle2 className="h-4 w-4 text-gray-400 mt-0.5 flex-shrink-0" />
+          <div className="flex-1 min-w-0">
+            <p className="font-medium text-sm">Approved by: {batch.dept_head_name || '—'}</p>
+          </div>
+        </div>
+      </div>
+
+      <div className="mt-4 pt-4 border-t border-slate-200">
+        <Button onClick={onView} variant="outline" className="w-full">
+          View Details
+        </Button>
+      </div>
+    </div>
+  );
+};
+
 // Transfer Form Card (mirrors ReturnFormCard – for past owner: View, Sign, Download)
 export const TransferFormCard: React.FC<{
   batch: AssetTransferFormBatch;
@@ -1561,6 +1685,7 @@ export interface AssetBorrowFormBatch {
   requester_company_name?: string | null;
   requester_company_logo_url?: string | null;
   dept_head_signed_at?: string | null;
+  dept_head_name?: string | null;
   approved_at?: string | null;
   pre_usage_condition?: string | null;
   asset_name?: string | null;
@@ -1652,7 +1777,7 @@ export function buildBorrowDataForPDFFromBatch(
     itReceivedBy: batch.approved_by_name?.trim() || '—',
     itReceivedBySignature: batch.processor_signature ?? null,
     itReceivedBySignedAt: batch.processor_signed_at ?? null,
-    itApprovedBy: batch.approved_by_name?.trim() || '—',
+    itApprovedBy: batch.dept_head_name?.trim() || '—',
     postUsageCondition: post,
     borrowerCompanyName: batch.requester_company_name ?? null,
     borrowerCompanyLogoUrl: batch.requester_company_logo_url ?? null,
@@ -1864,7 +1989,7 @@ export const BorrowFormCard: React.FC<{
     badgeLabel = 'Returned';
   } else if (completed) {
     badgeClass = 'bg-green-100 text-green-800';
-    badgeLabel = 'Completed';
+    badgeLabel = 'Processed';
   } else if (pendingStaff) {
     badgeClass = 'bg-blue-100 text-blue-800';
     badgeLabel = 'Pending IT/Admin';
@@ -1964,6 +2089,24 @@ export const BorrowFormCard: React.FC<{
                 </p>
               </div>
             </div>
+
+            {batch.approved_by_name && (
+              <div className="flex items-start gap-3">
+                <CheckCircle2 className="h-4 w-4 text-gray-400 mt-0.5 flex-shrink-0" />
+                <div className="flex-1 min-w-0">
+                  <p className="font-medium text-sm">Processed by: {batch.approved_by_name}</p>
+                </div>
+              </div>
+            )}
+
+            {batch.dept_head_name && (
+              <div className="flex items-start gap-3">
+                <CheckCircle2 className="h-4 w-4 text-gray-400 mt-0.5 flex-shrink-0" />
+                <div className="flex-1 min-w-0">
+                  <p className="font-medium text-sm">Approved by: {batch.dept_head_name}</p>
+                </div>
+              </div>
+            )}
 
             <div className="flex items-start gap-3">
               <FileCheck className="h-4 w-4 text-gray-400 mt-0.5 flex-shrink-0" />

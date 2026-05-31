@@ -2,7 +2,7 @@ import type { Response, Request } from 'express';
 import jwt from 'jsonwebtoken';
 import { pool } from '../db.js';
 import { config } from '../config/validation.js';
-import { cookieOptions, accessTokenCookieOptions } from '../cookieConfig.js';
+import { cookieOptions, accessTokenCookieOptions, clearCookieOptions } from '../cookieConfig.js';
 import {
   login,
   register,
@@ -422,8 +422,8 @@ export async function refreshTokenHandler(req: AuthRequest, res: Response) {
 export async function logoutHandler(req: Request, res: Response) {
   const { isAutoLogout } = req.body as { isAutoLogout?: boolean };
 
-  res.clearCookie(ASSET_ACCESS_COOKIE_NAME, accessTokenCookieOptions);
-  res.clearCookie(ASSET_REFRESH_COOKIE_NAME, cookieOptions);
+  res.clearCookie(ASSET_ACCESS_COOKIE_NAME, clearCookieOptions);
+  res.clearCookie(ASSET_REFRESH_COOKIE_NAME, clearCookieOptions);
 
   // Try to authenticate manually for audit logging
   let userId: string | null = null;
