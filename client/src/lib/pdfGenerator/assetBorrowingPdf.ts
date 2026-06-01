@@ -300,6 +300,23 @@ export const generateAssetBorrowingPDF = async (
     });
   }
 
+  let itApprovedSigImg: HTMLImageElement | null = null;
+  if (borrowData.itApprovedBySignature) {
+    itApprovedSigImg = await new Promise<HTMLImageElement | null>(resolve => {
+      const img = new Image();
+      img.crossOrigin = 'anonymous';
+      img.onload = () => {
+        const processedSrc = removeSignatureBackground(img);
+        const processedImg = new Image();
+        processedImg.onload = () => resolve(processedImg);
+        processedImg.onerror = () => resolve(null);
+        processedImg.src = processedSrc;
+      };
+      img.onerror = () => resolve(null);
+      img.src = borrowData.itApprovedBySignature!;
+    });
+  }
+
   // Signature area (3 columns) per spec
   const sigStartY = (doc as any).lastAutoTable.finalY;
   const sigColW = tableWidth / 3;
@@ -429,6 +446,51 @@ export const generateAssetBorrowingPDF = async (
         doc.setFont('helvetica', 'normal');
         doc.setTextColor(0, 0, 0);
         doc.text(borrowData.itReceivedBy, cell.x + 3, nameY, {
+          align: 'left',
+        });
+
+        return;
+      }
+
+      if (data.column.index === 2) {
+        let sigY = cell.y + 5;
+        let sigH = 0;
+        if (itApprovedSigImg) {
+          const sigMaxH = 35;
+          const aspectRatio = itApprovedSigImg.width / itApprovedSigImg.height;
+          let sigW = sigMaxH * aspectRatio;
+          sigH = sigMaxH;
+          if (sigW > cell.width - 4) {
+            sigW = cell.width - 4;
+            sigH = sigW / aspectRatio;
+          }
+          const sigX = cell.x - 3;
+
+          const signedDate = borrowData.itApprovedBySignedAt
+            ? new Date(borrowData.itApprovedBySignedAt)
+            : null;
+          if (signedDate) {
+            const dateStr = signedDate.toLocaleDateString();
+            const timeStr = signedDate.toLocaleTimeString();
+
+            doc.setFontSize(7);
+            doc.setTextColor(100, 100, 100);
+            doc.text(dateStr, cell.x + 45, sigY + 3, {
+              align: 'left',
+            });
+            doc.text(timeStr, cell.x + 45, sigY + 6, {
+              align: 'left',
+            });
+          }
+
+          doc.addImage(itApprovedSigImg, 'PNG', sigX, sigY, sigW, sigH);
+        }
+
+        const nameY = itApprovedSigImg ? sigY + sigH + 5 : cell.y + 25;
+        doc.setFontSize(9);
+        doc.setFont('helvetica', 'normal');
+        doc.setTextColor(0, 0, 0);
+        doc.text(borrowData.itApprovedBy, cell.x + 3, nameY, {
           align: 'left',
         });
 

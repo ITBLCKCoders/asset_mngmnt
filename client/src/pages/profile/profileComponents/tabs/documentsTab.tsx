@@ -2215,6 +2215,9 @@ export const BorrowFormDetail: React.FC<{
     borrowFormBatch.return_condition,
     borrowFormBatch.return_remarks,
     borrowFormBatch.pre_usage_condition,
+    borrowFormBatch.received_at,
+    borrowFormBatch.received_by,
+    borrowFormBatch.received_by_signature,
   ]);
 
   const pdfBody = (
