@@ -132,6 +132,8 @@ export interface BorrowRequestRow {
   processor_signature?: string | null;
   /** Timestamp when the processor signed the borrow request */
   processor_signed_at?: string | null;
+  /** Receiver (Manager Approver 2) full name when received */
+  received_by_name?: string | null;
 }
 
 /** Request is finished on the staff queue: no approve/decline/processing. */
@@ -160,7 +162,7 @@ export function borrowRequestStatusLabel(r: BorrowRequestRow): string {
     case 'pending':
       return 'Pending';
     case 'approved':
-      return 'Processed';
+      return 'Approved';
     default:
       return r.status?.replace(/_/g, ' ') || r.status || 'Unknown';
   }
@@ -1140,7 +1142,7 @@ export default function BorrowRequestsPage() {
         <Tabs value={activeTab} onValueChange={setActiveTab}>
           <TabsList className={segmentTabsListClassName + ' grid grid-cols-3 w-full'}>
             <TabsTrigger value="request" className={segmentTabsTriggerClassName}>Request</TabsTrigger>
-            <TabsTrigger value="approved" className={segmentTabsTriggerClassName}>Processed</TabsTrigger>
+            <TabsTrigger value="approved" className={segmentTabsTriggerClassName}>Approved</TabsTrigger>
             <TabsTrigger value="declined" className={segmentTabsTriggerClassName}>Declined</TabsTrigger>
           </TabsList>
           <TabsContent value="request" className="space-y-4 mt-4">
@@ -1238,7 +1240,7 @@ export default function BorrowRequestsPage() {
                     },
                     {
                       key: 'approved_by_name',
-                      label: 'Processed By',
+                      label: 'Approved By',
                       render: (row) => row.approved_by_name || '—',
                     },
                     {
@@ -1258,7 +1260,7 @@ export default function BorrowRequestsPage() {
           </TabsContent>
           <TabsContent value="approved" className="space-y-4 mt-4">
             <div className="flex items-center justify-between">
-              <p className="text-sm text-slate-600">Processed borrow requests</p>
+              <p className="text-sm text-slate-600">Approved borrow requests</p>
               <div className="flex items-center gap-2">
                 <Button
                   variant={viewMode === 'card' ? 'default' : 'outline'}
@@ -1309,8 +1311,8 @@ export default function BorrowRequestsPage() {
                   <div className="flex h-16 w-16 items-center justify-center rounded-full bg-green-100 mb-4">
                     <CheckCircle2 className="h-8 w-8 text-green-500" />
                   </div>
-                  <p className="text-sm font-medium text-slate-900 mb-1">No processed requests</p>
-                  <p className="text-xs text-slate-500 text-center">Processed borrow requests ready for return processing will appear here.</p>
+                  <p className="text-sm font-medium text-slate-900 mb-1">No approved requests</p>
+                  <p className="text-xs text-slate-500 text-center">Approved borrow requests ready for return processing will appear here.</p>
                 </div>
               ) : viewMode === 'card' ? (
                 <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-3">{cards}</div>
@@ -1319,8 +1321,8 @@ export default function BorrowRequestsPage() {
                   tableId="approved-tab"
                   data={filteredRows}
                   columns={tabTableColumns}
-                  searchPlaceholder="Search processed requests..."
-                  title="Processed Requests"
+                  searchPlaceholder="Search approved requests..."
+                  title="Approved Requests"
                   titleBadge={`${filteredRows.length} requests`}
                   isLoading={loading}
                   onRowClick={(row) => {

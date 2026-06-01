@@ -47,6 +47,7 @@ const BasicInfoTab = forwardRef<BasicInfoTabHandle, BasicInfoTabProps>(
     const { user, loading: userLoading, refetch } = useCurrentUser();
     const [formData, setFormData] = useState<any>({});
     const [isSaving, setIsSaving] = useState(false);
+    const [isTabLoading, setIsTabLoading] = useState(true);
     const [signatureReadyToSave, setSignatureReadyToSave] = useState<string | null>(null);
     const [signatureMarkedDone, setSignatureMarkedDone] = useState(false);
     const [signatureSaved, setSignatureSaved] = useState(false);
@@ -77,6 +78,11 @@ const BasicInfoTab = forwardRef<BasicInfoTabHandle, BasicInfoTabProps>(
     const otpResolveRef = useRef<((success: boolean) => void) | null>(null);
     const otpRejectRef = useRef<((value: boolean) => void) | null>(null);
     const otpInputsRef = useRef<(HTMLInputElement | null)[]>([]);
+
+    useEffect(() => {
+      const timer = setTimeout(() => setIsTabLoading(false), 1400);
+      return () => clearTimeout(timer);
+    }, []);
 
     // OTP timer effects
     useEffect(() => {
@@ -591,7 +597,7 @@ const BasicInfoTab = forwardRef<BasicInfoTabHandle, BasicInfoTabProps>(
 
     useImperativeHandle(ref, () => ({ save: handleSave }));
 
-    if (isLoading || !user) {
+    if (isTabLoading || isLoading || !user) {
       return (
         <Card className="shadow-xl rounded-2xl overflow-hidden border-0">
           <CardHeader className="bg-gradient-to-r from-red-600 to-red-800 p-4 text-white sm:p-6 lg:p-8">

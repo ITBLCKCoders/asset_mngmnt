@@ -895,11 +895,12 @@ export async function getChecklistByAssignmentIdHandler(
 }
 
 export async function getAssetChecklistsHandler(
-  _req: AuthRequest,
+  req: AuthRequest,
   res: Response
 ) {
   try {
-    const checklists = await checklistListRepo.getAssetChecklists();
+    const employeeId = req.query.employee_id as string | undefined;
+    const checklists = await checklistListRepo.getAssetChecklists(employeeId);
     return res.status(200).json({ checklists });
   } catch (error) {
     logger.error('Get asset checklists failed:', error);

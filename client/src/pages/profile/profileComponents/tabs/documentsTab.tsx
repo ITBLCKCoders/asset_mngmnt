@@ -33,6 +33,7 @@ import {
   XCircle,
   ArrowRightLeft,
   HandHelping,
+  ClipboardList,
 } from 'lucide-react';
 import { Checkbox } from '@/components/ui/checkbox';
 import {
@@ -41,6 +42,7 @@ import {
   AlertDialogCancel,
   AlertDialogAction,
 } from '@/components/ui/alert-dialog';
+import { cn } from '@/lib/utils';
 import { Shimmer } from '@/components/ui/shimmer';
 import { Tabs, TabsList, TabsTrigger, TabsContent, segmentTabsListClassName, segmentTabsTriggerClassName } from '@/components/ui/tabs';
 import { api } from '@/lib/api';
@@ -57,6 +59,7 @@ import {
   generateAssetReturnPDF,
   generateAssetTransferPDF,
   generateAssetBorrowingPDF,
+  generateAssetChecklistPDF,
   downloadPDF,
   type AssetReturnData,
   type AssetTransferData,
@@ -1224,7 +1227,7 @@ export const BorrowRequestCard: React.FC<{
           </div>
         </div>
         <Badge variant="secondary" className="bg-green-100 text-green-800">
-          Processed
+          Approved
         </Badge>
       </div>
 
@@ -1987,6 +1990,12 @@ export const BorrowFormCard: React.FC<{
   const pendingStaff =
     !!batch.dept_head_signed_at && !batch.approved_at && !declined;
   const completed = !!batch.approved_at && !declined;
+  const received = Boolean(
+    batch.received_at ||
+    batch.received_by ||
+    batch.received_by_signature ||
+    (batch.received_by_name && batch.received_by_name.trim())
+  );
 
   let badgeClass = 'bg-amber-100 text-amber-800';
   let badgeLabel = 'Pending approval';
@@ -1996,9 +2005,12 @@ export const BorrowFormCard: React.FC<{
   } else if (returned) {
     badgeClass = 'bg-green-100 text-green-800';
     badgeLabel = 'Returned';
+  } else if (received) {
+    badgeClass = 'bg-green-100 text-green-800';
+    badgeLabel = 'Approved';
   } else if (completed) {
     badgeClass = 'bg-green-100 text-green-800';
-    badgeLabel = 'Processed';
+    badgeLabel = 'Approved';
   } else if (pendingStaff) {
     badgeClass = 'bg-blue-100 text-blue-800';
     badgeLabel = 'Pending IT/Admin';
@@ -2414,6 +2426,41 @@ export interface AssetReturnFormBatch {
   returns: AssetReturnForm[];
 }
 
+type ChecklistRow = {
+  id: string;
+  form_number?: string | null;
+  assignment_id: string;
+  employee_id: string;
+  employee_name: string;
+  employee_designation?: string | null;
+  employee_department?: string | null;
+  employee_company?: string | null;
+  employee_company_logo_url?: string | null;
+  type_onboarding: boolean;
+  type_offboarding: boolean;
+  received_by?: string | null;
+  checklist_data: any;
+  remarks?: string | null;
+  created_at: string;
+  creator_name?: string | null;
+  creator_digital_signature?: string | null;
+  employee_signed_at?: string | null;
+  employee_digital_signature?: string | null;
+  dept_head_signed_at?: string | null;
+  dept_head_signed_by?: string | null;
+  dept_head_digital_signature?: string | null;
+  dept_head_name?: string | null;
+  it_manager_signed_at?: string | null;
+  it_manager_signed_by?: string | null;
+  it_manager_digital_signature?: string | null;
+  it_manager_name?: string | null;
+  asset?: {
+    id: string;
+    code?: string | null;
+    name?: string | null;
+  } | null;
+};
+
 
 export default function DocumentsTab({
   setActiveTab,
@@ -2455,6 +2502,12 @@ export default function DocumentsTab({
   const [returnSearchQuery, setReturnSearchQuery] = useState('');
   const [transferSearchQuery, setTransferSearchQuery] = useState('');
   const [borrowSearchQuery, setBorrowSearchQuery] = useState('');
+  const [checklistSearchQuery, setChecklistSearchQuery] = useState('');
+  const [assetChecklistForms, setAssetChecklistForms] = useState<ChecklistRow[]>([]);
+  const [filteredChecklistForms, setFilteredChecklistForms] = useState<ChecklistRow[]>([]);
+  const [selectedChecklist, setSelectedChecklist] = useState<ChecklistRow | null>(null);
+  const [showChecklistPreview, setShowChecklistPreview] = useState(false);
+  const [checklistPdfUrl, setChecklistPdfUrl] = useState<string | null>(null);
   const [selectedForm, setSelectedForm] = useState<AccountabilityForm | null>(
     null
   );
@@ -2469,14 +2522,20 @@ export default function DocumentsTab({
   const [selectedBorrowFormBatch, setSelectedBorrowFormBatch] =
     useState<AssetBorrowFormBatch | null>(null);
   const [showBorrowFormDetail, setShowBorrowFormDetail] = useState(false);
-  const [activeTab, setActiveTabState] = useState<'accountability' | 'returns'>(
+  const [activeSubTab, setActiveSubTab] = useState<string>(
     'accountability'
   );
   const [statusFilter, setStatusFilter] = useState<
     'all' | 'active' | 'disabled'
   >('active');
 
+  const [isTabLoading, setIsTabLoading] = useState(true);
   const isLoading = userLoading;
+
+  useEffect(() => {
+    const timer = setTimeout(() => setIsTabLoading(false), 1400);
+    return () => clearTimeout(timer);
+  }, []);
 
   const fetchAccountabilityForms = async () => {
     if (!currentUser?.id) {
@@ -2633,6 +2692,45 @@ export default function DocumentsTab({
     }
   }, [borrowSearchQuery, assetBorrowForms]);
 
+  useEffect(() => {
+    if (!checklistSearchQuery.trim()) {
+      setFilteredChecklistForms(assetChecklistForms);
+    } else {
+      const q = checklistSearchQuery.trim().toLowerCase();
+      const filtered = assetChecklistForms.filter(row =>
+        [
+          row.form_number,
+          row.employee_name,
+          row.employee_department,
+          row.employee_company,
+          row.asset?.name,
+          row.asset?.code,
+        ]
+          .filter(Boolean)
+          .some(value => String(value).toLowerCase().includes(q))
+      );
+      setFilteredChecklistForms(filtered);
+    }
+  }, [checklistSearchQuery, assetChecklistForms]);
+
+  const fetchAssetChecklistForms = async () => {
+    if (!currentUser?.id) {
+      setAssetChecklistForms([]);
+      setFilteredChecklistForms([]);
+      return;
+    }
+    try {
+      const response = await api.get(`/asset-assignments/checklists?employee_id=${currentUser.id}`);
+      const forms: ChecklistRow[] = Array.isArray(response.checklists) ? response.checklists : [];
+      setAssetChecklistForms(forms);
+      setFilteredChecklistForms(forms);
+    } catch (error) {
+      console.error('Failed to fetch checklist forms:', error);
+      setAssetChecklistForms([]);
+      setFilteredChecklistForms([]);
+    }
+  };
+
   const fetchAssetBorrowForms = async () => {
     if (!currentUser?.id) {
       setAssetBorrowForms([]);
@@ -2662,6 +2760,7 @@ export default function DocumentsTab({
         fetchAssetReturnForms(),
         fetchAssetTransferForms(),
         fetchAssetBorrowForms(),
+        fetchAssetChecklistForms(),
       ]);
     };
     loadData();
@@ -2803,7 +2902,57 @@ export default function DocumentsTab({
     }
   };
 
-  if (isLoading || !currentUser) {
+  const handleDownloadChecklist = async (row: ChecklistRow) => {
+    try {
+      const assetLabel = row.asset
+        ? `${row.asset.name || 'Asset'} (${row.asset.code || '—'})`
+        : 'Asset';
+      const blob = await generateAssetChecklistPDF({ ...row, asset_label: assetLabel });
+      const formNumber = row.form_number || `CHK-${row.assignment_id}`;
+      downloadPDF(blob, `Asset_Checklist_${formNumber}.pdf`);
+      toast.success('Checklist PDF downloaded successfully');
+    } catch (error) {
+      console.error('Failed to download checklist PDF:', error);
+      toast.error('Failed to download checklist PDF');
+    }
+  };
+
+  const handleViewChecklist = async (row: ChecklistRow) => {
+    setSelectedChecklist(row);
+    setShowChecklistPreview(true);
+  };
+
+  useEffect(() => {
+    if (!showChecklistPreview || !selectedChecklist) return;
+    let cancelled = false;
+    const generate = async () => {
+      try {
+        const assetLabel = selectedChecklist.asset
+          ? `${selectedChecklist.asset.name || 'Asset'} (${selectedChecklist.asset.code || '—'})`
+          : 'Asset';
+        const blob = await generateAssetChecklistPDF({
+          ...selectedChecklist,
+          asset_label: assetLabel,
+        });
+        if (cancelled) return;
+        const url = URL.createObjectURL(blob);
+        setChecklistPdfUrl(url);
+      } catch (error) {
+        console.error('Failed to generate checklist preview:', error);
+        toast.error('Failed to generate checklist PDF');
+      }
+    };
+    generate();
+    return () => {
+      cancelled = true;
+      setChecklistPdfUrl(prev => {
+        if (prev) URL.revokeObjectURL(prev);
+        return null;
+      });
+    };
+  }, [showChecklistPreview, selectedChecklist]);
+
+  if (isTabLoading || isLoading || !currentUser) {
     return (
       <Card className="shadow-lg rounded-2xl overflow-hidden border-0">
         <CardHeader className="bg-gradient-to-r from-red-600 to-red-800 p-4 text-white sm:p-6 lg:p-8">
@@ -2819,40 +2968,35 @@ export default function DocumentsTab({
         </CardHeader>
 
         <CardContent className="p-4 sm:p-6 lg:p-8">
-          {/* Accountability Forms Section Shimmer */}
+          {/* Tab Triggers Shimmer */}
+          <div className={cn(segmentTabsListClassName, 'grid grid-cols-2 sm:grid-cols-5 mb-6')}>
+            {Array.from({ length: 5 }).map((_, i) => (
+              <div key={i} className="flex h-10 items-center justify-center gap-2 rounded-lg bg-slate-100/90 px-3">
+                <Shimmer className="w-4 h-4 rounded" />
+                <Shimmer className="h-4 w-16 rounded" />
+              </div>
+            ))}
+          </div>
+
+          {/* Content Shimmer — single tab */}
           <div className="mb-8">
             <div className="flex items-center gap-3 mb-6">
               <Shimmer className="w-6 h-6 rounded" />
-              <Shimmer className="h-6 w-64 rounded" />
+              <Shimmer className="h-6 w-48 rounded" />
               <Shimmer className="h-6 w-8 rounded-full" />
             </div>
 
-            {/* Search and Filter Controls Shimmer */}
-            <div className="flex flex-col sm:flex-row gap-4 mb-6">
-              {/* Search Bar */}
-              <div className="relative flex-1">
-                <Shimmer className="absolute left-3 top-1/2 transform -translate-y-1/2 w-4 h-4 rounded" />
-                <Shimmer className="h-10 w-full max-w-md rounded-lg" />
-              </div>
-
-              {/* Status Filter */}
-              <div className="flex gap-2">
-                <Shimmer className="h-10 w-16 rounded-lg" />
-                <Shimmer className="h-10 w-16 rounded-lg" />
-                <Shimmer className="h-10 w-20 rounded-lg" />
-              </div>
+            <div className="relative mb-6">
+              <Shimmer className="absolute left-3 top-1/2 transform -translate-y-1/2 w-4 h-4 rounded" />
+              <Shimmer className="h-10 w-full max-w-md rounded-lg" />
             </div>
 
-            {/* Shimmer cards grid */}
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-              {Array.from({ length: 6 }).map((_, i) => (
-                <div
-                  key={i}
-                  className="border rounded-lg p-6 space-y-4 hover:shadow-md transition-shadow bg-white"
-                >
+              {Array.from({ length: 4 }).map((_, i) => (
+                <div key={i} className="border rounded-lg p-6 space-y-4 hover:shadow-md transition-shadow bg-white">
                   <div className="flex items-start justify-between">
                     <div className="flex items-center gap-3">
-                      <Shimmer className="w-12 h-12 rounded-lg" />
+                      <Shimmer className="w-10 h-10 rounded-lg" />
                       <div>
                         <Shimmer className="h-5 w-32 rounded" />
                         <Shimmer className="h-4 w-24 rounded mt-1" />
@@ -2860,86 +3004,17 @@ export default function DocumentsTab({
                     </div>
                     <Shimmer className="h-6 w-16 rounded-full" />
                   </div>
-
                   <div className="space-y-3">
-                    <div className="flex items-start gap-3">
-                      <Shimmer className="w-4 h-4 rounded-full mt-0.5" />
-                      <Shimmer className="h-4 w-48 rounded" />
-                    </div>
-                    <div className="flex items-start gap-3">
-                      <Shimmer className="w-4 h-4 rounded-full mt-0.5" />
-                      <Shimmer className="h-4 w-36 rounded" />
-                    </div>
-                    <div className="flex items-start gap-3">
-                      <Shimmer className="w-4 h-4 rounded-full mt-0.5" />
-                      <Shimmer className="h-4 w-40 rounded" />
-                    </div>
+                    <Shimmer className="h-4 w-48 rounded" />
+                    <Shimmer className="h-4 w-36 rounded" />
+                    <Shimmer className="h-4 w-40 rounded" />
                   </div>
-
                   <div className="flex gap-2">
                     <Shimmer className="h-10 flex-1 rounded-lg" />
                     <Shimmer className="h-10 w-20 rounded-lg" />
                   </div>
                 </div>
               ))}
-            </div>
-          </div>
-
-          {/* Asset Return Forms Section Shimmer */}
-          <div className="mb-8">
-            <div className="flex items-center gap-3 mb-6">
-              <Shimmer className="w-6 h-6 rounded" />
-              <Shimmer className="h-6 w-64 rounded" />
-              <Shimmer className="h-6 w-8 rounded-full" />
-            </div>
-
-            {/* Return Forms Search Bar Shimmer */}
-            <div className="relative mb-6">
-              <Shimmer className="absolute left-3 top-1/2 transform -translate-y-1/2 w-4 h-4 rounded" />
-              <Shimmer className="h-10 w-full max-w-md rounded-lg" />
-            </div>
-
-            {/* Return Form Cards Shimmer */}
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-              {Array.from({ length: 4 }).map((_, i) => (
-                <div
-                  key={i}
-                  className="border rounded-lg p-6 hover:shadow-md transition-shadow bg-white"
-                >
-                  <div className="flex items-start justify-between mb-4">
-                    <div className="flex-1">
-                      <div className="flex items-center gap-2 mb-2">
-                        <Shimmer className="h-5 w-48 rounded" />
-                        <Shimmer className="h-4 w-20 rounded" />
-                      </div>
-                      <div className="text-sm text-gray-600 mb-2">
-                        <Shimmer className="h-4 w-32 rounded" />
-                      </div>
-                      <div className="text-sm text-gray-600 mb-2">
-                        <Shimmer className="h-4 w-28 rounded" />
-                      </div>
-                      <div className="text-sm text-gray-600">
-                        <Shimmer className="h-4 w-40 rounded" />
-                      </div>
-                    </div>
-                  </div>
-
-                  <div className="flex gap-2">
-                    <Shimmer className="h-10 flex-1 rounded-lg" />
-                    <Shimmer className="h-10 w-20 rounded-lg" />
-                  </div>
-                </div>
-              ))}
-            </div>
-          </div>
-
-          {/* Other Documents Section Shimmer */}
-          <div className="border-t pt-8">
-            <div className="text-center py-12 space-y-4">
-              <Shimmer className="w-16 h-16 mx-auto rounded-full" />
-              <Shimmer className="h-6 w-48 mx-auto rounded" />
-              <Shimmer className="h-4 w-64 mx-auto rounded" />
-              <Shimmer className="h-4 w-32 mx-auto rounded" />
             </div>
           </div>
         </CardContent>
@@ -2967,392 +3042,548 @@ export default function DocumentsTab({
         <Separator className="bg-gray-100" />
 
         <CardContent className="p-4 sm:p-6 lg:p-8">
-          {/* Accountability Forms Section */}
-          <div className="mb-8">
-            <div className="flex items-center gap-3 mb-6">
-              <FileCheck className="w-6 h-6 text-blue-600" />
-              <h3 className="text-xl font-semibold text-gray-900">
-                Asset Accountability Forms
-              </h3>
-              <span className="bg-blue-100 text-blue-800 text-sm px-2 py-1 rounded-full">
-                {filteredForms.length}
-              </span>
-            </div>
+          <Tabs value={activeSubTab} onValueChange={setActiveSubTab} className="w-full">
+            <TabsList className={cn(segmentTabsListClassName, 'grid grid-cols-2 sm:grid-cols-5 mb-6')}>
+              <TabsTrigger value="accountability" className={cn(segmentTabsTriggerClassName, 'text-xs sm:text-sm')}>
+                <FileCheck className="mr-1.5 h-4 w-4" /> Accountability
+              </TabsTrigger>
+              <TabsTrigger value="returns" className={cn(segmentTabsTriggerClassName, 'text-xs sm:text-sm')}>
+                <FileDown className="mr-1.5 h-4 w-4" /> Returns
+              </TabsTrigger>
+              <TabsTrigger value="transfers" className={cn(segmentTabsTriggerClassName, 'text-xs sm:text-sm')}>
+                <ArrowRightLeft className="mr-1.5 h-4 w-4" /> Transfers
+              </TabsTrigger>
+              <TabsTrigger value="borrows" className={cn(segmentTabsTriggerClassName, 'text-xs sm:text-sm')}>
+                <HandHelping className="mr-1.5 h-4 w-4" /> Borrows
+              </TabsTrigger>
+              <TabsTrigger value="checklists" className={cn(segmentTabsTriggerClassName, 'text-xs sm:text-sm')}>
+                <ClipboardList className="mr-1.5 h-4 w-4" /> Checklists
+              </TabsTrigger>
+            </TabsList>
 
-            {/* Search and Filter Controls */}
-            <div className="flex flex-col sm:flex-row gap-4 mb-6">
-              {/* Search Bar */}
-              <div className="relative flex-1">
+            {/* TabsContent: Accountability */}
+            <TabsContent value="accountability" className="mt-0">
+              <div className="flex items-center gap-3 mb-6">
+                <FileCheck className="w-6 h-6 text-blue-600" />
+                <h3 className="text-xl font-semibold text-gray-900">
+                  Asset Accountability Forms
+                </h3>
+                <span className="bg-blue-100 text-blue-800 text-sm px-2 py-1 rounded-full">
+                  {filteredForms.length}
+                </span>
+              </div>
+
+              <div className="flex flex-col sm:flex-row gap-4 mb-6">
+                <div className="relative flex-1">
+                  <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 w-4 h-4" />
+                  <Input
+                    type="text"
+                    placeholder="Search form number, employee, assets, department..."
+                    value={searchQuery}
+                    onChange={e => setSearchQuery(e.target.value)}
+                    className="pl-10 pr-4 py-2 w-full max-w-md"
+                  />
+                </div>
+                <div className="flex gap-2">
+                  <Button
+                    variant={statusFilter === 'all' ? 'default' : 'outline'}
+                    size="sm"
+                    onClick={() => setStatusFilter('all')}
+                    className={
+                      statusFilter === 'all'
+                        ? 'bg-blue-600 hover:bg-blue-700 text-white'
+                        : 'border-gray-300 text-gray-700 hover:bg-gray-50'
+                    }
+                  >
+                    All
+                  </Button>
+                  <Button
+                    variant={statusFilter === 'active' ? 'default' : 'outline'}
+                    size="sm"
+                    onClick={() => setStatusFilter('active')}
+                    className={
+                      statusFilter === 'active'
+                        ? 'bg-green-600 hover:bg-green-700 text-white'
+                        : 'border-gray-300 text-gray-700 hover:bg-gray-50'
+                    }
+                  >
+                    Active
+                  </Button>
+                  <Button
+                    variant={statusFilter === 'disabled' ? 'default' : 'outline'}
+                    size="sm"
+                    onClick={() => setStatusFilter('disabled')}
+                    className={
+                      statusFilter === 'disabled'
+                        ? 'bg-red-600 hover:bg-red-700 text-white'
+                        : 'border-gray-300 text-gray-700 hover:bg-gray-50'
+                    }
+                  >
+                    Disabled
+                  </Button>
+                </div>
+              </div>
+
+              {filteredForms.length === 0 ? (
+                <div className="text-center py-12 rounded-lg">
+                  <FileCheck className="w-16 h-16 text-gray-300 mx-auto mb-4" />
+                  {searchQuery ? (
+                    <>
+                      <p className="text-gray-500 text-lg">No forms found</p>
+                      <p className="text-gray-400 text-sm mt-1">
+                        No forms match &quot;{searchQuery}&quot;. Try different
+                        keywords (form number, employee, asset, etc.).
+                      </p>
+                    </>
+                  ) : (
+                    <>
+                      <p className="text-gray-500 text-lg">
+                        No accountability forms yet
+                      </p>
+                      <p className="text-gray-400 text-sm mt-1">
+                        Forms will appear here when assets are assigned to you
+                      </p>
+                    </>
+                  )}
+                </div>
+              ) : (
+                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+                  {filteredForms.map(form => (
+                    <AccountabilityFormCard
+                      key={form.id}
+                      form={form}
+                      onSign={handleSignForm}
+                      onView={handleViewForm}
+                      showDeclineButton
+                      onDecline={handleDeclineAccountabilityForm}
+                      showDownloadButton={false}
+                    />
+                  ))}
+                </div>
+              )}
+            </TabsContent>
+
+            {/* TabsContent: Returns */}
+            <TabsContent value="returns" className="mt-0">
+              <div className="flex items-center gap-3 mb-6">
+                <FileDown className="w-6 h-6 text-green-600" />
+                <h3 className="text-xl font-semibold text-gray-900">
+                  Asset Return Forms
+                </h3>
+                <span className="bg-green-100 text-green-800 text-sm px-2 py-1 rounded-full">
+                  {filteredReturnForms.length}
+                </span>
+              </div>
+
+              <div className="relative mb-6">
                 <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 w-4 h-4" />
                 <Input
                   type="text"
-                  placeholder="Search form number, employee, assets, department..."
-                  value={searchQuery}
-                  onChange={e => setSearchQuery(e.target.value)}
+                  placeholder="Search form number, assets, returner, department, notes..."
+                  value={returnSearchQuery}
+                  onChange={e => setReturnSearchQuery(e.target.value)}
                   className="pl-10 pr-4 py-2 w-full max-w-md"
                 />
               </div>
 
-              {/* Status Filter */}
-              <div className="flex gap-2">
-                <Button
-                  variant={statusFilter === 'all' ? 'default' : 'outline'}
-                  size="sm"
-                  onClick={() => setStatusFilter('all')}
-                  className={
-                    statusFilter === 'all'
-                      ? 'bg-blue-600 hover:bg-blue-700 text-white'
-                      : 'border-gray-300 text-gray-700 hover:bg-gray-50'
-                  }
-                >
-                  All
-                </Button>
-                <Button
-                  variant={statusFilter === 'active' ? 'default' : 'outline'}
-                  size="sm"
-                  onClick={() => setStatusFilter('active')}
-                  className={
-                    statusFilter === 'active'
-                      ? 'bg-green-600 hover:bg-green-700 text-white'
-                      : 'border-gray-300 text-gray-700 hover:bg-gray-50'
-                  }
-                >
-                  Active
-                </Button>
-                <Button
-                  variant={statusFilter === 'disabled' ? 'default' : 'outline'}
-                  size="sm"
-                  onClick={() => setStatusFilter('disabled')}
-                  className={
-                    statusFilter === 'disabled'
-                      ? 'bg-red-600 hover:bg-red-700 text-white'
-                      : 'border-gray-300 text-gray-700 hover:bg-gray-50'
-                  }
-                >
-                  Disabled
-                </Button>
-              </div>
-            </div>
-
-            {filteredForms.length === 0 ? (
-              <div className="text-center py-12 rounded-lg">
-                <FileCheck className="w-16 h-16 text-gray-300 mx-auto mb-4" />
-                {searchQuery ? (
-                  <>
-                    <p className="text-gray-500 text-lg">No forms found</p>
-                    <p className="text-gray-400 text-sm mt-1">
-                      No forms match &quot;{searchQuery}&quot;. Try different
-                      keywords (form number, employee, asset, etc.).
-                    </p>
-                  </>
-                ) : (
-                  <>
-                    <p className="text-gray-500 text-lg">
-                      No accountability forms yet
-                    </p>
-                    <p className="text-gray-400 text-sm mt-1">
-                      Forms will appear here when assets are assigned to you
-                    </p>
-                  </>
-                )}
-              </div>
-            ) : (
-              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-                {filteredForms.map(form => (
-                  <AccountabilityFormCard
-                    key={form.id}
-                    form={form}
-                    onSign={handleSignForm}
-                    onView={handleViewForm}
-                    showDeclineButton
-                    onDecline={handleDeclineAccountabilityForm}
-                    showDownloadButton={false}
-                  />
-                ))}
-              </div>
-            )}
-          </div>
-
-          {/* Asset Return Forms Section */}
-          <div id="asset-return-forms" className="mb-8">
-            <div className="flex items-center gap-3 mb-6">
-              <FileDown className="w-6 h-6 text-green-600" />
-              <h3 className="text-xl font-semibold text-gray-900">
-                Asset Return Forms
-              </h3>
-              <span className="bg-green-100 text-green-800 text-sm px-2 py-1 rounded-full">
-                {filteredReturnForms.length}
-              </span>
-            </div>
-
-            {/* Return Forms Search Bar */}
-            <div className="relative mb-6">
-              <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 w-4 h-4" />
-              <Input
-                type="text"
-                placeholder="Search form number, assets, returner, department, notes..."
-                value={returnSearchQuery}
-                onChange={e => setReturnSearchQuery(e.target.value)}
-                className="pl-10 pr-4 py-2 w-full max-w-md"
-              />
-            </div>
-
-            {filteredReturnForms.length === 0 ? (
-              <div className="text-center py-12 rounded-lg">
-                <FileDown className="w-16 h-16 text-gray-300 mx-auto mb-4" />
-                {returnSearchQuery ? (
-                  <>
-                    <p className="text-gray-500 text-lg">
-                      No return forms found
-                    </p>
-                    <p className="text-gray-400 text-sm mt-1">
-                      No return forms match "{returnSearchQuery}". Try a
-                      different search term.
-                    </p>
-                  </>
-                ) : (
-                  <>
-                    <p className="text-gray-500 text-lg">
-                      No asset return forms yet
-                    </p>
-                    <p className="text-gray-400 text-sm mt-1">
-                      Return forms will appear here when you return assets
-                    </p>
-                  </>
-                )}
-              </div>
-            ) : (
-              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-                {filteredReturnForms.map(batch => (
-                  <ReturnFormCard
-                    key={
-                      batch.formID ??
-                      batch.return_batch_id ??
-                      batch.returns[0]?.return_id ??
-                      ''
-                    }
-                    batch={batch}
-                    onView={() => {
-                      setSelectedReturnFormBatch(batch);
-                      setShowReturnFormDetail(true);
-                    }}
-                    onSign={handleSignReturnForm}
-                    onDownload={async () => {
-                      try {
-                        const signature =
-                          batch.signed_at &&
-                          currentUser?.id === batch.user_id
-                            ? {
-                                signed_at: batch.signed_at,
-                              }
-                            : undefined;
-                        const returnDataForPDF = buildReturnDataForPDFFromBatch(
-                          batch,
-                          signature
-                        );
-                        if (!returnDataForPDF) {
-                          throw new Error(
-                            'Return form data is missing or incomplete'
+              {filteredReturnForms.length === 0 ? (
+                <div className="text-center py-12 rounded-lg">
+                  <FileDown className="w-16 h-16 text-gray-300 mx-auto mb-4" />
+                  {returnSearchQuery ? (
+                    <>
+                      <p className="text-gray-500 text-lg">
+                        No return forms found
+                      </p>
+                      <p className="text-gray-400 text-sm mt-1">
+                        No return forms match "{returnSearchQuery}". Try a
+                        different search term.
+                      </p>
+                    </>
+                  ) : (
+                    <>
+                      <p className="text-gray-500 text-lg">
+                        No asset return forms yet
+                      </p>
+                      <p className="text-gray-400 text-sm mt-1">
+                        Return forms will appear here when you return assets
+                      </p>
+                    </>
+                  )}
+                </div>
+              ) : (
+                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+                  {filteredReturnForms.map(batch => (
+                    <ReturnFormCard
+                      key={
+                        batch.formID ??
+                        batch.return_batch_id ??
+                        batch.returns[0]?.return_id ??
+                        ''
+                      }
+                      batch={batch}
+                      onView={() => {
+                        setSelectedReturnFormBatch(batch);
+                        setShowReturnFormDetail(true);
+                      }}
+                      onSign={handleSignReturnForm}
+                      onDownload={async () => {
+                        try {
+                          const signature =
+                            batch.signed_at &&
+                            currentUser?.id === batch.user_id
+                              ? {
+                                  signed_at: batch.signed_at,
+                                }
+                              : undefined;
+                          const returnDataForPDF = buildReturnDataForPDFFromBatch(
+                            batch,
+                            signature
+                          );
+                          if (!returnDataForPDF) {
+                            throw new Error(
+                              'Return form data is missing or incomplete'
+                            );
+                          }
+                          const pdfBlob =
+                            await generateAssetReturnPDF(returnDataForPDF);
+                          const fileName =
+                            batch.returns.length === 1
+                              ? `Asset_Return_Form_${batch.returns[0].assignment?.asset?.code ?? 'return'}_${Date.now()}.pdf`
+                              : `Asset_Return_Form_${batch.returns.length}_assets_${Date.now()}.pdf`;
+                          downloadPDF(pdfBlob, fileName);
+                          toast.success('Return form downloaded successfully');
+                        } catch (error) {
+                          console.error('Failed to download return form:', error);
+                          toast.error(
+                            error instanceof Error
+                              ? error.message
+                              : 'Failed to download return form'
                           );
                         }
-                        const pdfBlob =
-                          await generateAssetReturnPDF(returnDataForPDF);
-                        const fileName =
-                          batch.returns.length === 1
-                            ? `Asset_Return_Form_${batch.returns[0].assignment?.asset?.code ?? 'return'}_${Date.now()}.pdf`
-                            : `Asset_Return_Form_${batch.returns.length}_assets_${Date.now()}.pdf`;
-                        downloadPDF(pdfBlob, fileName);
-                        toast.success('Return form downloaded successfully');
-                      } catch (error) {
-                        console.error('Failed to download return form:', error);
-                        toast.error(
-                          error instanceof Error
-                            ? error.message
-                            : 'Failed to download return form'
-                        );
-                      }
-                    }}
-                  />
-                ))}
-              </div>
-            )}
-          </div>
+                      }}
+                    />
+                  ))}
+                </div>
+              )}
+            </TabsContent>
 
-          {/* Asset Transfer Forms Section */}
-          <div id="asset-transfer-forms" className="mb-8">
-            <div className="flex items-center gap-3 mb-6">
-              <ArrowRightLeft className="w-6 h-6 text-purple-600" />
-              <h3 className="text-xl font-semibold text-gray-900">
-                Asset Transfer Forms
-              </h3>
-              <span className="bg-purple-100 text-purple-800 text-sm px-2 py-1 rounded-full">
-                {filteredTransferForms.length}
-              </span>
-            </div>
-            <div className="relative mb-6">
-              <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 w-4 h-4" />
-              <Input
-                type="text"
-                placeholder="Search form number, assets, users, department, recipient..."
-                value={transferSearchQuery}
-                onChange={e => setTransferSearchQuery(e.target.value)}
-                className="pl-10 pr-4 py-2 w-full max-w-md"
-              />
-            </div>
-            {filteredTransferForms.length === 0 ? (
-              <div className="text-center py-12 rounded-lg">
-                <ArrowRightLeft className="w-16 h-16 text-gray-300 mx-auto mb-4" />
-                {transferSearchQuery ? (
-                  <>
-                    <p className="text-gray-500 text-lg">
-                      No transfer forms found
-                    </p>
-                    <p className="text-gray-400 text-sm mt-1">
-                      No transfer forms match &quot;{transferSearchQuery}&quot;
-                    </p>
-                  </>
-                ) : (
-                  <>
-                    <p className="text-gray-500 text-lg">
-                      No asset transfer forms yet
-                    </p>
-                    <p className="text-gray-400 text-sm mt-1">
-                      Transfer forms will appear here when assets are
-                      transferred from you
-                    </p>
-                  </>
-                )}
+            {/* TabsContent: Transfers */}
+            <TabsContent value="transfers" className="mt-0">
+              <div className="flex items-center gap-3 mb-6">
+                <ArrowRightLeft className="w-6 h-6 text-purple-600" />
+                <h3 className="text-xl font-semibold text-gray-900">
+                  Asset Transfer Forms
+                </h3>
+                <span className="bg-purple-100 text-purple-800 text-sm px-2 py-1 rounded-full">
+                  {filteredTransferForms.length}
+                </span>
               </div>
-            ) : (
-              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-                {filteredTransferForms.map(batch => (
-                  <TransferFormCard
-                    key={batch.formID ?? batch.returns[0]?.return_id ?? ''}
-                    batch={batch}
-                    onView={() => {
-                      setSelectedTransferFormBatch(batch);
-                      setShowTransferFormDetail(true);
-                    }}
-                    onSign={handleSignTransferForm}
-                    onDownload={async () => {
-                      try {
-                        const data = buildTransferDataForPDFFromBatch(batch);
-                        if (!data) {
-                          throw new Error(
-                            'Transfer form data is missing or incomplete'
+
+              <div className="relative mb-6">
+                <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 w-4 h-4" />
+                <Input
+                  type="text"
+                  placeholder="Search form number, assets, users, department, recipient..."
+                  value={transferSearchQuery}
+                  onChange={e => setTransferSearchQuery(e.target.value)}
+                  className="pl-10 pr-4 py-2 w-full max-w-md"
+                />
+              </div>
+
+              {filteredTransferForms.length === 0 ? (
+                <div className="text-center py-12 rounded-lg">
+                  <ArrowRightLeft className="w-16 h-16 text-gray-300 mx-auto mb-4" />
+                  {transferSearchQuery ? (
+                    <>
+                      <p className="text-gray-500 text-lg">
+                        No transfer forms found
+                      </p>
+                      <p className="text-gray-400 text-sm mt-1">
+                        No transfer forms match &quot;{transferSearchQuery}&quot;
+                      </p>
+                    </>
+                  ) : (
+                    <>
+                      <p className="text-gray-500 text-lg">
+                        No asset transfer forms yet
+                      </p>
+                      <p className="text-gray-400 text-sm mt-1">
+                        Transfer forms will appear here when assets are
+                        transferred from you
+                      </p>
+                    </>
+                  )}
+                </div>
+              ) : (
+                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+                  {filteredTransferForms.map(batch => (
+                    <TransferFormCard
+                      key={batch.formID ?? batch.returns[0]?.return_id ?? ''}
+                      batch={batch}
+                      onView={() => {
+                        setSelectedTransferFormBatch(batch);
+                        setShowTransferFormDetail(true);
+                      }}
+                      onSign={handleSignTransferForm}
+                      onDownload={async () => {
+                        try {
+                          const data = buildTransferDataForPDFFromBatch(batch);
+                          if (!data) {
+                            throw new Error(
+                              'Transfer form data is missing or incomplete'
+                            );
+                          }
+                          const pdfBlob = await generateAssetTransferPDF(data);
+                          const fileName = `Asset_Transfer_Form_${batch.form_number ?? 'transfer'}_${Date.now()}.pdf`;
+                          downloadPDF(pdfBlob, fileName);
+                          toast.success('Transfer form downloaded successfully');
+                        } catch (error) {
+                          console.error(
+                            'Failed to download transfer form:',
+                            error
+                          );
+                          toast.error(
+                            error instanceof Error
+                              ? error.message
+                              : 'Failed to download transfer form'
                           );
                         }
-                        const pdfBlob = await generateAssetTransferPDF(data);
-                        const fileName = `Asset_Transfer_Form_${batch.form_number ?? 'transfer'}_${Date.now()}.pdf`;
-                        downloadPDF(pdfBlob, fileName);
-                        toast.success('Transfer form downloaded successfully');
-                      } catch (error) {
-                        console.error(
-                          'Failed to download transfer form:',
-                          error
-                        );
-                        toast.error(
-                          error instanceof Error
-                            ? error.message
-                            : 'Failed to download transfer form'
-                        );
-                      }
-                    }}
-                  />
-                ))}
-              </div>
-            )}
-          </div>
+                      }}
+                    />
+                  ))}
+                </div>
+              )}
+            </TabsContent>
 
-          {/* Asset Borrow Forms (equipment borrowing — same cards as staff borrow list) */}
-          <div id="asset-borrow-forms" className="mb-8">
-            <div className="flex items-center gap-3 mb-6">
-              <HandHelping className="w-6 h-6 text-amber-600" />
-              <h3 className="text-xl font-semibold text-gray-900">
-                Asset Borrow Forms
-              </h3>
-              <span className="bg-amber-100 text-amber-800 text-sm px-2 py-1 rounded-full">
-                {filteredBorrowForms.length}
-              </span>
-            </div>
-            <div className="relative mb-6">
-              <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 w-4 h-4" />
-              <Input
-                type="text"
-                placeholder="Search form number, equipment, purpose, status..."
-                value={borrowSearchQuery}
-                onChange={e => setBorrowSearchQuery(e.target.value)}
-                className="pl-10 pr-4 py-2 w-full max-w-md"
-              />
-            </div>
-            {filteredBorrowForms.length === 0 ? (
-              <div className="text-center py-12 rounded-lg">
-                <HandHelping className="w-16 h-16 text-gray-300 mx-auto mb-4" />
-                {borrowSearchQuery ? (
-                  <>
-                    <p className="text-gray-500 text-lg">No borrow forms found</p>
-                    <p className="text-gray-400 text-sm mt-1">
-                      No forms match &quot;{borrowSearchQuery}&quot;.
-                    </p>
-                  </>
-                ) : (
-                  <>
-                    <p className="text-gray-500 text-lg">No borrow forms yet</p>
-                    <p className="text-gray-400 text-sm mt-1">
-                      Submitted equipment borrowing requests appear here
-                    </p>
-                  </>
-                )}
+            {/* TabsContent: Borrows */}
+            <TabsContent value="borrows" className="mt-0">
+              <div className="flex items-center gap-3 mb-6">
+                <HandHelping className="w-6 h-6 text-amber-600" />
+                <h3 className="text-xl font-semibold text-gray-900">
+                  Asset Borrow Forms
+                </h3>
+                <span className="bg-amber-100 text-amber-800 text-sm px-2 py-1 rounded-full">
+                  {filteredBorrowForms.length}
+                </span>
               </div>
-            ) : (
-              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-                {filteredBorrowForms.map(batch => (
-                  <BorrowFormCard
-                    key={batch.borrow_request_id}
-                    batch={batch}
-                    onView={() => {
-                      setSelectedBorrowFormBatch(batch);
-                      setShowBorrowFormDetail(true);
-                    }}
-                    onDownload={async () => {
-                      try {
-                        const data = buildBorrowDataForPDFFromBatch(batch);
-                        if (!data) {
-                          throw new Error(
-                            'Borrow form data is missing or incomplete'
+
+              <div className="relative mb-6">
+                <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 w-4 h-4" />
+                <Input
+                  type="text"
+                  placeholder="Search form number, equipment, purpose, status..."
+                  value={borrowSearchQuery}
+                  onChange={e => setBorrowSearchQuery(e.target.value)}
+                  className="pl-10 pr-4 py-2 w-full max-w-md"
+                />
+              </div>
+
+              {filteredBorrowForms.length === 0 ? (
+                <div className="text-center py-12 rounded-lg">
+                  <HandHelping className="w-16 h-16 text-gray-300 mx-auto mb-4" />
+                  {borrowSearchQuery ? (
+                    <>
+                      <p className="text-gray-500 text-lg">No borrow forms found</p>
+                      <p className="text-gray-400 text-sm mt-1">
+                        No forms match &quot;{borrowSearchQuery}&quot;.
+                      </p>
+                    </>
+                  ) : (
+                    <>
+                      <p className="text-gray-500 text-lg">No borrow forms yet</p>
+                      <p className="text-gray-400 text-sm mt-1">
+                        Submitted equipment borrowing requests appear here
+                      </p>
+                    </>
+                  )}
+                </div>
+              ) : (
+                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+                  {filteredBorrowForms.map(batch => (
+                    <BorrowFormCard
+                      key={batch.borrow_request_id}
+                      batch={batch}
+                      onView={() => {
+                        setSelectedBorrowFormBatch(batch);
+                        setShowBorrowFormDetail(true);
+                      }}
+                      onDownload={async () => {
+                        try {
+                          const data = buildBorrowDataForPDFFromBatch(batch);
+                          if (!data) {
+                            throw new Error(
+                              'Borrow form data is missing or incomplete'
+                            );
+                          }
+                          const pdfBlob =
+                            await generateAssetBorrowingPDF(data);
+                          const fileName = `Equipment_Borrow_${batch.form_number ?? batch.borrow_request_id.slice(0, 8)}_${Date.now()}.pdf`;
+                          downloadPDF(pdfBlob, fileName);
+                          toast.success('Borrow form downloaded successfully');
+                        } catch (error) {
+                          console.error('Failed to download borrow form:', error);
+                          toast.error(
+                            error instanceof Error
+                              ? error.message
+                              : 'Failed to download borrow form'
                           );
                         }
-                        const pdfBlob =
-                          await generateAssetBorrowingPDF(data);
-                        const fileName = `Equipment_Borrow_${batch.form_number ?? batch.borrow_request_id.slice(0, 8)}_${Date.now()}.pdf`;
-                        downloadPDF(pdfBlob, fileName);
-                        toast.success('Borrow form downloaded successfully');
-                      } catch (error) {
-                        console.error('Failed to download borrow form:', error);
-                        toast.error(
-                          error instanceof Error
-                            ? error.message
-                            : 'Failed to download borrow form'
-                        );
-                      }
-                    }}
-                  />
-                ))}
-              </div>
-            )}
-          </div>
+                      }}
+                    />
+                  ))}
+                </div>
+              )}
+            </TabsContent>
 
-          {/* Other Documents Placeholder */}
-          <div className="border-t pt-8">
-            <div className="text-center py-12 text-gray-500">
-              <FileText className="w-16 h-16 mx-auto text-gray-300 mb-4" />
-              <p className="text-lg">Other employee documents</p>
-              <p className="text-sm mt-1">
-                Contracts, certificates, payslips, etc.
-              </p>
-              <p className="text-xs text-gray-400 mt-2">Coming soon...</p>
-            </div>
-          </div>
+            {/* TabsContent: Checklists (NEW) */}
+            <TabsContent value="checklists" className="mt-0">
+              <div className="flex items-center gap-3 mb-6">
+                <ClipboardList className="w-6 h-6 text-red-600" />
+                <h3 className="text-xl font-semibold text-gray-900">
+                  Asset Checklist Forms
+                </h3>
+                <span className="bg-red-100 text-red-800 text-sm px-2 py-1 rounded-full">
+                  {filteredChecklistForms.length}
+                </span>
+              </div>
+
+              <div className="relative mb-6">
+                <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 w-4 h-4" />
+                <Input
+                  type="text"
+                  placeholder="Search form number, employee, asset..."
+                  value={checklistSearchQuery}
+                  onChange={e => setChecklistSearchQuery(e.target.value)}
+                  className="pl-10 pr-4 py-2 w-full max-w-md"
+                />
+              </div>
+
+              {filteredChecklistForms.length === 0 ? (
+                <div className="text-center py-12 rounded-lg">
+                  <ClipboardList className="w-16 h-16 text-gray-300 mx-auto mb-4" />
+                  {checklistSearchQuery ? (
+                    <>
+                      <p className="text-gray-500 text-lg">No checklist forms found</p>
+                      <p className="text-gray-400 text-sm mt-1">
+                        No forms match &quot;{checklistSearchQuery}&quot;.
+                      </p>
+                    </>
+                  ) : (
+                    <>
+                      <p className="text-gray-500 text-lg">No checklist forms yet</p>
+                      <p className="text-gray-400 text-sm mt-1">
+                        Checklist forms will appear here when assigned.
+                      </p>
+                    </>
+                  )}
+                </div>
+              ) : (
+                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+                  {filteredChecklistForms.map(row => (
+                    <Card key={row.id} className="hover:shadow-md transition-shadow flex flex-col">
+                      <CardHeader className="pb-3">
+                        <div className="flex items-start justify-between">
+                          <div className="flex items-center gap-3">
+                            <div className="p-2 bg-red-100 rounded-lg">
+                              <ClipboardList className="h-5 w-5 text-red-600" />
+                            </div>
+                            <div>
+                              <CardTitle className="text-lg">
+                                {row.form_number || `CHK-${row.assignment_id}`}
+                              </CardTitle>
+                              <p className="text-sm text-gray-500">
+                                Created {new Date(row.created_at).toLocaleDateString()}
+                              </p>
+                            </div>
+                          </div>
+                          <Badge className="bg-red-100 text-red-800 hover:bg-red-100">
+                            {row.type_onboarding && row.type_offboarding
+                              ? 'Onboarding/Offboarding'
+                              : row.type_onboarding
+                                ? 'Onboarding'
+                                : row.type_offboarding
+                                  ? 'Offboarding'
+                                  : 'Checklist'}
+                          </Badge>
+                        </div>
+                      </CardHeader>
+
+                      <CardContent className="flex-1 flex flex-col gap-4">
+                        <div className="flex items-start gap-3">
+                          <User className="h-4 w-4 text-gray-400 mt-0.5 flex-shrink-0" />
+                          <div className="flex-1 min-w-0">
+                            <p className="font-medium text-sm">{row.employee_name}</p>
+                          </div>
+                        </div>
+
+                        <div className="flex items-start gap-3">
+                          <Package className="h-4 w-4 text-gray-400 mt-0.5 flex-shrink-0" />
+                          <div className="flex-1 min-w-0">
+                            <p className="text-sm text-gray-600">
+                              {row.asset
+                                ? `${row.asset.name || 'Asset'} (${row.asset.code || '—'})`
+                                : 'Asset'}
+                            </p>
+                          </div>
+                        </div>
+
+                        {row.employee_department && (
+                          <div className="flex items-start gap-3">
+                            <User className="h-4 w-4 text-gray-400 mt-0.5 flex-shrink-0" />
+                            <div className="flex-1 min-w-0">
+                              <p className="text-sm text-gray-600">
+                                Department: {row.employee_department}
+                              </p>
+                            </div>
+                          </div>
+                        )}
+
+                        {row.received_by && (
+                          <div className="flex items-start gap-3">
+                            <User className="h-4 w-4 text-gray-400 mt-0.5 flex-shrink-0" />
+                            <div className="flex-1 min-w-0">
+                              <p className="text-sm text-gray-600">
+                                Received by: {row.received_by}
+                              </p>
+                            </div>
+                          </div>
+                        )}
+
+                        <div className="flex items-start gap-3">
+                          <Calendar className="h-4 w-4 text-gray-400 mt-0.5 flex-shrink-0" />
+                          <div className="flex-1 min-w-0">
+                            <p className="text-sm text-gray-600">
+                              {new Date(row.created_at).toLocaleDateString()}{' '}
+                              {new Date(row.created_at).toLocaleTimeString()}
+                            </p>
+                          </div>
+                        </div>
+                      </CardContent>
+
+                      <div className="flex gap-2 border-t border-slate-100 p-4">
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          className="flex-1 hover:bg-red-600 hover:text-white"
+                          onClick={() => handleViewChecklist(row)}
+                        >
+                          <Eye className="mr-2 h-4 w-4" /> View
+                        </Button>
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          className="flex-1 hover:bg-blue-600 hover:text-white"
+                          onClick={() => handleDownloadChecklist(row)}
+                        >
+                          <Download className="mr-2 h-4 w-4" /> Download
+                        </Button>
+                      </div>
+                    </Card>
+                  ))}
+                </div>
+              )}
+            </TabsContent>
+          </Tabs>
         </CardContent>
       </Card>
 
@@ -3598,6 +3829,61 @@ export default function DocumentsTab({
                 >
                   <Download className="mr-2 h-4 w-4" />
                   Download PDF
+                </Button>
+              </AppDialogChromeFooter>
+            </>
+          )}
+        </AppDialogFrame>
+      </Dialog>
+
+      {/* Checklist Preview Dialog */}
+      <Dialog open={showChecklistPreview} onOpenChange={(open) => {
+        if (!open) {
+          setShowChecklistPreview(false);
+          if (checklistPdfUrl) {
+            URL.revokeObjectURL(checklistPdfUrl);
+            setChecklistPdfUrl(null);
+          }
+        }
+      }}>
+        <AppDialogFrame className="max-w-4xl max-h-[90vh] overflow-hidden !flex !flex-col !gap-0 !border-0 !p-0">
+          {selectedChecklist && (
+            <>
+              <AppDialogGradientHeader
+                title={`${selectedChecklist.employee_name} - ${selectedChecklist.form_number || `CHK-${selectedChecklist.assignment_id}`}`}
+                description="Asset Checklist Form Preview"
+              />
+              <AppDialogBody className="min-h-0 flex-1 overflow-auto !p-0">
+                {checklistPdfUrl ? (
+                  <PDFViewer pdfUrl={checklistPdfUrl} className="h-full w-full" />
+                ) : (
+                  <div className="flex h-full w-full items-center justify-center text-gray-500">
+                    Generating checklist PDF preview...
+                  </div>
+                )}
+              </AppDialogBody>
+              <AppDialogChromeFooter className="justify-end gap-3">
+                {selectedChecklist && (
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => handleDownloadChecklist(selectedChecklist)}
+                  >
+                    <Download className="mr-2 h-4 w-4" /> Download PDF
+                  </Button>
+                )}
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => {
+                    setShowChecklistPreview(false);
+                    if (checklistPdfUrl) {
+                      URL.revokeObjectURL(checklistPdfUrl);
+                      setChecklistPdfUrl(null);
+                    }
+                  }}
+                >
+                  Close
                 </Button>
               </AppDialogChromeFooter>
             </>

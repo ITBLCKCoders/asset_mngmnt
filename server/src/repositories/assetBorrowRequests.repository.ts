@@ -888,7 +888,7 @@ export async function updateBorrowRequestReceived(
 ): Promise<boolean> {
   const [result] = await pool.execute(
     `UPDATE asset_borrow_requests
-     SET received_at = NOW(), received_by = ?, received_by_signature = ?, updated_at = NOW()
+     SET received_at = NOW(), received_by = ?, received_by_signature = ?, status = 'approved', updated_at = NOW()
      WHERE borrow_request_id = ? AND approved_at IS NOT NULL AND received_at IS NULL`,
     [receivedByUserId, receivedBySignature ?? null, borrowRequestId]
   );

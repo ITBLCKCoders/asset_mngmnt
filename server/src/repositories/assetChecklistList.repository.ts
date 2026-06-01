@@ -6,7 +6,7 @@ import {
   hasItManagerSignColumns,
 } from './assetChecklist.repository.js';
 
-export async function getAssetChecklists() {
+export async function getAssetChecklists(employeeId?: string) {
   const [includeEmployeeSign, includeDeptHeadSign, includeItManagerSign] =
     await Promise.all([
       hasEmployeeSignColumns(),
@@ -39,6 +39,8 @@ export async function getAssetChecklists() {
       NULL AS it_manager_signed_by,
       NULL AS it_manager_digital_signature,
       NULL AS it_manager_name,`;
+
+  const whereClause = employeeId ? 'WHERE ac.employee_id = ?' : '';
 
   const query = `
     SELECT
@@ -73,11 +75,13 @@ export async function getAssetChecklists() {
     LEFT JOIN users dh ON ac.dept_head_signed_by = dh.userID
     LEFT JOIN users im ON ac.it_manager_signed_by = im.userID
     LEFT JOIN companies c ON ac.employee_company = c.name AND c.deleted_at IS NULL
+    ${whereClause}
     ORDER BY ac.created_at DESC
   `;
 
   try {
-    const [rows] = await pool.query(query);
+    const params = employeeId ? [employeeId] : [];
+    const [rows] = await pool.query(query, params);
     return (rows as any[]).map(checklist => ({
       ...checklist,
       type_onboarding: checklist.type_onboarding === 1,
