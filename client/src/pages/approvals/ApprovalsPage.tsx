@@ -25,16 +25,20 @@ import {
   TransferFormCard,
   TransferFormDetail,
   BorrowRequestCard,
+  BorrowFormDetail,
   buildReturnDataForPDFFromBatch,
   buildTransferDataForPDFFromBatch,
+  buildBorrowDataForPDFFromBatch,
   clearReturnPdfCacheForFormNumber,
   type AssetReturnFormBatch,
   type AssetTransferFormBatch,
+  type AssetBorrowFormBatch,
 } from '@/pages/profile/profileComponents/tabs/documentsTab';
 import {
   generateAssetReturnPDF,
   generateAssetTransferPDF,
   generateAssetChecklistPDF,
+  generateAssetBorrowingPDF,
   downloadPDF,
 } from '@/lib/pdfGenerator';
 import {
@@ -42,6 +46,7 @@ import {
   type ChecklistApprovalBatch,
 } from '@/pages/approvals/ChecklistApprovalCard';
 import { PDFViewer } from '@/components/PDFViewer';
+import type { BorrowRequestRow } from '@/pages/assets/borrowRequestsPage';
 import { useCurrentUser } from '@/hooks/useCurrentUser';
 import { useUserPermissions } from '@/hooks/useUserPermissions';
 import { Shimmer } from '@/components/ui/shimmer';
@@ -50,11 +55,17 @@ import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs';
 import SmsOtpDialog from '@/components/auth/SmsOtpDialog';
 import { useRef } from 'react';
 
-type FormApprovalBatch = (AssetReturnFormBatch | AssetTransferFormBatch) & {
-  formType?: 'return' | 'transfer' | 'borrow';
+type BorrowRequestBatch = BorrowRequestRow & {
+  formType: 'borrow';
+  received_at?: string | null;
+  received_by?: string | null;
 };
 
-type ApprovalBatch = FormApprovalBatch | ChecklistApprovalBatch;
+type FormApprovalBatch = (AssetReturnFormBatch | AssetTransferFormBatch) & {
+  formType?: 'return' | 'transfer';
+};
+
+type ApprovalBatch = FormApprovalBatch | ChecklistApprovalBatch | BorrowRequestBatch;
 
 function mapChecklistApiBatches(
   rows: ChecklistApprovalBatch[],
@@ -297,9 +308,19 @@ export default function ApprovalsPage() {
       );
       return name.includes(q) || dept.includes(q) || assets;
     }
+    // Handle borrow requests
+    if (batch.formType === 'borrow') {
+      const borrowBatch = batch as BorrowRequestBatch;
+      return (
+        (borrowBatch.form_number || '').toLowerCase().includes(q) ||
+        (borrowBatch.category_name || '').toLowerCase().includes(q) ||
+        (borrowBatch.type_name || '').toLowerCase().includes(q) ||
+        `${borrowBatch.requester_first_name || ''} ${borrowBatch.requester_last_name || ''}`.trim().toLowerCase().includes(q)
+      );
+    }
     const base =
       batch.returns?.some(
-        r =>
+        (r: any) =>
           r.assignment?.asset?.name?.toLowerCase().includes(q) ||
           r.assignment?.asset?.code?.toLowerCase().includes(q) ||
           (r.assignment?.user?.first_name || '').toLowerCase().includes(q) ||
@@ -389,6 +410,18 @@ export default function ApprovalsPage() {
     try {
       if (batch.formType === 'checklist') {
         await downloadChecklistBatch(batch as ChecklistApprovalBatch);
+        return;
+      }
+      if (batch.formType === 'borrow') {
+        const data = buildBorrowDataForPDFFromBatch(batch as AssetBorrowFormBatch);
+        if (!data) {
+          toast.error('Cannot generate PDF for this form');
+          return;
+        }
+        const blob = await generateAssetBorrowingPDF(data);
+        const fileName = `Equipment_Borrow_${(batch as AssetBorrowFormBatch).form_number ?? (batch as AssetBorrowFormBatch).borrow_request_id.slice(0, 8)}_${Date.now()}.pdf`;
+        downloadPDF(blob, fileName);
+        toast.success('Download started');
         return;
       }
       if (batch.formType === 'transfer') {
@@ -647,6 +680,37 @@ export default function ApprovalsPage() {
         return;
       }
 
+      // Handle borrow request receive
+      if (selectedBatch.formType === 'borrow') {
+        const borrowRequestId = (selectedBatch as any).borrow_request_id;
+        if (!borrowRequestId) {
+          toast.error('Borrow request ID not found');
+          return;
+        }
+        try {
+          setReceiving(true);
+          const sig =
+            (currentUser as { digitalSignature?: string })?.digitalSignature ||
+            '';
+          await api.post(`/asset-borrow-requests/${borrowRequestId}/receive`, {
+            digitalSignature: sig || undefined,
+          });
+          toast.success('Borrow request received successfully');
+          setShowDetail(false);
+          setSelectedBatch(null);
+          await refreshAll();
+        } catch (error: unknown) {
+          const msg =
+            (error as { data?: { error?: string } })?.data?.error ||
+            (error as Error)?.message ||
+            'Failed to receive borrow request';
+          toast.error(msg);
+        } finally {
+          setReceiving(false);
+        }
+        return;
+      }
+
       if (!('formID' in selectedBatch) || !selectedBatch.formID) {
         return;
       }
@@ -720,11 +784,13 @@ export default function ApprovalsPage() {
     (selectedBatch.formType === 'checklist'
       ? !!(selectedBatch as ChecklistApprovalBatch).dept_head_signed_at &&
         !(selectedBatch as ChecklistApprovalBatch).it_manager_signed_at
-      : !!(selectedBatch as FormApprovalBatch).dept_head_signed_at &&
-        (!!(selectedBatch as FormApprovalBatch).process_signed_at ||
-          !!(selectedBatch as AssetTransferFormBatch).processor_pending_signed_at ||
-          !!(selectedBatch as AssetReturnFormBatch).processor_pending_signed_at) &&
-        !(selectedBatch as FormApprovalBatch).it_manager_signed_at);
+      : selectedBatch.formType === 'borrow'
+        ? !!(selectedBatch as any).approved_at && !(selectedBatch as any).received_at
+        : !!(selectedBatch as FormApprovalBatch).dept_head_signed_at &&
+          (!!(selectedBatch as FormApprovalBatch).process_signed_at ||
+            !!(selectedBatch as AssetTransferFormBatch).processor_pending_signed_at ||
+            !!(selectedBatch as AssetReturnFormBatch).processor_pending_signed_at) &&
+          !(selectedBatch as FormApprovalBatch).it_manager_signed_at);
 
   const handleDownloadCurrent = async () => {
     if (!selectedBatch) return;
@@ -759,10 +825,12 @@ export default function ApprovalsPage() {
         const key =
           batch.formType === 'checklist'
             ? (batch as ChecklistApprovalBatch).batchKey
-            : batch.formID ??
-                batch.return_batch_id ??
-                batch.returns?.[0]?.return_id ??
-                '';
+            : batch.formType === 'borrow'
+              ? (batch as BorrowRequestBatch).borrow_request_id
+              : (batch as FormApprovalBatch).formID ??
+                  (batch as FormApprovalBatch).return_batch_id ??
+                  (batch as FormApprovalBatch).returns?.[0]?.return_id ??
+                  '';
         if (batch.formType === 'checklist') {
           const cb = batch as ChecklistApprovalBatch;
           return (
@@ -987,19 +1055,25 @@ export default function ApprovalsPage() {
                   <>
                     {selectedBatch.formType === 'checklist'
                       ? `${(selectedBatch as ChecklistApprovalBatch).employee_name} — Asset Checklist (${(selectedBatch as ChecklistApprovalBatch).checklist_count} asset${(selectedBatch as ChecklistApprovalBatch).checklist_count !== 1 ? 's' : ''})`
-                      : selectedBatch.returns?.[0]?.assignment?.user
-                        ? `${selectedBatch.returns[0].assignment.user.first_name || ''} ${selectedBatch.returns[0].assignment.user.last_name || ''}`.trim() ||
-                          (selectedBatch.formType === 'transfer'
+                      : selectedBatch.formType === 'borrow'
+                        ? (() => {
+                            const borrowBatch = selectedBatch as BorrowRequestBatch;
+                            const requesterName = `${borrowBatch.requester_first_name || ''} ${borrowBatch.requester_last_name || ''}`.trim() || borrowBatch.requester_email || 'Borrow Request';
+                            return `${requesterName} — Asset Borrow`;
+                          })()
+                        : (selectedBatch as FormApprovalBatch).returns?.[0]?.assignment?.user
+                          ? `${(selectedBatch as FormApprovalBatch).returns![0].assignment!.user!.first_name || ''} ${(selectedBatch as FormApprovalBatch).returns![0].assignment!.user!.last_name || ''}`.trim() ||
+                            (selectedBatch.formType === 'transfer'
+                              ? 'Transfer'
+                              : 'Return')
+                          : selectedBatch.formType === 'transfer'
                             ? 'Transfer'
-                            : 'Return')
-                        : selectedBatch.formType === 'transfer'
-                          ? 'Transfer'
-                          : 'Return'}{' '}
-                    {selectedBatch.formType !== 'checklist' && (
+                            : 'Return'}{' '}
+                    {selectedBatch.formType !== 'checklist' && selectedBatch.formType !== 'borrow' && (
                       <>
                         -{' '}
-                        {selectedBatch.form_number ??
-                          `${selectedBatch.formType === 'transfer' ? 'Transfer' : 'Return'} of ${selectedBatch.returns?.length ?? 0} assets`}
+                        {(selectedBatch as FormApprovalBatch).form_number ??
+                          `${selectedBatch.formType === 'transfer' ? 'Transfer' : 'Return'} of ${(selectedBatch as FormApprovalBatch).returns?.length ?? 0} assets`}
                       </>
                     )}
                   </>
@@ -1009,7 +1083,9 @@ export default function ApprovalsPage() {
                     ? 'Asset Checklist Form Preview'
                     : selectedBatch.formType === 'transfer'
                       ? 'Asset Transfer Form Preview'
-                      : 'Asset Return Form Preview'
+                      : selectedBatch.formType === 'borrow'
+                        ? 'Asset Borrow Request Details'
+                        : 'Asset Return Form Preview'
                 }
               />
               <div className="min-h-0 flex-1 flex flex-col overflow-hidden bg-white px-4 sm:px-6">
@@ -1064,6 +1140,17 @@ export default function ApprovalsPage() {
                   onDownload={handleDownloadCurrent}
                   contentOnly
                 />
+              ) : selectedBatch.formType === 'borrow' ? (
+                <BorrowFormDetail
+                  key={(selectedBatch as BorrowRequestBatch).borrow_request_id}
+                  borrowFormBatch={selectedBatch as AssetBorrowFormBatch}
+                  onClose={() => {
+                    setShowDetail(false);
+                    setSelectedBatch(null);
+                  }}
+                  onDownload={handleDownloadCurrent}
+                  contentOnly
+                />
               ) : (
                 <ReturnFormDetail
                   key={
@@ -1098,6 +1185,7 @@ export default function ApprovalsPage() {
                   Close
                 </Button>
                 {canApprove &&
+                  selectedBatch.formType !== 'borrow' &&
                   (selectedBatch.formType === 'checklist'
                     ? !(selectedBatch as ChecklistApprovalBatch).dept_head_signed_at
                     : !(

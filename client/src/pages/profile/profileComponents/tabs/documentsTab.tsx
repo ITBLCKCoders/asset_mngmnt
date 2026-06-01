@@ -1704,6 +1704,12 @@ export interface AssetBorrowFormBatch {
   processor_signature?: string | null;
   /** Timestamp when the processor signed the borrow request */
   processor_signed_at?: string | null;
+  /** Manager Approver 2 who received the borrow request */
+  received_by?: string | null;
+  received_by_name?: string | null;
+  /** Manager Approver 2's digital signature when receiving */
+  received_by_signature?: string | null;
+  received_at?: string | null;
 }
 
 function parseMyBorrowRequestsResponse(res: unknown): AssetBorrowFormBatch[] {
@@ -1777,7 +1783,10 @@ export function buildBorrowDataForPDFFromBatch(
     itReceivedBy: batch.approved_by_name?.trim() || '—',
     itReceivedBySignature: batch.processor_signature ?? null,
     itReceivedBySignedAt: batch.processor_signed_at ?? null,
-    itApprovedBy: batch.dept_head_name?.trim() || '—',
+    // For the "IT Approved by:" or "Admin Approved by:" section, use the Manager Approver 2 who received
+    itApprovedBy: batch.received_by_name?.trim() || batch.received_by?.trim() || '—',
+    itApprovedBySignature: batch.received_by_signature ?? null,
+    itApprovedBySignedAt: batch.received_at ?? null,
     postUsageCondition: post,
     borrowerCompanyName: batch.requester_company_name ?? null,
     borrowerCompanyLogoUrl: batch.requester_company_logo_url ?? null,

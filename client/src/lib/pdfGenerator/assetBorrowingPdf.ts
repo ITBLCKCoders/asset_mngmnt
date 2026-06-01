@@ -29,6 +29,10 @@ export interface AssetBorrowingData {
   /** Timestamp when the IT receiver signed */
   itReceivedBySignedAt?: string | null;
   itApprovedBy: string;
+  /** Digital signature of the IT/Admin approver (Manager Approver 2) (base64 data URL) */
+  itApprovedBySignature?: string | null;
+  /** Timestamp when the IT/Admin approver signed */
+  itApprovedBySignedAt?: string | null;
   /** Upon return section */
   postUsageCondition: string;
   borrowerCompanyName?: string | null;

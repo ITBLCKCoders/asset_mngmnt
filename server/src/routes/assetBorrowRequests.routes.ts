@@ -13,6 +13,7 @@ import {
   listMyAssetBorrowRequests,
   listPendingDeptHeadBorrowRequests,
   processBorrowReturn,
+  receiveBorrowRequest,
   staffDeclineBorrowRequest,
   staffApproveBorrowRequest,
 } from '../controllers/assetBorrowRequests.controller.js';
@@ -84,6 +85,11 @@ router.post(
   authenticate,
   validateDto(ProcessBorrowReturnDtoSchema),
   processBorrowReturn
+);
+router.post(
+  '/:borrowRequestId/receive',
+  authenticate,
+  receiveBorrowRequest
 );
 
 export default router;

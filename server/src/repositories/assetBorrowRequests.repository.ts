@@ -569,7 +569,11 @@ export async function findApprovedBorrowRequestsForReceive(
       IFNULL(CONCAT(dh.first_name, ' ', dh.last_name), NULL) AS dept_head_name,
       br.requested_by_signature,
       br.processor_signature,
-      DATE_FORMAT(br.processor_signed_at, '%Y-%m-%d %H:%i:%s') AS processor_signed_at
+      DATE_FORMAT(br.processor_signed_at, '%Y-%m-%d %H:%i:%s') AS processor_signed_at,
+      br.received_by,
+      CONCAT(rb.first_name, ' ', rb.last_name) AS received_by_name,
+      br.received_by_signature,
+      DATE_FORMAT(br.received_at, '%Y-%m-%d %H:%i:%s') AS received_at
     FROM asset_borrow_requests br
     INNER JOIN asset_categories c ON br.category_id = c.categoryID AND c.deleted_at IS NULL
     INNER JOIN asset_types t ON br.type_id = t.typeID AND t.deleted_at IS NULL
@@ -579,10 +583,12 @@ export async function findApprovedBorrowRequestsForReceive(
     LEFT JOIN assets a ON br.asset_id = a.assetID AND a.deleted_at IS NULL
     LEFT JOIN users ap ON br.approved_by = ap.userID
     LEFT JOIN users dh ON br.dept_head_signed_by = dh.userID
+    LEFT JOIN users rb ON br.received_by = rb.userID
     WHERE br.company_id = ?
       AND br.status = 'approved'
       AND br.approved_at IS NOT NULL
       AND br.returned_at IS NULL
+      AND br.received_at IS NULL
       ${scopeClause}
     ORDER BY br.approved_at DESC
   `;
@@ -830,4 +836,47 @@ export async function getBorrowFormsByAssetId(
     [assetId]
   );
   return rows;
+}
+
+export async function getAssignmentForBorrowRequest(
+  pool: Pool,
+  assetId: string,
+  userId: string
+): Promise<{ assignmentID: string; status: string } | null> {
+  const [rows] = await pool.execute<RowDataPacket[]>(
+    `SELECT assignmentID, status FROM asset_assignments
+     WHERE asset_id = ? AND user_id = ? AND deleted_at IS NULL
+     ORDER BY assigned_date DESC LIMIT 1`,
+    [assetId, userId]
+  );
+  const row = rows[0];
+  if (!row) return null;
+  return { assignmentID: row.assignmentID as string, status: row.status as string };
+}
+
+export async function updateAssignmentStatusActive(
+  pool: Pool,
+  assignmentId: string
+): Promise<boolean> {
+  const [result] = await pool.execute(
+    `UPDATE asset_assignments SET status = 'Active', updated_at = NOW()
+     WHERE assignmentID = ? AND deleted_at IS NULL`,
+    [assignmentId]
+  );
+  return (result as { affectedRows?: number }).affectedRows === 1;
+}
+
+export async function updateBorrowRequestReceived(
+  pool: Pool,
+  borrowRequestId: string,
+  receivedByUserId: string,
+  receivedBySignature?: string | null
+): Promise<boolean> {
+  const [result] = await pool.execute(
+    `UPDATE asset_borrow_requests
+     SET received_at = NOW(), received_by = ?, received_by_signature = ?, updated_at = NOW()
+     WHERE borrow_request_id = ? AND approved_at IS NOT NULL AND received_at IS NULL`,
+    [receivedByUserId, receivedBySignature ?? null, borrowRequestId]
+  );
+  return (result as { affectedRows?: number }).affectedRows === 1;
 }

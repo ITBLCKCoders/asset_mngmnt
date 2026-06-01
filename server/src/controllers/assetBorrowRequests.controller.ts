@@ -484,3 +484,58 @@ export async function processBorrowReturn(
   }
 }
 
+export async function receiveBorrowRequest(
+  req: AuthRequest,
+  res: Response
+): Promise<Response> {
+  try {
+    const userId = req.user?.userID;
+    if (!userId) return createErrorResponse(res, 'UNAUTHORIZED', [], 401);
+    const borrowRequestId = req.params.borrowRequestId;
+    if (!borrowRequestId) return createErrorResponse(res, 'Borrow request ID is required', [], 400);
+
+    // Extract digital signature from request body
+    const bodySignature =
+      typeof req.body?.digitalSignature === 'string'
+        ? req.body.digitalSignature.trim()
+        : '';
+
+    // Get user's stored digital signature if not provided in body
+    let digitalSignature: string | null = bodySignature || null;
+    if (!digitalSignature) {
+      const [userRows] = (await pool.query(
+        'SELECT digital_signature FROM users WHERE userID = ? LIMIT 1',
+        [userId]
+      )) as [{ digital_signature?: string | null }[], unknown];
+      const fromUser = userRows[0]?.digital_signature;
+      digitalSignature =
+        fromUser != null && String(fromUser).trim() !== ''
+          ? String(fromUser).trim()
+          : null;
+    }
+
+    const result = await AssetBorrowRequestsService.receiveBorrowRequest(
+      pool,
+      userId,
+      borrowRequestId,
+      digitalSignature
+    );
+    if ('error' in result) return createErrorResponse(res, result.error, [], result.status);
+
+    await createAuditLog({
+      userId,
+      action: 'receive_borrow_request',
+      resourceType: 'borrow_request',
+      resourceId: borrowRequestId,
+      details: `Received borrow request with ID: ${borrowRequestId}`,
+      ipAddress: req.ip,
+      userAgent: req.get('User-Agent'),
+    });
+
+    return createSuccessResponse(res, { ok: true }, 'Borrow request received successfully');
+  } catch (err) {
+    logger.error('[assetBorrowRequests] receive failed', err);
+    return createErrorResponse(res, 'Failed to receive borrow request', [], 500);
+  }
+}
+

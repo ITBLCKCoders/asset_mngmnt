@@ -17,13 +17,16 @@ import {
   findBorrowRequestsForList,
   findBorrowRequestsForUser,
   findPendingDeptHeadBorrowRequests,
+  getAssignmentForBorrowRequest,
   getAvailableAssetByCodeForBorrowStaffPool,
   getBorrowRequestById,
   getCategoryDepartmentForCompany,
   getTypeForCategoryAndCompany,
   insertAssetBorrowRequest,
+  updateAssignmentStatusActive,
   updateBorrowRequestDeptHeadApprove,
   updateBorrowRequestDeptHeadDecline,
+  updateBorrowRequestReceived,
   updateBorrowRequestStaffApprove,
   updateBorrowRequestStaffDecline,
   updateBorrowRequestReturnProcess,
@@ -412,6 +415,12 @@ export class AssetBorrowRequestsService {
       userId,
     ]);
 
+    // Set assignment status to 'Inactive' - asset will appear in My Assets only after receive approval
+    await pool.execute(
+      `UPDATE asset_assignments SET status = 'Inactive' WHERE assignmentID = ?`,
+      [assignmentId]
+    );
+
     const updated = await updateBorrowRequestStaffApprove(pool, {
       borrowRequestId: params.borrowRequestId,
       approvedBy: userId,
@@ -463,6 +472,40 @@ export class AssetBorrowRequestsService {
 
     const borrowRequests = await findApprovedBorrowRequestsForReceive(pool, companyId, borrowScope);
     return { borrowRequests };
+  }
+
+  static async receiveBorrowRequest(
+    pool: Pool,
+    userId: string,
+    borrowRequestId: string,
+    digitalSignature?: string | null
+  ): Promise<{ ok: true } | { error: string; status: number }> {
+    const row = await getBorrowRequestById(pool, borrowRequestId);
+    if (!row) return { error: 'Borrow request not found', status: 404 };
+
+    const { companyId, borrowScope } = await getBorrowRequestListScope(pool, userId);
+    if (!companyId) return { error: 'Company context required', status: 400 };
+    if (row.company_id !== companyId) return { error: 'Not in your company', status: 403 };
+    if (borrowScope !== null && borrowScope !== row.borrow_scope) {
+      return { error: 'Not authorized for this scope', status: 403 };
+    }
+
+    if (!row.approved_at) return { error: 'Borrow request is not processed yet', status: 400 };
+    if (row.returned_at) return { error: 'Borrow request is already returned', status: 400 };
+    if (row.received_at) return { error: 'Borrow request is already received', status: 400 };
+
+    // Activate the assignment so asset appears in user's My Assets
+    if (row.asset_id && row.user_id) {
+      const assignment = await getAssignmentForBorrowRequest(pool, row.asset_id, row.user_id);
+      if (assignment) {
+        await updateAssignmentStatusActive(pool, assignment.assignmentID);
+      }
+    }
+
+    const updated = await updateBorrowRequestReceived(pool, borrowRequestId, userId, digitalSignature);
+    if (!updated) return { error: 'Could not receive borrow request', status: 409 };
+
+    return { ok: true };
   }
 
   static async processBorrowReturn(
