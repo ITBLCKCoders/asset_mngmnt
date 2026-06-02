@@ -14,7 +14,8 @@ import {
 import { Alert, AlertDescription } from '@/components/ui/alert';
 import { api } from '@/lib/api';
 import { toast } from 'sonner';
-import { Shield, KeyRound, ArrowLeft } from 'lucide-react';
+import { Shield, KeyRound, ArrowLeft, Loader2 } from 'lucide-react';
+import { Shimmer } from '@/components/ui/shimmer';
 
 export default function VerifyMFA() {
   const [totp, setTotp] = useState('');
@@ -133,7 +134,14 @@ export default function VerifyMFA() {
               disabled={totp.length < 6 || isLoading} 
               className="w-full"
             >
-              {isLoading ? 'Verifying...' : 'Verify'}
+              {isLoading ? (
+                <>
+                  <Loader2 className="w-4 h-4 animate-spin mr-2" />
+                  Verifying...
+                </>
+              ) : (
+                'Verify'
+              )}
             </Button>
           </div>
 

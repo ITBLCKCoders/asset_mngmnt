@@ -29,11 +29,13 @@ export function ChecklistApprovalCard({
   onDownload: () => void;
 }) {
   return (
-    <Card className="flex flex-col border border-slate-200 shadow-sm hover:shadow-md transition-shadow">
-      <CardContent className="flex flex-1 flex-col gap-3 p-4">
+    <Card className="shadow-md hover:shadow-xl transition-all duration-200 border-slate-200 bg-white flex flex-col overflow-hidden">
+      <CardContent className="flex flex-1 flex-col gap-3 p-4 relative">
         <div className="flex items-start justify-between gap-2">
           <div className="flex items-center gap-2">
-            <ClipboardList className="h-5 w-5 text-red-600 shrink-0" />
+            <div className="p-2 bg-gradient-to-br from-red-500 to-red-600 shadow-sm rounded-xl">
+              <ClipboardList className="h-5 w-5 text-white shrink-0" />
+            </div>
             <div>
               <p className="text-xs font-medium uppercase tracking-wide text-red-600">
                 Asset Checklist
@@ -58,12 +60,12 @@ export function ChecklistApprovalCard({
             </li>
           ))}
         </ul>
-        <div className="flex gap-2 mt-auto pt-2">
+        <div className="flex gap-2 mt-auto pt-2 border-t border-slate-100">
           <Button
             variant="outline"
             size="sm"
             onClick={onView}
-            className="flex-1 hover:bg-red-600 hover:text-white"
+            className="flex-1 bg-red-600 text-white border-red-600 hover:bg-white hover:text-red-600 hover:border-red-600 shadow-sm"
           >
             <Eye className="h-4 w-4 mr-2" />
             View
@@ -72,7 +74,7 @@ export function ChecklistApprovalCard({
             variant="outline"
             size="sm"
             onClick={onDownload}
-            className="flex-1 hover:bg-blue-600 hover:text-white"
+            className="flex-1 bg-white text-red-600 border-red-600 hover:bg-red-600 hover:text-white shadow-sm"
           >
             <Download className="h-4 w-4 mr-2" />
             Download

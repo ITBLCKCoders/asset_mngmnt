@@ -30,6 +30,7 @@ import {
   RotateCcw,
   Loader2,
   Wrench,
+  FileDown,
   FileText,
   HandHelping,
   ClipboardList,
@@ -50,6 +51,11 @@ import {
   buildDashboardChartConfig,
   DashboardMultiSeriesChart,
 } from './components/dashboardMultiSeriesChart';
+import EmployeeRecentActivity from './components/employeeRecentActivity';
+import EmployeeAssetStatusChart from './components/employeeAssetStatusChart';
+import EmployeeRequestTimeline from './components/employeeRequestTimeline';
+import PendingRequestsWidget from './components/pendingRequestsWidget';
+import QuickActions from './components/quickActions';
 import {
   Select,
   SelectContent,
@@ -57,6 +63,8 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select';
+import { generateDashboardPDF } from '@/lib/pdfGenerator/dashboardPdf';
+import { downloadPDF } from '@/lib/pdfGenerator';
 
 export interface DashboardStats {
   totalAssets: number;
@@ -262,6 +270,68 @@ const STAT_CARDS: Array<{
   },
 ];
 
+const MANAGER_STAT_CARDS: Array<{
+  key: keyof DashboardStats;
+  title: string;
+  icon: React.ComponentType<{ className?: string }>;
+  color: string;
+}> = [
+  {
+    key: 'totalAssets',
+    title: 'Total Assets',
+    icon: Package,
+    color: 'text-foreground',
+  },
+  {
+    key: 'activeAssignments',
+    title: 'Active Assets',
+    icon: UserCheck,
+    color: 'text-blue-600',
+  },
+  {
+    key: 'availableAssets',
+    title: 'Available',
+    icon: CheckCircle,
+    color: 'text-green-600',
+  },
+  {
+    key: 'deployedAssets',
+    title: 'Deployed',
+    icon: Archive,
+    color: 'text-indigo-600',
+  },
+  {
+    key: 'underMaintenance',
+    title: 'Under Maintenance',
+    icon: Wrench,
+    color: 'text-amber-600',
+  },
+  {
+    key: 'underRepair',
+    title: 'Under Repair',
+    icon: Loader2,
+    color: 'text-gray-600',
+  },
+  {
+    key: 'pendingReturnCount',
+    title: 'Pending Return',
+    icon: Clock,
+    color: 'text-yellow-600',
+  },
+  {
+    key: 'borrowRequestsCount',
+    title: 'Borrow Requests',
+    icon: HandHelping,
+    color: 'text-orange-600',
+  },
+  {
+    key: 'pendingTransferCount',
+    title: 'Pending Transfer',
+    icon: ArrowRightLeft,
+    color: 'text-purple-600',
+  },
+];
+
 function StatsCard({
   title,
   value,
@@ -297,6 +367,9 @@ export default function Dashboard() {
     null
   );
   const [auditLogs, setAuditLogs] = useState<AuditLogItem[]>([]);
+  const [employeeActivity, setEmployeeActivity] = useState<AuditLogItem[]>([]);
+  const [employeeAssetStatus, setEmployeeAssetStatus] = useState<{ name: string; value: number }[]>([]);
+  const [employeeTimelineData, setEmployeeTimelineData] = useState<{ label: string; requests: number }[]>([]);
   const [scope, setScope] = useState<'it' | 'admin'>('it');
   const [movementPeriod, setMovementPeriod] = useState<'weekly' | 'monthly'>(
     'weekly'
@@ -307,6 +380,7 @@ export default function Dashboard() {
   const [showDigitalInitialsDialog, setShowDigitalInitialsDialog] = useState(false);
   const [showMFADialog, setShowMFADialog] = useState(false);
   const [securityCheckDone, setSecurityCheckDone] = useState(false);
+  const [exporting, setExporting] = useState(false);
 
   const normalizedRoleName = (user?.role?.name ?? '').trim().toLowerCase();
   const isSuperAdmin = normalizedRoleName === 'super admin';
@@ -315,16 +389,25 @@ export default function Dashboard() {
     normalizedRoleName === 'user' ||
     normalizedRoleName === 'employee' ||
     normalizedRoleName.includes('employee');
+  const isITManager =
+    normalizedRoleName === 'it asset manager' ||
+    normalizedRoleName === 'it custodian';
+  const isAdminManager =
+    normalizedRoleName === 'admin asset manager' ||
+    normalizedRoleName === 'admin custodian';
   const assetType = roleCustodian?.assetType ?? null;
+  const effectiveScope = !isSuperAdmin && assetType ? assetType : scope;
   const dashboardTitle = isSuperAdmin
     ? scope === 'it'
       ? 'IT Asset Dashboard'
       : 'Admin Asset Dashboard'
-    : assetType === 'it'
+    : isITManager || assetType === 'it'
       ? 'IT Asset Dashboard'
-      : assetType === 'admin'
+      : isAdminManager || assetType === 'admin'
         ? 'Admin Asset Dashboard'
-        : 'Asset Dashboard';
+        : isEmployee
+          ? 'My Dashboard'
+          : 'Asset Dashboard';
 
   const fetchDashboardData = useCallback(async () => {
     setLoading(true);
@@ -334,10 +417,18 @@ export default function Dashboard() {
           api.get<{ assets?: unknown[] }>('/assets/my-assets'),
           api.get<{ requests?: any[] }>('/asset-requests'),
           api.get<unknown>('/asset-borrow-requests/mine'),
+          api.get<{ auditLogs?: AuditLogItem[] }>(
+            `/audit?limit=10&sortBy=created_at&sortOrder=DESC&userId=${user.id}`
+          ),
         ]);
 
-        const [myAssetsResult, myAssetRequestsResult, myBorrowsResult] =
+        const [myAssetsResult, myAssetRequestsResult, myBorrowsResult, myActivityResult] =
           settled;
+
+        const myActivityRes = myActivityResult.status === 'fulfilled' ? myActivityResult.value : null;
+        const employeeActivityLogs =
+          myActivityRes?.auditLogs ?? (myActivityRes as any)?.data?.auditLogs ?? [];
+        setEmployeeActivity(Array.isArray(employeeActivityLogs) ? employeeActivityLogs : []);
 
         const safeValue = <T,>(result: PromiseSettledResult<T>, fallback: T): T =>
           result.status === 'fulfilled' ? result.value : fallback;
@@ -418,6 +509,61 @@ export default function Dashboard() {
             borrowDeclinedCount,
         };
 
+        // Compute asset status breakdown from my-assets response
+        const rawAssets = Array.isArray(myAssetsRes?.assets)
+          ? myAssetsRes.assets
+          : [];
+        const statusMap = new Map<string, number>();
+        for (const asset of rawAssets) {
+          const a = asset as { status?: string } | null;
+          const status = String(a?.status ?? 'Unknown');
+          statusMap.set(status, (statusMap.get(status) ?? 0) + 1);
+        }
+        setEmployeeAssetStatus(
+          Array.from(statusMap.entries())
+            .map(([name, value]) => ({ name, value }))
+            .sort((a, b) => b.value - a.value)
+        );
+
+        // Compute request timeline from asset requests
+        const allRequests = [
+          ...myAssetRequestRows.map((r: any) => ({
+            date: r?.created_at || r?.createdAt || null,
+          })),
+          ...borrowRows.map((r: any) => ({
+            date: r?.created_at || r?.createdAt || null,
+          })),
+        ].filter(r => r.date);
+        if (allRequests.length > 0) {
+          const weekMap = new Map<string, number>();
+          for (const req of allRequests) {
+            try {
+              const d = new Date(req.date);
+              const weekStart = new Date(d);
+              weekStart.setDate(d.getDate() - d.getDay());
+              const label = weekStart.toLocaleDateString('en-US', {
+                month: 'short',
+                day: 'numeric',
+              });
+              weekMap.set(label, (weekMap.get(label) ?? 0) + 1);
+            } catch {
+              // skip invalid dates
+            }
+          }
+          setEmployeeTimelineData(
+            Array.from(weekMap.entries())
+              .map(([label, requests]) => ({ label, requests }))
+              .sort((a, b) => {
+                const da = new Date(a.label);
+                const db = new Date(b.label);
+                return da.getTime() - db.getTime();
+              })
+              .slice(-8)
+          );
+        } else {
+          setEmployeeTimelineData([]);
+        }
+
         setDashboardData({
           stats: {
             totalAssets: employeeStats.myAssets,
@@ -457,7 +603,11 @@ export default function Dashboard() {
       }
 
       const params = new URLSearchParams();
-      if (isSuperAdmin) params.set('scope', scope);
+      if (isSuperAdmin) {
+        params.set('scope', scope);
+      } else if (assetType) {
+        params.set('scope', assetType);
+      }
       if (isAdmin && selectedCompanyId)
         params.set('companyId', selectedCompanyId);
       const query = params.toString() ? `?${params.toString()}` : '';
@@ -561,6 +711,26 @@ export default function Dashboard() {
     });
   };
 
+  const handleExportPDF = async () => {
+    if (!dashboardData) return;
+    setExporting(true);
+    try {
+      const blob = await generateDashboardPDF(
+        dashboardData,
+        user?.company,
+        auditLogs,
+        movementPeriod
+      );
+      downloadPDF(blob, `Dashboard_Export_${new Date().toISOString().slice(0, 10)}.pdf`);
+      toast.success('Dashboard exported as PDF');
+    } catch (err) {
+      toast.error('Failed to export dashboard PDF');
+      console.error(err);
+    } finally {
+      setExporting(false);
+    }
+  };
+
   const movementData = dashboardData?.movement?.[movementPeriod] ?? [];
 
   const statusDistribution = dashboardData?.statusDistribution ?? [];
@@ -574,21 +744,28 @@ export default function Dashboard() {
   const statusSeries = [{ key: 'value', label: 'Count' }] as const;
   const statusConfig = buildDashboardChartConfig([...statusSeries]);
 
-  const movementSeries = [
+  const assignReturnSeries = [
     { key: 'assigned', label: 'Assigned' },
     { key: 'returned', label: 'Returned' },
-    { key: 'borrowRequests', label: 'Borrow Requests' },
-    { key: 'available', label: 'Available' },
-    { key: 'transfer', label: 'Transfer' },
-    { key: 'repair', label: 'Repair' },
+    { key: 'netChange', label: 'Net Change' },
   ] as const;
-  const movementConfig = buildDashboardChartConfig([...movementSeries]);
-  const movementChartRows = movementData.map(d => ({
-    month: d.label || d.period,
+  const assignReturnConfig = buildDashboardChartConfig([...assignReturnSeries]);
+  const assignReturnRows = movementData.map(d => ({
+    label: d.label || d.period,
     assigned: d.assigned,
     returned: d.returned,
+    netChange: d.netChange ?? (d.assigned - d.returned),
+  }));
+
+  const requestsOverTimeSeries = [
+    { key: 'borrowRequests', label: 'Borrow Requests' },
+    { key: 'transfer', label: 'Transfers' },
+    { key: 'repair', label: 'Repairs' },
+  ] as const;
+  const requestsOverTimeConfig = buildDashboardChartConfig([...requestsOverTimeSeries]);
+  const requestsOverTimeRows = movementData.map(d => ({
+    label: d.label || d.period,
     borrowRequests: d.borrowRequests ?? 0,
-    available: d.available ?? 0,
     transfer: d.transfer ?? 0,
     repair: d.repair ?? 0,
   }));
@@ -694,7 +871,11 @@ export default function Dashboard() {
           description={
             isEmployee
               ? 'Quick view of your assets and requests'
-              : 'Overview of asset metrics and recent activity'
+              : isITManager
+                ? 'IT asset metrics, activity, and pending requests'
+                : isAdminManager
+                  ? 'Admin asset metrics, activity, and pending requests'
+                  : 'Overview of asset metrics and recent activity'
           }
           loading={loading}
         >
@@ -720,6 +901,15 @@ export default function Dashboard() {
                 </TabsList>
               </Tabs>
             )}
+            <Button
+              variant="secondary"
+              size="sm"
+              onClick={handleExportPDF}
+              disabled={exporting || loading || !dashboardData}
+            >
+              <FileDown className="h-4 w-4 mr-1" />
+              {exporting ? 'Exporting…' : 'Export PDF'}
+            </Button>
           </div>
         </PageHeader>
 
@@ -727,12 +917,18 @@ export default function Dashboard() {
           className={
             isEmployee
               ? 'grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4'
-              : 'grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 2xl:grid-cols-5'
+              : 'grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4'
           }
         >
           {loading ? (
             <DashboardStatsGridSkeleton
-              count={isEmployee ? employeeCards.length : STAT_CARDS.length}
+              count={
+                isEmployee
+                  ? employeeCards.length
+                  : isITManager || isAdminManager
+                    ? MANAGER_STAT_CARDS.length
+                    : STAT_CARDS.length
+              }
             />
           ) : dashboardData ? (
             isEmployee ? (
@@ -745,6 +941,16 @@ export default function Dashboard() {
                 >
                   <StatsCard title={title} value={value} icon={icon} color={color} />
                 </button>
+              ))
+            ) : isITManager || isAdminManager ? (
+              MANAGER_STAT_CARDS.map(({ key, title, icon, color }) => (
+                <StatsCard
+                  key={key}
+                  title={title}
+                  value={dashboardData.stats[key] ?? 0}
+                  icon={icon}
+                  color={color}
+                />
               ))
             ) : (
               STAT_CARDS.map(({ key, title, icon, color }) => (
@@ -781,6 +987,29 @@ export default function Dashboard() {
                   />
                 )}
               </DashboardChartShell>
+
+              <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                <EmployeeAssetStatusChart
+                  data={employeeAssetStatus}
+                  loading={loading}
+                />
+                <EmployeeRequestTimeline
+                  data={employeeTimelineData}
+                  loading={loading}
+                />
+              </div>
+
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+                <div className="md:col-span-2">
+                  <EmployeeRecentActivity
+                    activities={employeeActivity}
+                    loading={loading}
+                  />
+                </div>
+                <div>
+                  <QuickActions />
+                </div>
+              </div>
             </>
           ) : (
             <>
@@ -828,15 +1057,15 @@ export default function Dashboard() {
 
               {loading ? (
                 <DashboardChartCardSkeleton
-                  titleWidth="w-40"
-                  descriptionWidth="max-w-lg"
+                  titleWidth="w-52"
+                  descriptionWidth="max-w-md"
                 />
               ) : (
                 <DashboardChartShell
-                  defaultTitle="Asset Movement"
-                  defaultDescription="Assigned, returned, transfer and repair over time"
+                  defaultTitle="Assignments & Returns"
+                  defaultDescription="New assignments, returns, and net change over time"
                   defaultVariant="area"
-                  empty={!movementData.length}
+                  empty={!assignReturnRows.length}
                   emptyMessage="No movement data"
                   headerActions={
                     <Tabs
@@ -865,11 +1094,60 @@ export default function Dashboard() {
                   {v => (
                     <DashboardMultiSeriesChart
                       variant={v}
-                      data={movementChartRows}
-                      indexKey="month"
-                      series={[...movementSeries]}
-                      chartConfig={movementConfig}
+                      data={assignReturnRows}
+                      indexKey="label"
+                      series={[...assignReturnSeries]}
+                      chartConfig={assignReturnConfig}
                       className="min-h-[300px] w-full"
+                    />
+                  )}
+                </DashboardChartShell>
+              )}
+
+              {loading ? (
+                <DashboardChartCardSkeleton
+                  titleWidth="w-48"
+                  descriptionWidth="max-w-sm"
+                />
+              ) : (
+                <DashboardChartShell
+                  defaultTitle="Requests Over Time"
+                  defaultDescription="Borrow requests, transfers, and repairs per period"
+                  defaultVariant="bar"
+                  empty={!requestsOverTimeRows.length}
+                  emptyMessage="No request data"
+                  headerActions={
+                    <Tabs
+                      value={movementPeriod}
+                      onValueChange={v =>
+                        setMovementPeriod(v as 'weekly' | 'monthly')
+                      }
+                    >
+                      <TabsList className={segmentTabsListClassName + ' w-full sm:w-auto'}>
+                        <TabsTrigger
+                          value="weekly"
+                          className={segmentTabsTriggerClassName}
+                        >
+                          Weekly
+                        </TabsTrigger>
+                        <TabsTrigger
+                          value="monthly"
+                          className={segmentTabsTriggerClassName}
+                        >
+                          Monthly
+                        </TabsTrigger>
+                      </TabsList>
+                    </Tabs>
+                  }
+                >
+                  {v => (
+                    <DashboardMultiSeriesChart
+                      variant={v}
+                      data={requestsOverTimeRows}
+                      indexKey="label"
+                      series={[...requestsOverTimeSeries]}
+                      chartConfig={requestsOverTimeConfig}
+                      className="min-h-[280px] w-full"
                     />
                   )}
                 </DashboardChartShell>
@@ -879,7 +1157,15 @@ export default function Dashboard() {
                 loading={loading}
                 dashboardData={dashboardData}
                 movementPeriod={movementPeriod}
+                variant={isITManager || isAdminManager ? 'simplified' : 'full'}
               />
+
+              {(isITManager || isAdminManager) && !loading && (
+                <PendingRequestsWidget
+                  requests={[]}
+                  scopeLabel={isITManager ? 'Pending IT Requests' : 'Pending Admin Requests'}
+                />
+              )}
             </>
           )}
         </div>

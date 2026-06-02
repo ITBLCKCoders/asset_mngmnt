@@ -38,6 +38,7 @@ import { toast } from 'sonner';
 import { useCurrentUser } from '@/hooks/useCurrentUser';
 import { useUserPermissions } from '@/hooks/useUserPermissions';
 import { DataTable } from '@/components/ui/dataTable';
+import { Shimmer } from '@/components/ui/shimmer';
 import type { ColumnDef } from '@tanstack/react-table';
 
 interface Asset {
@@ -459,11 +460,16 @@ export default function AssetsDisposal() {
               <CardContent className="pt-0">
                 <div className="space-y-3 max-h-96 overflow-y-auto scrollbar-thin scrollbar-thumb-gray-300 scrollbar-track-gray-100">
                   {loading ? (
-                    <div className="flex items-center justify-center py-12">
-                      <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-red-600"></div>
-                      <span className="ml-3 text-gray-600">
-                        Loading assets...
-                      </span>
+                    <div className="space-y-3">
+                      {[1, 2, 3, 4, 5].map(i => (
+                        <div key={i} className="flex items-center gap-3 p-4 border-2 rounded-xl">
+                          <Shimmer className="h-5 w-5 rounded" />
+                          <div className="flex-1 space-y-2">
+                            <Shimmer className="h-4 w-48 rounded" />
+                            <Shimmer className="h-3 w-32 rounded" />
+                          </div>
+                        </div>
+                      ))}
                     </div>
                   ) : filteredAssets.length === 0 ? (
                     <div className="text-center py-12">

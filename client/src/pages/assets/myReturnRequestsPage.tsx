@@ -3,6 +3,7 @@
 import { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { Undo2, ArrowLeft, FileText, Package } from 'lucide-react';
+import { Shimmer } from '@/components/ui/shimmer';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { PageHeader } from '@/components/common/PageHeader';
 import { Button } from '@/components/ui/button';
@@ -111,9 +112,18 @@ export default function MyReturnRequestsPage() {
         </PageHeader>
 
         {loading ? (
-          <div className="flex justify-center py-12">
-            <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600" />
-            <span className="ml-3 text-gray-600">Loading your requests...</span>
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+            {[1, 2, 3, 4, 5, 6].map(i => (
+              <div key={i} className="rounded-lg border p-4 space-y-3">
+                <Shimmer className="h-5 w-48 rounded" />
+                <Shimmer className="h-4 w-28 rounded" />
+                <div className="space-y-2 pt-2">
+                  <Shimmer className="h-3 w-full rounded" />
+                  <Shimmer className="h-3 w-3/4 rounded" />
+                </div>
+                <Shimmer className="h-6 w-20 rounded-full" />
+              </div>
+            ))}
           </div>
         ) : batches.length === 0 ? (
           <Card className="shadow-md border-0 bg-white/80">

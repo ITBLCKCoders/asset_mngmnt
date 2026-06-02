@@ -113,6 +113,17 @@ const myBorrowRequestColumns: ColumnDef<BorrowRequestRow>[] = [
     ),
   },
   {
+    id: 'approved_by',
+    header: 'Approved By',
+    accessorFn: row => row.dept_head_name ?? row.received_by_name ?? row.approved_by_name ?? '',
+    size: 180,
+    cell: ({ row }) => (
+      <span className="text-sm">
+        {row.original.dept_head_name ?? row.original.received_by_name ?? row.original.approved_by_name ?? '—'}
+      </span>
+    ),
+  },
+  {
     id: 'status',
     header: 'Status',
     accessorFn: row => borrowRequestStatusLabel(row),
@@ -569,6 +580,11 @@ export default function AssetBorrowing() {
                       key: 'purpose',
                       label: 'Purpose',
                       render: row => row.purpose,
+                    },
+                    {
+                      key: 'approved_by',
+                      label: 'Approved By',
+                      render: row => row.dept_head_name ?? (row as any).received_by_name ?? row.approved_by_name ?? '—',
                     },
                   ]}
                 />

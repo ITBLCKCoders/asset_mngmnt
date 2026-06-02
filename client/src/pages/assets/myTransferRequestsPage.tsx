@@ -14,6 +14,7 @@ import { PageHeader } from '@/components/common/PageHeader';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Input } from '@/components/ui/input';
+import { Shimmer } from '@/components/ui/shimmer';
 import { api } from '@/lib/api';
 import { toast } from 'sonner';
 import { useCurrentUser } from '@/hooks/useCurrentUser';
@@ -149,9 +150,18 @@ export default function MyTransferRequestsPage() {
         </PageHeader>
 
         {loading ? (
-          <div className="flex justify-center py-12">
-            <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600" />
-            <span className="ml-3 text-gray-600">Loading your requests...</span>
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+            {[1, 2, 3, 4, 5, 6].map(i => (
+              <div key={i} className="rounded-lg border p-4 space-y-3">
+                <Shimmer className="h-5 w-48 rounded" />
+                <Shimmer className="h-4 w-32 rounded" />
+                <div className="space-y-2 pt-2">
+                  <Shimmer className="h-3 w-full rounded" />
+                  <Shimmer className="h-3 w-2/3 rounded" />
+                </div>
+                <Shimmer className="h-6 w-24 rounded-full" />
+              </div>
+            ))}
           </div>
         ) : requests.length === 0 ? (
           <Card className="shadow-md border-0 bg-white/80">

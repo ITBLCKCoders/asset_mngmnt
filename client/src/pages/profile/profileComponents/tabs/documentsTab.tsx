@@ -850,7 +850,7 @@ export const ReturnFormCard: React.FC<{
   const first = batch.returns[0];
   if (!first?.assignment?.asset) {
     return (
-      <Card className="hover:shadow-md transition-shadow flex flex-col">
+      <Card className="shadow-md hover:shadow-xl transition-all duration-200 border-slate-200 bg-white flex flex-col overflow-hidden">
         <CardContent className="py-8">
           <div className="text-center text-gray-500">
             <p>Return form data is incomplete or missing</p>
@@ -884,12 +884,12 @@ export const ReturnFormCard: React.FC<{
     Boolean(batch.dept_head_signed_at);
 
   return (
-    <Card className="hover:shadow-md transition-shadow flex flex-col">
+    <Card className="shadow-md hover:shadow-xl transition-all duration-200 border-slate-200 bg-white flex flex-col overflow-hidden">
       <CardHeader className="pb-3">
         <div className="flex items-start justify-between">
           <div className="flex items-center gap-3">
-            <div className="p-2 bg-red-100 rounded-lg">
-              <FileSignature className="h-5 w-5 text-red-600" />
+            <div className="p-2.5 bg-gradient-to-br from-red-500 to-red-600 shadow-sm rounded-xl">
+              <FileSignature className="h-5 w-5 text-white" />
             </div>
             <div>
               <CardTitle className="text-lg">{formNumber}</CardTitle>
@@ -938,8 +938,8 @@ export const ReturnFormCard: React.FC<{
                     : `${batch.returns.length} asset${batch.returns.length === 1 ? '' : 's'} returned`}
                 </p>
                 {batch.returns.length > 0 && (
-                  <ul className="text-xs text-gray-600 mt-1 space-y-0.5 list-none">
-                    {batch.returns.slice(0, 5).map(r => (
+                  <ul className="max-h-[120px] overflow-y-auto scrollbar-hide text-xs text-gray-600 mt-1 space-y-0.5 list-none">
+                    {batch.returns.map(r => (
                       <li key={r.return_id} className="flex items-center">
                         <span className="w-1.5 h-1.5 bg-gray-400 rounded-full mr-2 flex-shrink-0" />
                         <span className="truncate">
@@ -954,14 +954,6 @@ export const ReturnFormCard: React.FC<{
                         </span>
                       </li>
                     ))}
-                    {batch.returns.length > 5 && (
-                      <li className="flex items-center">
-                        <span className="w-1.5 h-1.5 bg-gray-400 rounded-full mr-2 flex-shrink-0" />
-                        <span className="text-gray-400">
-                          +{batch.returns.length - 5} more
-                        </span>
-                      </li>
-                    )}
                   </ul>
                 )}
               </div>
@@ -1044,12 +1036,12 @@ export const ReturnFormCard: React.FC<{
         </TabsContent>
       </Tabs>
 
-      <div className="flex gap-2 p-4 mt-auto">
+      <div className="flex gap-2 p-4 mt-auto border-t border-slate-100">
         <Button
           variant="outline"
           size="sm"
           onClick={onView}
-          className="flex-1 hover:bg-red-600 hover:text-white"
+          className="flex-1 bg-red-600 text-white border-red-600 hover:bg-white hover:text-red-600 hover:border-red-600 shadow-sm"
         >
           <Eye className="h-4 w-4 mr-2" />
           View
@@ -1057,9 +1049,10 @@ export const ReturnFormCard: React.FC<{
         {canSign && !viewOnly && (
           <>
             <Button
+              variant="outline"
               size="sm"
               onClick={() => setShowConfirmDialog(true)}
-              className="flex-1 bg-green-600 hover:bg-green-700 text-white"
+              className="flex-1 bg-red-600 text-white border-red-600 hover:bg-white hover:text-red-600 hover:border-red-600 shadow-sm"
             >
               <CheckCircle2 className="h-4 w-4 mr-2" />
               Sign Form
@@ -1141,7 +1134,7 @@ export const ReturnFormCard: React.FC<{
                       setShowOtpDialog(true);
                     }}
                     disabled={!agreeReturn}
-                    className="bg-green-600 hover:bg-green-700 text-white disabled:bg-gray-300 disabled:cursor-not-allowed"
+                    className="bg-red-600 hover:bg-white hover:text-red-600 hover:border-red-600 text-white border border-red-600 disabled:bg-gray-300 disabled:cursor-not-allowed shadow-sm"
                   >
                     Sign Form
                   </AlertDialogAction>
@@ -1173,7 +1166,7 @@ export const ReturnFormCard: React.FC<{
           variant="outline"
           size="sm"
           onClick={onDownload}
-          className="hover:bg-red-600 hover:text-white"
+          className="flex-1 bg-white text-red-600 border-red-600 hover:bg-red-600 hover:text-white shadow-sm"
         >
           <Download className="h-4 w-4 mr-2" />
           Download
@@ -1293,7 +1286,7 @@ export const BorrowRequestCard: React.FC<{
         <div className="flex items-start gap-3">
           <CheckCircle2 className="h-4 w-4 text-gray-400 mt-0.5 flex-shrink-0" />
           <div className="flex-1 min-w-0">
-            <p className="font-medium text-sm">Approved by: {batch.dept_head_name || '—'}</p>
+            <p className="font-medium text-sm">Approved by: {batch.dept_head_name || batch.received_by_name || batch.approved_by_name || '—'}</p>
           </div>
         </div>
       </div>
@@ -1360,7 +1353,7 @@ export const TransferFormCard: React.FC<{
   const first = batch.returns[0];
   if (!first?.assignment?.asset) {
     return (
-      <Card className="hover:shadow-md transition-shadow flex flex-col">
+      <Card className="shadow-md hover:shadow-xl transition-all duration-200 border-slate-200 bg-white flex flex-col overflow-hidden">
         <CardContent className="py-8">
           <div className="text-center text-gray-500">
             Transfer form data is incomplete
@@ -1378,12 +1371,12 @@ export const TransferFormCard: React.FC<{
     `${first.assignment.user.first_name || ''} ${first.assignment.user.last_name || ''}`.trim();
 
   return (
-    <Card className="hover:shadow-md transition-shadow flex flex-col">
+    <Card className="shadow-md hover:shadow-xl transition-all duration-200 border-slate-200 bg-white flex flex-col overflow-hidden">
       <CardHeader className="pb-3">
         <div className="flex items-start justify-between">
           <div className="flex items-center gap-3">
-            <div className="p-2 bg-purple-100 rounded-lg">
-              <ArrowRightLeft className="h-5 w-5 text-purple-600" />
+            <div className="p-2.5 bg-gradient-to-br from-red-500 to-red-600 shadow-sm rounded-xl">
+              <ArrowRightLeft className="h-5 w-5 text-white" />
             </div>
             <div>
               <CardTitle className="text-lg">{formNumber}</CardTitle>
@@ -1431,8 +1424,8 @@ export const TransferFormCard: React.FC<{
                     : `${batch.returns.length} asset${batch.returns.length === 1 ? '' : 's'} transferred`}
                 </p>
                 {batch.returns.length > 0 && (
-                  <ul className="text-xs text-gray-600 mt-1 space-y-0.5 list-none">
-                    {batch.returns.slice(0, 5).map(r => (
+                  <ul className="max-h-[120px] overflow-y-auto scrollbar-hide text-xs text-gray-600 mt-1 space-y-0.5 list-none">
+                    {batch.returns.map(r => (
                       <li key={r.return_id} className="flex items-center">
                         <span className="w-1.5 h-1.5 bg-gray-400 rounded-full mr-2 flex-shrink-0" />
                         <span className="truncate">
@@ -1447,14 +1440,6 @@ export const TransferFormCard: React.FC<{
                         </span>
                       </li>
                     ))}
-                    {batch.returns.length > 5 && (
-                      <li className="flex items-center">
-                        <span className="w-1.5 h-1.5 bg-gray-400 rounded-full mr-2 flex-shrink-0" />
-                        <span className="text-gray-400">
-                          +{batch.returns.length - 5} more
-                        </span>
-                      </li>
-                    )}
                   </ul>
                 )}
               </div>
@@ -1539,12 +1524,12 @@ export const TransferFormCard: React.FC<{
           </CardContent>
         </TabsContent>
       </Tabs>
-      <div className="flex gap-2 p-4 mt-auto">
+      <div className="flex gap-2 p-4 mt-auto border-t border-slate-100">
         <Button
           variant="outline"
           size="sm"
           onClick={onView}
-          className="flex-1 hover:bg-purple-600 hover:text-white"
+          className="flex-1 bg-red-600 text-white border-red-600 hover:bg-white hover:text-red-600 hover:border-red-600 shadow-sm"
         >
           <Eye className="h-4 w-4 mr-2" />
           View
@@ -1552,9 +1537,10 @@ export const TransferFormCard: React.FC<{
         {canSign && !viewOnly && (
           <>
             <Button
+              variant="outline"
               size="sm"
               onClick={() => setShowConfirmDialog(true)}
-              className="flex-1 bg-green-600 hover:bg-green-700 text-white"
+              className="flex-1 bg-red-600 text-white border-red-600 hover:bg-white hover:text-red-600 hover:border-red-600 shadow-sm"
             >
               <CheckCircle2 className="h-4 w-4 mr-2" />
               Sign Form
@@ -1628,7 +1614,7 @@ export const TransferFormCard: React.FC<{
                       setShowConfirmDialog(false);
                       setShowOtpDialog(true);
                     }}
-                    className="bg-green-600 hover:bg-green-700"
+                    className="bg-red-600 hover:bg-white hover:text-red-600 hover:border-red-600 text-white border border-red-600 disabled:bg-gray-300 disabled:cursor-not-allowed shadow-sm"
                   >
                     Sign Form
                   </AlertDialogAction>
@@ -1660,7 +1646,7 @@ export const TransferFormCard: React.FC<{
           variant="outline"
           size="sm"
           onClick={onDownload}
-          className="flex-1 hover:bg-green-600 hover:text-white"
+          className="flex-1 bg-white text-red-600 border-red-600 hover:bg-red-600 hover:text-white shadow-sm"
         >
           <Download className="h-4 w-4 mr-2" />
           Download
@@ -2020,12 +2006,12 @@ export const BorrowFormCard: React.FC<{
   }
 
   return (
-    <Card className="hover:shadow-md transition-shadow flex flex-col">
+    <Card className="shadow-md hover:shadow-xl transition-all duration-200 border-slate-200 bg-white flex flex-col overflow-hidden">
       <CardHeader className="pb-3">
         <div className="flex items-start justify-between">
           <div className="flex items-center gap-3">
-            <div className="p-2 bg-red-100 rounded-lg">
-              <HandHelping className="h-5 w-5 text-red-700" />
+            <div className="p-2.5 bg-gradient-to-br from-red-500 to-red-600 shadow-sm rounded-xl">
+              <HandHelping className="h-5 w-5 text-white" />
             </div>
             <div>
               <CardTitle className="text-lg">{formNumber}</CardTitle>
@@ -2120,11 +2106,11 @@ export const BorrowFormCard: React.FC<{
               </div>
             )}
 
-            {batch.dept_head_name && (
+            {(batch.dept_head_name || batch.received_by_name || batch.approved_by_name) && (
               <div className="flex items-start gap-3">
                 <CheckCircle2 className="h-4 w-4 text-gray-400 mt-0.5 flex-shrink-0" />
                 <div className="flex-1 min-w-0">
-                  <p className="font-medium text-sm">Approved by: {batch.dept_head_name}</p>
+                  <p className="font-medium text-sm">Approved by: {batch.dept_head_name || batch.received_by_name || batch.approved_by_name || '—'}</p>
                 </div>
               </div>
             )}
@@ -2146,12 +2132,12 @@ export const BorrowFormCard: React.FC<{
         </TabsContent>
       </Tabs>
 
-      <div className="flex gap-2 p-4 mt-auto">
+      <div className="flex gap-2 p-4 mt-auto border-t border-slate-100">
         <Button
           variant="outline"
           size="sm"
           onClick={onView}
-          className="flex-1 hover:bg-red-600 hover:text-white"
+          className="flex-1 bg-red-600 text-white border-red-600 hover:bg-white hover:text-red-600 hover:border-red-600 shadow-sm"
         >
           <Eye className="h-4 w-4 mr-2" />
           View
@@ -2160,7 +2146,7 @@ export const BorrowFormCard: React.FC<{
           variant="outline"
           size="sm"
           onClick={onDownload}
-          className="hover:bg-red-600 hover:text-white"
+          className="flex-1 bg-white text-red-600 border-red-600 hover:bg-red-600 hover:text-white shadow-sm"
         >
           <Download className="h-4 w-4 mr-2" />
           Download
@@ -3125,22 +3111,24 @@ export default function DocumentsTab({
               </div>
 
               {filteredForms.length === 0 ? (
-                <div className="text-center py-12 rounded-lg">
-                  <FileCheck className="w-16 h-16 text-gray-300 mx-auto mb-4" />
+                <div className="text-center py-12 rounded-xl border-2 border-dashed border-slate-200 bg-slate-50/50">
+                  <div className="inline-flex p-3 bg-slate-100 rounded-full mb-4">
+                    <FileCheck className="w-10 h-10 text-slate-400" />
+                  </div>
                   {searchQuery ? (
                     <>
-                      <p className="text-gray-500 text-lg">No forms found</p>
-                      <p className="text-gray-400 text-sm mt-1">
+                      <p className="text-slate-600 text-lg font-medium">No forms found</p>
+                      <p className="text-slate-400 text-sm mt-1">
                         No forms match &quot;{searchQuery}&quot;. Try different
                         keywords (form number, employee, asset, etc.).
                       </p>
                     </>
                   ) : (
                     <>
-                      <p className="text-gray-500 text-lg">
+                      <p className="text-slate-600 text-lg font-medium">
                         No accountability forms yet
                       </p>
-                      <p className="text-gray-400 text-sm mt-1">
+                      <p className="text-slate-400 text-sm mt-1">
                         Forms will appear here when assets are assigned to you
                       </p>
                     </>
@@ -3187,24 +3175,26 @@ export default function DocumentsTab({
               </div>
 
               {filteredReturnForms.length === 0 ? (
-                <div className="text-center py-12 rounded-lg">
-                  <FileDown className="w-16 h-16 text-gray-300 mx-auto mb-4" />
+                <div className="text-center py-12 rounded-xl border-2 border-dashed border-slate-200 bg-slate-50/50">
+                  <div className="inline-flex p-3 bg-slate-100 rounded-full mb-4">
+                    <FileDown className="w-10 h-10 text-slate-400" />
+                  </div>
                   {returnSearchQuery ? (
                     <>
-                      <p className="text-gray-500 text-lg">
+                      <p className="text-slate-600 text-lg font-medium">
                         No return forms found
                       </p>
-                      <p className="text-gray-400 text-sm mt-1">
+                      <p className="text-slate-400 text-sm mt-1">
                         No return forms match "{returnSearchQuery}". Try a
                         different search term.
                       </p>
                     </>
                   ) : (
                     <>
-                      <p className="text-gray-500 text-lg">
+                      <p className="text-slate-600 text-lg font-medium">
                         No asset return forms yet
                       </p>
-                      <p className="text-gray-400 text-sm mt-1">
+                      <p className="text-slate-400 text-sm mt-1">
                         Return forms will appear here when you return assets
                       </p>
                     </>
@@ -3291,23 +3281,25 @@ export default function DocumentsTab({
               </div>
 
               {filteredTransferForms.length === 0 ? (
-                <div className="text-center py-12 rounded-lg">
-                  <ArrowRightLeft className="w-16 h-16 text-gray-300 mx-auto mb-4" />
+                <div className="text-center py-12 rounded-xl border-2 border-dashed border-slate-200 bg-slate-50/50">
+                  <div className="inline-flex p-3 bg-slate-100 rounded-full mb-4">
+                    <ArrowRightLeft className="w-10 h-10 text-slate-400" />
+                  </div>
                   {transferSearchQuery ? (
                     <>
-                      <p className="text-gray-500 text-lg">
+                      <p className="text-slate-600 text-lg font-medium">
                         No transfer forms found
                       </p>
-                      <p className="text-gray-400 text-sm mt-1">
+                      <p className="text-slate-400 text-sm mt-1">
                         No transfer forms match &quot;{transferSearchQuery}&quot;
                       </p>
                     </>
                   ) : (
                     <>
-                      <p className="text-gray-500 text-lg">
+                      <p className="text-slate-600 text-lg font-medium">
                         No asset transfer forms yet
                       </p>
-                      <p className="text-gray-400 text-sm mt-1">
+                      <p className="text-slate-400 text-sm mt-1">
                         Transfer forms will appear here when assets are
                         transferred from you
                       </p>
@@ -3379,19 +3371,21 @@ export default function DocumentsTab({
               </div>
 
               {filteredBorrowForms.length === 0 ? (
-                <div className="text-center py-12 rounded-lg">
-                  <HandHelping className="w-16 h-16 text-gray-300 mx-auto mb-4" />
+                <div className="text-center py-12 rounded-xl border-2 border-dashed border-slate-200 bg-slate-50/50">
+                  <div className="inline-flex p-3 bg-slate-100 rounded-full mb-4">
+                    <HandHelping className="w-10 h-10 text-slate-400" />
+                  </div>
                   {borrowSearchQuery ? (
                     <>
-                      <p className="text-gray-500 text-lg">No borrow forms found</p>
-                      <p className="text-gray-400 text-sm mt-1">
+                      <p className="text-slate-600 text-lg font-medium">No borrow forms found</p>
+                      <p className="text-slate-400 text-sm mt-1">
                         No forms match &quot;{borrowSearchQuery}&quot;.
                       </p>
                     </>
                   ) : (
                     <>
-                      <p className="text-gray-500 text-lg">No borrow forms yet</p>
-                      <p className="text-gray-400 text-sm mt-1">
+                      <p className="text-slate-600 text-lg font-medium">No borrow forms yet</p>
+                      <p className="text-slate-400 text-sm mt-1">
                         Submitted equipment borrowing requests appear here
                       </p>
                     </>
@@ -3459,19 +3453,21 @@ export default function DocumentsTab({
               </div>
 
               {filteredChecklistForms.length === 0 ? (
-                <div className="text-center py-12 rounded-lg">
-                  <ClipboardList className="w-16 h-16 text-gray-300 mx-auto mb-4" />
+                <div className="text-center py-12 rounded-xl border-2 border-dashed border-slate-200 bg-slate-50/50">
+                  <div className="inline-flex p-3 bg-slate-100 rounded-full mb-4">
+                    <ClipboardList className="w-10 h-10 text-slate-400" />
+                  </div>
                   {checklistSearchQuery ? (
                     <>
-                      <p className="text-gray-500 text-lg">No checklist forms found</p>
-                      <p className="text-gray-400 text-sm mt-1">
+                      <p className="text-slate-600 text-lg font-medium">No checklist forms found</p>
+                      <p className="text-slate-400 text-sm mt-1">
                         No forms match &quot;{checklistSearchQuery}&quot;.
                       </p>
                     </>
                   ) : (
                     <>
-                      <p className="text-gray-500 text-lg">No checklist forms yet</p>
-                      <p className="text-gray-400 text-sm mt-1">
+                      <p className="text-slate-600 text-lg font-medium">No checklist forms yet</p>
+                      <p className="text-slate-400 text-sm mt-1">
                         Checklist forms will appear here when assigned.
                       </p>
                     </>
@@ -3480,12 +3476,12 @@ export default function DocumentsTab({
               ) : (
                 <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
                   {filteredChecklistForms.map(row => (
-                    <Card key={row.id} className="hover:shadow-md transition-shadow flex flex-col">
+                    <Card key={row.id} className="shadow-md hover:shadow-xl transition-all duration-200 border-slate-200 bg-white flex flex-col overflow-hidden">
                       <CardHeader className="pb-3">
                         <div className="flex items-start justify-between">
                           <div className="flex items-center gap-3">
-                            <div className="p-2 bg-red-100 rounded-lg">
-                              <ClipboardList className="h-5 w-5 text-red-600" />
+                            <div className="p-2.5 bg-gradient-to-br from-red-500 to-red-600 shadow-sm rounded-xl">
+                              <ClipboardList className="h-5 w-5 text-white" />
                             </div>
                             <div>
                               <CardTitle className="text-lg">
@@ -3564,7 +3560,7 @@ export default function DocumentsTab({
                         <Button
                           variant="outline"
                           size="sm"
-                          className="flex-1 hover:bg-red-600 hover:text-white"
+                          className="flex-1 bg-red-600 text-white border-red-600 hover:bg-white hover:text-red-600 hover:border-red-600 shadow-sm"
                           onClick={() => handleViewChecklist(row)}
                         >
                           <Eye className="mr-2 h-4 w-4" /> View
@@ -3572,7 +3568,7 @@ export default function DocumentsTab({
                         <Button
                           variant="outline"
                           size="sm"
-                          className="flex-1 hover:bg-blue-600 hover:text-white"
+                          className="flex-1 bg-white text-red-600 border-red-600 hover:bg-red-600 hover:text-white shadow-sm"
                           onClick={() => handleDownloadChecklist(row)}
                         >
                           <Download className="mr-2 h-4 w-4" /> Download

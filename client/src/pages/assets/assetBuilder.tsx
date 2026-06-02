@@ -692,8 +692,9 @@ export default function AssetBuilderPage() {
                 <div className="border rounded-lg">
                   <DataTable<Asset>
                     tableId="asset-builder-available"
-                    data={loading || loadingBuilders ? [] : selectableAssets}
+                    data={selectableAssets}
                     columns={builderColumns}
+                    isLoading={loading || loadingBuilders}
                     searchPlaceholder="Search all columns..."
                     globalFilterFn={(row, _columnId, filterValue) => {
                       const q = String(filterValue ?? '').trim();

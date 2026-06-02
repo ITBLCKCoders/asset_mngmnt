@@ -1,5 +1,3 @@
-'use client';
-
 import { DashboardAnalyticsGridSkeleton } from '@/components/common/pageSkeletons';
 import { DashboardChartShell } from './DashboardChartShell';
 import {
@@ -32,10 +30,12 @@ export function DashboardAnalyticsCharts({
   loading,
   dashboardData,
   movementPeriod,
+  variant = 'full',
 }: {
   loading: boolean;
   dashboardData: DashboardData | null;
   movementPeriod: 'weekly' | 'monthly';
+  variant?: 'full' | 'simplified';
 }) {
   if (loading) {
     return <DashboardAnalyticsGridSkeleton />;
@@ -46,6 +46,9 @@ export function DashboardAnalyticsCharts({
   const movement = dashboardData.movement?.[movementPeriod] ?? [];
   const byType = dashboardData.assetByType ?? [];
   const dept = dashboardData.assetsByDepartment ?? [];
+  const location = dashboardData.assetsByLocation ?? [];
+  const categoryMix = dashboardData.categoryMix ?? [];
+  const brandMix = dashboardData.brandMix ?? [];
   const aging = dashboardData.agingBuckets ?? [];
   const warranty = dashboardData.warrantyRunway ?? [];
   const pipeline = dashboardData.requestPipeline ?? [];
@@ -78,9 +81,12 @@ export function DashboardAnalyticsCharts({
   const pipelineConfig = buildDashboardChartConfig([...pipelineSeries]);
 
   const deptRows = namedCountRows(dept);
+  const locationRows = namedCountRows(location);
   const countSeries = [{ key: 'total', label: 'Assets' }] as const;
   const countConfig = buildDashboardChartConfig([...countSeries]);
 
+  const categoryRows = namedValueRows(categoryMix);
+  const brandRows = namedValueRows(brandMix);
   const agingRows = namedValueRows(aging);
   const warrantyRows = namedValueRows(warranty);
   const valueSeries = [{ key: 'value', label: 'Assets' }] as const;
@@ -101,25 +107,16 @@ export function DashboardAnalyticsCharts({
   ] as const;
   const netConfig = buildDashboardChartConfig([...netSeries]);
 
-  const maintRows = movement.map(d => ({
-    label: d.label || d.period,
-    maintenanceEvents: d.maintenanceEvents ?? 0,
-    repairEvents: d.repairEvents ?? 0,
-  }));
-  const maintSeries = [
-    { key: 'maintenanceEvents', label: 'Maintenance (audit)' },
-    { key: 'repairEvents', label: 'Repair (audit)' },
-  ] as const;
-  const maintConfig = buildDashboardChartConfig([...maintSeries]);
-
   const agingEmpty = !aging.length || !aging.some(a => a.value > 0);
   const warrantyEmpty =
     !warranty.length || !warranty.some(a => a.value > 0);
 
+  const simplified = variant === 'simplified';
+
   return (
     <div className="space-y-6">
       <h2 className="text-lg font-semibold tracking-tight">Analytics</h2>
-      <div className="grid grid-cols-1 xl:grid-cols-2 gap-6">
+      <div className="grid grid-cols-1 xl:grid-cols-3 gap-6">
         <DashboardChartShell
           defaultTitle="Utilization by type"
           defaultDescription="In use vs not in use, stacked by asset type"
@@ -194,60 +191,106 @@ export function DashboardAnalyticsCharts({
           )}
         </DashboardChartShell>
 
-        <DashboardChartShell
-          defaultTitle="Warranty runway"
-          defaultDescription="Time to warranty end from purchase + warranty months"
-          defaultVariant="bar"
-          empty={warrantyEmpty}
-        >
-          {v => (
-            <DashboardMultiSeriesChart
-              variant={v}
-              data={warrantyRows}
-              indexKey="name"
-              series={[...valueSeries]}
-              chartConfig={valueConfig}
-              className="min-h-[260px] w-full"
-            />
-          )}
-        </DashboardChartShell>
+        {simplified ? null : (
+          <DashboardChartShell
+            defaultTitle="Warranty runway"
+            defaultDescription="Time to warranty end from purchase + warranty months"
+            defaultVariant="bar"
+            empty={warrantyEmpty}
+          >
+            {v => (
+              <DashboardMultiSeriesChart
+                variant={v}
+                data={warrantyRows}
+                indexKey="name"
+                series={[...valueSeries]}
+                chartConfig={valueConfig}
+                className="min-h-[260px] w-full"
+              />
+            )}
+          </DashboardChartShell>
+        )}
 
-        <DashboardChartShell
-          defaultTitle="Assignment flow vs returns"
-          defaultDescription="New assignments and returns in each period; net = new − returns"
-          defaultVariant="area"
-          empty={!movement.length}
-        >
-          {v => (
-            <DashboardMultiSeriesChart
-              variant={v}
-              data={netRows}
-              indexKey="label"
-              series={[...netSeries]}
-              chartConfig={netConfig}
-              className="min-h-[280px] w-full"
-            />
-          )}
-        </DashboardChartShell>
+        {simplified ? null : (
+          <DashboardChartShell
+            defaultTitle="Assets by location"
+            defaultDescription="Top locations by asset count"
+            defaultVariant="bar"
+            empty={!location.length}
+          >
+            {v => (
+              <DashboardMultiSeriesChart
+                variant={v}
+                data={locationRows}
+                indexKey="name"
+                series={[...countSeries]}
+                chartConfig={countConfig}
+                barLayout="vertical"
+                className="min-h-[280px] w-full"
+              />
+            )}
+          </DashboardChartShell>
+        )}
 
-        <DashboardChartShell
-          defaultTitle="Maintenance vs repair (audit)"
-          defaultDescription="Stacked audit events mentioning maintenance or repair"
-          defaultVariant="area"
-          empty={!movement.length}
-        >
-          {v => (
-            <DashboardMultiSeriesChart
-              variant={v}
-              data={maintRows}
-              indexKey="label"
-              series={[...maintSeries]}
-              chartConfig={maintConfig}
-              stacked
-              className="min-h-[280px] w-full"
-            />
-          )}
-        </DashboardChartShell>
+        {simplified ? null : (
+          <DashboardChartShell
+            defaultTitle="Category mix"
+            defaultDescription="Top categories by asset count"
+            defaultVariant="bar"
+            empty={!categoryMix.length}
+          >
+            {v => (
+              <DashboardMultiSeriesChart
+                variant={v}
+                data={categoryRows}
+                indexKey="name"
+                series={[...valueSeries]}
+                chartConfig={valueConfig}
+                className="min-h-[260px] w-full"
+              />
+            )}
+          </DashboardChartShell>
+        )}
+
+        {simplified ? null : (
+          <DashboardChartShell
+            defaultTitle="Brand mix"
+            defaultDescription="Top brands by asset count"
+            defaultVariant="bar"
+            empty={!brandMix.length}
+          >
+            {v => (
+              <DashboardMultiSeriesChart
+                variant={v}
+                data={brandRows}
+                indexKey="name"
+                series={[...valueSeries]}
+                chartConfig={valueConfig}
+                className="min-h-[260px] w-full"
+              />
+            )}
+          </DashboardChartShell>
+        )}
+
+        {simplified ? null : (
+          <DashboardChartShell
+            defaultTitle="Assignment flow vs returns"
+            defaultDescription="New assignments and returns in each period; net = new − returns"
+            defaultVariant="area"
+            empty={!movement.length}
+          >
+            {v => (
+              <DashboardMultiSeriesChart
+                variant={v}
+                data={netRows}
+                indexKey="label"
+                series={[...netSeries]}
+                chartConfig={netConfig}
+                className="min-h-[280px] w-full"
+              />
+            )}
+          </DashboardChartShell>
+        )}
       </div>
     </div>
   );

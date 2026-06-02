@@ -15,7 +15,8 @@ import { Alert, AlertDescription } from '@/components/ui/alert';
 import { api } from '@/lib/api';
 import { toast } from 'sonner';
 import { motion } from 'framer-motion';
-import { CheckCircle2, Shield, Copy, RefreshCw } from 'lucide-react';
+import { CheckCircle2, Shield, Copy, RefreshCw, Loader2 } from 'lucide-react';
+import { Shimmer } from '@/components/ui/shimmer';
 
 export default function SetupMFA() {
   const [qrCode, setQrCode] = useState<string | null>(null);
@@ -23,10 +24,12 @@ export default function SetupMFA() {
   const [totp, setTotp] = useState('');
   const [backupCodes, setBackupCodes] = useState<string[] | null>(null);
   const [step, setStep] = useState<'init' | 'scan' | 'verify' | 'success'>('init');
+  const [loading, setLoading] = useState(false);
   const [copied, setCopied] = useState(false);
   const navigate = useNavigate();
 
   const startSetup = async () => {
+    setLoading(true);
     try {
       const response = await api.post('/auth/mfa/setup');
       setQrCode(response.qrCode);
@@ -35,6 +38,8 @@ export default function SetupMFA() {
       toast.success('QR code generated!');
     } catch (err: any) {
       toast.error(err.message || 'Failed to start MFA setup');
+    } finally {
+      setLoading(false);
     }
   };
 
@@ -44,6 +49,7 @@ export default function SetupMFA() {
       return;
     }
 
+    setLoading(true);
     try {
       const response = await api.post('/auth/mfa/verify-setup', { token: totp });
       setBackupCodes(response.backupCodes);
@@ -52,6 +58,8 @@ export default function SetupMFA() {
     } catch (err: any) {
       toast.error(err.message || 'Invalid code. Please try again.');
       setTotp('');
+    } finally {
+      setLoading(false);
     }
   };
 
@@ -106,8 +114,15 @@ export default function SetupMFA() {
                 <li>Save your backup codes in a safe place</li>
               </ol>
             </div>
-            <Button onClick={startSetup} className="w-full">
-              Start Setup
+            <Button onClick={startSetup} disabled={loading} className="w-full">
+              {loading ? (
+                <>
+                  <Loader2 className="w-4 h-4 animate-spin mr-2" />
+                  Setting up...
+                </>
+              ) : (
+                'Start Setup'
+              )}
             </Button>
             <Button variant="outline" onClick={() => navigate(-1)} className="w-full">
               Cancel
@@ -160,8 +175,15 @@ export default function SetupMFA() {
                 className="text-center text-lg tracking-widest"
               />
             </div>
-            <Button onClick={verifySetup} disabled={totp.length !== 6} className="w-full">
-              Verify & Enable
+            <Button onClick={verifySetup} disabled={totp.length !== 6 || loading} className="w-full">
+              {loading ? (
+                <>
+                  <Loader2 className="w-4 h-4 animate-spin mr-2" />
+                  Verifying...
+                </>
+              ) : (
+                'Verify & Enable'
+              )}
             </Button>
             <Button variant="outline" onClick={() => setStep('init')} className="w-full">
               Back
