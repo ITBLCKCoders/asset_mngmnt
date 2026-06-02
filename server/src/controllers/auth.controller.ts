@@ -349,6 +349,17 @@ export async function forgotPasswordHandler(req: AuthRequest, res: Response) {
     return res.status(400).json({ error: result.error });
   }
 
+  createAuditLog({
+    action: 'Password Reset Requested',
+    resourceType: 'auth',
+    resourceName: email || contactNumber || 'unknown',
+    details: `Password reset requested via ${channel} for ${email ? email : (contactNumber ? 'SMS' : 'unknown')}`,
+    ipAddress: req.ip,
+    userAgent: req.get('User-Agent'),
+    status: 'success',
+    severity: 'warning',
+  }).catch((err) => logger.warn('Failed to create forgot password audit log:', err));
+
   res.json(result);
 }
 
@@ -384,6 +395,18 @@ export async function resetPasswordHandler(req: AuthRequest, res: Response) {
 
   const result = await resetPassword(userId, password, req);
   if ('error' in result) return res.status(400).json({ error: result.error });
+
+  createAuditLog({
+    userId,
+    action: 'Password Reset',
+    resourceType: 'auth',
+    resourceId: userId,
+    details: 'Password was reset via forgot-password flow',
+    ipAddress: req.ip,
+    userAgent: req.get('User-Agent'),
+    status: 'success',
+    severity: 'warning',
+  }).catch((err) => logger.warn('Failed to create password reset audit log:', err));
 
   return res.json({ message: 'Password reset successful' });
 }
@@ -614,6 +637,18 @@ export async function changePasswordHandler(req: AuthRequest, res: Response) {
     `[CHANGE PASSWORD] SUCCESS → User ID: ${user.userID} | Revoked Sessions: ${revokedCount}`
   );
 
+  createAuditLog({
+    userId: user.userID,
+    action: 'Password Changed',
+    resourceType: 'auth',
+    resourceId: user.userID,
+    details: 'User changed their own password',
+    ipAddress: req.ip,
+    userAgent: req.get('User-Agent'),
+    status: 'success',
+    severity: 'warning',
+  }).catch((err) => logger.warn('Failed to create change password audit log:', err));
+
   return res.json({
     message: 'Password changed successfully. Logged out from all devices.',
     revokedSessions: revokedCount,
@@ -726,6 +761,16 @@ export async function updateProfileHandler(req: AuthRequest, res: Response) {
         region || null,
       ]
     );
+
+    createAuditLog({
+      userId,
+      action: 'Profile Updated',
+      resourceType: 'user',
+      resourceId: userId,
+      details: 'User updated their profile',
+      ipAddress: req.ip,
+      userAgent: req.get('User-Agent'),
+    }).catch((err) => logger.warn('Failed to create profile update audit log:', err));
 
     res.json({ message: 'Profile updated successfully' });
   } catch (error: any) {
@@ -882,6 +927,17 @@ export async function uploadAvatarHandler(req: AuthRequest, res: Response) {
     logger.info(
       `[AVATAR UPLOAD] Success → User ${req.user!.userID} | URL: ${url}`
     );
+
+    createAuditLog({
+      userId: req.user!.userID,
+      action: 'Avatar Updated',
+      resourceType: 'user',
+      resourceId: req.user!.userID,
+      details: 'User uploaded a new avatar',
+      ipAddress: req.ip,
+      userAgent: req.get('User-Agent'),
+    }).catch((err) => logger.warn('Failed to create avatar upload audit log:', err));
+
     return res.json({ url });
   } catch (err: any) {
     logger.error('Avatar upload failed', { err });

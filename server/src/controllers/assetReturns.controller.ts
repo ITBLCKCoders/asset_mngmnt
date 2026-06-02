@@ -459,6 +459,18 @@ export async function submitAssetReturnRequestHandler(
       logger.warn('No departmentId found, skipping notification');
     }
 
+    createAuditLog({
+      userId: currentUserId,
+      action: 'Submitted Return Request',
+      resourceType: 'asset_return_form',
+      resourceId: form_id,
+      resourceName: returnForm!.form_number,
+      details: `Return request submitted for ${assignmentIds.length} asset(s) with type: ${normalizedReturnType}`,
+      ipAddress: req.ip,
+      userAgent: req.get('User-Agent'),
+      companyId: companyId || undefined,
+    }).catch((err) => logger.warn('Failed to create return request audit log:', err));
+
     return res.status(201).json({
       message: 'Return request submitted successfully',
       formID: form_id,
