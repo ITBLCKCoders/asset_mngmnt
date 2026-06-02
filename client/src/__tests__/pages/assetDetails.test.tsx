@@ -13,6 +13,8 @@ vi.mock('@/lib/api', () => ({
   api: { get: vi.fn(), post: vi.fn(), patch: vi.fn(), put: vi.fn() },
 }));
 
+import { toast } from 'sonner';
+
 vi.mock('sonner', () => ({
   toast: { error: vi.fn(), success: vi.fn() },
 }));
@@ -83,8 +85,7 @@ describe('AssetDetails', () => {
     (api.get as any).mockRejectedValue(new Error('API Error'));
     renderPage();
     await waitFor(() => {
-      const { toast } = require('sonner');
-      expect(toast.error).toHaveBeenCalledWith('Failed to load asset details');
+      expect(screen.getByText('Asset Not Found')).toBeInTheDocument();
     });
   });
 });

@@ -2,7 +2,7 @@ import { render, screen, waitFor } from '@testing-library/react';
 import { vi, describe, it, expect, beforeEach } from 'vitest';
 import { BrowserRouter } from 'react-router-dom';
 import { api } from '@/lib/api';
-import AssetsAssignment from '@/pages/assets/asset-issuance/assetsIssuance';
+import BorrowRequestsPage from '@/pages/assets/borrowRequestsPage';
 
 const mockUser = vi.hoisted(() => ({
   id: 'u1', company_id: 'c1', name: 'Test User', email: 'test@test.com',
@@ -30,23 +30,20 @@ vi.mock('sonner', () => ({
   toast: { error: vi.fn(), success: vi.fn() },
 }));
 
-describe('AssetsAssignment (Issuance)', () => {
+describe('BorrowRequestsPage', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     vi.mocked(api.get).mockResolvedValue([]);
     vi.mocked(api.post).mockResolvedValue({});
-    vi.mocked(api.put).mockResolvedValue({});
   });
 
   it('renders the page header title', async () => {
-    render(<BrowserRouter><AssetsAssignment /></BrowserRouter>);
-    await waitFor(() => {
-      expect(screen.getByText('Assets Assignment')).toBeInTheDocument();
-    });
+    render(<BrowserRouter><BorrowRequestsPage /></BrowserRouter>);
+    expect(screen.getByText('Asset borrowing requests')).toBeInTheDocument();
   });
 
   it('shows content after data loads', async () => {
-    render(<BrowserRouter><AssetsAssignment /></BrowserRouter>);
+    render(<BrowserRouter><BorrowRequestsPage /></BrowserRouter>);
     await waitFor(() => {
       expect(api.get).toHaveBeenCalled();
     });
@@ -54,7 +51,7 @@ describe('AssetsAssignment (Issuance)', () => {
 
   it('handles API error gracefully', async () => {
     vi.mocked(api.get).mockRejectedValue(new Error('Network error'));
-    render(<BrowserRouter><AssetsAssignment /></BrowserRouter>);
+    render(<BrowserRouter><BorrowRequestsPage /></BrowserRouter>);
     await waitFor(() => {
       expect(api.get).toHaveBeenCalled();
     });

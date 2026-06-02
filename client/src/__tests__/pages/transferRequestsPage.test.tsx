@@ -2,7 +2,7 @@ import { render, screen, waitFor } from '@testing-library/react';
 import { vi, describe, it, expect, beforeEach } from 'vitest';
 import { BrowserRouter } from 'react-router-dom';
 import { api } from '@/lib/api';
-import AssetsAssignment from '@/pages/assets/asset-issuance/assetsIssuance';
+import TransferRequestsPage from '@/pages/assets/transferRequestsPage';
 
 const mockUser = vi.hoisted(() => ({
   id: 'u1', company_id: 'c1', name: 'Test User', email: 'test@test.com',
@@ -17,12 +17,6 @@ const mockUser = vi.hoisted(() => ({
 vi.mock('@/hooks/useCurrentUser', () => ({
   useCurrentUser: () => ({ user: mockUser, loading: false }),
 }));
-vi.mock('@/hooks/useUserPermissions', () => ({
-  useUserPermissions: () => ({ permissions: {}, roleCustodian: null, loading: false, hasPermission: vi.fn(() => true), refetch: vi.fn() }),
-}));
-vi.mock('@/context/CompanyContext', () => ({
-  useCompanyContext: () => ({ activeCompany: { id: 'c1', name: 'Test Company' }, loading: false, companies: [], fetchCompanies: vi.fn(), fetchActiveCompany: vi.fn(), setActiveCompany: vi.fn() }),
-}));
 vi.mock('@/lib/api', () => ({
   api: { get: vi.fn(), post: vi.fn(), patch: vi.fn(), put: vi.fn() },
 }));
@@ -30,23 +24,20 @@ vi.mock('sonner', () => ({
   toast: { error: vi.fn(), success: vi.fn() },
 }));
 
-describe('AssetsAssignment (Issuance)', () => {
+describe('TransferRequestsPage', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     vi.mocked(api.get).mockResolvedValue([]);
     vi.mocked(api.post).mockResolvedValue({});
-    vi.mocked(api.put).mockResolvedValue({});
   });
 
   it('renders the page header title', async () => {
-    render(<BrowserRouter><AssetsAssignment /></BrowserRouter>);
-    await waitFor(() => {
-      expect(screen.getByText('Assets Assignment')).toBeInTheDocument();
-    });
+    render(<BrowserRouter><TransferRequestsPage /></BrowserRouter>);
+    expect(screen.getByText('Transfer Requests')).toBeInTheDocument();
   });
 
   it('shows content after data loads', async () => {
-    render(<BrowserRouter><AssetsAssignment /></BrowserRouter>);
+    render(<BrowserRouter><TransferRequestsPage /></BrowserRouter>);
     await waitFor(() => {
       expect(api.get).toHaveBeenCalled();
     });
@@ -54,7 +45,7 @@ describe('AssetsAssignment (Issuance)', () => {
 
   it('handles API error gracefully', async () => {
     vi.mocked(api.get).mockRejectedValue(new Error('Network error'));
-    render(<BrowserRouter><AssetsAssignment /></BrowserRouter>);
+    render(<BrowserRouter><TransferRequestsPage /></BrowserRouter>);
     await waitFor(() => {
       expect(api.get).toHaveBeenCalled();
     });
