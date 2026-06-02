@@ -1,6 +1,7 @@
 'use client';
 
 import { useEffect, useState } from 'react';
+import { motion } from 'framer-motion';
 import {
   LineChart,
   Line,
@@ -78,9 +79,12 @@ export default function MonthlyTrendChart({ data }: { data: any[] }) {
   }
 
   return (
-    <div
+    <motion.div
       className="h-72 w-full min-h-[260px] rounded-lg border border-border/50 bg-card/50 p-3 sm:p-4"
       style={{ minHeight: '288px' }}
+      initial={{ opacity: 0, y: 20 }}
+      animate={{ opacity: 1, y: 0 }}
+      transition={{ duration: 0.5, ease: 'easeOut' }}
     >
       <ResponsiveContainer width="100%" height="100%">
         <LineChart
@@ -185,6 +189,6 @@ export default function MonthlyTrendChart({ data }: { data: any[] }) {
           />
         </LineChart>
       </ResponsiveContainer>
-    </div>
+    </motion.div>
   );
 }

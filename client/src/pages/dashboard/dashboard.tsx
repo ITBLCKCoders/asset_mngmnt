@@ -744,19 +744,6 @@ export default function Dashboard() {
   const statusSeries = [{ key: 'value', label: 'Count' }] as const;
   const statusConfig = buildDashboardChartConfig([...statusSeries]);
 
-  const assignReturnSeries = [
-    { key: 'assigned', label: 'Assigned' },
-    { key: 'returned', label: 'Returned' },
-    { key: 'netChange', label: 'Net Change' },
-  ] as const;
-  const assignReturnConfig = buildDashboardChartConfig([...assignReturnSeries]);
-  const assignReturnRows = movementData.map(d => ({
-    label: d.label || d.period,
-    assigned: d.assigned,
-    returned: d.returned,
-    netChange: d.netChange ?? (d.assigned - d.returned),
-  }));
-
   const requestsOverTimeSeries = [
     { key: 'borrowRequests', label: 'Borrow Requests' },
     { key: 'transfer', label: 'Transfers' },
@@ -1054,55 +1041,6 @@ export default function Dashboard() {
                   )}
                 </CardContent>
               </Card>
-
-              {loading ? (
-                <DashboardChartCardSkeleton
-                  titleWidth="w-52"
-                  descriptionWidth="max-w-md"
-                />
-              ) : (
-                <DashboardChartShell
-                  defaultTitle="Assignments & Returns"
-                  defaultDescription="New assignments, returns, and net change over time"
-                  defaultVariant="area"
-                  empty={!assignReturnRows.length}
-                  emptyMessage="No movement data"
-                  headerActions={
-                    <Tabs
-                      value={movementPeriod}
-                      onValueChange={v =>
-                        setMovementPeriod(v as 'weekly' | 'monthly')
-                      }
-                    >
-                      <TabsList className={segmentTabsListClassName + ' w-full sm:w-auto'}>
-                        <TabsTrigger
-                          value="weekly"
-                          className={segmentTabsTriggerClassName}
-                        >
-                          Weekly
-                        </TabsTrigger>
-                        <TabsTrigger
-                          value="monthly"
-                          className={segmentTabsTriggerClassName}
-                        >
-                          Monthly
-                        </TabsTrigger>
-                      </TabsList>
-                    </Tabs>
-                  }
-                >
-                  {v => (
-                    <DashboardMultiSeriesChart
-                      variant={v}
-                      data={assignReturnRows}
-                      indexKey="label"
-                      series={[...assignReturnSeries]}
-                      chartConfig={assignReturnConfig}
-                      className="min-h-[300px] w-full"
-                    />
-                  )}
-                </DashboardChartShell>
-              )}
 
               {loading ? (
                 <DashboardChartCardSkeleton

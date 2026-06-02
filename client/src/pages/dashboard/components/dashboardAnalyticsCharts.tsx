@@ -97,13 +97,11 @@ export function DashboardAnalyticsCharts({
     newAssignments: d.newAssignments ?? 0,
     returned: d.returned ?? 0,
     borrowRequests: d.borrowRequests ?? 0,
-    netChange: d.netChange ?? 0,
   }));
   const netSeries = [
     { key: 'newAssignments', label: 'New assignments' },
     { key: 'returned', label: 'Returns completed' },
     { key: 'borrowRequests', label: 'Borrow requests' },
-    { key: 'netChange', label: 'Net (new − returns)' },
   ] as const;
   const netConfig = buildDashboardChartConfig([...netSeries]);
 
@@ -275,7 +273,7 @@ export function DashboardAnalyticsCharts({
         {simplified ? null : (
           <DashboardChartShell
             defaultTitle="Assignment flow vs returns"
-            defaultDescription="New assignments and returns in each period; net = new − returns"
+            defaultDescription="New assignments and returns completed in each period"
             defaultVariant="area"
             empty={!movement.length}
           >

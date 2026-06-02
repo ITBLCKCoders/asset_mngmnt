@@ -42,6 +42,7 @@ import {
   isMysqlUnknownColumnError,
   fetchAssetReturnFormsRowsForUserList,
   fetchPendingDeptHeadApprovalFormRows,
+  fetchPendingDeptHeadApprovalFormRowsByCompany,
   fetchUserPosition,
   fetchUserDigitalSignature,
   resolveProcessorReturnTarget,
@@ -340,8 +341,13 @@ export async function submitAssetReturnRequestHandler(
     const categoryDeptRows = await getCategoryDepartmentsByAssetIds(assetIdsForCategoryDept);
     const categoryDeptId = (categoryDeptRows[0] as any)?.departmentID ?? null;
 
+    const returnerUserDeptId = firstAssignment.user_id
+      ? await getUserDepartmentId(firstAssignment.user_id)
+      : null;
+    const effectiveDepartmentId = returnerUserDeptId ?? categoryDeptId ?? firstAssignment.department_id;
+
     let companyId: string | null = null;
-    const deptIdForCompany = categoryDeptId || firstAssignment.department_id;
+    const deptIdForCompany = effectiveDepartmentId;
     if (deptIdForCompany) {
       const dept = await getDepartmentById(deptIdForCompany);
       companyId = dept?.company_id ?? null;
@@ -392,7 +398,7 @@ export async function submitAssetReturnRequestHandler(
     const returnForm = await AssetReturnFormModel.createWithReturnerSignature({
       form_number,
       user_id: firstAssignment.user_id,
-      department_id: categoryDeptId ?? firstAssignment.department_id ?? null,
+      department_id: effectiveDepartmentId,
       location_id: firstAssignment.location_id ?? null,
       location_room_id: firstAssignment.location_room_id ?? null,
       created_by: currentUserId,
@@ -417,8 +423,8 @@ export async function submitAssetReturnRequestHandler(
     }
 
     // Send notification to department heads (Manager Approver 1) in the same department
-    const departmentId = categoryDeptId ?? firstAssignment.department_id;
-    logger.info(`Notification debug - categoryDeptId: ${categoryDeptId}, firstAssignment.department_id: ${firstAssignment.department_id}, final departmentId: ${departmentId}`);
+    const departmentId = effectiveDepartmentId;
+    logger.info(`Notification debug - returnerUserDeptId: ${returnerUserDeptId}, categoryDeptId: ${categoryDeptId}, firstAssignment.department_id: ${firstAssignment.department_id}, final departmentId: ${departmentId}`);
     if (departmentId) {
       try {
         const managerApprover1UserIds = await getManagerApprover1UserIdsInDepartment(departmentId);
@@ -2561,7 +2567,7 @@ export async function signAssetReturnFormHandler(
   }
 }
 
-/** GET pending approvals: return forms with Returner signed but no Dept Head signature. Only Manager Approver 1 users; only forms where returner's user department = approver's department; filtered by company. */
+/** GET pending approvals: return forms with Returner signed but no Dept Head signature. Only Manager Approver 1 users; filtered by company. */
 export async function getPendingApprovalsHandler(
   req: AuthRequest,
   res: Response
@@ -2569,7 +2575,7 @@ export async function getPendingApprovalsHandler(
   try {
     const userId = req.user!.userID;
 
-    const { companyId } = await getAssetScope(pool, userId);
+    const { companyId, departmentIds, isSuperAdmin } = await getAssetScope(pool, userId);
     if (!companyId) {
       return res.json({ assetReturnForms: [] });
     }
@@ -2579,15 +2585,20 @@ export async function getPendingApprovalsHandler(
       return res.json({ assetReturnForms: [] });
     }
 
-    const approverDepartmentId = await getUserDepartmentId(userId);
-    if (approverDepartmentId == null) {
-      return res.json({ assetReturnForms: [] });
+    let pendingForms: any[];
+    if (isSuperAdmin || departmentIds === null) {
+      // Super Admin / full-scope: show all forms in the company (no department filter)
+      pendingForms = await fetchPendingDeptHeadApprovalFormRowsByCompany(companyId);
+    } else {
+      const approverDepartmentId = await getUserDepartmentId(userId);
+      if (approverDepartmentId == null) {
+        return res.json({ assetReturnForms: [] });
+      }
+      pendingForms = await fetchPendingDeptHeadApprovalFormRows(
+        approverDepartmentId,
+        companyId
+      );
     }
-
-    const pendingForms = await fetchPendingDeptHeadApprovalFormRows(
-      approverDepartmentId,
-      companyId
-    );
     const formIds = pendingForms.map((r: any) => r.formID);
 
     if (formIds.length === 0) {

@@ -1,6 +1,7 @@
 'use client';
 
 import { useEffect, useState } from 'react';
+import { motion } from 'framer-motion';
 import {
   BarChart,
   Bar,
@@ -54,7 +55,13 @@ export default function AssetByTypeChart({
   }
 
   return (
-    <div className="h-64 w-full" style={{ minHeight: '256px' }}>
+    <motion.div
+      className="h-64 w-full"
+      style={{ minHeight: '256px' }}
+      initial={{ opacity: 0, y: 20 }}
+      animate={{ opacity: 1, y: 0 }}
+      transition={{ duration: 0.5, ease: 'easeOut' }}
+    >
       <ResponsiveContainer
         width="100%"
         height="100%"
@@ -107,6 +114,6 @@ export default function AssetByTypeChart({
           />
         </BarChart>
       </ResponsiveContainer>
-    </div>
+    </motion.div>
   );
 }

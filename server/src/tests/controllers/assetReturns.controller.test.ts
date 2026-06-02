@@ -84,6 +84,7 @@ describe('assetReturns.controller', () => {
       req.body = { assignmentIds: ['a1', 'a2'], returnType: 'Returned', digitalSignature: 'sig-data' };
       transferRepo.getActiveAssignmentsByIds.mockResolvedValue([mockAssignment, { ...mockAssignment, assignmentID: 'a2' }]);
       transferRepo.getCategoryDepartmentsByAssetIds.mockResolvedValue([{ departmentID: 'd1' }]);
+      transferRepo.getUserDepartmentId.mockResolvedValue('d1');
       transferRepo.getDepartmentById.mockResolvedValue({ company_id: '10' });
       generateReturnFormNumber.mockResolvedValue('RET-001');
       returnFormModel.createWithReturnerSignature.mockResolvedValue({ formID: 'f1', form_number: 'RET-001' });
