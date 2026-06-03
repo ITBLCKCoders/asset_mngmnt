@@ -65,6 +65,9 @@ import {
 } from '@/lib/pdfGenerator';
 import { FileDown } from 'lucide-react';
 import SmsOtpDialog from '@/components/auth/SmsOtpDialog';
+import { AssetChecklistDialog, type AssetChecklistSubmitPayload } from '@/pages/assets/asset-issuance/components/AssetChecklistDialog';
+import { hasComputerTypeAssets, filterComputerTypeAssets } from '@/utils/assetTypeDetection';
+import type { OffboardingChecklistItemData } from '../../../../shared/types/dtos/asset.dtos';
 
 interface AssetAssignment {
   assignmentID: string;
@@ -173,6 +176,24 @@ export default function AssetsReturn() {
   const [ownerAbsent, setOwnerAbsent] = useState(false);
   const [smsOtpDialogOpen, setSmsOtpDialogOpen] = useState(false);
   const pendingReturnActionRef = useRef<(() => Promise<void>) | null>(null);
+
+  // Checklist dialog state for return flow
+  const [checklistDialogOpen, setChecklistDialogOpen] = useState(false);
+  const [checklistStepIndex, setChecklistStepIndex] = useState(0);
+  const [checklistComputerAssets, setChecklistComputerAssets] = useState<any[]>([]);
+  const pendingReturnChecklistsRef = useRef<{
+    assignmentId: string;
+    employeeId: string;
+    employeeName: string;
+    employeeDesignation: string | null;
+    employeeDepartment: string | null;
+    employeeCompany: string | null;
+    checklistData: OffboardingChecklistItemData;
+    typeOnboarding: boolean;
+    typeOffboarding: boolean;
+    receivedBy: string;
+    remarks: string;
+  }[]>([]);
 
   const isSuperAdmin = currentUser?.role?.name?.toLowerCase() === 'super admin';
   const isAdmin = currentUser?.role?.name?.toLowerCase() === 'admin';
@@ -890,6 +911,31 @@ export default function AssetsReturn() {
                 `Successfully returned ${selectedAssignments.length} asset(s)`
       );
 
+      // Save offboarding checklists after successful return
+      if (pendingReturnChecklistsRef.current.length > 0) {
+        try {
+          await Promise.all(
+            pendingReturnChecklistsRef.current.map(checklist =>
+              api.post('/asset-assignments/checklist', {
+                assignmentId: checklist.assignmentId,
+                employeeId: checklist.employeeId,
+                employeeName: checklist.employeeName,
+                employeeDesignation: checklist.employeeDesignation,
+                employeeDepartment: checklist.employeeDepartment,
+                employeeCompany: checklist.employeeCompany,
+                typeOnboarding: checklist.typeOnboarding,
+                typeOffboarding: checklist.typeOffboarding,
+                receivedBy: checklist.receivedBy,
+                checklistData: checklist.checklistData,
+                remarks: checklist.remarks,
+              })
+            )
+          );
+        } catch (checklistErr) {
+          console.error('Failed to save offboarding checklists:', checklistErr);
+        }
+      }
+
       // Download PDF automatically for processor-initiated returns with owner absent
       if (assignAllToMe && ownerAbsent) {
         try {
@@ -924,6 +970,10 @@ export default function AssetsReturn() {
       setSharedReturnAreaId('');
       setShowConditionModal(false);
 
+      setChecklistComputerAssets([]);
+      setChecklistDialogOpen(false);
+      pendingReturnChecklistsRef.current = [];
+
       await fetchAssignments();
     } catch (error: unknown) {
       console.error('Failed to return assets:', error);
@@ -939,6 +989,78 @@ export default function AssetsReturn() {
 
   const handleReturnAssets = () => {
     if (!validateReturnForm()) return;
+
+    // Check if any selected assets are computer-type
+    const selectedAssetObjects = selectedAssignments
+      .map(assignmentId => assignments.find(a => a.assignmentID === assignmentId))
+      .filter(Boolean) as AssetAssignment[];
+    const typedAssets = selectedAssetObjects.map(a => ({
+      id: a.asset.id,
+      name: a.asset.name,
+      type: a.asset.type_id || '',
+      category: a.asset.category_id || '',
+    }));
+    const hasComputer = hasComputerTypeAssets(typedAssets, typedAssets.map(a => a.id));
+
+    if (hasComputer) {
+      // Open checklist dialog first for computer-type assets
+      const computerAssets = filterComputerTypeAssets(typedAssets);
+      setChecklistComputerAssets(computerAssets);
+      setChecklistStepIndex(0);
+      pendingReturnChecklistsRef.current = [];
+      setChecklistDialogOpen(true);
+      return;
+    }
+
+    // No computer assets, proceed directly to OTP
+    pendingReturnActionRef.current = async () => {
+      await submitReturnRequest();
+    };
+    setSmsOtpDialogOpen(true);
+  };
+
+  const handleReturnChecklistNext = async (payload: AssetChecklistSubmitPayload) => {
+    const currentComputer = checklistComputerAssets[checklistStepIndex];
+    const assignment = assignments.find(a => a.asset.id === currentComputer?.id);
+    if (assignment) {
+      pendingReturnChecklistsRef.current.push({
+        assignmentId: assignment.assignmentID,
+        employeeId: assignment.user.id,
+        employeeName: `${assignment.user.first_name} ${assignment.user.last_name}`,
+        employeeDesignation: assignment.user.position || null,
+        employeeDepartment: assignment.department?.name || null,
+        employeeCompany: null,
+        checklistData: payload.checklistData as OffboardingChecklistItemData,
+        typeOnboarding: payload.typeOnboarding,
+        typeOffboarding: payload.typeOffboarding,
+        receivedBy: payload.receivedBy,
+        remarks: payload.remarks,
+      });
+    }
+    setChecklistStepIndex(prev => prev + 1);
+  };
+
+  const handleReturnChecklistFinalSubmit = async (payload: AssetChecklistSubmitPayload) => {
+    const currentComputer = checklistComputerAssets[checklistStepIndex];
+    const assignment = assignments.find(a => a.asset.id === currentComputer?.id);
+    if (assignment) {
+      pendingReturnChecklistsRef.current.push({
+        assignmentId: assignment.assignmentID,
+        employeeId: assignment.user.id,
+        employeeName: `${assignment.user.first_name} ${assignment.user.last_name}`,
+        employeeDesignation: assignment.user.position || null,
+        employeeDepartment: assignment.department?.name || null,
+        employeeCompany: null,
+        checklistData: payload.checklistData as OffboardingChecklistItemData,
+        typeOnboarding: payload.typeOnboarding,
+        typeOffboarding: payload.typeOffboarding,
+        receivedBy: payload.receivedBy,
+        remarks: payload.remarks,
+      });
+    }
+
+    // Close checklist dialog and open OTP
+    setChecklistDialogOpen(false);
     pendingReturnActionRef.current = async () => {
       await submitReturnRequest();
     };
@@ -2327,6 +2449,37 @@ export default function AssetsReturn() {
           </AppDialogFrame>
         </Dialog>
 
+        {/* Asset Checklist Dialog (offboarding variant) - shown before OTP for computer-type assets */}
+        {checklistComputerAssets.length > 0 && (
+          <AssetChecklistDialog
+            isOpen={checklistDialogOpen}
+            onOpenChange={open => {
+              if (!open) {
+                setChecklistDialogOpen(false);
+                pendingReturnChecklistsRef.current = [];
+              }
+            }}
+            onCancel={() => {
+              pendingReturnChecklistsRef.current = [];
+            }}
+            checklistVariant="offboarding"
+            selectedAssets={checklistComputerAssets.map(a => a.id)}
+            assets={checklistComputerAssets}
+            computerAssets={checklistComputerAssets}
+            currentIndex={checklistStepIndex}
+            selectedUser={(() => {
+              const currentComputer = checklistComputerAssets[checklistStepIndex];
+              const assignment = assignments.find(a => a.asset.id === currentComputer?.id);
+              return assignment?.user.id || '';
+            })()}
+            users={users}
+            departments={departments}
+            currentUserPosition={currentUser?.position || ''}
+            onNext={handleReturnChecklistNext}
+            onFinalSubmit={handleReturnChecklistFinalSubmit}
+          />
+        )}
+
         {/* SMS OTP Verification Dialog */}
         <SmsOtpDialog
           isOpen={smsOtpDialogOpen}
@@ -2341,10 +2494,12 @@ export default function AssetsReturn() {
           onVerified={() => {
             setSmsOtpDialogOpen(false);
             pendingReturnActionRef.current = null;
+            pendingReturnChecklistsRef.current = [];
           }}
           onCancel={() => {
             setSmsOtpDialogOpen(false);
             pendingReturnActionRef.current = null;
+            pendingReturnChecklistsRef.current = [];
           }}
           pendingActionRef={pendingReturnActionRef}
           title="OTP SMS Verification"

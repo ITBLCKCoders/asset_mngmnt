@@ -28,9 +28,7 @@ import { AvatarPreviewProvider } from '@/hooks/avatarPreview';
 import { CompanyProvider, useCompanyContext } from '@/context/CompanyContext';
 import { CompanyFilter } from '@/components/CompanyFilter';
 
-const Shimmer = ({ className }: { className?: string }) => (
-  <div className={cn('animate-shimmer rounded bg-gray-200/80', className)} />
-);
+import { Shimmer } from '@/components/ui/shimmer';
 
 function ProtectedLayoutShell() {
   const navigate = useNavigate();

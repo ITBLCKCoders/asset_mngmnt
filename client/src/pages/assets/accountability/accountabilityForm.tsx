@@ -409,7 +409,8 @@ export const generateAccountabilityFormPDF = async (
   doc.setFontSize(14);
   doc.setFont('helvetica', 'bold');
   doc.setTextColor(0, 0, 0);
-  doc.text('Asset Accountability Form', 105, 40, { align: 'center' });
+  const title = form.formOrigin === 'processor_return' ? 'Asset Accountability Form (TEMPORARY)' : 'Asset Accountability Form';
+  doc.text(title, 105, 40, { align: 'center' });
 
   // Department - font size 12
   doc.setFontSize(12);

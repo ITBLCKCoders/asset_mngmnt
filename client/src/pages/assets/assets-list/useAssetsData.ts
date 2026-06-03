@@ -2,131 +2,10 @@
 
 import { useEffect, useState } from 'react';
 import { api } from '@/lib/api';
-import { generateAccountabilityFormPDF, type AccountabilityForm } from '@/pages/assets/accountability/accountabilityForm';
 import { toast } from 'sonner';
 import { computeNextMaintenanceDate } from '@/utils/computeNextMaintenanceDate';
+import type { AssetResponseDto } from '@/types/assetsDTOs';
 import { Asset } from './assetsComponents/assetTable/assetData';
-
-interface ApiAsset {
-  assetID: string;
-  asset_code: string;
-  name: string;
-  description?: string;
-  category_id: string;
-  category_name?: string;
-  supplier?: string;
-  type_id?: string;
-  type_name?: string;
-  brand?: string;
-  model?: string;
-  serial?: string;
-  image_url?: string;
-  purchase_date?: string;
-  asset_value?: number;
-  salvage_value?: number;
-  depreciation_method?: string;
-  useful_life_years?: number;
-  annual_depreciation?: number;
-  depreciation_start_date?: string;
-  company_id?: string;
-  company_name?: string;
-  location_id?: string;
-  location_name?: string;
-  building?: string;
-  location_room_id?: string;
-  room_name?: string;
-  department_id?: string;
-  department?: string;
-  location_notes?: string;
-  warranty_months?: number;
-  condition?: string;
-  maintenance_schedule?: string;
-  last_maintenance_date?: string;
-  next_maintenance_date?: string;
-  status?: string;
-  transferred_out?: boolean;
-  transferred_to_company_name?: string | null;
-  created_at: string;
-  created_by?: string;
-  created_by_name?: string;
-  updated_at?: string;
-  updated_by?: string;
-  updated_by_name?: string;
-  deleted_at?: string;
-  deleted_by?: string;
-  documents?: Array<{
-    documentID: string;
-    fileName: string;
-    fileUrl: string;
-    fileSize: number;
-    fileType: string;
-    createdAt: string;
-  }>;
-  currentAssignment?: {
-    assignmentID: string;
-    user: {
-      id: string;
-      name: string;
-      email: string;
-      employeeNumber?: string;
-      position?: string;
-    };
-    department: string;
-    location: string;
-    assignedDate: string;
-    actualReturnDate?: string;
-    status: string;
-    assignedBy?: string;
-    assignmentNotes?: string;
-  };
-  assignmentHistory?: Array<{
-    assignmentID: string;
-    user: {
-      id: string;
-      name: string;
-      email: string;
-      employeeNumber?: string;
-      position?: string;
-    };
-    department: string;
-    location: string;
-    assignedDate: string;
-    actualReturnDate?: string;
-    status: string;
-    assignedBy?: string;
-    assignmentNotes?: string;
-  }>;
-  builderHistory?: Array<{
-    itemID: string;
-    builderName: string;
-    builderID: string;
-    addedDate: string;
-    addedBy: string;
-  }>;
-}
-
-interface Company {
-  id: string;
-  name: string;
-  email: string;
-  code: string;
-  prefix?: string;
-  taxId?: string;
-  phone?: string;
-  website?: string;
-  logo_url?: string | null;
-  industry?: string;
-  size?: string;
-  unit_no?: string;
-  building_street?: string;
-  region_name?: string;
-  province_name?: string;
-  city_name?: string;
-  barangay_name?: string;
-  zipcode?: string;
-  is_active?: boolean;
-  is_main?: boolean;
-}
 
 export const useAssetsData = (companyFilter?: string | null, scope?: string | null) => {
   const [assets, setAssets] = useState<Asset[]>([]);
@@ -156,7 +35,7 @@ export const useAssetsData = (companyFilter?: string | null, scope?: string | nu
         url += `?${queryString}`;
       }
       const response = await api.get<{
-        assets: ApiAsset[];
+        assets: AssetResponseDto[];
         meta?: {
           page: number;
           limit: number;
@@ -165,7 +44,7 @@ export const useAssetsData = (companyFilter?: string | null, scope?: string | nu
         };
       }>(url);
       // Transform API data to match the expected format for DataTable
-      const transformedAssets = response.assets.map((asset: ApiAsset) => {
+      const transformedAssets = response.assets.map((asset: AssetResponseDto) => {
         const createdAtParsed = asset.created_at
           ? new Date(
               asset.created_at.replace(' ', 'T') +
@@ -252,48 +131,26 @@ export const useAssetsData = (companyFilter?: string | null, scope?: string | nu
             ? new Date(asset.updated_at)
             : new Date(asset.created_at),
           updatedBy: asset.updated_by_name || asset.updated_by || '',
+          accountabilityForm: (() => {
+            const form = asset.accountabilityForms?.[0];
+            if (!form) return undefined;
+            const assetsArray = form.assets_data?.assets || [{
+              id: asset.assetID || asset.asset_code,
+              code: asset.asset_code,
+              name: asset.name,
+              category: asset.category_name || asset.category_id,
+              categoryDepartment: asset.department ? (() => { try { return JSON.parse(asset.department).name; } catch { return ''; } })() : '',
+              type: asset.type_name || asset.type_id,
+              serialNo: asset.serial,
+              modelNo: asset.model,
+              brand: asset.brand,
+            }];
+            return { ...form, assets: assetsArray };
+          })(),
         };
       });
       
-      // Batch fetch accountability forms for all assets
-      const assetsWithForms = await Promise.all(
-        transformedAssets.map(async (asset) => {
-          try {
-            const formsResponse = await api.get<{
-              accountabilityForms: any[];
-            }>(`/assets/${asset.id}/forms`);
-            
-            const currentAccountabilityForm = formsResponse.accountabilityForms?.[0];
-            if (currentAccountabilityForm) {
-              // Extract the assets array from the assets_data object
-              const assetsArray = currentAccountabilityForm.assets_data?.assets || [{
-                id: asset.assetID || asset.id,
-                code: asset.id,
-                name: asset.name,
-                category: asset.category,
-                categoryDepartment: asset.department,
-                type: asset.type,
-                serialNo: asset.serialNo,
-                modelNo: asset.modelNo,
-                brand: asset.brand,
-              }];
-              const formWithAssets = {
-                ...currentAccountabilityForm,
-                assets: assetsArray,
-              };
-              return {
-                ...asset,
-                accountabilityForm: formWithAssets,
-              };
-            }
-          } catch (error) {
-            // Failed to fetch accountability forms for asset
-          }
-          return asset;
-        })
-      );
-      
-      setAssets(assetsWithForms);
+      setAssets(transformedAssets);
       setMeta(prev => ({
         ...prev,
         total: response.assets?.length ?? 0,
@@ -330,4 +187,4 @@ export const useAssetsData = (companyFilter?: string | null, scope?: string | nu
   };
 };
 
-export type { Company };
+

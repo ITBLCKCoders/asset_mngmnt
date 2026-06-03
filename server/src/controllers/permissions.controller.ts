@@ -64,6 +64,13 @@ export async function getUserPermissionsHandler(
       }
     });
 
+    // Auto-grant view permission for general-access modules (profile, mfa, etc.)
+    for (const module of ['Profile', 'MFA', 'UserManual', 'FlowDiagrams']) {
+      if (permissions[module]) {
+        permissions[module].view = true;
+      }
+    }
+
     // Load custodian info: asset_type/manager_role from role; approver flags from user_custodian_settings (per-user)
     let roleCustodian: {
       assetType: string | null;
@@ -311,6 +318,13 @@ export async function applyRolePermissionsHandler(
         };
       permissions['Accountability Form'].view = true;
       permissions['Accountability Form'].create = true;
+    }
+
+    // Auto-grant view for general-access modules
+    for (const module of ['Profile', 'MFA', 'UserManual', 'FlowDiagrams']) {
+      if (permissions[module]) {
+        permissions[module].view = true;
+      }
     }
 
     await pool.execute('DELETE FROM user_permissions WHERE user_id = ?', [

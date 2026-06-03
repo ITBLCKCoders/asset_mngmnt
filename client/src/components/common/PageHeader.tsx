@@ -1,6 +1,6 @@
 'use client';
 
-import React from 'react';
+import React, { memo } from 'react';
 import type { LucideIcon } from 'lucide-react';
 import { Card, CardContent } from '@/components/ui/card';
 import { Shimmer } from '@/components/ui/shimmer';
@@ -16,7 +16,7 @@ interface PageHeaderProps {
   children?: React.ReactNode;
 }
 
-export function PageHeader({
+const PageHeader = memo(function PageHeader({
   icon: Icon,
   title,
   description,
@@ -69,4 +69,6 @@ export function PageHeader({
       </CardContent>
     </Card>
   );
-}
+});
+
+export { PageHeader };

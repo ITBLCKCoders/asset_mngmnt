@@ -39,7 +39,7 @@ describe('AssetDetails', () => {
     );
     renderPage();
     await waitFor(() => {
-      const skeletons = document.querySelectorAll('.animate-pulse');
+      const skeletons = document.querySelectorAll('[style*="opacity"]');
       expect(skeletons.length).toBeGreaterThan(0);
     });
   });

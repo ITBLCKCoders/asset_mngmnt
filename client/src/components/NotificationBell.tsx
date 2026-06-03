@@ -16,6 +16,7 @@ import {
   PopoverTrigger,
 } from '@/components/ui/popover';
 import { cn } from '@/lib/utils';
+import { Shimmer } from '@/components/ui/shimmer';
 import { useNotifications } from '@/context/NotificationContext';
 import { formatDistanceToNow } from 'date-fns';
 import type { Notification } from '@/types/notifications';
@@ -32,10 +33,6 @@ const AccountabilityFormPreviewDialog = lazy(() =>
   import('@/components/AccountabilityFormPreviewDialog').then(m => ({
     default: m.AccountabilityFormPreviewDialog,
   }))
-);
-
-const Shimmer = ({ className }: { className?: string }) => (
-  <div className={cn('animate-shimmer rounded bg-gray-200/80', className)} />
 );
 
 interface NotificationBellProps {

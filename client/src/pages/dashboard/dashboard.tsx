@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState, useCallback } from 'react';
+import { useEffect, useState, useCallback, memo } from 'react';
 import { useNavigate } from 'react-router-dom';
 import {
   Card,
@@ -332,7 +332,7 @@ const MANAGER_STAT_CARDS: Array<{
   },
 ];
 
-function StatsCard({
+const StatsCard = memo(function StatsCard({
   title,
   value,
   icon: Icon,
@@ -356,7 +356,7 @@ function StatsCard({
       </CardContent>
     </Card>
   );
-}
+});
 
 export default function Dashboard() {
   const navigate = useNavigate();
@@ -903,7 +903,7 @@ export default function Dashboard() {
         <div
           className={
             isEmployee
-              ? 'grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4'
+              ? 'grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-3'
               : 'grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4'
           }
         >

@@ -1,5 +1,5 @@
 import { motion } from 'framer-motion';
-import type { ReactNode } from 'react';
+import { memo, type ReactNode } from 'react';
 
 export const SIDEBAR_HOVER_TRANSITION = {
   type: 'spring',
@@ -12,7 +12,7 @@ export const SIDEBAR_HOVER_TRANSITION = {
  * Wraps a sidebar item in a motion div that scales/translates on hover. The
  * `active` flag suppresses the translate so the active item stays anchored.
  */
-export function SidebarHoverItem({
+export const SidebarHoverItem = memo(function SidebarHoverItem({
   children,
   active = false,
 }: {
@@ -29,4 +29,4 @@ export function SidebarHoverItem({
       {children}
     </motion.div>
   );
-}
+});

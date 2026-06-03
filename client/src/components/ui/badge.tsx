@@ -41,7 +41,7 @@ export interface BadgeProps
   hoverEffect?: boolean;
 }
 
-function Badge({
+const Badge = React.memo(function Badge({
   className,
   variant,
   hoverEffect,
@@ -59,6 +59,6 @@ function Badge({
       {...props}
     />
   );
-}
+});
 
 export { Badge, badgeVariants };

@@ -100,7 +100,7 @@ describe('AssetTransferRequest', () => {
     );
     renderPage();
     await waitFor(() => {
-      const shimmers = document.querySelectorAll('.animate-shimmer');
+      const shimmers = document.querySelectorAll('[style*="background-position"]');
       expect(shimmers.length).toBeGreaterThan(0);
     });
   });

@@ -2228,7 +2228,7 @@ export async function runTransferFormExecution(
     transferredAssetIds.map((id: string) => String(id))
   );
   const [existingProcessorTempForms] = (await pool.execute(
-    `SELECT formID, form_number, status, assets_data
+    `SELECT formID, form_number, status, assets_data, department_id
        FROM accountability_forms
       WHERE user_id = ?
         AND deleted_at IS NULL
@@ -2359,6 +2359,9 @@ export async function runTransferFormExecution(
           processSignature?.digital_signature?.trim() ||
           (await fetchUserDigitalSignature(processorId));
 
+        // Use the original employee's department from the existing temp form (same source as Asset Accountability settings)
+        const existingDeptId = (existingProcessorTempForms as any[])[0]?.department_id || null;
+
         for (const group of groupedByDept.values()) {
           if (group.assets.length === 0) continue;
           const tempFormReq = {
@@ -2367,7 +2370,7 @@ export async function runTransferFormExecution(
             body: {
               assets: group.assets,
               userId: processorId,
-              departmentId: group.departmentId,
+              departmentId: existingDeptId,
               locationId: group.locationId,
               locationRoomId: group.locationRoomId,
               formOrigin: 'processor_return',

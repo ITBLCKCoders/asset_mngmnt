@@ -6,14 +6,8 @@ import { useCompanyContext } from '@/context/CompanyContext';
 import { useCurrentUser } from '@/hooks/useCurrentUser';
 import { cn } from '@/lib/utils';
 
-const SELECTED_COMPANY_KEY = 'selectedCompanyId';
-
-const Shimmer = ({ className }: { className?: string }) => (
-  <div className={cn('animate-shimmer rounded bg-gray-200/80', className)} />
-);
-
 export function CompanyFilter() {
-  const { companies, activeCompany, setActiveCompany, loading } =
+  const { companies, activeCompany, setActiveCompany, clearActiveCompany, loading } =
     useCompanyContext();
   const { user } = useCurrentUser();
   const [isOpen, setIsOpen] = useState(false);
@@ -57,9 +51,7 @@ export function CompanyFilter() {
     setIsOpen(false);
     
     if (companyId === 'all') {
-      // Handle "All Companies" selection
-      localStorage.setItem(SELECTED_COMPANY_KEY, 'all');
-      window.location.reload();
+      await clearActiveCompany();
       return;
     }
     

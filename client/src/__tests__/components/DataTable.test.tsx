@@ -56,7 +56,7 @@ describe('DataTable', () => {
     const { container } = render(
       <DataTable data={data} columns={columns} isLoading />
     );
-    const shimmerElements = container.querySelectorAll('.animate-shimmer');
+    const shimmerElements = container.querySelectorAll('.bg-gray-200\\/80');
     expect(shimmerElements.length).toBeGreaterThanOrEqual(5);
   });
 

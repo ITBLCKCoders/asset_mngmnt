@@ -18,10 +18,7 @@ import { useRef, useEffect, useState } from 'react';
 import { cn } from '@/lib/utils';
 import { useAvatarPreview } from '@/hooks/avatarPreview';
 
-const Shimmer = ({ className }: { className?: string }) => (
-  <div className={cn('animate-shimmer rounded bg-gray-200/80', className)} />
-);
-
+import { Shimmer } from '@/components/ui/shimmer';
 
 interface ProfileHeaderProps {
   user: any;

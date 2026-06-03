@@ -20,6 +20,7 @@ vi.mock('@/lib/api', () => ({
 vi.mock('sonner', () => ({ toast: mockToast }));
 vi.mock('react-phone-number-input/react-hook-form', () => ({
   default: function MockPhoneInput({ control, name, ...props }: any) {
+    // eslint-disable-next-line @typescript-eslint/no-require-imports
     const { Controller } = require('react-hook-form');
     return (
       <Controller

@@ -21,6 +21,7 @@ interface CompanyContextType {
   fetchCompanies: () => Promise<void>;
   fetchActiveCompany: () => Promise<void>;
   setActiveCompany: (companyId: string) => Promise<void>;
+  clearActiveCompany: () => Promise<void>;
 }
 
 const CompanyContext = createContext<CompanyContextType | undefined>(undefined);
@@ -58,11 +59,8 @@ export function CompanyProvider({ children }: { children: ReactNode }) {
       const response = await api.patch(`/companies/${companyId}/active`);
       
       if (response && response.success !== false) {
-        // Store in localStorage for persistence
         localStorage.setItem(SELECTED_COMPANY_KEY, companyId);
-        
-        // Reload the page to reflect changes
-        window.location.reload();
+        await Promise.all([fetchActiveCompany(), fetchCompanies()]);
       } else {
         throw new Error('Failed to set active company');
       }
@@ -70,7 +68,13 @@ export function CompanyProvider({ children }: { children: ReactNode }) {
       console.error('Failed to set active company:', error);
       throw error;
     }
-  }, []);
+  }, [fetchActiveCompany, fetchCompanies]);
+
+  const clearActiveCompany = useCallback(async () => {
+    localStorage.setItem(SELECTED_COMPANY_KEY, 'all');
+    setActiveCompanyState(null);
+    await fetchCompanies();
+  }, [fetchCompanies]);
 
   useEffect(() => {
     if (!isAuthenticated || !authUserId) {
@@ -111,6 +115,7 @@ export function CompanyProvider({ children }: { children: ReactNode }) {
       fetchCompanies,
       fetchActiveCompany,
       setActiveCompany,
+      clearActiveCompany,
     }),
     [
       companies,
@@ -119,6 +124,7 @@ export function CompanyProvider({ children }: { children: ReactNode }) {
       fetchCompanies,
       fetchActiveCompany,
       setActiveCompany,
+      clearActiveCompany,
     ]
   );
 

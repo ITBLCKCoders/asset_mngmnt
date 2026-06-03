@@ -81,10 +81,30 @@ export interface AssetResponseDto {
   next_maintenance_date: string | null;
   status: string;
   is_old_unit: number;
+  building: string | null;
+  room_name: string | null;
+  last_maintenance_date: string | null;
+  department: string | null;
+  created_by_name: string | null;
+  updated_by_name: string | null;
+  deleted_at: string | null;
+  deleted_by: string | null;
   created_at: string;
   created_by: string;
   updated_at: string;
   updated_by: string;
+  specifications: Array<{
+    assetId: string;
+    assetName: string;
+    specDescription: string;
+  }> | null;
+  builderHistory: Array<{
+    itemID: string;
+    builderName: string;
+    builderID: string;
+    addedDate: string;
+    addedBy: string;
+  }> | null;
 
   // Related data
   documents: AssetDocumentDto[];
@@ -186,6 +206,19 @@ export interface AccountabilityFormDto {
   formNumber: string;
   status: AccountabilityFormStatus;
   declineReason?: string | null;
+  assets_data?: {
+    assets?: Array<{
+      id: string;
+      code: string;
+      name: string;
+      category: string;
+      categoryDepartment: string;
+      type: string;
+      serialNo: string;
+      modelNo: string;
+      brand: string;
+    }>;
+  } | null;
   created_at: string;
   signed_at: string | null;
 }
@@ -528,6 +561,38 @@ export interface AssetChecklistItemData {
   patchUpdateManagement: {
     enableUpdates: boolean | null;
     applyUpdatePolicy: boolean | null;
+  };
+}
+
+export interface OffboardingChecklistItemData {
+  deviceInventoryVerification: {
+    verifyAssetTagSerial: boolean | null;
+    inspectPhysicalCondition: boolean | null;
+    checkAccessories: boolean | null;
+    confirmDeviceFunctional: boolean | null;
+  };
+  dataAccountHandover: {
+    verifyBackup: boolean | null;
+    confirmSignOutM365: boolean | null;
+    removePersonalAccounts: boolean | null;
+    clearBrowserData: boolean | null;
+    signOutThirdPartyApps: boolean | null;
+  };
+  securityAccessRevocation: {
+    disableDeleteLocalAccount: boolean | null;
+    revokeM365License: boolean | null;
+    removeDeviceFromNetwork: boolean | null;
+    rotateBitLockerKey: boolean | null;
+    deactivateVpnCredentials: boolean | null;
+    performFactoryReset: boolean | null;
+    applyOsUpdates: boolean | null;
+    verifyBiosSecureBoot: boolean | null;
+    confirmBitLockerReEnabled: boolean | null;
+    removeDeviceNaming: boolean | null;
+    updateCmdbAssetTracker: boolean | null;
+    recordReturnDateCondition: boolean | null;
+    archiveBitLockerKey: boolean | null;
+    updateNetworkFirewallRecords: boolean | null;
   };
 }
 

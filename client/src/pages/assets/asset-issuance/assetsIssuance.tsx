@@ -45,7 +45,7 @@ import {
   filterComputerTypeAssets,
   hasComputerTypeAssets,
 } from '@/utils/assetTypeDetection';
-import type { AssetChecklistItemData } from '../../../../../shared/types/dtos/asset.dtos';
+import type { AssetChecklistItemData, OffboardingChecklistItemData } from '../../../../../shared/types/dtos/asset.dtos';
 
 const logger = createLogger('AssetsIssuance');
 
@@ -118,7 +118,7 @@ export default function AssetsAssignment() {
   const [checklistStepIndex, setChecklistStepIndex] = useState(0);
   type PendingChecklistEntry = {
     assetId: string;
-    checklistData: AssetChecklistItemData;
+    checklistData: AssetChecklistItemData | OffboardingChecklistItemData;
     typeOnboarding: boolean;
     typeOffboarding: boolean;
     receivedBy: string;

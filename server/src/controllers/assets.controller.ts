@@ -596,6 +596,7 @@ export async function getAssetsHandler(req: AuthRequest, res: Response) {
             status: row.status,
             created_at: row.created_at,
             signed_at: row.signed_at,
+            assets_data: row.assets_data,
           }));
       }
     } else {

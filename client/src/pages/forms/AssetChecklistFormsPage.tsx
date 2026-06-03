@@ -21,7 +21,6 @@ import { generateAssetChecklistPDF } from '@/lib/pdfGenerator/assetChecklistPdf'
 import { Download, Eye, FileText, Search, Package, User, Calendar } from 'lucide-react';
 import { toast } from 'sonner';
 import { Card, CardHeader, CardTitle, CardContent } from '@/components/ui/card';
-import { classifyDepartmentScopeByName } from '@/lib/assetScope';
 import { useCurrentUser } from '@/hooks/useCurrentUser';
 import {
   Select,
@@ -61,6 +60,7 @@ type ChecklistRow = {
   it_manager_signed_by?: string | null;
   it_manager_digital_signature?: string | null;
   it_manager_name?: string | null;
+  asset_scope_type?: string;
   asset?: {
     id: string;
     code?: string | null;
@@ -205,11 +205,7 @@ export default function AssetChecklistFormsPage() {
     // Apply asset type filter
     if (assetTypeFilter !== 'all') {
       const targetScope = assetTypeFilter === 'it' ? 'IT' : 'Admin';
-      result = result.filter(row => {
-        const deptCandidate = row.employee_department || '';
-        const assetScope = classifyDepartmentScopeByName(deptCandidate);
-        return assetScope === targetScope;
-      });
+      result = result.filter(row => row.asset_scope_type === targetScope);
     }
 
     // Apply search filter

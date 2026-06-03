@@ -159,6 +159,7 @@ export interface AccountabilityFormBatchRow extends RowDataPacket {
   status: string;
   created_at: string | null;
   signed_at: string | null;
+  assets_data: any;
 }
 
 export interface AssetForUpdateRow extends RowDataPacket {
@@ -707,7 +708,7 @@ export async function getAccountabilityFormsForAssetIds(
   if (assetIds.length === 0) return [];
   const placeholders = assetIds.map(() => '?').join(',');
   const [rows] = await pool.execute<AccountabilityFormBatchRow[]>(
-    `SELECT asset_id, formID, form_number, status, created_at, signed_at
+    `SELECT asset_id, formID, form_number, status, created_at, signed_at, assets_data
      FROM accountability_forms
      WHERE asset_id IN (${placeholders}) AND deleted_at IS NULL
      ORDER BY asset_id, created_at DESC`,

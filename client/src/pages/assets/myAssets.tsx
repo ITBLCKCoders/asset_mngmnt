@@ -17,106 +17,13 @@ import { PageHeader } from '@/components/common/PageHeader';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { AssetViewModal } from './assets-list/assetsComponents/assetViewModal';
+import type { AssetResponseDto } from '@/types/assetsDTOs';
 import { Asset } from './assets-list/assetsComponents/assetTable/assetData';
 import { api } from '@/lib/api';
 import { toast } from 'sonner';
 import { useCurrentUser } from '@/hooks/useCurrentUser';
 import { useUserPermissions } from '@/hooks/useUserPermissions';
 import { Shimmer } from '@/components/ui/shimmer';
-
-interface ApiAsset {
-  assetID: string;
-  asset_code: string;
-  name: string;
-  description?: string;
-  category_id: string;
-  category_name?: string;
-  supplier?: string;
-  type_id?: string;
-  type_name?: string;
-  brand?: string;
-  model?: string;
-  serial?: string;
-  image_url?: string;
-  purchase_date?: string;
-  asset_value?: number;
-  salvage_value?: number;
-  depreciation_method?: string;
-  useful_life_years?: number;
-  annual_depreciation?: number;
-  depreciation_start_date?: string;
-  company_id?: string;
-  company_name?: string;
-  location_id?: string;
-  location_name?: string;
-  building?: string;
-  location_room_id?: string;
-  room_name?: string;
-  department_id?: string;
-  department?: string;
-  location_notes?: string;
-  warranty_months?: number;
-  condition?: string;
-  maintenance_schedule?: string;
-  last_maintenance_date?: string;
-  next_maintenance_date?: string;
-  status?: string;
-  created_at: string;
-  created_by?: string;
-  created_by_name?: string;
-  updated_at?: string;
-  updated_by?: string;
-  updated_by_name?: string;
-  deleted_at?: string;
-  deleted_by?: string;
-  specifications?: Array<{
-    assetId: string;
-    assetName: string;
-    specDescription: string;
-  }>;
-  documents?: Array<{
-    documentID: string;
-    fileName: string;
-    fileUrl: string;
-    fileSize: number;
-    fileType: string;
-    createdAt: string;
-  }>;
-  currentAssignment?: {
-    assignmentID: string;
-    user: {
-      id: string;
-      name: string;
-      email: string;
-      employeeNumber?: string;
-      position?: string;
-    };
-    department: string;
-    location: string;
-    assignedDate: string;
-    actualReturnDate?: string;
-    status: string;
-    assignedBy?: string;
-    assignmentNotes?: string;
-  };
-  assignmentHistory?: Array<{
-    assignmentID: string;
-    user: {
-      id: string;
-      name: string;
-      email: string;
-      employeeNumber?: string;
-      position?: string;
-    };
-    department: string;
-    location: string;
-    assignedDate: string;
-    actualReturnDate?: string;
-    status: string;
-    assignedBy?: string;
-    assignmentNotes?: string;
-  }>;
-}
 
 export default function MyAssetsPage() {
   const { user, loading: userLoading } = useCurrentUser();
@@ -133,14 +40,14 @@ export default function MyAssetsPage() {
     try {
       setLoading(true);
       // Use the dedicated endpoint for user's assets
-      const response = await api.get<{ assets: ApiAsset[] }>(
+      const response = await api.get<{ assets: AssetResponseDto[] }>(
         '/assets/my-assets'
       );
 
       console.log('My assets loaded:', response.assets.length, 'assets');
 
       // Transform API data to match the expected format with error handling
-      const transformedAssets = response.assets.map((asset: ApiAsset) => {
+      const transformedAssets = response.assets.map((asset: AssetResponseDto) => {
         // Safely parse department data if it exists
         let departmentName = '';
         if (asset.currentAssignment?.department) {

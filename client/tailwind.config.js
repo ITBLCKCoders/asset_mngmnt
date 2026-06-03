@@ -17,7 +17,6 @@ export default {
       animation: {
         'fade-in': 'fadeIn 0.2s ease-out',
         'zoom-in': 'zoomIn 0.2s ease-out',
-        shimmer: 'shimmer 2s ease-in-out infinite',
       },
       keyframes: {
         fadeIn: {
@@ -27,10 +26,6 @@ export default {
         zoomIn: {
           '0%': { transform: 'scale(0.95)' },
           '100%': { transform: 'scale(1)' },
-        },
-        shimmer: {
-          '0%': { backgroundPosition: '-200% 0' },
-          '100%': { backgroundPosition: '200% 0' },
         },
       },
     },

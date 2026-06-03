@@ -1334,13 +1334,17 @@ async function runAfterReturnAccountabilityAndProcessorAssign(
         [processorId, ...departmentAssets.map((a: { id: string }) => a.id)]
       )) as any[];
       const loc = firstAssignment?.[0];
+
+      // Use the asset category's department (IT/Admin scope) — same source used by regular accountability forms
+      const originalDeptId = expandedList[0]?.department_id || null;
+
       const accountabilityFormReq = {
         ...req,
         user: { userID: processorId },
         body: {
           assets: departmentAssets,
           userId: processorId,
-          departmentId: deptKey !== 'other' ? deptKey : null,
+          departmentId: originalDeptId,
           locationId: loc?.location_id || null,
           formOrigin: 'processor_return',
           issuerSignature: processorDigitalSignature,

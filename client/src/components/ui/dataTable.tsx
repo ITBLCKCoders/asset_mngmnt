@@ -67,6 +67,7 @@ import {
 } from './tooltip';
 import { formatDistanceToNow } from 'date-fns';
 import { cn } from '@/lib/utils';
+import { Shimmer } from '@/components/ui/shimmer';
 
 type DataTableProps<T> = {
   data: T[];
@@ -305,38 +306,18 @@ export function DataTable<T>({
   // Skeleton loading component for table header
   const TableHeaderSkeleton = () => (
     <div className="space-y-4">
-      {/* Table header skeleton */}
       <div className="flex space-x-4 mb-4">
         <div className="flex-1 space-y-2">
-          <div
-            className={cn(
-              'animate-shimmer rounded bg-gray-200/80',
-              'h-6 w-full'
-            )}
-          />
-          <div
-            className={cn(
-              'animate-shimmer rounded bg-gray-200/80',
-              'h-4 w-3/4'
-            )}
-          />
+          <Shimmer className="h-6 w-full" />
+          <Shimmer className="h-4 w-3/4" />
         </div>
-        <div
-          className={cn('animate-shimmer rounded bg-gray-200/80', 'h-10 w-32')}
-        />
+        <Shimmer className="h-10 w-32" />
       </div>
-      {/* Table body skeleton - simulate actual table structure */}
       <div className="space-y-3">
         {Array.from({ length: 5 }, (_, i) => (
           <div key={i} className="flex gap-4 border-b border-gray-100 py-3">
             {Array.from({ length: 28 }, (_, j) => (
-              <div
-                key={j}
-                className={cn(
-                  'animate-shimmer rounded bg-gray-200/80',
-                  'h-12 flex-1 min-w-0'
-                )}
-              />
+              <Shimmer key={j} className="h-12 flex-1 min-w-0" />
             ))}
           </div>
         ))}
@@ -352,36 +333,16 @@ export function DataTable<T>({
           <div className="space-y-3">
             {Array.from({ length: 3 }, (_, j) => (
               <div key={j} className="flex justify-between">
-                <div
-                  className={cn(
-                    'animate-shimmer rounded bg-gray-200/80',
-                    'h-3 w-16'
-                  )}
-                />
-                <div
-                  className={cn(
-                    'animate-shimmer rounded bg-gray-200/80',
-                    'h-4 w-24'
-                  )}
-                />
+                <Shimmer className="h-3 w-16" />
+                <Shimmer className="h-4 w-24" />
               </div>
             ))}
             <div className="pt-2 border-t border-gray-100">
               <div className="grid grid-cols-2 gap-2">
                 {Array.from({ length: 4 }, (_, k) => (
                   <div key={k} className="space-y-1">
-                    <div
-                      className={cn(
-                        'animate-shimmer rounded bg-gray-200/80',
-                        'h-3 w-12'
-                      )}
-                    />
-                    <div
-                      className={cn(
-                        'animate-shimmer rounded bg-gray-200/80',
-                        'h-4 w-20'
-                      )}
-                    />
+                    <Shimmer className="h-3 w-12" />
+                    <Shimmer className="h-4 w-20" />
                   </div>
                 ))}
               </div>
