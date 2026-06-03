@@ -39,7 +39,7 @@ import { useUserPermissions } from '@/hooks/useUserPermissions';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Badge } from '@/components/ui/badge';
 import { useAvatarPreview } from '@/hooks/avatarPreview';
-import { useEffect, useRef, useState, useTransition } from 'react';
+import { memo, useCallback, useEffect, useMemo, useRef, useState, useTransition } from 'react';
 import { cn } from '@/lib/utils';
 import { api, setToken } from '@/lib/api';
 import { ASSET_SIDEBAR_ENTRIES } from '@/components/sidebar/sidebarConfig';
@@ -58,44 +58,39 @@ interface SidebarProps {
 
 
 
-export default function Sidebar({ onLogout }: SidebarProps) {
+const Sidebar = memo(function Sidebar({ onLogout }: SidebarProps) {
+
   const navigate = useNavigate();
   const location = useLocation();
   const { user, loading } = useCurrentUser();
   const { hasPermission } = useUserPermissions();
   const { previewUrl, clearPreview } = useAvatarPreview();
-  const [, startTransition] = useTransition();
+  const [isPending, startTransition] = useTransition();
 
   /**
    * Wraps `navigate` in a transition so the previous page stays visible while
    * the next lazy chunk loads, eliminating the `RouteContentFallback` flash.
    */
-  const go = (path: string) => {
+  const go = useCallback((path: string) => {
     startTransition(() => navigate(path));
-  };
+  }, [navigate, startTransition]);
 
-  /**
-   * Hover/focus handlers that warm-load a route's JS chunk before the click.
-   * Spread onto navigable buttons via `{...prefetch(path)}`.
-   */
-  const prefetch = (path: string) => ({
-    onMouseEnter: () => prefetchRoute(path),
-    onFocus: () => prefetchRoute(path),
-  });
-
-  /** Same as `prefetch` but for parent toggle buttons that gate a submenu. */
-  const prefetchMany = (paths: readonly string[]) => ({
-    onMouseEnter: () => prefetchRoutes(paths),
-    onFocus: () => prefetchRoutes(paths),
-  });
-
-  const [assetsOpen, setAssetsOpen] = useState(false);
-  const [formsOpen, setFormsOpen] = useState(false);
-  const [reportsOpen, setReportsOpen] = useState(false);
-  const [userManualOpen, setUserManualOpen] = useState(false);
-  const [assetNestedOpen, setAssetNestedOpen] = useState<Record<string, boolean>>(
-    {}
+  const prefetch = useCallback(
+    (path: string) => ({
+      onMouseEnter: () => prefetchRoute(path),
+      onFocus: () => prefetchRoute(path),
+    }),
+    []
   );
+
+  const prefetchMany = useCallback(
+    (paths: readonly string[]) => ({
+      onMouseEnter: () => prefetchRoutes(paths),
+      onFocus: () => prefetchRoutes(paths),
+    }),
+    []
+  );
+
   const savedAvatarUrlRef = useRef<string | undefined>(undefined);
 
   useEffect(() => {
@@ -105,85 +100,100 @@ export default function Sidebar({ onLogout }: SidebarProps) {
     }
   }, [user?.avatarUrl, clearPreview]);
 
-  useEffect(() => {
-    const path = location.pathname;
+  const [userFormsOpen, setUserFormsOpen] = useState(false);
+  const [userReportsOpen, setUserReportsOpen] = useState(false);
+  const [userManualOpen, setUserManualOpen] = useState(false);
+  const [userAssetsOpen, setUserAssetsOpen] = useState(false);
+  const [userAssetNestedOpen, setUserAssetNestedOpen] = useState<Record<string, boolean>>({});
 
-    if (
-      path === '/forms/accountability' ||
-      path === '/forms/borrow' ||
-      path === '/forms/checklist' ||
-      path === '/forms/return' ||
-      path === '/forms/transfer' ||
-      path === '/approvals'
-    ) {
-      setFormsOpen(true);
-    }
-
-    if (path.startsWith('/reports') || path.startsWith('/history/')) {
-      setReportsOpen(true);
-    }
-
-    setUserManualOpen(
-      path === '/user-manual' || path === '/flow-diagrams'
+  const formsOpenMatch = useMemo(() => {
+    const p = location.pathname;
+    return (
+      p === '/forms/accountability' ||
+      p === '/forms/borrow' ||
+      p === '/forms/checklist' ||
+      p === '/forms/return' ||
+      p === '/forms/transfer' ||
+      p === '/approvals'
     );
-
-    if (path.startsWith('/assets') && path !== '/assets/my-assets') {
-      setAssetsOpen(true);
-    }
-
-    setAssetNestedOpen(prev => {
-      const next = { ...prev };
-      if (
-        path === '/assets/borrow' ||
-        path.startsWith('/assets/borrow-requests')
-      ) {
-        next['assets-borrow'] = true;
-      }
-      if (path.startsWith('/assets/transfer-request')) {
-        next['assets-transfer-request'] = true;
-      } else if (
-        path === '/assets/transfer' ||
-        path.startsWith('/assets/transfer-requests')
-      ) {
-        next['assets-transfer'] = true;
-      }
-      if (path.startsWith('/assets/return-request')) {
-        next['assets-return-request'] = true;
-      } else if (
-        path === '/assets/return' ||
-        path.startsWith('/assets/return-requests')
-      ) {
-        next['assets-return'] = true;
-      }
-      return next;
-    });
   }, [location.pathname]);
+  const formsOpen = userFormsOpen || formsOpenMatch;
+
+  const reportsOpenMatch = useMemo(() => {
+    const p = location.pathname;
+    return p.startsWith('/reports') || p.startsWith('/history/');
+  }, [location.pathname]);
+  const reportsOpen = userReportsOpen || reportsOpenMatch;
+
+  const manualOpenMatch = useMemo(() => {
+    const p = location.pathname;
+    return p === '/user-manual' || p === '/flow-diagrams';
+  }, [location.pathname]);
+  const manualOpen = userManualOpen || manualOpenMatch;
+
+  const assetsOpenMatch = useMemo(() => {
+    const p = location.pathname;
+    return p.startsWith('/assets') && p !== '/assets/my-assets';
+  }, [location.pathname]);
+  const assetsOpen = userAssetsOpen || assetsOpenMatch;
+
+  const assetNestedOpen = useMemo(() => {
+    const path = location.pathname;
+    const routeMatch: Record<string, boolean> = {};
+    if (
+      path === '/assets/borrow' ||
+      path.startsWith('/assets/borrow-requests')
+    ) {
+      routeMatch['assets-borrow'] = true;
+    }
+    if (path.startsWith('/assets/transfer-request')) {
+      routeMatch['assets-transfer-request'] = true;
+    } else if (
+      path === '/assets/transfer' ||
+      path.startsWith('/assets/transfer-requests')
+    ) {
+      routeMatch['assets-transfer'] = true;
+    }
+    if (path.startsWith('/assets/return-request')) {
+      routeMatch['assets-return-request'] = true;
+    } else if (
+      path === '/assets/return' ||
+      path.startsWith('/assets/return-requests')
+    ) {
+      routeMatch['assets-return'] = true;
+    }
+    return { ...userAssetNestedOpen, ...routeMatch };
+  }, [location.pathname, userAssetNestedOpen]);
 
   const displayAvatarUrl = previewUrl || user?.avatarUrl;
 
-  const handleProfileClick = () => {
-    navigate('/profile');
-  };
+  const handleProfileClick = useCallback(() => {
+    startTransition(() => navigate('/profile'));
+  }, [navigate, startTransition]);
 
-  const initials =
-    user?.username
-      ?.split(' ')
-      .map(n => n[0])
-      .join('')
-      .toUpperCase()
-      .slice(0, 2) ?? 'GU';
+  const initials = useMemo(
+    () =>
+      user?.username
+        ?.split(' ')
+        .map(n => n[0])
+        .join('')
+        .toUpperCase()
+        .slice(0, 2) ?? 'GU',
+    [user?.username]
+  );
 
-  const matchesPath = (path: string) => {
-    // For /assets, only match exactly - don't match /assets/assignment, /assets/borrow, etc.
-    if (path === '/assets') {
-      return location.pathname === '/assets';
-    }
-    // For other paths, use the original logic
-    return location.pathname === path || location.pathname.startsWith(`${path}/`);
-  };
+  const matchesPath = useCallback(
+    (path: string) => {
+      if (path === '/assets') {
+        return location.pathname === '/assets';
+      }
+      return location.pathname === path || location.pathname.startsWith(`${path}/`);
+    },
+    [location.pathname]
+  );
   const reportSection = new URLSearchParams(location.search).get('section');
 
-  const handleLogout = async () => {
+  const handleLogout = useCallback(async () => {
     try {
       await api.post('/auth/logout').catch(() => {});
     } finally {
@@ -199,7 +209,7 @@ export default function Sidebar({ onLogout }: SidebarProps) {
       onLogout?.();
       navigate('/login', { replace: true });
     }
-  };
+  }, [navigate, onLogout]);
 
   return (
     <TooltipProvider delayDuration={150}>
@@ -348,7 +358,7 @@ export default function Sidebar({ onLogout }: SidebarProps) {
                     }
                   >
                     <button
-                      onClick={() => setFormsOpen(!formsOpen)} {...prefetchMany(['/forms/accountability', '/forms/checklist', '/forms/borrow', '/forms/return', '/forms/transfer', '/approvals'])}
+                      onClick={() => setUserFormsOpen(!formsOpen)} {...prefetchMany(['/forms/accountability', '/forms/checklist', '/forms/borrow', '/forms/return', '/forms/transfer', '/approvals'])}
                       className={cn(
                         'flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium w-full transition-all duration-200 justify-between',
                         location.pathname === '/forms/accountability' ||
@@ -522,7 +532,7 @@ export default function Sidebar({ onLogout }: SidebarProps) {
                     }
                   >
                     <button
-                      onClick={() => setAssetsOpen(!assetsOpen)} {...prefetchMany(ASSET_SIDEBAR_ENTRIES.flatMap(e => [e.path, ...(e.children?.map(c => c.path) ?? [])]))}
+                      onClick={() => setUserAssetsOpen(!assetsOpen)} {...prefetchMany(ASSET_SIDEBAR_ENTRIES.flatMap(e => [e.path, ...(e.children?.map(c => c.path) ?? [])]))}
                       className={cn(
                         'flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium w-full transition-all duration-200 justify-between',
                         (location.pathname.startsWith('/assets') &&
@@ -647,7 +657,7 @@ export default function Sidebar({ onLogout }: SidebarProps) {
                                       : 'Expand submenu'
                                   }
                                   onClick={() =>
-                                    setAssetNestedOpen(prev => ({
+                                    setUserAssetNestedOpen((prev: Record<string, boolean>) => ({
                                       ...prev,
                                       [gk]: !prev[gk],
                                     }))
@@ -746,7 +756,7 @@ export default function Sidebar({ onLogout }: SidebarProps) {
                         type="button"
                         aria-expanded={reportsOpen}
                         aria-label={reportsOpen ? 'Collapse reports submenu' : 'Expand reports submenu'}
-                        onClick={() => setReportsOpen(!reportsOpen)} {...prefetch('/reports')}
+                        onClick={() => setUserReportsOpen(!reportsOpen)} {...prefetch('/reports')}
                         className={cn(
                           'flex shrink-0 items-center justify-center rounded-lg px-2 text-white/80 transition-colors hover:bg-white/10 hover:text-white',
                           reportsOpen && 'text-white'
@@ -1002,7 +1012,7 @@ export default function Sidebar({ onLogout }: SidebarProps) {
                 >
                   <button
                     type="button"
-                    onClick={() => setUserManualOpen(!userManualOpen)} {...prefetchMany(['/user-manual', '/flow-diagrams'])}
+                    onClick={() => setUserManualOpen(!manualOpen)} {...prefetchMany(['/user-manual', '/flow-diagrams'])}
                     className={cn(
                       'flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium w-full transition-all duration-200 justify-between',
                       location.pathname === '/user-manual' ||
@@ -1018,7 +1028,7 @@ export default function Sidebar({ onLogout }: SidebarProps) {
                     <ChevronDown
                       className={cn(
                         'h-4 w-4 transition-transform duration-200',
-                        userManualOpen && 'rotate-180'
+                        manualOpen && 'rotate-180'
                       )}
                     />
                   </button>
@@ -1027,7 +1037,7 @@ export default function Sidebar({ onLogout }: SidebarProps) {
                 <div
                   className={cn(
                     'overflow-hidden transition-all duration-300 ease-in-out',
-                    userManualOpen
+                    manualOpen
                       ? 'max-h-[500px] opacity-100'
                       : 'max-h-0 opacity-0'
                   )}
@@ -1089,4 +1099,6 @@ export default function Sidebar({ onLogout }: SidebarProps) {
       </div>
     </TooltipProvider>
   );
-}
+});
+
+export default Sidebar;

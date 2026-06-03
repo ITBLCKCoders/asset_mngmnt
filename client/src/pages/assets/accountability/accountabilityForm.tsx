@@ -1382,9 +1382,6 @@ export function AccountabilityFormCard({
 
   // Fetch all checklists linked to this accountability form
   useEffect(() => {
-    if (lazyLoadDetails) {
-      return;
-    }
     const fetchChecklists = async () => {
       try {
         setChecklistLoading(true);
@@ -1426,7 +1423,7 @@ export function AccountabilityFormCard({
       }
     };
     fetchChecklists();
-  }, [form.id, form.assignment?.id, lazyLoadDetails]);
+  }, [form.id, form.assignment?.id]);
 
   // Fetch intangible assets for the assignment
   useEffect(() => {

@@ -64,6 +64,7 @@ import {
   type AssetReturnData,
   type AssetTransferData,
   type AssetBorrowingData,
+  type AssetChecklistData,
 } from '@/lib/pdfGenerator';
 import SmsOtpDialog from '@/components/auth/SmsOtpDialog';
 
@@ -847,6 +848,61 @@ export const ReturnFormCard: React.FC<{
     };
   }, [showConfirmDialog, canSign, batch]);
 
+  const [activeCardTab, setActiveCardTab] = useState<'details' | 'timeline' | 'checklist'>('details');
+  const [checklists, setChecklists] = useState<ReturnFormChecklistEntry[]>([]);
+  const [activeChecklistKey, setActiveChecklistKey] = useState<string>('');
+  const [checklistLoading, setChecklistLoading] = useState(false);
+
+  const hasChecklist = checklists.length > 0;
+
+  function getChecklistTabKey(checklist: ReturnFormChecklistEntry): string {
+    return checklist.assignment_id || checklist.id;
+  }
+
+  function getChecklistAssetLabel(
+    checklist: ReturnFormChecklistEntry,
+    allReturns: AssetReturnForm[]
+  ): string {
+    const checklistAsset = checklist.asset;
+    const fallback = allReturns.find(r => r.assignment.asset.id === checklistAsset?.id) ?? allReturns[0];
+    const name = checklistAsset?.name || fallback?.assignment.asset.name || 'Asset';
+    const code = checklistAsset?.code || fallback?.assignment.asset.code || '—';
+    return `${name} (${code})`;
+  }
+
+  const activeChecklist =
+    checklists.find(c => getChecklistTabKey(c) === activeChecklistKey) ??
+    checklists[0] ??
+    null;
+
+  // Fetch all offboarding checklists linked to this return form
+  useEffect(() => {
+    if (!batch.formID) return;
+    const fetchChecklists = async () => {
+      try {
+        setChecklistLoading(true);
+        const response = await api.get<{ checklists: ReturnFormChecklistEntry[] }>(
+          `/asset-returns/forms/${batch.formID}/checklists`
+        );
+        const allChecklists = response?.checklists ?? [];
+        const offboardingOnly = allChecklists.filter(c => c.type_offboarding === true);
+        setChecklists(offboardingOnly);
+        if (offboardingOnly.length > 0) {
+          setActiveChecklistKey(getChecklistTabKey(offboardingOnly[0]!));
+        } else {
+          setActiveChecklistKey('');
+        }
+      } catch (error) {
+        console.error('Failed to fetch return form checklists:', error);
+        setChecklists([]);
+        setActiveChecklistKey('');
+      } finally {
+        setChecklistLoading(false);
+      }
+    };
+    fetchChecklists();
+  }, [batch.formID]);
+
   const first = batch.returns[0];
   if (!first?.assignment?.asset) {
     return (
@@ -911,8 +967,8 @@ export const ReturnFormCard: React.FC<{
         </div>
       </CardHeader>
 
-      <Tabs defaultValue="details" className="flex-1 flex flex-col min-h-0">
-        <TabsList className={segmentTabsListClassName + ' mx-4 mb-2 grid grid-cols-2 w-[calc(100%-2rem)]'}>
+      <Tabs value={activeCardTab} onValueChange={(v) => setActiveCardTab(v as 'details' | 'timeline' | 'checklist')} className="flex-1 flex flex-col min-h-0">
+        <TabsList className={`${segmentTabsListClassName} mx-4 mb-2 grid grid-cols-${hasChecklist ? '3' : '2'} w-[calc(100%-2rem)]`}>
           <TabsTrigger
             value="details"
             className={segmentTabsTriggerClassName}
@@ -925,6 +981,14 @@ export const ReturnFormCard: React.FC<{
           >
             Timeline
           </TabsTrigger>
+          {hasChecklist && (
+            <TabsTrigger
+              value="checklist"
+              className={segmentTabsTriggerClassName}
+            >
+              Checklist
+            </TabsTrigger>
+          )}
         </TabsList>
         <TabsContent value="details" className="mt-0 flex-1">
           <CardContent className="space-y-4 flex-1 pt-0">
@@ -1031,6 +1095,20 @@ export const ReturnFormCard: React.FC<{
               dept_head_signed_at={batch.dept_head_signed_at}
               dept_head_user_name={batch.dept_head_user_name}
               process_signed_at={batch.process_signed_at}
+            />
+          </CardContent>
+        </TabsContent>
+        <TabsContent value="checklist" className="mt-0 flex-1">
+          <CardContent className="pt-0">
+            <ReturnChecklistCard
+              checklists={checklists}
+              checklistLoading={checklistLoading}
+              activeChecklistKey={activeChecklistKey}
+              setActiveChecklistKey={setActiveChecklistKey}
+              activeChecklist={activeChecklist}
+              batch={batch}
+              getChecklistTabKey={getChecklistTabKey}
+              getChecklistAssetLabel={getChecklistAssetLabel}
             />
           </CardContent>
         </TabsContent>
@@ -2447,6 +2525,262 @@ type ChecklistRow = {
   } | null;
 };
 
+type ReturnFormChecklistEntry = AssetChecklistData & {
+  asset?: { id: string; code: string | null; name: string | null } | null;
+};
+
+const OFFBOARDING_SECTIONS = [
+  {
+    label: 'Device Inventory & Verification',
+    key: 'deviceInventoryVerification',
+    items: [
+      { key: 'returnCompanyDevice', label: 'Return company device' },
+      { key: 'returnPeripherals', label: 'Return peripherals (mouse, keyboard, cables, etc.)' },
+      { key: 'returnDocumentsKeys', label: 'Return company documents/keys' },
+      { key: 'hardwareInspectionCheck', label: 'Hardware inspection check' },
+    ],
+  },
+  {
+    label: 'Data & Account Handover',
+    key: 'dataAccountHandover',
+    items: [
+      { key: 'backupWorkFiles', label: 'Backup work files to shared drive' },
+      { key: 'transferDocuments', label: 'Transfer documents to team member' },
+      { key: 'forwardEmails', label: 'Forward emails to supervisor' },
+      { key: 'notifyContacts', label: 'Notify external contacts of departure' },
+      { key: 'handoverPasswords', label: 'Handover passwords (manager only)' },
+    ],
+  },
+  {
+    label: 'Security and Access Revocation',
+    key: 'securityAccessRevocation',
+    items: [
+      { key: 'deactivateEmail', label: 'Deactivate email account' },
+      { key: 'revokeSystemAccess', label: 'Revoke system access' },
+      { key: 'removeVpnAccess', label: 'Remove VPN access' },
+      { key: 'deactivateM365License', label: 'Deactivate M365 license' },
+      { key: 'removeSharedMailboxAccess', label: 'Remove shared mailbox access' },
+      { key: 'removeTeamsPhone', label: 'Remove Teams phone number' },
+      { key: 'deactivateSlackZoomDiscord', label: 'Deactivate Slack / Zoom / Discord' },
+      { key: 'removeCloudAccess', label: 'Remove cloud access (AWS, GitHub, etc.)' },
+      { key: 'returnSecurityBadge', label: 'Return security badge / ID' },
+      { key: 'disableBiometrics', label: 'Disable biometric access' },
+      { key: 'wipeMobileDevice', label: 'Wipe mobile device (if company-issued)' },
+      { key: 'revokeRemoteAccess', label: 'Revoke remote desktop access' },
+      { key: 'disableServiceAccounts', label: 'Disable service accounts' },
+      { key: 'exitInterviewCompleted', label: 'Exit interview completed' },
+    ],
+  },
+];
+
+function ReturnChecklistCard({
+  checklists,
+  checklistLoading,
+  activeChecklistKey,
+  setActiveChecklistKey,
+  activeChecklist,
+  batch,
+  getChecklistTabKey,
+  getChecklistAssetLabel,
+}: {
+  checklists: ReturnFormChecklistEntry[];
+  checklistLoading: boolean;
+  activeChecklistKey: string;
+  setActiveChecklistKey: (key: string) => void;
+  activeChecklist: ReturnFormChecklistEntry | null;
+  batch: AssetReturnFormBatch;
+  getChecklistTabKey: (checklist: ReturnFormChecklistEntry) => string;
+  getChecklistAssetLabel: (checklist: ReturnFormChecklistEntry, allReturns: AssetReturnForm[]) => string;
+}) {
+  if (checklistLoading) {
+    return (
+      <div className="space-y-4">
+        <div className="flex gap-2">
+          {[1, 2, 3].map(i => (
+            <Shimmer key={i} className="h-8 w-28 rounded-lg" />
+          ))}
+        </div>
+        <div className="rounded-xl border p-4 space-y-3">
+          <Shimmer className="h-5 w-48 rounded" />
+          <div className="space-y-2">
+            {[1, 2, 3, 4].map(j => (
+              <div key={j} className="flex items-center gap-3">
+                <Shimmer className="h-4 w-4 rounded" />
+                <Shimmer className="h-4 flex-1 rounded" />
+              </div>
+            ))}
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  if (!activeChecklist) {
+    return (
+      <div className="rounded-xl border border-dashed border-slate-300 bg-slate-50 px-4 py-8 text-center text-sm text-slate-500">
+        No offboarding checklist data available
+      </div>
+    );
+  }
+
+  const checklist = activeChecklist;
+  const checklistData = checklist.checklist_data || {};
+
+  function renderSection(section: { label: string; key: string; items: { key: string; label: string }[] }) {
+    const sectionData = checklistData[section.key] || {};
+    return (
+      <div key={section.key} className="space-y-2">
+        <h4 className="text-xs font-semibold uppercase tracking-wide text-slate-700">{section.label}</h4>
+        <div className="space-y-1">
+          {section.items.map(item => {
+            const checked = sectionData[item.key] === true;
+            return (
+              <div key={item.key} className="flex items-center gap-2 text-sm">
+                <span className={`w-4 h-4 rounded border flex items-center justify-center flex-shrink-0 ${checked ? 'bg-green-500 border-green-500' : 'border-slate-300'}`}>
+                  {checked && <span className="text-white text-[10px]">&#10003;</span>}
+                </span>
+                <span className={checked ? 'text-slate-700' : 'text-slate-500'}>{item.label}</span>
+              </div>
+            );
+          })}
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div className="space-y-3">
+      {checklists.length > 1 && (
+        <Tabs
+          value={activeChecklistKey}
+          onValueChange={setActiveChecklistKey}
+          className="w-full"
+        >
+          <TabsList
+            className={
+              segmentTabsListClassName +
+              ' flex h-auto w-full flex-wrap justify-start gap-1'
+            }
+          >
+            {checklists.map(entry => (
+              <TabsTrigger
+                key={getChecklistTabKey(entry)}
+                value={getChecklistTabKey(entry)}
+                className={segmentTabsTriggerClassName + ' text-xs'}
+              >
+                {getChecklistAssetLabel(entry, batch.returns)}
+              </TabsTrigger>
+            ))}
+          </TabsList>
+        </Tabs>
+      )}
+
+      <div className="space-y-3 rounded-xl border border-red-200 bg-gradient-to-br from-red-50/80 via-white to-slate-50 p-4 shadow-md">
+        {/* Header */}
+        <div className="flex items-start justify-between gap-3 border-b border-red-100 pb-3">
+          <div>
+            <p className="text-xs font-medium uppercase tracking-wide text-red-600">
+              Offboarding Checklist
+            </p>
+            <p className="mt-1 font-mono text-sm font-semibold text-slate-900">
+              {checklist.form_number || `CHK-${checklist.assignment_id}`}
+            </p>
+          </div>
+          <div className="flex flex-wrap justify-end gap-1.5">
+            {checklist.type_onboarding && (
+              <Badge className="bg-emerald-100 text-emerald-800 hover:bg-emerald-100">Onboarding</Badge>
+            )}
+            {checklist.type_offboarding && (
+              <Badge className="bg-blue-100 text-blue-800 hover:bg-blue-100">Offboarding</Badge>
+            )}
+            {checklist.employee_signed_at && (
+              <Badge className="bg-green-100 text-green-800 hover:bg-green-100">Employee Signed</Badge>
+            )}
+            {checklist.dept_head_signed_at && (
+              <Badge className="bg-purple-100 text-purple-800 hover:bg-purple-100">Dept Head Approved</Badge>
+            )}
+            {checklist.it_manager_signed_at && (
+              <Badge className="bg-indigo-100 text-indigo-800 hover:bg-indigo-100">IT Manager Received</Badge>
+            )}
+          </div>
+        </div>
+
+        {/* Employee info */}
+        <div className="grid gap-3 text-sm sm:grid-cols-2">
+          <div className="rounded-lg border border-slate-200 bg-white/80 p-3">
+            <p className="text-xs font-medium uppercase tracking-wide text-slate-500">Date Created</p>
+            <p className="mt-1 font-medium text-slate-900">{new Date(checklist.created_at).toLocaleDateString()}</p>
+          </div>
+          <div className="rounded-lg border border-slate-200 bg-white/80 p-3">
+            <p className="text-xs font-medium uppercase tracking-wide text-slate-500">Employee</p>
+            <p className="mt-1 font-medium text-slate-900">{checklist.employee_name}</p>
+            {checklist.employee_designation && (
+              <p className="text-xs text-slate-500">{checklist.employee_designation}</p>
+            )}
+            {checklist.employee_department && (
+              <p className="text-xs text-slate-500">{checklist.employee_department}</p>
+            )}
+          </div>
+        </div>
+
+        <div className="rounded-lg border border-slate-200 bg-white/80 p-3 text-sm">
+          <p className="text-xs font-medium uppercase tracking-wide text-slate-500">Received By</p>
+          <p className="mt-1 font-medium text-slate-900">{checklist.received_by || 'N/A'}</p>
+        </div>
+
+        {/* Offboarding sections */}
+        <div className="space-y-4">
+          {OFFBOARDING_SECTIONS.map(section => renderSection(section))}
+        </div>
+
+        {/* Remarks */}
+        {checklist.remarks && (
+          <div className="rounded-lg border border-slate-200 bg-white/80 p-3 text-sm">
+            <p className="text-xs font-medium uppercase tracking-wide text-slate-500">Remarks</p>
+            <p className="mt-1 text-slate-700">{checklist.remarks}</p>
+          </div>
+        )}
+
+        {/* Signatory status */}
+        <div className="grid gap-3 text-sm sm:grid-cols-3">
+          <div className="rounded-lg border border-slate-200 bg-white/80 p-3">
+            <p className="text-xs font-medium uppercase tracking-wide text-slate-500">Employee</p>
+            <p className={`mt-1 font-medium ${checklist.employee_signed_at ? 'text-green-700' : 'text-slate-400'}`}>
+              {checklist.employee_signed_at ? 'Signed' : 'Pending'}
+            </p>
+            {checklist.employee_signed_at && (
+              <p className="text-xs text-slate-500">
+                {new Date(checklist.employee_signed_at).toLocaleDateString()}
+              </p>
+            )}
+          </div>
+          <div className="rounded-lg border border-slate-200 bg-white/80 p-3">
+            <p className="text-xs font-medium uppercase tracking-wide text-slate-500">Department Head</p>
+            <p className={`mt-1 font-medium ${checklist.dept_head_signed_at ? 'text-green-700' : 'text-slate-400'}`}>
+              {checklist.dept_head_signed_at ? 'Approved' : 'Pending'}
+            </p>
+            {checklist.dept_head_signed_at && (
+              <p className="text-xs text-slate-500">
+                {new Date(checklist.dept_head_signed_at).toLocaleDateString()}
+              </p>
+            )}
+          </div>
+          <div className="rounded-lg border border-slate-200 bg-white/80 p-3">
+            <p className="text-xs font-medium uppercase tracking-wide text-slate-500">IT Manager</p>
+            <p className={`mt-1 font-medium ${checklist.it_manager_signed_at ? 'text-green-700' : 'text-slate-400'}`}>
+              {checklist.it_manager_signed_at ? 'Received' : 'Pending'}
+            </p>
+            {checklist.it_manager_signed_at && (
+              <p className="text-xs text-slate-500">
+                {new Date(checklist.it_manager_signed_at).toLocaleDateString()}
+              </p>
+            )}
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
 
 export default function DocumentsTab({
   setActiveTab,

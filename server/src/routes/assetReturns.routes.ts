@@ -18,6 +18,7 @@ import {
   uploadConditionPhotoHandler,
   createReturnChecklistHandler,
   getReturnChecklistByAssignmentIdHandler,
+  getReturnFormChecklistsHandler,
 } from '../controllers/assetReturns.controller.js';
 import { authenticate } from '../middleware/authenticate.js';
 import { verifyFileMagicBytes } from '../middleware/verifyFileMagicBytes.js';
@@ -264,6 +265,24 @@ router.post('/checklist', authenticate, createReturnChecklistHandler);
  *       404: { description: Checklist not found }
  */
 router.get('/checklist/:assignmentId', authenticate, getReturnChecklistByAssignmentIdHandler);
+
+/**
+ * @swagger
+ * /api/asset-returns/forms/{formId}/checklists:
+ *   get:
+ *     tags: [Asset Returns]
+ *     summary: Get all offboarding checklists linked to a return form
+ *     parameters:
+ *       - in: path
+ *         name: formId
+ *         required: true
+ *         schema: { type: string }
+ *     responses:
+ *       200: { description: List of offboarding checklists }
+ *       401: { description: Unauthorized }
+ *       404: { description: Not found }
+ */
+router.get('/forms/:formId/checklists', authenticate, getReturnFormChecklistsHandler);
 
 /**
  * @swagger

@@ -4868,3 +4868,28 @@ export async function getReturnChecklistByAssignmentIdHandler(
     return res.status(500).json({ error: 'Failed to get checklist' });
   }
 }
+
+export async function getReturnFormChecklistsHandler(
+  req: AuthRequest,
+  res: Response
+) {
+  try {
+    const { formId } = req.params;
+
+    if (!formId) {
+      return res.status(400).json({ error: 'Form ID is required' });
+    }
+
+    const assignmentIds = await getAssignmentIdsByReturnFormId(formId);
+    if (assignmentIds.length === 0) {
+      return res.status(200).json({ checklists: [] });
+    }
+
+    const checklists = await checklistRepo.getChecklistsByAssignmentIds(assignmentIds);
+
+    return res.status(200).json({ checklists });
+  } catch (error) {
+    logger.error('Get return form checklists failed:', error);
+    return res.status(500).json({ error: 'Failed to fetch return form checklists' });
+  }
+}
