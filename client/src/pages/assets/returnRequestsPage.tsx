@@ -51,6 +51,11 @@ import {
 import type { Department, Location } from '@/types/assets';
 import SmsOtpDialog from '@/components/auth/SmsOtpDialog';
 import { useRef } from 'react';
+import {
+  AssetChecklistDialog,
+  type AssetChecklistSubmitPayload,
+} from '@/pages/assets/asset-issuance/components/AssetChecklistDialog';
+import { filterComputerTypeAssets } from '@/utils/assetTypeDetection';
 
 const conditionOptions = [
   {
@@ -92,11 +97,23 @@ type PendingReturn = {
   return_department_id?: string | null;
   return_location_id?: string | null;
   return_location_room_id?: string | null;
-  assignment?: {
-    assignmentID: string;
-    asset?: { code?: string; name?: string; id?: string };
-    user?: { first_name?: string; last_name?: string };
-  };
+    assignment?: {
+      assignmentID: string;
+      asset?: {
+        code?: string;
+        name?: string;
+        id?: string;
+        category_name?: string;
+        type_name?: string;
+      };
+      user?: {
+        first_name?: string;
+        last_name?: string;
+        position?: string | null;
+        company?: { id?: string; name?: string };
+        department?: { id?: string; name?: string };
+      };
+    };
 };
 
 type PendingForm = {
@@ -152,6 +169,17 @@ export default function ReturnRequestsPage() {
   const [smsOtpDialogDeclineOpen, setSmsOtpDialogDeclineOpen] = useState(false);
   const pendingProcessActionRef = useRef<(() => Promise<void>) | null>(null);
   const pendingDeclineActionRef = useRef<(() => Promise<void>) | null>(null);
+  const processingFormRef = useRef<PendingForm | null>(null);
+  const pendingProcessParamsRef = useRef<{
+    formID: string;
+    assetReturns: { assignmentId: string; condition: string; notes: string; imageUrls: string[]; returnDepartmentId: string; returnLocationId: string; returnAreaId: string | undefined }[];
+    returnType: string;
+    assignToProcessor: boolean;
+  } | null>(null);
+  const [checklistDialogOpen, setChecklistDialogOpen] = useState(false);
+  const [checklistStepIndex, setChecklistStepIndex] = useState(0);
+  const [checklistAssets, setChecklistAssets] = useState<{ id: string; name: string; type?: string; category?: string }[]>([]);
+  const pendingReturnChecklistsRef = useRef<any[]>([]);
 
   // Close parent dialog when SMS OTP dialog opens to prevent scrollbar issues
   useEffect(() => {
@@ -374,13 +402,40 @@ export default function ReturnRequestsPage() {
     if (returnTypeOffboarding) returnTypeParts.push('Offboarding');
     const returnType = returnTypeParts.join(',');
 
-    // Set the pending action and open SMS OTP dialog
+    // Save form ref for later use
+    processingFormRef.current = processForm;
+
+    // Check for computer-type assets BEFORE opening OTP (matches assignment page flow)
+    const mappedAssets = (processForm?.returns || []).map(r => {
+      const a = r.assignment?.asset;
+      return {
+        id: a?.id || r.assignment_id,
+        name: a?.name || '',
+        type: a?.type_name || '',
+        category: a?.category_name || '',
+      };
+    });
+    const computerReturns = filterComputerTypeAssets(mappedAssets);
+
+    if (computerReturns.length > 0 && returnTypeOffboarding) {
+      pendingProcessParamsRef.current = {
+        formID: processForm.formID,
+        assetReturns,
+        returnType: returnType || '',
+        assignToProcessor,
+      };
+      setChecklistAssets(computerReturns);
+      setChecklistStepIndex(0);
+      pendingReturnChecklistsRef.current = [];
+      setChecklistDialogOpen(true);
+      return;
+    }
+
+    // No computer assets — proceed directly to OTP (existing flow)
     pendingProcessActionRef.current = async () => {
       setSubmitting(true);
       try {
-        const processRes = await api.post<{
-          returnerHasRemainingAssets?: boolean;
-        }>(`/asset-returns/forms/${processForm.formID}/process`, {
+        await api.post(`/asset-returns/forms/${processForm.formID}/process`, {
           processSignature: {
             signed_at: new Date().toISOString(),
           },
@@ -389,6 +444,104 @@ export default function ReturnRequestsPage() {
           assignToProcessor,
           receivedBy: assignToProcessor ? (currentUser?.id ?? null) : null,
         });
+        toast.success('Return processed successfully');
+        setProcessForm(null);
+        await fetchPending();
+      } catch (err: unknown) {
+        const e = err as { data?: { error?: string } };
+        toast.error(e?.data?.error ?? 'Failed to process return');
+      } finally {
+        setSubmitting(false);
+      }
+    };
+    setSmsOtpDialogOpen(true);
+  };
+
+  const handleChecklistNext = async (payload: AssetChecklistSubmitPayload) => {
+    const asset = checklistAssets[checklistStepIndex];
+    const r = processingFormRef.current?.returns.find(
+      ret => (ret.assignment?.asset?.id || ret.assignment_id) === asset.id
+    );
+    pendingReturnChecklistsRef.current.push({
+      assignmentId: r?.assignment?.assignmentID || r?.assignment_id || '',
+      employeeId: processingFormRef.current?.user_id || '',
+      employeeName: processingFormRef.current
+        ? returnerName(processingFormRef.current)
+        : '',
+      employeeDesignation: r?.assignment?.user?.position || '',
+      employeeDepartment: r?.assignment?.user?.department?.name || '',
+      employeeCompany: r?.assignment?.user?.company?.name || '',
+      typeOnboarding: payload.typeOnboarding,
+      typeOffboarding: payload.typeOffboarding,
+      receivedBy: payload.receivedBy,
+      checklistData: payload.checklistData,
+      remarks: payload.remarks,
+    });
+    setChecklistStepIndex(prev => prev + 1);
+  };
+
+  const handleChecklistFinalSubmit = async (payload: AssetChecklistSubmitPayload) => {
+    const asset = checklistAssets[checklistStepIndex];
+    const r = processingFormRef.current?.returns.find(
+      ret => (ret.assignment?.asset?.id || ret.assignment_id) === asset.id
+    );
+    pendingReturnChecklistsRef.current.push({
+      assignmentId: r?.assignment?.assignmentID || r?.assignment_id || '',
+      employeeId: processingFormRef.current?.user_id || '',
+      employeeName: processingFormRef.current
+        ? returnerName(processingFormRef.current)
+        : '',
+      employeeDesignation: r?.assignment?.user?.position || '',
+      employeeDepartment: r?.assignment?.user?.department?.name || '',
+      employeeCompany: r?.assignment?.user?.company?.name || '',
+      typeOnboarding: payload.typeOnboarding,
+      typeOffboarding: payload.typeOffboarding,
+      receivedBy: payload.receivedBy,
+      checklistData: payload.checklistData,
+      remarks: payload.remarks,
+    });
+
+    setChecklistDialogOpen(false);
+
+    // Proceed to OTP, then process + save checklists
+    const params = pendingProcessParamsRef.current;
+    if (!params) return;
+
+    pendingProcessActionRef.current = async () => {
+      setSubmitting(true);
+      try {
+        await api.post(`/asset-returns/forms/${params.formID}/process`, {
+          processSignature: {
+            signed_at: new Date().toISOString(),
+          },
+          assetReturns: params.assetReturns,
+          returnType: params.returnType || undefined,
+          assignToProcessor: params.assignToProcessor,
+          receivedBy: params.assignToProcessor ? (currentUser?.id ?? null) : null,
+        });
+
+        const digitalSignature =
+          (currentUser as { digitalSignature?: string | null })
+            ?.digitalSignature ?? null;
+        await Promise.all(
+          pendingReturnChecklistsRef.current.map(checklist =>
+            api.post('/asset-returns/checklist', {
+              assignmentId: checklist.assignmentId,
+              employeeId: checklist.employeeId,
+              employeeName: checklist.employeeName,
+              employeeDesignation: checklist.employeeDesignation,
+              employeeDepartment: checklist.employeeDepartment,
+              employeeCompany: checklist.employeeCompany,
+              typeOnboarding: checklist.typeOnboarding,
+              typeOffboarding: checklist.typeOffboarding,
+              receivedBy: checklist.receivedBy,
+              checklistData: checklist.checklistData,
+              remarks: checklist.remarks,
+              digitalSignature,
+            })
+          )
+        );
+
         toast.success('Return processed successfully');
         setProcessForm(null);
         await fetchPending();
@@ -1225,6 +1378,56 @@ export default function ReturnRequestsPage() {
             </AppDialogChromeFooter>
           </AppDialogFrame>
         </Dialog>
+
+        <AssetChecklistDialog
+          isOpen={checklistDialogOpen}
+          onOpenChange={open => {
+            if (!open) {
+              setChecklistDialogOpen(false);
+              pendingReturnChecklistsRef.current = [];
+            }
+          }}
+          onCancel={() => {
+            pendingReturnChecklistsRef.current = [];
+          }}
+          checklistVariant="offboarding"
+          selectedAssets={checklistAssets.map(a => a.id)}
+          assets={checklistAssets}
+          computerAssets={checklistAssets}
+          currentIndex={checklistStepIndex}
+          selectedUser={processingFormRef.current?.user_id || ''}
+          users={
+            processingFormRef.current
+              ? [
+                  {
+                    userID: processingFormRef.current.user_id,
+                    first_name:
+                      processingFormRef.current.returns[0]?.assignment?.user
+                        ?.first_name || '',
+                    last_name:
+                      processingFormRef.current.returns[0]?.assignment?.user
+                        ?.last_name || '',
+                    position:
+                      processingFormRef.current.returns[0]?.assignment?.user
+                        ?.position || null,
+                    department_id:
+                      processingFormRef.current.returns[0]?.assignment?.user
+                        ?.department?.id || '',
+                    company:
+                      processingFormRef.current.returns[0]?.assignment?.user
+                        ?.company || null,
+                  },
+                ]
+              : []
+          }
+          departments={departments.map(d => ({
+            departmentID: d.departmentID,
+            name: d.name,
+          }))}
+          currentUserPosition={currentUser?.position || ''}
+          onNext={handleChecklistNext}
+          onFinalSubmit={handleChecklistFinalSubmit}
+        />
       </main>
     </div>
   );

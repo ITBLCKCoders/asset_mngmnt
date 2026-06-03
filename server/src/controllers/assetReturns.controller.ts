@@ -67,6 +67,9 @@ import {
   getAssetCodeByAssetId,
   executeRawWrite,
 } from '../repositories/assetTransferForm.repository.js';
+import * as checklistRepo from '../repositories/assetChecklist.repository.js';
+import { generateChecklistFormNumber, generateChecklistFormNumberFallback } from '../utils/checklistFormNumber.js';
+import { getCategoryDepartmentForAssetIds, getCompanyIdByDepartment } from '../repositories/assetReturn.repository.js';
 
 /** Format process_signed_at for API: we store server local time in DB; return ISO UTC so client shows correct local time. */
 function formatProcessSignedAtForApi(
@@ -2547,6 +2550,31 @@ export async function signAssetReturnFormHandler(
       newValues: { signed_at: new Date().toISOString(), signed_by: userId },
     });
 
+    // Auto-sign linked offboarding checklists as employee
+    try {
+      const assignmentIds = await getAssignmentIdsByReturnFormId(formId);
+      if (assignmentIds.length > 0) {
+        const checklists = await checklistRepo.getChecklistsByAssignmentIds(assignmentIds);
+        const unsignedChecklists = checklists.filter(
+          (c: any) => !c.employee_signed_at
+        );
+        if (unsignedChecklists.length > 0) {
+          await checklistRepo.signChecklistsAsEmployee({
+            checklistIds: unsignedChecklists.map((c: any) => c.id),
+            employeeId: userId,
+            digitalSignature: returnerDigitalSignature,
+          });
+          await checklistRepo.backfillEmployeeChecklistSignatures({
+            checklistIds: unsignedChecklists.map((c: any) => c.id),
+            employeeId: userId,
+            digitalSignature: returnerDigitalSignature ?? '',
+          });
+        }
+      }
+    } catch (checklistErr) {
+      logger.error('Failed to auto-sign offboarding checklists:', checklistErr);
+    }
+
     return res.json({
       message: 'Return form signed successfully',
       formID: formId,
@@ -3413,6 +3441,30 @@ export async function receiveReturnFormHandler(
         it_manager_signed_by: userId,
       },
     });
+
+    // Auto-receive linked offboarding checklists as IT Manager
+    try {
+      const assignmentIds = await getAssignmentIdsByReturnFormId(formId);
+      if (assignmentIds.length > 0) {
+        const checklists = await checklistRepo.getChecklistsByAssignmentIds(assignmentIds);
+        const unreceivedChecklists = checklists.filter(
+          (c: any) => c.dept_head_signed_at && !c.it_manager_signed_at
+        );
+        if (unreceivedChecklists.length > 0) {
+          const formCompanyId = (form as any).form_company_id || (form as any).company_id || null;
+          if (formCompanyId) {
+            await checklistRepo.receiveChecklistsAsItManager({
+              checklistIds: unreceivedChecklists.map((c: any) => c.id),
+              approverUserId: userId,
+              companyId: formCompanyId,
+              digitalSignature: itManagerDigitalSignature,
+            });
+          }
+        }
+      }
+    } catch (checklistErr) {
+      logger.error('Failed to auto-receive offboarding checklists:', checklistErr);
+    }
 
     const rawSignedAt = new Date().toISOString();
     return res.json({
@@ -4405,6 +4457,32 @@ export async function approveReturnFormHandler(
       logger.error('Failed to send notification to asset role users:', notifError);
     }
 
+    // Auto-approve linked offboarding checklists as dept head
+    try {
+      const assignmentIds = await getAssignmentIdsByReturnFormId(formId);
+      if (assignmentIds.length > 0) {
+        const checklists = await checklistRepo.getChecklistsByAssignmentIds(assignmentIds);
+        const unapprovedChecklists = checklists.filter(
+          (c: any) => c.employee_signed_at && !c.dept_head_signed_at
+        );
+        if (unapprovedChecklists.length > 0) {
+          const dHeadDeptId = await getUserDepartmentId(userId);
+          const effectiveCompanyId = companyId || form.company_id || null;
+          if (dHeadDeptId && effectiveCompanyId) {
+            await checklistRepo.approveChecklistsAsDeptHead({
+              checklistIds: unapprovedChecklists.map((c: any) => c.id),
+              approverUserId: userId,
+              approverDepartmentId: dHeadDeptId,
+              companyId: effectiveCompanyId,
+              digitalSignature: deptHeadDigitalSignature,
+            });
+          }
+        }
+      }
+    } catch (checklistErr) {
+      logger.error('Failed to auto-approve offboarding checklists:', checklistErr);
+    }
+
     const rawSignedAt = new Date().toISOString();
     return res.json({
       message: 'Return form approved successfully',
@@ -4649,5 +4727,144 @@ export async function uploadConditionPhotoHandler(
     return res
       .status(500)
       .json({ error: 'Upload failed', details: err.message });
+  }
+}
+
+async function getAssignmentIdsByReturnFormId(formId: string): Promise<string[]> {
+  try {
+    const [rows] = (await pool.execute(
+      'SELECT assignment_id FROM asset_returns WHERE form_id = ?',
+      [formId]
+    )) as any[];
+    return (rows || []).map((r: any) => r.assignment_id).filter(Boolean);
+  } catch {
+    return [];
+  }
+}
+
+export async function createReturnChecklistHandler(
+  req: AuthRequest,
+  res: Response
+) {
+  try {
+    const {
+      assignmentId,
+      employeeId,
+      employeeName,
+      employeeDesignation,
+      employeeDepartment,
+      employeeCompany,
+      typeOnboarding,
+      typeOffboarding,
+      receivedBy,
+      checklistData,
+      remarks,
+      digitalSignature,
+    } = req.body;
+    const createdBy = req.user!.userID;
+
+    if (!assignmentId || !employeeId || !employeeName || !checklistData) {
+      return res.status(400).json({
+        error: 'assignmentId, employeeId, employeeName, and checklistData are required',
+      });
+    }
+
+    const checklistId = crypto.randomUUID();
+    let formNumber = await generateChecklistFormNumberFallback();
+    try {
+      const [assignmentRows] = (await pool.execute(
+        'SELECT asset_id FROM asset_assignments WHERE assignmentID = ?',
+        [assignmentId]
+      )) as any[];
+      const assetId = assignmentRows[0]?.asset_id;
+      if (assetId) {
+        const deptId = await getCategoryDepartmentForAssetIds([assetId]);
+        if (deptId) {
+          const companyId = await getCompanyIdByDepartment(deptId);
+          if (companyId) {
+            formNumber = await generateChecklistFormNumber(companyId, deptId);
+          }
+        }
+      }
+    } catch (numErr) {
+      logger.warn('Failed to generate proper checklist form number, using fallback:', numErr);
+    }
+
+    await checklistRepo.createAssetChecklist({
+      id: checklistId,
+      formNumber,
+      assignmentId,
+      employeeId,
+      employeeName,
+      employeeDesignation: employeeDesignation || null,
+      employeeDepartment: employeeDepartment || null,
+      employeeCompany: employeeCompany || null,
+      typeOnboarding: typeOnboarding ?? false,
+      typeOffboarding: typeOffboarding ?? false,
+      receivedBy: receivedBy || null,
+      checklistData,
+      remarks: remarks || null,
+      createdBy,
+    });
+
+    await createAuditLog({
+      userId: createdBy,
+      action: 'Created Return Offboarding Checklist',
+      resourceType: 'asset_checklist',
+      resourceId: checklistId,
+      resourceName: `Offboarding checklist for assignment ${assignmentId}`,
+      details: `Return offboarding checklist created for employee ${employeeName}`,
+    });
+
+    // Auto-sign as employee if digital signature provided
+    if (digitalSignature && typeof digitalSignature === 'string' && digitalSignature.trim()) {
+      try {
+        await checklistRepo.signChecklistsAsEmployee({
+          checklistIds: [checklistId],
+          employeeId,
+          digitalSignature: digitalSignature.trim(),
+        });
+        await checklistRepo.backfillEmployeeChecklistSignatures({
+          checklistIds: [checklistId],
+          employeeId,
+          digitalSignature: digitalSignature.trim(),
+        });
+      } catch (signErr) {
+        logger.warn('Failed to auto-sign offboarding checklist:', signErr);
+      }
+    }
+
+    return res.status(201).json({
+      message: 'Return offboarding checklist created successfully',
+      checklistId,
+      formNumber,
+    });
+  } catch (error) {
+    logger.error('Create return offboarding checklist failed:', error);
+    return res.status(500).json({ error: 'Failed to create return offboarding checklist' });
+  }
+}
+
+export async function getReturnChecklistByAssignmentIdHandler(
+  req: AuthRequest,
+  res: Response
+) {
+  try {
+    const { assignmentId } = req.params;
+
+    if (!assignmentId) {
+      return res.status(400).json({ error: 'assignmentId is required' });
+    }
+
+    const checklist = await checklistRepo.getChecklistByAssignmentId(assignmentId);
+
+    if (!checklist) {
+      return res.status(404).json({ error: 'Checklist not found' });
+    }
+
+    return res.status(200).json(checklist);
+  } catch (error) {
+    logger.error('Get return checklist by assignment ID failed:', error);
+    return res.status(500).json({ error: 'Failed to get checklist' });
   }
 }

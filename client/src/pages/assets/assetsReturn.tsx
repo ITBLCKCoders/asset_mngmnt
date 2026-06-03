@@ -916,7 +916,7 @@ export default function AssetsReturn() {
         try {
           await Promise.all(
             pendingReturnChecklistsRef.current.map(checklist =>
-              api.post('/asset-assignments/checklist', {
+              api.post('/asset-returns/checklist', {
                 assignmentId: checklist.assignmentId,
                 employeeId: checklist.employeeId,
                 employeeName: checklist.employeeName,
@@ -928,6 +928,7 @@ export default function AssetsReturn() {
                 receivedBy: checklist.receivedBy,
                 checklistData: checklist.checklistData,
                 remarks: checklist.remarks,
+                digitalSignature: processDigitalSignature,
               })
             )
           );

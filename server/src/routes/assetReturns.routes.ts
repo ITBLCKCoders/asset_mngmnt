@@ -16,6 +16,8 @@ import {
   declineReturnFormHandler,
   declineReturnFormByProcessorHandler,
   uploadConditionPhotoHandler,
+  createReturnChecklistHandler,
+  getReturnChecklistByAssignmentIdHandler,
 } from '../controllers/assetReturns.controller.js';
 import { authenticate } from '../middleware/authenticate.js';
 import { verifyFileMagicBytes } from '../middleware/verifyFileMagicBytes.js';
@@ -222,6 +224,46 @@ router.post('/forms/:formId/receive', authenticate, receiveReturnFormHandler);
  */
 router.post('/forms/:formId/approve', authenticate, approveReturnFormHandler);
 router.post('/forms/:formId/decline', authenticate, declineReturnFormHandler);
+
+/**
+ * @swagger
+ * /api/asset-returns/checklist:
+ *   post:
+ *     tags: [Asset Returns]
+ *     summary: Create an offboarding checklist during asset return
+ *     requestBody:
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             properties:
+ *               assignmentId: { type: string }
+ *               employeeId: { type: string }
+ *               employeeName: { type: string }
+ *               checklistData: { type: object }
+ *     responses:
+ *       201: { description: Offboarding checklist created }
+ *       400: { description: Validation error }
+ *       401: { description: Unauthorized }
+ */
+router.post('/checklist', authenticate, createReturnChecklistHandler);
+
+/**
+ * @swagger
+ * /api/asset-returns/checklist/{assignmentId}:
+ *   get:
+ *     tags: [Asset Returns]
+ *     summary: Get offboarding checklist by assignment ID
+ *     parameters:
+ *       - in: path
+ *         name: assignmentId
+ *         required: true
+ *         schema: { type: string }
+ *     responses:
+ *       200: { description: Offboarding checklist }
+ *       404: { description: Checklist not found }
+ */
+router.get('/checklist/:assignmentId', authenticate, getReturnChecklistByAssignmentIdHandler);
 
 /**
  * @swagger
