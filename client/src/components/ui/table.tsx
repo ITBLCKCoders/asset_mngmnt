@@ -1,5 +1,4 @@
 import * as React from 'react';
-import { motion } from 'framer-motion';
 
 import { cn } from '@/lib/utils';
 
@@ -68,15 +67,18 @@ const TableRow = React.forwardRef<
     hoverEffect ??
     /(?:^|\s)(?:hover:|cursor-pointer|group-hover:)/.test(className ?? '');
 
+  const liftClass = shouldAnimateHover
+    ? 'transition-[transform,background-color] duration-150 hover:-translate-y-0.5'
+    : '';
+
   return (
-    <motion.tr
+    <tr
       ref={ref}
       className={cn(
-        'border-b transition-colors hover:bg-muted/50 data-[state=selected]:bg-muted',
+        'border-b hover:bg-muted/50 data-[state=selected]:bg-muted',
+        liftClass,
         className
       )}
-      whileHover={shouldAnimateHover ? { y: -1 } : undefined}
-      transition={{ type: 'spring', stiffness: 420, damping: 28, mass: 0.55 }}
       {...props}
     />
   );

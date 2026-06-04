@@ -1,7 +1,6 @@
 'use client';
 
 import { useLocation, useNavigate } from 'react-router-dom';
-import { motion } from 'framer-motion';
 import { Button } from '@/components/ui/button';
 import {
   Tooltip,
@@ -43,10 +42,7 @@ import { memo, useCallback, useEffect, useMemo, useRef, useState, useTransition 
 import { cn } from '@/lib/utils';
 import { api, setToken } from '@/lib/api';
 import { ASSET_SIDEBAR_ENTRIES } from '@/components/sidebar/sidebarConfig';
-import {
-  SidebarHoverItem,
-  SIDEBAR_HOVER_TRANSITION,
-} from '@/components/sidebar/SidebarHoverItem';
+import { SidebarHoverItem } from '@/components/sidebar/SidebarHoverItem';
 import {
   prefetchRoute,
   prefetchRoutes,
@@ -222,12 +218,9 @@ const Sidebar = memo(function Sidebar({ onLogout }: SidebarProps) {
         <div className="flex shrink-0 flex-col items-center px-3 pb-3 pr-4 pt-6 sm:px-4 sm:pb-4 sm:pr-6 sm:pt-8">
           <Tooltip>
             <TooltipTrigger asChild>
-              <motion.button
+              <button
                 onClick={handleProfileClick}
-                className="group focus:outline-none focus:ring-2 focus:ring-white/30 rounded-full transition-all duration-200 hover:ring-4 hover:ring-white/40"
-                whileHover={{ scale: 1.03 }}
-                whileTap={{ scale: 0.98 }}
-                transition={SIDEBAR_HOVER_TRANSITION}
+                className="group focus:outline-none focus:ring-2 focus:ring-white/30 rounded-full transition-[transform,box-shadow] duration-150 ease-out hover:scale-105 hover:ring-4 hover:ring-white/40 active:scale-95"
               >
                 <Avatar className="h-[clamp(5.5rem,14vh,10rem)] w-[clamp(5.5rem,14vh,10rem)] ring-2 sm:ring-4 ring-white/50 shadow-xl transition-transform group-hover:scale-105">
                   <AvatarImage
@@ -239,7 +232,7 @@ const Sidebar = memo(function Sidebar({ onLogout }: SidebarProps) {
                     {initials}
                   </AvatarFallback>
                 </Avatar>
-              </motion.button>
+              </button>
             </TooltipTrigger>
             <TooltipContent
               side="right"

@@ -2,7 +2,6 @@
 'use client';
 
 import React, { useState, useEffect, useMemo } from 'react';
-import { motion } from 'framer-motion';
 import {
   useReactTable,
   getCoreRowModel,
@@ -143,15 +142,13 @@ function SortableTableHeader<T>({ header }: { header: Header<T, unknown> }) {
   const def = header.column.columnDef as { size?: number };
   const size = def.size ?? 120;
   return (
-    <motion.th
+    <th
       ref={setNodeRef}
       style={{ width: size, minWidth: size, ...style }}
       className={cn(
-        'h-10 px-2 px-4 py-3 text-left align-middle text-xs font-medium uppercase tracking-wider text-gray-900 cursor-pointer hover:bg-gray-100 whitespace-nowrap',
+        'h-10 px-2 px-4 py-3 text-left align-middle text-xs font-medium uppercase tracking-wider text-gray-900 cursor-pointer hover:bg-gray-100 whitespace-nowrap transition-[transform,background-color] duration-150 hover:-translate-y-0.5',
         isDragging && 'opacity-50 bg-gray-100'
       )}
-      whileHover={isDragging ? undefined : { y: -1 }}
-      transition={{ type: 'spring', stiffness: 420, damping: 28, mass: 0.55 }}
     >
       <div className="flex items-center gap-1">
         <TooltipProvider delayDuration={300}>
@@ -194,7 +191,7 @@ function SortableTableHeader<T>({ header }: { header: Header<T, unknown> }) {
           />
         </div>
       </div>
-    </motion.th>
+    </th>
   );
 }
 
@@ -693,21 +690,14 @@ export function DataTable<T>({
               const secondaryFields = fields.slice(3);
 
               return (
-                <motion.div
+                <div
                   key={row.id}
                   className={cn(
-                    'cursor-pointer rounded-lg border border-gray-200 bg-white p-4 shadow-sm transition-shadow hover:shadow-md',
+                    'cursor-pointer rounded-lg border border-gray-200 bg-white p-4 shadow-sm transition-[transform,box-shadow] duration-150 hover:-translate-y-1 hover:shadow-md',
                     getRowClassName?.(row),
                     mobileCardClassName
                   )}
                   onClick={() => onRowClick?.(row)}
-                  whileHover={{ y: -3, scale: 1.01 }}
-                  transition={{
-                    type: 'spring',
-                    stiffness: 320,
-                    damping: 26,
-                    mass: 0.7,
-                  }}
                 >
                   <div className="space-y-3">
                     {primaryFields.map(field => (
@@ -754,7 +744,7 @@ export function DataTable<T>({
                       {renderSubComponent({ row })}
                     </div>
                   )}
-                </motion.div>
+                </div>
               );
             })
           ) : (

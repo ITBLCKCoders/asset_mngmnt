@@ -54,8 +54,9 @@ const Badge = React.memo(function Badge({
   return (
     <motion.div
       className={cn(badgeVariants({ variant }), className)}
-      whileHover={shouldAnimateHover ? { y: -1, scale: 1.02 } : undefined}
-      transition={{ type: 'spring', stiffness: 420, damping: 28, mass: 0.55 }}
+      style={{ willChange: 'transform' }}
+      whileHover={shouldAnimateHover ? { y: -1 } : undefined}
+      transition={{ type: 'tween', duration: 0.15, ease: 'easeOut' }}
       {...props}
     />
   );

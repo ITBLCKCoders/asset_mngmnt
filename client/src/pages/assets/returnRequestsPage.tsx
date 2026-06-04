@@ -17,10 +17,13 @@ import {
   AlertTriangle,
   ImagePlus,
   XCircle,
+  FileSignature,
+  FileText,
+  Calendar,
 } from 'lucide-react';
 import { PageHeader } from '@/components/common/PageHeader';
 import { Button } from '@/components/ui/button';
-import { Card, CardContent, CardHeader } from '@/components/ui/card';
+import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Dialog } from '@/components/ui/dialog';
 import {
@@ -144,8 +147,7 @@ export default function ReturnRequestsPage() {
     Record<string, string[]>
   >({});
   const [expandedAssets, setExpandedAssets] = useState<Set<string>>(new Set());
-  const [returnTypeReturned, setReturnTypeReturned] = useState(false);
-  const [returnTypeOffboarding, setReturnTypeOffboarding] = useState(false);
+  const [returnType, setReturnType] = useState<string>('');
   const [assignToProcessor, setAssignToProcessor] = useState(false);
   const [verificationTag, setVerificationTag] = useState(false);
   const [verificationCondition, setVerificationCondition] = useState(false);
@@ -269,12 +271,16 @@ export default function ReturnRequestsPage() {
         ''
     );
     const rt = rawRt.toLowerCase();
-    setReturnTypeReturned(
-      rt.includes('returned') ||
-        rt === 'return' ||
-        rt.includes('regular return')
-    );
-    setReturnTypeOffboarding(rt.includes('offboarding'));
+    if (rt.includes('offboarding')) {
+      setReturnType('offboarding');
+    } else if (rt.includes('returned') || rt === 'return' || rt.includes('regular return')) {
+      setReturnType('returned');
+    } else if (rt.includes('return for transfer')) {
+      // Transfer-generated returns default to 'returned' since the employee isn't leaving
+      setReturnType('returned');
+    } else {
+      setReturnType('');
+    }
     setAssignToProcessor(false);
     setVerificationTag(false);
     setVerificationCondition(false);
@@ -356,8 +362,8 @@ export default function ReturnRequestsPage() {
       toast.error('Please select condition for each asset');
       return;
     }
-    if (!returnTypeReturned && !returnTypeOffboarding) {
-      toast.error('Please select at least one return type');
+    if (!returnType) {
+      toast.error('Please select a return type');
       return;
     }
     if (!sharedReturnDepartmentId || !sharedReturnLocationId) {
@@ -397,10 +403,7 @@ export default function ReturnRequestsPage() {
       };
     });
 
-    const returnTypeParts: string[] = [];
-    if (returnTypeReturned) returnTypeParts.push('Returned');
-    if (returnTypeOffboarding) returnTypeParts.push('Offboarding');
-    const returnType = returnTypeParts.join(',');
+    const returnTypeLabel = returnType === 'offboarding' ? 'Offboarding' : 'Returned';
 
     // Save form ref for later use
     processingFormRef.current = processForm;
@@ -417,7 +420,7 @@ export default function ReturnRequestsPage() {
     });
     const computerReturns = filterComputerTypeAssets(mappedAssets);
 
-    if (computerReturns.length > 0 && returnTypeOffboarding) {
+    if (computerReturns.length > 0) {
       pendingProcessParamsRef.current = {
         formID: processForm.formID,
         assetReturns,
@@ -593,7 +596,7 @@ export default function ReturnRequestsPage() {
     allConditionsSelected &&
     allLocationsSelected &&
     allRoomsSelected &&
-    (returnTypeReturned || returnTypeOffboarding) &&
+    !!returnType &&
     verificationTag &&
     verificationCondition &&
     verificationConfirmSign &&
@@ -708,29 +711,45 @@ export default function ReturnRequestsPage() {
             {Array.from({ length: 6 }).map((_, index) => (
               <Card
                 key={index}
-                className="flex flex-col shadow-xl border-0 bg-white/80 backdrop-blur-sm overflow-hidden rounded-2xl border-l-4 border-l-gray-300"
+                className="flex flex-col shadow-md border-slate-200 bg-white overflow-hidden"
               >
-                <CardHeader className="pb-2 bg-gradient-to-r from-slate-50 to-white border-b border-slate-100">
-                  <div className="flex items-center justify-between">
-                    <Shimmer className="h-6 w-24 rounded" />
-                    <Shimmer className="h-5 w-16 rounded-full" />
-                  </div>
-                  <div className="flex items-center gap-2 mt-2">
-                    <Shimmer className="h-4 w-4 rounded" />
-                    <Shimmer className="h-4 w-32 rounded" />
+                <CardHeader className="pb-3">
+                  <div className="flex items-start justify-between">
+                    <div className="flex items-center gap-3">
+                      <Shimmer className="h-10 w-10 rounded-xl shrink-0" />
+                      <div className="space-y-1.5">
+                        <Shimmer className="h-5 w-28 rounded" />
+                        <Shimmer className="h-3.5 w-20 rounded" />
+                      </div>
+                    </div>
+                    <Shimmer className="h-5 w-16 rounded-full shrink-0" />
                   </div>
                 </CardHeader>
-                <CardContent className="flex-1 flex flex-col gap-3 pt-4">
-                  <div className="space-y-1.5">
-                    {Array.from({ length: 5 }).map((_, idx) => (
-                      <div key={idx} className="flex gap-2">
-                        <Shimmer className="h-4 w-20 rounded" />
-                        <Shimmer className="h-4 w-16 rounded" />
-                      </div>
-                    ))}
+                <CardContent className="space-y-4 pt-0">
+                  <div className="flex gap-3">
+                    <Shimmer className="h-4 w-4 rounded shrink-0 mt-0.5" />
+                    <div className="flex-1 space-y-1.5">
+                      <Shimmer className="h-4 w-24 rounded" />
+                      {Array.from({ length: 3 }).map((_, idx) => (
+                        <div key={idx} className="flex items-center gap-2">
+                          <Shimmer className="h-1.5 w-1.5 rounded-full shrink-0" />
+                          <Shimmer className="h-3.5 w-40 rounded" />
+                        </div>
+                      ))}
+                    </div>
                   </div>
-                  <Shimmer className="h-9 w-full rounded-lg mt-auto" />
+                  <div className="flex gap-3">
+                    <Shimmer className="h-4 w-4 rounded shrink-0 mt-0.5" />
+                    <Shimmer className="h-4 w-32 rounded" />
+                  </div>
+                  <div className="flex gap-3">
+                    <Shimmer className="h-4 w-4 rounded shrink-0 mt-0.5" />
+                    <Shimmer className="h-4 w-48 rounded" />
+                  </div>
                 </CardContent>
+                <div className="p-4 mt-auto border-t border-slate-100">
+                  <Shimmer className="h-9 w-full rounded-xl" />
+                </div>
               </Card>
             ))}
           </div>
@@ -750,58 +769,109 @@ export default function ReturnRequestsPage() {
           </Card>
         ) : (
           <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-3">
-            {forms.map(form => (
-              <Card
-                key={form.formID}
-                className="flex flex-col shadow-xl border-0 bg-white/80 backdrop-blur-sm overflow-hidden rounded-2xl border-l-4 border-l-red-500 hover:shadow-2xl transition-shadow"
-              >
-                <CardHeader className="pb-2 bg-gradient-to-r from-slate-50 to-white border-b border-slate-100">
-                  <div className="flex items-center justify-between">
-                    <span className="font-mono font-semibold text-slate-900">
-                      {form.form_number ?? form.formID}
-                    </span>
-                    <Badge className="bg-red-100 text-red-800 hover:bg-red-100">
-                      {form.returns.length} asset
-                      {form.returns.length !== 1 ? 's' : ''}
-                    </Badge>
+            {forms.map(form => {
+              const formNumber = form.form_number ?? form.formID;
+              const notesFromReturns = form.returns.map(r => r.return_notes).filter(Boolean);
+              const returnTypeNote = form.return_type && String(form.return_type).trim() ? form.return_type : null;
+              const returnNotes = [returnTypeNote, ...notesFromReturns].filter(Boolean).join('; ') || '—';
+
+              return (
+                <Card
+                  key={form.formID}
+                  className="flex flex-col shadow-md hover:shadow-xl transition-all duration-200 border-slate-200 bg-white overflow-hidden"
+                >
+                  <CardHeader className="pb-3">
+                    <div className="flex items-start justify-between">
+                      <div className="flex items-center gap-3 min-w-0">
+                        <div className="p-2.5 bg-gradient-to-br from-red-500 to-red-600 shadow-sm rounded-xl shrink-0">
+                          <FileSignature className="h-5 w-5 text-white" />
+                        </div>
+                        <div className="min-w-0">
+                          <CardTitle className="text-lg truncate">{formNumber}</CardTitle>
+                          <p className="text-sm text-gray-500">
+                            Created {new Date(form.created_at).toLocaleDateString()}
+                          </p>
+                        </div>
+                      </div>
+                      <Badge
+                        variant="secondary"
+                        className="bg-amber-100 text-amber-800 shrink-0 ml-2"
+                      >
+                        Pending
+                      </Badge>
+                    </div>
+                  </CardHeader>
+                  <CardContent className="space-y-4 flex-1 pt-0">
+                    <div className="flex items-start gap-3">
+                      <Package className="h-4 w-4 text-gray-400 mt-0.5 flex-shrink-0" />
+                      <div className="flex-1 min-w-0">
+                        <p className="font-medium text-sm">
+                          {form.returns.length === 0
+                            ? 'No assets'
+                            : `${form.returns.length} asset${form.returns.length === 1 ? '' : 's'} to return`}
+                        </p>
+                        {form.returns.length > 0 && (
+                          <ul className="max-h-[120px] overflow-y-auto scrollbar-hide text-xs text-gray-600 mt-1 space-y-0.5 list-none">
+                            {form.returns.slice(0, 10).map(r => (
+                              <li key={r.assignment_id} className="flex items-center">
+                                <span className="w-1.5 h-1.5 bg-gray-400 rounded-full mr-2 flex-shrink-0" />
+                                <span className="truncate">
+                                  {r.assignment?.asset?.name ??
+                                    r.assignment?.asset?.code ??
+                                    'Asset'}
+                                  {r.assignment?.asset?.code && (
+                                    <span className="text-gray-400 font-mono ml-1">
+                                      ({r.assignment.asset.code})
+                                    </span>
+                                  )}
+                                  <span className="text-gray-400 ml-1">
+                                    — {r.return_condition ?? '—'}
+                                  </span>
+                                </span>
+                              </li>
+                            ))}
+                            {form.returns.length > 10 && (
+                              <li className="text-xs text-gray-400">
+                                +{form.returns.length - 10} more
+                              </li>
+                            )}
+                          </ul>
+                        )}
+                      </div>
+                    </div>
+
+                    <div className="flex items-start gap-3">
+                      <User className="h-4 w-4 text-gray-400 mt-0.5 flex-shrink-0" />
+                      <div className="flex-1 min-w-0">
+                        <p className="font-medium text-sm">
+                          Returned by: {returnerName(form)}
+                        </p>
+                      </div>
+                    </div>
+
+                    <div className="flex items-start gap-3">
+                      <FileText className="h-4 w-4 text-gray-400 mt-0.5 flex-shrink-0" />
+                      <div className="flex-1 min-w-0">
+                        <p className="text-sm text-gray-600 line-clamp-2">
+                          Return notes: {returnNotes}
+                        </p>
+                      </div>
+                    </div>
+                  </CardContent>
+
+                  <div className="flex gap-2 p-4 mt-auto border-t border-slate-100">
+                    <Button
+                      className="flex-1 bg-gradient-to-r from-red-500 to-red-600 hover:from-red-600 hover:to-red-700 text-white font-semibold rounded-xl shadow-md"
+                      size="sm"
+                      onClick={() => openProcessModal(form)}
+                    >
+                      <Eye className="h-4 w-4 mr-2" />
+                      View / Return Asset
+                    </Button>
                   </div>
-                  <div className="flex items-center gap-2 text-sm text-slate-600 mt-2">
-                    <User className="h-4 w-4 text-red-500" />
-                    {returnerName(form)}
-                  </div>
-                </CardHeader>
-                <CardContent className="flex-1 flex flex-col gap-3 pt-4">
-                  <ul className="text-sm space-y-1.5 list-disc list-inside text-slate-700">
-                    {form.returns.slice(0, 5).map(r => (
-                      <li key={r.assignment_id}>
-                        <span className="font-mono text-slate-600">
-                          {r.assignment?.asset?.code ??
-                            r.assignment?.asset?.name ??
-                            'Asset'}
-                        </span>
-                        <span className="text-slate-400">
-                          {' '}
-                          — {r.return_condition ?? '—'}
-                        </span>
-                      </li>
-                    ))}
-                    {form.returns.length > 5 && (
-                      <li className="text-slate-400">
-                        +{form.returns.length - 5} more
-                      </li>
-                    )}
-                  </ul>
-                  <Button
-                    className="mt-auto w-full bg-gradient-to-r from-red-500 to-red-600 hover:from-red-600 hover:to-red-700 text-white font-semibold rounded-xl shadow-md"
-                    size="sm"
-                    onClick={() => openProcessModal(form)}
-                  >
-                    <Eye className="h-4 w-4 mr-2" />
-                    View / Return Asset
-                  </Button>
-                </CardContent>
-              </Card>
-            ))}
+                </Card>
+              );
+            })}
           </div>
         )}
 
@@ -854,37 +924,51 @@ export default function ReturnRequestsPage() {
                     </Label>
                     <div className="flex flex-wrap gap-3 mt-3">
                       <label
-                        htmlFor="return-type-returned-req"
                         className={cn(
                           'flex items-center gap-3 px-4 py-3 rounded-lg border-2 cursor-pointer transition-all duration-200 flex-1 min-w-[140px]',
-                          returnTypeReturned
+                          returnType === 'returned'
                             ? 'border-red-500 bg-red-50 shadow-sm'
                             : 'border-slate-200 bg-white hover:border-slate-300 hover:bg-slate-50'
                         )}
+                        onClick={() => setReturnType('returned')}
                       >
-                        <Checkbox
-                          id="return-type-returned-req"
-                          checked={returnTypeReturned}
-                          onCheckedChange={v => setReturnTypeReturned(!!v)}
-                        />
+                        <div
+                          className={cn(
+                            'h-4 w-4 rounded-full border-2 flex items-center justify-center',
+                            returnType === 'returned'
+                              ? 'border-red-500'
+                              : 'border-gray-300'
+                          )}
+                        >
+                          {returnType === 'returned' && (
+                            <div className="h-2 w-2 rounded-full bg-red-500" />
+                          )}
+                        </div>
                         <span className="text-sm font-medium text-slate-800">
                           Returned
                         </span>
                       </label>
                       <label
-                        htmlFor="return-type-offboarding-req"
                         className={cn(
                           'flex items-center gap-3 px-4 py-3 rounded-lg border-2 cursor-pointer transition-all duration-200 flex-1 min-w-[140px]',
-                          returnTypeOffboarding
+                          returnType === 'offboarding'
                             ? 'border-red-500 bg-red-50 shadow-sm'
                             : 'border-slate-200 bg-white hover:border-slate-300 hover:bg-slate-50'
                         )}
+                        onClick={() => setReturnType('offboarding')}
                       >
-                        <Checkbox
-                          id="return-type-offboarding-req"
-                          checked={returnTypeOffboarding}
-                          onCheckedChange={v => setReturnTypeOffboarding(!!v)}
-                        />
+                        <div
+                          className={cn(
+                            'h-4 w-4 rounded-full border-2 flex items-center justify-center',
+                            returnType === 'offboarding'
+                              ? 'border-red-500'
+                              : 'border-gray-300'
+                          )}
+                        >
+                          {returnType === 'offboarding' && (
+                            <div className="h-2 w-2 rounded-full bg-red-500" />
+                          )}
+                        </div>
                         <span className="text-sm font-medium text-slate-800">
                           Offboarding
                         </span>

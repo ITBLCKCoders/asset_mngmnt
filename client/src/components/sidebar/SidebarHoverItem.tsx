@@ -1,16 +1,11 @@
-import { motion } from 'framer-motion';
 import { memo, type ReactNode } from 'react';
+import { cn } from '@/lib/utils';
 
-export const SIDEBAR_HOVER_TRANSITION = {
-  type: 'spring',
-  stiffness: 320,
-  damping: 24,
-  mass: 0.7,
-} as const;
+const transition = 'transition-[transform,opacity] duration-150 ease-out';
 
 /**
- * Wraps a sidebar item in a motion div that scales/translates on hover. The
- * `active` flag suppresses the translate so the active item stays anchored.
+ * Wraps a sidebar item in a div that translates/scales on hover via CSS.
+ * The `active` flag suppresses the translate so the active item stays anchored.
  */
 export const SidebarHoverItem = memo(function SidebarHoverItem({
   children,
@@ -20,13 +15,15 @@ export const SidebarHoverItem = memo(function SidebarHoverItem({
   active?: boolean;
 }) {
   return (
-    <motion.div
-      initial={false}
-      whileHover={active ? { scale: 1.01 } : { x: 4, scale: 1.02 }}
-      whileTap={{ scale: 0.98 }}
-      transition={SIDEBAR_HOVER_TRANSITION}
+    <div
+      className={cn(
+        transition,
+        active
+          ? 'hover:scale-[1.01]'
+          : 'hover:translate-x-1 hover:scale-[1.02]'
+      )}
     >
       {children}
-    </motion.div>
+    </div>
   );
 });

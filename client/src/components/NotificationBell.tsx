@@ -1,7 +1,6 @@
 'use client';
 
 import React, { lazy, Suspense, useState } from 'react';
-import { motion } from 'framer-motion';
 import { useNavigate } from 'react-router-dom';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
@@ -312,22 +311,15 @@ export default function NotificationBell({ className }: NotificationBellProps) {
                   </div>
                 ) : (
                   notifications.map(notif => (
-                    <motion.div
+                    <div
                       key={notif.id}
                       onClick={() => handleNotificationClick(notif)}
                       className={cn(
-                        'flex gap-3 p-4 rounded-xl transition-all hover:bg-gray-50 cursor-pointer border-l-4 min-w-0 w-full max-w-full overflow-hidden group',
+                        'flex gap-3 p-4 rounded-xl transition-[transform,background-color] duration-150 hover:-translate-y-0.5 hover:bg-gray-50 cursor-pointer border-l-4 min-w-0 w-full max-w-full overflow-hidden group',
                         notif.read
                           ? 'border-transparent bg-white'
                           : 'border-[#EE1D25] bg-red-50 hover:bg-red-100'
                       )}
-                      whileHover={{ y: -2, scale: 1.01 }}
-                      transition={{
-                        type: 'spring',
-                        stiffness: 320,
-                        damping: 24,
-                        mass: 0.7,
-                      }}
                     >
                       <Avatar className="h-11 w-11 ring-2 ring-white shadow-md flex-shrink-0">
                         <AvatarFallback
@@ -375,7 +367,7 @@ export default function NotificationBell({ className }: NotificationBellProps) {
                           <X className="h-4 w-4" />
                         </Button>
                       </div>
-                    </motion.div>
+                    </div>
                   ))
                 )}
               </div>

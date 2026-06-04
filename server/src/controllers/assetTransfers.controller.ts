@@ -27,6 +27,15 @@ import {
   generateReturnFormNumberFallback,
 } from '../utils/returnFormNumber.js';
 import {
+  generateChecklistFormNumber,
+  generateChecklistFormNumberFallback,
+} from '../utils/checklistFormNumber.js';
+import * as checklistRepo from '../repositories/assetChecklist.repository.js';
+import {
+  getCategoryDepartmentForAssetIds,
+  getCompanyIdByDepartment,
+} from '../repositories/assetReturn.repository.js';
+import {
   generateTransferFormNumber,
   generateTransferFormNumberFallback,
 } from '../utils/transferFormNumber.js';
@@ -1775,6 +1784,19 @@ interface RunTransferFormExecutionOptions {
     roomId?: string | null;
     roomName?: string | null;
   };
+  checklists?: Array<{
+    assignmentId: string;
+    employeeId: string;
+    employeeName: string;
+    employeeDesignation?: string;
+    employeeDepartment?: string;
+    employeeCompany?: string;
+    typeOnboarding: boolean;
+    typeOffboarding: boolean;
+    receivedBy?: string;
+    checklistData: any;
+    remarks?: string;
+  }>;
 }
 
 /** Run transfer execution (assignments, accountability, executed_at). Throws AppError on failure. Exported for use from approveReturnFormHandler when return form has linked transfer. */
@@ -1789,6 +1811,7 @@ export async function runTransferFormExecution(
     transferType,
     receivedBy,
     newAssignment,
+    checklists,
   } = options;
   const { req, processorId } = context;
   const form = await AssetTransferFormModel.findById(formId);
@@ -2116,6 +2139,59 @@ export async function runTransferFormExecution(
         assignment.asset_id,
       ]
     );
+
+    // Save matching checklist for this transfer if provided
+    if (checklists && checklists.length > 0) {
+      const matchingChecklist = checklists.find(
+        (c: any) => c.assignmentId === transferData.assignmentId
+      );
+      if (matchingChecklist) {
+        try {
+          const checklistId = crypto.randomUUID();
+          let chkFormNumber = await generateChecklistFormNumberFallback();
+          try {
+            const deptId = await getCategoryDepartmentForAssetIds([
+              assignment.asset_id,
+            ]);
+            if (deptId) {
+              const companyId = await getCompanyIdByDepartment(deptId);
+              if (companyId) {
+                chkFormNumber = await generateChecklistFormNumber(
+                  companyId,
+                  deptId
+                );
+              }
+            }
+          } catch (numErr) {
+            logger.warn(
+              'Failed to generate proper checklist form number, using fallback:',
+              numErr
+            );
+          }
+
+          await checklistRepo.createAssetChecklist({
+            id: checklistId,
+            formNumber: chkFormNumber,
+            assignmentId: newAssignmentId,
+            employeeId: matchingChecklist.employeeId,
+            employeeName: matchingChecklist.employeeName,
+            employeeDesignation:
+              matchingChecklist.employeeDesignation || null,
+            employeeDepartment:
+              matchingChecklist.employeeDepartment || null,
+            employeeCompany: matchingChecklist.employeeCompany || null,
+            typeOnboarding: matchingChecklist.typeOnboarding ? 1 : 0,
+            typeOffboarding: matchingChecklist.typeOffboarding ? 1 : 0,
+            receivedBy: matchingChecklist.receivedBy || null,
+            checklistData: matchingChecklist.checklistData,
+            remarks: matchingChecklist.remarks || null,
+            createdBy: processorId,
+          });
+        } catch (chkErr) {
+          logger.error('Failed to save transfer checklist:', chkErr);
+        }
+      }
+    }
 
     await createAuditLog({
       userId: processorId,
@@ -2622,6 +2698,7 @@ export async function executeTransferFormHandler(
       transferType,
       receivedBy,
       newAssignment,
+      checklists,
     } = req.body;
 
     if (!formId) return res.status(400).json({ error: 'Form ID is required' });
@@ -2648,6 +2725,7 @@ export async function executeTransferFormHandler(
         transferType,
         receivedBy,
         newAssignment,
+        checklists,
       },
       { req, processorId: req.user!.userID }
     );

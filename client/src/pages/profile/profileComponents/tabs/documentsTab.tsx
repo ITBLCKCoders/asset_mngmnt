@@ -662,7 +662,7 @@ export const TransferFormDetail: React.FC<{
 };
 
 /** Shared timeline for return/transfer forms: Submitted → Approved by dept head → Completed */
-function FormTimeline({
+export function FormTimeline({
   type,
   created_at,
   signerName,
@@ -852,6 +852,8 @@ export const ReturnFormCard: React.FC<{
   const [checklists, setChecklists] = useState<ReturnFormChecklistEntry[]>([]);
   const [activeChecklistKey, setActiveChecklistKey] = useState<string>('');
   const [checklistLoading, setChecklistLoading] = useState(false);
+  const [showChecklistPreview, setShowChecklistPreview] = useState(false);
+  const [checklistPreviewUrl, setChecklistPreviewUrl] = useState<string>('');
 
   const hasChecklist = checklists.length > 0;
 
@@ -940,6 +942,7 @@ export const ReturnFormCard: React.FC<{
     Boolean(batch.dept_head_signed_at);
 
   return (
+    <>
     <Card className="shadow-md hover:shadow-xl transition-all duration-200 border-slate-200 bg-white flex flex-col overflow-hidden">
       <CardHeader className="pb-3">
         <div className="flex items-start justify-between">
@@ -1118,7 +1121,23 @@ export const ReturnFormCard: React.FC<{
         <Button
           variant="outline"
           size="sm"
-          onClick={onView}
+          onClick={async () => {
+            if (activeCardTab === 'checklist' && activeChecklist) {
+              try {
+                const blob = await generateAssetChecklistPDF({
+                  ...activeChecklist,
+                  asset_label: getChecklistAssetLabel(activeChecklist, batch.returns),
+                });
+                const url = URL.createObjectURL(blob);
+                setChecklistPreviewUrl(url);
+                setShowChecklistPreview(true);
+              } catch {
+                toast.error('Failed to generate checklist preview');
+              }
+            } else {
+              onView();
+            }
+          }}
           className="flex-1 bg-red-600 text-white border-red-600 hover:bg-white hover:text-red-600 hover:border-red-600 shadow-sm"
         >
           <Eye className="h-4 w-4 mr-2" />
@@ -1243,7 +1262,22 @@ export const ReturnFormCard: React.FC<{
         <Button
           variant="outline"
           size="sm"
-          onClick={onDownload}
+          onClick={async () => {
+            if (activeCardTab === 'checklist' && activeChecklist) {
+              try {
+                const blob = await generateAssetChecklistPDF({
+                  ...activeChecklist,
+                  asset_label: getChecklistAssetLabel(activeChecklist, batch.returns),
+                });
+                downloadPDF(blob, `Asset_Checklist_${activeChecklist.form_number || `CHK-${activeChecklist.assignment_id}`}.pdf`);
+                toast.success('Checklist PDF downloaded successfully');
+              } catch {
+                toast.error('Failed to download checklist PDF');
+              }
+            } else {
+              onDownload();
+            }
+          }}
           className="flex-1 bg-white text-red-600 border-red-600 hover:bg-red-600 hover:text-white shadow-sm"
         >
           <Download className="h-4 w-4 mr-2" />
@@ -1251,7 +1285,45 @@ export const ReturnFormCard: React.FC<{
         </Button>
       </div>
     </Card>
-  );
+    <Dialog open={showChecklistPreview} onOpenChange={(open) => {
+      setShowChecklistPreview(open);
+      if (!open) {
+        setChecklistPreviewUrl(url => {
+          if (url) URL.revokeObjectURL(url);
+          return '';
+        });
+      }
+    }}>
+      <AppDialogFrame className="max-w-4xl max-h-[90vh] overflow-hidden !flex !flex-col !gap-0 !border-0 !p-0">
+        <AppDialogGradientHeader
+          title={activeChecklist ? `${activeChecklist.employee_name} - ${activeChecklist.form_number || `CHK-${activeChecklist.assignment_id}`}` : 'Asset Checklist'}
+          description="Asset Checklist Form Preview"
+        />
+        <AppDialogBody className="min-h-0 flex-1 overflow-auto !p-0">
+          <div className="mx-4 my-4 h-[620px] overflow-hidden rounded-lg border border-slate-200 bg-slate-50 sm:mx-6">
+            {checklistPreviewUrl ? (
+              <PDFViewer pdfUrl={checklistPreviewUrl} className="h-full w-full" />
+            ) : (
+              <div className="flex h-full w-full items-center justify-center text-gray-500">
+                Generating checklist PDF preview...
+              </div>
+            )}
+          </div>
+        </AppDialogBody>
+        <AppDialogChromeFooter className="justify-end gap-3">
+          <Button variant="outline" size="sm" onClick={() => {
+            setShowChecklistPreview(false);
+            if (checklistPreviewUrl) {
+              URL.revokeObjectURL(checklistPreviewUrl);
+              setChecklistPreviewUrl('');
+            }
+          }}>
+            Close
+          </Button>
+        </AppDialogChromeFooter>
+      </AppDialogFrame>
+    </Dialog>
+  </>);
 };
 
 // Borrow Request Card Component for Approvals Page
@@ -2529,50 +2601,6 @@ type ReturnFormChecklistEntry = AssetChecklistData & {
   asset?: { id: string; code: string | null; name: string | null } | null;
 };
 
-const OFFBOARDING_SECTIONS = [
-  {
-    label: 'Device Inventory & Verification',
-    key: 'deviceInventoryVerification',
-    items: [
-      { key: 'returnCompanyDevice', label: 'Return company device' },
-      { key: 'returnPeripherals', label: 'Return peripherals (mouse, keyboard, cables, etc.)' },
-      { key: 'returnDocumentsKeys', label: 'Return company documents/keys' },
-      { key: 'hardwareInspectionCheck', label: 'Hardware inspection check' },
-    ],
-  },
-  {
-    label: 'Data & Account Handover',
-    key: 'dataAccountHandover',
-    items: [
-      { key: 'backupWorkFiles', label: 'Backup work files to shared drive' },
-      { key: 'transferDocuments', label: 'Transfer documents to team member' },
-      { key: 'forwardEmails', label: 'Forward emails to supervisor' },
-      { key: 'notifyContacts', label: 'Notify external contacts of departure' },
-      { key: 'handoverPasswords', label: 'Handover passwords (manager only)' },
-    ],
-  },
-  {
-    label: 'Security and Access Revocation',
-    key: 'securityAccessRevocation',
-    items: [
-      { key: 'deactivateEmail', label: 'Deactivate email account' },
-      { key: 'revokeSystemAccess', label: 'Revoke system access' },
-      { key: 'removeVpnAccess', label: 'Remove VPN access' },
-      { key: 'deactivateM365License', label: 'Deactivate M365 license' },
-      { key: 'removeSharedMailboxAccess', label: 'Remove shared mailbox access' },
-      { key: 'removeTeamsPhone', label: 'Remove Teams phone number' },
-      { key: 'deactivateSlackZoomDiscord', label: 'Deactivate Slack / Zoom / Discord' },
-      { key: 'removeCloudAccess', label: 'Remove cloud access (AWS, GitHub, etc.)' },
-      { key: 'returnSecurityBadge', label: 'Return security badge / ID' },
-      { key: 'disableBiometrics', label: 'Disable biometric access' },
-      { key: 'wipeMobileDevice', label: 'Wipe mobile device (if company-issued)' },
-      { key: 'revokeRemoteAccess', label: 'Revoke remote desktop access' },
-      { key: 'disableServiceAccounts', label: 'Disable service accounts' },
-      { key: 'exitInterviewCompleted', label: 'Exit interview completed' },
-    ],
-  },
-];
-
 function ReturnChecklistCard({
   checklists,
   checklistLoading,
@@ -2624,30 +2652,6 @@ function ReturnChecklistCard({
   }
 
   const checklist = activeChecklist;
-  const checklistData = checklist.checklist_data || {};
-
-  function renderSection(section: { label: string; key: string; items: { key: string; label: string }[] }) {
-    const sectionData = checklistData[section.key] || {};
-    return (
-      <div key={section.key} className="space-y-2">
-        <h4 className="text-xs font-semibold uppercase tracking-wide text-slate-700">{section.label}</h4>
-        <div className="space-y-1">
-          {section.items.map(item => {
-            const checked = sectionData[item.key] === true;
-            return (
-              <div key={item.key} className="flex items-center gap-2 text-sm">
-                <span className={`w-4 h-4 rounded border flex items-center justify-center flex-shrink-0 ${checked ? 'bg-green-500 border-green-500' : 'border-slate-300'}`}>
-                  {checked && <span className="text-white text-[10px]">&#10003;</span>}
-                </span>
-                <span className={checked ? 'text-slate-700' : 'text-slate-500'}>{item.label}</span>
-              </div>
-            );
-          })}
-        </div>
-      </div>
-    );
-  }
-
   return (
     <div className="space-y-3">
       {checklists.length > 1 && (
@@ -2726,11 +2730,6 @@ function ReturnChecklistCard({
         <div className="rounded-lg border border-slate-200 bg-white/80 p-3 text-sm">
           <p className="text-xs font-medium uppercase tracking-wide text-slate-500">Received By</p>
           <p className="mt-1 font-medium text-slate-900">{checklist.received_by || 'N/A'}</p>
-        </div>
-
-        {/* Offboarding sections */}
-        <div className="space-y-4">
-          {OFFBOARDING_SECTIONS.map(section => renderSection(section))}
         </div>
 
         {/* Remarks */}

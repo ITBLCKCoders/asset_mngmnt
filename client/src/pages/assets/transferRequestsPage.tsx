@@ -1,21 +1,37 @@
 'use client';
 
 import { useEffect, useRef, useState } from 'react';
+import {
+  AssetChecklistDialog,
+  type AssetChecklistSubmitPayload,
+} from '@/pages/assets/asset-issuance/components/AssetChecklistDialog';
+import { filterComputerTypeAssets } from '@/utils/assetTypeDetection';
+import type { Department } from '@/types/assets';
 import { useNavigate } from 'react-router-dom';
 import {
   ArrowRightLeft,
+  Calendar,
   CheckCircle,
   Eye,
+  FileText,
   ImagePlus,
   Package,
   RefreshCw,
   User,
   XCircle,
 } from 'lucide-react';
-import { Card, CardContent, CardHeader } from '@/components/ui/card';
+import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { PageHeader } from '@/components/common/PageHeader';
 import { Button } from '@/components/ui/button';
+import {
+  Tabs,
+  TabsContent,
+  TabsList,
+  TabsTrigger,
+  segmentTabsListClassName,
+  segmentTabsTriggerClassName,
+} from '@/components/ui/tabs';
 import { Dialog } from '@/components/ui/dialog';
 import {
   AppDialogFrame,
@@ -33,6 +49,7 @@ import { toast } from 'sonner';
 import { Shimmer } from '@/components/ui/shimmer';
 import { useCurrentUser } from '@/hooks/useCurrentUser';
 import SmsOtpDialog from '@/components/auth/SmsOtpDialog';
+import { FormTimeline } from '@/pages/profile/profileComponents/tabs/documentsTab';
 
 const MAX_CONDITION_IMAGES = 5;
 const VALID_IMAGE_TYPES = [
@@ -55,13 +72,20 @@ interface ApprovedBatch {
     last_name: string;
     department?: string | null;
   };
+  transfer_type?: string | null;
+  signed_at?: string | null;
+  signed_by?: string | null;
+  processed_by?: string | null;
+  process_signed_at?: string | null;
+  dept_head_signed_at?: string | null;
+  dept_head_user_name?: string | null;
   returns: Array<{
     assignment_id: string;
     return_condition?: string | null;
     return_notes?: string | null;
     condition_images?: string[] | null;
     assignment: {
-      asset: { id: string; code: string; name: string };
+      asset: { id: string; code: string; name: string; type_name?: string; category_name?: string };
       /** Current assignee — transfer from (from GET approved-for-execution). */
       user?: {
         id?: string;
@@ -120,6 +144,31 @@ export default function TransferRequestsPage() {
   const [showReturnProcessBlockDialog, setShowReturnProcessBlockDialog] =
     useState(false);
   const [returnProcessBlockMessage, setReturnProcessBlockMessage] = useState('');
+  const [checklistDialogOpen, setChecklistDialogOpen] = useState(false);
+  const [checklistStepIndex, setChecklistStepIndex] = useState(0);
+  const [checklistAssets, setChecklistAssets] = useState<
+    { id: string; name: string; type?: string; category?: string }[]
+  >([]);
+  const [departments, setDepartments] = useState<Department[]>([]);
+  const pendingTransferChecklistsRef = useRef<any[]>([]);
+  const pendingExecuteTransferParamsRef = useRef<{
+    formID: string;
+    assetTransfers: any[];
+    transferType: string;
+    receivedBy: string;
+    newAssignment: any;
+  } | null>(null);
+
+  const fetchDepartments = async () => {
+    try {
+      const response = await api.get<{ departments?: Department[] }>(
+        '/departments'
+      );
+      setDepartments(response.departments ?? []);
+    } catch {
+      setDepartments([]);
+    }
+  };
 
   const fetchApproved = async () => {
     try {
@@ -139,6 +188,7 @@ export default function TransferRequestsPage() {
 
   useEffect(() => {
     fetchApproved();
+    fetchDepartments();
   }, []);
 
   const handleView = (batch: ApprovedBatch) => {
@@ -267,6 +317,105 @@ export default function TransferRequestsPage() {
     }
   };
 
+  const handleTransferChecklistNext = async (
+    payload: AssetChecklistSubmitPayload
+  ) => {
+    const asset = checklistAssets[checklistStepIndex];
+    const r = selectedBatch?.returns.find(
+      ret => (ret.assignment?.asset?.id || ret.assignment_id) === asset.id
+    );
+    pendingTransferChecklistsRef.current.push({
+      assignmentId: r?.assignment_id || '',
+      employeeId: selectedBatch!.new_assigned_user_id,
+      employeeName: selectedBatch!.new_assigned_user
+        ? `${selectedBatch!.new_assigned_user.first_name} ${selectedBatch!.new_assigned_user.last_name}`
+        : '',
+      employeeDesignation: '',
+      employeeDepartment:
+        selectedBatch!.new_assigned_user?.department || '',
+      employeeCompany: '',
+      typeOnboarding: payload.typeOnboarding,
+      typeOffboarding: payload.typeOffboarding,
+      receivedBy: payload.receivedBy,
+      checklistData: payload.checklistData,
+      remarks: payload.remarks,
+    });
+    setChecklistStepIndex(prev => prev + 1);
+  };
+
+  const handleTransferChecklistFinalSubmit = async (
+    payload: AssetChecklistSubmitPayload
+  ) => {
+    const asset = checklistAssets[checklistStepIndex];
+    const r = selectedBatch?.returns.find(
+      ret => (ret.assignment?.asset?.id || ret.assignment_id) === asset.id
+    );
+    pendingTransferChecklistsRef.current.push({
+      assignmentId: r?.assignment_id || '',
+      employeeId: selectedBatch!.new_assigned_user_id,
+      employeeName: selectedBatch!.new_assigned_user
+        ? `${selectedBatch!.new_assigned_user.first_name} ${selectedBatch!.new_assigned_user.last_name}`
+        : '',
+      employeeDesignation: '',
+      employeeDepartment:
+        selectedBatch!.new_assigned_user?.department || '',
+      employeeCompany: '',
+      typeOnboarding: payload.typeOnboarding,
+      typeOffboarding: payload.typeOffboarding,
+      receivedBy: payload.receivedBy,
+      checklistData: payload.checklistData,
+      remarks: payload.remarks,
+    });
+
+    setChecklistDialogOpen(false);
+
+    const params = pendingExecuteTransferParamsRef.current;
+    if (!params) return;
+
+    pendingExecuteActionRef.current = async () => {
+      setTransferring(true);
+      try {
+        await api.post(
+          `/asset-transfers/forms/${params.formID}/execute`,
+          {
+            assetTransfers: params.assetTransfers,
+            processSignature: {
+              signed_at: new Date().toISOString(),
+            },
+            transferType: params.transferType,
+            receivedBy: params.receivedBy,
+            newAssignment: params.newAssignment,
+            checklists: pendingTransferChecklistsRef.current,
+          }
+        );
+        toast.success('Transfer completed successfully');
+        setShowConfirmDialog(false);
+        setSelectedBatch(null);
+        await fetchApproved();
+      } catch (err: any) {
+        const msg =
+          err?.data?.error ||
+          err?.response?.data?.error ||
+          'Failed to execute transfer';
+        if (
+          typeof msg === 'string' &&
+          msg
+            .toLowerCase()
+            .includes(
+              'linked return form is processed by the processor'
+            )
+        ) {
+          setReturnProcessBlockMessage(msg);
+          setShowReturnProcessBlockDialog(true);
+        }
+        toast.error(msg);
+      } finally {
+        setTransferring(false);
+      }
+    };
+    setShowOtpDialog(true);
+  };
+
   const handleConditionImageAdd = async (
     assignmentId: string,
     file: File
@@ -338,29 +487,36 @@ export default function TransferRequestsPage() {
             {Array.from({ length: 6 }).map((_, index) => (
               <Card
                 key={index}
-                className="flex flex-col shadow-xl border-0 bg-white/80 backdrop-blur-sm overflow-hidden rounded-2xl border-l-4 border-l-gray-300"
+                className="shadow-md border-slate-200 bg-white flex flex-col overflow-hidden"
               >
-                <CardHeader className="pb-2 bg-gradient-to-r from-slate-50 to-white border-b border-slate-100">
-                  <div className="flex items-center justify-between">
-                    <Shimmer className="h-6 w-24 rounded" />
-                    <Shimmer className="h-5 w-16 rounded-full" />
-                  </div>
-                  <div className="flex items-center gap-2 mt-2">
-                    <Shimmer className="h-4 w-4 rounded" />
-                    <Shimmer className="h-4 w-32 rounded" />
+                <CardHeader className="pb-3">
+                  <div className="flex items-start justify-between">
+                    <div className="flex items-center gap-3">
+                      <Shimmer className="h-10 w-10 rounded-xl" />
+                      <div className="space-y-1.5">
+                        <Shimmer className="h-5 w-36 rounded" />
+                        <Shimmer className="h-3 w-24 rounded" />
+                      </div>
+                    </div>
+                    <Shimmer className="h-5 w-20 rounded-full" />
                   </div>
                 </CardHeader>
-                <CardContent className="flex-1 flex flex-col gap-3 pt-4">
-                  <div className="space-y-1.5">
-                    {Array.from({ length: 5 }).map((_, idx) => (
+                <div className="mx-4 mb-2">
+                  <Shimmer className="h-8 w-full rounded-lg" />
+                </div>
+                <CardContent className="space-y-3 pt-0">
+                  <div className="space-y-2">
+                    {Array.from({ length: 3 }).map((_, idx) => (
                       <div key={idx} className="flex gap-2">
-                        <Shimmer className="h-4 w-20 rounded" />
-                        <Shimmer className="h-4 w-16 rounded" />
+                        <Shimmer className="h-4 w-4 rounded-full" />
+                        <Shimmer className="h-4 w-32 rounded" />
                       </div>
                     ))}
                   </div>
-                  <Shimmer className="h-9 w-full rounded-lg mt-auto" />
                 </CardContent>
+                <div className="p-4 mt-auto border-t border-slate-100">
+                  <Shimmer className="h-9 w-full rounded-lg" />
+                </div>
               </Card>
             ))}
           </div>
@@ -380,61 +536,177 @@ export default function TransferRequestsPage() {
           </Card>
         ) : (
           <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-3">
-            {batches.map(batch => (
+            {batches.map(batch => {
+              const transferrerName = formatTransferFromNames(batch);
+              return (
               <Card
                 key={batch.formID}
-                className="flex flex-col shadow-xl border-0 bg-white/80 backdrop-blur-sm overflow-hidden rounded-2xl border-l-4 border-l-red-500 hover:shadow-2xl transition-shadow"
+                className="shadow-md hover:shadow-xl transition-all duration-200 border-slate-200 bg-white flex flex-col overflow-hidden"
               >
-                <CardHeader className="pb-2 bg-gradient-to-r from-slate-50 to-white border-b border-slate-100">
-                  <div className="flex items-center justify-between">
-                    <span className="font-mono font-semibold text-slate-900">
-                      {batch.form_number ?? batch.formID}
-                    </span>
+                <CardHeader className="pb-3">
+                  <div className="flex items-start justify-between">
+                    <div className="flex items-center gap-3">
+                      <div className="p-2.5 bg-gradient-to-br from-red-500 to-red-600 shadow-sm rounded-xl">
+                        <ArrowRightLeft className="h-5 w-5 text-white" />
+                      </div>
+                      <div>
+                        <CardTitle className="text-lg">
+                          {batch.form_number ?? batch.formID}
+                        </CardTitle>
+                        <p className="text-sm text-gray-500">
+                          Created{' '}
+                          {new Date(batch.created_at).toLocaleDateString()}
+                        </p>
+                      </div>
+                    </div>
                     <Badge className="bg-red-100 text-red-800 hover:bg-red-100">
                       {(batch.returns || []).length} asset
                       {(batch.returns || []).length !== 1 ? 's' : ''}
                     </Badge>
                   </div>
-                  <div className="flex items-center gap-2 text-sm text-slate-600 mt-2">
-                    <User className="h-4 w-4 text-red-500" />
-                    {batch.new_assigned_user
-                      ? `${batch.new_assigned_user.first_name ?? ''} ${batch.new_assigned_user.last_name ?? ''}`.trim() ||
-                        '—'
-                      : '—'}
-                  </div>
                 </CardHeader>
-                <CardContent className="flex-1 flex flex-col gap-3 pt-4">
-                  <ul className="text-sm space-y-1.5 list-disc list-inside text-slate-700">
-                    {(batch.returns || []).slice(0, 5).map(r => (
-                      <li key={r.assignment_id}>
-                        <span className="font-mono text-slate-600">
-                          {r.assignment?.asset?.code ??
-                            r.assignment?.asset?.name ??
-                            'Asset'}
-                        </span>
-                        <span className="text-slate-400">
-                          {' '}
-                          — {r.return_condition ?? '—'}
-                        </span>
-                      </li>
-                    ))}
-                    {(batch.returns || []).length > 5 && (
-                      <li className="text-slate-400">
-                        +{(batch.returns || []).length - 5} more
-                      </li>
-                    )}
-                  </ul>
+                <Tabs
+                  defaultValue="details"
+                  className="flex-1 flex flex-col min-h-0"
+                >
+                  <TabsList
+                    className={
+                      segmentTabsListClassName +
+                      ' mx-4 mb-2 grid grid-cols-2 w-[calc(100%-2rem)]'
+                    }
+                  >
+                    <TabsTrigger
+                      value="details"
+                      className={segmentTabsTriggerClassName}
+                    >
+                      Details
+                    </TabsTrigger>
+                    <TabsTrigger
+                      value="timeline"
+                      className={segmentTabsTriggerClassName}
+                    >
+                      Timeline
+                    </TabsTrigger>
+                  </TabsList>
+                  <TabsContent value="details" className="mt-0 flex-1">
+                    <CardContent className="space-y-4 flex-1 pt-0">
+                      <div className="flex items-start gap-3">
+                        <Package className="h-4 w-4 text-gray-400 mt-0.5 flex-shrink-0" />
+                        <div className="flex-1 min-w-0">
+                          <p className="font-medium text-sm">
+                            {(batch.returns || []).length === 0
+                              ? 'No assets'
+                              : `${(batch.returns || []).length} asset${(batch.returns || []).length === 1 ? '' : 's'} transferred`}
+                          </p>
+                          {(batch.returns || []).length > 0 && (
+                            <ul className="max-h-[120px] overflow-y-auto scrollbar-hide text-xs text-gray-600 mt-1 space-y-0.5 list-none">
+                              {(batch.returns || []).map(r => (
+                                <li
+                                  key={r.assignment_id}
+                                  className="flex items-center"
+                                >
+                                  <span className="w-1.5 h-1.5 bg-gray-400 rounded-full mr-2 flex-shrink-0" />
+                                  <span className="truncate">
+                                    {r.assignment?.asset?.name ??
+                                      r.assignment?.asset?.code ??
+                                      '—'}
+                                    {r.assignment?.asset?.code && (
+                                      <span className="text-gray-400 font-mono ml-1">
+                                        ({r.assignment.asset.code})
+                                      </span>
+                                    )}
+                                  </span>
+                                </li>
+                              ))}
+                            </ul>
+                          )}
+                        </div>
+                      </div>
+                      {batch.new_assigned_user && (
+                        <div className="flex items-start gap-3">
+                          <User className="h-4 w-4 text-gray-400 mt-0.5 flex-shrink-0" />
+                          <div className="flex-1 min-w-0">
+                            <p className="font-medium text-sm">
+                              Transferred to:{' '}
+                              {[
+                                batch.new_assigned_user.first_name,
+                                batch.new_assigned_user.last_name,
+                              ]
+                                .filter(Boolean)
+                                .join(' ') || '—'}
+                            </p>
+                          </div>
+                        </div>
+                      )}
+                      {transferrerName && (
+                        <div className="flex items-start gap-3">
+                          <User className="h-4 w-4 text-gray-400 mt-0.5 flex-shrink-0" />
+                          <div className="flex-1 min-w-0">
+                            <p className="font-medium text-sm">
+                              Transferrer: {transferrerName}
+                            </p>
+                          </div>
+                        </div>
+                      )}
+                      <div className="flex items-start gap-3">
+                        <Calendar className="h-4 w-4 text-gray-400 mt-0.5 flex-shrink-0" />
+                        <div className="flex-1 min-w-0">
+                          <p className="text-sm text-gray-600">
+                            Transfer date:{' '}
+                            {batch.created_at &&
+                            !isNaN(new Date(batch.created_at).getTime())
+                              ? new Date(batch.created_at).toLocaleDateString() +
+                                ' ' +
+                                new Date(
+                                  batch.created_at
+                                ).toLocaleTimeString()
+                              : '—'}
+                          </p>
+                        </div>
+                      </div>
+                      {batch.transfer_type && (
+                        <div className="flex items-start gap-3">
+                          <FileText className="h-4 w-4 text-gray-400 mt-0.5 flex-shrink-0" />
+                          <div className="flex-1 min-w-0">
+                            <p className="text-sm text-gray-600">
+                              Transfer type: {batch.transfer_type}
+                            </p>
+                          </div>
+                        </div>
+                      )}
+                    </CardContent>
+                  </TabsContent>
+                  <TabsContent value="timeline" className="mt-0 flex-1">
+                    <CardContent className="pt-0">
+                      <FormTimeline
+                        type="transfer"
+                        created_at={batch.created_at}
+                        signerName={transferrerName}
+                        dept_head_signed_at={
+                          batch.dept_head_signed_at
+                        }
+                        dept_head_user_name={
+                          batch.dept_head_user_name
+                        }
+                        process_signed_at={batch.process_signed_at}
+                      />
+                    </CardContent>
+                  </TabsContent>
+                </Tabs>
+                <div className="flex gap-2 p-4 mt-auto border-t border-slate-100">
                   <Button
-                    className="mt-auto w-full bg-gradient-to-r from-red-500 to-red-600 hover:from-red-600 hover:to-red-700 text-white font-semibold rounded-xl shadow-md"
+                    variant="outline"
                     size="sm"
                     onClick={() => handleView(batch)}
+                    className="flex-1 bg-red-600 text-white border-red-600 hover:bg-white hover:text-red-600 hover:border-red-600 shadow-sm"
                   >
                     <Eye className="h-4 w-4 mr-2" />
                     View & Transfer
                   </Button>
-                </CardContent>
+                </div>
               </Card>
-            ))}
+            );
+            })}
           </div>
         )}
 
@@ -747,8 +1019,109 @@ export default function TransferRequestsPage() {
               </Button>
               <Button
                 onClick={() => {
+                  if (!selectedBatch) return;
+
+                  const transferType = transferTypeOffboarding
+                    ? 'Transfer Offboarding'
+                    : 'Transfer';
+
+                  const assetTransfers = (
+                    selectedBatch.returns || []
+                  ).map(r => ({
+                    assignmentId: r.assignment_id,
+                    condition:
+                      conditions[r.assignment_id] ||
+                      r.return_condition ||
+                      'Good',
+                    notes:
+                      notesByAssignment[r.assignment_id] ??
+                      r.return_notes ??
+                      '',
+                    imageUrls:
+                      imageUrlsByAssignment[r.assignment_id] ??
+                      (Array.isArray(r.condition_images)
+                        ? r.condition_images
+                        : []),
+                  }));
+
+                  const newAssignment = {
+                    userId: selectedBatch.new_assigned_user_id,
+                    departmentId: null,
+                    locationId: null,
+                    roomId: null,
+                    roomName: null,
+                  };
+
+                  const mappedAssets = (
+                    selectedBatch.returns || []
+                  ).map(r => ({
+                    id:
+                      r.assignment?.asset?.id || r.assignment_id,
+                    name: r.assignment?.asset?.name || '',
+                    type: r.assignment?.asset?.type_name || '',
+                    category:
+                      r.assignment?.asset?.category_name || '',
+                  }));
+                  const computerReturns =
+                    filterComputerTypeAssets(mappedAssets);
+
+                  if (computerReturns.length > 0) {
+                    pendingExecuteTransferParamsRef.current = {
+                      formID: selectedBatch.formID,
+                      assetTransfers,
+                      transferType,
+                      receivedBy,
+                      newAssignment,
+                    };
+                    setChecklistAssets(computerReturns);
+                    setChecklistStepIndex(0);
+                    pendingTransferChecklistsRef.current = [];
+                    setChecklistDialogOpen(true);
+                    setShowConfirmDialog(false);
+                    return;
+                  }
+
                   pendingExecuteActionRef.current = async () => {
-                    await handleExecuteTransfer();
+                    setTransferring(true);
+                    try {
+                      await api.post(
+                        `/asset-transfers/forms/${selectedBatch.formID}/execute`,
+                        {
+                          assetTransfers,
+                          processSignature: {
+                            signed_at: new Date().toISOString(),
+                          },
+                          transferType,
+                          receivedBy,
+                          newAssignment,
+                        }
+                      );
+                      toast.success(
+                        'Transfer completed successfully'
+                      );
+                      setShowConfirmDialog(false);
+                      setSelectedBatch(null);
+                      await fetchApproved();
+                    } catch (err: any) {
+                      const msg =
+                        err?.data?.error ||
+                        err?.response?.data?.error ||
+                        'Failed to execute transfer';
+                      if (
+                        typeof msg === 'string' &&
+                        msg
+                          .toLowerCase()
+                          .includes(
+                            'linked return form is processed by the processor'
+                          )
+                      ) {
+                        setReturnProcessBlockMessage(msg);
+                        setShowReturnProcessBlockDialog(true);
+                      }
+                      toast.error(msg);
+                    } finally {
+                      setTransferring(false);
+                    }
                   };
                   setShowOtpDialog(true);
                 }}
@@ -820,6 +1193,49 @@ export default function TransferRequestsPage() {
           phoneNumber={
             (currentUser as { contactNumber?: string })?.contactNumber
           }
+        />
+
+        <AssetChecklistDialog
+          isOpen={checklistDialogOpen}
+          onOpenChange={open => {
+            if (!open) {
+              setChecklistDialogOpen(false);
+              pendingTransferChecklistsRef.current = [];
+            }
+          }}
+          onCancel={() => {
+            pendingTransferChecklistsRef.current = [];
+          }}
+          checklistVariant="onboarding"
+          selectedAssets={checklistAssets.map(a => a.id)}
+          assets={checklistAssets}
+          computerAssets={checklistAssets}
+          currentIndex={checklistStepIndex}
+          selectedUser={selectedBatch?.new_assigned_user_id || ''}
+          users={
+            selectedBatch
+              ? [
+                  {
+                    userID: selectedBatch.new_assigned_user_id,
+                    first_name:
+                      selectedBatch.new_assigned_user?.first_name ||
+                      '',
+                    last_name:
+                      selectedBatch.new_assigned_user?.last_name || '',
+                    position: null,
+                    department_id: '',
+                    company: null,
+                  },
+                ]
+              : []
+          }
+          departments={departments.map(d => ({
+            departmentID: d.departmentID,
+            name: d.name,
+          }))}
+          currentUserPosition={currentUser?.position || ''}
+          onNext={handleTransferChecklistNext}
+          onFinalSubmit={handleTransferChecklistFinalSubmit}
         />
       </main>
     </div>
