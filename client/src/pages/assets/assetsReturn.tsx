@@ -1,4 +1,4 @@
-'use client';
+﻿'use client';
 
 import { useEffect, useState, useMemo, useRef } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
@@ -23,6 +23,7 @@ import {
   ImagePlus,
   ImageIcon,
   Crown,
+  Layers,
 } from 'lucide-react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { PageHeader } from '@/components/common/PageHeader';
@@ -174,6 +175,8 @@ export default function AssetsReturn() {
     useState<string>('');
   const [sharedReturnAreaId, setSharedReturnAreaId] = useState<string>('');
   const [ownerAbsent, setOwnerAbsent] = useState(false);
+  const [intangibleAssets, setIntangibleAssets] = useState<any[]>([]);
+  const [selectedIntangibleAssetIds, setSelectedIntangibleAssetIds] = useState<string[]>([]);
   const [smsOtpDialogOpen, setSmsOtpDialogOpen] = useState(false);
   const pendingReturnActionRef = useRef<(() => Promise<void>) | null>(null);
 
@@ -364,7 +367,7 @@ export default function AssetsReturn() {
         cell: ({ row }) => {
           const imgs = row.original.conditionImages ?? [];
           if (imgs.length === 0)
-            return <span className="text-slate-400">—</span>;
+            return <span className="text-slate-400">â€”</span>;
           return (
             <Button
               variant="outline"
@@ -481,6 +484,16 @@ export default function AssetsReturn() {
     }
   };
 
+  const fetchIntangibleAssets = async () => {
+    try {
+      const response = await api.get('/intangible-assets');
+      setIntangibleAssets(response || []);
+    } catch (error) {
+      console.error('Failed to fetch intangible assets:', error);
+      setIntangibleAssets([]);
+    }
+  };
+
   useEffect(() => {
     const fetchData = async () => {
       // Fetch assignments and other data
@@ -491,6 +504,7 @@ export default function AssetsReturn() {
         fetchCategories(),
         fetchLocations(),
         fetchAssetBuilders(),
+        fetchIntangibleAssets(),
       ]);
       setLoading(false);
     };
@@ -576,8 +590,8 @@ export default function AssetsReturn() {
   };
 
   const handleReturnClick = () => {
-    if (selectedAssignments.length === 0) {
-      toast.error('Please select at least one asset assignment to return');
+    if (selectedAssignments.length === 0 && selectedIntangibleAssetIds.length === 0) {
+      toast.error('Please select at least one asset or intangible asset to return');
       return;
     }
 
@@ -590,11 +604,6 @@ export default function AssetsReturn() {
         return assignment;
       })
       .filter(Boolean);
-
-    if (selectedAssignmentData.length === 0) {
-      toast.error('No valid assignments found');
-      return;
-    }
 
     // Initialize return data for each asset (condition, notes, images only; return location is shared)
     const initialReturnData = selectedAssignmentData.map(assignment => ({
@@ -763,7 +772,7 @@ export default function AssetsReturn() {
     );
     const locDisplayName =
       returnLoc && room?.room_name
-        ? `${returnLoc.name} — ${room.room_name}`
+        ? `${returnLoc.name} â€” ${room.room_name}`
         : returnLoc?.name ?? '';
     const returnTypeParts: string[] = [];
     if (returnTypeReturned) returnTypeParts.push('Returned');
@@ -887,12 +896,17 @@ export default function AssetsReturn() {
       if (returnTypeOffboarding) returnTypeParts.push('Offboarding');
       const returnType = returnTypeParts.join(',');
 
+      const intangibleAssetReturnItems = selectedIntangibleAssetIds.length > 0
+        ? selectedIntangibleAssetIds.map(id => ({ id }))
+        : undefined;
+
       const response = (await api.post('/asset-returns', {
         assetReturns,
         processSignature,
         returnType,
         assignToProcessor: assignAllToMe,
         ownerAbsent: assignAllToMe && ownerAbsent,
+        intangibleAssetReturnItems,
       })) as {
         message?: string;
         returnForm?: { formID?: string; form_number?: string | null };
@@ -900,15 +914,16 @@ export default function AssetsReturn() {
 
       const serverMsg = response?.message;
       const formNum = response?.returnForm?.form_number ?? null;
+      const totalAssets = selectedAssignments.length + selectedIntangibleAssetIds.length;
       toast.success(
         ownerAbsent && assignAllToMe
           ? serverMsg ??
               'Return request created. Obtain the department head signature on the downloaded form.'
           : assignAllToMe
             ? serverMsg ??
-                'Return request created. The returner must sign the form in Profile → Documents, then the department head must approve before assets are assigned to you.'
+                'Return request created. The returner must sign the form in Profile â†’ Documents, then the department head must approve before assets are assigned to you.'
             : serverMsg ||
-                `Successfully returned ${selectedAssignments.length} asset(s)`
+                `Successfully returned ${totalAssets} asset(s)`
       );
 
       // Save offboarding checklists after successful return
@@ -958,6 +973,7 @@ export default function AssetsReturn() {
       }
 
       setSelectedAssignments([]);
+      setSelectedIntangibleAssetIds([]);
       setAssetReturnData([]);
       setVerificationTag(false);
       setVerificationCondition(false);
@@ -1234,7 +1250,7 @@ export default function AssetsReturn() {
           {/* Asset Selection / Asset Built Tabs */}
           <div className="xl:col-span-2">
             <Tabs value={activeTab} onValueChange={(value) => { setActiveTab(value); setTabLoading(true); setTimeout(() => setTabLoading(false), 300); }} className="w-full">
-              <TabsList className={segmentTabsListClassName + ' grid grid-cols-2'}>
+              <TabsList className={segmentTabsListClassName + ' grid grid-cols-3'}>
                 <TabsTrigger
                   value="select-assets"
                   className={segmentTabsTriggerClassName + ' flex items-center gap-2'}
@@ -1253,6 +1269,16 @@ export default function AssetsReturn() {
                   Asset Built
                   <Badge variant="secondary" className="ml-1 text-xs">
                     {filteredAssignedBuilders.length}
+                  </Badge>
+                </TabsTrigger>
+                <TabsTrigger
+                  value="intangible-assets"
+                  className={segmentTabsTriggerClassName + ' flex items-center gap-2'}
+                >
+                  <Layers className="h-4 w-4" />
+                  Intangible Assets
+                  <Badge variant="secondary" className="ml-1 text-xs">
+                    {intangibleAssets.filter(a => a.status === 'assigned').length}
                   </Badge>
                 </TabsTrigger>
               </TabsList>
@@ -1391,7 +1417,7 @@ export default function AssetsReturn() {
                                   </span>
                                   {assignment.department && (
                                     <span className="ml-2 text-gray-400">
-                                      •
+                                      â€¢
                                     </span>
                                   )}
                                   {assignment.department && (
@@ -1399,7 +1425,7 @@ export default function AssetsReturn() {
                                   )}
                                   {assignment.location && (
                                     <span className="ml-2 text-gray-400">
-                                      •
+                                      â€¢
                                     </span>
                                   )}
                                   {assignment.location && (
@@ -1690,7 +1716,7 @@ export default function AssetsReturn() {
                                               <li
                                                 key={a.assignmentID}
                                                 className={cn(
-                                                  'flex items-center gap-3 p-3 rounded-lg border-2 transition-all cursor-pointer min-w-0 pl-4 relative before:content-["•"] before:absolute before:left-2 before:font-bold before:text-gray-500',
+                                                  'flex items-center gap-3 p-3 rounded-lg border-2 transition-all cursor-pointer min-w-0 pl-4 relative before:content-["â€¢"] before:absolute before:left-2 before:font-bold before:text-gray-500',
                                                   selectedAssignments.includes(
                                                     a.assignmentID
                                                   )
@@ -1767,9 +1793,79 @@ export default function AssetsReturn() {
                   </CardContent>
                 </Card>
               </TabsContent>
+
+              <TabsContent value="intangible-assets" className="mt-4">
+                <Card className="shadow-xl border-0 bg-white/80 backdrop-blur-sm">
+                  <CardHeader className="pb-4">
+                    <CardTitle className="flex items-center gap-3 text-xl">
+                      <div className="p-2 bg-red-100 rounded-lg">
+                        <Layers className="h-5 w-5 text-red-600" />
+                      </div>
+                      Intangible Assets
+                    </CardTitle>
+                  </CardHeader>
+                  <CardContent>
+                    {(() => {
+                      const assignedIntangibles = intangibleAssets.filter(a => a.status === 'assigned');
+                      if (assignedIntangibles.length === 0) {
+                        return (
+                          <div className="text-center py-8">
+                            <Layers className="h-10 w-10 text-gray-300 mx-auto mb-3" />
+                            <p className="text-gray-500 text-sm">No assigned intangible assets.</p>
+                          </div>
+                        );
+                      }
+                      return (
+                        <div className="space-y-2 max-h-[400px] overflow-y-auto">
+                          {assignedIntangibles.map(asset => {
+                            const isSelected = selectedIntangibleAssetIds.includes(asset.id);
+                            return (
+                              <div
+                                key={asset.id}
+                                className={`flex items-center gap-3 p-3 rounded-lg border-2 cursor-pointer transition-all ${
+                                  isSelected
+                                    ? 'border-red-500 bg-red-50'
+                                    : 'border-slate-200 hover:border-red-300 hover:bg-slate-50'
+                                }`}
+                                onClick={() => {
+                                  if (isSelected) {
+                                    setSelectedIntangibleAssetIds(prev => prev.filter(id => id !== asset.id));
+                                  } else {
+                                    setSelectedIntangibleAssetIds(prev => [...prev, asset.id]);
+                                  }
+                                }}
+                              >
+                                <div className={`h-4 w-4 rounded border-2 flex items-center justify-center ${
+                                  isSelected ? 'bg-red-500 border-red-500' : 'border-gray-300'
+                                }`}>
+                                  {isSelected && (
+                                    <svg className="h-3 w-3 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M5 13l4 4L19 7" />
+                                    </svg>
+                                  )}
+                                </div>
+                                <div className="flex-1 min-w-0">
+                                  <div className="flex items-center gap-2">
+                                    <span className="font-medium text-slate-900">{asset.name}</span>
+                                    <Badge variant="outline" className={asset.type === 'IT scope' ? 'bg-red-100 text-red-800 border-red-200' : 'bg-orange-100 text-orange-800 border-orange-200'}>
+                                      {asset.type}
+                                    </Badge>
+                                  </div>
+                                  {asset.description && (
+                                    <p className="text-sm text-gray-500 truncate mt-0.5">{asset.description}</p>
+                                  )}
+                                </div>
+                              </div>
+                            );
+                          })}
+                        </div>
+                      );
+                    })()}
+                  </CardContent>
+                </Card>
+              </TabsContent>
             </Tabs>
           </div>
-
           {/* Return Details Panel */}
           <div>
             <Card className="shadow-xl border-0 bg-white/80 backdrop-blur-sm sticky top-8">
@@ -1793,7 +1889,7 @@ export default function AssetsReturn() {
                   onClick={handleReturnClick}
                   disabled={
                     returning ||
-                    selectedAssignments.length === 0 ||
+                    (selectedAssignments.length === 0 && selectedIntangibleAssetIds.length === 0) ||
                     !hasPermission('Asset Return', 'create') ||
                     !hasPermission('Asset Return', 'edit')
                   }
@@ -1807,7 +1903,7 @@ export default function AssetsReturn() {
                   ) : (
                     <div className="flex items-center gap-2">
                       <RotateCcw className="h-5 w-5" />
-                      Return {selectedAssignments.length} Asset
+                      Return {selectedAssignments.length + selectedIntangibleAssetIds.length} Asset
                       {selectedAssignments.length !== 1 ? 's' : ''}
                     </div>
                   )}
@@ -2293,7 +2389,7 @@ export default function AssetsReturn() {
                 <p className="text-sm text-slate-700">
                   {currentUser?.position?.trim()
                     ? currentUser.position
-                    : '— (add a position on your profile if missing)'}
+                    : 'â€” (add a position on your profile if missing)'}
                 </p>
                 <p className="text-xs text-slate-500">
                   Shown on the return form PDF after processing.

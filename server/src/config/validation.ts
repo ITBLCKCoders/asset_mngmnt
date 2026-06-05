@@ -41,10 +41,10 @@ const envSchema = z.object({
   RESEND_API_KEY: z.string().optional(),
   RESEND_FROM_EMAIL: z.string().email().optional(),
 
-  // Vonage SMS Configuration
-  VONAGE_API_KEY: z.string().optional(),
-  VONAGE_API_SECRET: z.string().optional(),
-  VONAGE_FROM_NUMBER: z.string().optional(),
+  // Vonage SMS Configuration (disabled — all OTP now uses email)
+  // VONAGE_API_KEY: z.string().optional(),
+  // VONAGE_API_SECRET: z.string().optional(),
+  // VONAGE_FROM_NUMBER: z.string().optional(),
 
   // Cloudinary Configuration
   CLOUDINARY_CLOUD_NAME: z.string().optional(),
@@ -73,9 +73,9 @@ const normalizedEnv = {
   FRONTEND_URL: process.env.FRONTEND_URL ?? process.env.FRONTENDURL,
   API_PUBLIC_URL: process.env.API_PUBLIC_URL ?? process.env.APIPUBLICURL,
   COOKIE_DOMAIN: process.env.COOKIE_DOMAIN ?? process.env.COOKIEDOMAIN,
-  VONAGE_API_KEY: process.env.VONAGE_API_KEY ?? process.env.VONAGEAPIKEY,
-  VONAGE_API_SECRET: process.env.VONAGE_API_SECRET ?? process.env.VONAGEAPISECRET,
-  VONAGE_FROM_NUMBER: process.env.VONAGE_FROM_NUMBER ?? process.env.VONAGEFROMNUMBER,
+  // VONAGE_API_KEY: process.env.VONAGE_API_KEY ?? process.env.VONAGEAPIKEY,
+  // VONAGE_API_SECRET: process.env.VONAGE_API_SECRET ?? process.env.VONAGEAPISECRET,
+  // VONAGE_FROM_NUMBER: process.env.VONAGE_FROM_NUMBER ?? process.env.VONAGEFROMNUMBER,
 };
 
 // Parse and validate environment variables
@@ -89,15 +89,16 @@ if (!env.success) {
   process.exit(1);
 }
 
-export function validateVonageConfig() {
-  if (config.NODE_ENV !== 'production') {
-    return;
-  }
+// Vonage SMS config validation disabled — all OTP now uses email
+// export function validateVonageConfig() {
+//   if (config.NODE_ENV !== 'production') {
+//     return;
+//   }
 
-  if (!config.VONAGE_API_KEY || !config.VONAGE_API_SECRET) {
-    throw new Error('Vonage SMS configuration is required in production');
-  }
-}
+//   if (!config.VONAGE_API_KEY || !config.VONAGE_API_SECRET) {
+//     throw new Error('Vonage SMS configuration is required in production');
+//   }
+// }
 
 export const config = env.data;
 
@@ -140,5 +141,5 @@ export function validateAllConfigs() {
   validateJWTConfig();
   validateEmailConfig();
   validateCloudinaryConfig();
-  validateVonageConfig();
+  // validateVonageConfig();
 }

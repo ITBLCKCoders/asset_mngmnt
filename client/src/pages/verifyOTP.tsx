@@ -29,11 +29,14 @@ export default function VerifyOTP() {
   const navigate = useNavigate();
   const inputsRef = useRef<(HTMLInputElement | null)[]>([]);
 
-  const channel =
-    (localStorage.getItem('pendingVerificationChannel') as 'email' | 'sms') ||
-    'email';
+  // SMS channel disabled — all OTP now uses email
+  // const channel =
+  //   (localStorage.getItem('pendingVerificationChannel') as 'email' | 'sms') ||
+  //   'email';
+  const channel = 'email';
   const email = localStorage.getItem('pendingVerificationEmail') || '';
-  const contactNumber = localStorage.getItem('pendingVerificationContact') || '';
+  // const contactNumber = localStorage.getItem('pendingVerificationContact') || '';
+  const contactNumber = '';
 
   useEffect(() => {
     const expiryTime = localStorage.getItem('otpExpiryTime');
@@ -105,9 +108,9 @@ export default function VerifyOTP() {
     const loadingToast = toast.loading('Verifying OTP...');
     try {
       await api.post('/auth/verify-otp', {
-        channel,
+        // channel,
         email,
-        contactNumber,
+        // contactNumber,
         otp: code,
       });
       localStorage.removeItem('pendingVerificationChannel');
@@ -115,9 +118,10 @@ export default function VerifyOTP() {
       localStorage.removeItem('pendingVerificationContact');
       localStorage.removeItem('otpExpiryTime');
       toast.success(
-        channel === 'sms'
-          ? 'Phone number verified successfully!'
-          : 'Email verified successfully!',
+        // channel === 'sms'
+        //   ? 'Phone number verified successfully!'
+        //   : 'Email verified successfully!',
+        'Email verified successfully!',
         {
         id: loadingToast,
         icon: <CheckCircle2 className="w-5 h-5" />,
@@ -143,7 +147,8 @@ export default function VerifyOTP() {
   };
 
   const resendOTP = async () => {
-    const identifierMissing = channel === 'email' ? !email : !contactNumber;
+    // const identifierMissing = channel === 'email' ? !email : !contactNumber;
+    const identifierMissing = !email;
     if (!canResend || identifierMissing) return;
     setCanResend(false);
     setResendCooldown(60);
@@ -156,9 +161,9 @@ export default function VerifyOTP() {
     const loadingToast = toast.loading('Sending new OTP...');
     try {
       await api.post('/auth/resend-otp', {
-        channel,
+        // channel,
         email,
-        contactNumber,
+        // contactNumber,
       });
       toast.success('New OTP sent!', {
         id: loadingToast,
@@ -182,11 +187,11 @@ export default function VerifyOTP() {
       <Card className="w-full max-w-md shadow-xl">
         <CardHeader className="text-center">
           <CardTitle className="text-2xl">
-            Verify {channel === 'sms' ? 'Phone Number' : 'Email'}
+            Verify Email
           </CardTitle>
           <CardDescription>
             Enter the 6-digit code sent to{' '}
-            <strong>{channel === 'sms' ? contactNumber : email}</strong>
+            <strong>{email}</strong>
           </CardDescription>
           <p className="text-sm text-muted-foreground mt-2">
             Expires in:{' '}
@@ -237,7 +242,8 @@ export default function VerifyOTP() {
               disabled={
                 !canResend ||
                 status === 'loading' ||
-                (channel === 'email' ? !email : !contactNumber) ||
+                // (channel === 'email' ? !email : !contactNumber) ||
+                !email ||
                 otpExpiry === 0
               }
               variant="outline"

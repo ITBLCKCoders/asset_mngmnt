@@ -19,6 +19,8 @@ import {
   RefreshCw,
   User,
   XCircle,
+  Layers,
+  Search,
 } from 'lucide-react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
@@ -150,6 +152,9 @@ export default function TransferRequestsPage() {
     { id: string; name: string; type?: string; category?: string }[]
   >([]);
   const [departments, setDepartments] = useState<Department[]>([]);
+  const [intangibleAssets, setIntangibleAssets] = useState<any[]>([]);
+  const [selectedIntangibleAssetIds, setSelectedIntangibleAssetIds] = useState<string[]>([]);
+  const [intangibleNotes, setIntangibleNotes] = useState<Record<string, string>>({});
   const pendingTransferChecklistsRef = useRef<any[]>([]);
   const pendingExecuteTransferParamsRef = useRef<{
     formID: string;
@@ -157,6 +162,7 @@ export default function TransferRequestsPage() {
     transferType: string;
     receivedBy: string;
     newAssignment: any;
+    intangibleAssetItems?: { id: string; notes: string }[];
   } | null>(null);
 
   const fetchDepartments = async () => {
@@ -186,13 +192,26 @@ export default function TransferRequestsPage() {
     }
   };
 
+  const fetchIntangibleAssets = async () => {
+    try {
+      const response = await api.get('/intangible-assets');
+      setIntangibleAssets(response || []);
+    } catch (error) {
+      console.error('Failed to fetch intangible assets:', error);
+      setIntangibleAssets([]);
+    }
+  };
+
   useEffect(() => {
     fetchApproved();
     fetchDepartments();
+    fetchIntangibleAssets();
   }, []);
 
   const handleView = (batch: ApprovedBatch) => {
     setSelectedBatch(batch);
+    setSelectedIntangibleAssetIds([]);
+    setIntangibleNotes({});
     setConditions(
       (batch.returns || []).reduce(
         (acc, r) => ({
@@ -386,6 +405,7 @@ export default function TransferRequestsPage() {
             receivedBy: params.receivedBy,
             newAssignment: params.newAssignment,
             checklists: pendingTransferChecklistsRef.current,
+            intangibleAssetItems: params.intangibleAssetItems,
           }
         );
         toast.success('Transfer completed successfully');
@@ -788,140 +808,275 @@ export default function TransferRequestsPage() {
                   </div>
                 </div>
 
-                {(selectedBatch.returns || []).map(r => (
-                  <div
-                    key={r.assignment_id}
-                    className="rounded-xl border border-slate-200 bg-white p-5 shadow-sm space-y-4"
-                  >
-                    <div className="flex items-center gap-3">
-                      <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-slate-100">
-                        <Package className="h-5 w-5 text-slate-600" />
-                      </div>
-                      <div>
-                        <h4 className="font-semibold text-slate-900">
-                          {r.assignment?.asset?.name}
-                        </h4>
-                        <p className="text-sm text-slate-500 font-mono">
-                          {r.assignment?.asset?.code}
-                        </p>
-                      </div>
-                    </div>
-                    <div>
-                      <Label className="text-sm font-semibold text-slate-700">
-                        Condition
-                      </Label>
-                      <div className="grid grid-cols-2 sm:grid-cols-3 gap-2 mt-2">
-                        {conditionOptions.map(opt => {
-                          const sel =
-                            (conditions[r.assignment_id] || 'Good') === opt;
-                          return (
-                            <div
-                              key={opt}
-                              role="button"
-                              tabIndex={0}
-                              className={cn(
-                                'flex items-center gap-2 p-2 rounded-lg cursor-pointer border-2',
-                                sel
-                                  ? 'border-red-500 bg-red-50'
-                                  : 'border-slate-200 hover:border-slate-300'
-                              )}
-                              onClick={() =>
-                                setConditions(prev => ({
-                                  ...prev,
-                                  [r.assignment_id]: opt,
-                                }))
-                              }
-                              onKeyDown={e => {
-                                if (e.key === 'Enter' || e.key === ' ') {
-                                  e.preventDefault();
-                                  setConditions(prev => ({
-                                    ...prev,
-                                    [r.assignment_id]: opt,
-                                  }));
-                                }
-                              }}
-                            >
-                              <CheckCircle
-                                className={cn(
-                                  'h-4 w-4',
-                                  sel ? 'text-green-600' : 'text-slate-400'
-                                )}
-                              />
-                              <span className="text-sm font-medium">{opt}</span>
+                {(() => {
+                  const transferrerId = selectedBatch.returns[0]?.assignment?.user?.id || '';
+                  const assignedIntangibles = intangibleAssets.filter(a => a.assigned_to === transferrerId);
+                  return (
+                    <Tabs defaultValue="physical-assets" className="w-full">
+                      <TabsList className={segmentTabsListClassName + ' grid grid-cols-2 w-full'}>
+                        <TabsTrigger value="physical-assets" className={segmentTabsTriggerClassName + ' flex items-center gap-2'}>
+                          <Package className="h-4 w-4" />
+                          Physical Assets
+                          <Badge variant="secondary" className="ml-1 text-xs">
+                            {(selectedBatch.returns || []).length}
+                          </Badge>
+                        </TabsTrigger>
+                        <TabsTrigger value="intangible-assets" className={segmentTabsTriggerClassName + ' flex items-center gap-2'}>
+                          <Layers className="h-4 w-4" />
+                          Intangible Assets
+                          <Badge variant="secondary" className="ml-1 text-xs">
+                            {assignedIntangibles.length}
+                          </Badge>
+                        </TabsTrigger>
+                      </TabsList>
+
+                      <TabsContent value="physical-assets" className="mt-4 space-y-4">
+                        {(selectedBatch.returns || []).map(r => (
+                          <div
+                            key={r.assignment_id}
+                            className="rounded-xl border border-slate-200 bg-white p-5 shadow-sm space-y-4"
+                          >
+                            <div className="flex items-center gap-3">
+                              <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-slate-100">
+                                <Package className="h-5 w-5 text-slate-600" />
+                              </div>
+                              <div>
+                                <h4 className="font-semibold text-slate-900">
+                                  {r.assignment?.asset?.name}
+                                </h4>
+                                <p className="text-sm text-slate-500 font-mono">
+                                  {r.assignment?.asset?.code}
+                                </p>
+                              </div>
                             </div>
-                          );
-                        })}
-                      </div>
-                    </div>
-                    <div>
-                      <Label className="text-sm font-medium">
-                        Transfer Notes (optional)
-                      </Label>
-                      <Textarea
-                        placeholder="Add notes..."
-                        value={notesByAssignment[r.assignment_id] ?? ''}
-                        onChange={e =>
-                          setNotesByAssignment(prev => ({
-                            ...prev,
-                            [r.assignment_id]: e.target.value,
-                          }))
-                        }
-                        className="mt-1 border-slate-200"
-                        rows={2}
-                      />
-                    </div>
-                    <div>
-                      <Label className="text-sm font-medium">
-                        Transfer Condition Photos (up to {MAX_CONDITION_IMAGES})
-                      </Label>
-                      <div className="flex flex-wrap gap-2 mt-1">
-                        {(imageUrlsByAssignment[r.assignment_id] ?? []).map(
-                          (url, i) => (
-                            <div key={`${url}-${i}`} className="relative group">
-                              <img
-                                src={url}
-                                alt=""
-                                className="h-20 w-20 object-cover rounded-lg border"
-                              />
-                              <button
-                                type="button"
-                                onClick={() =>
-                                  handleConditionImageRemove(
-                                    r.assignment_id,
-                                    i
-                                  )
-                                }
-                                className="absolute -top-1 -right-1 h-6 w-6 rounded-full bg-red-500 text-white flex items-center justify-center opacity-0 group-hover:opacity-100"
-                              >
-                                <XCircle className="h-4 w-4" />
-                              </button>
-                            </div>
-                          )
-                        )}
-                        {(imageUrlsByAssignment[r.assignment_id] ?? [])
-                          .length < MAX_CONDITION_IMAGES && (
-                          <label className="flex h-20 w-20 items-center justify-center rounded-lg border-2 border-dashed border-slate-300 cursor-pointer">
-                            <input
-                              type="file"
-                              accept={VALID_IMAGE_TYPES.join(',')}
-                              className="hidden"
-                              onChange={e => {
-                                const f = e.target.files?.[0];
-                                if (f)
-                                  handleConditionImageAdd(
-                                    r.assignment_id,
-                                    f
+                            <div>
+                              <Label className="text-sm font-semibold text-slate-700">
+                                Condition
+                              </Label>
+                              <div className="grid grid-cols-2 sm:grid-cols-3 gap-2 mt-2">
+                                {conditionOptions.map(opt => {
+                                  const sel =
+                                    (conditions[r.assignment_id] || 'Good') === opt;
+                                  return (
+                                    <div
+                                      key={opt}
+                                      role="button"
+                                      tabIndex={0}
+                                      className={cn(
+                                        'flex items-center gap-2 p-2 rounded-lg cursor-pointer border-2',
+                                        sel
+                                          ? 'border-red-500 bg-red-50'
+                                          : 'border-slate-200 hover:border-slate-300'
+                                      )}
+                                      onClick={() =>
+                                        setConditions(prev => ({
+                                          ...prev,
+                                          [r.assignment_id]: opt,
+                                        }))
+                                      }
+                                      onKeyDown={e => {
+                                        if (e.key === 'Enter' || e.key === ' ') {
+                                          e.preventDefault();
+                                          setConditions(prev => ({
+                                            ...prev,
+                                            [r.assignment_id]: opt,
+                                          }));
+                                        }
+                                      }}
+                                    >
+                                      <CheckCircle
+                                        className={cn(
+                                          'h-4 w-4',
+                                          sel ? 'text-green-600' : 'text-slate-400'
+                                        )}
+                                      />
+                                      <span className="text-sm font-medium">{opt}</span>
+                                    </div>
                                   );
-                                e.target.value = '';
-                              }}
-                            />
-                            <ImagePlus className="h-8 w-8 text-slate-400" />
-                          </label>
-                        )}
-                      </div>
+                                })}
+                              </div>
+                            </div>
+                            <div>
+                              <Label className="text-sm font-medium">
+                                Transfer Notes (optional)
+                              </Label>
+                              <Textarea
+                                placeholder="Add notes..."
+                                value={notesByAssignment[r.assignment_id] ?? ''}
+                                onChange={e =>
+                                  setNotesByAssignment(prev => ({
+                                    ...prev,
+                                    [r.assignment_id]: e.target.value,
+                                  }))
+                                }
+                                className="mt-1 border-slate-200"
+                                rows={2}
+                              />
+                            </div>
+                            <div>
+                              <Label className="text-sm font-medium">
+                                Transfer Condition Photos (up to {MAX_CONDITION_IMAGES})
+                              </Label>
+                              <div className="flex flex-wrap gap-2 mt-1">
+                                {(imageUrlsByAssignment[r.assignment_id] ?? []).map(
+                                  (url, i) => (
+                                    <div key={`${url}-${i}`} className="relative group">
+                                      <img
+                                        src={url}
+                                        alt=""
+                                        className="h-20 w-20 object-cover rounded-lg border"
+                                      />
+                                      <button
+                                        type="button"
+                                        onClick={() =>
+                                          handleConditionImageRemove(
+                                            r.assignment_id,
+                                            i
+                                          )
+                                        }
+                                        className="absolute -top-1 -right-1 h-6 w-6 rounded-full bg-red-500 text-white flex items-center justify-center opacity-0 group-hover:opacity-100"
+                                      >
+                                        <XCircle className="h-4 w-4" />
+                                      </button>
+                                    </div>
+                                  )
+                                )}
+                                {(imageUrlsByAssignment[r.assignment_id] ?? [])
+                                  .length < MAX_CONDITION_IMAGES && (
+                                  <label className="flex h-20 w-20 items-center justify-center rounded-lg border-2 border-dashed border-slate-300 cursor-pointer">
+                                    <input
+                                      type="file"
+                                      accept={VALID_IMAGE_TYPES.join(',')}
+                                      className="hidden"
+                                      onChange={e => {
+                                        const f = e.target.files?.[0];
+                                        if (f)
+                                          handleConditionImageAdd(
+                                            r.assignment_id,
+                                            f
+                                          );
+                                        e.target.value = '';
+                                      }}
+                                    />
+                                    <ImagePlus className="h-8 w-8 text-slate-400" />
+                                  </label>
+                                )}
+                              </div>
+                            </div>
+                          </div>
+                        ))}
+                      </TabsContent>
+
+                      <TabsContent value="intangible-assets" className="mt-4">
+                        <div className="rounded-xl border border-slate-200 bg-white p-5 shadow-sm">
+                          {assignedIntangibles.length === 0 ? (
+                            <div className="text-center py-8">
+                              <Layers className="h-10 w-10 text-gray-300 mx-auto mb-3" />
+                              <p className="text-gray-500 text-sm">No intangible assets assigned to this user.</p>
+                            </div>
+                          ) : (
+                            <div className="space-y-2">
+                              <Label className="text-sm font-semibold text-slate-800 tracking-tight uppercase flex items-center gap-2">
+                                <Layers className="h-4 w-4 text-red-500" />
+                                Select intangible assets to transfer
+                              </Label>
+                              <div className="space-y-2 max-h-[300px] overflow-y-auto mt-3">
+                                {assignedIntangibles.map(asset => {
+                                  const isSelected = selectedIntangibleAssetIds.includes(asset.id);
+                                  return (
+                                    <div
+                                      key={asset.id}
+                                      className={`flex items-center gap-3 p-3 rounded-lg border-2 cursor-pointer transition-all ${
+                                        isSelected
+                                          ? 'border-red-500 bg-red-50'
+                                          : 'border-slate-200 hover:border-red-300 hover:bg-slate-50'
+                                      }`}
+                                      onClick={() => {
+                                        if (isSelected) {
+                                          setSelectedIntangibleAssetIds(prev => prev.filter(id => id !== asset.id));
+                                        } else {
+                                          setSelectedIntangibleAssetIds(prev => [...prev, asset.id]);
+                                        }
+                                      }}
+                                    >
+                                      <div className={`h-4 w-4 rounded border-2 flex items-center justify-center ${
+                                        isSelected ? 'bg-red-500 border-red-500' : 'border-gray-300'
+                                      }`}>
+                                        {isSelected && (
+                                          <svg className="h-3 w-3 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M5 13l4 4L19 7" />
+                                          </svg>
+                                        )}
+                                      </div>
+                                      <div className="flex-1 min-w-0">
+                                        <div className="flex items-center gap-2">
+                                          <span className="font-medium text-slate-900">{asset.name}</span>
+                                          <Badge variant="outline" className={asset.type === 'IT scope' ? 'bg-red-100 text-red-800 border-red-200' : 'bg-orange-100 text-orange-800 border-orange-200'}>
+                                            {asset.type}
+                                          </Badge>
+                                        </div>
+                                        {asset.description && (
+                                          <p className="text-sm text-gray-500 truncate mt-0.5">{asset.description}</p>
+                                        )}
+                                      </div>
+                                    </div>
+                                  );
+                                })}
+                              </div>
+                            </div>
+                          )}
+                        </div>
+                      </TabsContent>
+                    </Tabs>
+                  );
+                })()}
+
+                {selectedIntangibleAssetIds.length > 0 && (
+                  <div className="rounded-xl border border-slate-200 bg-white p-5 shadow-sm">
+                    <Label className="text-sm font-semibold text-slate-800 tracking-tight uppercase flex items-center gap-2 mb-4">
+                      <Layers className="h-4 w-4 text-red-500" />
+                      Intangible Assets ({selectedIntangibleAssetIds.length})
+                    </Label>
+                    <div className="overflow-x-auto">
+                      <table className="w-full text-sm">
+                        <thead>
+                          <tr className="border-b border-slate-200">
+                            <th className="text-left py-2 px-3 font-semibold text-slate-700">Name</th>
+                            <th className="text-left py-2 px-3 font-semibold text-slate-700">Type</th>
+                            <th className="text-left py-2 px-3 font-semibold text-slate-700">Description</th>
+                            <th className="text-left py-2 px-3 font-semibold text-slate-700">Notes</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {selectedIntangibleAssetIds.map(id => {
+                            const asset = intangibleAssets.find(a => a.id === id);
+                            if (!asset) return null;
+                            return (
+                              <tr key={id} className="border-b border-slate-100 last:border-0">
+                                <td className="py-2 px-3 text-slate-900 font-medium">{asset.name}</td>
+                                <td className="py-2 px-3">
+                                  <Badge variant="outline" className={asset.type === 'IT scope' ? 'bg-red-100 text-red-800 border-red-200' : 'bg-orange-100 text-orange-800 border-orange-200'}>
+                                    {asset.type}
+                                  </Badge>
+                                </td>
+                                <td className="py-2 px-3 text-slate-600">{asset.description || '—'}</td>
+                                <td className="py-2 px-3">
+                                  <Textarea
+                                    placeholder="Notes..."
+                                    value={intangibleNotes[id] ?? ''}
+                                    onChange={e => setIntangibleNotes(prev => ({ ...prev, [id]: e.target.value }))}
+                                    className="border-slate-200 focus:border-red-500 focus:ring-red-500/20 rounded-lg resize-none text-xs"
+                                    rows={2}
+                                  />
+                                </td>
+                              </tr>
+                            );
+                          })}
+                        </tbody>
+                      </table>
                     </div>
                   </div>
-                ))}
+                )}
 
                 <div className="rounded-xl border border-slate-200 bg-white p-5 shadow-sm space-y-4">
                   <Label className="text-sm font-semibold text-slate-800 uppercase">
@@ -1044,6 +1199,13 @@ export default function TransferRequestsPage() {
                         : []),
                   }));
 
+                  const intangibleAssetItems = selectedIntangibleAssetIds
+                    .filter(id => intangibleAssets.some(ia => ia.id === id))
+                    .map(id => ({
+                      id,
+                      notes: intangibleNotes[id] ?? '',
+                    }));
+
                   const newAssignment = {
                     userId: selectedBatch.new_assigned_user_id,
                     departmentId: null,
@@ -1072,6 +1234,7 @@ export default function TransferRequestsPage() {
                       transferType,
                       receivedBy,
                       newAssignment,
+                      intangibleAssetItems: intangibleAssetItems.length > 0 ? intangibleAssetItems : undefined,
                     };
                     setChecklistAssets(computerReturns);
                     setChecklistStepIndex(0);
@@ -1094,6 +1257,7 @@ export default function TransferRequestsPage() {
                           transferType,
                           receivedBy,
                           newAssignment,
+                          intangibleAssetItems: intangibleAssetItems.length > 0 ? intangibleAssetItems : undefined,
                         }
                       );
                       toast.success(

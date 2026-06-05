@@ -5,8 +5,9 @@ import { createMockPool } from '../helpers/mockPool.js';
 const mockPool = createMockPool();
 const mockSettingGetValue = jest.fn();
 const mockSendEmail = jest.fn();
-const mockSendSmsVerification = jest.fn();
-const mockCheckSmsVerification = jest.fn();
+// SMS mocks disabled — all OTP now uses email
+// const mockSendSmsVerification = jest.fn();
+// const mockCheckSmsVerification = jest.fn();
 const mockGenerateTokens = jest.fn();
 const mockNormalizePhone = jest.fn((p: string) => p);
 const mockBuildPhoneLookupVariants = jest.fn((p: string) => [p]);
@@ -23,10 +24,11 @@ jest.mock('../../models/setting.model.js', () => ({
   SettingModel: { getValue: (...args: any[]) => mockSettingGetValue(...args) },
 }));
 jest.mock('../../email.js', () => ({ sendEmail: (...args: any[]) => mockSendEmail(...args) }));
-jest.mock('../../auth/sms.js', () => ({
-  sendSmsVerification: (...args: any[]) => mockSendSmsVerification(...args),
-  checkSmsVerification: (...args: any[]) => mockCheckSmsVerification(...args),
-}));
+// SMS OTP replaced by email OTP — kept for reference
+// jest.mock('../../auth/sms.js', () => ({
+//   sendSmsVerification: (...args: any[]) => mockSendSmsVerification(...args),
+//   checkSmsVerification: (...args: any[]) => mockCheckSmsVerification(...args),
+// }));
 jest.mock('../../auth/tokens.js', () => ({
   generateTokens: (...args: any[]) => mockGenerateTokens(...args),
 }));
@@ -152,25 +154,26 @@ describe('Auth Password', () => {
     });
   });
 
-  describe('forgotPassword (sms channel)', () => {
-    it('should send SMS OTP when normalized phone is valid', async () => {
-      mockNormalizePhone.mockReturnValue('+639123456789');
-      mockBuildPhoneLookupVariants.mockReturnValue(['+639123456789']);
-      (mockPool.execute as jest.Mock).mockResolvedValueOnce([[{ userID: 'u1' }], []]);
-      mockSendSmsVerification.mockResolvedValue({ success: true as const });
-      const result = await forgotPassword('sms', { contactNumber: '09123456789' });
-      expect(result.message).toBe('If account exists, OTP sent');
-    });
-
-    it('should return error when SMS send fails', async () => {
-      mockNormalizePhone.mockReturnValue('+639123456789');
-      mockBuildPhoneLookupVariants.mockReturnValue(['+639123456789']);
-      (mockPool.execute as jest.Mock).mockResolvedValueOnce([[{ userID: 'u1' }], []]);
-      mockSendSmsVerification.mockResolvedValue({ error: 'SMS failed' });
-      const result = await forgotPassword('sms', { contactNumber: '09123456789' });
-      expect(result.error).toBe('SMS failed');
-    });
-  });
+  // SMS OTP replaced by email OTP — kept for reference
+  // describe('forgotPassword (sms channel)', () => {
+  //   it('should send SMS OTP when normalized phone is valid', async () => {
+  //     mockNormalizePhone.mockReturnValue('+639123456789');
+  //     mockBuildPhoneLookupVariants.mockReturnValue(['+639123456789']);
+  //     (mockPool.execute as jest.Mock).mockResolvedValueOnce([[{ userID: 'u1' }], []]);
+  //     mockSendSmsVerification.mockResolvedValue({ success: true as const });
+  //     const result = await forgotPassword('sms', { contactNumber: '09123456789' });
+  //     expect(result.message).toBe('If account exists, OTP sent');
+  //   });
+  //
+  //   it('should return error when SMS send fails', async () => {
+  //     mockNormalizePhone.mockReturnValue('+639123456789');
+  //     mockBuildPhoneLookupVariants.mockReturnValue(['+639123456789']);
+  //     (mockPool.execute as jest.Mock).mockResolvedValueOnce([[{ userID: 'u1' }], []]);
+  //     mockSendSmsVerification.mockResolvedValue({ error: 'SMS failed' });
+  //     const result = await forgotPassword('sms', { contactNumber: '09123456789' });
+  //     expect(result.error).toBe('SMS failed');
+  //   });
+  // });
 
   describe('verifyPasswordResetOTP', () => {
     it('should return success when OTP is valid', async () => {

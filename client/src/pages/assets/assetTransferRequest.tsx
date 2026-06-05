@@ -10,6 +10,7 @@ import {
   ArrowRightLeft,
   Boxes,
   Crown,
+  Layers,
 } from 'lucide-react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { PageHeader } from '@/components/common/PageHeader';
@@ -264,6 +265,8 @@ export default function AssetTransferRequest() {
   const [expandedBuilderForSelect, setExpandedBuilderForSelect] = useState<
     string | null
   >(null);
+  const [intangibleAssets, setIntangibleAssets] = useState<any[]>([]);
+  const [selectedIntangibleAssetIds, setSelectedIntangibleAssetIds] = useState<string[]>([]);
   const [showOtpDialog, setShowOtpDialog] = useState(false);
   const pendingSubmitActionRef = useRef<(() => Promise<void>) | null>(null);
   const [confirmTransferWhenApproved, setConfirmTransferWhenApproved] =
@@ -283,7 +286,13 @@ export default function AssetTransferRequest() {
       : 'the selected user';
   }, [targetUser, users]);
 
-  const confirmTransferMessage = `You are about to submit a transfer request for ${selectedAssignments.length} asset(s) to ${targetUserName}. The form will be sent to your department head for approval. Do you want to continue?`;
+  const selectedIntangibleAssetsForConfirm = useMemo(
+    () =>
+      intangibleAssets.filter(a => selectedIntangibleAssetIds.includes(a.id)),
+    [intangibleAssets, selectedIntangibleAssetIds]
+  );
+
+  const confirmTransferMessage = `You are about to submit a transfer request for ${selectedAssignments.length} asset(s)${selectedIntangibleAssetIds.length > 0 ? ` and ${selectedIntangibleAssetIds.length} intangible asset(s)` : ''} to ${targetUserName}. The form will be sent to your department head for approval. Do you want to continue?`;
 
   const selectedAssignmentsForConfirm = useMemo(
     () =>
@@ -412,6 +421,16 @@ export default function AssetTransferRequest() {
     }
   };
 
+  const fetchIntangibleAssets = async () => {
+    try {
+      const response = await api.get('/intangible-assets');
+      setIntangibleAssets(response || []);
+    } catch (error) {
+      console.error('Failed to fetch intangible assets:', error);
+      setIntangibleAssets([]);
+    }
+  };
+
   useEffect(() => {
     const fetchData = async () => {
       await Promise.all([
@@ -421,6 +440,7 @@ export default function AssetTransferRequest() {
         fetchUsers(),
         fetchDepartments(),
         fetchAssetBuilders(),
+        fetchIntangibleAssets(),
       ]);
       setLoading(false);
     };
@@ -509,16 +529,18 @@ export default function AssetTransferRequest() {
           notes: transferNotes,
           transferType,
           digitalSignature,
+          intangibleAssetIds: selectedIntangibleAssetIds,
         }
       );
 
       toast.success(
-        `Transfer request submitted for ${selectedAssignments.length} asset(s). It will be sent to your department head for approval.`
+        `Transfer request submitted for ${selectedAssignments.length} asset(s)${selectedIntangibleAssetIds.length > 0 ? ` and ${selectedIntangibleAssetIds.length} intangible asset(s)` : ''}. It will be sent to your department head for approval.`
       );
       setShowConfirmDialog(false);
       setConfirmTransferWhenApproved(false);
       setConfirmSigningTransfer(false);
       setSelectedAssignments([]);
+      setSelectedIntangibleAssetIds([]);
       setTransferNotes('');
       setTargetUser('');
       setSelectedDepartmentId('');
@@ -707,7 +729,7 @@ export default function AssetTransferRequest() {
         <div className="grid grid-cols-1 xl:grid-cols-3 gap-8">
           <div className="xl:col-span-2">
             <Tabs defaultValue="select-assets" className="w-full">
-              <TabsList className={segmentTabsListClassName + ' grid grid-cols-2 mb-4'}>
+              <TabsList className={segmentTabsListClassName + ' grid grid-cols-3 mb-4'}>
                 <TabsTrigger
                   value="select-assets"
                   className={segmentTabsTriggerClassName + ' flex items-center gap-2'}
@@ -726,6 +748,16 @@ export default function AssetTransferRequest() {
                   Asset Built
                   <Badge variant="secondary" className="ml-1 text-xs">
                     {filteredAssignedBuilders.length}
+                  </Badge>
+                </TabsTrigger>
+                <TabsTrigger
+                  value="intangible-assets"
+                  className={segmentTabsTriggerClassName + ' flex items-center gap-2'}
+                >
+                  <Layers className="h-4 w-4" />
+                  Intangible Assets
+                  <Badge variant="secondary" className="ml-1 text-xs">
+                    {intangibleAssets.filter(a => a.assigned_to === currentUser?.id).length}
                   </Badge>
                 </TabsTrigger>
               </TabsList>
@@ -1473,6 +1505,77 @@ export default function AssetTransferRequest() {
                   </div>
                 )}
               </TabsContent>
+
+              <TabsContent value="intangible-assets" className="mt-0">
+                <Card className="shadow-xl border-0 bg-white/80 backdrop-blur-sm">
+                  <CardHeader className="pb-4">
+                    <CardTitle className="flex items-center gap-3 text-xl">
+                      <div className="p-2 bg-red-100 rounded-lg">
+                        <Layers className="h-5 w-5 text-red-600" />
+                      </div>
+                      Intangible Assets
+                    </CardTitle>
+                  </CardHeader>
+                  <CardContent>
+                    {(() => {
+                      const myIntangibles = intangibleAssets.filter(a => a.assigned_to === currentUser?.id);
+                      if (myIntangibles.length === 0) {
+                        return (
+                          <div className="text-center py-8">
+                            <Layers className="h-10 w-10 text-gray-300 mx-auto mb-3" />
+                            <p className="text-gray-500 text-sm">No intangible assets assigned to you.</p>
+                          </div>
+                        );
+                      }
+                      return (
+                        <div className="space-y-2 max-h-[400px] overflow-y-auto">
+                          {myIntangibles.map(asset => {
+                            const isSelected = selectedIntangibleAssetIds.includes(asset.id);
+                            return (
+                              <div
+                                key={asset.id}
+                                className={`flex items-center gap-3 p-3 rounded-lg border-2 cursor-pointer transition-all ${
+                                  isSelected
+                                    ? 'border-red-500 bg-red-50'
+                                    : 'border-slate-200 hover:border-red-300 hover:bg-slate-50'
+                                }`}
+                                onClick={() => {
+                                  if (isSelected) {
+                                    setSelectedIntangibleAssetIds(prev => prev.filter(id => id !== asset.id));
+                                  } else {
+                                    setSelectedIntangibleAssetIds(prev => [...prev, asset.id]);
+                                  }
+                                }}
+                              >
+                                <div className={`h-4 w-4 rounded border-2 flex items-center justify-center ${
+                                  isSelected ? 'bg-red-500 border-red-500' : 'border-gray-300'
+                                }`}>
+                                  {isSelected && (
+                                    <svg className="h-3 w-3 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M5 13l4 4L19 7" />
+                                    </svg>
+                                  )}
+                                </div>
+                                <div className="flex-1 min-w-0">
+                                  <div className="flex items-center gap-2">
+                                    <span className="font-medium text-slate-900">{asset.name}</span>
+                                    <Badge variant="outline" className={asset.type === 'IT scope' ? 'bg-red-100 text-red-800 border-red-200' : 'bg-orange-100 text-orange-800 border-orange-200'}>
+                                      {asset.type}
+                                    </Badge>
+                                  </div>
+                                  {asset.description && (
+                                    <p className="text-sm text-gray-500 truncate mt-0.5">{asset.description}</p>
+                                  )}
+                                </div>
+                              </div>
+                            );
+                          })}
+                        </div>
+                      );
+                    })()}
+                  </CardContent>
+                </Card>
+              </TabsContent>
             </Tabs>
           </div>
 
@@ -1711,6 +1814,22 @@ export default function AssetTransferRequest() {
                   ))}
                 </ul>
               </div>
+              {selectedIntangibleAssetsForConfirm.length > 0 && (
+                <div>
+                  <h4 className="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-1">Intangible Assets</h4>
+                  <ul className="space-y-1.5">
+                    {selectedIntangibleAssetsForConfirm.map(asset => (
+                      <li key={asset.id} className="flex w-full items-center gap-3 rounded-xl border-2 border-blue-200 bg-white px-3 py-2 shadow-sm transition-all duration-200 hover:border-blue-300 hover:shadow-md">
+                        <Layers className="h-5 w-5 flex-shrink-0 text-gray-500" />
+                        <div className="min-w-0 flex-1">
+                          <p className="truncate text-sm font-semibold text-gray-900">{asset.name}</p>
+                          <p className="mt-0.5 text-xs text-gray-500">{asset.type}</p>
+                        </div>
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+              )}
               <div className="rounded-lg border border-gray-200 bg-gray-50 px-3 py-3">
                 <p className="text-xs leading-snug text-gray-700">
                   {confirmTransferMessage}

@@ -19,6 +19,7 @@ import {
 } from '../utils/approverNotifications.js';
 import { createNotificationForApi } from '../utils/notificationsApi.js';
 import { createErrorResponse } from '../utils/responseWrapper.js';
+import * as intangibleAssetsService from '../services/intangibleAssets.service.js';
 import {
   AssetReturnModel,
   type AssetReturn,
@@ -289,8 +290,9 @@ export async function submitAssetReturnRequestHandler(
       returnType?: string;
       return_type?: string;
       digitalSignature?: string;
+      intangibleAssetIds?: string[];
     };
-    const { assignmentIds, returnConditions, returnNotes } = body;
+    const { assignmentIds, returnConditions, returnNotes, intangibleAssetIds } = body;
     const returnTypeRaw = body.returnType ?? body.return_type;
 
     const normalizedReturnType = normalizeReturnTypeString(returnTypeRaw);
@@ -425,6 +427,28 @@ export async function submitAssetReturnRequestHandler(
       });
     }
 
+    // Process intangible asset returns (unassign from user)
+    if (intangibleAssetIds && intangibleAssetIds.length > 0 && companyId) {
+      for (const assetId of intangibleAssetIds) {
+        try {
+          await intangibleAssetsService.unassignIntangibleAsset(assetId, companyId);
+          await createAuditLog({
+            userId: currentUserId,
+            action: 'Requested Return of Intangible Asset',
+            resourceType: 'intangible_asset',
+            resourceId: assetId,
+            resourceName: assetId,
+            details: `Intangible asset return requested as part of return form ${returnForm!.form_number}`,
+            ipAddress: req.ip,
+            userAgent: req.get('User-Agent'),
+            companyId,
+          });
+        } catch (err) {
+          logger.error('Failed to unassign intangible asset on return request', { id: assetId, err });
+        }
+      }
+    }
+
     // Send notification to department heads (Manager Approver 1) in the same department
     const departmentId = effectiveDepartmentId;
     logger.info(`Notification debug - returnerUserDeptId: ${returnerUserDeptId}, categoryDeptId: ${categoryDeptId}, firstAssignment.department_id: ${firstAssignment.department_id}, final departmentId: ${departmentId}`);
@@ -504,6 +528,7 @@ export async function createAssetReturnHandler(
       returnType,
       assignToProcessor = false,
       ownerAbsent: ownerAbsentRaw,
+      intangibleAssetReturnItems,
     } = req.body;
     const ownerAbsent =
       ownerAbsentRaw === true ||
@@ -517,18 +542,21 @@ export async function createAssetReturnHandler(
       });
     }
 
+    const hasIntangibleItems = intangibleAssetReturnItems && Array.isArray(intangibleAssetReturnItems) && intangibleAssetReturnItems.length > 0;
     if (
       !assetReturns ||
       !Array.isArray(assetReturns) ||
-      assetReturns.length === 0
+      (assetReturns.length === 0 && !hasIntangibleItems)
     ) {
-      return res.status(400).json({
-        error: 'Asset returns array is required',
-      });
+      if (!hasIntangibleItems) {
+        return res.status(400).json({
+          error: 'Asset returns array is required',
+        });
+      }
     }
 
     // Validate all assignments exist and are active
-    const assignmentIds = assetReturns.map(item => item.assignmentId);
+    const assignmentIds = assetReturns.map((item: any) => item.assignmentId);
 
     const assignmentRows = await getActiveAssignmentsByIds(assignmentIds);
 
@@ -682,6 +710,28 @@ export async function createAssetReturnHandler(
           });
         }
       }
+      // Process intangible asset return items (unassign from user)
+      if (hasIntangibleItems && companyId) {
+        for (const item of intangibleAssetReturnItems) {
+          try {
+            await intangibleAssetsService.unassignIntangibleAsset(item.id, companyId);
+            await createAuditLog({
+              userId: req.user!.userID,
+              action: 'Returned Intangible Asset',
+              resourceType: 'intangible_asset',
+              resourceId: item.id,
+              resourceName: item.id,
+              details: `Intangible asset returned via Asset Return page`,
+              ipAddress: req.ip,
+              userAgent: req.get ? req.get('User-Agent') : 'Unknown',
+              companyId,
+            });
+          } catch (err) {
+            logger.error('Failed to unassign intangible asset on return', { id: item.id, err });
+          }
+        }
+      }
+
       return res.status(201).json({
         message: ownerAbsent
           ? 'Return request created. The asset owner was marked absent—download the return form, obtain the asset owner’s department head signature for processing, then the department head can approve in Approvals. Assets will be assigned to you after approval.'
@@ -695,7 +745,7 @@ export async function createAssetReturnHandler(
     }
 
     // Create asset return records (with form_id) and update assignments (full execute path when not assignToProcessor)
-    const returnPromises = assetReturns.map(async returnData => {
+    const returnPromises = assetReturns.map(async (returnData: any) => {
       let processorAssignAuditData: {
         processorId: string;
         newAssignmentId: string;
@@ -1097,8 +1147,30 @@ export async function createAssetReturnHandler(
       }
     }
 
+    // Process intangible asset return items (unassign from user)
+    if (hasIntangibleItems && companyId) {
+      for (const item of intangibleAssetReturnItems) {
+        try {
+          await intangibleAssetsService.unassignIntangibleAsset(item.id, companyId);
+          await createAuditLog({
+            userId: req.user!.userID,
+            action: 'Returned Intangible Asset',
+            resourceType: 'intangible_asset',
+            resourceId: item.id,
+            resourceName: item.id,
+            details: `Intangible asset returned via Asset Return page`,
+            ipAddress: req.ip,
+            userAgent: req.get ? req.get('User-Agent') : 'Unknown',
+            companyId,
+          });
+        } catch (err) {
+          logger.error('Failed to unassign intangible asset on return', { id: item.id, err });
+        }
+      }
+    }
+
     return res.status(201).json({
-      message: `Successfully returned ${assetReturns.length} asset(s)`,
+      message: `Successfully returned ${assetReturns.length} asset(s)${hasIntangibleItems ? ` and ${intangibleAssetReturnItems.length} intangible asset(s)` : ''}`,
       assetReturns: createdReturns,
       returnForm: returnForm
         ? { formID: returnForm.formID, form_number: returnForm.form_number }
@@ -3501,6 +3573,7 @@ export async function processReturnFormHandler(
       returnType,
       assignToProcessor = false,
       receivedBy,
+      intangibleAssetReturnItems,
     } = req.body as {
       processSignature?: { signed_at?: string; digital_signature?: string };
       assetReturns?: {
@@ -3515,6 +3588,7 @@ export async function processReturnFormHandler(
       returnType?: string;
       assignToProcessor?: boolean;
       receivedBy?: string | null;
+      intangibleAssetReturnItems?: { id: string; notes?: string }[];
     };
     const userId = req.user!.userID;
 
@@ -4159,6 +4233,30 @@ export async function processReturnFormHandler(
         actionTarget: 'my_return_requests',
       },
     });
+
+    // Process intangible asset returns (unassign from user)
+    if (intangibleAssetReturnItems && intangibleAssetReturnItems.length > 0) {
+      const companyId = form.form_company_id;
+      for (const item of intangibleAssetReturnItems) {
+        try {
+          await intangibleAssetsService.unassignIntangibleAsset(item.id, companyId);
+          await createAuditLog({
+            userId: req.user!.userID,
+            action: 'Returned Intangible Asset',
+            resourceType: 'intangible_asset',
+            resourceId: item.id,
+            resourceName: item.id,
+            details: `Intangible asset returned via return form ${form.form_number || formId}`,
+            newValues: { notes: item.notes || null },
+            ipAddress: req.ip || 'unknown',
+            userAgent: req.get('User-Agent') || 'unknown',
+            companyId,
+          });
+        } catch (err) {
+          logger.error('Failed to unassign intangible asset on return', { id: item.id, err });
+        }
+      }
+    }
 
     return res.json({
       message: 'Return form processed successfully',

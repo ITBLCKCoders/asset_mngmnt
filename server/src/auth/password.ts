@@ -8,7 +8,8 @@ import logger from '../logger.js';
 import { generateTokens } from './tokens.js';
 import { config } from '../config/validation.js';
 import { SettingModel } from '../models/setting.model.js';
-import { checkSmsVerification, sendSmsVerification } from './sms.js';
+// SMS OTP replaced by email OTP — kept for reference
+// import { checkSmsVerification, sendSmsVerification } from './sms.js';
 import { buildPhoneLookupVariants, normalizePhoneToE164PH } from '../utils/phone.js';
 import { redactEmail, redactPhone } from '../utils/redact.js';
 
@@ -113,7 +114,8 @@ export async function validatePassword(
 }
 
 export async function forgotPassword(
-  channel: 'email' | 'sms',
+  // channel: 'email' | 'sms',
+  channel: 'email',
   identifier: { email?: string; contactNumber?: string }
 ) {
   if (channel === 'email') {
@@ -159,45 +161,49 @@ export async function forgotPassword(
     return { message: 'If account exists, OTP sent' };
   }
 
-  let normalizedPhone = normalizePhoneToE164PH(identifier.contactNumber || '');
-  if (!normalizedPhone && identifier.email) {
-    const [userRows] = (await pool.execute('CALL sp_get_user_by_email(?)', [
-      identifier.email,
-    ])) as any[];
-    const userResult = Array.isArray(userRows[0]) ? userRows[0] : userRows;
-    const user = userResult[0];
-    const contactFromEmail = user?.contact_number || user?.contactNumber || '';
-    normalizedPhone = normalizePhoneToE164PH(contactFromEmail);
-  }
+  // Fallback — should never reach here since channel is always 'email'
+  return { message: 'If account exists, OTP sent' };
 
-  if (!normalizedPhone) {
-    return { message: 'If account exists, OTP sent' };
-  }
+  // SMS OTP replaced by email OTP — kept for reference
+  // let normalizedPhone = normalizePhoneToE164PH(identifier.contactNumber || '');
+  // if (!normalizedPhone && identifier.email) {
+  //   const [userRows] = (await pool.execute('CALL sp_get_user_by_email(?)', [
+  //     identifier.email,
+  //   ])) as any[];
+  //   const userResult = Array.isArray(userRows[0]) ? userRows[0] : userRows;
+  //   const user = userResult[0];
+  //   const contactFromEmail = user?.contact_number || user?.contactNumber || '';
+  //   normalizedPhone = normalizePhoneToE164PH(contactFromEmail);
+  // }
 
-  const phoneVariants = buildPhoneLookupVariants(normalizedPhone);
-  const placeholders = phoneVariants.map(() => '?').join(', ');
+  // if (!normalizedPhone) {
+  //   return { message: 'If account exists, OTP sent' };
+  // }
 
-  const [rows] = (await pool.execute(
-    `SELECT userID FROM users WHERE contact_number IN (${placeholders}) LIMIT 1`,
-    phoneVariants
-  )) as any[];
-  const user = (rows as any[])[0];
+  // const phoneVariants = buildPhoneLookupVariants(normalizedPhone);
+  // const placeholders = phoneVariants.map(() => '?').join(', ');
 
-  if (!user) {
-    logger.info('[FORGOT] No user found for contact number (silent)');
-    return { message: 'If account exists, OTP sent' };
-  }
+  // const [rows] = (await pool.execute(
+  //   `SELECT userID FROM users WHERE contact_number IN (${placeholders}) LIMIT 1`,
+  //   phoneVariants
+  // )) as any[];
+  // const user = (rows as any[])[0];
 
-  const sendResult = await sendSmsVerification(normalizedPhone);
-  if ('error' in sendResult) {
-    logger.warn('[FORGOT] SMS failed, returning error');
-    return { error: sendResult.error };
-  }
+  // if (!user) {
+  //   logger.info('[FORGOT] No user found for contact number (silent)');
+  //   return { message: 'If account exists, OTP sent' };
+  // }
 
-  logger.info(
-    `[FORGOT] Reset OTP sent via SMS to: ${redactPhone(normalizedPhone)}`
-  );
-  return { message: 'If account exists, OTP sent', contactNumber: normalizedPhone, effectiveChannel: 'sms' };
+  // const sendResult = await sendSmsVerification(normalizedPhone);
+  // if ('error' in sendResult) {
+  //   logger.warn('[FORGOT] SMS failed, returning error');
+  //   return { error: sendResult.error };
+  // }
+
+  // logger.info(
+  //   `[FORGOT] Reset OTP sent via SMS to: ${redactPhone(normalizedPhone)}`
+  // );
+  // return { message: 'If account exists, OTP sent', contactNumber: normalizedPhone, effectiveChannel: 'sms' };
 }
 
 export async function verifyPasswordResetOTP(otp: string) {
@@ -233,54 +239,55 @@ export async function verifyPasswordResetOTP(otp: string) {
   return { success: true, userId: user.userID, email: user.email };
 }
 
-export async function verifyPasswordResetOTPSms(
-  contactNumber: string,
-  otp: string,
-  email?: string
-) {
-  let normalizedPhone = normalizePhoneToE164PH(contactNumber);
-  if (!normalizedPhone && email) {
-    const [userRows] = (await pool.execute('CALL sp_get_user_by_email(?)', [
-      email,
-    ])) as any[];
-    const userResult = Array.isArray(userRows[0]) ? userRows[0] : userRows;
-    const user = userResult[0];
-    const contactFromEmail = user?.contact_number || user?.contactNumber || '';
-    normalizedPhone = normalizePhoneToE164PH(contactFromEmail);
-  }
+// SMS OTP replaced by email OTP — kept for reference
+// export async function verifyPasswordResetOTPSms(
+//   contactNumber: string,
+//   otp: string,
+//   email?: string
+// ) {
+//   let normalizedPhone = normalizePhoneToE164PH(contactNumber);
+//   if (!normalizedPhone && email) {
+//     const [userRows] = (await pool.execute('CALL sp_get_user_by_email(?)', [
+//       email,
+//     ])) as any[];
+//     const userResult = Array.isArray(userRows[0]) ? userRows[0] : userRows;
+//     const user = userResult[0];
+//     const contactFromEmail = user?.contact_number || user?.contactNumber || '';
+//     normalizedPhone = normalizePhoneToE164PH(contactFromEmail);
+//   }
 
-  if (!normalizedPhone) {
-    return { error: 'Invalid contact number format' };
-  }
+//   if (!normalizedPhone) {
+//     return { error: 'Invalid contact number format' };
+//   }
 
-  const phoneVariants = buildPhoneLookupVariants(normalizedPhone);
-  const placeholders = phoneVariants.map(() => '?').join(', ');
+//   const phoneVariants = buildPhoneLookupVariants(normalizedPhone);
+//   const placeholders = phoneVariants.map(() => '?').join(', ');
 
-  const verificationResult = await checkSmsVerification(normalizedPhone, otp);
-  if ('error' in verificationResult) {
-    return { error: verificationResult.error };
-  }
+//   const verificationResult = await checkSmsVerification(normalizedPhone, otp);
+//   if ('error' in verificationResult) {
+//     return { error: verificationResult.error };
+//   }
 
-  const [rows] = (await pool.execute(
-    `SELECT userID, email FROM users WHERE contact_number IN (${placeholders}) LIMIT 1`,
-    phoneVariants
-  )) as any[];
-  const user = (rows as any[])[0];
-  if (!user) {
-    return { error: 'User not found' };
-  }
+//   const [rows] = (await pool.execute(
+//     `SELECT userID, email FROM users WHERE contact_number IN (${placeholders}) LIMIT 1`,
+//     phoneVariants
+//   )) as any[];
+//   const user = (rows as any[])[0];
+//   if (!user) {
+//     return { error: 'User not found' };
+//   }
 
-  const resetToken = crypto.randomInt(100000, 1000000).toString();
-  await pool.execute('CALL sp_delete_password_reset_tokens_by_user(?)', [
-    user.userID,
-  ]);
-  await pool.execute('CALL sp_insert_password_reset_token(?, ?)', [
-    resetToken,
-    user.userID,
-  ]);
+//   const resetToken = crypto.randomInt(100000, 1000000).toString();
+//   await pool.execute('CALL sp_delete_password_reset_tokens_by_user(?)', [
+//     user.userID,
+//   ]);
+//   await pool.execute('CALL sp_insert_password_reset_token(?, ?)', [
+//     resetToken,
+//     user.userID,
+//   ]);
 
-  return { success: true, userId: user.userID, email: user.email };
-}
+//   return { success: true, userId: user.userID, email: user.email };
+// }
 
 export async function resetPassword(
   userId: string,

@@ -22,6 +22,7 @@ import {
   Building2,
   Images,
   Crown,
+  Layers,
 } from 'lucide-react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { PageHeader } from '@/components/common/PageHeader';
@@ -196,6 +197,8 @@ export default function AssetsTransfer() {
   const [users, setUsers] = useState<User[]>([]);
   const [loading, setLoading] = useState(true);
   const [selectedAssignments, setSelectedAssignments] = useState<string[]>([]);
+  const [intangibleAssets, setIntangibleAssets] = useState<any[]>([]);
+  const [selectedIntangibleAssetIds, setSelectedIntangibleAssetIds] = useState<string[]>([]);
   const [buildings, setBuildings] = useState<string[]>([]);
   const [transferring, setTransferring] = useState(false);
   const [showTransferDialog, setShowTransferDialog] = useState(false);
@@ -386,6 +389,16 @@ export default function AssetsTransfer() {
     }
   };
 
+  const fetchIntangibleAssets = async () => {
+    try {
+      const response = await api.get('/intangible-assets');
+      setIntangibleAssets(response || []);
+    } catch (error) {
+      console.error('Failed to fetch intangible assets:', error);
+      setIntangibleAssets([]);
+    }
+  };
+
   useEffect(() => {
     const fetchData = async () => {
       // Fetch assignments and other data
@@ -398,6 +411,7 @@ export default function AssetsTransfer() {
         fetchAssetBuilders(),
         fetchCompanyTransferAssets(),
         fetchTransferHistory(),
+        fetchIntangibleAssets(),
       ]);
       setLoading(false);
     };
@@ -542,8 +556,8 @@ export default function AssetsTransfer() {
       .filter(Boolean) as AssetAssignment[];
 
   const handleTransferClick = () => {
-    if (selectedAssignments.length === 0) {
-      toast.error('Please select at least one asset assignment to transfer');
+    if (selectedAssignments.length === 0 && selectedIntangibleAssetIds.length === 0) {
+      toast.error('Please select at least one asset or intangible asset to transfer');
       return;
     }
     const selectedData = getSelectedAssignmentDetails();
@@ -586,10 +600,12 @@ export default function AssetsTransfer() {
       toast.error('Please select who received the assets');
       return false;
     }
-    const hasMissingCondition = assetTransferData.some(item => !item.condition);
-    if (hasMissingCondition) {
-      toast.error('Please select a condition for all selected assets');
-      return false;
+    if (assetTransferData.length > 0) {
+      const hasMissingCondition = assetTransferData.some(item => !item.condition);
+      if (hasMissingCondition) {
+        toast.error('Please select a condition for all selected assets');
+        return false;
+      }
     }
     if (
       !verificationTag ||
@@ -611,6 +627,9 @@ export default function AssetsTransfer() {
       const processDigitalSignature =
         (currentUser as { digitalSignature?: string | null })?.digitalSignature ??
         null;
+      const intangibleAssetItems = selectedIntangibleAssetIds.length > 0
+        ? selectedIntangibleAssetIds.map(id => ({ id }))
+        : undefined;
       const payload: Record<string, unknown> = {
         assetTransfers: assetTransferData.map(d => ({
           assignmentId: d.assignmentId,
@@ -627,6 +646,7 @@ export default function AssetsTransfer() {
           roomId: null,
           roomName: newAssignmentRoom || null,
         },
+        intangibleAssetItems,
       };
       if (verificationConfirmSign) {
         payload.processSignature = {
@@ -641,7 +661,8 @@ export default function AssetsTransfer() {
       );
       setShowTransferDialog(false);
       setSelectedAssignments([]);
-      await Promise.all([fetchAssignments(), fetchTransferHistory()]);
+      setSelectedIntangibleAssetIds([]);
+      await Promise.all([fetchAssignments(), fetchTransferHistory(), fetchIntangibleAssets()]);
     } catch (err: any) {
       const data = err?.data ?? err?.response?.data;
       toast.error(
@@ -1128,7 +1149,7 @@ export default function AssetsTransfer() {
           {/* Asset Selection / Asset Built Tabs */}
           <div className="xl:col-span-2">
             <Tabs value={activeTab} onValueChange={(value) => { setActiveTab(value); setTabLoading(true); setTimeout(() => setTabLoading(false), 300); }} className="w-full">
-              <TabsList className={segmentTabsListClassName + ' grid grid-cols-3'}>
+              <TabsList className={segmentTabsListClassName + ' grid grid-cols-4'}>
                 <TabsTrigger
                   value="select-assets"
                   className={segmentTabsTriggerClassName + ' flex items-center gap-2'}
@@ -1157,6 +1178,16 @@ export default function AssetsTransfer() {
                   Company
                   <Badge variant="secondary" className="ml-1 text-xs">
                     {filteredCompanyTransferAssets.length}
+                  </Badge>
+                </TabsTrigger>
+                <TabsTrigger
+                  value="intangible-assets"
+                  className={segmentTabsTriggerClassName + ' flex items-center gap-2'}
+                >
+                  <Layers className="h-4 w-4" />
+                  Intangible
+                  <Badge variant="secondary" className="ml-1 text-xs">
+                    {intangibleAssets.filter(a => a.status === 'assigned').length}
                   </Badge>
                 </TabsTrigger>
               </TabsList>
@@ -1979,6 +2010,77 @@ export default function AssetsTransfer() {
                   </CardContent>
                 </Card>
               </TabsContent>
+
+              <TabsContent value="intangible-assets" className="mt-4">
+                <Card className="shadow-xl border-0 bg-white/80 backdrop-blur-sm">
+                  <CardHeader className="pb-4">
+                    <CardTitle className="flex items-center gap-3 text-xl">
+                      <div className="p-2 bg-red-100 rounded-lg">
+                        <Layers className="h-5 w-5 text-red-600" />
+                      </div>
+                      Intangible Assets
+                    </CardTitle>
+                  </CardHeader>
+                  <CardContent>
+                    {(() => {
+                      const assignedIntangibles = intangibleAssets.filter(a => a.status === 'assigned');
+                      if (assignedIntangibles.length === 0) {
+                        return (
+                          <div className="text-center py-8">
+                            <Layers className="h-10 w-10 text-gray-300 mx-auto mb-3" />
+                            <p className="text-gray-500 text-sm">No assigned intangible assets.</p>
+                          </div>
+                        );
+                      }
+                      return (
+                        <div className="space-y-2 max-h-[400px] overflow-y-auto">
+                          {assignedIntangibles.map(asset => {
+                            const isSelected = selectedIntangibleAssetIds.includes(asset.id);
+                            return (
+                              <div
+                                key={asset.id}
+                                className={`flex items-center gap-3 p-3 rounded-lg border-2 cursor-pointer transition-all ${
+                                  isSelected
+                                    ? 'border-red-500 bg-red-50'
+                                    : 'border-slate-200 hover:border-red-300 hover:bg-slate-50'
+                                }`}
+                                onClick={() => {
+                                  if (isSelected) {
+                                    setSelectedIntangibleAssetIds(prev => prev.filter(id => id !== asset.id));
+                                  } else {
+                                    setSelectedIntangibleAssetIds(prev => [...prev, asset.id]);
+                                  }
+                                }}
+                              >
+                                <div className={`h-4 w-4 rounded border-2 flex items-center justify-center ${
+                                  isSelected ? 'bg-red-500 border-red-500' : 'border-gray-300'
+                                }`}>
+                                  {isSelected && (
+                                    <svg className="h-3 w-3 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M5 13l4 4L19 7" />
+                                    </svg>
+                                  )}
+                                </div>
+                                <div className="flex-1 min-w-0">
+                                  <div className="flex items-center gap-2">
+                                    <span className="font-medium text-slate-900">{asset.name}</span>
+                                    <Badge variant="outline" className={asset.type === 'IT scope' ? 'bg-red-100 text-red-800 border-red-200' : 'bg-orange-100 text-orange-800 border-orange-200'}>
+                                      {asset.type}
+                                    </Badge>
+                                  </div>
+                                  {asset.description && (
+                                    <p className="text-sm text-gray-500 truncate mt-0.5">{asset.description}</p>
+                                  )}
+                                </div>
+                              </div>
+                            );
+                          })}
+                        </div>
+                      );
+                    })()}
+                  </CardContent>
+                </Card>
+              </TabsContent>
             </Tabs>
           </div>
 
@@ -2033,7 +2135,7 @@ export default function AssetsTransfer() {
                       onClick={handleTransferClick}
                       disabled={
                         transferring ||
-                        selectedAssignments.length === 0 ||
+                        (selectedAssignments.length === 0 && selectedIntangibleAssetIds.length === 0) ||
                         !hasPermission('Asset Transfer', 'create') ||
                         !hasPermission('Asset Transfer', 'edit')
                       }
@@ -2041,11 +2143,11 @@ export default function AssetsTransfer() {
                     >
                       <div className="flex items-center gap-2">
                         <ArrowRightLeft className="h-5 w-5" />
-                        Transfer {selectedAssignments.length} Asset
-                        {selectedAssignments.length !== 1 ? 's' : ''}
+                        Transfer {selectedAssignments.length + selectedIntangibleAssetIds.length} Asset
+                        {selectedAssignments.length + selectedIntangibleAssetIds.length !== 1 ? 's' : ''}
                       </div>
                     </Button>
-                    {selectedAssignments.length === 0 && (
+                    {selectedAssignments.length === 0 && selectedIntangibleAssetIds.length === 0 && (
                       <p className="text-sm text-gray-500 text-center">
                         Select asset assignments above to enable transfer
                       </p>

@@ -1252,10 +1252,9 @@ export const ReturnFormCard: React.FC<{
                 pendingSignActionRef.current = null;
               }}
               pendingActionRef={pendingSignActionRef}
-              title="OTP SMS Verification"
-              description="OTP SMS Verification has been sent to your registered mobile number for return form signing."
+              title="OTP Email Verification"
+              description="OTP Email Verification has been sent to your registered email for return form signing."
               verifyButtonLabel="Verify & Sign Form"
-              phoneNumber={currentUser?.contactNumber ?? undefined}
             />
           </>
         )}
@@ -1785,10 +1784,9 @@ export const TransferFormCard: React.FC<{
                 pendingSignActionRef.current = null;
               }}
               pendingActionRef={pendingSignActionRef}
-              title="OTP SMS Verification"
-              description="OTP SMS Verification has been sent to your registered mobile number for transfer form signing."
+              title="OTP Email Verification"
+              description="OTP Email Verification has been sent to your registered email for transfer form signing."
               verifyButtonLabel="Verify & Sign Form"
-              phoneNumber={currentUser?.contactNumber ?? undefined}
             />
           </>
         )}

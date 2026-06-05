@@ -20,6 +20,8 @@ import {
   FileSignature,
   FileText,
   Calendar,
+  Layers,
+  Search,
 } from 'lucide-react';
 import { PageHeader } from '@/components/common/PageHeader';
 import { Button } from '@/components/ui/button';
@@ -52,6 +54,14 @@ import {
   type AccountabilityForm,
 } from '@/pages/assets/accountability/accountabilityForm';
 import type { Department, Location } from '@/types/assets';
+import {
+  Tabs,
+  TabsContent,
+  TabsList,
+  TabsTrigger,
+  segmentTabsListClassName,
+  segmentTabsTriggerClassName,
+} from '@/components/ui/tabs';
 import SmsOtpDialog from '@/components/auth/SmsOtpDialog';
 import { useRef } from 'react';
 import {
@@ -177,11 +187,15 @@ export default function ReturnRequestsPage() {
     assetReturns: { assignmentId: string; condition: string; notes: string; imageUrls: string[]; returnDepartmentId: string; returnLocationId: string; returnAreaId: string | undefined }[];
     returnType: string;
     assignToProcessor: boolean;
+    intangibleAssetReturnItems?: { id: string; notes: string }[];
   } | null>(null);
   const [checklistDialogOpen, setChecklistDialogOpen] = useState(false);
   const [checklistStepIndex, setChecklistStepIndex] = useState(0);
   const [checklistAssets, setChecklistAssets] = useState<{ id: string; name: string; type?: string; category?: string }[]>([]);
   const pendingReturnChecklistsRef = useRef<any[]>([]);
+  const [intangibleAssets, setIntangibleAssets] = useState<any[]>([]);
+  const [selectedIntangibleAssetIds, setSelectedIntangibleAssetIds] = useState<string[]>([]);
+  const [intangibleNotes, setIntangibleNotes] = useState<Record<string, string>>({});
 
   // Close parent dialog when SMS OTP dialog opens to prevent scrollbar issues
   useEffect(() => {
@@ -228,10 +242,21 @@ export default function ReturnRequestsPage() {
     }
   };
 
+  const fetchIntangibleAssets = async () => {
+    try {
+      const response = await api.get('/intangible-assets');
+      setIntangibleAssets(response || []);
+    } catch (error) {
+      console.error('Failed to fetch intangible assets:', error);
+      setIntangibleAssets([]);
+    }
+  };
+
   useEffect(() => {
     fetchPending();
     fetchDepartments();
     fetchLocations();
+    fetchIntangibleAssets();
   }, []);
 
   // Note: wet-upload notification deep-link is handled on `/assets/return`
@@ -285,6 +310,8 @@ export default function ReturnRequestsPage() {
     setVerificationTag(false);
     setVerificationCondition(false);
     setVerificationConfirmSign(false);
+    setSelectedIntangibleAssetIds([]);
+    setIntangibleNotes({});
   };
 
   const toggleAssetExpansion = (assetId: string) => {
@@ -403,6 +430,13 @@ export default function ReturnRequestsPage() {
       };
     });
 
+    const intangibleAssetReturnItems = selectedIntangibleAssetIds
+      .filter(id => intangibleAssets.some(ia => ia.id === id))
+      .map(id => ({
+        id,
+        notes: intangibleNotes[id] ?? '',
+      }));
+
     const returnTypeLabel = returnType === 'offboarding' ? 'Offboarding' : 'Returned';
 
     // Save form ref for later use
@@ -426,6 +460,7 @@ export default function ReturnRequestsPage() {
         assetReturns,
         returnType: returnType || '',
         assignToProcessor,
+        intangibleAssetReturnItems: intangibleAssetReturnItems.length > 0 ? intangibleAssetReturnItems : undefined,
       };
       setChecklistAssets(computerReturns);
       setChecklistStepIndex(0);
@@ -446,6 +481,7 @@ export default function ReturnRequestsPage() {
           returnType: returnType || undefined,
           assignToProcessor,
           receivedBy: assignToProcessor ? (currentUser?.id ?? null) : null,
+          intangibleAssetReturnItems: intangibleAssetReturnItems.length > 0 ? intangibleAssetReturnItems : undefined,
         });
         toast.success('Return processed successfully');
         setProcessForm(null);
@@ -521,6 +557,7 @@ export default function ReturnRequestsPage() {
           returnType: params.returnType || undefined,
           assignToProcessor: params.assignToProcessor,
           receivedBy: params.assignToProcessor ? (currentUser?.id ?? null) : null,
+          intangibleAssetReturnItems: params.intangibleAssetReturnItems,
         });
 
         const digitalSignature =
@@ -976,178 +1013,312 @@ export default function ReturnRequestsPage() {
                     </div>
                   </div>
 
-                  {/* Asset Cards – same as Asset Return page */}
-                  {processForm.returns.map(r => {
-                    const aid = r.assignment?.assignmentID ?? r.assignment_id;
-                    const assetId = r.assignment?.asset?.id ?? aid;
-                    const assetName = r.assignment?.asset?.name ?? 'Asset';
-                    const assetCode = r.assignment?.asset?.code ?? '';
-                    const condition = processorConditions[aid] ?? 'Good';
-                    const notes = processorNotes[aid] ?? '';
-                    const conditionImages =
-                      processorConditionImages[aid] ?? [];
-                    const isExpanded = expandedAssets.has(assetId);
+                  <Tabs defaultValue="physical-assets" className="w-full">
+                    <TabsList className={segmentTabsListClassName + ' grid grid-cols-2 w-full'}>
+                      <TabsTrigger value="physical-assets" className={segmentTabsTriggerClassName + ' flex items-center gap-2'}>
+                        <Package className="h-4 w-4" />
+                        Physical Assets
+                        <Badge variant="secondary" className="ml-1 text-xs">
+                          {processForm.returns.length}
+                        </Badge>
+                      </TabsTrigger>
+                      <TabsTrigger value="intangible-assets" className={segmentTabsTriggerClassName + ' flex items-center gap-2'}>
+                        <Layers className="h-4 w-4" />
+                        Intangible Assets
+                        <Badge variant="secondary" className="ml-1 text-xs">
+                          {(intangibleAssets.filter(a => a.assigned_to === processForm.user_id).length)}
+                        </Badge>
+                      </TabsTrigger>
+                    </TabsList>
 
-                    return (
-                      <div
-                        key={aid}
-                        className="rounded-xl border border-slate-200 bg-white p-5 shadow-sm -mx-3 space-y-3 transition-shadow hover:shadow-md"
-                      >
-                        <div className="flex items-center justify-between">
-                          <div className="flex items-center gap-3">
-                            <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-slate-100 text-slate-600">
-                              <Package className="h-5 w-5" />
-                            </div>
-                            <div>
-                              <h4 className="font-semibold text-slate-900">
-                                {assetName}
-                              </h4>
-                              <p className="text-sm text-slate-500 font-mono">
-                                {assetCode}
-                              </p>
-                            </div>
-                          </div>
-                          <button
-                            type="button"
-                            onClick={() => toggleAssetExpansion(assetId)}
-                            className="p-2 hover:bg-slate-100 rounded-lg transition-colors"
-                            aria-label={isExpanded ? 'Collapse' : 'Expand'}
+                    <TabsContent value="physical-assets" className="mt-4 space-y-4">
+                      {processForm.returns.map(r => {
+                        const aid = r.assignment?.assignmentID ?? r.assignment_id;
+                        const assetId = r.assignment?.asset?.id ?? aid;
+                        const assetName = r.assignment?.asset?.name ?? 'Asset';
+                        const assetCode = r.assignment?.asset?.code ?? '';
+                        const condition = processorConditions[aid] ?? 'Good';
+                        const notes = processorNotes[aid] ?? '';
+                        const conditionImages =
+                          processorConditionImages[aid] ?? [];
+                        const isExpanded = expandedAssets.has(assetId);
+
+                        return (
+                          <div
+                            key={aid}
+                            className="rounded-xl border border-slate-200 bg-white p-5 shadow-sm -mx-3 space-y-3 transition-shadow hover:shadow-md"
                           >
-                            {isExpanded ? (
-                              <ChevronUp className="h-5 w-5 text-gray-600" />
-                            ) : (
-                              <ChevronDown className="h-5 w-5 text-gray-600" />
-                            )}
-                          </button>
-                        </div>
+                            <div className="flex items-center justify-between">
+                              <div className="flex items-center gap-3">
+                                <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-slate-100 text-slate-600">
+                                  <Package className="h-5 w-5" />
+                                </div>
+                                <div>
+                                  <h4 className="font-semibold text-slate-900">
+                                    {assetName}
+                                  </h4>
+                                  <p className="text-sm text-slate-500 font-mono">
+                                    {assetCode}
+                                  </p>
+                                </div>
+                              </div>
+                              <button
+                                type="button"
+                                onClick={() => toggleAssetExpansion(assetId)}
+                                className="p-2 hover:bg-slate-100 rounded-lg transition-colors"
+                                aria-label={isExpanded ? 'Collapse' : 'Expand'}
+                              >
+                                {isExpanded ? (
+                                  <ChevronUp className="h-5 w-5 text-gray-600" />
+                                ) : (
+                                  <ChevronDown className="h-5 w-5 text-gray-600" />
+                                )}
+                              </button>
+                            </div>
 
-                        {isExpanded && (
-                          <div className="space-y-5 pt-2 border-t border-slate-100 animate-in slide-in-from-top-2 duration-200">
-                            <div className="space-y-3">
-                              <Label className="text-sm font-semibold text-slate-700 flex items-center gap-2">
-                                <CheckCircle className="h-4 w-4 text-red-500" />
-                                Asset Condition
+                            {isExpanded && (
+                              <div className="space-y-5 pt-2 border-t border-slate-100 animate-in slide-in-from-top-2 duration-200">
+                                <div className="space-y-3">
+                                  <Label className="text-sm font-semibold text-slate-700 flex items-center gap-2">
+                                    <CheckCircle className="h-4 w-4 text-red-500" />
+                                    Asset Condition
+                                  </Label>
+                                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                                    {conditionOptions.map(opt => {
+                                      const IconComponent = opt.icon;
+                                      const isSelected = condition === opt.value;
+                                      return (
+                                        <div
+                                          key={opt.value}
+                                          className={cn(
+                                            'flex items-center gap-3 p-3 rounded-lg transition-all duration-200 cursor-pointer',
+                                            isSelected
+                                              ? 'border-2 border-red-500 bg-red-50 shadow-sm'
+                                              : 'border-2 border-slate-200 hover:border-slate-300 hover:bg-slate-50'
+                                          )}
+                                          onClick={() =>
+                                            setConditionForAssignment(
+                                              aid,
+                                              opt.value
+                                            )
+                                          }
+                                        >
+                                          <div
+                                            className={cn(
+                                              'h-4 w-4 rounded-full border-2',
+                                              isSelected
+                                                ? 'bg-red-500 border-red-500'
+                                                : 'border-gray-300'
+                                            )}
+                                          />
+                                          <IconComponent
+                                            className={cn(
+                                              'h-5 w-5 shrink-0',
+                                              isSelected
+                                                ? opt.color
+                                                : 'text-slate-400'
+                                            )}
+                                          />
+                                          <span className="font-medium text-slate-800">
+                                            {opt.label}
+                                          </span>
+                                        </div>
+                                      );
+                                    })}
+                                  </div>
+                                </div>
+                                <div className="space-y-2">
+                                  <Label className="text-sm font-medium text-slate-700">
+                                    Return Notes{' '}
+                                    <span className="text-slate-400 font-normal">
+                                      (optional)
+                                    </span>
+                                  </Label>
+                                  <Textarea
+                                    placeholder="Add notes about this asset's return..."
+                                    value={notes}
+                                    onChange={e =>
+                                      setNotesForAssignment(aid, e.target.value)
+                                    }
+                                    className="border-slate-200 focus:border-red-500 focus:ring-red-500/20 rounded-lg resize-none"
+                                    rows={3}
+                                  />
+                                </div>
+                                <div className="space-y-2">
+                                  <Label className="text-sm font-medium text-slate-700">
+                                    Return Condition Photos{' '}
+                                    <span className="text-slate-400 font-normal">
+                                      (optional, up to {MAX_CONDITION_IMAGES})
+                                    </span>
+                                  </Label>
+                                  <div className="flex flex-wrap gap-2 items-start">
+                                    {conditionImages.map((url, idx) => (
+                                      <div
+                                        key={`${aid}-condition-image-${idx}`}
+                                        className="relative group"
+                                      >
+                                        <button
+                                          type="button"
+                                          className="overflow-hidden rounded-lg border border-slate-200 bg-slate-50"
+                                          onClick={() => window.open(url, '_blank')}
+                                        >
+                                          <img
+                                            src={url}
+                                            alt={`Return condition photo ${idx + 1}`}
+                                            className="h-20 w-20 object-cover"
+                                          />
+                                        </button>
+                                        <button
+                                          type="button"
+                                          onClick={() =>
+                                            handleImageRemove(aid, idx)
+                                          }
+                                          className="absolute -top-1.5 -right-1.5 h-6 w-6 rounded-full bg-red-500 text-white flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity hover:bg-red-600"
+                                          aria-label="Remove photo"
+                                        >
+                                          <XCircle className="h-4 w-4" />
+                                        </button>
+                                      </div>
+                                    ))}
+                                    {conditionImages.length <
+                                      MAX_CONDITION_IMAGES && (
+                                      <label className="flex h-20 w-20 items-center justify-center rounded-lg border-2 border-dashed border-slate-300 hover:border-slate-400 cursor-pointer transition-colors">
+                                        <input
+                                          type="file"
+                                          accept={VALID_IMAGE_TYPES.join(',')}
+                                          className="hidden"
+                                          onChange={e => {
+                                            const file = e.target.files?.[0];
+                                            if (file) handleImageAdd(aid, file);
+                                            e.target.value = '';
+                                          }}
+                                        />
+                                        <ImagePlus className="h-8 w-8 text-slate-400" />
+                                      </label>
+                                    )}
+                                  </div>
+                                </div>
+                              </div>
+                            )}
+                          </div>
+                        );
+                      })}
+                    </TabsContent>
+
+                    <TabsContent value="intangible-assets" className="mt-4">
+                      <div className="rounded-xl border border-slate-200 bg-white p-5 shadow-sm -mx-3">
+                        {(() => {
+                          const assignedIntangibles = intangibleAssets.filter(a => a.assigned_to === processForm.user_id);
+                          if (assignedIntangibles.length === 0) {
+                            return (
+                              <div className="text-center py-8">
+                                <Layers className="h-10 w-10 text-gray-300 mx-auto mb-3" />
+                                <p className="text-gray-500 text-sm">No intangible assets assigned to this user.</p>
+                              </div>
+                            );
+                          }
+                          return (
+                            <div className="space-y-2">
+                              <Label className="text-sm font-semibold text-slate-800 tracking-tight uppercase flex items-center gap-2">
+                                <Layers className="h-4 w-4 text-red-500" />
+                                Select intangible assets to return
                               </Label>
-                              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-                                {conditionOptions.map(opt => {
-                                  const IconComponent = opt.icon;
-                                  const isSelected = condition === opt.value;
+                              <div className="space-y-2 max-h-[300px] overflow-y-auto mt-3">
+                                {assignedIntangibles.map(asset => {
+                                  const isSelected = selectedIntangibleAssetIds.includes(asset.id);
                                   return (
                                     <div
-                                      key={opt.value}
-                                      className={cn(
-                                        'flex items-center gap-3 p-3 rounded-lg transition-all duration-200 cursor-pointer',
+                                      key={asset.id}
+                                      className={`flex items-center gap-3 p-3 rounded-lg border-2 cursor-pointer transition-all ${
                                         isSelected
-                                          ? 'border-2 border-red-500 bg-red-50 shadow-sm'
-                                          : 'border-2 border-slate-200 hover:border-slate-300 hover:bg-slate-50'
-                                      )}
-                                      onClick={() =>
-                                        setConditionForAssignment(
-                                          aid,
-                                          opt.value
-                                        )
-                                      }
+                                          ? 'border-red-500 bg-red-50'
+                                          : 'border-slate-200 hover:border-red-300 hover:bg-slate-50'
+                                      }`}
+                                      onClick={() => {
+                                        if (isSelected) {
+                                          setSelectedIntangibleAssetIds(prev => prev.filter(id => id !== asset.id));
+                                        } else {
+                                          setSelectedIntangibleAssetIds(prev => [...prev, asset.id]);
+                                        }
+                                      }}
                                     >
-                                      <div
-                                        className={cn(
-                                          'h-4 w-4 rounded-full border-2',
-                                          isSelected
-                                            ? 'bg-red-500 border-red-500'
-                                            : 'border-gray-300'
+                                      <div className={`h-4 w-4 rounded border-2 flex items-center justify-center ${
+                                        isSelected ? 'bg-red-500 border-red-500' : 'border-gray-300'
+                                      }`}>
+                                        {isSelected && (
+                                          <svg className="h-3 w-3 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M5 13l4 4L19 7" />
+                                          </svg>
                                         )}
-                                      />
-                                      <IconComponent
-                                        className={cn(
-                                          'h-5 w-5 shrink-0',
-                                          isSelected
-                                            ? opt.color
-                                            : 'text-slate-400'
+                                      </div>
+                                      <div className="flex-1 min-w-0">
+                                        <div className="flex items-center gap-2">
+                                          <span className="font-medium text-slate-900">{asset.name}</span>
+                                          <Badge variant="outline" className={asset.type === 'IT scope' ? 'bg-red-100 text-red-800 border-red-200' : 'bg-orange-100 text-orange-800 border-orange-200'}>
+                                            {asset.type}
+                                          </Badge>
+                                        </div>
+                                        {asset.description && (
+                                          <p className="text-sm text-gray-500 truncate mt-0.5">{asset.description}</p>
                                         )}
-                                      />
-                                      <span className="font-medium text-slate-800">
-                                        {opt.label}
-                                      </span>
+                                      </div>
                                     </div>
                                   );
                                 })}
                               </div>
                             </div>
-                            <div className="space-y-2">
-                              <Label className="text-sm font-medium text-slate-700">
-                                Return Notes{' '}
-                                <span className="text-slate-400 font-normal">
-                                  (optional)
-                                </span>
-                              </Label>
-                              <Textarea
-                                placeholder="Add notes about this asset's return..."
-                                value={notes}
-                                onChange={e =>
-                                  setNotesForAssignment(aid, e.target.value)
-                                }
-                                className="border-slate-200 focus:border-red-500 focus:ring-red-500/20 rounded-lg resize-none"
-                                rows={3}
-                              />
-                            </div>
-                            <div className="space-y-2">
-                              <Label className="text-sm font-medium text-slate-700">
-                                Return Condition Photos{' '}
-                                <span className="text-slate-400 font-normal">
-                                  (optional, up to {MAX_CONDITION_IMAGES})
-                                </span>
-                              </Label>
-                              <div className="flex flex-wrap gap-2 items-start">
-                                {conditionImages.map((url, idx) => (
-                                  <div
-                                    key={`${aid}-condition-image-${idx}`}
-                                    className="relative group"
-                                  >
-                                    <button
-                                      type="button"
-                                      className="overflow-hidden rounded-lg border border-slate-200 bg-slate-50"
-                                      onClick={() => window.open(url, '_blank')}
-                                    >
-                                      <img
-                                        src={url}
-                                        alt={`Return condition photo ${idx + 1}`}
-                                        className="h-20 w-20 object-cover"
-                                      />
-                                    </button>
-                                    <button
-                                      type="button"
-                                      onClick={() =>
-                                        handleImageRemove(aid, idx)
-                                      }
-                                      className="absolute -top-1.5 -right-1.5 h-6 w-6 rounded-full bg-red-500 text-white flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity hover:bg-red-600"
-                                      aria-label="Remove photo"
-                                    >
-                                      <XCircle className="h-4 w-4" />
-                                    </button>
-                                  </div>
-                                ))}
-                                {conditionImages.length <
-                                  MAX_CONDITION_IMAGES && (
-                                  <label className="flex h-20 w-20 items-center justify-center rounded-lg border-2 border-dashed border-slate-300 hover:border-slate-400 cursor-pointer transition-colors">
-                                    <input
-                                      type="file"
-                                      accept={VALID_IMAGE_TYPES.join(',')}
-                                      className="hidden"
-                                      onChange={e => {
-                                        const file = e.target.files?.[0];
-                                        if (file) handleImageAdd(aid, file);
-                                        e.target.value = '';
-                                      }}
-                                    />
-                                    <ImagePlus className="h-8 w-8 text-slate-400" />
-                                  </label>
-                                )}
-                              </div>
-                            </div>
-                          </div>
-                        )}
+                          );
+                        })()}
                       </div>
-                    );
-                  })}
+                    </TabsContent>
+                  </Tabs>
+
+                  {selectedIntangibleAssetIds.length > 0 && (
+                    <div className="rounded-xl border border-slate-200 bg-white p-5 shadow-sm -mx-3">
+                      <Label className="text-sm font-semibold text-slate-800 tracking-tight uppercase flex items-center gap-2 mb-4">
+                        <Layers className="h-4 w-4 text-red-500" />
+                        Intangible Assets ({selectedIntangibleAssetIds.length})
+                      </Label>
+                      <div className="overflow-x-auto">
+                        <table className="w-full text-sm">
+                          <thead>
+                            <tr className="border-b border-slate-200">
+                              <th className="text-left py-2 px-3 font-semibold text-slate-700">Name</th>
+                              <th className="text-left py-2 px-3 font-semibold text-slate-700">Type</th>
+                              <th className="text-left py-2 px-3 font-semibold text-slate-700">Description</th>
+                              <th className="text-left py-2 px-3 font-semibold text-slate-700">Notes</th>
+                            </tr>
+                          </thead>
+                          <tbody>
+                            {selectedIntangibleAssetIds.map(id => {
+                              const asset = intangibleAssets.find(a => a.id === id);
+                              if (!asset) return null;
+                              return (
+                                <tr key={id} className="border-b border-slate-100 last:border-0">
+                                  <td className="py-2 px-3 text-slate-900 font-medium">{asset.name}</td>
+                                  <td className="py-2 px-3">
+                                    <Badge variant="outline" className={asset.type === 'IT scope' ? 'bg-red-100 text-red-800 border-red-200' : 'bg-orange-100 text-orange-800 border-orange-200'}>
+                                      {asset.type}
+                                    </Badge>
+                                  </td>
+                                  <td className="py-2 px-3 text-slate-600">{asset.description || '—'}</td>
+                                  <td className="py-2 px-3">
+                                    <Textarea
+                                      placeholder="Notes..."
+                                      value={intangibleNotes[id] ?? ''}
+                                      onChange={e => setIntangibleNotes(prev => ({ ...prev, [id]: e.target.value }))}
+                                      className="border-slate-200 focus:border-red-500 focus:ring-red-500/20 rounded-lg resize-none text-xs"
+                                      rows={2}
+                                    />
+                                  </td>
+                                </tr>
+                              );
+                            })}
+                          </tbody>
+                        </table>
+                      </div>
+                    </div>
+                  )}
 
                   <div className="rounded-xl border border-slate-200 bg-white p-5 shadow-sm -mx-3 space-y-3 transition-shadow hover:shadow-md">
                     <Label className="text-sm font-semibold text-slate-800 tracking-tight uppercase flex items-center gap-2">

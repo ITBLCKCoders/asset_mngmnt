@@ -9,7 +9,9 @@ import { api } from '@/lib/api';
 import { toast } from 'sonner';
 import { motion } from 'framer-motion';
 
-type ResetChannel = 'email' | 'sms';
+// SMS channel disabled — all OTP now uses email
+// type ResetChannel = 'email' | 'sms';
+type ResetChannel = 'email';
 
 const AUTH_TRANSITION_MS = 350;
 
@@ -46,7 +48,11 @@ function AuthBackdrop() {
 
 export default function ResetMethodSelectionPage() {
   const navigate = useNavigate();
-  const [channel, setChannel] = useState<ResetChannel>('email');
+  // const [channel, setChannel] = useState<ResetChannel>('email');
+  const [channel] = useState<ResetChannel>('email');
+  const setChannel = (_c: ResetChannel) => {
+    // channel changes disabled — always email
+  };
   const [loading, setLoading] = useState(false);
   const [isLeaving, setIsLeaving] = useState(false);
 
@@ -67,35 +73,22 @@ export default function ResetMethodSelectionPage() {
 
     setLoading(true);
     try {
-      const { message, contactNumber, effectiveChannel } = await api.post<{
+      const { message } = await api.post<{
         message: string;
-        contactNumber?: string;
-        effectiveChannel?: 'email' | 'sms';
       }>('/auth/forgot-password', {
-        channel,
+        // channel,
         email,
       });
 
-      const actualChannel = effectiveChannel || channel;
-      localStorage.setItem('resetChannel', actualChannel);
-      if (actualChannel === 'sms' && contactNumber) {
-        localStorage.setItem('resetContactNumber', contactNumber);
-      } else {
-        localStorage.removeItem('resetContactNumber');
-      }
+      localStorage.setItem('resetChannel', 'email');
+      localStorage.removeItem('resetContactNumber');
       localStorage.setItem('resetEmail', email);
       localStorage.setItem(
         'resetOtpExpiryTime',
         (Date.now() + 10 * 60 * 1000).toString()
       );
 
-      if (channel === 'sms' && effectiveChannel === 'email') {
-        toast.success('SMS failed. OTP sent via Email instead.', {
-          description: 'Please check your email for the reset code.',
-        });
-      } else {
-        toast.success(message);
-      }
+      toast.success(message);
       setIsLeaving(true);
       setTimeout(() => {
         navigate('/verify-reset-otp');
@@ -131,7 +124,7 @@ export default function ResetMethodSelectionPage() {
               <div className="space-y-1">
                 <p className="text-2xl font-semibold text-black">Choose Verification Method</p>
                 <p className="text-sm text-gray-700">
-                  Send reset code for <strong>{email}</strong>
+                  Send reset code via Email to <strong>{email}</strong>
                 </p>
               </div>
 
@@ -147,7 +140,8 @@ export default function ResetMethodSelectionPage() {
                 >
                   Email OTP
                 </button>
-                <button
+                {/* SMS OTP option removed — all OTP now uses email */}
+                {/* <button
                   type="button"
                   onClick={() => setChannel('sms')}
                   className={`rounded-md border-2 px-4 py-3 text-sm font-medium transition-colors ${
@@ -157,7 +151,7 @@ export default function ResetMethodSelectionPage() {
                   }`}
                 >
                   SMS OTP
-                </button>
+                </button> */}
               </div>
 
               <div className="flex flex-col items-center gap-3 pt-1">

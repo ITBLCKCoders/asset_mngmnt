@@ -103,7 +103,9 @@ export default function RegisterPage() {
   const navigate = useNavigate();
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [showOtpModal, setShowOtpModal] = useState(false);
-  const [selectedOtpChannel, setSelectedOtpChannel] = useState<'email' | 'sms'>('email');
+  // SMS channel disabled — all OTP now uses email
+  // const [selectedOtpChannel, setSelectedOtpChannel] = useState<'email' | 'sms'>('email');
+  const [selectedOtpChannel] = useState<'email'>('email');
   const [pendingFormData, setPendingFormData] = useState<RegisterForm | null>(null);
   const [showVerification, setShowVerification] = useState(false);
   const [otp, setOtp] = useState(['', '', '', '', '', '']);
@@ -253,9 +255,9 @@ export default function RegisterPage() {
     try {
       await api.post('/auth/register', {
         ...pendingFormData,
-        otpChannel: selectedOtpChannel,
+        // otpChannel: selectedOtpChannel,
       });
-      localStorage.setItem('pendingVerificationChannel', selectedOtpChannel);
+      localStorage.setItem('pendingVerificationChannel', 'email');
       localStorage.setItem('pendingVerificationEmail', pendingFormData.email);
       localStorage.setItem('pendingVerificationContact', pendingFormData.contactNumber);
       localStorage.setItem('otpExpiryTime', (Date.now() + 10 * 60 * 1000).toString());
@@ -296,9 +298,9 @@ export default function RegisterPage() {
     const loadingToast = toast.loading('Verifying OTP...');
     try {
       await api.post('/auth/verify-otp', {
-        channel: selectedOtpChannel,
+        // channel: selectedOtpChannel,
         email: pendingFormData.email,
-        contactNumber: pendingFormData.contactNumber,
+        // contactNumber: pendingFormData.contactNumber,
         otp: code,
       });
       localStorage.removeItem('pendingVerificationChannel');
@@ -306,9 +308,10 @@ export default function RegisterPage() {
       localStorage.removeItem('pendingVerificationContact');
       localStorage.removeItem('otpExpiryTime');
       toast.success(
-        selectedOtpChannel === 'sms'
-          ? 'Phone number verified successfully!'
-          : 'Email verified successfully!',
+        // selectedOtpChannel === 'sms'
+        //   ? 'Phone number verified successfully!'
+        //   : 'Email verified successfully!',
+        'Email verified successfully!',
         {
           id: loadingToast,
           icon: <CheckCircle2 className="w-5 h-5" />,
@@ -340,9 +343,9 @@ export default function RegisterPage() {
     const loadingToast = toast.loading('Sending new OTP...');
     try {
       await api.post('/auth/resend-otp', {
-        channel: selectedOtpChannel,
+        // channel: selectedOtpChannel,
         email: pendingFormData.email,
-        contactNumber: pendingFormData.contactNumber,
+        // contactNumber: pendingFormData.contactNumber,
       });
       toast.success('New OTP sent!', {
         id: loadingToast,
@@ -445,14 +448,12 @@ export default function RegisterPage() {
                 transition={{ duration: 0.35, ease: 'easeInOut' }}
               >
                 <h2 className="text-2xl font-bold text-black text-center">
-                  Verify {selectedOtpChannel === 'sms' ? 'Phone Number' : 'Email'}
+                  Verify Email
                 </h2>
                 <p className="text-sm text-gray-600 text-center">
                   Enter the 6-digit code sent to{' '}
                   <strong>
-                    {selectedOtpChannel === 'sms'
-                      ? pendingFormData?.contactNumber
-                      : pendingFormData?.email}
+                    {pendingFormData?.email}
                   </strong>
                 </p>
                 <p className="text-sm text-gray-500 text-center">
@@ -543,10 +544,10 @@ export default function RegisterPage() {
               >
                 <div className="space-y-1 text-center">
                   <h2 className="text-2xl font-bold text-black">
-                    Choose OTP Verification
+                    Email OTP Verification
                   </h2>
                   <p className="text-sm text-gray-600">
-                    Select where to receive your verification code.
+                    A verification code will be sent to your email.
                   </p>
                 </div>
 
@@ -583,7 +584,8 @@ export default function RegisterPage() {
                     </div>
                   </button>
 
-                  <button
+                  {/* SMS OTP option removed — all OTP now uses email */}
+                  {/* <button
                     type="button"
                     onClick={() => setSelectedOtpChannel('sms')}
                     className={`w-full rounded-md border-2 p-4 text-left transition-colors ${
@@ -613,7 +615,7 @@ export default function RegisterPage() {
                         </span>
                       </span>
                     </div>
-                  </button>
+                  </button> */}
                 </div>
 
                 <div className="flex flex-col items-center gap-3 pt-2">

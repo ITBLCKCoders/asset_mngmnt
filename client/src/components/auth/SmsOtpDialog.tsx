@@ -41,7 +41,8 @@ export default function SmsOtpDialog({
   onCancel,
   pendingActionRef,
   expirySeconds = 300,
-  title = 'OTP SMS Verification',
+  // title = 'OTP SMS Verification',
+  title = 'OTP Email Verification',
   description,
   icon = <ShieldCheck className="h-6 w-6 text-blue-600" />,
   verifyButtonLabel = 'Verify & Sign',
@@ -63,10 +64,10 @@ export default function SmsOtpDialog({
   const onOpenChangeRef = useRef(onOpenChange);
   const isTimerRunningRef = useRef(false);
 
-  // Build description with phone number if provided
+  // Build description with email if provided (SMS replaced by email)
   const displayDescription = description || (phoneNumber
-    ? `OTP SMS Verification has been sent to ${phoneNumber} for accountability form signing.`
-    : 'OTP SMS Verification has been sent to your registered mobile number for accountability form signing.');
+    ? `OTP Email Verification has been sent to your registered email for accountability form signing.`
+    : 'OTP Email Verification has been sent to your registered email for accountability form signing.');
 
 
   // Keep onOpenChange ref in sync
@@ -268,7 +269,7 @@ export default function SmsOtpDialog({
         <div className="space-y-4 py-4">
           <div>
             <Label className="text-sm text-gray-600 mb-2 block">
-              Enter the 6-digit code sent to {phoneNumber || 'your registered mobile number'}
+              Enter the 6-digit code sent to your registered email
             </Label>
             <p className="text-sm text-gray-700 mt-2">
               Expires in:{' '}

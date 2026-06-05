@@ -87,22 +87,23 @@ describe('config/validation', () => {
     });
   });
 
-  describe('validateVonageConfig', () => {
-    it('should not throw in non-production when Vonage keys are missing', () => {
-      process.env.JWT_SECRET = 'a'.repeat(64);
-      process.env.COOKIE_SECRET = 'a'.repeat(32);
-      const { validateVonageConfig } = require('../../config/validation.js');
-      expect(() => validateVonageConfig()).not.toThrow();
-    });
-
-    it('should throw in production when Vonage keys are missing', () => {
-      process.env.NODE_ENV = 'production';
-      process.env.JWT_SECRET = 'a'.repeat(64);
-      process.env.COOKIE_SECRET = 'a'.repeat(32);
-      const { validateVonageConfig } = require('../../config/validation.js');
-      expect(() => validateVonageConfig()).toThrow('Vonage SMS configuration is required in production');
-    });
-  });
+  // Vonage SMS config tests disabled — all OTP now uses email
+  // describe('validateVonageConfig', () => {
+  //   it('should not throw in non-production when Vonage keys are missing', () => {
+  //     process.env.JWT_SECRET = 'a'.repeat(64);
+  //     process.env.COOKIE_SECRET = 'a'.repeat(32);
+  //     const { validateVonageConfig } = require('../../config/validation.js');
+  //     expect(() => validateVonageConfig()).not.toThrow();
+  //   });
+  //
+  //   it('should throw in production when Vonage keys are missing', () => {
+  //     process.env.NODE_ENV = 'production';
+  //     process.env.JWT_SECRET = 'a'.repeat(64);
+  //     process.env.COOKIE_SECRET = 'a'.repeat(32);
+  //     const { validateVonageConfig } = require('../../config/validation.js');
+  //     expect(() => validateVonageConfig()).toThrow('Vonage SMS configuration is required in production');
+  //   });
+  // });
 
   describe('validateEmailConfig', () => {
     it('should throw in production when RESEND_API_KEY and RESEND_FROM_EMAIL missing', () => {
