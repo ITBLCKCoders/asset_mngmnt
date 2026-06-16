@@ -23,6 +23,8 @@ interface AssetViewModalProps {
   showEditButton?: boolean;
   canEdit?: boolean;
   hideFinancialInfo?: boolean;
+  hideTimeline?: boolean;
+  hideForms?: boolean;
 }
 
 const viewTabs = [
@@ -54,8 +56,16 @@ export function AssetViewModal({
   showEditButton = true,
   canEdit = true,
   hideFinancialInfo = false,
+  hideTimeline = false,
+  hideForms = false,
 }: AssetViewModalProps) {
   const [activeTab, setActiveTab] = useState('details');
+
+  const visibleTabs = viewTabs.filter(tab => {
+    if (tab.value === 'timeline' && hideTimeline) return false;
+    if (tab.value === 'forms' && hideForms) return false;
+    return true;
+  });
 
   const handlePdfModalOpen = () => {
     // Set a flag before closing so we know to reopen later
@@ -201,7 +211,7 @@ export function AssetViewModal({
           <div className="relative -mt-4 sm:-mt-6 md:-mt-8 px-2 md:px-4 flex-shrink-0">
             <div className="flex justify-center overflow-x-auto scrollbar-hide">
               <div className="flex items-center bg-white rounded-full shadow-xl px-2 sm:px-4 md:px-10 py-2 sm:py-3 md:py-4 border-2 md:border-4 border-red-100">
-                {viewTabs.map((tab, index) => {
+                {visibleTabs.map((tab, index) => {
                   const Icon = tab.icon;
                   const isActive = tab.value === activeTab;
 
@@ -224,7 +234,7 @@ export function AssetViewModal({
                           {tab.title}
                         </p>
                       </div>
-                      {index < viewTabs.length - 1 && (
+                      {index < visibleTabs.length - 1 && (
                         <div className="w-4 sm:w-8 md:w-20 lg:w-24 h-1 mx-1 sm:mx-2 md:mx-4 bg-gray-300" />
                       )}
                     </div>
@@ -237,7 +247,7 @@ export function AssetViewModal({
           <CardContent className="flex-1 overflow-y-auto px-4 sm:px-6 pt-5 sm:pt-6 pb-4 min-h-0">
             <div className="mb-8">
               <h3 className="text-xl sm:text-2xl font-bold text-red-700 text-center sm:text-left">
-                {viewTabs.find(tab => tab.value === activeTab)?.description}
+                {visibleTabs.find(tab => tab.value === activeTab)?.description}
               </h3>
             </div>
 

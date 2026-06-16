@@ -129,7 +129,9 @@ export function Step1AssetInfo({
       if (
         !type ||
         (type.categoryId != selectedCategoryId &&
-          type.category_id != selectedCategoryId)
+          type.category_id != selectedCategoryId &&
+          type.categoryId !== null &&
+          type.category_id !== null)
       ) {
         updateForm('typeId', '');
         updateForm('type', '');
@@ -142,7 +144,9 @@ export function Step1AssetInfo({
       const supplier = suppliers.find(s => s.name == formData.supplier);
       if (
         !supplier ||
-        ((supplier.categoryId || supplier.category_id) != selectedCategoryId)
+        (((supplier.categoryId || supplier.category_id) != selectedCategoryId) &&
+          supplier.categoryId !== null &&
+          supplier.category_id !== null)
       ) {
         updateForm('supplier', '');
       }
@@ -154,7 +158,10 @@ export function Step1AssetInfo({
       const brand = brands.find(b => b.id.toString() == formData.brandId);
       if (
         !brand ||
-        (brand.typeId != formData.typeId && brand.type_id != formData.typeId)
+        (brand.typeId != formData.typeId &&
+          brand.type_id != formData.typeId &&
+          brand.typeId !== null &&
+          brand.type_id !== null)
       ) {
         // Only clear the brand if we're not in edit mode with existing brand data
         if (!formData.assetId) {
@@ -380,7 +387,9 @@ export function Step1AssetInfo({
                   const filteredSuppliers = suppliers.filter(
                     s =>
                       (s.categoryId && s.categoryId == selectedCategoryId) ||
-                      (s.category_id && s.category_id == selectedCategoryId)
+                      (s.category_id && s.category_id == selectedCategoryId) ||
+                      s.categoryId === null ||
+                      s.category_id === null
                   );
                   const showSearch = filteredSuppliers.length > 5;
                   return (
@@ -471,7 +480,9 @@ export function Step1AssetInfo({
                   const filteredTypes = types.filter(
                     t =>
                       t.categoryId == selectedCategoryId ||
-                      t.category_id == selectedCategoryId
+                      t.category_id == selectedCategoryId ||
+                      t.categoryId === null ||
+                      t.category_id === null
                   );
                   const showSearch = filteredTypes.length > 5;
                   return (
@@ -581,7 +592,9 @@ export function Step1AssetInfo({
                     filteredBrands = brands.filter(
                       b =>
                         b.typeId == formData.typeId ||
-                        b.type_id == formData.typeId
+                        b.type_id == formData.typeId ||
+                        b.typeId === null ||
+                        b.type_id === null
                     );
                   }
 

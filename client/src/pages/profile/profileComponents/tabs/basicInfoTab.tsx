@@ -583,7 +583,7 @@ const BasicInfoTab = forwardRef<BasicInfoTabHandle, BasicInfoTabProps>(
     };
 
     const handleSave = async () => {
-      if (isSettingInitials()) {
+      if (isSettingInitials() && initialsChanged()) {
         setConsentChecks({ official: false, binding: false, smsOtp: false, terms: false });
         pendingSaveRef.current = executeSave;
         setShowConsentDialog(true);

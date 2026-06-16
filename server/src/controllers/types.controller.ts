@@ -74,6 +74,44 @@ export const createType = async (req: AuthRequest, res: Response) => {
   const userId = req.user!.userID;
 
   try {
+    const rawName = (req.body.name || '').toString().trim();
+    const isUnknown = ['unknown', 'unkown'].includes(rawName.toLowerCase());
+
+    // Handle global "Unknown" type -- one per company, no category_id
+    if (isUnknown) {
+      const activeCompany = await getScopedActiveCompany(pool, req.user?.userID);
+      if (!activeCompany) {
+        return res.status(400).json({ error: 'No active company found' });
+      }
+
+      const [existing] = await pool.query<any[][]>(
+        `SELECT typeID FROM asset_types WHERE LOWER(name) IN ('unknown','unkown') AND company_id = ? AND deleted_at IS NULL LIMIT 1`,
+        [activeCompany.id]
+      );
+      if ((existing[0] as any[]).length > 0) {
+        return res.status(409).json({ error: 'Unknown type already exists for this company' });
+      }
+
+      const params = ['Unknown', null, '', activeCompany.id, userId];
+      await pool.query(
+        `CALL sp_CreateType(${params.map(() => '?').join(', ')})`,
+        params
+      );
+
+      await createAuditLog({
+        userId,
+        action: 'Created Type',
+        resourceType: 'type',
+        resourceName: 'Unknown',
+        details: 'Created global Unknown type',
+        ipAddress: req.ip,
+        userAgent: req.get('User-Agent'),
+        companyId: activeCompany.id,
+      });
+
+      return res.status(201).json({ success: true, message: 'Unknown type created' });
+    }
+
     const validatedFields = validateTypeFields(req.body);
 
     const activeCompany = await getScopedActiveCompany(pool, req.user?.userID);

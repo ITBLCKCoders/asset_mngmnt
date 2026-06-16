@@ -484,6 +484,8 @@ export default function MyAssetsPage() {
         asset={selectedAsset}
         showEditButton={false}
         hideFinancialInfo={true}
+        hideTimeline={true}
+        hideForms={true}
       />
     </div>
   );
