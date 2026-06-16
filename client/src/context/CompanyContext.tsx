@@ -55,16 +55,19 @@ export function CompanyProvider({ children }: { children: ReactNode }) {
   }, []);
 
   const setActiveCompany = useCallback(async (companyId: string) => {
+    setLoading(true);
     try {
       const response = await api.patch(`/companies/${companyId}/active`);
       
       if (response && response.success !== false) {
         localStorage.setItem(SELECTED_COMPANY_KEY, companyId);
         await Promise.all([fetchActiveCompany(), fetchCompanies()]);
+        window.location.reload();
       } else {
         throw new Error('Failed to set active company');
       }
     } catch (error) {
+      setLoading(false);
       console.error('Failed to set active company:', error);
       throw error;
     }
@@ -74,6 +77,7 @@ export function CompanyProvider({ children }: { children: ReactNode }) {
     localStorage.setItem(SELECTED_COMPANY_KEY, 'all');
     setActiveCompanyState(null);
     await fetchCompanies();
+    window.location.reload();
   }, [fetchCompanies]);
 
   useEffect(() => {

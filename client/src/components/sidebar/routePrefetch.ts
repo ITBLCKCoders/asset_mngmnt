@@ -117,3 +117,6 @@ export function prefetchRoute(path: string): void {
 export function prefetchRoutes(paths: readonly string[]): void {
   for (const p of paths) prefetchRoute(p);
 }
+
+/** All route paths available for prefetching, used to eagerly warm-load chunks. */
+export const SIDEBAR_ROUTE_PATHS = Object.keys(ROUTE_IMPORTERS);

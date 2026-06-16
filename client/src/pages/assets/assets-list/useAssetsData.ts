@@ -6,6 +6,7 @@ import { toast } from 'sonner';
 import { computeNextMaintenanceDate } from '@/utils/computeNextMaintenanceDate';
 import type { AssetResponseDto } from '@/types/assetsDTOs';
 import { Asset } from './assetsComponents/assetTable/assetData';
+import type { AccountabilityForm } from '@/pages/assets/accountability/accountabilityFormTypes';
 
 export const useAssetsData = (companyFilter?: string | null, scope?: string | null) => {
   const [assets, setAssets] = useState<Asset[]>([]);
@@ -89,9 +90,9 @@ export const useAssetsData = (companyFilter?: string | null, scope?: string | nu
           location:
             asset.currentAssignment?.location ||
             `${asset.location_name || ''}${asset.room_name ? ` - ${asset.room_name}` : ''}`,
-          currentAssignment: asset.currentAssignment,
+          currentAssignment: asset.currentAssignment ?? undefined,
           assignmentHistory: asset.assignmentHistory,
-          builderHistory: asset.builderHistory,
+          builderHistory: asset.builderHistory ?? undefined,
           purchaseDate: asset.purchase_date
             ? new Date(asset.purchase_date)
             : null,
@@ -145,7 +146,7 @@ export const useAssetsData = (companyFilter?: string | null, scope?: string | nu
               modelNo: asset.model,
               brand: asset.brand,
             }];
-            return { ...form, assets: assetsArray };
+            return { ...form, assets: assetsArray } as AccountabilityForm;
           })(),
         };
       });

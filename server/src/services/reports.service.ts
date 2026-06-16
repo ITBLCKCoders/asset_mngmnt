@@ -94,14 +94,14 @@ export class ReportsService {
     const companyId =
       scope.isSuperAdmin && requestedCompanyId
         ? requestedCompanyId
-        : scope.companyId;
+        : scope.isSuperAdmin
+          ? null
+          : scope.companyId;
 
-    if (!companyId) {
-      return {
-        maintenanceHistory: [],
-        repairHistory: [],
-      };
-    }
+    const companyFilter = companyId
+      ? 'AND (a.company_id = ? OR a.originating_company_id = ?)'
+      : '';
+    const queryParams = companyId ? [companyId, companyId] : [];
 
     const baseQuery = `
       SELECT
@@ -135,7 +135,7 @@ export class ReportsService {
         ON al.user_id = u.userID
       WHERE al.deleted_at IS NULL
         AND al.resource_type = 'asset'
-        AND (a.company_id = ? OR a.originating_company_id = ?)
+        ${companyFilter}
         AND (
           LOWER(al.action) LIKE ?
           OR LOWER(COALESCE(al.details, '')) LIKE ?
@@ -166,15 +166,13 @@ export class ReportsService {
       }));
 
     const [maintenanceRows] = (await pool.execute(baseQuery, [
-      companyId,
-      companyId,
+      ...queryParams,
       '%maintenance%',
       '%maintenance%',
     ])) as any[];
 
     const [repairRows] = (await pool.execute(baseQuery, [
-      companyId,
-      companyId,
+      ...queryParams,
       '%repair%',
       '%repair%',
     ])) as any[];
@@ -195,21 +193,9 @@ export class ReportsService {
     const companyId =
       scope.isSuperAdmin && requestedCompanyId
         ? requestedCompanyId
-        : scope.companyId;
-
-    if (!companyId) {
-      return {
-        fixedAssetRegister: [],
-        depreciationSchedule: [],
-        assetValuationSummary: {
-          totalAssetValue: 0,
-          totalAccumulatedDepreciation: 0,
-          totalNetBookValue: 0,
-          byCategory: [],
-          byDepartment: [],
-        },
-      };
-    }
+        : scope.isSuperAdmin
+          ? null
+          : scope.companyId;
 
     let categoryIds: string[] | null = null;
     if (scopeOverride && (scopeOverride === 'it' || scopeOverride === 'admin')) {
@@ -233,6 +219,11 @@ export class ReportsService {
     } else {
       logger.info(`[finance-reports] No scope override or invalid scope. scopeOverride: ${scopeOverride}`);
     }
+
+    const companyFilter = companyId
+      ? 'AND (a.company_id = ? OR a.originating_company_id = ?)'
+      : '';
+    const queryParams: any[] = companyId ? [companyId, companyId] : [];
 
     let baseQuery = `
       SELECT
@@ -289,10 +280,8 @@ export class ReportsService {
         ON a.location_room_id = lr.roomID
        AND lr.deleted_at IS NULL
       WHERE a.deleted_at IS NULL
-        AND (a.company_id = ? OR a.originating_company_id = ?)
+        ${companyFilter}
     `;
-
-    const queryParams: any[] = [companyId, companyId];
 
     if (categoryIds && categoryIds.length > 0) {
       const placeholders = categoryIds.map(() => '?').join(',');

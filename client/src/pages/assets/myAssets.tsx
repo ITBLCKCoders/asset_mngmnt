@@ -86,7 +86,7 @@ export default function MyAssetsPage() {
           location:
             asset.currentAssignment?.location ||
             `${asset.location_name || ''}${asset.room_name ? ` - ${asset.room_name}` : ''}`,
-          currentAssignment: asset.currentAssignment,
+          currentAssignment: asset.currentAssignment ?? undefined,
           assignmentHistory: asset.assignmentHistory || [],
           purchaseDate: asset.purchase_date
             ? new Date(asset.purchase_date)

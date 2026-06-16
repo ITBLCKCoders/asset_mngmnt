@@ -7,7 +7,7 @@ import ExcelJS from 'exceljs';
 import { formatCurrency } from '@/lib/currency';
 import { toast } from 'sonner';
 import { Asset } from './assetsComponents/assetTable/assetData';
-import { Company } from './useAssetsData';
+import type { Company } from '@/types/assets.d';
 import {
   addCompanyLogoToPDF,
   formatBuilderItems,

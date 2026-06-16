@@ -100,7 +100,7 @@ export default function AssetsTagging() {
         location:
           asset.currentAssignment?.location ||
           `${asset.location_name || ''}${asset.room_name ? ` - ${asset.room_name}` : ''}`,
-        currentAssignment: asset.currentAssignment,
+        currentAssignment: asset.currentAssignment ?? undefined,
         assignmentHistory: [],
         purchaseDate: asset.purchase_date
           ? new Date(asset.purchase_date)

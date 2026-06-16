@@ -710,9 +710,12 @@ export async function getAccountabilityFormsForAssetIds(
   const [rows] = await pool.execute<AccountabilityFormBatchRow[]>(
     `SELECT asset_id, formID, form_number, status, created_at, signed_at, assets_data
      FROM accountability_forms
-     WHERE asset_id IN (${placeholders}) AND deleted_at IS NULL
+     WHERE deleted_at IS NULL
+       AND (asset_id IN (${placeholders})
+            OR (assets_data IS NOT NULL
+                AND JSON_OVERLAPS(JSON_EXTRACT(assets_data, '$.assets[*].id'), ?)))
      ORDER BY asset_id, created_at DESC`,
-    assetIds
+    [...assetIds, JSON.stringify(assetIds)]
   );
   return rows;
 }

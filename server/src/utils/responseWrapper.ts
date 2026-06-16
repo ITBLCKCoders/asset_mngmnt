@@ -1,5 +1,6 @@
 import { Response } from 'express';
 import { ValidationError } from '../dtos/common/ApiResponseDto';
+import logger from '../logger.js';
 
 export interface ApiResponse<T = any> {
   success: boolean;
@@ -119,7 +120,7 @@ export async function handleAsyncOperation<T>(
     const data = await operation();
     return createSuccessResponse(res, data, successMessage);
   } catch (error: any) {
-    console.error('Async operation error:', error);
+    logger.error('Async operation error:', error);
     return createInternalErrorResponse(
       res,
       errorMessage || 'Operation failed',

@@ -1758,9 +1758,9 @@ export function AssetsPage() {
                                           currentAssignment:
                                             apiAsset.currentAssignment,
                                           assignmentHistory:
-                                            apiAsset.assignmentHistory,
+                                            apiAsset.assignmentHistory ?? undefined,
                                           builderHistory:
-                                            apiAsset.builderHistory,
+                                            apiAsset.builderHistory ?? undefined,
                                           purchaseDate: apiAsset.purchase_date
                                             ? new Date(apiAsset.purchase_date)
                                             : null,

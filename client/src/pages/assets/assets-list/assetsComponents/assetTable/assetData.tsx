@@ -31,16 +31,30 @@ export interface AssetAssignment {
     id: string;
     name: string;
     email: string;
-    employeeNumber?: string;
-    position?: string;
+    employeeNumber?: string | null;
+    position?: string | null;
+  };
+  department: string | null;
+  location: string | null;
+  assignedDate: string;
+  actualReturnDate?: string | null;
+  status: string;
+  assignedBy?: string | null;
+  assignmentNotes?: string | null;
+}
+
+export interface AssetCurrentAssignment {
+  user: {
+    id: string;
+    name: string;
+    email: string;
+    employeeNumber?: string | null;
+    position?: string | null;
   };
   department: string;
   location: string;
   assignedDate: string;
-  actualReturnDate?: string;
   status: string;
-  assignedBy?: string;
-  assignmentNotes?: string;
 }
 
 export interface AssetBuilderHistory {

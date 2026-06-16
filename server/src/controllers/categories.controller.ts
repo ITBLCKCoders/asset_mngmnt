@@ -32,15 +32,50 @@ const validateCategoryFields = (body: any): CategoryFields => {
 // GET all categories
 export const getAllCategories = async (req: AuthRequest, res: Response) => {
   try {
-    const activeCompany = await getScopedActiveCompany(pool, req.user?.userID);
-    if (!activeCompany) {
-      return res.status(400).json({ error: 'No active company found' });
+    const queryCompanyId = req.query.company_id as string | undefined;
+
+    // If company_id is provided in query, use it directly
+    if (queryCompanyId) {
+      const [rows] = await pool.query<any[][]>('CALL sp_GetAllCategories(?)', [
+        queryCompanyId,
+      ]);
+      return res.json(rows[0] ?? []);
     }
 
-    const [rows] = await pool.query<any[][]>('CALL sp_GetAllCategories(?)', [
-      activeCompany.id,
-    ]);
-    res.json(rows[0] ?? []);
+    // No company_id in query — check user role
+    const activeCompany = await getScopedActiveCompany(pool, req.user?.userID);
+    if (activeCompany) {
+      const [rows] = await pool.query<any[][]>('CALL sp_GetAllCategories(?)', [
+        activeCompany.id,
+      ]);
+      return res.json(rows[0] ?? []);
+    }
+
+    // No scoped company — for Super Admin/Admin, return all categories
+    const [userRows] = await pool.query<any[][]>(
+      `SELECT r.name as role_name FROM users u
+       LEFT JOIN asset_mngmnt_roles r ON u.role_id = r.roleID AND r.deleted_at IS NULL
+       WHERE u.userID = ? LIMIT 1`,
+      [req.user?.userID]
+    );
+    const roleName = String(userRows[0]?.[0]?.role_name ?? '').trim().toLowerCase();
+    if (roleName === 'super admin' || roleName === 'admin') {
+      const [rows] = await pool.query<any[][]>(
+        `SELECT ac.categoryID, ac.name, ac.prefix, ac.gl_code, ac.department_id, ac.company_id,
+                ac.created_at, ac.created_by, ac.updated_at, ac.updated_by,
+                ac.deleted_at, ac.deleted_by,
+                CASE WHEN d.departmentID IS NOT NULL THEN
+                  JSON_OBJECT('id', d.departmentID, 'name', d.name, 'code', d.code)
+                ELSE NULL END as department
+         FROM asset_categories ac
+         LEFT JOIN asset_mngmnt_departments d ON ac.department_id = d.departmentID AND d.deleted_at IS NULL
+         WHERE ac.deleted_at IS NULL
+         ORDER BY ac.created_at DESC`
+      );
+      return res.json(rows[0] ?? []);
+    }
+
+    return res.status(400).json({ error: 'No active company found' });
   } catch (err) {
     logger.error('Get all categories error', { err });
     res.status(500).json({ error: 'Failed to fetch categories' });

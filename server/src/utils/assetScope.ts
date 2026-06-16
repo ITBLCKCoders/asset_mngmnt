@@ -36,6 +36,8 @@ export async function getAssetScope(
     const activeCompany = await getActiveCompany(pool);
     if (activeCompany?.id) {
       companyId = activeCompany.id;
+    } else {
+      companyId = null;
     }
   }
 
@@ -123,6 +125,8 @@ export async function getBorrowRequestListScope(
     const activeCompany = await getActiveCompany(pool);
     if (activeCompany?.id) {
       companyId = activeCompany.id;
+    } else {
+      companyId = null;
     }
     return { companyId, borrowScope: null };
   }

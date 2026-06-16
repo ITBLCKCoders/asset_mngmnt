@@ -4,12 +4,12 @@ import { createMockRes } from '../helpers/mockRes.js';
 
 jest.mock('../../db.js', () => ({ pool: { execute: jest.fn() } }));
 jest.mock('../../logger.js', () => ({ __esModule: true, default: { error: jest.fn(), info: jest.fn(), warn: jest.fn(), debug: jest.fn() } }));
-jest.mock('../../utils/audit.js', () => ({ createAuditLog: jest.fn() }));
+jest.mock('../../utils/audit.js', () => ({ createAuditLog: jest.fn(() => Promise.resolve()) }));
 jest.mock('../../utils/accountabilityFormOnReturn.js', () => ({ handleAccountabilityFormOnAssetReturn: jest.fn() }));
 jest.mock('../../utils/assetScope.js', () => ({ getAssetScope: jest.fn(), classifyDepartmentScopeByName: jest.fn() }));
 jest.mock('../../utils/approverNotifications.js', () => ({ isUserManagerApprover1: jest.fn(), isUserManagerApprover2: jest.fn(), getManagerApprover1UserIdsInDepartment: jest.fn(), getManagerApprover2UserIdsInDepartment: jest.fn() }));
 jest.mock('../../utils/notificationsApi.js', () => ({ createNotificationForApi: jest.fn() }));
-jest.mock('../../utils/responseWrapper.js', () => ({ createErrorResponse: jest.fn((res, error, errors, statusCode, message) => { res.status(statusCode).json({ error: message }); return res; }) }));
+jest.mock('../../utils/responseWrapper.js', () => ({ createErrorResponse: jest.fn((res: any, error: any, errors: any, statusCode: any, message: any) => { res.status(statusCode).json({ error: message }); return res; }) }));
 jest.mock('../../utils/returnFormNumber.js', () => ({ generateReturnFormNumber: jest.fn(), generateReturnFormNumberFallback: jest.fn() }));
 jest.mock('../../utils/cloudinary.js', () => ({ uploadReturnConditionImageToCloudinary: jest.fn(), signedRawUrlFromStoredSecureUrl: jest.fn() }));
 jest.mock('../../models/assetReturn.model.js', () => ({ AssetReturnModel: { create: jest.fn(), findByFormId: jest.fn(), findById: jest.fn(), findAll: jest.fn(), findByUserId: jest.fn() } }));
@@ -55,16 +55,16 @@ jest.mock('../../services/assetReturn.service.js', () => ({ resolveReturnFormCon
 jest.mock('../../controllers/accountabilityForms.controller.js', () => ({ createAccountabilityFormHandler: jest.fn() }));
 jest.mock('../../controllers/assetTransfers.controller.js', () => ({ runTransferFormExecution: jest.fn() }));
 
-const { pool } = jest.requireMock('../../db.js');
-const returnModel = jest.requireMock('../../models/assetReturn.model.js').AssetReturnModel;
-const returnFormModel = jest.requireMock('../../models/assetReturnForm.model.js').AssetReturnFormModel;
-const { getAssetScope } = jest.requireMock('../../utils/assetScope.js');
-const transferRepo = jest.requireMock('../../repositories/assetTransferForm.repository.js');
-const returnRepo = jest.requireMock('../../repositories/assetReturn.repository.js');
-const { isUserManagerApprover1, getManagerApprover1UserIdsInDepartment } = jest.requireMock('../../utils/approverNotifications.js');
-const { createNotificationForApi } = jest.requireMock('../../utils/notificationsApi.js');
-const { generateReturnFormNumber, generateReturnFormNumberFallback } = jest.requireMock('../../utils/returnFormNumber.js');
-const { createErrorResponse } = jest.requireMock('../../utils/responseWrapper.js');
+const { pool } = jest.requireMock('../../db.js') as { pool: { execute: jest.Mock } };
+const returnModel = jest.requireMock('../../models/assetReturn.model.js').AssetReturnModel as jest.Mock;
+const returnFormModel = jest.requireMock('../../models/assetReturnForm.model.js').AssetReturnFormModel as jest.Mock;
+const { getAssetScope } = jest.requireMock('../../utils/assetScope.js') as { getAssetScope: jest.Mock };
+const transferRepo = jest.requireMock('../../repositories/assetTransferForm.repository.js') as Record<string, jest.Mock>;
+const returnRepo = jest.requireMock('../../repositories/assetReturn.repository.js') as Record<string, jest.Mock>;
+const { isUserManagerApprover1, getManagerApprover1UserIdsInDepartment } = jest.requireMock('../../utils/approverNotifications.js') as { isUserManagerApprover1: jest.Mock; getManagerApprover1UserIdsInDepartment: jest.Mock };
+const { createNotificationForApi } = jest.requireMock('../../utils/notificationsApi.js') as { createNotificationForApi: jest.Mock };
+const { generateReturnFormNumber, generateReturnFormNumberFallback } = jest.requireMock('../../utils/returnFormNumber.js') as { generateReturnFormNumber: jest.Mock; generateReturnFormNumberFallback: jest.Mock };
+const { createErrorResponse } = jest.requireMock('../../utils/responseWrapper.js') as { createErrorResponse: jest.Mock };
 
 const mockAssignment = { assignmentID: 'a1', asset_id: '10', user_id: 'u1', department_id: 'd1', location_id: 'l1', location_room_id: 'lr1', status: 'Active' };
 const defaultScope = { companyId: 10, departmentIds: null, isSuperAdmin: false };
@@ -77,6 +77,8 @@ describe('assetReturns.controller', () => {
     jest.resetAllMocks();
     req = { body: {}, params: {}, query: {}, ip: '127.0.0.1', get: jest.fn(), user: { userID: 'u1' } };
     res = createMockRes();
+    const { createAuditLog } = jest.requireMock('../../utils/audit.js') as { createAuditLog: jest.Mock };
+    createAuditLog.mockResolvedValue(undefined);
   });
 
   describe('submitAssetReturnRequestHandler', () => {
@@ -224,7 +226,7 @@ describe('assetReturns.controller', () => {
   describe('uploadConditionPhotoHandler', () => {
     it('uploads photo successfully', async () => {
       req.file = { buffer: Buffer.from('test'), mimetype: 'image/jpeg', originalname: 'photo.jpg' };
-      const { uploadReturnConditionImageToCloudinary } = jest.requireMock('../../utils/cloudinary.js');
+      const { uploadReturnConditionImageToCloudinary } = jest.requireMock('../../utils/cloudinary.js') as { uploadReturnConditionImageToCloudinary: jest.Mock };
       uploadReturnConditionImageToCloudinary.mockResolvedValue('https://cloudinary.com/img.jpg');
       await assetReturnsController.uploadConditionPhotoHandler(req, res);
       expect(res._json.url).toBeDefined();

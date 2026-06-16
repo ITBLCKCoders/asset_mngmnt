@@ -28,7 +28,6 @@ describe('ResetMethodSelectionPage', () => {
     expect(screen.getByText('Choose Verification Method')).toBeInTheDocument();
     expect(screen.getByText(/test@test\.com/)).toBeInTheDocument();
     expect(screen.getByText('Email OTP')).toBeInTheDocument();
-    expect(screen.getByText('SMS OTP')).toBeInTheDocument();
   });
 
   it('should call API and store channel on continue', async () => {
@@ -37,7 +36,7 @@ describe('ResetMethodSelectionPage', () => {
     render(<ResetMethodSelectionPage />);
     fireEvent.click(screen.getByRole('button', { name: /Send Reset Code/i }));
     await waitFor(() => {
-      expect(api.post).toHaveBeenCalledWith('/auth/forgot-password', { channel: 'email', email: 'test@test.com' });
+      expect(api.post).toHaveBeenCalledWith('/auth/forgot-password', { email: 'test@test.com' });
     });
     expect(localStorage.getItem('resetChannel')).toBe('email');
   });

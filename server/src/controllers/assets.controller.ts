@@ -15,11 +15,7 @@ import {
   UpdateAssetDtoSchema,
 } from '../dtos/assets/CreateAssetDto.js';
 import { DtoTransformers } from '../utils/dtoTransformers.js';
-import {
-  createSuccessResponse,
-  createErrorResponse,
-} from '../utils/validation.js';
-import { createErrorResponse as createErrorResponseRes } from '../utils/responseWrapper.js';
+import { createErrorResponse } from '../utils/responseWrapper.js';
 import { getActiveCompany } from '../utils/activeCompany.js';
 import {
   getAssetScope,
@@ -589,7 +585,16 @@ export async function getAssetsHandler(req: AuthRequest, res: Response) {
         }
 
         asset.accountabilityForms = (formRows as any[])
-          .filter((f: any) => f.asset_id === asset.assetID)
+          .filter((f: any) => {
+            if (f.asset_id === asset.assetID) return true;
+            if (f.asset_id === null && f.assets_data) {
+              try {
+                const data = typeof f.assets_data === 'string' ? JSON.parse(f.assets_data) : f.assets_data;
+                return data?.assets?.some((a: any) => a.id === asset.assetID);
+              } catch {}
+            }
+            return false;
+          })
           .map((row: any) => ({
             id: row.formID,
             formNumber: row.form_number,

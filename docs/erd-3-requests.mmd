@@ -1,0 +1,29 @@
+erDiagram
+  asset_borrow_requests {
+    borrow_request_id char(36) PK
+    company_id char(36) FK
+    user_id char(36) FK
+    borrow_scope enum
+    category_id char(36) FK
+    type_id char(36) FK
+    asset_id char(36)
+  }
+  asset_mngmnt_gate_passes {
+    gate_pass_id char(36) PK
+    assignment_id char(36) FK
+    asset_id char(36) FK
+    user_id char(36) FK
+    destination_location_id char(36) FK
+    destination_department_id char(36) FK
+    created_by char(36) FK
+    processed_by char(36) FK
+  }
+
+  companies ||--o{ asset_borrow_requests : scope
+  users ||--o{ asset_borrow_requests : requester
+  asset_categories ||--o{ asset_borrow_requests : category
+  asset_types ||--o{ asset_borrow_requests : type
+
+  asset_assignments ||--o{ asset_mngmnt_gate_passes : for
+  assets ||--o{ asset_mngmnt_gate_passes : item
+  users ||--o{ asset_mngmnt_gate_passes : requester

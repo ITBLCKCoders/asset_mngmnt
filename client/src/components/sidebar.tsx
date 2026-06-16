@@ -38,7 +38,7 @@ import { useUserPermissions } from '@/hooks/useUserPermissions';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Badge } from '@/components/ui/badge';
 import { useAvatarPreview } from '@/hooks/avatarPreview';
-import { memo, useCallback, useEffect, useMemo, useRef, useState, useTransition } from 'react';
+import { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { cn } from '@/lib/utils';
 import { api, setToken } from '@/lib/api';
 import { ASSET_SIDEBAR_ENTRIES } from '@/components/sidebar/sidebarConfig';
@@ -46,6 +46,7 @@ import { SidebarHoverItem } from '@/components/sidebar/SidebarHoverItem';
 import {
   prefetchRoute,
   prefetchRoutes,
+  SIDEBAR_ROUTE_PATHS,
 } from '@/components/sidebar/routePrefetch';
 
 interface SidebarProps {
@@ -61,15 +62,10 @@ const Sidebar = memo(function Sidebar({ onLogout }: SidebarProps) {
   const { user, loading } = useCurrentUser();
   const { hasPermission } = useUserPermissions();
   const { previewUrl, clearPreview } = useAvatarPreview();
-  const [isPending, startTransition] = useTransition();
 
-  /**
-   * Wraps `navigate` in a transition so the previous page stays visible while
-   * the next lazy chunk loads, eliminating the `RouteContentFallback` flash.
-   */
   const go = useCallback((path: string) => {
-    startTransition(() => navigate(path));
-  }, [navigate, startTransition]);
+    navigate(path);
+  }, [navigate]);
 
   const prefetch = useCallback(
     (path: string) => ({
@@ -164,8 +160,8 @@ const Sidebar = memo(function Sidebar({ onLogout }: SidebarProps) {
   const displayAvatarUrl = previewUrl || user?.avatarUrl;
 
   const handleProfileClick = useCallback(() => {
-    startTransition(() => navigate('/profile'));
-  }, [navigate, startTransition]);
+    navigate('/profile');
+  }, [navigate]);
 
   const initials = useMemo(
     () =>
@@ -189,12 +185,17 @@ const Sidebar = memo(function Sidebar({ onLogout }: SidebarProps) {
   );
   const reportSection = new URLSearchParams(location.search).get('section');
 
+  // Eagerly warm-load all lazy route chunks so navigation feels instant
+  useEffect(() => {
+    prefetchRoutes(SIDEBAR_ROUTE_PATHS);
+  }, []);
+
   const handleLogout = useCallback(async () => {
     try {
       await api.post('/auth/logout').catch(() => {});
     } finally {
       clearCurrentUserCache();
-      localStorage.clear();
+      localStorage.removeItem('mfaTempToken');
       sessionStorage.clear();
       document.cookie.split(';').forEach(c => {
         document.cookie = c

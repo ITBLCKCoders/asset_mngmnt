@@ -337,8 +337,7 @@ export const loginHandler = async (req: Request, res: Response) => {
 
   res.json({
     message: 'Login successful',
-    accessToken: tokenResult.accessToken,
-    refreshToken: tokenResult.refreshToken,
+    authenticated: true,
   });
 };
 // FORGOT & RESET PASSWORD
@@ -806,7 +805,7 @@ export async function checkInitialsAvailabilityHandler(
   try {
     // Check if any active user (excluding current user) has the same initials
     const [rows] = (await pool.execute(
-      `SELECT userID, username, firstName, lastName, digital_signature
+      `SELECT userID, username, first_name, last_name, digital_signature
        FROM users
        WHERE digital_signature = ?
        AND userID != ?
@@ -821,8 +820,8 @@ export async function checkInitialsAvailabilityHandler(
         error: 'These initials are already in use by another active account',
         conflictingUser: {
           username: conflictingUser.username,
-          firstName: conflictingUser.firstName,
-          lastName: conflictingUser.lastName,
+          firstName: conflictingUser.first_name,
+          lastName: conflictingUser.last_name,
         },
       });
     }
@@ -1061,8 +1060,7 @@ export async function verifyMFAHandler(req: Request, res: Response) {
 
   res.json({
     message: 'Login successful',
-    accessToken: tokens.accessToken,
-    refreshToken: tokens.refreshToken,
+    authenticated: true,
   });
 }
 
@@ -1478,8 +1476,7 @@ export async function forceChangePasswordHandler(req: Request, res: Response) {
 
     return res.json({
       message: 'Password changed successfully',
-      accessToken: tokens.accessToken,
-      refreshToken: tokens.refreshToken,
+      authenticated: true,
     });
   } catch (error: any) {
     logger.error('Force change password failed:', error);

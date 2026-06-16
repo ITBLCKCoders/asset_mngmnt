@@ -1,0 +1,221 @@
+erDiagram
+  companies {
+    companyID char(36) PK
+  }
+  asset_mngmnt_departments {
+    departmentID char(36) PK
+    company_id char(36) FK
+  }
+  asset_mngmnt_locations {
+    locationID char(36) PK
+    company_id char(36) FK
+    department_id char(36) FK
+  }
+  asset_mngmnt_location_rooms {
+    roomID char(36) PK
+    locationID char(36) FK
+  }
+  asset_categories {
+    categoryID char(36) PK
+    company_id char(36) FK
+    department_id char(36) FK
+  }
+  asset_types {
+    typeID char(36) PK
+    company_id char(36) FK
+    category_id char(36) FK
+  }
+  users {
+    userID char(36) PK
+    company_id char(36)
+    department_id char(36)
+    role_id char(36)
+  }
+  asset_mngmnt_roles {
+    roleID char(36) PK
+  }
+  role_permissions {
+    permission_id char(36) PK
+    role_id char(36) FK
+  }
+  user_permissions {
+    permission_id char(36) PK
+    user_id char(36) FK
+  }
+  assets {
+    assetID char(36) PK
+    company_id char(36) FK
+    department_id char(36) FK
+    category_id char(36) FK
+    type_id char(36) FK
+    location_id char(36) FK
+    location_room_id char(36) FK
+    created_by char(36) FK
+  }
+  asset_specifications {
+    id char(36) PK
+    asset_id char(36) FK
+    created_by char(36) FK
+  }
+  asset_assignments {
+    assignmentID char(36) PK
+    asset_id char(36) FK
+    user_id char(36) FK
+    department_id char(36) FK
+    location_id char(36) FK
+    location_room_id char(36) FK
+    assigned_by char(36) FK
+  }
+  accountability_forms {
+    formID char(36) PK
+    assignment_id char(36) FK
+    asset_id char(36) FK
+    user_id char(36) FK
+    department_id char(36) FK
+    location_id char(36) FK
+    location_room_id char(36) FK
+    created_by char(36) FK
+  }
+  asset_return_forms {
+    formID char(36) PK
+    user_id char(36) FK
+    department_id char(36) FK
+    location_id char(36) FK
+    location_room_id char(36) FK
+    created_by char(36) FK
+  }
+  asset_returns {
+    return_id char(36) PK
+    assignment_id char(36) FK
+    user_id char(36) FK
+    form_id char(36) FK
+    return_location_id char(36) FK
+    return_location_room_id char(36) FK
+    return_department_id char(36) FK
+  }
+  asset_transfer_forms {
+    formID char(36) PK
+    user_id char(36) FK
+    department_id char(36) FK
+    location_id char(36) FK
+    location_room_id char(36) FK
+    new_assigned_user_id char(36) FK
+    created_by char(36) FK
+  }
+  asset_transfer {
+    record_id char(36) PK
+    form_id char(36) FK
+    assignment_id char(36) FK
+    user_id char(36) FK
+  }
+  asset_checklists {
+    id char(36) PK
+    assignment_id char(36) FK
+    employee_id char(36) FK
+    created_by char(36) FK
+  }
+  asset_borrow_requests {
+    borrow_request_id char(36) PK
+    company_id char(36) FK
+    user_id char(36) FK
+    category_id char(36) FK
+    type_id char(36) FK
+    asset_id char(36)
+  }
+  asset_mngmnt_gate_passes {
+    gate_pass_id char(36) PK
+    assignment_id char(36) FK
+    asset_id char(36) FK
+    user_id char(36) FK
+    destination_location_id char(36) FK
+    destination_department_id char(36) FK
+    created_by char(36) FK
+  }
+  audit_logs {
+    auditID char(36) PK
+    user_id char(36) FK
+  }
+  audit_logs_archive {
+    archive_id char(36) PK
+    auditID char(36) FK
+    user_id char(36) FK
+  }
+  audit_retention_settings {
+    id char(36) PK
+    company_id char(36) FK
+  }
+  asset_builders {
+    builderID char(36) PK
+    company_id char(36) FK
+    created_by char(36) FK
+  }
+  asset_builder_items {
+    itemID char(36) PK
+    builder_id char(36) FK
+    asset_id char(36) FK
+    created_by char(36) FK
+  }
+  asset_documents {
+    documentID char(36) PK
+    asset_id char(36) FK
+    created_by char(36) FK
+  }
+  asset_counters {
+    company_id char(36)
+    department_id char(36)
+    last_seq int
+  }
+
+  companies ||--o{ asset_mngmnt_departments : has
+  companies ||--o{ asset_mngmnt_locations : has
+  companies ||--o{ asset_categories : has
+  companies ||--o{ asset_types : has
+  companies ||--o{ users : employs
+  asset_mngmnt_departments ||--o{ asset_mngmnt_locations : contains
+  asset_mngmnt_locations ||--o{ asset_mngmnt_location_rooms : has
+  asset_categories ||--o{ asset_types : categorizes
+  asset_categories ||--o{ assets : classifies
+  asset_types ||--o{ assets : typed_as
+  asset_mngmnt_locations ||--o{ assets : hosts
+  asset_mngmnt_location_rooms ||--o{ assets : in_room
+  asset_mngmnt_departments ||--o{ assets : for
+  users ||--o{ assets : created_by
+  assets ||--o{ asset_specifications : has
+  users ||--o{ asset_specifications : created_by
+  assets ||--o{ asset_assignments : has
+  users ||--o{ asset_assignments : assignee
+  users ||--o{ asset_assignments : assigned_by
+  asset_assignments ||--o{ accountability_forms : has
+  assets ||--o{ accountability_forms : covered
+  users ||--o{ accountability_forms : subject
+  users ||--o{ asset_return_forms : submitter
+  asset_return_forms ||--o{ asset_returns : groups
+  asset_assignments ||--o{ asset_returns : returned
+  users ||--o{ asset_returns : performer
+  users ||--o{ asset_transfer_forms : submitter
+  asset_transfer_forms ||--o{ asset_transfer : details
+  asset_assignments ||--o{ asset_transfer : moved
+  users ||--o{ asset_transfer : actor
+  asset_assignments ||--o{ asset_checklists : has
+  users ||--o{ asset_checklists : employee
+  companies ||--o{ asset_borrow_requests : scope
+  users ||--o{ asset_borrow_requests : requester
+  asset_categories ||--o{ asset_borrow_requests : category
+  asset_types ||--o{ asset_borrow_requests : type
+  asset_assignments ||--o{ asset_mngmnt_gate_passes : for
+  assets ||--o{ asset_mngmnt_gate_passes : item
+  users ||--o{ asset_mngmnt_gate_passes : requester
+  users ||--o{ audit_logs : actor
+  audit_logs ||--o{ audit_logs_archive : archived_as
+  companies ||--o{ audit_retention_settings : policy
+  asset_mngmnt_roles ||--o{ role_permissions : includes
+  users ||--o{ user_permissions : grants
+  companies ||--o{ asset_builders : has
+  users ||--o{ asset_builders : created_by
+  asset_builders ||--o{ asset_builder_items : includes
+  assets ||--o{ asset_builder_items : component
+  users ||--o{ asset_builder_items : created_by
+  assets ||--o{ asset_documents : has
+  users ||--o{ asset_documents : created_by
+  companies ||--o{ asset_counters : numbering
+  asset_mngmnt_departments ||--o{ asset_counters : numbering

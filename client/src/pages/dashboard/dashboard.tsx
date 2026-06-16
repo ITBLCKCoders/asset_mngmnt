@@ -16,6 +16,7 @@ import { getToken } from '@/lib/api';
 import { toast } from 'sonner';
 import { useCurrentUser } from '@/hooks/useCurrentUser';
 import { useUserPermissions } from '@/hooks/useUserPermissions';
+import { useCompanyContext } from '@/context/CompanyContext';
 import { useAuditFieldLookups } from '@/hooks/useAuditFieldLookups';
 import DigitalInitialsRequiredDialog from '@/components/auth/DigitalInitialsRequiredDialog';
 import MFARequiredDialog from '@/components/auth/MFARequiredDialog';
@@ -362,6 +363,7 @@ export default function Dashboard() {
   const navigate = useNavigate();
   const { user, loading: userLoading } = useCurrentUser();
   const { roleCustodian } = useUserPermissions();
+  const { activeCompany } = useCompanyContext();
   const [loading, setLoading] = useState(true);
   const [dashboardData, setDashboardData] = useState<DashboardData | null>(
     null
@@ -374,7 +376,9 @@ export default function Dashboard() {
   const [movementPeriod, setMovementPeriod] = useState<'weekly' | 'monthly'>(
     'weekly'
   );
-  const [selectedCompanyId, setSelectedCompanyId] = useState<string>('');
+  const [selectedCompanyId, setSelectedCompanyId] = useState<string>(
+    activeCompany?.id || ''
+  );
   const { lookups: auditFieldLookups, mergedIdLabels: auditMergedIdLabels } =
     useAuditFieldLookups();
   const [showDigitalInitialsDialog, setShowDigitalInitialsDialog] = useState(false);

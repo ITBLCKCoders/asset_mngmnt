@@ -1,0 +1,46 @@
+﻿User Manual Asset Management System
+User Registration
+First open Any browser (Suggested Edge, Chrome).
+Access the site IP http://200.2.4.52:9669
+Click the Create account () Button under the Log in button.
+3971607179165300
+(Fig. 1)
+Now fill up all the required fields in the registration form see Fig. 2 for reference.
+8187075184410(Fig. 2)
+After filling up all the fields in the registration form click the Create account
+() see Fig.2 for reference.
+Check your Email address and look for an email from it.github@theblackcoders.com that contains your verification code.
+Enter your verification code in the Verify Email fields see Fig. 3.
+center331315(Fig. 3)
+If you donâ€™t see any email from the it.github@theblackcoders.com click the resend OTP in the verify email page see Fig 3.1.
+2483334136868100
+(Fig. 3.1)
+3215915175025900Enter the received OTP at the verify email field and Click the Verify Butto see Fig. 3.2
+(Fig. 3.2)
+Click the Verify button after entering the OTP in the fields see Fig. 3.2.
+Log In
+Enter Email and password in the Login forms see Fig. 4.
+3562066107596400(Fig. 4)
+Click Login after entering Email and password see Fig. 5.
+4080444170936100
+(Fig. 5)
+Forgot password
+Click the forgot password? in the Log in page under the password field.
+3858016158444700(Fig. 6)
+Enter your email.
+22727861380813
+(Fig. 7)
+Click the Send Reset Code button.
+226695015414610
+(Fig. 8)
+Check your email and look for email from the it.github@theblackcoders.com and copy the OTP and paste it in the OTP Field see Fig. 9.
+230695511474450
+(Fig. 9)
+If there is no email click the Resend OTP button see Fig. 9.1.
+2380615144589500(Fig. 9.1)
+3247077163511600Click the Verify button after entering the OTP see Fig. 9.2.
+(Fig. 9.2)
+Admin Dashboard
+(Fig. 10)
+My Asset List
+In the sidebar Click My asset.

@@ -79,18 +79,13 @@ export default function MFARecoveryDialog({
     setError(null);
 
     try {
-      const response = await api.post<{
-        accessToken: string;
-        refreshToken: string;
-        message: string;
-      }>('/auth/mfa/verify', {
+      await api.post('/auth/mfa/verify', {
         tempToken,
         totp: backupCode,
       });
 
-      // Store auth tokens
-      setToken(response.accessToken);
-      setRefreshToken(response.refreshToken);
+      // Signal auth success
+      setToken('authenticated');
 
       toast.success('Login successful!');
       onVerified();
@@ -120,18 +115,13 @@ export default function MFARecoveryDialog({
     setError(null);
 
     try {
-      const response = await api.post<{
-        accessToken: string;
-        refreshToken: string;
-        message: string;
-      }>('/auth/mfa/recovery/verify', {
+      await api.post('/auth/mfa/recovery/verify', {
         tempToken,
         otp,
       });
 
-      // Store auth tokens
-      setToken(response.accessToken);
-      setRefreshToken(response.refreshToken);
+      // Signal auth success
+      setToken('authenticated');
 
       toast.success('Login successful!');
       onVerified();

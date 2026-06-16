@@ -37,7 +37,7 @@ describe('VerifyOTP', () => {
     });
     await waitFor(() => {
       expect(api.post).toHaveBeenCalledWith('/auth/verify-otp', {
-        channel: 'email', email: 'test@test.com', contactNumber: '', otp: '123456',
+        email: 'test@test.com', otp: '123456',
       });
     });
   });

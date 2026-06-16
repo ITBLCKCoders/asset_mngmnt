@@ -39,7 +39,7 @@ describe('gatePass.controller', () => {
 
   beforeEach(() => {
     jest.resetAllMocks();
-    req = { user: { userID: '1' }, body: {}, params: {}, query: {} };
+    req = { user: { userID: '1' }, body: {}, params: {}, query: {}, get: jest.fn().mockReturnValue('Unknown') };
     res = createMockRes();
   });
 

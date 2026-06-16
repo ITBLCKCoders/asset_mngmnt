@@ -26,15 +26,43 @@ const validateBrandFields = (body: any): BrandFields => {
 // GET all brands
 export const getAllBrands = async (req: AuthRequest, res: Response) => {
   try {
-    const activeCompany = await getScopedActiveCompany(pool, req.user?.userID);
-    if (!activeCompany) {
-      return res.status(400).json({ error: 'No active company found' });
+    const queryCompanyId = req.query.company_id as string | undefined;
+
+    if (queryCompanyId) {
+      const [rows] = await pool.query<any[][]>('CALL sp_GetAllBrands(?)', [
+        queryCompanyId,
+      ]);
+      return res.json(rows[0] ?? []);
     }
 
-    const [rows] = await pool.query<any[][]>('CALL sp_GetAllBrands(?)', [
-      activeCompany.id,
-    ]);
-    res.json(rows[0] ?? []);
+    const activeCompany = await getScopedActiveCompany(pool, req.user?.userID);
+    if (activeCompany) {
+      const [rows] = await pool.query<any[][]>('CALL sp_GetAllBrands(?)', [
+        activeCompany.id,
+      ]);
+      return res.json(rows[0] ?? []);
+    }
+
+    const [userRows] = await pool.query<any[][]>(
+      `SELECT r.name as role_name FROM users u
+       LEFT JOIN asset_mngmnt_roles r ON u.role_id = r.roleID AND r.deleted_at IS NULL
+       WHERE u.userID = ? LIMIT 1`,
+      [req.user?.userID]
+    );
+    const roleName = String(userRows[0]?.[0]?.role_name ?? '').trim().toLowerCase();
+    if (roleName === 'super admin' || roleName === 'admin') {
+      const [rows] = await pool.query<any[][]>(
+        `SELECT ab.brandID, ab.name, ab.type_id, ab.prefix, ab.company_id,
+                ab.created_at, ab.created_by, ab.updated_at, ab.updated_by,
+                ab.deleted_at, ab.deleted_by
+         FROM asset_brands ab
+         WHERE ab.deleted_at IS NULL
+         ORDER BY ab.created_at DESC`
+      );
+      return res.json(rows[0] ?? []);
+    }
+
+    return res.status(400).json({ error: 'No active company found' });
   } catch (err) {
     logger.error('Get all brands error', { err });
     res.status(500).json({ error: 'Failed to fetch brands' });

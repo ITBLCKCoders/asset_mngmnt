@@ -554,7 +554,6 @@ export default function RegisterPage() {
                 <div className="grid gap-3">
                   <button
                     type="button"
-                    onClick={() => setSelectedOtpChannel('email')}
                     className={`w-full rounded-md border-2 p-4 text-left transition-colors ${
                       selectedOtpChannel === 'email'
                         ? 'border-red-500 bg-red-50'

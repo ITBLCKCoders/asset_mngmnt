@@ -26,10 +26,7 @@ export default function AssetDetails() {
 
   // Check if user has access to financial information (internal users)
   useEffect(() => {
-    // Check for auth token or session to determine if user is internal
-    const token =
-      localStorage.getItem('authToken') || sessionStorage.getItem('authToken');
-    setShowFinancialInfo(!!token);
+    setShowFinancialInfo(true);
   }, []);
 
   const fetchAsset = async () => {
@@ -72,7 +69,7 @@ export default function AssetDetails() {
         location:
           assetData.currentAssignment?.location ||
           `${assetData.location_name || ''}${assetData.room_name ? ` - ${assetData.room_name}` : ''}`,
-        currentAssignment: assetData.currentAssignment,
+        currentAssignment: assetData.currentAssignment ?? undefined,
         assignmentHistory: [],
         purchaseDate: assetData.purchase_date
           ? new Date(assetData.purchase_date)

@@ -151,8 +151,6 @@ export default function LoginPage() {
     setLoading(true);
     try {
       const response = await api.post<{
-        accessToken?: string;
-        refreshToken?: string;
         mfaRequired?: boolean;
         mustChangePassword?: boolean;
         passwordExpired?: boolean;
@@ -194,9 +192,8 @@ export default function LoginPage() {
       }
 
       // Normal login flow (no MFA required)
-      if (response.accessToken && response.refreshToken) {
-        setToken(response.accessToken);
-        setRefreshToken(response.refreshToken);
+      if (response.message) {
+        setToken('authenticated');
         toast.success('Logged in!');
 
         // Show warning if password is expiring soon

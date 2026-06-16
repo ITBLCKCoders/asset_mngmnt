@@ -67,7 +67,7 @@ const emptyApiMock = vi.fn().mockImplementation(async (url: string) => {
   if (url === '/asset-transfers/user/u1') return { assetTransferForms: [] };
   if (url === '/asset-returns/user/u1') return { assetReturnForms: [] };
   if (url === '/users') return { users: [] };
-  if (url === '/asset-builders') return { builders: [] };
+  if (url === '/intangible-assets') return [];
   return {};
 });
 

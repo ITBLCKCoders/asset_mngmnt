@@ -26,15 +26,43 @@ const validateTypeFields = (body: any): TypeFields => {
 // GET all types
 export const getAllTypes = async (req: AuthRequest, res: Response) => {
   try {
-    const activeCompany = await getScopedActiveCompany(pool, req.user?.userID);
-    if (!activeCompany) {
-      return res.status(400).json({ error: 'No active company found' });
+    const queryCompanyId = req.query.company_id as string | undefined;
+
+    if (queryCompanyId) {
+      const [rows] = await pool.query<any[][]>('CALL sp_GetAllTypes(?)', [
+        queryCompanyId,
+      ]);
+      return res.json(rows[0] ?? []);
     }
 
-    const [rows] = await pool.query<any[][]>('CALL sp_GetAllTypes(?)', [
-      activeCompany.id,
-    ]);
-    res.json(rows[0] ?? []);
+    const activeCompany = await getScopedActiveCompany(pool, req.user?.userID);
+    if (activeCompany) {
+      const [rows] = await pool.query<any[][]>('CALL sp_GetAllTypes(?)', [
+        activeCompany.id,
+      ]);
+      return res.json(rows[0] ?? []);
+    }
+
+    const [userRows] = await pool.query<any[][]>(
+      `SELECT r.name as role_name FROM users u
+       LEFT JOIN asset_mngmnt_roles r ON u.role_id = r.roleID AND r.deleted_at IS NULL
+       WHERE u.userID = ? LIMIT 1`,
+      [req.user?.userID]
+    );
+    const roleName = String(userRows[0]?.[0]?.role_name ?? '').trim().toLowerCase();
+    if (roleName === 'super admin' || roleName === 'admin') {
+      const [rows] = await pool.query<any[][]>(
+        `SELECT at.typeID, at.name, at.category_id, at.prefix, at.company_id,
+                at.created_at, at.created_by, at.updated_at, at.updated_by,
+                at.deleted_at, at.deleted_by
+         FROM asset_types at
+         WHERE at.deleted_at IS NULL
+         ORDER BY at.created_at DESC`
+      );
+      return res.json(rows[0] ?? []);
+    }
+
+    return res.status(400).json({ error: 'No active company found' });
   } catch (err) {
     logger.error('Get all types error', { err });
     res.status(500).json({ error: 'Failed to fetch types' });

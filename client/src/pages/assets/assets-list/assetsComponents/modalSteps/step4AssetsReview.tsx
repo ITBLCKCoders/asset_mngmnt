@@ -15,7 +15,7 @@ import {
   File,
 } from 'lucide-react';
 import { AssetFormData } from '../assetTypes/assetFormTypes';
-import { AssetDocument } from '../assetTable/assetData';
+import { AssetDocument, type AssetAssignment } from '../assetTable/assetData';
 import { formatCurrency } from '@/lib/currency';
 import { format } from 'date-fns';
 
@@ -51,19 +51,7 @@ interface Step4ReviewProps {
   showReviewHeader?: boolean;
   assetDocuments?: AssetDocument[];
   users?: any[];
-  currentAssignment?: {
-    user: {
-      id: string;
-      name: string;
-      email: string;
-      employeeNumber?: string;
-      position?: string;
-    };
-    department: string;
-    location: string;
-    assignedDate: string;
-    status: string;
-  };
+  currentAssignment?: AssetAssignment;
   showFinancialInfo?: boolean;
 }
 

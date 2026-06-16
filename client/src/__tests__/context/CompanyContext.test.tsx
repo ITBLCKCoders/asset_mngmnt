@@ -4,7 +4,7 @@ import { vi, describe, it, expect, beforeEach } from 'vitest';
 import { CompanyProvider, useCompanyContext } from '@/context/CompanyContext';
 import { api } from '@/lib/api';
 
-const mockUseAuth = vi.fn(() => ({ user: null, isAuthenticated: false }));
+const mockUseAuth = vi.fn(() => ({ user: null as any, isAuthenticated: false }));
 
 vi.mock('@/lib/api', () => ({
   api: { get: vi.fn(), patch: vi.fn() },

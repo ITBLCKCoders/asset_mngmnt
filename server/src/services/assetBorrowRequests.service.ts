@@ -114,17 +114,26 @@ export class AssetBorrowRequestsService {
 
   static async listForStaff(
     pool: Pool,
-    userId: string
+    userId: string,
+    companyIdParam?: string
   ): Promise<
     | { rows: Awaited<ReturnType<typeof findBorrowRequestsForList>> }
     | { error: string; status: number }
   > {
-    const { companyId, borrowScope } = await getBorrowRequestListScope(
-      pool,
-      userId
-    );
+    // Use provided companyId if given, otherwise resolve from scope
+    let companyId: string | null;
+    let borrowScope: 'it' | 'admin' | null = null;
+
+    if (companyIdParam) {
+      companyId = companyIdParam;
+    } else {
+      const scope = await getBorrowRequestListScope(pool, userId);
+      companyId = scope.companyId;
+      borrowScope = scope.borrowScope;
+    }
+
     if (!companyId) {
-      return { error: 'Company context required', status: 400 };
+      return { rows: [] };
     }
 
     const rows = await findBorrowRequestsForList(

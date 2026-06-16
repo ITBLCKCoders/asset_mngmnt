@@ -63,7 +63,9 @@ export async function listAssetBorrowRequests(
       return createErrorResponse(res, 'UNAUTHORIZED', [], 401);
     }
 
-    const result = await AssetBorrowRequestsService.listForStaff(pool, userId);
+    const companyIdParam = req.query.companyId as string | undefined;
+
+    const result = await AssetBorrowRequestsService.listForStaff(pool, userId, companyIdParam);
 
     if ('error' in result) {
       return createErrorResponse(res, result.error, [], result.status);

@@ -28,15 +28,43 @@ const validateSupplierFields = (body: any): SupplierFields => {
 // GET all suppliers
 export const getAllSuppliers = async (req: AuthRequest, res: Response) => {
   try {
-    const activeCompany = await getScopedActiveCompany(pool, req.user?.userID);
-    if (!activeCompany) {
-      return res.status(400).json({ error: 'No active company found' });
+    const queryCompanyId = req.query.company_id as string | undefined;
+
+    if (queryCompanyId) {
+      const [rows] = await pool.query<any[][]>('CALL sp_GetAllSuppliers(?)', [
+        queryCompanyId,
+      ]);
+      return res.json(rows[0] ?? []);
     }
 
-    const [rows] = await pool.query<any[][]>('CALL sp_GetAllSuppliers(?)', [
-      activeCompany.id,
-    ]);
-    res.json(rows[0] ?? []);
+    const activeCompany = await getScopedActiveCompany(pool, req.user?.userID);
+    if (activeCompany) {
+      const [rows] = await pool.query<any[][]>('CALL sp_GetAllSuppliers(?)', [
+        activeCompany.id,
+      ]);
+      return res.json(rows[0] ?? []);
+    }
+
+    const [userRows] = await pool.query<any[][]>(
+      `SELECT r.name as role_name FROM users u
+       LEFT JOIN asset_mngmnt_roles r ON u.role_id = r.roleID AND r.deleted_at IS NULL
+       WHERE u.userID = ? LIMIT 1`,
+      [req.user?.userID]
+    );
+    const roleName = String(userRows[0]?.[0]?.role_name ?? '').trim().toLowerCase();
+    if (roleName === 'super admin' || roleName === 'admin') {
+      const [rows] = await pool.query<any[][]>(
+        `SELECT s.supplierID, s.name, s.category_id, s.contact, s.email, s.company_id,
+                s.created_at, s.created_by, s.updated_at, s.updated_by,
+                s.deleted_at, s.deleted_by
+         FROM asset_suppliers s
+         WHERE s.deleted_at IS NULL
+         ORDER BY s.created_at DESC`
+      );
+      return res.json(rows[0] ?? []);
+    }
+
+    return res.status(400).json({ error: 'No active company found' });
   } catch (err) {
     logger.error('Get all suppliers error', { err });
     res.status(500).json({ error: 'Failed to fetch suppliers' });

@@ -6,6 +6,8 @@ import { useCompanyContext } from '@/context/CompanyContext';
 import { useCurrentUser } from '@/hooks/useCurrentUser';
 import { cn } from '@/lib/utils';
 
+const SELECTED_COMPANY_KEY = 'selectedCompanyId';
+
 export function CompanyFilter() {
   const { companies, activeCompany, setActiveCompany, clearActiveCompany, loading } =
     useCompanyContext();

@@ -1,0 +1,200 @@
+﻿Asset Management
+Project Proposal
+Ver 1.0
+Table of Contents
+TOC \o "1-3" \z \u \hProject ProposalPAGEREF _Toc53414436 \h4
+1.SummaryPAGEREF _Toc1170798429 \h4
+2.Problem StatementPAGEREF _Toc1597643606 \h4
+2.1.Current ChallengesPAGEREF _Toc556599737 \h4
+2.2.Business Pain PointsPAGEREF _Toc1051560646 \h4
+3.Proposed SolutionPAGEREF _Toc440175041 \h5
+3.1.Solution OverviewPAGEREF _Toc1543747357 \h5
+3.2.Core CapabilitiesPAGEREF _Toc1570682249 \h5
+3.3.Use Case DiagramPAGEREF _Toc2002358425 \h6
+3.4.Data Flow DiagramsPAGEREF _Toc929252439 \h7
+3.5.In ScopePAGEREF _Toc123933390 \h8
+4.Functional RequirementsPAGEREF _Toc451890501 \h10
+4.1.In ScopePAGEREF _Toc63901767 \h10
+4.2.Asset ManagementPAGEREF _Toc1856617441 \h10
+4.3.Asset OperationsPAGEREF _Toc511402046 \h10
+4.4.MaintenancePAGEREF _Toc1591201859 \h11
+4.5.ReportPAGEREF _Toc497696610 \h11
+5.Non-Functional RequirementsPAGEREF _Toc1809452136 \h12
+5.1.PerformancePAGEREF _Toc1877958284 \h12
+5.2.SecurityPAGEREF _Toc873274886 \h12
+5.3.UsabilityPAGEREF _Toc1390459577 \h12
+5.4.ReliabilityPAGEREF _Toc1904787444 \h12
+6.Technology StackPAGEREF _Toc1488727112 \h13
+6.1.FrontendPAGEREF _Toc122555309 \h13
+6.2.BackendPAGEREF _Toc2006858138 \h13
+7.Implementation TimelinePAGEREF _Toc1538989274 \h13
+Phase 1: Data Gathering / Data CollectionPAGEREF _Toc682070577 \h13
+Phase 2: Software DevelopmentPAGEREF _Toc1520144095 \h14
+Phase 3: Software Testing & DebuggingPAGEREF _Toc1725662443 \h15
+Phase 4: Data MigrationPAGEREF _Toc1434471913 \h15
+Phase 5: DocumentationPAGEREF _Toc402804699 \h15
+Phase 6: Management PresentationPAGEREF _Toc344040154 \h16
+Phase 7: Executive ApprovalPAGEREF _Toc706299385 \h16
+Phase 8: DeploymentPAGEREF _Toc187547223 \h16
+8.Resource RequirementsPAGEREF _Toc1743070773 \h16
+8.1.Human ResourcesPAGEREF _Toc2135482497 \h16
+8.2.Technical ResourcesPAGEREF _Toc1200218773 \h16
+9.Expected BenefitsPAGEREF _Toc311522057 \h16
+9.1.Quantitative BenefitsPAGEREF _Toc654410293 \h16
+10.2Qualitative BenefitsPAGEREF _Toc886878441 \h17
+10.Risk AssessmentPAGEREF _Toc367059920 \h17
+11.Success MetricsPAGEREF _Toc1371717753 \h17
+12.BudgetPAGEREF _Toc347971283 \h18
+13.ConclusionsPAGEREF _Toc565260079 \h18
+14.Additional System DiagramsPAGEREF _Toc1089085522 \h19
+14.1.Asset Assignment Flow DiagramPAGEREF _Toc1964958277 \h19
+14.2.Asset Return Request Flow DiagramPAGEREF _Toc1242502187 \h20
+14.3.Asset Transfer Request Flow DiagramPAGEREF _Toc799590294 \h21
+14.4.Asset Diagram DescrioptionsPAGEREF _Toc363579276 \h22
+Project Proposal
+Summary
+The Asset Management System is a comprehensive web-based platform designed to transform how organizations track, manage, and optimize their physical and digital assets. This proposal outlines the development of a centralized solution that provides complete visibility into asset lifecycle management, from acquisition to disposal.
+The system addresses critical business needs including inventory control, accountability tracking, maintenance scheduling, and compliance documentation. By implementing this solution, organizations can expect significant improvements in asset utilization, reduced losses, and streamlined operational processes.
+Problem Statement
+Current Challenges
+Organizations face significant challenges in managing their assets effectively:
+Challenge
+Impact
+Root Cause
+Manual Tracking
+Inefficient, Error-prone
+Spreadsheet -based tracking
+Poor Visibility
+Lost or underutilized
+No centralized system
+Accountability Gaps
+Asset loss, misuse
+No assignment tracking
+Compliance Risk
+Audit failures
+Incomplete documentation
+Delayed Maintenance
+Increased costs
+No scheduled maintenance
+Slow Process
+Productivity loss
+Manual Approval
+Business Pain Points
+Asset Loss: Inability to locate assets results in unnecessary purchases.
+Duplicate Purchases: No visibility into existing inventory.
+Compliance Failures: Missing documentation for audits.
+Maintenance Backlogs: Unscheduled equipment failures.
+Inefficient Allocations: Assets not optimally distributed
+Reporting Delays: Manual data compilation takes days
+Proposed Solution
+Solution Overview
+We propose developing a full- featured Asset Management System that provides:
+Centralized Asset Repository: Single source of truth for all assets
+Automated Workflows: Streamlined approval and assignment processes
+Real-time Tracking: Live visibility into asset location and status
+Comprehensive Auditing: Complete history for compliance
+Analytics Dashboard: Data-driven insights for decision-making
+Core Capabilities
+Asset Management System
+Asset Catalog:
+Create
+Search
+Categorize
+Tag
+Asset Tracking:
+Location
+Status
+History
+Transfer
+Asset Lifecycle:
+Acquire
+Assign
+Maintain
+Dispose
+Workflow Automation:
+Approvals
+Issuance
+Returns
+Transfer
+Reporting and Analytics:
+Dashboard
+Charts
+Exports
+Alerts
+Security and Compliance
+Role Based Access Control (RBAC)
+Audit
+Logging
+Encryption
+Multi Company Support
+Manage assets across multiple subsidiaries or organizations
+Logical data separation
+Centralized monitoring and reporting across all companies
+center36225300Use Case Diagram
+(Diagram 1)
+Use Case Descriptions
+ID
+Use Case
+Actor
+Description
+UC1
+User Authentication
+All
+Login, logout, session management
+UC2
+User Registration
+User
+Self-service user registration
+UC3
+Role Management
+Admin
+Assign and manage user roles
+UC4
+Asset CRUD
+Manager
+Create, read, update, delete assets
+UC5
+Asset Search
+All
+Search and filter assets
+UC6
+Import/Export
+Manager
+Bulk import and export assets
+UC7
+Asset Assignment
+User/Dept Head
+Request asset assignment
+UC8
+Assignment Approval
+Manager
+Approve or reject assignments
+UC9
+Asset Return
+User
+Request asset return
+UC10
+Return Approval
+Manager
+Approve or reject returns
+UC11
+Asset Transfer
+User/Dept Head
+Request asset transfer
+UC12
+Transfer Approval
+Manager
+Approve or reject transfers
+UC13
+Maintenance Request
+User
+Submit maintenance requests
+UC14
+Disposal Request
+Manager
+Request asset disposal
+UC15
+Dashboard View
+All
+View dashboard and statistics
+UC16

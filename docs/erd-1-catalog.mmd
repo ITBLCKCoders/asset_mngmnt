@@ -1,0 +1,74 @@
+erDiagram
+  companies {
+    companyID char(36) PK
+    name varchar
+    code varchar
+  }
+  asset_mngmnt_departments {
+    departmentID char(36) PK
+    company_id char(36) FK
+    name varchar
+    code varchar
+  }
+  asset_mngmnt_locations {
+    locationID char(36) PK
+    company_id char(36) FK
+    department_id char(36) FK
+    name varchar
+  }
+  asset_mngmnt_location_rooms {
+    roomID char(36) PK
+    locationID char(36) FK
+    room_name varchar
+  }
+  asset_categories {
+    categoryID char(36) PK
+    company_id char(36) FK
+    department_id char(36) FK
+    name varchar
+    prefix varchar
+  }
+  asset_types {
+    typeID char(36) PK
+    company_id char(36) FK
+    category_id char(36) FK
+    name varchar
+    prefix varchar
+  }
+  assets {
+    assetID char(36) PK
+    asset_code varchar
+    name varchar
+    category_id char(36) FK
+    type_id char(36) FK
+    company_id char(36) FK
+    location_id char(36) FK
+    location_room_id char(36) FK
+    department_id char(36) FK
+    created_by char(36) FK
+    updated_by char(36) FK
+    deleted_by char(36) FK
+    status enum
+  }
+  asset_specifications {
+    id char(36) PK
+    asset_id char(36) FK
+    name varchar
+    created_by char(36) FK
+    updated_by char(36) FK
+    deleted_by char(36) FK
+  }
+
+  companies ||--o{ asset_mngmnt_departments : has
+  companies ||--o{ asset_mngmnt_locations : has
+  companies ||--o{ asset_categories : has
+  companies ||--o{ asset_types : has
+  asset_mngmnt_departments ||--o{ asset_mngmnt_locations : contains
+  asset_mngmnt_locations ||--o{ asset_mngmnt_location_rooms : has
+  asset_categories ||--o{ asset_types : categorizes
+  asset_categories ||--o{ assets : classifies
+  asset_types ||--o{ assets : typed_as
+  asset_mngmnt_locations ||--o{ assets : hosts
+  asset_mngmnt_location_rooms ||--o{ assets : in_room
+  asset_mngmnt_departments ||--o{ assets : for
+  assets ||--o{ asset_specifications : has
