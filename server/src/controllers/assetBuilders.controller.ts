@@ -4,6 +4,7 @@ import type { AuthRequest } from '../middleware/authenticate.js';
 import logger from '../logger.js';
 import { createAuditLog } from '../utils/audit.js';
 import { getAssetScope, getDepartmentIdsForScope } from '../utils/assetScope.js';
+import { getActiveCompany } from '../utils/activeCompany.js';
 import {
   getTransferredOutBuildersForCompany,
   setAssetBuilderOriginatingCompany,
@@ -60,13 +61,27 @@ export async function createAssetBuilderHandler(
       }
     }
 
-    // Get active company for the user
+    // Get company context: Super Admin uses the active company (switched via UI),
+    // other users use their fixed company_id from the users table.
     const [companyRows] = (await pool.execute(
-      'SELECT company_id FROM users WHERE userID = ?',
+      `SELECT u.company_id, r.name as role_name
+       FROM users u
+       LEFT JOIN asset_mngmnt_roles r ON u.role_id = r.roleID AND r.deleted_at IS NULL
+       WHERE u.userID = ?`,
       [userId]
     )) as any[];
 
-    const companyId = companyRows[0]?.company_id;
+    const isSuperAdmin =
+      String(companyRows?.[0]?.role_name ?? '').trim().toLowerCase() === 'super admin';
+
+    let companyId = companyRows?.[0]?.company_id;
+
+    if (isSuperAdmin) {
+      const activeCompany = await getActiveCompany(pool);
+      if (activeCompany?.id) {
+        companyId = activeCompany.id;
+      }
+    }
 
     // Create asset builder using stored procedure
     const [builderRows] = (await pool.execute(
@@ -197,7 +212,7 @@ export async function getAssetBuildersHandler(req: AuthRequest, res: Response) {
     // For Super Admin, Admin, and overallManager: apply scope override if provided
     if (scopeOverride) {
       const [userRows] = (await pool.execute(
-        `SELECT r.manager_role FROM users u
+        `SELECT r.manager_role, r.name as role_name FROM users u
          LEFT JOIN asset_mngmnt_roles r ON u.role_id = r.roleID AND r.deleted_at IS NULL
          WHERE u.userID = ?`,
         [userId]
@@ -286,7 +301,10 @@ export async function getAssetBuildersHandler(req: AuthRequest, res: Response) {
     // assets all belong to allowed departments. Must run after items are loaded —
     // sp_get_asset_builders does not include items, so filtering earlier always
     // saw empty items and dropped every builder for non–Super Admin users.
-    if (departmentIds && departmentIds.length > 0 && builderRows.length > 0) {
+    const deptByAssetId = new Map<string, string | null>();
+    if (departmentIds && departmentIds.length === 0) {
+      builderRows = [];
+    } else if (departmentIds && departmentIds.length > 0 && builderRows.length > 0) {
       const allItemAssetIds: string[] = [];
       for (const builder of builderRows) {
         if (Array.isArray(builder.items)) {
@@ -308,7 +326,6 @@ export async function getAssetBuildersHandler(req: AuthRequest, res: Response) {
           allItemAssetIds
         )) as any[];
 
-        const deptByAssetId = new Map<string, string | null>();
         for (const row of assetDeptRows as any[]) {
           deptByAssetId.set(String(row.assetID), row.department_id ?? null);
         }
@@ -316,9 +333,6 @@ export async function getAssetBuildersHandler(req: AuthRequest, res: Response) {
         const allowedDeptSet = new Set(departmentIds.map(String));
 
         builderRows = builderRows.filter(builder => {
-          if (builder.transferred_out === true) {
-            return true;
-          }
           if (!Array.isArray(builder.items) || builder.items.length === 0) {
             return false;
           }

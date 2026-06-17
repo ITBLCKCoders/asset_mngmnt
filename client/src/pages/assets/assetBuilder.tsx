@@ -122,7 +122,7 @@ export default function AssetBuilderPage() {
       }
     };
     fetchGroupedAssets();
-  }, []);
+  }, [scope]);
 
   const selectableAssets = useMemo(() => {
     if (!groupedAssetIds) return [];

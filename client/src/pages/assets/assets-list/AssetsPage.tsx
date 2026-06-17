@@ -581,7 +581,7 @@ export function AssetsPage() {
 
   useEffect(() => {
     fetchAssetBuilders();
-  }, [location.pathname]);
+  }, [location.pathname, scope]);
 
   useEffect(() => {
     fetchAssets();
