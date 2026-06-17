@@ -202,6 +202,9 @@ export default function AssetsReturn() {
   const isAdmin = currentUser?.role?.name?.toLowerCase() === 'admin';
   const isOverallManager = roleCustodian?.managerRole === 'overallManager';
   const showScopeTabs = isSuperAdmin || isAdmin || isOverallManager;
+  const effectiveCompanyId = isSuperAdmin || isAdmin
+    ? activeCompany?.id || undefined
+    : currentUser?.company_id || undefined;
   const [scope, setScope] = useState<'it' | 'admin'>('it');
   const displayLoading = loading;
 
@@ -391,7 +394,8 @@ export default function AssetsReturn() {
 
   const fetchDepartments = async () => {
     try {
-      const response = await api.get('/departments');
+      const url = effectiveCompanyId ? `/departments?companyId=${effectiveCompanyId}` : '/departments';
+      const response = await api.get(url);
       setDepartments(response.departments || []);
     } catch (error) {
       console.error('Failed to fetch departments:', error);
@@ -401,7 +405,8 @@ export default function AssetsReturn() {
 
   const fetchUsers = async () => {
     try {
-      const response = await api.get('/users');
+      const url = effectiveCompanyId ? `/users?companyId=${effectiveCompanyId}` : '/users';
+      const response = await api.get(url);
       setUsers(response.users || []);
     } catch (error) {
       console.error('Failed to fetch users:', error);
@@ -425,7 +430,8 @@ export default function AssetsReturn() {
 
   const fetchLocations = async () => {
     try {
-      const response = await api.get('/locations');
+      const url = effectiveCompanyId ? `/locations?companyId=${effectiveCompanyId}` : '/locations';
+      const response = await api.get(url);
       setLocations(response.locations || []);
     } catch (error) {
       console.error('Failed to fetch locations:', error);

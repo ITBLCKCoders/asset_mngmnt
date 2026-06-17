@@ -142,6 +142,7 @@ type PendingForm = {
 export default function ReturnRequestsPage() {
   const navigate = useNavigate();
   const { user: currentUser } = useCurrentUser();
+  const userCompanyId = currentUser?.company_id;
   const [forms, setForms] = useState<PendingForm[]>([]);
   const [departments, setDepartments] = useState<Department[]>([]);
   const [locations, setLocations] = useState<Location[]>([]);
@@ -222,9 +223,8 @@ export default function ReturnRequestsPage() {
 
   const fetchDepartments = async () => {
     try {
-      const response = await api.get<{ departments?: Department[] }>(
-        '/departments'
-      );
+      const url = userCompanyId ? `/departments?companyId=${userCompanyId}` : '/departments';
+      const response = await api.get<{ departments?: Department[] }>(url);
       setDepartments(response.departments ?? []);
     } catch (error) {
       console.error('Failed to fetch departments:', error);
@@ -234,7 +234,8 @@ export default function ReturnRequestsPage() {
 
   const fetchLocations = async () => {
     try {
-      const response = await api.get<{ locations?: Location[] }>('/locations');
+      const url = userCompanyId ? `/locations?companyId=${userCompanyId}` : '/locations';
+      const response = await api.get<{ locations?: Location[] }>(url);
       setLocations(response.locations ?? []);
     } catch (error) {
       console.error('Failed to fetch locations:', error);

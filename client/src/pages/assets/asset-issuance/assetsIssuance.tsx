@@ -158,6 +158,9 @@ export default function AssetsAssignment() {
   const isSuperAdmin = currentUser?.role?.name?.toLowerCase() === 'super admin';
   const isAdmin = currentUser?.role?.name?.toLowerCase() === 'admin';
   const showScopeTabs = isSuperAdmin || isAdmin;
+  const effectiveCompanyId = isSuperAdmin || isAdmin
+    ? activeCompany?.id || undefined
+    : currentUser?.company_id || undefined;
   const [scope, setScope] = useState<'it' | 'admin'>('it');
 
   const fetchAssets = async () => {
@@ -206,7 +209,15 @@ export default function AssetsAssignment() {
 
   const fetchDepartments = async () => {
     try {
-      const response = await api.get('/departments');
+      let companyId: string | undefined;
+      const userRole = currentUser?.role?.name?.toLowerCase();
+      if (userRole === 'super admin' || userRole === 'admin') {
+        companyId = activeCompany?.id || undefined;
+      } else {
+        companyId = currentUser?.company_id || undefined;
+      }
+      const url = companyId ? `/departments?companyId=${companyId}` : '/departments';
+      const response = await api.get(url);
       setDepartments(response.departments || []);
     } catch (error) {
       console.error('Failed to fetch departments:', error);
@@ -216,7 +227,15 @@ export default function AssetsAssignment() {
 
   const fetchLocations = async () => {
     try {
-      const response = await api.get('/locations');
+      let companyId: string | undefined;
+      const userRole = currentUser?.role?.name?.toLowerCase();
+      if (userRole === 'super admin' || userRole === 'admin') {
+        companyId = activeCompany?.id || undefined;
+      } else {
+        companyId = currentUser?.company_id || undefined;
+      }
+      const url = companyId ? `/locations?companyId=${companyId}` : '/locations';
+      const response = await api.get(url);
       const locs = response.locations || [];
       setLocations(locs);
       setBuildings([
@@ -233,7 +252,8 @@ export default function AssetsAssignment() {
 
   const fetchUsers = async () => {
     try {
-      const response = await api.get('/users');
+      const url = effectiveCompanyId ? `/users?companyId=${effectiveCompanyId}` : '/users';
+      const response = await api.get(url);
       setUsers(response.users || []);
     } catch (error) {
       console.error('Failed to fetch users:', error);
@@ -871,7 +891,7 @@ export default function AssetsAssignment() {
   const filteredUsers = (users || []).filter(
     user =>
       (!selectedDepartment || user.department_id === selectedDepartment) &&
-      (!activeCompany?.id || user.company?.id === activeCompany?.id)
+      (!effectiveCompanyId || user.company?.id === effectiveCompanyId)
   );
 
   // Skeleton component for builder cards
