@@ -468,13 +468,22 @@ export const generateAccountabilityFormPDF = async (
     asset => getAssetScopeType(asset, form) === 'Admin'
   );
 
+  const itIntangibleAssets = assignedIntangibleAssets.filter(
+    (asset: any) => asset.type === 'IT scope'
+  );
+  const adminIntangibleAssets = assignedIntangibleAssets.filter(
+    (asset: any) => asset.type === 'Admin scope'
+  );
+
   // Determine which department to show in the acknowledgment text
+  const hasIT = itAssets.length > 0 || itIntangibleAssets.length > 0;
+  const hasAdmin = adminAssets.length > 0 || adminIntangibleAssets.length > 0;
   let issuingDepartment = '_______________________________';
-  if (itAssets.length > 0 && adminAssets.length > 0) {
+  if (hasIT && hasAdmin) {
     issuingDepartment = 'IT Department and Admin Department';
-  } else if (itAssets.length > 0) {
+  } else if (hasIT) {
     issuingDepartment = 'IT Department';
-  } else if (adminAssets.length > 0) {
+  } else if (hasAdmin) {
     issuingDepartment = 'Admin Department';
   }
 
@@ -601,13 +610,6 @@ I agree that if any of the items are damaged or lost due to my negligence, I sha
     4: { cellWidth: 32 }, // Asset Tag
     5: { cellWidth: 27.9 }, // Condition
   };
-
-  const itIntangibleAssets = assignedIntangibleAssets.filter(
-    (asset: any) => asset.type === 'IT scope'
-  );
-  const adminIntangibleAssets = assignedIntangibleAssets.filter(
-    (asset: any) => asset.type === 'Admin scope'
-  );
 
   // IT Asset Details - font size 12 bold
   if (itAssets.length > 0) {
