@@ -160,7 +160,14 @@ export function Step3Location({
 
   const fetchDepartments = async () => {
     try {
-      const response = await api.get('/departments');
+      let companyId: string | undefined;
+      if (hasSpecialRole) {
+        companyId = user?.company_id ?? undefined;
+      } else if (isSuperAdminOrAdmin && activeCompany) {
+        companyId = activeCompany.id;
+      }
+      const url = companyId ? `/departments?companyId=${companyId}` : '/departments';
+      const response = await api.get(url);
       setDepartments(response.departments);
     } catch (error) {
       console.error('Failed to fetch departments:', error);

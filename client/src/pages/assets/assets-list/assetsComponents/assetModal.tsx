@@ -226,6 +226,34 @@ export function AddAssetModal({
     });
   }, [categories, roleCustodian]);
 
+  const typesForStep1 = useMemo(() => {
+    const scopedIds = new Set(
+      categoriesForStep1.map((c: any) => c.id?.toString())
+    );
+    if (scopedIds.size === 0) return types;
+    return types.filter(
+      (t: any) =>
+        scopedIds.has(t.categoryId?.toString()) ||
+        scopedIds.has(t.category_id?.toString()) ||
+        t.categoryId === null ||
+        t.category_id === null
+    );
+  }, [types, categoriesForStep1]);
+
+  const suppliersForStep1 = useMemo(() => {
+    const scopedIds = new Set(
+      categoriesForStep1.map((c: any) => c.id?.toString())
+    );
+    if (scopedIds.size === 0) return suppliers;
+    return suppliers.filter(
+      (s: any) =>
+        scopedIds.has(s.categoryId?.toString()) ||
+        scopedIds.has(s.category_id?.toString()) ||
+        s.categoryId === null ||
+        s.category_id === null
+    );
+  }, [suppliers, categoriesForStep1]);
+
   const canAddLocation = useMemo(() => {
     if (user?.role?.name === 'Super Admin' || user?.role?.name === 'Admin')
       return true;
@@ -293,16 +321,21 @@ export function AddAssetModal({
 
   const fetchActiveCompany = async () => {
     try {
-      const data = await api.get('/companies/active');
+      const isSuperAdminOrAdmin =
+        user?.role?.name === 'Super Admin' || user?.role?.name === 'Admin';
+      const endpoint = isSuperAdminOrAdmin ? '/companies/active' : '/companies/my';
+      const data = await api.get(endpoint);
       setActiveCompany(data?.data?.[0] || null);
     } catch (error) {
-      console.error('Failed to fetch active company:', error);
+      console.error('Failed to fetch company:', error);
     }
   };
 
   const fetchDepartments = async () => {
     try {
-      const response = await api.get('/departments');
+      const companyId = activeCompany?.id;
+      const url = companyId ? `/departments?companyId=${companyId}` : '/departments';
+      const response = await api.get(url);
       setDepartments(response.departments || []);
     } catch (error) {
       console.error('Failed to fetch departments:', error);
@@ -406,7 +439,6 @@ export function AddAssetModal({
         setFormData(initialAssetFormData);
       }
       fetchActiveCompany();
-      fetchDepartments();
       fetchUsers();
     }
   }, [isOpen]);
@@ -417,6 +449,7 @@ export function AddAssetModal({
       fetchTypes();
       fetchSuppliers();
       fetchBrands();
+      fetchDepartments();
       fetchLocations();
       checkSmartIdFormat();
     }
@@ -763,8 +796,8 @@ export function AddAssetModal({
                 formData={formData}
                 updateForm={updateForm}
                 categories={categoriesForStep1}
-                types={types}
-                suppliers={suppliers}
+                types={typesForStep1}
+                suppliers={suppliersForStep1}
                 brands={brands}
                 onOpenAddCategory={() => setIsAddCategoryOpen(true)}
                 onOpenAddSupplier={openAddSupplierDialog}

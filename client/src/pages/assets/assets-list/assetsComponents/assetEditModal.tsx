@@ -115,7 +115,14 @@ export function EditAssetModal({
   onSubmit,
 }: EditAssetModalProps) {
   const { user } = useCurrentUser();
-  const { activeCompany } = useCompanyContext();
+  const { activeCompany: contextActiveCompany } = useCompanyContext();
+  const activeCompany = useMemo(() => {
+    const isSuperAdminOrAdmin =
+      user?.role?.name === 'Super Admin' || user?.role?.name === 'Admin';
+    if (isSuperAdminOrAdmin) return contextActiveCompany;
+    if (user?.company_id) return { id: user.company_id, name: user.company || '' };
+    return contextActiveCompany;
+  }, [user, contextActiveCompany]);
   const [currentStep, setCurrentStep] = useState(0);
   const [formData, setFormData] = useState<AssetFormData>(initialAssetFormData);
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -216,6 +223,34 @@ export function EditAssetModal({
       return 0;
     });
   }, [categories, roleCustodian]);
+
+  const typesForStep1 = useMemo(() => {
+    const scopedIds = new Set(
+      categoriesForStep1.map((c: any) => c.id?.toString())
+    );
+    if (scopedIds.size === 0) return types;
+    return types.filter(
+      (t: any) =>
+        scopedIds.has(t.categoryId?.toString()) ||
+        scopedIds.has(t.category_id?.toString()) ||
+        t.categoryId === null ||
+        t.category_id === null
+    );
+  }, [types, categoriesForStep1]);
+
+  const suppliersForStep1 = useMemo(() => {
+    const scopedIds = new Set(
+      categoriesForStep1.map((c: any) => c.id?.toString())
+    );
+    if (scopedIds.size === 0) return suppliers;
+    return suppliers.filter(
+      (s: any) =>
+        scopedIds.has(s.categoryId?.toString()) ||
+        scopedIds.has(s.category_id?.toString()) ||
+        s.categoryId === null ||
+        s.category_id === null
+    );
+  }, [suppliers, categoriesForStep1]);
 
   const canAddLocation = useMemo(() => {
     if (user?.role?.name === 'Super Admin' || user?.role?.name === 'Admin')
@@ -472,7 +507,9 @@ export function EditAssetModal({
 
   const fetchDepartments = async () => {
     try {
-      const response = await api.get('/departments');
+      const companyId = activeCompany?.id;
+      const url = companyId ? `/departments?companyId=${companyId}` : '/departments';
+      const response = await api.get(url);
       setDepartments(response.departments || []);
     } catch (error) {
       console.error('Failed to fetch departments:', error);
@@ -553,7 +590,6 @@ export function EditAssetModal({
 
   useEffect(() => {
     if (isOpen && asset) {
-      fetchDepartments();
       fetchUsers();
       setCurrentStep(0);
     }
@@ -633,6 +669,7 @@ export function EditAssetModal({
       fetchTypes();
       fetchSuppliers();
       fetchBrands();
+      fetchDepartments();
       fetchLocations();
     }
   }, [activeCompany]);
@@ -1068,8 +1105,8 @@ export function EditAssetModal({
                 formData={formData}
                 updateForm={updateForm}
                 categories={categoriesForStep1}
-                types={types}
-                suppliers={suppliers}
+                types={typesForStep1}
+                suppliers={suppliersForStep1}
                 brands={brands}
                 onOpenAddCategory={() => setIsAddCategoryOpen(true)}
                 onOpenAddSupplier={openAddSupplierDialog}
