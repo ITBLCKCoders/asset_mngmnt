@@ -412,14 +412,10 @@ export const generateAssetReturnPDF = async (
   const sectionBStartY = (doc as any).lastAutoTable.finalY;
   const sectionBHalfWidth = tableWidth / 2;
   const hasReturnerSignature = !!returnData.signed_at;
-  const hasProcessSignature = !!returnData.process_signed_at;
   const hasDeptHeadSignature = !!returnData.dept_head_signed_at;
   const hasItManagerSignature = !!returnData.it_manager_signed_at;
   const showProcessorSignatureBlock = !!returnData.showProcessorSignatureBlock;
   const processUserNameForCell = (returnData.process_user_name ?? '').trim();
-  const processInitial = processUserNameForCell
-    ? processUserNameForCell.charAt(0).toUpperCase()
-    : '';
   const approvalSignatureRowHeight = 40;
   const approvalSignatureDownOffsetMm = 8;
   const signatureAnchorBottomY = (nameY: number) =>
@@ -496,9 +492,7 @@ export const generateAssetReturnPDF = async (
         data.column.index === 0
       ) {
         const yTop = yMin;
-        const dateTimeReserved = 20;
         const sigHeight = Math.min(50, Math.max(28, contentHeight - 2));
-        const dateTimeX = xMax - dateTimeReserved;
         const nameY = yTop + sigHeight - 6;
 
         doc.setFontSize(8);
@@ -523,30 +517,6 @@ export const generateAssetReturnPDF = async (
           const nameLines = doc.splitTextToSize(itManagerName, nameMaxWidth);
           doc.text(nameLines, xMin, nameY);
         }
-
-        const rawIt = returnData.it_manager_signed_at?.trim() ?? '';
-        const itSignedDate = rawIt
-          ? new Date(
-              rawIt.endsWith('Z') || /[+-]\d{2}:?\d{2}$/.test(rawIt)
-                ? rawIt
-                : rawIt.replace(' ', 'T') + 'Z'
-            )
-          : new Date();
-        const dateStr = itSignedDate.toLocaleDateString('en-US', {
-          year: 'numeric',
-          month: '2-digit',
-          day: '2-digit',
-        });
-        const timeStr = itSignedDate.toLocaleTimeString('en-US', {
-          hour: '2-digit',
-          minute: '2-digit',
-          hour12: true,
-        });
-        doc.setFontSize(7);
-        doc.setFont('helvetica', 'normal');
-        doc.text(dateStr, dateTimeX, yTop + 4);
-        doc.text(timeStr, dateTimeX, yTop + 9);
-        return;
       }
 
       // Row 1, column 1: IT Staff / IT Inventory Manager (matches checklist creator cell)
@@ -557,9 +527,7 @@ export const generateAssetReturnPDF = async (
         data.column.index === 1
       ) {
         const yTop = yMin;
-        const dateTimeReserved = 20;
         const sigHeight = Math.min(50, Math.max(28, contentHeight - 2));
-        const dateTimeX = xMax - dateTimeReserved;
         const nameY = yTop + sigHeight - 6;
 
         doc.setFontSize(8);
@@ -576,14 +544,6 @@ export const generateAssetReturnPDF = async (
             maxHeight: PDF_SIGNATURE_MAX_HEIGHT_MM,
             pageNumber: data.pageNumber,
           });
-        } else if (processInitial) {
-          doc.setFontSize(14);
-          doc.setFont('helvetica', 'bold');
-          doc.text(
-            processInitial,
-            xMin,
-            yTop + 10 + approvalSignatureDownOffsetMm
-          );
         }
 
         doc.setFontSize(8);
@@ -594,32 +554,6 @@ export const generateAssetReturnPDF = async (
           nameMaxWidth
         );
         doc.text(nameLines, xMin, nameY);
-
-        if (hasProcessSignature) {
-          const raw = returnData.process_signed_at?.trim() ?? '';
-          const processSignedDate = raw
-            ? new Date(
-                raw.endsWith('Z') || /[+-]\d{2}:?\d{2}$/.test(raw)
-                  ? raw
-                  : raw.replace(' ', 'T') + 'Z'
-              )
-            : new Date();
-          const dateStr = processSignedDate.toLocaleDateString('en-US', {
-            year: 'numeric',
-            month: '2-digit',
-            day: '2-digit',
-          });
-          const timeStr = processSignedDate.toLocaleTimeString('en-US', {
-            hour: '2-digit',
-            minute: '2-digit',
-            hour12: true,
-          });
-          doc.setFontSize(7);
-          doc.setFont('helvetica', 'normal');
-          doc.text(dateStr, dateTimeX, yTop + 4);
-          doc.text(timeStr, dateTimeX, yTop + 9);
-        }
-        return;
       }
 
       // Row 3, column 0: Returner's Department Head (matches checklist dept-head cell)
@@ -629,9 +563,7 @@ export const generateAssetReturnPDF = async (
         data.column.index === 0
       ) {
         const yTop = yMin;
-        const dateTimeReserved = 20;
         const sigHeight = Math.min(50, Math.max(28, contentHeight - 2));
-        const dateTimeX = xMax - dateTimeReserved;
         const nameY = yTop + sigHeight - 6;
 
         doc.setFontSize(8);
@@ -656,30 +588,6 @@ export const generateAssetReturnPDF = async (
           const nameLines = doc.splitTextToSize(deptHeadName, nameMaxWidth);
           doc.text(nameLines, xMin, nameY);
         }
-
-        const rawDept = returnData.dept_head_signed_at?.trim() ?? '';
-        const deptSignedDate = rawDept
-          ? new Date(
-              rawDept.endsWith('Z') || /[+-]\d{2}:?\d{2}$/.test(rawDept)
-                ? rawDept
-                : rawDept.replace(' ', 'T') + 'Z'
-            )
-          : new Date();
-        const dateStr = deptSignedDate.toLocaleDateString('en-US', {
-          year: 'numeric',
-          month: '2-digit',
-          day: '2-digit',
-        });
-        const timeStr = deptSignedDate.toLocaleTimeString('en-US', {
-          hour: '2-digit',
-          minute: '2-digit',
-          hour12: true,
-        });
-        doc.setFontSize(7);
-        doc.setFont('helvetica', 'normal');
-        doc.text(dateStr, dateTimeX, yTop + 4);
-        doc.text(timeStr, dateTimeX, yTop + 9);
-        return;
       }
 
       // Row 3, column 1: Returner (matches checklist employee cell)
@@ -689,16 +597,11 @@ export const generateAssetReturnPDF = async (
         data.column.index === 1
       ) {
         const yTop = yMin;
-        const dateTimeReserved = 20;
         const sigHeight = Math.min(50, Math.max(28, contentHeight - 2));
-        const dateTimeX = xMax - dateTimeReserved;
         const nameY = yTop + sigHeight - 6;
         const fullName = [returnData.user.first_name, returnData.user.last_name]
           .filter(Boolean)
           .join(' ');
-        const returnerInitial = fullName
-          ? fullName.charAt(0).toUpperCase()
-          : '';
 
         doc.setFontSize(8);
         doc.setFont('helvetica', 'normal');
@@ -714,14 +617,6 @@ export const generateAssetReturnPDF = async (
             maxHeight: PDF_SIGNATURE_MAX_HEIGHT_MM,
             pageNumber: data.pageNumber,
           });
-        } else if (returnerInitial) {
-          doc.setFontSize(14);
-          doc.setFont('helvetica', 'bold');
-          doc.text(
-            returnerInitial,
-            xMin,
-            yTop + 10 + approvalSignatureDownOffsetMm
-          );
         }
 
         if (fullName) {
@@ -729,24 +624,6 @@ export const generateAssetReturnPDF = async (
           const nameLines = doc.splitTextToSize(fullName, nameMaxWidth);
           doc.text(nameLines, xMin, nameY);
         }
-
-        const signedDate = returnData.signed_at
-          ? new Date(returnData.signed_at)
-          : new Date();
-        const dateStr = signedDate.toLocaleDateString('en-US', {
-          year: 'numeric',
-          month: '2-digit',
-          day: '2-digit',
-        });
-        const timeStr = signedDate.toLocaleTimeString('en-US', {
-          hour: '2-digit',
-          minute: '2-digit',
-          hour12: true,
-        });
-        doc.setFontSize(7);
-        doc.setFont('helvetica', 'normal');
-        doc.text(dateStr, dateTimeX, yTop + 4);
-        doc.text(timeStr, dateTimeX, yTop + 9);
       }
     },
   });

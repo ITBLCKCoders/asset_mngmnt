@@ -376,7 +376,7 @@ export async function updateAssetBuilderHandler(
 
     // Check if builder exists and belongs to user's company
     const [builderRows] = (await pool.execute(
-      `SELECT ab.*, u.company_id
+      `SELECT ab.*, u.company_id AS creator_company_id
        FROM asset_builders ab
        JOIN users u ON ab.created_by = u.userID
        WHERE ab.builderID = ? AND ab.deleted_at IS NULL`,
@@ -658,7 +658,7 @@ export async function getAssetBuilderFormsHandler(
 
     // Check if builder exists and belongs to user's company
     const [builderRows] = (await pool.execute(
-      `SELECT ab.*, u.company_id
+      `SELECT ab.*, u.company_id AS creator_company_id
        FROM asset_builders ab
        JOIN users u ON ab.created_by = u.userID
        WHERE ab.builderID = ? AND ab.deleted_at IS NULL`,
@@ -801,7 +801,7 @@ export async function deleteAssetBuilderHandler(
 
     // Check if builder exists and belongs to user's company
     const [builderRows] = (await pool.execute(
-      `SELECT ab.*, u.company_id
+      `SELECT ab.*, u.company_id AS creator_company_id
        FROM asset_builders ab
        JOIN users u ON ab.created_by = u.userID
        WHERE ab.builderID = ? AND ab.deleted_at IS NULL`,
