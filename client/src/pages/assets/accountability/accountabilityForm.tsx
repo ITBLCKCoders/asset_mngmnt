@@ -327,19 +327,11 @@ const getAccountabilityFormAssignmentIds = (form: AccountabilityForm): string[] 
   return [...assignmentIds];
 };
 
-const fetchAssignedIntangibleAssetsForForm = async (
+const fetchAssignedIntangibleAssetsForForm = (
   form: AccountabilityForm
-): Promise<any[]> => {
-  const assignmentIds = new Set(getAccountabilityFormAssignmentIds(form));
-  if (assignmentIds.size === 0) {
-    return [];
-  }
-
-  const response = await api.get('/intangible-assets');
-  return (response || []).filter((asset: any) =>
-    assignmentIds.has(
-      String(asset.assignment_id ?? asset.assignmentId ?? '').trim()
-    )
+): any[] => {
+  return (form.assets || []).filter(
+    (asset: any) => String(asset.category ?? '').toLowerCase() === 'intangible'
   );
 };
 
@@ -349,8 +341,9 @@ export const generateAccountabilityFormPDF = async (
   currentUser?: any,
   intangibleAssets?: any[]
 ): Promise<Blob> => {
-  const assignedIntangibleAssets =
-    intangibleAssets ?? (await fetchAssignedIntangibleAssetsForForm(form));
+  const assignedIntangibleAssets = (intangibleAssets && intangibleAssets.length > 0)
+    ? intangibleAssets
+    : fetchAssignedIntangibleAssetsForForm(form);
 
   const [{ jsPDF: JsPDFConstructor }, autoTableModule] = await Promise.all([
     import('jspdf'),
@@ -465,10 +458,13 @@ export const generateAccountabilityFormPDF = async (
 
   // Categorize assets based on IT/Admin scope classification
   const sortedAssets = sortAssetsByLast5Digits(form.assets);
-  const itAssets = sortedAssets.filter(
+  const tangibleAssets = sortedAssets.filter(
+    asset => String(asset.category ?? '').toLowerCase() !== 'intangible'
+  );
+  const itAssets = tangibleAssets.filter(
     asset => getAssetScopeType(asset, form) === 'IT'
   );
-  const adminAssets = sortedAssets.filter(
+  const adminAssets = tangibleAssets.filter(
     asset => getAssetScopeType(asset, form) === 'Admin'
   );
 
@@ -1843,7 +1839,7 @@ export function AccountabilityFormCard({
                       {form.assets.map(asset => (
                         <div key={asset.id} className="flex items-center">
                           <span className="w-1 h-1 bg-gray-400 rounded-full mr-2 flex-shrink-0"></span>
-                          <span>{asset.code}</span>
+                          <span>{asset.name || asset.code}</span>
                         </div>
                       ))}
                     </div>
@@ -2003,13 +1999,13 @@ export function AccountabilityFormCard({
                     ? 'No Assets'
                     : `${form.assets.length} Assets`}
                 </p>
-                {form.assets.length > 0 && (
+                  {form.assets.length > 0 && (
                   <div className="max-h-[120px] overflow-y-auto scrollbar-hide text-xs text-gray-500 mt-1">
                     <div className="space-y-0.5">
                       {form.assets.map(asset => (
                         <div key={asset.id} className="flex items-center">
                           <span className="w-1 h-1 bg-gray-400 rounded-full mr-2 flex-shrink-0"></span>
-                          <span>{asset.code}</span>
+                          <span>{asset.name || asset.code}</span>
                         </div>
                       ))}
                     </div>

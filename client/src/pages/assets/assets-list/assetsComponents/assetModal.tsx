@@ -373,7 +373,7 @@ export function AddAssetModal({
 
   const fetchLocations = async () => {
     try {
-      const response = await api.get('/locations');
+      const response = await api.get(`/locations?companyId=${activeCompany.id}`);
       setLocations(response.locations || []);
     } catch (error) {
       console.error('Failed to fetch locations:', error);

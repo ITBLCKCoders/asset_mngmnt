@@ -127,7 +127,7 @@ export default function IntangibleAssetDialog({
 
       if (mode === 'edit' && editingAsset) {
         // Update single asset
-        await api.patch(`/intangible-assets/${editingAsset.id}`, rows[0]);
+        await api.patch(`/intangible-assets/${editingAsset.id}`, { ...rows[0], status: editingAsset.status });
         toast.success('Intangible asset updated successfully');
       } else {
         // Create bulk assets

@@ -25,6 +25,7 @@ import { Checkbox } from '@/components/ui/checkbox';
 import { Shimmer } from '@/components/ui/shimmer';
 import { api } from '@/lib/api';
 import { toast } from 'sonner';
+import { generateUUID } from '@/utils/uuid';
 import { useCurrentUser } from '@/hooks/useCurrentUser';
 import { useUserPermissions } from '@/hooks/useUserPermissions';
 import { useCompanyContext } from '@/context/CompanyContext';
@@ -516,30 +517,91 @@ export default function AssetsAssignment() {
       if (selectedIntangibleAssets.length > 0 && assignmentResponse) {
         // Use the assignment ID from the tangible assets assignment
         const assignmentId = assignmentResponse.assignments?.[0]?.assignmentID;
-        
-        for (const intangibleAssetId of selectedIntangibleAssets) {
+
+        const selectedIntangibleAssetObjects = selectedIntangibleAssets
+          .map(id => intangibleAssets.find(ia => ia.id === id))
+          .filter((ia): ia is any => ia != null);
+
+        const scopeGroups: Record<string, any[]> = {};
+        for (const ia of selectedIntangibleAssetObjects) {
+          const scope = ia.type === 'Admin scope' ? 'Admin scope' : 'IT scope';
+          if (!scopeGroups[scope]) {
+            scopeGroups[scope] = [];
+          }
+          scopeGroups[scope].push(ia);
+        }
+
+        for (const [scope, scopeAssets] of Object.entries(scopeGroups)) {
           try {
-            await api.post(`/intangible-assets/${intangibleAssetId}/assign`, {
+            const deptKeyword = scope === 'Admin scope' ? 'admin' : 'it';
+            const matchDept = departments.find(d =>
+              d.name?.toLowerCase().includes(deptKeyword)
+            );
+
+            const batchResult = await api.post('/intangible-assets/batch-assign', {
+              assetIds: scopeAssets.map(ia => ia.id),
               assignedTo: selectedUser,
-              assignmentId: assignmentId,
+              assignmentId,
+              departmentId: matchDept?.departmentID || undefined,
+              locationId: selectedLocation || undefined,
+              signAsIssuer,
+              issuerSignature: signAsIssuer ? currentUser?.digitalSignature || null : null,
+              signITCopy,
+              itCopySignature: signITCopy ? currentUser?.digitalSignature || null : null,
             });
+            if (batchResult?.formError) {
+              console.error(`Form error for ${scope}:`, batchResult.formError);
+              toast.error(`Accountability form error: ${batchResult.formError}`);
+            }
           } catch (error) {
-            console.error('Failed to assign intangible asset:', error);
-            toast.error(`Failed to assign intangible asset ${intangibleAssetId}`);
+            console.error(`Failed to assign ${scope} intangible assets:`, error);
+            toast.error(`Failed to assign ${scope} intangible assets`);
           }
         }
       } else if (selectedIntangibleAssets.length > 0 && !assignmentResponse) {
-        // If only intangible assets are selected, create a simple assignment ID
-        const assignmentId = crypto.randomUUID();
-        for (const intangibleAssetId of selectedIntangibleAssets) {
+        // If only intangible assets are selected, group by scope and batch assign
+        const assignmentId = generateUUID();
+
+        const selectedIntangibleAssetObjects = selectedIntangibleAssets
+          .map(id => intangibleAssets.find(ia => ia.id === id))
+          .filter((ia): ia is any => ia != null);
+
+        // Group by scope type
+        const scopeGroups: Record<string, any[]> = {};
+        for (const ia of selectedIntangibleAssetObjects) {
+          const scope = ia.type === 'Admin scope' ? 'Admin scope' : 'IT scope';
+          if (!scopeGroups[scope]) {
+            scopeGroups[scope] = [];
+          }
+          scopeGroups[scope].push(ia);
+        }
+
+        // Send one batch request per scope (server creates accountability form with existing tangible assets)
+        for (const [scope, scopeAssets] of Object.entries(scopeGroups)) {
           try {
-            await api.post(`/intangible-assets/${intangibleAssetId}/assign`, {
+            const deptKeyword = scope === 'Admin scope' ? 'admin' : 'it';
+            const matchDept = departments.find(d =>
+              d.name?.toLowerCase().includes(deptKeyword)
+            );
+
+            const batchResult = await api.post('/intangible-assets/batch-assign', {
+              assetIds: scopeAssets.map(ia => ia.id),
               assignedTo: selectedUser,
-              assignmentId: assignmentId,
+              assignmentId,
+              departmentId: matchDept?.departmentID || undefined,
+              locationId: selectedLocation || undefined,
+              signAsIssuer,
+              issuerSignature: signAsIssuer ? currentUser?.digitalSignature || null : null,
+              signITCopy,
+              itCopySignature: signITCopy ? currentUser?.digitalSignature || null : null,
             });
+            if (batchResult?.formError) {
+              console.error(`Form error for ${scope}:`, batchResult.formError);
+              toast.error(`Accountability form error: ${batchResult.formError}`);
+            }
           } catch (error) {
-            console.error('Failed to assign intangible asset:', error);
-            toast.error(`Failed to assign intangible asset ${intangibleAssetId}`);
+            console.error(`Failed to batch assign ${scope} intangible assets:`, error);
+            toast.error(`Failed to assign ${scope} intangible assets`);
           }
         }
       }
