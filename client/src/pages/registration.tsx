@@ -119,6 +119,7 @@ export default function RegisterPage() {
   const [allPositions, setAllPositions] = useState<Position[]>([]);
   const [positions, setPositions] = useState<Position[]>([]);
   const [loadingOptions, setLoadingOptions] = useState(true);
+  const [loadingCompanyData, setLoadingCompanyData] = useState(false);
   const [loadingPositions, setLoadingPositions] = useState(false);
   const [showPassword, setShowPassword] = useState(false);
   const [showConfirmPassword, setShowConfirmPassword] = useState(false);
@@ -148,17 +149,11 @@ export default function RegisterPage() {
   useEffect(() => {
     const fetchOptions = async () => {
       try {
-        const [companiesRes, departmentsRes, positionsRes] = await Promise.all([
+        const [companiesRes] = await Promise.all([
           // Public projection (id, name, prefix, logo_url) — no PII.
           api.get('/companies/public'),
-          api.get('/departments'),
-          api.get('/positions'),
         ]);
         setCompanies(companiesRes.companies || companiesRes.data || []);
-        setDepartments(departmentsRes.departments);
-        const positionsList = positionsRes.positions || positionsRes.data || [];
-        setAllPositions(positionsList);
-        setPositions([]);
       } catch (error) {
         console.error('Failed to fetch options:', error);
         toast.error('Failed to load form options');
@@ -194,6 +189,46 @@ export default function RegisterPage() {
     else formatted += '-000';
     setValue('employeeNumber', formatted, { shouldValidate: true });
   }, [watchedCompanyId, userDigits, setValue, companies]);
+
+  useEffect(() => {
+    if (!watchedCompanyId || watchedCompanyId === OTHER_COMPANY_ID) {
+      setDepartments([]);
+      setAllPositions([]);
+      setPositions([]);
+      if (!watchedCompanyId) {
+        setValue('department_id', '');
+        setValue('position', '');
+      }
+      return;
+    }
+
+    const fetchCompanyData = async () => {
+      try {
+        setLoadingCompanyData(true);
+        setValue('department_id', '');
+        setValue('position', '');
+        setPositions([]);
+        setDepartments([]);
+        setAllPositions([]);
+
+        const [departmentsRes, positionsRes] = await Promise.all([
+          api.get('/departments?companyId=' + watchedCompanyId),
+          api.get('/positions?companyId=' + watchedCompanyId),
+        ]);
+        setDepartments(departmentsRes.departments);
+        const positionsList = positionsRes.positions || positionsRes.data || [];
+        setAllPositions(positionsList);
+      } catch (error) {
+        console.error('Failed to fetch company data:', error);
+        toast.error('Failed to load department and position options');
+        setDepartments([]);
+        setAllPositions([]);
+      } finally {
+        setLoadingCompanyData(false);
+      }
+    };
+    fetchCompanyData();
+  }, [watchedCompanyId]);
 
   const handleEmployeeChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const raw = e.target.value.replace(/\D/g, '').slice(0, 8);
@@ -866,21 +901,29 @@ export default function RegisterPage() {
                       <Select
                         onValueChange={value => handleDepartmentChange(value)}
                         value={field.value ?? ''}
-                        disabled={loadingOptions}
+                        disabled={loadingOptions || loadingCompanyData || !watchedCompanyId}
                       >
                         <SelectTrigger className="bg-white border-2 border-gray-300 focus:ring-2 focus:ring-red-500">
                           <SelectValue
                             placeholder={
-                              loadingOptions
+                              loadingOptions || loadingCompanyData
                                 ? 'Loading...'
-                                : 'Select department'
+                                : !watchedCompanyId
+                                  ? 'Select company first'
+                                  : departments.length === 0
+                                    ? 'No departments available'
+                                    : 'Select department'
                             }
                           />
                         </SelectTrigger>
                         <SelectContent className="bg-white">
-                          {departments.length === 0 ? (
+                          {!watchedCompanyId ? (
                             <div className="px-2 py-1.5 text-sm text-gray-500">
-                              No departments available
+                              Select company first
+                            </div>
+                          ) : departments.length === 0 ? (
+                            <div className="px-2 py-1.5 text-sm text-gray-500">
+                              {loadingCompanyData ? 'Loading...' : 'No departments available'}
                             </div>
                           ) : (
                             departments.map(d => (
@@ -916,7 +959,7 @@ export default function RegisterPage() {
                       <Select
                         onValueChange={field.onChange}
                         value={field.value ?? ''}
-                        disabled={loadingPositions || !watch('department_id')}
+                        disabled={loadingPositions || loadingCompanyData || !watch('department_id')}
                       >
                         <SelectTrigger className="bg-white border-2 border-gray-300 focus:ring-2 focus:ring-red-500">
                           <SelectValue

@@ -65,18 +65,23 @@ describe('RegisterPage', () => {
     expect(screen.getByAltText('Blackcoders')).toBeDefined();
   });
 
-  it('should load companies, departments and positions on mount', async () => {
-    (api.get as any).mockResolvedValue({
-      companies: [{ id: 'c1', name: 'Company A', prefix: 'CA' }],
-      departments: [{ departmentID: 'd1', name: 'Engineering' }],
-      positions: [{ positionID: 'p1', name: 'Engineer', department_id: 'd1' }],
-    });
+  it('should load companies on mount and fetch filtered data when company is selected', async () => {
+    (api.get as any)
+      .mockResolvedValueOnce({
+        companies: [{ id: 'c1', name: 'Company A', prefix: 'CA' }],
+      })
+      .mockResolvedValueOnce({
+        departments: [{ departmentID: 'd1', name: 'Engineering' }],
+      })
+      .mockResolvedValueOnce({
+        positions: [{ positionID: 'p1', name: 'Engineer', department_id: 'd1' }],
+      });
     renderPage();
     await waitFor(() => {
       expect(api.get).toHaveBeenCalledWith('/companies/public');
     });
-    expect(api.get).toHaveBeenCalledWith('/departments');
-    expect(api.get).toHaveBeenCalledWith('/positions');
+    expect(api.get).not.toHaveBeenCalledWith('/departments');
+    expect(api.get).not.toHaveBeenCalledWith('/positions');
   });
 
   it('should render form fields after loading', async () => {
