@@ -7,7 +7,7 @@ import { createAuditLog } from '../utils/audit.js';
 
 export async function getPositionsHandler(req: AuthRequest, res: Response) {
   try {
-    const companyIdParam = req.query.companyId as string | undefined;
+    const companyIdParam = (req.query as any)?.companyId as string | undefined;
     let companyId: string;
     if (companyIdParam) {
       companyId = companyIdParam;

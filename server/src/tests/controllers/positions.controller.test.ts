@@ -23,7 +23,7 @@ describe('positions.controller', () => {
 
   beforeEach(() => {
     jest.resetAllMocks();
-    req = { user: { userID: '1' }, body: {}, params: {}, ip: '127.0.0.1', get: jest.fn() };
+    req = { user: { userID: '1' }, body: {}, params: {}, query: {}, ip: '127.0.0.1', get: jest.fn() };
     res = createMockRes();
   });
 
