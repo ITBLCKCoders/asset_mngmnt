@@ -60,6 +60,7 @@ interface Asset {
   assignedTo: string;
   department: string;
   location: string;
+  description: string;
   specifications?: Array<{
     assetId: string;
     assetName: string;
@@ -199,6 +200,7 @@ export default function AssetsAssignment() {
         assignedTo: asset.created_by_name || asset.created_by,
         department: asset.department_name || '',
         location: `${asset.location_name || ''}${asset.room_name ? ` - ${asset.room_name}` : ''}`,
+        description: asset.description || '',
         specifications: asset.specifications || [],
       }));
       setAssets(transformedAssets);
@@ -759,6 +761,7 @@ export default function AssetsAssignment() {
         asset.assignedTo,
         asset.department,
         asset.location,
+        asset.description,
         asset.specifications
           ?.map(s => s.assetName || s.specDescription)
           .join(' '),
