@@ -19,6 +19,7 @@ import {
   MapPin,
 } from 'lucide-react';
 import { Checkbox } from '@/components/ui/checkbox';
+import { Switch } from '@/components/ui/switch';
 import { api } from '@/lib/api';
 import { toast } from 'sonner';
 import SmsOtpDialog from '@/components/auth/SmsOtpDialog';
@@ -62,7 +63,7 @@ interface ConfirmationModalProps {
   selectedRoom: string;
   selectedUser: string;
   assigning: boolean;
-  onConfirm: (signAsIssuer: boolean, signITCopy: boolean) => Promise<void>;
+  onConfirm: (signAsIssuer: boolean, signITCopy: boolean, tempAccountability: boolean) => Promise<void>;
 }
 
 export function ConfirmationModal({
@@ -84,6 +85,11 @@ export function ConfirmationModal({
   const { user } = useCurrentUser();
   const [signAsIssuer, setSignAsIssuer] = useState(true);
   const [signITCopy, setSignITCopy] = useState(true);
+  const [tempAccountability, setTempAccountability] = useState(false);
+  const selectedUserData = users?.find(u => u.userID === selectedUser);
+  const assigneeRoleName = (selectedUserData as any)?.role?.name;
+  const allowedRoles = ['IT Asset Manager', 'Admin Asset Manager', 'Admin', 'Super Admin'];
+  const showTempAccountability = assigneeRoleName ? allowedRoles.includes(assigneeRoleName) : false;
   const canConfirmAssignment = signAsIssuer && signITCopy && !assigning;
 
   // OTP verification state
@@ -98,6 +104,7 @@ export function ConfirmationModal({
 
     setSignAsIssuer(true);
     setSignITCopy(true);
+    setTempAccountability(false);
   }, [isOpen]);
 
   const checkUnsignedAccountabilityForms = async (userId: string) => {
@@ -267,6 +274,27 @@ export function ConfirmationModal({
                 </div>
               </div>
             </div>
+            {/* Temp Accountability Option */}
+            {showTempAccountability && (
+              <div className="p-4 bg-purple-50 rounded-lg border border-purple-200">
+                <div className="flex items-center justify-between gap-3">
+                  <div className="space-y-1">
+                    <label className="text-sm font-medium text-gray-900">
+                      Put this asset in user temp accountability
+                    </label>
+                    <p className="text-xs text-gray-600">
+                      When enabled, all assigned assets will be placed under
+                      temporary accountability of the user.
+                    </p>
+                  </div>
+                  <Switch
+                    checked={tempAccountability}
+                    onCheckedChange={setTempAccountability}
+                    className="shrink-0"
+                  />
+                </div>
+              </div>
+            )}
           </AppDialogBody>
 
           <AppDialogChromeFooter className="shrink-0 border-t bg-gray-50">
@@ -315,7 +343,7 @@ export function ConfirmationModal({
 
                 // Store the confirm action for SmsOtpDialog
                 pendingActionRef.current = async () => {
-                  await onConfirm(signAsIssuer, signITCopy);
+                  await onConfirm(signAsIssuer, signITCopy, tempAccountability);
                 };
 
                 // Close confirmation modal and show OTP dialog

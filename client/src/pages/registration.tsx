@@ -36,6 +36,8 @@ type AuthScene = 'login' | 'register';
 
 const AUTH_TRANSITION_MS = 900;
 
+const TRANSITION_EASING: [number, number, number, number] = [0.65, 0, 0.35, 1];
+
 const AUTH_BACKDROP: Record<AuthScene, { red: string; white: string }> = {
   login: {
     red: 'M760 -120 C620 130 555 315 720 455 C900 608 610 715 510 900 L1440 900 L1440 -120 Z',
@@ -62,13 +64,13 @@ function AuthBackdrop({ scene }: { scene: AuthScene }) {
         fill="#EE1D25"
         initial={false}
         animate={{ d: AUTH_BACKDROP[scene].red }}
-        transition={{ duration: AUTH_TRANSITION_MS / 1000, ease: 'easeInOut' }}
+        transition={{ duration: AUTH_TRANSITION_MS / 1000, ease: TRANSITION_EASING }}
       />
       <motion.path
         fill="#ffffff"
         initial={false}
         animate={{ d: AUTH_BACKDROP[scene].white }}
-        transition={{ duration: AUTH_TRANSITION_MS / 1000, ease: 'easeInOut' }}
+        transition={{ duration: AUTH_TRANSITION_MS / 1000, ease: TRANSITION_EASING, delay: 0.08 }}
       />
     </svg>
   );
@@ -80,11 +82,13 @@ function GhostLoginPanel({ scene }: { scene: AuthScene }) {
       className="pointer-events-none absolute right-[6vw] top-1/2 z-10 hidden w-[27rem] -translate-y-1/2 lg:block"
       initial={false}
       animate={{
-        opacity: scene === 'register' ? 0.08 : 0.03,
+        opacity: scene === 'register' ? 0.12 : 0.04,
         x: scene === 'register' ? 0 : 96,
-        scale: scene === 'register' ? 1 : 0.96,
+        y: scene === 'register' ? 0 : -16,
+        scale: scene === 'register' ? 1 : 0.94,
+        rotate: scene === 'register' ? 0 : 1,
       }}
-      transition={{ duration: AUTH_TRANSITION_MS / 1000, ease: 'easeInOut' }}
+      transition={{ duration: AUTH_TRANSITION_MS / 1000, ease: TRANSITION_EASING }}
       aria-hidden="true"
     >
       <div className="mx-auto mb-8 h-16 w-56 rounded-sm border border-red-600/20" />
@@ -102,10 +106,6 @@ function GhostLoginPanel({ scene }: { scene: AuthScene }) {
 export default function RegisterPage() {
   const navigate = useNavigate();
   const [isSubmitting, setIsSubmitting] = useState(false);
-  const [showOtpModal, setShowOtpModal] = useState(false);
-  // SMS channel disabled — all OTP now uses email
-  // const [selectedOtpChannel, setSelectedOtpChannel] = useState<'email' | 'sms'>('email');
-  const [selectedOtpChannel] = useState<'email'>('email');
   const [pendingFormData, setPendingFormData] = useState<RegisterForm | null>(null);
   const [showVerification, setShowVerification] = useState(false);
   const [otp, setOtp] = useState(['', '', '', '', '', '']);
@@ -277,31 +277,23 @@ export default function RegisterPage() {
     }
 
     setPendingFormData(data);
-    setShowOtpModal(true);
-  });
-
-  const handleOtpChannelConfirm = async () => {
-    if (!pendingFormData) return;
-
     setIsSubmitting(true);
     const loadingToast = toast.loading('Creating your account...', {
       icon: <Loader2 className="w-5 h-5 animate-spin" />,
     });
     try {
       await api.post('/auth/register', {
-        ...pendingFormData,
-        // otpChannel: selectedOtpChannel,
+        ...data,
       });
       localStorage.setItem('pendingVerificationChannel', 'email');
-      localStorage.setItem('pendingVerificationEmail', pendingFormData.email);
-      localStorage.setItem('pendingVerificationContact', pendingFormData.contactNumber);
+      localStorage.setItem('pendingVerificationEmail', data.email);
+      localStorage.setItem('pendingVerificationContact', data.contactNumber);
       localStorage.setItem('otpExpiryTime', (Date.now() + 10 * 60 * 1000).toString());
       setOtpExpiry(600);
       toast.success('Account created!', {
         id: loadingToast,
         icon: <CheckCircle2 className="w-5 h-5" />,
       });
-      setShowOtpModal(false);
       setShowVerification(true);
       inputsRef.current[0]?.focus();
     } catch (e: any) {
@@ -309,7 +301,7 @@ export default function RegisterPage() {
     } finally {
       setIsSubmitting(false);
     }
-  };
+  });
 
   const handleChange = (value: string, index: number) => {
     if (!/^\d?$/.test(value)) return;
@@ -447,6 +439,20 @@ export default function RegisterPage() {
     <div className="relative min-h-screen overflow-hidden bg-black md:overflow-y-auto">
       <AuthBackdrop scene={scene} />
       <GhostLoginPanel scene={scene} />
+
+      {isRouting && (
+        <motion.div
+          className="absolute inset-0 z-30 pointer-events-none"
+          initial={{ opacity: 0 }}
+          animate={{ opacity: 1 }}
+          transition={{ duration: 0.35, ease: TRANSITION_EASING }}
+          style={{
+            background:
+              'radial-gradient(ellipse at 50% 50%, transparent 25%, rgba(0,0,0,0.55) 100%)',
+          }}
+        />
+      )}
+
       <form
         onSubmit={onSubmit}
         className="relative z-20 flex min-h-screen w-full items-center justify-center px-4 py-8 lg:justify-start lg:pl-[7vw] lg:pr-[36vw]"
@@ -457,17 +463,19 @@ export default function RegisterPage() {
           animate={{
             opacity: scene === 'register' ? 1 : 0,
             x: scene === 'register' ? 0 : 180,
+            y: scene === 'register' ? 0 : 24,
             scale: scene === 'register' ? 1 : 0.96,
           }}
-          transition={{ duration: AUTH_TRANSITION_MS / 1000, ease: 'easeInOut' }}
+          transition={{ duration: AUTH_TRANSITION_MS / 1000, ease: TRANSITION_EASING }}
         >
           <div
             className={`flex flex-col items-center rounded-lg bg-white/95 p-6 shadow-xl backdrop-blur-sm lg:bg-transparent lg:p-0 lg:shadow-none lg:backdrop-blur-none ${
-              showVerification || showOtpModal
+              showVerification
                 ? 'overflow-visible'
                 : 'max-h-[92vh] overflow-y-auto'
             }`}
-          >
+            >
+              <div className="w-full min-w-0 flex flex-col items-center">
             <div className="mb-6 w-52 drop-shadow-md sm:w-64 lg:w-[29rem] lg:drop-shadow-lg">
               <img src={logo} alt="Blackcoders" className="h-auto w-full" />
             </div>
@@ -539,7 +547,7 @@ export default function RegisterPage() {
                     disabled={
                       status === 'loading' || !otp.every(d => d) || otpExpiry === 0
                     }
-                    className="w-full max-w-xs bg-red-600 hover:bg-red-700 text-white font-medium text-sm py-2"
+                   className="w-full max-w-xs bg-red-600 hover:bg-white hover:text-red-600 hover:border-red-600 text-white font-medium text-sm py-2 border-2 border-transparent"
                   >
                     {status === 'loading' ? (
                       <>
@@ -568,117 +576,7 @@ export default function RegisterPage() {
                   </button>
                 </div>
               </motion.div>
-            ) : showOtpModal ? (
-              <motion.div
-                key="choose-otp-channel"
-                className="w-full space-y-4"
-                initial={{ opacity: 0, x: 72, scale: 0.98 }}
-                animate={{ opacity: 1, x: 0, scale: 1 }}
-                exit={{ opacity: 0, x: -72, scale: 0.98 }}
-                transition={{ duration: 0.35, ease: 'easeInOut' }}
-              >
-                <div className="space-y-1 text-center">
-                  <h2 className="text-2xl font-bold text-black">
-                    Email OTP Verification
-                  </h2>
-                  <p className="text-sm text-gray-600">
-                    A verification code will be sent to your email.
-                  </p>
-                </div>
 
-                <div className="grid gap-3">
-                  <button
-                    type="button"
-                    className={`w-full rounded-md border-2 p-4 text-left transition-colors ${
-                      selectedOtpChannel === 'email'
-                        ? 'border-red-500 bg-red-50'
-                        : 'border-gray-300 bg-white hover:border-gray-400'
-                    }`}
-                  >
-                    <div className="flex items-center gap-3">
-                      <span
-                        className={`flex h-4 w-4 items-center justify-center rounded-full border-2 ${
-                          selectedOtpChannel === 'email'
-                            ? 'border-red-500 bg-red-500'
-                            : 'border-gray-300'
-                        }`}
-                      >
-                        {selectedOtpChannel === 'email' && (
-                          <span className="h-2 w-2 rounded-full bg-white" />
-                        )}
-                      </span>
-                      <span>
-                        <span className="block font-medium text-black">
-                          Email OTP
-                        </span>
-                        <span className="text-xs text-gray-500">
-                          Receive code via email
-                        </span>
-                      </span>
-                    </div>
-                  </button>
-
-                  {/* SMS OTP option removed — all OTP now uses email */}
-                  {/* <button
-                    type="button"
-                    onClick={() => setSelectedOtpChannel('sms')}
-                    className={`w-full rounded-md border-2 p-4 text-left transition-colors ${
-                      selectedOtpChannel === 'sms'
-                        ? 'border-red-500 bg-red-50'
-                        : 'border-gray-300 bg-white hover:border-gray-400'
-                    }`}
-                  >
-                    <div className="flex items-center gap-3">
-                      <span
-                        className={`flex h-4 w-4 items-center justify-center rounded-full border-2 ${
-                          selectedOtpChannel === 'sms'
-                            ? 'border-red-500 bg-red-500'
-                            : 'border-gray-300'
-                        }`}
-                      >
-                        {selectedOtpChannel === 'sms' && (
-                          <span className="h-2 w-2 rounded-full bg-white" />
-                        )}
-                      </span>
-                      <span>
-                        <span className="block font-medium text-black">
-                          SMS OTP
-                        </span>
-                        <span className="text-xs text-gray-500">
-                          Receive code via SMS
-                        </span>
-                      </span>
-                    </div>
-                  </button> */}
-                </div>
-
-                <div className="flex flex-col items-center gap-3 pt-2">
-                  <Button
-                    type="button"
-                    onClick={handleOtpChannelConfirm}
-                    disabled={isSubmitting}
-                    className="w-full max-w-xs bg-red-600 hover:bg-red-700 text-white font-medium text-sm py-2"
-                  >
-                    {isSubmitting ? (
-                      <>
-                        <Loader2 className="w-3 h-3 animate-spin mr-1" />
-                        Creating...
-                      </>
-                    ) : (
-                      'Continue'
-                    )}
-                  </Button>
-                  <Button
-                    type="button"
-                    onClick={() => setShowOtpModal(false)}
-                    disabled={isSubmitting}
-                    variant="ghost"
-                    className="w-full max-w-xs text-red-600 hover:bg-red-600 hover:text-white text-sm py-2 shadow-none"
-                  >
-                    Back to details
-                  </Button>
-                </div>
-              </motion.div>
             ) : (
               <motion.div
                 key="registration-fields"
@@ -1047,7 +945,7 @@ export default function RegisterPage() {
                 <Button
                   type="submit"
                   disabled={isSubmitting}
-                  className="w-full max-w-xs bg-red-600 hover:bg-red-700 text-white font-medium text-sm py-2"
+                  className="w-full max-w-xs bg-red-600 hover:!bg-white hover:!text-red-600 hover:!border-red-600 text-white font-medium text-sm py-2 border-2 border-transparent"
                 >
                   {isSubmitting ? (
                     <>
@@ -1071,6 +969,7 @@ export default function RegisterPage() {
             </motion.div>
             )}
             </AnimatePresence>
+            </div>
           </div>
         </motion.div>
       </form>

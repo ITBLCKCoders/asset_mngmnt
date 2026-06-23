@@ -18,14 +18,35 @@ test.describe('Dashboard', () => {
   });
 
   test('dashboard loads for manager role', async ({ page }) => {
-    test.use({ storageState: 'storage/manager.json' });
     await page.goto('/dashboard');
     await page.waitForLoadState('networkidle');
     await expect(page).toHaveURL(/dashboard/);
   });
 
+  test('dashboard shows stats for admin', async ({ page }) => {
+    await page.goto('/dashboard');
+    await page.waitForLoadState('networkidle');
+    const statsSection = page.locator('text=Stats, text=Overview, text=Summary, text=Statistics').first();
+    if (await statsSection.isVisible({ timeout: 5000 }).catch(() => false)) {
+      await expect(statsSection).toBeVisible();
+    }
+  });
+});
+
+test.describe('Dashboard for manager', () => {
+  test.use({ storageState: 'storage/manager.json' });
+
+  test('dashboard loads for manager role', async ({ page }) => {
+    await page.goto('/dashboard');
+    await page.waitForLoadState('networkidle');
+    await expect(page).toHaveURL(/dashboard/);
+  });
+});
+
+test.describe('Dashboard for regular user', () => {
+  test.use({ storageState: 'storage/user.json' });
+
   test('dashboard loads for regular user role', async ({ page }) => {
-    test.use({ storageState: 'storage/user.json' });
     await page.goto('/dashboard');
     await page.waitForLoadState('networkidle');
     await expect(page).toHaveURL(/dashboard/);

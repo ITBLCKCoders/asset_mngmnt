@@ -473,7 +473,7 @@ export default function AssetsAssignment() {
     setConfirmModalOpen(true);
   };
 
-  const handleAssign = async (signAsIssuer: boolean, signITCopy: boolean) => {
+  const handleAssign = async (signAsIssuer: boolean, signITCopy: boolean, tempAccountability: boolean) => {
     if (selectedAssets.length === 0) {
       toast.error('Please select at least one asset');
       return;
@@ -510,6 +510,7 @@ export default function AssetsAssignment() {
           issuerSignature: signAsIssuer ? currentUser?.digitalSignature || null : null,
           signITCopy: signITCopy,
           itCopySignature: signITCopy ? currentUser?.digitalSignature || null : null,
+          tempAccountability: tempAccountability || undefined,
         };
 
         assignmentResponse = await api.post('/asset-assignments', assignmentData);
@@ -550,6 +551,7 @@ export default function AssetsAssignment() {
               issuerSignature: signAsIssuer ? currentUser?.digitalSignature || null : null,
               signITCopy,
               itCopySignature: signITCopy ? currentUser?.digitalSignature || null : null,
+              tempAccountability: tempAccountability || undefined,
             });
             if (batchResult?.formError) {
               console.error(`Form error for ${scope}:`, batchResult.formError);
@@ -596,6 +598,7 @@ export default function AssetsAssignment() {
               issuerSignature: signAsIssuer ? currentUser?.digitalSignature || null : null,
               signITCopy,
               itCopySignature: signITCopy ? currentUser?.digitalSignature || null : null,
+              tempAccountability: tempAccountability || undefined,
             });
             if (batchResult?.formError) {
               console.error(`Form error for ${scope}:`, batchResult.formError);

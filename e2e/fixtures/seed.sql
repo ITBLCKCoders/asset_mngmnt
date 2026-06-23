@@ -87,9 +87,83 @@ INSERT INTO `asset_mngmnt_location_rooms` (`roomID`, `locationID`, `room_name`)
 VALUES ('70000000-0000-0000-0000-000000000011', '70000000-0000-0000-0000-000000000001', 'Server Room'),
 ('70000000-0000-0000-0000-000000000012', '70000000-0000-0000-0000-000000000001', 'IT Work Area');
 
--- 12. Assets (3 test assets with different statuses)
+-- 12. Assets (5 test assets with different statuses)
 INSERT INTO `assets` (`assetID`, `asset_code`, `name`, `description`, `category_id`, `type_id`, `brand`, `model`, `serial`, `company_id`, `location_id`, `department_id`, `condition`, `status`, `created_by`)
 VALUES
 ('a1000000-0000-0000-0000-000000000001', 'E2E-IT-001', 'Dell Latitude 5540 Laptop', 'E2E test laptop', '50000000-0000-0000-0000-000000000001', '60000000-0000-0000-0000-000000000001', 'Dell', 'Latitude 5540', 'E2ESN001', '10000000-0000-0000-0000-000000000001', '70000000-0000-0000-0000-000000000001', '20000000-0000-0000-0000-000000000001', 'Good', 'In Use', '40000000-0000-0000-0000-000000000001'),
 ('a1000000-0000-0000-0000-000000000002', 'E2E-IT-002', 'HP LaserJet Pro Printer', 'E2E test printer', '50000000-0000-0000-0000-000000000001', '60000000-0000-0000-0000-000000000002', 'HP', 'LaserJet Pro', 'E2ESN002', '10000000-0000-0000-0000-000000000001', '70000000-0000-0000-0000-000000000001', '20000000-0000-0000-0000-000000000001', 'Excellent', 'Available', '40000000-0000-0000-0000-000000000001'),
-('a1000000-0000-0000-0000-000000000003', 'E2E-IT-003', 'Cisco Meraki MX64 Firewall', 'E2E test network device', '50000000-0000-0000-0000-000000000001', '60000000-0000-0000-0000-000000000003', 'Cisco', 'Meraki MX64', 'E2ESN003', '10000000-0000-0000-0000-000000000001', '70000000-0000-0000-0000-000000000001', '20000000-0000-0000-0000-000000000001', 'Fair', 'Under Maintenance', '40000000-0000-0000-0000-000000000001');
+('a1000000-0000-0000-0000-000000000003', 'E2E-IT-003', 'Cisco Meraki MX64 Firewall', 'E2E test network device', '50000000-0000-0000-0000-000000000001', '60000000-0000-0000-0000-000000000003', 'Cisco', 'Meraki MX64', 'E2ESN003', '10000000-0000-0000-0000-000000000001', '70000000-0000-0000-0000-000000000001', '20000000-0000-0000-0000-000000000001', 'Fair', 'Under Maintenance', '40000000-0000-0000-0000-000000000001'),
+('a1000000-0000-0000-0000-000000000004', 'E2E-IT-004', 'Dell Latitude 5550 Laptop', 'E2E test laptop for assignment', '50000000-0000-0000-0000-000000000001', '60000000-0000-0000-0000-000000000001', 'Dell', 'Latitude 5550', 'E2ESN004', '10000000-0000-0000-0000-000000000001', '70000000-0000-0000-0000-000000000001', '20000000-0000-0000-0000-000000000001', 'Good', 'Available', '40000000-0000-0000-0000-000000000001'),
+('a1000000-0000-0000-0000-000000000005', 'E2E-IT-005', 'HP ProBook 450 Laptop', 'E2E test laptop for borrowing', '50000000-0000-0000-0000-000000000001', '60000000-0000-0000-0000-000000000001', 'HP', 'ProBook 450', 'E2ESN005', '10000000-0000-0000-0000-000000000001', '70000000-0000-0000-0000-000000000001', '20000000-0000-0000-0000-000000000001', 'Good', 'Available', '40000000-0000-0000-0000-000000000001');
+
+-- 13. Asset assignments (active assignment for E2E User)
+INSERT INTO `asset_assignments` (`assignmentID`, `asset_id`, `user_id`, `department_id`, `location_id`, `location_room_id`, `assigned_date`, `status`, `assigned_by`)
+VALUES
+('b1000000-0000-0000-0000-000000000001', 'a1000000-0000-0000-0000-000000000001', '40000000-0000-0000-0000-000000000003', '20000000-0000-0000-0000-000000000001', '70000000-0000-0000-0000-000000000001', '70000000-0000-0000-0000-000000000012', NOW(), 'Active', '40000000-0000-0000-0000-000000000001');
+
+-- 14. Asset builders
+INSERT INTO `asset_builders` (`builderID`, `company_id`, `name`, `description`, `type_id`, `category_id`, `created_by`)
+VALUES
+('c1000000-0000-0000-0000-000000000001', '10000000-0000-0000-0000-000000000001', 'E2E Test Builder', 'E2E test asset builder for computer-type', '60000000-0000-0000-0000-000000000001', '50000000-0000-0000-0000-000000000001', '40000000-0000-0000-0000-000000000001');
+
+-- 15. Settings entries (form settings, MFA settings, security settings)
+INSERT INTO `accountability_form_settings` (`id`, `company_id`, `company_format`, `department_format`, `it_accountability_form_code`, `admin_accountability_form_code`, `include_date`, `date_format`, `created_by`)
+VALUES ('l1000000-0000-0000-0000-000000000001', '10000000-0000-0000-0000-000000000001', 'code', 'code', '1021', '6012', 1, 'MMYYYY', '40000000-0000-0000-0000-000000000001')
+ON DUPLICATE KEY UPDATE `company_id` = `company_id`;
+
+INSERT INTO `asset_return_form_settings` (`id`, `company_id`, `company_format`, `department_format`, `it_asset_return_code`, `admin_asset_return_code`, `include_date`, `date_format`, `created_by`)
+VALUES ('l1000000-0000-0000-0000-000000000002', '10000000-0000-0000-0000-000000000001', 'code', 'code', '1009', '1009', 1, 'MMYYYY', '40000000-0000-0000-0000-000000000001')
+ON DUPLICATE KEY UPDATE `company_id` = `company_id`;
+
+INSERT INTO `asset_transfer_form_settings` (`id`, `company_id`, `company_format`, `department_format`, `it_asset_transfer_code`, `admin_asset_transfer_code`, `include_date`, `date_format`, `created_by`)
+VALUES ('l1000000-0000-0000-0000-000000000003', '10000000-0000-0000-0000-000000000001', 'code', 'code', 'TRF', 'TRF', 1, 'MMYYYY', '40000000-0000-0000-0000-000000000001')
+ON DUPLICATE KEY UPDATE `company_id` = `company_id`;
+
+-- 16. Asset borrow requests (pending dept head approval)
+INSERT INTO `asset_borrow_requests` (`borrow_request_id`, `company_id`, `user_id`, `borrow_scope`, `category_id`, `type_id`, `expected_return_at`, `purpose`, `status`)
+VALUES
+('d1000000-0000-0000-0000-000000000001', '10000000-0000-0000-0000-000000000001', '40000000-0000-0000-0000-000000000003', 'it', '50000000-0000-0000-0000-000000000001', '60000000-0000-0000-0000-000000000001', DATE_ADD(NOW(), INTERVAL 7 DAY), 'E2E test borrow request for laptop', 'pending_dept_head');
+
+-- 17. Asset return forms (pending dept head approval, signed by user)
+INSERT INTO `asset_return_forms` (`formID`, `form_number`, `user_id`, `department_id`, `location_id`, `location_room_id`, `created_by`, `signed_at`, `signed_by`)
+VALUES
+('e1000000-0000-0000-0000-000000000001', 'E2E-RF-001', '40000000-0000-0000-0000-000000000003', '20000000-0000-0000-0000-000000000001', '70000000-0000-0000-0000-000000000001', '70000000-0000-0000-0000-000000000012', '40000000-0000-0000-0000-000000000003', NOW(), '40000000-0000-0000-0000-000000000003');
+
+-- 18. Asset returns linked to return form (uses the active assignment)
+INSERT INTO `asset_returns` (`return_id`, `assignment_id`, `user_id`, `return_condition`, `return_notes`, `pdf_file_path`, `form_id`)
+VALUES
+('e1000000-0000-0000-0000-000000000011', 'b1000000-0000-0000-0000-000000000001', '40000000-0000-0000-0000-000000000003', 'Good', 'E2E test return', 'e2e-test-return.pdf', 'e1000000-0000-0000-0000-000000000001');
+
+-- 19. Asset transfer forms (signed, pending dept head approval)
+INSERT INTO `asset_transfer_forms` (`formID`, `form_number`, `user_id`, `department_id`, `location_id`, `location_room_id`, `new_assigned_user_id`, `created_by`, `signed_at`, `signed_by`, `transfer_type`)
+VALUES
+('f1000000-0000-0000-0000-000000000001', 'E2E-TRF-001', '40000000-0000-0000-0000-000000000003', '20000000-0000-0000-0000-000000000001', '70000000-0000-0000-0000-000000000001', '70000000-0000-0000-0000-000000000012', '40000000-0000-0000-0000-000000000002', '40000000-0000-0000-0000-000000000003', NOW(), '40000000-0000-0000-0000-000000000003', 'standard');
+
+-- 20. Transfer form assignments
+INSERT INTO `transfer_form_assignments` (`form_id`, `assignment_id`)
+VALUES ('f1000000-0000-0000-0000-000000000001', 'b1000000-0000-0000-0000-000000000001');
+
+-- 21. Accountability forms (Pending status, user has unsigned form)
+INSERT INTO `accountability_forms` (`formID`, `form_number`, `assignment_id`, `asset_id`, `user_id`, `department_id`, `location_id`, `location_room_id`, `status`, `created_by`, `created_at`)
+VALUES
+('g1000000-0000-0000-0000-000000000001', 'E2E-ACF-001', 'b1000000-0000-0000-0000-000000000001', 'a1000000-0000-0000-0000-000000000001', '40000000-0000-0000-0000-000000000003', '20000000-0000-0000-0000-000000000001', '70000000-0000-0000-0000-000000000001', '70000000-0000-0000-0000-000000000012', 'Pending', '40000000-0000-0000-0000-000000000001', NOW());
+
+-- 22. Notifications (unread for E2E User)
+INSERT INTO `notifications` (`notificationID`, `user_id`, `title`, `message`, `type`, `status`, `data`)
+VALUES
+('h1000000-0000-0000-0000-000000000001', '40000000-0000-0000-0000-000000000003', 'Asset Assigned', 'You have been assigned Dell Latitude 5540 Laptop', 'asset_assignment', 'unread', JSON_OBJECT('assignmentId', 'b1000000-0000-0000-0000-000000000001', 'assetName', 'Dell Latitude 5540 Laptop'));
+
+-- 23. Audit logs
+INSERT INTO `audit_logs` (`auditID`, `user_id`, `action`, `resource_type`, `resource_id`, `resource_name`, `details`, `company_id`, `status`)
+VALUES
+('i1000000-0000-0000-0000-000000000001', '40000000-0000-0000-0000-000000000001', 'CREATE_ASSET', 'asset', 'a1000000-0000-0000-0000-000000000001', 'Dell Latitude 5540 Laptop', 'Asset created via E2E seed', '10000000-0000-0000-0000-000000000001', 'success');
+
+-- 24. Gate passes
+INSERT INTO `asset_mngmnt_gate_passes` (`gate_pass_id`, `assignment_id`, `asset_id`, `user_id`, `purpose`, `expected_return_date`, `destination_location_id`, `condition`, `status`, `created_by`)
+VALUES
+('j1000000-0000-0000-0000-000000000001', 'b1000000-0000-0000-0000-000000000001', 'a1000000-0000-0000-0000-000000000001', '40000000-0000-0000-0000-000000000003', 'E2E test off-site work', DATE_ADD(NOW(), INTERVAL 1 DAY), '70000000-0000-0000-0000-000000000001', 'Good', 'Approved', '40000000-0000-0000-0000-000000000001');
+
+-- 25. Intangible assets
+INSERT INTO `intangible_assets` (`id`, `company_id`, `name`, `description`, `type`, `status`, `created_by`)
+VALUES
+('k1000000-0000-0000-0000-000000000001', '10000000-0000-0000-0000-000000000001', 'E2E Software License', 'E2E test software license', 'IT scope', 'available', '40000000-0000-0000-0000-000000000001');

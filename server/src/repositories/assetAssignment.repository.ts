@@ -65,6 +65,16 @@ export interface BuilderRow extends RowDataPacket {
   builder_status: string;
 }
 
+export interface BuilderActiveAssignmentRow extends RowDataPacket {
+  assignmentID: string;
+  user_id: string;
+  department_id: string | null;
+  location_id: string | null;
+  location_room_id: string | null;
+  expected_return_date: string | null;
+  assignment_notes: string | null;
+}
+
 export interface BuilderAssetCodeRow extends RowDataPacket {
   asset_code: string | null;
 }
@@ -370,6 +380,21 @@ export async function getBuildersForAsset(assetId: string): Promise<BuilderRow[]
     [assetId]
   );
   return rows;
+}
+
+export async function getAnyActiveAssignmentForBuilderAssets(
+  builderId: string
+): Promise<BuilderActiveAssignmentRow | null> {
+  const [rows] = await pool.execute<BuilderActiveAssignmentRow[]>(
+    `SELECT aa.assignmentID, aa.user_id, aa.department_id, aa.location_id,
+            aa.location_room_id, aa.expected_return_date, aa.assignment_notes
+     FROM asset_builder_items abi
+     JOIN asset_assignments aa ON abi.asset_id = aa.asset_id
+     WHERE abi.builder_id = ? AND aa.status = 'Active' AND aa.deleted_at IS NULL
+     LIMIT 1`,
+    [builderId]
+  );
+  return rows[0] ?? null;
 }
 
 export async function setBuilderStatus(

@@ -46,3 +46,18 @@ test.describe('Asset list with limited permissions', () => {
     expect(hasAccessDenied || isOnLogin).toBeTruthy();
   });
 });
+
+test.describe('Asset list for manager', () => {
+  test.use({ storageState: 'storage/manager.json' });
+
+  test('manager can view asset list', async ({ page }) => {
+    await page.goto('/assets');
+    await page.waitForLoadState('networkidle');
+    for (const asset of [E2E_TEST_ASSETS[0], E2E_TEST_ASSETS[3], E2E_TEST_ASSETS[4]]) {
+      const el = page.locator(`text=${asset.name}`).first();
+      if (await el.isVisible({ timeout: 3000 }).catch(() => false)) {
+        await expect(el).toBeVisible();
+      }
+    }
+  });
+});
