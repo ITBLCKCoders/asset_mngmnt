@@ -307,39 +307,30 @@ export function ConfirmationModal({
             </Button>
             <Button
               onClick={async () => {
-                // Check if the receiving user has unsigned accountability forms
-                if (selectedUser) {
-                  const checkResult = await checkUnsignedAccountabilityForms(selectedUser);
-
-                  if (checkResult.hasUnsignedForms && checkResult.unsignedForms.length > 0) {
-                    // Send notification to the receiving user
-                    try {
-                      await api.post('/notifications/accountability-unsigned', {
-                        userId: selectedUser,
-                        unsignedForms: checkResult.unsignedForms,
-                      });
-                    } catch (err: any) {
-                      console.error('Failed to send notification:', err);
-                    }
-
-                    // Show message to current user and close modal
-                    const receivingUser = users?.find(u => u.userID === selectedUser);
-                    const userName = receivingUser
-                      ? `${receivingUser.first_name} ${receivingUser.last_name}`
-                      : 'the user';
-
-                    toast.error(
-                      `Assignment blocked`,
-                      {
-                        description: `${userName} has an accountability form that has not been signed yet. A notification has been sent to them to sign it before they can receive new assets.`,
-                        duration: 6000,
-                      }
-                    );
-
-                    onOpenChange(false);
-                    return;
-                  }
-                }
+                // TEMPORARILY DISABLED: pending accountability signature check
+                // This block previously checked if the receiving user had unsigned
+                // accountability forms and blocked the assignment if so.
+                // TODO: Re-enable once accountability signing flow is stable.
+                //
+                // if (selectedUser) {
+                //   const checkResult = await checkUnsignedAccountabilityForms(selectedUser);
+                //   if (checkResult.hasUnsignedForms && checkResult.unsignedForms.length > 0) {
+                //     await api.post('/notifications/accountability-unsigned', {
+                //       userId: selectedUser,
+                //       unsignedForms: checkResult.unsignedForms,
+                //     });
+                //     const receivingUser = users?.find(u => u.userID === selectedUser);
+                //     const userName = receivingUser
+                //       ? `${receivingUser.first_name} ${receivingUser.last_name}`
+                //       : 'the user';
+                //     toast.error(`Assignment blocked`, {
+                //       description: `${userName} has an accountability form that has not been signed yet. A notification has been sent to them to sign it before they can receive new assets.`,
+                //       duration: 6000,
+                //     });
+                //     onOpenChange(false);
+                //     return;
+                //   }
+                // }
 
                 // Store the confirm action for SmsOtpDialog
                 pendingActionRef.current = async () => {
