@@ -4,8 +4,8 @@ export const CreateIntangibleAssetDtoSchema = z.object({
   name: z.string().min(1, 'Name is required').max(255),
   description: z.string().optional().nullable(),
   remarks: z.string().optional().nullable(),
-  type: z.enum(['IT scope', 'Admin scope'], {
-    errorMap: () => ({ message: 'Type must be either "IT scope" or "Admin scope"' }),
+  type: z.enum(['IT scope', 'Admin scope', 'HR scope'], {
+    errorMap: () => ({ message: 'Type must be "IT scope", "Admin scope", or "HR scope"' }),
   }),
   status: z.enum(['available', 'assigned'], {
     errorMap: () => ({ message: 'Status must be either "available" or "assigned"' }),

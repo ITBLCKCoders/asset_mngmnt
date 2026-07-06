@@ -1,6 +1,7 @@
 // src/pages/settings/settingsComponents/settingsTabs/generalTab/CompanyModal.tsx
 import { useState, useRef, useEffect } from 'react';
 import { Button } from '@/components/ui/button';
+import { proxyCloudinaryUrl } from '@/utils/cloudinaryProxy';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Dialog } from '@/components/ui/dialog';
@@ -396,9 +397,10 @@ export function CompanyModal({
                 {logoPreview ? (
                   <div className="space-y-6">
                     <img
-                      src={logoPreview}
+                      src={proxyCloudinaryUrl(logoPreview)}
                       alt="Logo"
                       className="mx-auto rounded-lg border shadow-md bg-white"
+                      onError={e => { (e.target as HTMLImageElement).style.display = 'none'; }}
                     />
                     <div className="flex justify-center gap-3">
                       <Button variant="secondary" size="sm">

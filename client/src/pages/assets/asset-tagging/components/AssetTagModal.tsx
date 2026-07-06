@@ -1,5 +1,6 @@
 'use client';
 
+import { useState } from 'react';
 import { Button } from '@/components/ui/button';
 import { Dialog } from '@/components/ui/dialog';
 import {
@@ -8,7 +9,7 @@ import {
   AppDialogBody,
   AppDialogChromeFooter,
 } from '@/components/common/appDialogChrome';
-import { Printer } from 'lucide-react';
+import { Printer, QrCode, Barcode } from 'lucide-react';
 import { toast } from 'sonner';
 import jsPDF from 'jspdf';
 import html2canvas from 'html2canvas';
@@ -30,6 +31,8 @@ export function AssetTagModal({
   activeCompany,
   onPrint,
 }: AssetTagModalProps) {
+  const [tagType, setTagType] = useState<'qr' | 'barcode'>('qr');
+
   return (
     <Dialog open={isOpen} onOpenChange={onOpenChange}>
       <AppDialogFrame className="max-w-4xl max-h-[80vh] overflow-hidden !flex !flex-col">
@@ -64,7 +67,6 @@ export function AssetTagModal({
           }
           description="Review tag layout, then download a PDF for printing."
         />
-
         <AppDialogBody className="min-h-0 flex-1 space-y-4 overflow-y-auto">
           <div
             id="tags-grid"
@@ -74,24 +76,54 @@ export function AssetTagModal({
               const qrData = `${window.location.origin}/assets/details/${asset.id}`;
 
               return (
-                <TagPreviewCard
-                  key={asset.id}
-                  asset={asset}
-                  activeCompany={activeCompany}
-                  qrData={qrData}
-                />
+                  <TagPreviewCard
+                    key={asset.id}
+                    asset={asset}
+                    activeCompany={activeCompany}
+                    qrData={qrData}
+                    tagType={tagType}
+                    barcodeFormat="CODE128"
+                  />
               );
             })}
           </div>
         </AppDialogBody>
         <AppDialogChromeFooter>
-          <Button
-            onClick={onPrint}
-            className="bg-red-600 hover:bg-red-700 text-white"
-          >
-            <Printer className="mr-2 h-4 w-4" />
-            Download PDF
-          </Button>
+          <div className="flex items-center justify-between w-full gap-3">
+            <div className="inline-flex items-center gap-1 rounded-xl border border-slate-200 bg-slate-100/90 p-1 shadow-sm">
+              <button
+                type="button"
+                onClick={() => setTagType('qr')}
+                className={`inline-flex items-center gap-1.5 rounded-lg px-4 py-1.5 text-xs font-medium transition-colors ${
+                  tagType === 'qr'
+                    ? 'bg-red-600 text-white shadow-sm'
+                    : 'text-slate-700 hover:bg-white/90 hover:text-slate-900'
+                }`}
+              >
+                <QrCode className="h-3.5 w-3.5" />
+                QR Code
+              </button>
+              <button
+                type="button"
+                onClick={() => setTagType('barcode')}
+                className={`inline-flex items-center gap-1.5 rounded-lg px-4 py-1.5 text-xs font-medium transition-colors ${
+                  tagType === 'barcode'
+                    ? 'bg-red-600 text-white shadow-sm'
+                    : 'text-slate-700 hover:bg-white/90 hover:text-slate-900'
+                }`}
+              >
+                <Barcode className="h-3.5 w-3.5" />
+                Barcode
+              </button>
+            </div>
+            <Button
+              onClick={onPrint}
+              className="bg-red-600 hover:bg-red-700 text-white"
+            >
+              <Printer className="mr-2 h-4 w-4" />
+              Download PDF
+            </Button>
+          </div>
         </AppDialogChromeFooter>
       </AppDialogFrame>
     </Dialog>

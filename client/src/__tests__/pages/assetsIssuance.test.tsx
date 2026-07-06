@@ -1,8 +1,11 @@
 import { render, screen, waitFor } from '@testing-library/react';
 import { vi, describe, it, expect, beforeEach } from 'vitest';
 import { BrowserRouter } from 'react-router-dom';
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { api } from '@/lib/api';
 import AssetsAssignment from '@/pages/assets/asset-issuance/assetsIssuance';
+
+const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
 
 const mockUser = vi.hoisted(() => ({
   id: 'u1', company_id: 'c1', name: 'Test User', email: 'test@test.com',
@@ -38,15 +41,18 @@ describe('AssetsAssignment (Issuance)', () => {
     vi.mocked(api.put).mockResolvedValue({});
   });
 
+  const renderPage = () =>
+    render(<QueryClientProvider client={queryClient}><BrowserRouter><AssetsAssignment /></BrowserRouter></QueryClientProvider>);
+
   it('renders the page header title', async () => {
-    render(<BrowserRouter><AssetsAssignment /></BrowserRouter>);
+    renderPage();
     await waitFor(() => {
       expect(screen.getByText('Assets Assignment')).toBeInTheDocument();
     });
   });
 
   it('shows content after data loads', async () => {
-    render(<BrowserRouter><AssetsAssignment /></BrowserRouter>);
+    renderPage();
     await waitFor(() => {
       expect(api.get).toHaveBeenCalled();
     });
@@ -54,7 +60,7 @@ describe('AssetsAssignment (Issuance)', () => {
 
   it('handles API error gracefully', async () => {
     vi.mocked(api.get).mockRejectedValue(new Error('Network error'));
-    render(<BrowserRouter><AssetsAssignment /></BrowserRouter>);
+    renderPage();
     await waitFor(() => {
       expect(api.get).toHaveBeenCalled();
     });

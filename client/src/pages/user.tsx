@@ -4,6 +4,7 @@ import { Avatar, AvatarImage, AvatarFallback } from '@/components/ui/avatar';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { PageHeader } from '@/components/common/PageHeader';
 import { Badge } from '@/components/ui/badge';
+import { proxyCloudinaryUrl } from '@/utils/cloudinaryProxy';
 import { Button } from '@/components/ui/button';
 import {
   Users,
@@ -460,7 +461,7 @@ function UserPermissions() {
                           <CardContent className="p-5 sm:p-6">
                             <div className="flex items-center gap-3 sm:gap-4">
                               <Avatar className="h-12 w-12 sm:h-14 sm:w-14 ring-4 ring-white shadow-lg">
-                                <AvatarImage src={user.avatar_url} />
+                                <AvatarImage src={proxyCloudinaryUrl(user.avatar_url)} />
                                 <AvatarFallback
                                   className={`font-bold text-base sm:text-lg ${
                                     selectedUser?.userID === user.userID

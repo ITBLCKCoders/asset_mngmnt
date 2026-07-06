@@ -4,6 +4,7 @@ import { Label } from '@/components/ui/label';
 import { CheckCircle2, MapPin, Building2 } from 'lucide-react';
 import { Company } from './utils/companyTypes';
 import { formatAddress } from './utils/companyUtils';
+import { proxyCloudinaryUrl } from '@/utils/cloudinaryProxy';
 
 interface ActiveCompanyCardProps {
   activeCompany: Company;
@@ -32,9 +33,10 @@ export function ActiveCompanyCard({ activeCompany }: ActiveCompanyCardProps) {
           <div className="h-28 w-28 ring-4 ring-red-500/20 rounded-lg overflow-hidden bg-gray-100 flex items-center justify-center">
             {activeCompany.logo_url ? (
               <img
-                src={activeCompany.logo_url}
+                src={proxyCloudinaryUrl(activeCompany.logo_url)}
                 alt={`${activeCompany.name} logo`}
                 className="h-full w-full object-contain"
+                onError={e => { (e.target as HTMLImageElement).style.display = 'none'; }}
               />
             ) : (
               <div className="text-4xl font-bold bg-red-100 text-red-700 h-full w-full flex items-center justify-center">

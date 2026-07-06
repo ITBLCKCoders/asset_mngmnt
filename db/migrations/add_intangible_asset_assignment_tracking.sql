@@ -19,7 +19,7 @@ CREATE PROCEDURE `sp_UpdateIntangibleAsset`(
   IN p_name VARCHAR(255),
   IN p_description TEXT,
   IN p_remarks TEXT,
-  IN p_type ENUM('IT scope','Admin scope'),
+  IN p_type ENUM('IT scope','Admin scope','HR scope'),
   IN p_status ENUM('available','assigned'),
   IN p_company_id CHAR(36),
   IN p_updated_by CHAR(36),

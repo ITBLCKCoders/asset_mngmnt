@@ -64,11 +64,9 @@ function GhostRegisterPanel({ scene }: { scene: AuthScene }) {
       className="pointer-events-none absolute left-[5vw] top-1/2 z-10 hidden w-[31rem] -translate-y-1/2 lg:block"
       initial={false}
       animate={{
-        opacity: scene === 'login' ? 0.12 : 0.04,
-        x: scene === 'login' ? 0 : -120,
-        y: scene === 'login' ? 0 : -16,
-        scale: scene === 'login' ? 1 : 0.94,
-        rotate: scene === 'login' ? 0 : -1,
+        opacity: scene === 'login' ? 0.08 : 0.18,
+        y: scene === 'login' ? 0 : -8,
+        scale: scene === 'login' ? 1 : 1.02,
       }}
       transition={{ duration: AUTH_TRANSITION_MS / 1000, ease: TRANSITION_EASING }}
       aria-hidden="true"
@@ -255,19 +253,19 @@ export default function LoginPage() {
       <form
         onSubmit={handleLogin}
         className="relative z-20 flex min-h-screen w-full items-center justify-center px-4 py-8 lg:justify-end lg:pl-[38vw] lg:pr-[8vw]"
+        style={{ perspective: '1000px' as unknown as React.CSSProperties['perspective'] }}
       >
         <motion.div
           className="w-full max-w-md"
+          style={{ transformStyle: 'preserve-3d' }}
           initial={false}
           animate={{
             opacity: scene === 'login' && !isRouting ? 1 : 0,
-            x: scene === 'login' ? (isRouting ? -72 : 0) : -180,
-            y: scene === 'login' && !isRouting ? 0 : 24,
-            scale: scene === 'login' && !isRouting ? 1 : 0.96,
+            scale: scene === 'login' && !isRouting ? 1 : 0.92,
+            rotateY: scene === 'login' && !isRouting ? 0 : -90,
           }}
           transition={{
-            duration:
-              scene === 'login' && isRouting ? 0.35 : AUTH_TRANSITION_MS / 1000,
+            duration: AUTH_TRANSITION_MS / 1000,
             ease: TRANSITION_EASING,
           }}
         >

@@ -69,6 +69,7 @@ import {
   type AssetChecklistSubmitPayload,
 } from '@/pages/assets/asset-issuance/components/AssetChecklistDialog';
 import { filterComputerTypeAssets } from '@/utils/assetTypeDetection';
+import { proxyCloudinaryUrl } from '@/utils/cloudinaryProxy';
 
 const conditionOptions = [
   {
@@ -1163,11 +1164,11 @@ export default function ReturnRequestsPage() {
                                           className="overflow-hidden rounded-lg border border-slate-200 bg-slate-50"
                                           onClick={() => window.open(url, '_blank')}
                                         >
-                                          <img
-                                            src={url}
-                                            alt={`Return condition photo ${idx + 1}`}
-                                            className="h-20 w-20 object-cover"
-                                          />
+                                            <img
+                                              src={proxyCloudinaryUrl(url)}
+                                              alt={`Return condition photo ${idx + 1}`}
+                                              className="h-20 w-20 object-cover"
+                                            />
                                         </button>
                                         <button
                                           type="button"

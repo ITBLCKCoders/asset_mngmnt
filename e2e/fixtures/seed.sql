@@ -49,14 +49,22 @@ VALUES ('20000000-0000-0000-0000-000000000001', '10000000-0000-0000-0000-0000000
 
 -- 5. Users (verified=1, is_active=1, mfa_enabled=0)
 -- Passwords (bcrypt hash, cost 10):
---   E2eAdmin123!  -> $2b$10$t2VN23Rq8tXWNtYhJJU2I.WyxpJ4G2vx4J6z/7RQk2gceYEXZlxq6
---   E2eManager123! -> $2b$10$RmQItc1ZLQkpyU3cdX3dgOmBL0pjXWk.oPQcXw5aTXCUUdnttXbpm
---   E2eUser123!    -> $2b$10$g0xdih/XS4S5xAaf9XJZIOZhFdH.UqVEnrO/YjBb3iRlIdm.SHdrG
-INSERT INTO `users` (`userID`, `email`, `password`, `name`, `verified`, `is_active`, `first_name`, `last_name`, `username`, `contact_number`, `company_id`, `department_id`, `role_id`, `position`, `employee_number`, `mfa_enabled`)
+--   E2eAdmin123!  -> $2b$10$STVgJvgoD0H0ck6hpI78JuJX9SdQGkrbYSwF5cWTQRf9yF1rVNWxC
+--   E2eManager123! -> $2b$10$T5LvCxbTNwge2v8hpCxhFeJNEinf8t6XPLYrYBqawWW.V98ohwe9y
+--   E2eUser123!    -> $2b$10$fuGY5h1gAo4Kz/rNq.ujs.qnFHa1jIh7LJG.48HUC6Yw2ajPXOcgK
+INSERT INTO `users` (`userID`, `email`, `password`, `name`, `verified`, `is_active`, `first_name`, `last_name`, `username`, `contact_number`, `company_id`, `department_id`, `role_id`, `position`, `employee_number`)
 VALUES
-('40000000-0000-0000-0000-000000000001', 'e2e-admin@test.com', '$2b$10$t2VN23Rq8tXWNtYhJJU2I.WyxpJ4G2vx4J6z/7RQk2gceYEXZlxq6', 'E2E Admin', 1, 1, 'E2E', 'Admin', 'e2e-admin', '+639000000001', '10000000-0000-0000-0000-000000000001', '20000000-0000-0000-0000-000000000001', '30000000-0000-0000-0000-000000000001', 'System Admin', 'E2E-001', 0),
-('40000000-0000-0000-0000-000000000002', 'e2e-manager@test.com', '$2b$10$RmQItc1ZLQkpyU3cdX3dgOmBL0pjXWk.oPQcXw5aTXCUUdnttXbpm', 'E2E Manager', 1, 1, 'E2E', 'Manager', 'e2e-manager', '+639000000002', '10000000-0000-0000-0000-000000000001', '20000000-0000-0000-0000-000000000001', '30000000-0000-0000-0000-000000000002', 'IT Manager', 'E2E-002', 0),
-('40000000-0000-0000-0000-000000000003', 'e2e-user@test.com', '$2b$10$g0xdih/XS4S5xAaf9XJZIOZhFdH.UqVEnrO/YjBb3iRlIdm.SHdrG', 'E2E User', 1, 1, 'E2E', 'User', 'e2e-user', '+639000000003', '10000000-0000-0000-0000-000000000001', '20000000-0000-0000-0000-000000000001', '30000000-0000-0000-0000-000000000003', 'Staff', 'E2E-003', 0);
+('40000000-0000-0000-0000-000000000001', 'e2e-admin@test.com', '$2b$10$STVgJvgoD0H0ck6hpI78JuJX9SdQGkrbYSwF5cWTQRf9yF1rVNWxC', 'E2E Admin', 1, 1, 'E2E', 'Admin', 'e2e-admin', '+639000000001', '10000000-0000-0000-0000-000000000001', '20000000-0000-0000-0000-000000000001', '30000000-0000-0000-0000-000000000001', 'System Admin', 'E2E-001'),
+('40000000-0000-0000-0000-000000000002', 'e2e-manager@test.com', '$2b$10$T5LvCxbTNwge2v8hpCxhFeJNEinf8t6XPLYrYBqawWW.V98ohwe9y', 'E2E Manager', 1, 1, 'E2E', 'Manager', 'e2e-manager', '+639000000002', '10000000-0000-0000-0000-000000000001', '20000000-0000-0000-0000-000000000001', '30000000-0000-0000-0000-000000000002', 'IT Manager', 'E2E-002'),
+('40000000-0000-0000-0000-000000000003', 'e2e-user@test.com', '$2b$10$fuGY5h1gAo4Kz/rNq.ujs.qnFHa1jIh7LJG.48HUC6Yw2ajPXOcgK', 'E2E User', 1, 1, 'E2E', 'User', 'e2e-user', '+639000000003', '10000000-0000-0000-0000-000000000001', '20000000-0000-0000-0000-000000000001', '30000000-0000-0000-0000-000000000003', 'Staff', 'E2E-003')
+ON DUPLICATE KEY UPDATE
+  `password` = VALUES(`password`),
+  `name` = VALUES(`name`),
+  `verified` = VALUES(`verified`),
+  `is_active` = VALUES(`is_active`),
+  `first_name` = VALUES(`first_name`),
+  `last_name` = VALUES(`last_name`),
+  `username` = VALUES(`username`);
 
 -- 6. Asset categories
 INSERT INTO `asset_categories` (`categoryID`, `company_id`, `name`, `prefix`, `gl_code`, `department_id`)

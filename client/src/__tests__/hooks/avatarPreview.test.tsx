@@ -1,4 +1,4 @@
-import { render, screen } from '@testing-library/react';
+import { render, screen, act } from '@testing-library/react';
 import { renderHook } from '@testing-library/react';
 import { vi, describe, it, expect } from 'vitest';
 import { useContext } from 'react';
@@ -17,7 +17,7 @@ describe('AvatarPreviewProvider', () => {
     const { result } = renderHook(() => useContext(AvatarPreviewContext), {
       wrapper: ({ children }) => <AvatarPreviewProvider>{children}</AvatarPreviewProvider>,
     });
-    result.current?.setPreviewUrl('http://example.com/avatar.png');
+    act(() => { result.current?.setPreviewUrl('http://example.com/avatar.png'); });
     expect(result.current?.previewUrl).toBe('http://example.com/avatar.png');
   });
 
@@ -25,9 +25,9 @@ describe('AvatarPreviewProvider', () => {
     const { result } = renderHook(() => useContext(AvatarPreviewContext), {
       wrapper: ({ children }) => <AvatarPreviewProvider>{children}</AvatarPreviewProvider>,
     });
-    result.current?.setPreviewUrl('http://example.com/avatar.png');
-    result.current?.setPendingFile(new File([], 'test.png'));
-    result.current?.clearPreview();
+    act(() => { result.current?.setPreviewUrl('http://example.com/avatar.png'); });
+    act(() => { result.current?.setPendingFile(new File([], 'test.png')); });
+    act(() => { result.current?.clearPreview(); });
     expect(result.current?.previewUrl).toBeNull();
     expect(result.current?.pendingFile).toBeNull();
   });

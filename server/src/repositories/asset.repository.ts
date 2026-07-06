@@ -351,7 +351,11 @@ export async function getBuilderByAssetId(
   assetId: string
 ): Promise<BuilderRow | null> {
   const [rows] = await pool.execute<BuilderRow[]>(
-    'SELECT builderID, status FROM asset_builders WHERE asset_id = ? AND deleted_at IS NULL',
+    `SELECT ab.builderID, ab.status
+     FROM asset_builder_items abi
+     JOIN asset_builders ab ON abi.builder_id = ab.builderID
+     WHERE abi.asset_id = ? AND ab.deleted_at IS NULL
+     LIMIT 1`,
     [assetId]
   );
   return rows[0] ?? null;
@@ -390,7 +394,11 @@ export async function getBuilderMetaForAsset(
   assetId: string
 ): Promise<BuilderRow | null> {
   const [rows] = await pool.execute<BuilderRow[]>(
-    'SELECT builderID, status FROM asset_builders WHERE asset_id = ? AND deleted_at IS NULL',
+    `SELECT ab.builderID, ab.status
+     FROM asset_builder_items abi
+     JOIN asset_builders ab ON abi.builder_id = ab.builderID
+     WHERE abi.asset_id = ? AND ab.deleted_at IS NULL
+     LIMIT 1`,
     [assetId]
   );
   return rows[0] ?? null;
@@ -420,7 +428,7 @@ export async function getAccountabilityFormsForAssetWithLike(
   const [rows] = await pool.execute<AccountabilityFormForAssetRow[]>(
     `SELECT formID, form_number, status, created_at, signed_at
      FROM accountability_forms
-     WHERE (asset_id = ? OR JSON_CONTAINS(assets_data, ?, '$.assets'))
+     WHERE (asset_id = ? OR assets_data LIKE ?)
        AND deleted_at IS NULL ORDER BY created_at DESC`,
     [assetId, `%${assetId}%`]
   );

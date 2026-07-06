@@ -122,6 +122,7 @@ export default function GatePass() {
   
   // Filter state
   const [searchTerm, setSearchTerm] = useState('');
+  const [searchColumn, setSearchColumn] = useState('all');
 
   // Form state
   const [formData, setFormData] = useState<GatePassData>({
@@ -156,8 +157,9 @@ export default function GatePass() {
 
   const filteredAssignments = useMemo(() => {
     return assignments.filter((assignment) => {
-      if (searchTerm) {
-        const q = searchTerm.toLowerCase();
+      if (!searchTerm) return true;
+      const q = searchTerm.toLowerCase();
+      if (searchColumn === 'all') {
         return (
           assignment.asset.name.toLowerCase().includes(q) ||
           assignment.asset.code.toLowerCase().includes(q) ||
@@ -170,9 +172,11 @@ export default function GatePass() {
             .includes(q)
         );
       }
-      return true;
+      const assetField = searchColumn === 'id' ? 'code' : searchColumn;
+      const val = (assignment.asset as any)[assetField];
+      return val != null && String(val).toLowerCase().includes(q);
     });
-  }, [assignments, searchTerm]);
+  }, [assignments, searchTerm, searchColumn]);
 
   const filteredAssignedBuilders = useMemo(() => {
     if (!builderSearchTerm) return assetBuilders;
@@ -566,14 +570,33 @@ export default function GatePass() {
                       </Badge>
                     </CardTitle>
 
-                    <div className="relative mt-4">
-                      <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-gray-400" />
-                      <Input
-                        placeholder="Search by asset name, asset code, department, or assigned to..."
-                        value={searchTerm}
-                        onChange={e => setSearchTerm(e.target.value)}
-                        className="pl-10 border-gray-200 focus:border-red-500 focus:ring-red-500"
-                      />
+                    <div className="flex items-center gap-2 mt-4">
+                      <select
+                        value={searchColumn}
+                        onChange={e => setSearchColumn(e.target.value)}
+                        className="h-9 rounded-md border border-gray-200 bg-white px-2 text-xs font-medium text-gray-700 focus:outline-none focus:ring-1 focus:ring-gray-300"
+                      >
+                        <option value="all">All Columns</option>
+                        <option value="id">Asset Code</option>
+                        <option value="name">Asset Name</option>
+                        <option value="description">Description</option>
+                        <option value="category">Category</option>
+                        <option value="type">Type</option>
+                        <option value="serialNo">Serial No</option>
+                        <option value="modelNo">Model</option>
+                        <option value="brand">Brand</option>
+                        <option value="department">Department</option>
+                        <option value="location">Location</option>
+                      </select>
+                      <div className="relative flex-1">
+                        <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-gray-400" />
+                        <Input
+                          placeholder="Search assets..."
+                          value={searchTerm}
+                          onChange={e => setSearchTerm(e.target.value)}
+                          className="pl-10 border-gray-200 focus:border-red-500 focus:ring-red-500"
+                        />
+                      </div>
                     </div>
                   </CardHeader>
                   <CardContent className="pt-0">

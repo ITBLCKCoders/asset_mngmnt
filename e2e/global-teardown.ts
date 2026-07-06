@@ -1,19 +1,14 @@
 import { FullConfig } from '@playwright/test';
-import mysql from 'mysql2/promise';
+import { execSync } from 'child_process';
 
-const DB_CONFIG = {
-  host: process.env.CI ? '127.0.0.1' : (process.env.MYSQL_HOST || 'localhost'),
-  port: parseInt(process.env.MYSQL_PORT || '3306', 10),
-  user: process.env.MYSQL_USER || 'root',
-  password: process.env.MYSQL_PASSWORD || 'P@ssw0rd',
-};
-
+const MYSQL_BIN = 'C:\\Program Files\\MySQL\\MySQL Server 8.0\\bin\\mysql.exe';
 const TEST_DB = process.env.E2E_DB || 'asset_mngmnt_e2e';
 
 async function globalTeardown(_config: FullConfig) {
-  const conn = await mysql.createConnection(DB_CONFIG);
-  await conn.query(`DROP DATABASE IF EXISTS \`${TEST_DB}\``);
-  await conn.end();
+  execSync(
+    `"${MYSQL_BIN}" --force -u root -p"P@ssw0rd" -h localhost -P 3306 -e "DROP DATABASE IF EXISTS \`${TEST_DB}\`"`,
+    { stdio: 'pipe', timeout: 30_000, shell: true }
+  );
 }
 
 export default globalTeardown;

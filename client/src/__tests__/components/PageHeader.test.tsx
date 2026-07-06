@@ -14,7 +14,7 @@ describe('PageHeader', () => {
     const { container } = render(
       <PageHeader icon={Package} title="Assets" description="Loading..." loading />
     );
-    const shimmers = container.querySelectorAll('.animate-pulse');
+    const shimmers = container.querySelectorAll('.bg-white\\/20');
     expect(shimmers.length).toBeGreaterThan(0);
   });
 

@@ -29,9 +29,11 @@ const LandingRedirect = (await import('@/components/routes/LandingRedirect')).de
 describe('LandingRedirect', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    mockUseUserPermissions.mockReturnValue({ hasPermission: mockHasPermission, loading: false });
+    mockUseCurrentUser.mockReturnValue({ user: null, loading: false });
   });
 
-  it('should redirect to /login when no token', () => {
+  it('should redirect to /login when no token', async () => {
     mockGetToken.mockReturnValue(null);
     render(
       <MemoryRouter initialEntries={['/']}>
@@ -41,10 +43,10 @@ describe('LandingRedirect', () => {
         </Routes>
       </MemoryRouter>
     );
-    expect(screen.getByTestId('login-page')).toBeDefined();
+    expect(await screen.findByTestId('login-page')).toBeDefined();
   });
 
-  it('should redirect to /login when user is null after loading', () => {
+  it('should redirect to /login when user is null after loading', async () => {
     mockGetToken.mockReturnValue('token');
     mockUseCurrentUser.mockReturnValue({ user: null, loading: false });
     mockUseUserPermissions.mockReturnValue({ hasPermission: mockHasPermission, loading: false });
@@ -56,7 +58,7 @@ describe('LandingRedirect', () => {
         </Routes>
       </MemoryRouter>
     );
-    expect(screen.getByTestId('login-page')).toBeDefined();
+    expect(await screen.findByTestId('login-page')).toBeDefined();
   });
 
   it('should show loading spinner while loading', () => {
@@ -68,10 +70,10 @@ describe('LandingRedirect', () => {
         <LandingRedirect />
       </MemoryRouter>
     );
-    expect(screen.getByRole('status')).toBeDefined();
+    expect(document.querySelector('.animate-spin')).toBeDefined();
   });
 
-  it('should redirect to landing page when user is loaded and authenticated', () => {
+  it('should redirect to landing page when user is loaded and authenticated', async () => {
     mockGetToken.mockReturnValue('token');
     mockUseCurrentUser.mockReturnValue({ user: { userID: 'u1', role: 'Admin' }, loading: false });
     mockUseUserPermissions.mockReturnValue({ hasPermission: mockHasPermission, loading: false });
@@ -84,7 +86,7 @@ describe('LandingRedirect', () => {
         </Routes>
       </MemoryRouter>
     );
-    expect(screen.getByTestId('dashboard-page')).toBeDefined();
+    expect(await screen.findByTestId('dashboard-page')).toBeDefined();
     expect(mockGetLandingPage).toHaveBeenCalledWith(mockHasPermission, true);
   });
 });

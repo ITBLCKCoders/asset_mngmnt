@@ -52,6 +52,7 @@ import { Shimmer } from '@/components/ui/shimmer';
 import { useCurrentUser } from '@/hooks/useCurrentUser';
 import SmsOtpDialog from '@/components/auth/SmsOtpDialog';
 import { FormTimeline } from '@/pages/profile/profileComponents/tabs/documentsTab';
+import { proxyCloudinaryUrl } from '@/utils/cloudinaryProxy';
 
 const MAX_CONDITION_IMAGES = 5;
 const VALID_IMAGE_TYPES = [
@@ -922,7 +923,7 @@ export default function TransferRequestsPage() {
                                   (url, i) => (
                                     <div key={`${url}-${i}`} className="relative group">
                                       <img
-                                        src={url}
+                                        src={proxyCloudinaryUrl(url)}
                                         alt=""
                                         className="h-20 w-20 object-cover rounded-lg border"
                                       />

@@ -39,7 +39,7 @@ const makeTransferBatch = (overrides = {}) => ({
 describe('formBatchOrgFilters', () => {
   describe('returnRowDepartmentId', () => {
     it('should return user department id', () => {
-      const result = returnRowDepartmentId(makeReturnBatch(), { assignment: { user: { department: { id: 'd1' } } } });
+      const result = returnRowDepartmentId(makeReturnBatch(), { assignment: { user: { department: { id: 'd1', name: 'IT' } } } });
       expect(result).toBe('d1');
     });
 
@@ -76,7 +76,7 @@ describe('formBatchOrgFilters', () => {
 
   describe('transferRowDepartmentId', () => {
     it('should return user department id', () => {
-      const result = transferRowDepartmentId({ assignment: { user: { department: { id: 'd1' } } } });
+      const result = transferRowDepartmentId({ assignment: { user: { department: { id: 'd1', name: 'IT' } } } });
       expect(result).toBe('d1');
     });
   });

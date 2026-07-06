@@ -1,6 +1,12 @@
 import { renderHook, waitFor } from '@testing-library/react';
 import { vi, describe, it, expect, beforeEach } from 'vitest';
+import React from 'react';
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { usePositions } from '@/hooks/usePositions';
+
+const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+const wrapper = ({ children }: { children: React.ReactNode }) =>
+  React.createElement(QueryClientProvider, { client: queryClient }, children);
 
 const mockGet = vi.fn();
 const mockPost = vi.fn();
@@ -20,7 +26,7 @@ describe('usePositions', () => {
 
   it('should fetch positions when active', async () => {
     mockGet.mockResolvedValue({ positions: [{ positionID: 'p1', name: 'Engineer' }] });
-    const { result } = renderHook(() => usePositions(true));
+    const { result } = renderHook(() => usePositions(true), { wrapper });
     await waitFor(() => { result.current.fetchPositions(); });
     await waitFor(() => expect(result.current.loading).toBe(false));
     expect(result.current.positions).toEqual([{ positionID: 'p1', name: 'Engineer' }]);
@@ -28,15 +34,15 @@ describe('usePositions', () => {
 
   it('should fetch positions by department', async () => {
     mockGet.mockResolvedValue({ positions: [{ positionID: 'p2', name: 'Manager' }] });
-    const { result } = renderHook(() => usePositions(true));
+    const { result } = renderHook(() => usePositions(true), { wrapper });
     await result.current.fetchPositionsByDepartment('dept1');
     expect(mockGet).toHaveBeenCalledWith('/positions/department/dept1');
-    expect(result.current.positions).toEqual([{ positionID: 'p2', name: 'Manager' }]);
+    await waitFor(() => expect(result.current.positions).toEqual([{ positionID: 'p2', name: 'Manager' }]));
   });
 
   it('should handle save for new position', async () => {
     mockPost.mockResolvedValue({ message: 'Created', position: { positionID: 'p3', name: 'Analyst' } });
-    const { result } = renderHook(() => usePositions(true));
+    const { result } = renderHook(() => usePositions(true), { wrapper });
     const saved = await result.current.handleSave({ name: 'Analyst', description: '', department_id: 'd1' }, null);
     expect(saved).toBe(true);
     expect(mockPost).toHaveBeenCalledWith('/positions', { name: 'Analyst', description: '', department_id: 'd1' });
@@ -45,7 +51,7 @@ describe('usePositions', () => {
   it('should handle save for existing position', async () => {
     mockGet.mockResolvedValue({ positions: [{ positionID: 'p1', name: 'Engineer' }] });
     mockPatch.mockResolvedValue({ message: 'Updated', position: { positionID: 'p1', name: 'Senior Engineer' } });
-    const { result } = renderHook(() => usePositions(true));
+    const { result } = renderHook(() => usePositions(true), { wrapper });
     await waitFor(() => expect(result.current.loading).toBe(false));
     const saved = await result.current.handleSave({ name: 'Senior Engineer', description: '', department_id: 'd1' }, { positionID: 'p1', name: 'Engineer' } as any);
     expect(saved).toBe(true);
@@ -54,7 +60,7 @@ describe('usePositions', () => {
 
   it('should handle delete', async () => {
     mockDelete.mockResolvedValue({ message: 'Deleted' });
-    const { result } = renderHook(() => usePositions(true));
+    const { result } = renderHook(() => usePositions(true), { wrapper });
     const deleted = await result.current.handleDelete({ positionID: 'p1', name: 'Engineer' } as any);
     expect(deleted).toBe(true);
     expect(mockDelete).toHaveBeenCalledWith('/positions/p1');

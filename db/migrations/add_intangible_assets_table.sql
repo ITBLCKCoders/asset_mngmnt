@@ -5,7 +5,7 @@ CREATE TABLE IF NOT EXISTS `intangible_assets` (
   `name` varchar(255) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci NOT NULL,
   `description` text CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci DEFAULT NULL,
   `remarks` text CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci DEFAULT NULL,
-  `type` enum('IT scope','Admin scope') CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci NOT NULL DEFAULT 'IT scope',
+  `type` enum('IT scope','Admin scope','HR scope') CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci NOT NULL DEFAULT 'IT scope',
   `status` enum('available','assigned') CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci NOT NULL DEFAULT 'available',
   `created_at` datetime DEFAULT CURRENT_TIMESTAMP,
   `created_by` char(36) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci DEFAULT NULL,
@@ -25,7 +25,7 @@ CREATE PROCEDURE `sp_CreateIntangibleAsset`(
   IN p_name VARCHAR(255),
   IN p_description TEXT,
   IN p_remarks TEXT,
-  IN p_type ENUM('IT scope','Admin scope'),
+  IN p_type ENUM('IT scope','Admin scope','HR scope'),
   IN p_status ENUM('available','assigned'),
   IN p_company_id CHAR(36),
   IN p_created_by CHAR(36)
@@ -79,7 +79,7 @@ CREATE PROCEDURE `sp_UpdateIntangibleAsset`(
   IN p_name VARCHAR(255),
   IN p_description TEXT,
   IN p_remarks TEXT,
-  IN p_type ENUM('IT scope','Admin scope'),
+  IN p_type ENUM('IT scope','Admin scope','HR scope'),
   IN p_status ENUM('available','assigned'),
   IN p_company_id CHAR(36),
   IN p_updated_by CHAR(36)

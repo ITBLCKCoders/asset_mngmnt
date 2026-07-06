@@ -28,6 +28,7 @@ import {
 import SignatureCanvas from 'react-signature-canvas';
 import { User, MapPin, Mail, Phone, Building, Calendar, ShieldCheck } from 'lucide-react';
 import { useCurrentUser } from '@/hooks/useCurrentUser';
+import { proxyCloudinaryUrl } from '@/utils/cloudinaryProxy';
 import { format } from 'date-fns';
 import { api } from '@/lib/api';
 import { useAvatarPreview } from '@/hooks/avatarPreview';
@@ -936,13 +937,13 @@ const BasicInfoTab = forwardRef<BasicInfoTabHandle, BasicInfoTabProps>(
                   </p>
                 </div>
                 <div className="p-6 bg-white flex items-center justify-center min-h-[80px]">
-                  {isImageSignature(user?.digitalSignature) && (
-                    <img
-                      src={user.digitalSignature || undefined}
-                      alt="Digital Initials"
-                      className="max-w-full h-32 object-contain mx-auto"
-                    />
-                  )}
+                      {isImageSignature(user?.digitalSignature) && (
+                        <img
+                          src={proxyCloudinaryUrl(user.digitalSignature)}
+                          alt="Digital Initials"
+                          className="max-w-full h-32 object-contain mx-auto"
+                        />
+                      )}
                 </div>
               </div>
             )}

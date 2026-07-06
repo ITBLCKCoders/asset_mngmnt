@@ -1,7 +1,7 @@
 'use client';
 
 import { Outlet, useLocation, useNavigate } from 'react-router-dom';
-import { Suspense, useEffect, useState } from 'react';
+import { Suspense, useCallback, useEffect, useMemo, useState } from 'react';
 import { RouteContentFallback } from '@/components/common/pageSkeletons';
 import { motion } from 'framer-motion';
 import { useIdleTimer } from '@/hooks/useIdleTimer';
@@ -33,7 +33,7 @@ import { Shimmer } from '@/components/ui/shimmer';
 function ProtectedLayoutShell() {
   const navigate = useNavigate();
   const location = useLocation();
-  const today = new Date();
+  const today = useMemo(() => new Date(), []);
   const { loading: companyLoading } = useCompanyContext();
 
   const [isCalOpen, setIsCalOpen] = useState(false);
@@ -48,13 +48,13 @@ function ProtectedLayoutShell() {
 
   const { showDialog, setShowDialog, onStay, onLogout: onIdleLogout, warningTime } = useIdleTimer();
 
-  const handleLogout = () => {
+  const handleLogout = useCallback(() => {
     localStorage.removeItem('token');
     localStorage.removeItem('pendingVerificationChannel');
     localStorage.removeItem('pendingVerificationEmail');
     localStorage.removeItem('pendingVerificationContact');
     navigate('/login', { replace: true });
-  };
+  }, [navigate]);
 
   return (
         <div className="relative flex h-screen bg-white overflow-hidden">
@@ -67,7 +67,7 @@ function ProtectedLayoutShell() {
         </div>
 
         <aside className="hidden md:block w-64 pt-6 pb-6 fixed bottom-0 left-0 z-10 h-[90vh] overflow-y-auto shadow-inner ring-1 ring-gray-200 rounded-tr-[210px] bg-gradient-to-t from-[#881115] to-[#EE1D25]">
-          <Sidebar onLogout={handleLogout} />
+          <Sidebar onLogout={handleLogout} currentPath={location.pathname} currentSearch={location.search} />
         </aside>
 
         <Sheet open={mobileNavOpen} onOpenChange={setMobileNavOpen}>
@@ -84,7 +84,7 @@ function ProtectedLayoutShell() {
           side="left"
           className="w-[min(16rem,88vw)] rounded-tr-[210px] border-r-0 p-0 bg-gradient-to-t from-[#881115] to-[#EE1D25] shadow-inner ring-1 ring-white/10 overflow-y-auto"
         >
-          <Sidebar onLogout={handleLogout} />
+          <Sidebar onLogout={handleLogout} currentPath={location.pathname} currentSearch={location.search} />
         </SheetContent>
         </Sheet>
 

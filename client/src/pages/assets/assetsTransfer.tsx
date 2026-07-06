@@ -57,6 +57,7 @@ import { DataTable } from '@/components/ui/dataTable';
 import type { ColumnDef } from '@tanstack/react-table';
 import { Shimmer } from '@/components/ui/shimmer';
 import SmsOtpDialog from '@/components/auth/SmsOtpDialog';
+import { proxyCloudinaryUrl } from '@/utils/cloudinaryProxy';
 
 interface Asset {
   id: string;
@@ -229,6 +230,7 @@ export default function AssetsTransfer() {
   const [newAssignmentRoom, setNewAssignmentRoom] = useState<string>('');
   const [newAssignmentUser, setNewAssignmentUser] = useState<string>('');
   const [searchTerm, setSearchTerm] = useState('');
+  const [searchColumn, setSearchColumn] = useState('all');
   const [expandedAssets, setExpandedAssets] = useState<string[]>([]);
   const [assetBuilders, setAssetBuilders] = useState<any[]>([]);
   const [buildersLoading, setBuildersLoading] = useState(false);
@@ -960,10 +962,11 @@ export default function AssetsTransfer() {
     const q = searchTerm.trim().toLowerCase();
     const base = !q
       ? assignments.filter(a => a.status === 'Active')
-      : assignments.filter(
-          assignment =>
-            assignment.status === 'Active' &&
-            (assignment.asset.name?.toLowerCase().includes(q) ||
+      : assignments.filter(assignment => {
+          if (assignment.status !== 'Active') return false;
+          if (searchColumn === 'all') {
+            return (
+              assignment.asset.name?.toLowerCase().includes(q) ||
               assignment.asset.code?.toLowerCase().includes(q) ||
               assignment.department?.name?.toLowerCase().includes(q) ||
               assignment.user.first_name?.toLowerCase().includes(q) ||
@@ -972,8 +975,13 @@ export default function AssetsTransfer() {
               `${assignment.user.first_name || ''} ${assignment.user.last_name || ''}`
                 .trim()
                 .toLowerCase()
-                .includes(q))
-        );
+                .includes(q)
+            );
+          }
+          const assetField = searchColumn === 'id' ? 'code' : searchColumn;
+          const val = (assignment.asset as any)[assetField];
+          return val != null && String(val).toLowerCase().includes(q);
+        });
     return base
       .filter(a => !assignmentIdsInBuilders.has(a.assignmentID))
       .sort((a, b) => {
@@ -1205,14 +1213,33 @@ export default function AssetsTransfer() {
                       </Badge>
                     </CardTitle>
 
-                    <div className="relative mt-4 w-full">
-                      <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-gray-400" />
-                      <Input
-                        placeholder="Search by asset name, asset code, department, or assigned to..."
-                        value={searchTerm}
-                        onChange={e => setSearchTerm(e.target.value)}
-                        className="pl-10 w-full border-gray-200 focus:border-red-500 focus:ring-red-500"
-                      />
+                    <div className="flex items-center gap-2 mt-4 w-full">
+                      <select
+                        value={searchColumn}
+                        onChange={e => setSearchColumn(e.target.value)}
+                        className="h-9 rounded-md border border-gray-200 bg-white px-2 text-xs font-medium text-gray-700 focus:outline-none focus:ring-1 focus:ring-gray-300"
+                      >
+                        <option value="all">All Columns</option>
+                        <option value="id">Asset Code</option>
+                        <option value="name">Asset Name</option>
+                        <option value="description">Description</option>
+                        <option value="category">Category</option>
+                        <option value="type">Type</option>
+                        <option value="serialNo">Serial No</option>
+                        <option value="modelNo">Model</option>
+                        <option value="brand">Brand</option>
+                        <option value="department">Department</option>
+                        <option value="location">Location</option>
+                      </select>
+                      <div className="relative flex-1">
+                        <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-gray-400" />
+                        <Input
+                          placeholder="Search assets..."
+                          value={searchTerm}
+                          onChange={e => setSearchTerm(e.target.value)}
+                          className="pl-10 w-full border-gray-200 focus:border-red-500 focus:ring-red-500"
+                        />
+                      </div>
                     </div>
                   </CardHeader>
 
@@ -2256,7 +2283,7 @@ export default function AssetsTransfer() {
                     className="block overflow-hidden rounded-lg border border-slate-200 transition-colors hover:border-purple-400"
                   >
                     <img
-                      src={url}
+                      src={proxyCloudinaryUrl(url)}
                       alt={`Condition photo ${idx + 1}`}
                       className="h-40 w-full object-cover"
                     />
@@ -2460,7 +2487,7 @@ export default function AssetsTransfer() {
                             {(td.imageUrls ?? []).map((url, i) => (
                               <div key={url} className="relative group">
                                 <img
-                                  src={url}
+                                  src={proxyCloudinaryUrl(url)}
                                   alt=""
                                   className="h-20 w-20 object-cover rounded-lg border"
                                 />

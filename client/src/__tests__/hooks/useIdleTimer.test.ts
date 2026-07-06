@@ -4,7 +4,7 @@ import { useIdleTimer } from '@/hooks/useIdleTimer';
 
 const mockLogout = vi.fn();
 
-vi.mock('@/lib/auth', () => ({ logout: (...args: any[]) => mockLogout(...args) }));
+vi.mock('@/lib/auth', () => ({ logout: (...args: any[]) => { mockLogout(...args); return Promise.resolve(); } }));
 vi.mock('sonner', () => ({ toast: { success: vi.fn(), warning: vi.fn(), error: vi.fn() } }));
 
 describe('useIdleTimer', () => {

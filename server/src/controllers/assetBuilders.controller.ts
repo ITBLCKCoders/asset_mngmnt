@@ -380,6 +380,12 @@ export async function updateAssetBuilderHandler(
       });
     }
 
+    if (!builderId) {
+      return res.status(400).json({
+        error: 'Builder ID is required',
+      });
+    }
+
     // Check if builder exists and belongs to user's company
     const [builderRows] = (await pool.execute(
       `SELECT ab.*, u.company_id AS creator_company_id

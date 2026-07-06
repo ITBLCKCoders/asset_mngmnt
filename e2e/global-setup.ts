@@ -1,46 +1,31 @@
 import { FullConfig } from '@playwright/test';
-import mysql from 'mysql2/promise';
 import * as path from 'path';
 import * as fs from 'fs';
 
-const DB_CONFIG = {
-  host: process.env.CI ? '127.0.0.1' : (process.env.MYSQL_HOST || 'localhost'),
-  port: parseInt(process.env.MYSQL_PORT || '3306', 10),
-  user: process.env.MYSQL_USER || 'root',
-  password: process.env.MYSQL_PASSWORD || 'P@ssw0rd',
-};
-
-const TEST_DB = process.env.E2E_DB || 'asset_mngmnt_e2e';
-const BASE_URL = `http://localhost:${process.env.E2E_CLIENT_PORT || '9669'}`;
+const API_BASE = `http://localhost:${process.env.E2E_SERVER_PORT || '6996'}`;
 
 async function globalSetup(_config: FullConfig) {
-  const rootDir = path.resolve(__dirname, '..');
-
-  // 1. Create test database
-  const conn = await mysql.createConnection({ ...DB_CONFIG, multipleStatements: true });
-  await conn.query(`DROP DATABASE IF EXISTS \`${TEST_DB}\``);
-  await conn.query(`CREATE DATABASE \`${TEST_DB}\` CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci`);
-  await conn.query(`USE \`${TEST_DB}\``);
-
-  // 2. Run all migrations (combined file)
-  const migrationsPath = path.join(rootDir, 'db', 'all_migrations.sql');
-  if (fs.existsSync(migrationsPath)) {
-    const migrations = fs.readFileSync(migrationsPath, 'utf8');
-    const statements = migrations
-      .split('\n')
-      .filter(line => line.trim() && !line.trim().startsWith('--'))
-      .join('\n');
-    await conn.query(statements);
+  // Wait for server to be ready
+  const healthUrl = `${API_BASE}/health`;
+  let serverReady = false;
+  for (let i = 0; i < 20; i++) {
+    try {
+      const r = await fetch(healthUrl, { signal: AbortSignal.timeout(2000) });
+      if (r.ok) {
+        const text = await r.text();
+        console.log(`[global-setup] Server ready on attempt ${i + 1} (status ${r.status}): ${text.substring(0, 200)}`);
+        serverReady = true;
+        break;
+      }
+    } catch (e: any) {
+      console.log(`[global-setup] Waiting for server attempt ${i + 1}: ${e?.cause?.code || e?.message}`);
+      await new Promise((r) => setTimeout(r, 2000));
+    }
+  }
+  if (!serverReady) {
+    console.warn('[global-setup] Server not ready after 40s, proceeding anyway');
   }
 
-  // 3. Run seed data
-  const seedPath = path.join(__dirname, 'fixtures', 'seed.sql');
-  const seedSql = fs.readFileSync(seedPath, 'utf8');
-  await conn.query(seedSql);
-
-  await conn.end();
-
-  // 4. Login as each user and save storage state
   const { chromium } = await import('playwright');
   const browser = await chromium.launch();
 
@@ -55,18 +40,53 @@ async function globalSetup(_config: FullConfig) {
 
   for (const user of users) {
     const context = await browser.newContext();
-    const page = await context.newPage();
 
-    await page.goto(`${BASE_URL}/login`, { waitUntil: 'networkidle' });
-    await page.fill('input[type="email"]', user.email);
-    await page.fill('input[type="password"]', user.password);
-    await page.click('button[type="submit"]');
+    // Login via API
+    let res;
+    try {
+      res = await fetch(`${API_BASE}/api/auth/login`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email: user.email, password: user.password }),
+        signal: AbortSignal.timeout(10_000),
+      });
+    } catch (e: any) {
+      console.error(`[global-setup] Login fetch error for ${user.email}: ${e.message} (cause: ${e?.cause?.code || e?.cause?.message || 'none'})`);
+      await context.close();
+      continue;
+    }
 
-    await page.waitForURL('**/dashboard', { timeout: 15_000 }).catch(() => {
-      console.warn(`[global-setup] Login redirect check failed for ${user.email}, continuing anyway`);
+    if (!res.ok) {
+      const body = await res.text();
+      console.warn(`[global-setup] API login failed for ${user.email}: ${res.status} ${body}`);
+      await context.close();
+      continue;
+    }
+
+    // Extract cookies from response
+    const setCookieHeaders = res.headers.getSetCookie?.() || [];
+    const cookies = setCookieHeaders.map((h: string) => {
+      const parts = h.split(';').map((s: string) => s.trim());
+      const [name, ...rest] = parts[0].split('=');
+      return { name, value: rest.join('='), domain: 'localhost', path: '/' };
     });
 
+    if (cookies.length > 0) {
+      await context.addCookies(cookies);
+    }
+
+    // Also set auth tokens from localStorage if returned in body
+    try {
+      const data = await res.json();
+      if (data.accessToken) {
+        await context.addInitScript((token) => {
+          localStorage.setItem('accessToken', token);
+        }, data.accessToken);
+      }
+    } catch { /* ignore JSON parse errors */ }
+
     await context.storageState({ path: path.join(storageDir, path.basename(user.storageFile)) });
+    console.log(`[global-setup] Login succeeded for ${user.email}`);
     await context.close();
   }
 

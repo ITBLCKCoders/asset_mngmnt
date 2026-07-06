@@ -23,7 +23,7 @@ describe('brands.controller', () => {
 
   beforeEach(() => {
     jest.resetAllMocks();
-    req = { user: { userID: '1' }, body: {}, params: {}, ip: '127.0.0.1', get: jest.fn() };
+    req = { user: { userID: '1' }, body: {}, params: {}, query: {}, ip: '127.0.0.1', get: jest.fn() };
     res = createMockRes();
   });
 
@@ -37,6 +37,7 @@ describe('brands.controller', () => {
 
     it('returns 400 when no active company', async () => {
       getScopedActiveCompany.mockResolvedValue(null);
+      mockPool.pool.query.mockResolvedValue([[{ role_name: 'User' }], []]);
       await brandsController.getAllBrands(req, res);
       expect(res._status).toBe(400);
       expect(res._json).toEqual({ error: 'No active company found' });

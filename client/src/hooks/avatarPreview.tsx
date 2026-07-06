@@ -8,7 +8,7 @@ interface AvatarPreviewContextType {
   clearPreview: () => void;
 }
 
-const AvatarPreviewContext = createContext<
+export const AvatarPreviewContext = createContext<
   AvatarPreviewContextType | undefined
 >(undefined);
 

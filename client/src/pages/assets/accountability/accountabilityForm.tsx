@@ -469,7 +469,7 @@ export const generateAccountabilityFormPDF = async (
   );
 
   const itIntangibleAssets = assignedIntangibleAssets.filter(
-    (asset: any) => asset.type === 'IT scope'
+    (asset: any) => asset.type === 'IT scope' || asset.type === 'HR scope'
   );
   const adminIntangibleAssets = assignedIntangibleAssets.filter(
     (asset: any) => asset.type === 'Admin scope'

@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useCallback, useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
 import {
   Package,
@@ -11,18 +11,23 @@ import {
   Wrench,
   FileText,
   RefreshCw,
+  Search,
 } from 'lucide-react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { PageHeader } from '@/components/common/PageHeader';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
 import { AssetViewModal } from './assets-list/assetsComponents/assetViewModal';
+import { proxyCloudinaryUrl } from '@/utils/cloudinaryProxy';
 import type { AssetResponseDto } from '@/types/assetsDTOs';
 import { Asset } from './assets-list/assetsComponents/assetTable/assetData';
 import { api } from '@/lib/api';
 import { toast } from 'sonner';
 import { useCurrentUser } from '@/hooks/useCurrentUser';
 import { useUserPermissions } from '@/hooks/useUserPermissions';
+import { findAssetByScannedCode } from '@/utils/barcodeScan';
+import { useBarcodeScanner } from '@/hooks/useBarcodeScanner';
 import { Shimmer } from '@/components/ui/shimmer';
 
 export default function MyAssetsPage() {
@@ -33,6 +38,8 @@ export default function MyAssetsPage() {
   const [loading, setLoading] = useState(true);
   const [selectedAsset, setSelectedAsset] = useState<Asset | null>(null);
   const [isViewModalOpen, setIsViewModalOpen] = useState(false);
+  const [searchTerm, setSearchTerm] = useState('');
+  const [searchColumn, setSearchColumn] = useState('all');
 
   const fetchMyAssets = async () => {
     if (!user) return;
@@ -147,10 +154,133 @@ export default function MyAssetsPage() {
     }
   }, [user, userLoading]);
 
+  const filteredAssets = useMemo(() => {
+    const q = searchTerm.toLowerCase().trim();
+    if (!q) return assets;
+    return assets.filter(asset => {
+      if (searchColumn === 'all') {
+        return (
+          asset.name.toLowerCase().includes(q) ||
+          asset.id.toLowerCase().includes(q) ||
+          asset.category.toLowerCase().includes(q) ||
+          asset.type.toLowerCase().includes(q) ||
+          asset.serialNo.toLowerCase().includes(q) ||
+          asset.description.toLowerCase().includes(q) ||
+          asset.modelNo.toLowerCase().includes(q) ||
+          asset.brand.toLowerCase().includes(q) ||
+          asset.department.toLowerCase().includes(q) ||
+          asset.location.toLowerCase().includes(q) ||
+          asset.assignedTo.toLowerCase().includes(q) ||
+          asset.supplier.toLowerCase().includes(q)
+        );
+      }
+      const val = (asset as any)[searchColumn];
+      return val != null && String(val).toLowerCase().includes(q);
+    });
+  }, [assets, searchTerm, searchColumn]);
+
   const handleAssetClick = (asset: Asset) => {
     setSelectedAsset(asset);
     setIsViewModalOpen(true);
   };
+
+  const handleBarcodeScan = useCallback(async (code: string) => {
+    let asset: Asset | undefined = findAssetByScannedCode(assets, code);
+
+    if (!asset) {
+      try {
+        const response = await api.get<{ assets: AssetResponseDto[] }>(
+          `/assets/${encodeURIComponent(code)}`
+        );
+        const apiAsset = response.assets?.[0];
+        if (apiAsset) {
+          asset = {
+            id: apiAsset.asset_code,
+            name: apiAsset.name,
+            image: apiAsset.image_url || '',
+            description: apiAsset.description || '',
+            category: apiAsset.category_name || apiAsset.category_id || '',
+            type: apiAsset.type_name || apiAsset.type_id || '',
+            serialNo: apiAsset.serial || '',
+            modelNo: apiAsset.model || '',
+            brand: apiAsset.brand || '',
+            status:
+              (apiAsset.status === 'In Use'
+                ? 'Assigned'
+                : (apiAsset.status as
+                    | 'Available'
+                    | 'Assigned'
+                    | 'In Maintenance')) || 'Assigned',
+            assignedTo: apiAsset.currentAssignment?.user?.name || '',
+            department:
+              apiAsset.currentAssignment?.department ||
+              (apiAsset.department ? JSON.parse(apiAsset.department).name : '') ||
+              '',
+            location:
+              apiAsset.currentAssignment?.location ||
+              `${apiAsset.location_name || ''}${apiAsset.room_name ? ` - ${apiAsset.room_name}` : ''}`,
+            currentAssignment: apiAsset.currentAssignment ?? undefined,
+            assignmentHistory: apiAsset.assignmentHistory || [],
+            purchaseDate: apiAsset.purchase_date
+              ? new Date(apiAsset.purchase_date)
+              : null,
+            purchasePrice: apiAsset.asset_value || 0,
+            supplier: apiAsset.supplier || '',
+            warranty: apiAsset.warranty_months
+              ? `${apiAsset.warranty_months} months`
+              : null,
+            warranty_months: apiAsset.warranty_months || null,
+            documents: apiAsset.documents || [],
+            maintenanceSchedule: apiAsset.maintenance_schedule || 'None',
+            lastMaintenanceDate: apiAsset.last_maintenance_date
+              ? new Date(apiAsset.last_maintenance_date)
+              : null,
+            nextMaintenanceDate: apiAsset.next_maintenance_date
+              ? new Date(apiAsset.next_maintenance_date)
+              : null,
+            condition:
+              (apiAsset.condition as
+                | 'Excellent'
+                | 'Good'
+                | 'Needs Repair'
+                | 'Damaged'
+                | 'Obsolete') || 'Good',
+            usefulLifeYears: apiAsset.useful_life_years || 0,
+            salvageValue: apiAsset.salvage_value || 0,
+            depreciationMethod: apiAsset.depreciation_method || '',
+            annualDepreciation: apiAsset.annual_depreciation || 0,
+            depreciationStartDate: apiAsset.depreciation_start_date
+              ? new Date(apiAsset.depreciation_start_date)
+              : null,
+            company: apiAsset.company_name || '',
+            building: apiAsset.building || '',
+            createdAt: new Date(apiAsset.created_at),
+            createdBy: apiAsset.created_by_name || apiAsset.created_by || '',
+            updatedAt: apiAsset.updated_at
+              ? new Date(apiAsset.updated_at)
+              : new Date(apiAsset.created_at),
+            updatedBy: apiAsset.updated_by_name || apiAsset.updated_by || '',
+            specifications: apiAsset.specifications || [],
+          } as Asset;
+        }
+      } catch (err: any) {
+        const status = err?.response?.status;
+        if (status === 500) {
+          toast.error(`Server error looking up "${code}". Check server logs.`);
+        }
+        console.error(`[BarcodeScan] API lookup failed for "${code}":`, err?.data || err);
+      }
+    }
+
+    if (asset) {
+      setSelectedAsset(asset);
+      setIsViewModalOpen(true);
+    } else {
+      toast.error(`Asset "${code}" not found`);
+    }
+  }, [assets]);
+
+  useBarcodeScanner(handleBarcodeScan);
 
   const getStatusColor = (status: string) => {
     switch (status) {
@@ -332,6 +462,40 @@ export default function MyAssetsPage() {
           </Button>
         </PageHeader>
 
+        {/* Search Bar */}
+        {assets.length > 0 && (
+          <div className="flex items-center gap-2">
+            <select
+              value={searchColumn}
+              onChange={e => setSearchColumn(e.target.value)}
+              className="h-9 rounded-md border border-gray-200 bg-white px-2 text-xs font-medium text-gray-700 focus:outline-none focus:ring-1 focus:ring-gray-300"
+            >
+              <option value="all">All Columns</option>
+              <option value="id">Asset Code</option>
+              <option value="name">Asset Name</option>
+              <option value="description">Description</option>
+              <option value="category">Category</option>
+              <option value="type">Type</option>
+              <option value="serialNo">Serial No</option>
+              <option value="modelNo">Model</option>
+              <option value="brand">Brand</option>
+              <option value="department">Department</option>
+              <option value="location">Location</option>
+              <option value="assignedTo">Assigned To</option>
+              <option value="supplier">Supplier</option>
+            </select>
+            <div className="relative flex-1 max-w-md">
+              <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-gray-400" />
+              <Input
+                placeholder="Search assets..."
+                value={searchTerm}
+                onChange={e => setSearchTerm(e.target.value)}
+                className="pl-10 border-gray-200 focus-visible:ring-0"
+              />
+            </div>
+          </div>
+        )}
+
         {assets.length === 0 ? (
           <Card className="border-0 shadow-sm">
             <CardContent className="p-8 sm:p-12 text-center">
@@ -360,9 +524,15 @@ export default function MyAssetsPage() {
               </div>
             </CardContent>
           </Card>
+        ) : filteredAssets.length === 0 && searchTerm ? (
+          <div className="text-center py-12">
+            <Package className="h-12 w-12 text-gray-300 mx-auto mb-4" />
+            <p className="text-gray-500 text-lg">No assets match your search</p>
+            <p className="text-gray-400 text-sm mt-1">Try adjusting your search criteria</p>
+          </div>
         ) : (
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
-            {assets.map(asset => (
+            {filteredAssets.map((asset: Asset) => (
               <Card
                 key={asset.id}
                 className="border border-gray-200 shadow-sm hover:shadow-md transition-shadow cursor-pointer min-h-[420px] flex flex-col rounded-lg"
@@ -398,7 +568,7 @@ export default function MyAssetsPage() {
                   {asset.image ? (
                     <div className="w-full h-32 bg-gray-100 rounded-lg overflow-hidden">
                       <img
-                        src={asset.image}
+                        src={proxyCloudinaryUrl(asset.image)}
                         alt={asset.name}
                         className="w-full h-full object-cover"
                         onError={e => {

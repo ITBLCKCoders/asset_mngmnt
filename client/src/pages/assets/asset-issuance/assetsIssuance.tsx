@@ -1,6 +1,7 @@
 'use client';
 
 import { useEffect, useState, useMemo, useRef, useCallback } from 'react';
+import { useQueryClient } from '@tanstack/react-query';
 import {
   Package,
   Boxes,
@@ -94,6 +95,7 @@ interface User {
 }
 
 export default function AssetsAssignment() {
+  const queryClient = useQueryClient();
   const { user: currentUser } = useCurrentUser();
   const { hasPermission, roleCustodian } = useUserPermissions();
   const { activeCompany } = useCompanyContext();
@@ -112,6 +114,7 @@ export default function AssetsAssignment() {
   const [selectedUser, setSelectedUser] = useState<string>('');
   const [assigning, setAssigning] = useState(false);
   const [searchTerm, setSearchTerm] = useState('');
+  const [searchColumn, setSearchColumn] = useState('all');
   const [builderSearchTerm, setBuilderSearchTerm] = useState('');
   const [departmentSearchTerm, setDepartmentSearchTerm] = useState('');
   const [userSearchTerm, setUserSearchTerm] = useState('');
@@ -703,8 +706,8 @@ export default function AssetsAssignment() {
 
       toast.success(message);
 
-      // Dispatch event to refetch assets in other components
-      window.dispatchEvent(new CustomEvent('assetsUpdated'));
+      // Invalidate assets cache to refetch in other components
+      queryClient.invalidateQueries({ queryKey: ['assets'] });
 
       // Reset form
       setSelectedAssets([]);
@@ -753,33 +756,37 @@ export default function AssetsAssignment() {
 
   const filteredAssets = useMemo(() => {
     const searchLower = searchTerm.trim().toLowerCase();
-    const searchText = (asset: Asset) =>
-      [
-        asset.id,
-        asset.name,
-        asset.status,
-        asset.category,
-        asset.type,
-        asset.serialNo,
-        asset.assignedTo,
-        asset.department,
-        asset.location,
-        asset.description,
-        asset.specifications
-          ?.map(s => s.assetName || s.specDescription)
-          .join(' '),
-      ]
-        .filter(Boolean)
-        .join(' ')
-        .toLowerCase();
 
     return assets
       .filter(
         asset => asset.status === 'Available' || asset.status === 'In Use'
       )
-      .filter(
-        asset => searchLower === '' || searchText(asset).includes(searchLower)
-      )
+      .filter(asset => {
+        if (!searchLower) return true;
+        if (searchColumn === 'all') {
+          return [
+            asset.id,
+            asset.name,
+            asset.status,
+            asset.category,
+            asset.type,
+            asset.serialNo,
+            asset.assignedTo,
+            asset.department,
+            asset.location,
+            asset.description,
+            asset.specifications
+              ?.map(s => s.assetName || s.specDescription)
+              .join(' '),
+          ]
+            .filter(Boolean)
+            .join(' ')
+            .toLowerCase()
+            .includes(searchLower);
+        }
+        const val = (asset as any)[searchColumn];
+        return val != null && String(val).toLowerCase().includes(searchLower);
+      })
       .filter(asset => {
         // Check if user has basic asset assignment permissions
         const hasBasicAccess =
@@ -1178,9 +1185,11 @@ export default function AssetsAssignment() {
                   assets={availableAssets}
                   selectedAssets={selectedAssets}
                   searchTerm={searchTerm}
+                  searchColumn={searchColumn}
                   loading={loading || buildersLoading || tabLoading}
                   hasPermission={hasPermission}
                   onSearchChange={setSearchTerm}
+                  onSearchColumnChange={setSearchColumn}
                   onAssetSelection={handleAssetSelection}
                   onClearAll={() => setSelectedAssets([])}
                 />

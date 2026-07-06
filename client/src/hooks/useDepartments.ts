@@ -1,16 +1,31 @@
 import { useState, useEffect, useRef } from 'react';
+import { useQueryClient } from '@tanstack/react-query';
 import { toast } from 'sonner';
 import { Department } from '@/types/assets';
 import { api } from '@/lib/api';
+import { useApiQuery } from '@/hooks/useApiQuery';
 
 export function useDepartments(isActive: boolean, action?: string) {
-  const [departments, setDepartments] = useState<Department[]>([]);
-  const [loading, setLoading] = useState(true);
+  const queryClient = useQueryClient();
   const [saving, setSaving] = useState(false);
   const [isTabLoading, setIsTabLoading] = useState(true);
-  const [activeCompany, setActiveCompany] = useState<any>(null);
   const [copyingSettings, setCopyingSettings] = useState(false);
   const hasOpenedAdd = useRef(false);
+
+  const { data: deptData, isLoading } = useApiQuery<{ departments: Department[] }>(
+    ['departments'],
+    '/departments',
+    { enabled: isActive }
+  );
+
+  const { data: companyData } = useApiQuery<{ data: any[] }>(
+    ['active-company'],
+    '/companies/active',
+    { enabled: isActive }
+  );
+
+  const departments = deptData?.departments ?? [];
+  const activeCompany = companyData?.data?.[0] ?? null;
 
   useEffect(() => {
     if (isActive) {
@@ -20,36 +35,12 @@ export function useDepartments(isActive: boolean, action?: string) {
     }
   }, [isActive]);
 
-  useEffect(() => {
-    if (isActive) fetchDepartments();
-  }, [isActive]);
-
-  useEffect(() => {
-    if (isActive) fetchActiveCompany();
-  }, [isActive]);
-
   const fetchDepartments = async () => {
-    try {
-      setLoading(true);
-      const response = await api.get<{ departments: Department[] }>(
-        '/departments'
-      );
-      setDepartments(response.departments);
-    } catch (error: any) {
-      console.error('Failed to fetch departments:', error);
-      toast.error(error.message || 'Failed to load departments');
-    } finally {
-      setLoading(false);
-    }
+    await queryClient.refetchQueries({ queryKey: ['departments'] });
   };
 
   const fetchActiveCompany = async () => {
-    try {
-      const data = await api.get('/companies/active');
-      setActiveCompany(data?.data?.[0] || null);
-    } catch (error) {
-      console.error('Failed to fetch active company:', error);
-    }
+    await queryClient.refetchQueries({ queryKey: ['active-company'] });
   };
 
   const copyMainCompanySettings = async () => {
@@ -65,7 +56,7 @@ export function useDepartments(isActive: boolean, action?: string) {
         'Successfully copied department settings from main company'
       );
       setIsTabLoading(true);
-      await fetchDepartments();
+      await queryClient.refetchQueries({ queryKey: ['departments'] });
       setIsTabLoading(false);
     } catch (error: any) {
       console.error('Failed to copy settings:', error);
@@ -86,22 +77,15 @@ export function useDepartments(isActive: boolean, action?: string) {
           message: string;
           department: Department;
         }>(`/departments/${editing.departmentID}`, form);
-        setDepartments(prev =>
-          prev.map(dept =>
-            dept.departmentID === editing.departmentID
-              ? response.department
-              : dept
-          )
-        );
         toast.success(response.message);
       } else {
         const response = await api.post<{
           message: string;
           department: Department;
         }>('/departments', form);
-        setDepartments(prev => [...prev, response.department]);
         toast.success(response.message);
       }
+      await queryClient.invalidateQueries({ queryKey: ['departments'] });
       return true;
     } catch (error: any) {
       console.error('Failed to save department:', error);
@@ -117,10 +101,8 @@ export function useDepartments(isActive: boolean, action?: string) {
       const response = await api.delete<{ message: string }>(
         `/departments/${deleting.departmentID}`
       );
-      setDepartments(prev =>
-        prev.filter(dept => dept.departmentID !== deleting.departmentID)
-      );
       toast.success(response.message);
+      await queryClient.invalidateQueries({ queryKey: ['departments'] });
       return true;
     } catch (error: any) {
       console.error('Failed to delete department:', error);
@@ -131,7 +113,7 @@ export function useDepartments(isActive: boolean, action?: string) {
 
   return {
     departments,
-    loading,
+    loading: isLoading,
     saving,
     isTabLoading,
     activeCompany,

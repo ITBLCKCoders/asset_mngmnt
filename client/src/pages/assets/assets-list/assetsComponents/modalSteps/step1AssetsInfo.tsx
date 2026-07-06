@@ -18,6 +18,7 @@ import {
 } from 'lucide-react';
 import { api } from '@/lib/api';
 import { toast } from 'sonner';
+import { proxyCloudinaryUrl } from '@/utils/cloudinaryProxy';
 
 import {
   Popover,
@@ -777,7 +778,7 @@ export function Step1AssetInfo({
           {imagePreview && (
             <div className="relative group">
               <img
-                src={imagePreview}
+                src={proxyCloudinaryUrl(imagePreview)}
                 alt="Asset preview"
                 className="rounded-lg object-cover w-full h-64 border shadow-lg"
               />

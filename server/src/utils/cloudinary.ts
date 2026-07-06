@@ -1,4 +1,7 @@
 import { v2 as cloudinary } from 'cloudinary';
+import https from 'https';
+import { Resolver } from 'dns';
+import logger from '../logger.js';
 
 const { CLOUDINARY_CLOUD_NAME, CLOUDINARY_API_KEY, CLOUDINARY_API_SECRET } =
   process.env;
@@ -12,6 +15,9 @@ cloudinary.config({
   api_key: CLOUDINARY_API_KEY,
   api_secret: CLOUDINARY_API_SECRET,
 });
+
+const cloudinaryResolver = new Resolver();
+cloudinaryResolver.setServers(['8.8.8.8', '1.1.1.1']);
 
 export async function uploadToCloudinary(buffer: Buffer): Promise<string> {
   return new Promise((resolve, reject) => {
@@ -156,6 +162,138 @@ export async function deleteFromCloudinary(url: string): Promise<void> {
     const publicId = `avatars/${publicIdWithoutExt}`;
     await cloudinary.uploader.destroy(publicId);
   } catch (err) {
-    console.warn('[Cloudinary] Failed to delete image:', url, err);
+    logger.warn('[Cloudinary] Failed to delete image:', url, err);
+  }
+}
+
+/** Ping Cloudinary API to verify credentials are working. */
+export async function checkCloudinaryConnection(): Promise<{
+  ok: boolean;
+  message: string;
+  usage?: Record<string, unknown>;
+}> {
+  try {
+    const usage = await cloudinary.api.usage();
+    return {
+      ok: true,
+      message: 'Connected',
+      usage: {
+        plan: usage.plan,
+        creditsUsed: usage.credits?.usage,
+        creditsLimit: usage.credits?.limit,
+        storageUsedBytes: usage.storage?.usage,
+        bandwidthUsedBytes: usage.bandwidth?.usage,
+      },
+    };
+  } catch (err: unknown) {
+    const message = err instanceof Error ? err.message : 'Connection failed';
+    return { ok: false, message };
+  }
+}
+
+/**
+ * Fetch a Cloudinary image via HTTPS using a custom DNS resolver.
+ * Bypasses system DNS which may block res.cloudinary.com on some networks.
+ */
+export async function fetchCloudinaryImage(
+  secureUrl: string
+): Promise<{ buffer: Buffer; contentType: string }> {
+  const parsedUrl = new URL(secureUrl);
+  const hostname = parsedUrl.hostname;
+
+  if (!hostname.endsWith('.cloudinary.com')) {
+    throw new Error('Not a Cloudinary URL');
+  }
+
+  const addresses = await new Promise<string[]>((resolve, reject) => {
+    cloudinaryResolver.resolve4(hostname, (err, addrs) => {
+      if (err) reject(err);
+      else resolve(addrs ?? []);
+    });
+  });
+
+  if (addresses.length === 0) {
+    throw new Error(`Could not resolve ${hostname}`);
+  }
+
+  return new Promise((resolve, reject) => {
+    const options: https.RequestOptions = {
+      hostname: addresses[0]!,
+      port: 443,
+      path: parsedUrl.pathname + parsedUrl.search,
+      headers: { Host: hostname },
+      servername: hostname,
+      rejectUnauthorized: true,
+    };
+
+    const req = https.get(options, (res) => {
+      if (res.statusCode && res.statusCode >= 300 && res.statusCode < 400 && res.headers.location) {
+        const redirectUrl = new URL(res.headers.location);
+        cloudinaryResolver.resolve4(redirectUrl.hostname, (redirectErr, redirectAddresses) => {
+          if (redirectErr || !redirectAddresses || redirectAddresses.length === 0) {
+            reject(redirectErr ?? new Error(`Could not resolve ${redirectUrl.hostname}`));
+            return;
+          }
+          const redirectOptions: https.RequestOptions = {
+            hostname: redirectAddresses[0]!,
+            port: 443,
+            path: redirectUrl.pathname + redirectUrl.search,
+            headers: { Host: redirectUrl.hostname },
+            servername: redirectUrl.hostname,
+            rejectUnauthorized: true,
+          };
+          https.get(redirectOptions, (redirectRes) => {
+            const chunks: Buffer[] = [];
+            redirectRes.on('data', (chunk: Buffer) => chunks.push(chunk));
+            redirectRes.on('end', () => {
+              if (redirectRes.statusCode !== 200) {
+                reject(new Error(`Cloudinary returned ${redirectRes.statusCode}`));
+                return;
+              }
+              resolve({
+                buffer: Buffer.concat(chunks),
+                contentType: redirectRes.headers['content-type'] || 'image/jpeg',
+              });
+            });
+          }).on('error', reject);
+        });
+        return;
+      }
+
+      const chunks: Buffer[] = [];
+      res.on('data', (chunk: Buffer) => chunks.push(chunk));
+      res.on('end', () => {
+        if (res.statusCode !== 200) {
+          reject(new Error(`Cloudinary returned ${res.statusCode}`));
+          return;
+        }
+        resolve({
+          buffer: Buffer.concat(chunks),
+          contentType: res.headers['content-type'] || 'image/jpeg',
+        });
+      });
+    });
+
+    req.on('error', reject);
+    req.setTimeout(15000, () => {
+      req.destroy();
+      reject(new Error('Cloudinary fetch timed out'));
+    });
+  });
+}
+
+/** Extract the public ID from a Cloudinary secure_url. */
+export function parseCloudinaryPublicId(secureUrl: string): string | null {
+  try {
+    const url = new URL(secureUrl);
+    if (!url.hostname.endsWith('.cloudinary.com')) return null;
+    const parts = url.pathname.split('/').filter(Boolean);
+    const uploadI = parts.indexOf('upload');
+    if (uploadI === -1) return null;
+    let afterUpload = parts.slice(uploadI + 1);
+    if (afterUpload[0]?.match(/^v\d+$/)) afterUpload = afterUpload.slice(1);
+    return afterUpload.join('/') || null;
+  } catch {
+    return null;
   }
 }

@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useCallback } from 'react';
 import { Tag, QrCode } from 'lucide-react';
 import { Tabs, TabsList, TabsTrigger, segmentTabsListClassName, segmentTabsTriggerClassName } from '@/components/ui/tabs';
 import { Card, CardContent } from '@/components/ui/card';
@@ -19,6 +19,72 @@ import { useCurrentUser } from '@/hooks/useCurrentUser';
 import { useCompanyContext } from '@/context/CompanyContext';
 import { TaggingColumns } from './components/TaggingColumns';
 import { AssetTagModal } from './components/AssetTagModal';
+import { useBarcodeScanner } from '@/hooks/useBarcodeScanner';
+import { findAssetByScannedCode } from '@/utils/barcodeScan';
+import { ASSET_SEARCH_COLUMNS } from '@/utils/assetSearchColumns';
+
+function mapDtoToTaggingAsset(asset: AssetResponseDto): Asset {
+  return {
+    id: asset.asset_code,
+    assetID: asset.assetID,
+    name: asset.name,
+    image: asset.image_url || '',
+    description: asset.description || '',
+    category: asset.category_name || asset.category_id || '',
+    type: asset.type_name || asset.type_id || '',
+    serialNo: asset.serial || '',
+    modelNo: asset.model || '',
+    brand: asset.brand || '',
+    status:
+      (asset.status === 'In Use'
+        ? 'Assigned'
+        : (asset.status as 'Available' | 'Assigned' | 'In Maintenance')) ||
+      'Available',
+    assignedTo: asset.currentAssignment?.user?.name || '',
+    department:
+      asset.currentAssignment?.department ||
+      (asset.department ? JSON.parse(asset.department).name : ''),
+    location:
+      asset.currentAssignment?.location ||
+      `${asset.location_name || ''}${asset.room_name ? ` - ${asset.room_name}` : ''}`,
+    currentAssignment: asset.currentAssignment ?? undefined,
+    assignmentHistory: [],
+    purchaseDate: asset.purchase_date ? new Date(asset.purchase_date) : null,
+    purchasePrice: asset.asset_value || 0,
+    supplier: asset.supplier || '',
+    warranty: asset.warranty_months ? `${asset.warranty_months} months` : null,
+    warranty_months: asset.warranty_months || null,
+    documents: asset.documents || [],
+    maintenanceSchedule: asset.maintenance_schedule || 'None',
+    lastMaintenanceDate: null,
+    nextMaintenanceDate: null,
+    condition:
+      (asset.condition as
+        | 'Excellent'
+        | 'Good'
+        | 'Needs Repair'
+        | 'Damaged'
+        | 'Obsolete') || 'Good',
+    usefulLifeYears: asset.useful_life_years || 0,
+    salvageValue: asset.salvage_value || 0,
+    depreciationMethod: asset.depreciation_method || '',
+    annualDepreciation: asset.annual_depreciation || 0,
+    depreciationStartDate: asset.depreciation_start_date
+      ? new Date(asset.depreciation_start_date)
+      : null,
+    company: asset.company_name || '',
+    building: asset.building || '',
+    createdAt: new Date(asset.created_at),
+    createdBy: asset.created_by_name || asset.created_by || '',
+    updatedAt: asset.updated_at
+      ? new Date(asset.updated_at)
+      : new Date(asset.created_at),
+    updatedBy: asset.updated_by_name || asset.updated_by || '',
+    specifications: asset.specifications || [],
+    isSelected: false,
+    onSelect: () => {},
+  };
+}
 
 export default function AssetsTagging() {
   const { user: currentUser } = useCurrentUser();
@@ -79,66 +145,7 @@ export default function AssetsTagging() {
         `/assets?${queryParams.toString()}`
       );
       const transformedAssets = response.assets.map((asset: AssetResponseDto) => ({
-        id: asset.asset_code,
-        name: asset.name,
-        image: asset.image_url || '',
-        description: asset.description || '',
-        category: asset.category_name || asset.category_id || '',
-        type: asset.type_name || asset.type_id || '',
-        serialNo: asset.serial || '',
-        modelNo: asset.model || '',
-        brand: asset.brand || '',
-        status:
-          (asset.status === 'In Use'
-            ? 'Assigned'
-            : (asset.status as 'Available' | 'Assigned' | 'In Maintenance')) ||
-          'Available',
-        assignedTo: asset.currentAssignment?.user?.name || '',
-        department:
-          asset.currentAssignment?.department ||
-          (asset.department ? JSON.parse(asset.department).name : ''),
-        location:
-          asset.currentAssignment?.location ||
-          `${asset.location_name || ''}${asset.room_name ? ` - ${asset.room_name}` : ''}`,
-        currentAssignment: asset.currentAssignment ?? undefined,
-        assignmentHistory: [],
-        purchaseDate: asset.purchase_date
-          ? new Date(asset.purchase_date)
-          : null,
-        purchasePrice: asset.asset_value || 0,
-        supplier: asset.supplier || '',
-        warranty: asset.warranty_months
-          ? `${asset.warranty_months} months`
-          : null,
-        warranty_months: asset.warranty_months || null,
-        documents: asset.documents || [],
-        maintenanceSchedule: asset.maintenance_schedule || 'None',
-        lastMaintenanceDate: null,
-        nextMaintenanceDate: null,
-        condition:
-          (asset.condition as
-            | 'Excellent'
-            | 'Good'
-            | 'Needs Repair'
-            | 'Damaged'
-            | 'Obsolete') || 'Good',
-        usefulLifeYears: asset.useful_life_years || 0,
-        salvageValue: asset.salvage_value || 0,
-        depreciationMethod: asset.depreciation_method || '',
-        annualDepreciation: asset.annual_depreciation || 0,
-        depreciationStartDate: asset.depreciation_start_date
-          ? new Date(asset.depreciation_start_date)
-          : null,
-        company: asset.company_name || '',
-        building: asset.building || '',
-        createdAt: new Date(asset.created_at),
-        createdBy: asset.created_by_name || asset.created_by || '',
-        updatedAt: asset.updated_at
-          ? new Date(asset.updated_at)
-          : new Date(asset.created_at),
-        updatedBy: asset.updated_by_name || asset.updated_by || '',
-        specifications: asset.specifications || [],
-        isSelected: false,
+        ...mapDtoToTaggingAsset(asset),
         onSelect: (id: string, checked: boolean) => {
           setSelectedAssets(prev => {
             const newSet = new Set(prev);
@@ -161,8 +168,9 @@ export default function AssetsTagging() {
   };
 
   useEffect(() => {
+    setLoading(true);
     fetchAssets();
-  }, [activeCompany?.id]);
+  }, [activeCompany?.id, scope, currentUser?.company_id]);
 
   const handleSelectAll = (checked: boolean) => {
     if (checked) {
@@ -172,81 +180,138 @@ export default function AssetsTagging() {
     }
   };
 
-  const handleGenerateTags = () => {
+  const handleGenerateTags = async () => {
     if (selectedAssets.size === 0) {
       toast.error('Please select at least one asset');
       return;
+    }
+    // Re-fetch to ensure tags use current asset codes. Asset codes may have
+    // changed after category/type edits on another page — re-map selections
+    // by the stable assetID so nothing gets silently dropped.
+    const oldSelectedByAssetId = new Map<string, string>();
+    for (const code of selectedAssets) {
+      const a = assets.find(x => x.id === code);
+      if (a?.assetID) oldSelectedByAssetId.set(a.assetID, code);
+    }
+    const response = await api.get<{ assets: AssetResponseDto[] }>(
+      `/assets?${new URLSearchParams({ limit: '-1', companyId: activeCompany?.id || '', scope }).toString()}`
+    );
+    const transformedAssets = response.assets.map((asset: AssetResponseDto) => ({
+      ...mapDtoToTaggingAsset(asset),
+      onSelect: (id: string, checked: boolean) => {
+        setSelectedAssets(prev => {
+          const newSet = new Set(prev);
+          if (checked) newSet.add(id);
+          else newSet.delete(id);
+          return newSet;
+        });
+      },
+    }));
+    setAssets(transformedAssets);
+    if (oldSelectedByAssetId.size > 0) {
+      const next = new Set(selectedAssets);
+      for (const fresh of transformedAssets) {
+        if (fresh.assetID && oldSelectedByAssetId.has(fresh.assetID) && !next.has(fresh.id)) {
+          const oldCode = oldSelectedByAssetId.get(fresh.assetID)!;
+          next.delete(oldCode);
+          next.add(fresh.id);
+        }
+      }
+      setSelectedAssets(next);
     }
     setIsTagModalOpen(true);
   };
 
   const handlePrint = async () => {
     const element = document.getElementById('tags-grid');
-    if (!element) {
-      toast.error('Failed to generate PDF: tags not found');
-      return;
-    }
+    if (!element) { toast.error('Failed to generate PDF: tags not found'); return; }
 
     try {
-      // Create a clean copy of the tags without background colors for PDF
-      const cleanElement = element.cloneNode(true) as HTMLElement;
-
-      // Remove all background colors and decorative elements
-      const allElements = cleanElement.querySelectorAll('*');
-      allElements.forEach(el => {
-        const htmlEl = el as HTMLElement;
-        // Remove background colors
-        htmlEl.style.backgroundColor = 'transparent';
-        htmlEl.style.background = 'transparent';
-        // Remove box shadows
-        htmlEl.style.boxShadow = 'none';
-        // Remove decorative elements
-        if (
-          htmlEl.classList.contains('print:hidden') ||
-          (htmlEl.classList.contains('absolute') &&
-            htmlEl.classList.contains('bg-red-500/5'))
-        ) {
-          htmlEl.style.display = 'none';
-        }
-      });
-
-      // Set white background on the main container
-      cleanElement.style.backgroundColor = '#ffffff';
-      cleanElement.style.padding = '20px';
-
-      // Temporarily replace the element for capture
-      const parent = element.parentElement;
-      const nextSibling = element.nextSibling;
-      parent?.insertBefore(cleanElement, nextSibling);
-      element.style.display = 'none';
-
-      const canvas = await html2canvas(cleanElement, {
-        useCORS: true,
-        allowTaint: true,
-      });
-
-      // Restore original element
-      parent?.removeChild(cleanElement);
-      element.style.display = '';
-
-      const imgData = canvas.toDataURL('image/png');
       const pdf = new jsPDF('p', 'mm', 'a4');
+      const pageW = 190;
+      const pageH = 277;
+      const scale = 5;
+      const gapPx = 24; // matches gap-6 in the grid
+      const marginX = 10;
+      const marginY = 10;
+      let pageY = marginY;
+      const cards = Array.from(element.children) as HTMLElement[];
 
-      const imgWidth = 190; // A4 width minus margins
-      const pageHeight = 277; // A4 height minus margins
-      const imgHeight = (canvas.height * imgWidth) / canvas.width;
-      let heightLeft = imgHeight;
+      // Process cards in pairs (each pair = one grid row)
+      for (let i = 0; i < cards.length; i += 2) {
+        const rowCards = cards.slice(i, i + 2);
 
-      let position = 10; // Start with top margin
+        // Build a temporary 2-column grid with just this row
+        const tempGrid = document.createElement('div');
+        tempGrid.style.display = 'grid';
+        tempGrid.style.gridTemplateColumns = '1fr 1fr';
+        tempGrid.style.gap = `${gapPx}px`;
+        tempGrid.style.backgroundColor = '#ffffff';
+        tempGrid.style.width = '820px';
 
-      pdf.addImage(imgData, 'PNG', 10, position, imgWidth, imgHeight);
-      heightLeft -= pageHeight;
+        for (const card of rowCards) {
+          const clone = card.cloneNode(true) as HTMLElement;
+          tempGrid.appendChild(clone);
+        }
 
-      while (heightLeft >= 0) {
-        position = heightLeft - imgHeight + 10;
-        pdf.addPage();
-        pdf.addImage(imgData, 'PNG', 10, position, imgWidth, imgHeight);
-        heightLeft -= pageHeight;
+        // Append to body (hidden offscreen to avoid flicker)
+        tempGrid.style.position = 'absolute';
+        tempGrid.style.left = '-9999px';
+        tempGrid.style.top = '0';
+        document.body.appendChild(tempGrid);
+
+        // Wait for images
+        const imgs = Array.from(tempGrid.querySelectorAll('img'));
+        await Promise.all(imgs.map(img =>
+          img.complete ? Promise.resolve() : new Promise(r => { img.onload = r; img.onerror = r; })
+        ));
+
+        // Capture this row (with barcode imgs still in DOM — html2canvas handles them natively)
+        const captured = await html2canvas(tempGrid, { useCORS: true, allowTaint: true, scale });
+
+        // Overlay fresh high-res barcodes onto the captured canvas to bypass
+        // html2canvas interpolation blur. Each barcode is rendered at the
+        // canvas native resolution via a temporary Image with pixelated smoothing.
+        const gridRect = tempGrid.getBoundingClientRect();
+        const barcodeImgs = Array.from(tempGrid.querySelectorAll<HTMLImageElement>('img[alt="barcode"]'));
+        const captureCtx = captured.getContext('2d');
+        if (captureCtx) {
+          captureCtx.imageSmoothingEnabled = false;
+          for (const img of barcodeImgs) {
+            const src = img.src;
+            const r = img.getBoundingClientRect();
+            if (r.width === 0 || r.height === 0) continue;
+            await new Promise<void>(resolve => {
+              const tempImg = new Image();
+              tempImg.onload = () => {
+                captureCtx.drawImage(
+                  tempImg,
+                  0, 0, tempImg.naturalWidth, tempImg.naturalHeight,
+                  Math.round((r.left - gridRect.left) * scale),
+                  Math.round((r.top - gridRect.top) * scale),
+                  Math.round(r.width * scale),
+                  Math.round(r.height * scale)
+                );
+                resolve();
+              };
+              tempImg.onerror = () => resolve();
+              tempImg.src = src;
+            });
+          }
+        }
+        document.body.removeChild(tempGrid);
+
+        const rowMm = (captured.height * pageW) / captured.width;
+
+        // Check if we need a new page
+        if (pageY + rowMm > pageH + marginY) {
+          pdf.addPage();
+          pageY = marginY;
+        }
+
+        pdf.addImage(captured.toDataURL('image/png'), 'PNG', marginX, pageY, pageW, rowMm);
+        const rowGapMm = (gapPx / captured.width) * pageW;
+        pageY += rowMm + rowGapMm;
       }
 
       pdf.save('asset-tags.pdf');
@@ -261,6 +326,39 @@ export default function AssetsTagging() {
     setSelectedAssetForView(asset);
     setIsAssetViewModalOpen(true);
   };
+
+  const handleBarcodeScan = useCallback(async (rawCode: string) => {
+    console.log('[BarcodeScan] raw parsed code:', JSON.stringify(rawCode), 'length:', rawCode.length);
+    const code = rawCode;
+    let asset = findAssetByScannedCode(assets, code);
+
+    if (!asset) {
+      try {
+        const response = await api.get<{ assets: AssetResponseDto[] }>(
+          `/assets/${encodeURIComponent(code)}`
+        );
+        const apiAsset = response.assets?.[0];
+        if (apiAsset) {
+          asset = mapDtoToTaggingAsset(apiAsset);
+        }
+      } catch (err: any) {
+        const status = err?.response?.status;
+        if (status === 500) {
+          toast.error(`Server error looking up "${code}". Check server logs.`);
+        }
+        console.error(`[BarcodeScan] API lookup failed for "${code}":`, err?.data || err);
+      }
+    }
+
+    if (asset) {
+      setSelectedAssetForView(asset);
+      setIsAssetViewModalOpen(true);
+    } else {
+      toast.error(`Asset "${code}" not found`);
+    }
+  }, [assets]);
+
+  useBarcodeScanner(handleBarcodeScan);
 
   const handleRowClick = (row: any) => {
     const assetId = row.original.id;
@@ -361,6 +459,7 @@ export default function AssetsTagging() {
           titleBadge={`${assets.length} assets`}
           onRowClick={handleRowClick}
           isLoading={displayLoading}
+          searchColumnOptions={ASSET_SEARCH_COLUMNS}
           mobileCardFields={[
             {
               key: 'asset-code',

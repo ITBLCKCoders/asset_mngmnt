@@ -18,6 +18,7 @@ import { AssetFormData } from '../assetTypes/assetFormTypes';
 import { AssetDocument, type AssetAssignment } from '../assetTable/assetData';
 import { formatCurrency } from '@/lib/currency';
 import { format } from 'date-fns';
+import { proxyCloudinaryUrl } from '@/utils/cloudinaryProxy';
 
 // Utility function to extract filename from Cloudinary URL or return the filename
 const getDisplayFileName = (fileName: string): string => {
@@ -86,7 +87,7 @@ export function Step4Review({
         <div className="flex justify-center -mt-2 sm:-mt-6">
           <div className="relative max-w-lg w-full min-w-0 group">
             <img
-              src={formData.imageUrl}
+              src={proxyCloudinaryUrl(formData.imageUrl)}
               alt="Asset preview"
               className="rounded-2xl sm:rounded-3xl object-cover w-full h-48 sm:h-72 md:h-96 max-h-[50vh] sm:max-h-none shadow-xl sm:shadow-2xl border-4 sm:border-8 border-white transition-transform group-hover:scale-[1.02]"
               onError={e => {

@@ -82,11 +82,9 @@ function GhostLoginPanel({ scene }: { scene: AuthScene }) {
       className="pointer-events-none absolute right-[6vw] top-1/2 z-10 hidden w-[27rem] -translate-y-1/2 lg:block"
       initial={false}
       animate={{
-        opacity: scene === 'register' ? 0.12 : 0.04,
-        x: scene === 'register' ? 0 : 96,
-        y: scene === 'register' ? 0 : -16,
-        scale: scene === 'register' ? 1 : 0.94,
-        rotate: scene === 'register' ? 0 : 1,
+        opacity: scene === 'register' ? 0.08 : 0.18,
+        y: scene === 'register' ? 0 : -8,
+        scale: scene === 'register' ? 1 : 1.02,
       }}
       transition={{ duration: AUTH_TRANSITION_MS / 1000, ease: TRANSITION_EASING }}
       aria-hidden="true"
@@ -456,15 +454,16 @@ export default function RegisterPage() {
       <form
         onSubmit={onSubmit}
         className="relative z-20 flex min-h-screen w-full items-center justify-center px-4 py-8 lg:justify-start lg:pl-[7vw] lg:pr-[36vw]"
+        style={{ perspective: '1000px' as unknown as React.CSSProperties['perspective'] }}
       >
         <motion.div
           className="w-full max-w-xl"
+          style={{ transformStyle: 'preserve-3d' }}
           initial={false}
           animate={{
             opacity: scene === 'register' ? 1 : 0,
-            x: scene === 'register' ? 0 : 180,
-            y: scene === 'register' ? 0 : 24,
-            scale: scene === 'register' ? 1 : 0.96,
+            scale: scene === 'register' ? 1 : 0.92,
+            rotateY: scene === 'register' ? 0 : 90,
           }}
           transition={{ duration: AUTH_TRANSITION_MS / 1000, ease: TRANSITION_EASING }}
         >
@@ -581,7 +580,7 @@ export default function RegisterPage() {
               <motion.div
                 key="registration-fields"
                 className="w-full space-y-3"
-                initial={{ opacity: 0, x: -72, scale: 0.98 }}
+                initial={false}
                 animate={{ opacity: 1, x: 0, scale: 1 }}
                 exit={{ opacity: 0, x: -72, scale: 0.98 }}
                 transition={{ duration: 0.35, ease: 'easeInOut' }}

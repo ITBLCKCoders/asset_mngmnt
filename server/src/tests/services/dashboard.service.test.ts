@@ -121,7 +121,7 @@ describe('dashboard.service', () => {
       expect(getDepartmentIdsForScope).toHaveBeenCalledWith(
         pool,
         'it',
-        'company-1'
+        null
       );
     });
   });

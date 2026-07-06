@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useState, useCallback } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
 import {
   Package,
@@ -52,6 +52,7 @@ import { EditAssetModal } from './assetsComponents/assetEditModal';
 import { BuilderFormsTab } from './assetsComponents/BuilderFormsTab';
 import { AssetFormData } from './assetsComponents/assetTypes/assetFormTypes';
 import { Asset } from './assetsComponents/assetTable/assetData';
+import type { AssetResponseDto } from '@/types/assetsDTOs';
 import IntangibleAssetDialog from '../components/IntangibleAssetDialog';
 import type { ColumnDef } from '@tanstack/react-table';
 import { Badge } from '@/components/ui/badge';
@@ -72,7 +73,10 @@ import {
 } from '@/utils/assetErrorHandling';
 import { formatAuditPlainText } from '@/components/common/AuditFieldChanges';
 import { useAuditFieldLookups } from '@/hooks/useAuditFieldLookups';
+import { useBarcodeScanner } from '@/hooks/useBarcodeScanner';
+import { findAssetByScannedCode } from '@/utils/barcodeScan';
 import { PDFViewer } from '@/components/PDFViewer';
+import { ASSET_SEARCH_COLUMNS } from '@/utils/assetSearchColumns';
 
 const logger = createLogger('AssetsPage');
 
@@ -376,7 +380,9 @@ export function AssetsPage() {
           const type = row.original.type;
           const badgeClass = type === 'IT scope'
             ? 'bg-blue-100 text-blue-800 hover:bg-blue-200'
-            : 'bg-purple-100 text-purple-800 hover:bg-purple-200';
+            : type === 'HR scope'
+              ? 'bg-green-100 text-green-800 hover:bg-green-200'
+              : 'bg-purple-100 text-purple-800 hover:bg-purple-200';
           return (
             <Badge variant="secondary" className={badgeClass}>
               {type}
@@ -720,6 +726,59 @@ export function AssetsPage() {
     setIsViewModalOpen(true);
   };
 
+  const handleBarcodeScan = useCallback(async (code: string) => {
+    let asset = findAssetByScannedCode(assets, code);
+
+    if (!asset) {
+      try {
+        const response = await api.get<{ assets: AssetResponseDto[] }>(
+          `/assets/${encodeURIComponent(code)}`
+        );
+        const apiAsset = response.assets?.[0];
+        if (apiAsset) {
+          asset = assets.find(a => a.id === apiAsset.asset_code) ?? {
+            id: apiAsset.asset_code,
+            assetID: apiAsset.assetID,
+            name: apiAsset.name,
+            image: apiAsset.image_url || '',
+            description: apiAsset.description || '',
+            category: apiAsset.category_name || apiAsset.category_id || '',
+            type: apiAsset.type_name || apiAsset.type_id || '',
+            serialNo: apiAsset.serial || '',
+            modelNo: apiAsset.model || '',
+            brand: apiAsset.brand || '',
+            status:
+              apiAsset.status === 'In Use' ? 'Assigned' : apiAsset.status || 'Available',
+            assignedTo: apiAsset.currentAssignment?.user?.name || '',
+            department:
+              apiAsset.currentAssignment?.department ||
+              (apiAsset.department ? JSON.parse(apiAsset.department).name : '') ||
+              '',
+            location:
+              apiAsset.currentAssignment?.location ||
+              `${apiAsset.location_name || ''}${apiAsset.room_name ? ` - ${apiAsset.room_name}` : ''}`,
+            currentAssignment: apiAsset.currentAssignment ?? undefined,
+          } as Asset;
+        }
+      } catch (err: any) {
+        const status = err?.response?.status;
+        if (status === 500) {
+          toast.error(`Server error looking up "${code}". Check server logs.`);
+        }
+        console.error(`[BarcodeScan] API lookup failed for "${code}":`, err?.data || err);
+      }
+    }
+
+    if (asset) {
+      setSelectedAsset(asset);
+      setIsViewModalOpen(true);
+    } else {
+      toast.error(`Asset "${code}" not found`);
+    }
+  }, [assets]);
+
+  useBarcodeScanner(handleBarcodeScan);
+
   const handleEditAsset = (asset: Asset) => {
     if (!hasAssetManagementAccess()) {
       setIsAccessDeniedDialogOpen(true);
@@ -1024,6 +1083,7 @@ export function AssetsPage() {
                   onRowClick={handleRowClick}
                   isLoading={isInitialLoading || tabLoading}
                   globalFilterFn={customFilterFn}
+                  searchColumnOptions={ASSET_SEARCH_COLUMNS}
                   mobileCardClassName="overflow-hidden rounded-2xl border border-red-100 bg-gradient-to-br from-white via-white to-red-50/40 p-4 shadow-sm shadow-red-100/40"
                   mobileCardFields={[
                     {
@@ -1820,6 +1880,11 @@ export function AssetsPage() {
                                             apiAsset.updated_by_name ||
                                             apiAsset.updated_by ||
                                             '',
+                                          categoryId: apiAsset.category_id || '',
+                                          typeId: apiAsset.type_id || '',
+                                          transferred_out: false,
+                                          transferred_to_company_name: null,
+                                          accountabilityForm: undefined,
                                         };
                                       }
                                     } catch (error) {

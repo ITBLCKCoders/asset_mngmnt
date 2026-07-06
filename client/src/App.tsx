@@ -3,6 +3,8 @@
 
 import { ComponentType, LazyExoticComponent, lazy } from 'react';
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
+import { QueryClientProvider } from '@tanstack/react-query';
+import { queryClient } from '@/lib/queryClient';
 import { SonnerToaster } from '@/components/ui/sonner';
 import { NotificationProvider } from '@/context/NotificationContext';
 import { AuthProvider } from '@/context/AuthContext';
@@ -106,10 +108,11 @@ const privateRoutes: RouteConfig[] = [
 
 export default function App() {
   return (
-    <AuthProvider>
-      <NotificationProvider>
-        <PermissionsProvider>
-          <BrowserRouter>
+    <QueryClientProvider client={queryClient}>
+      <AuthProvider>
+        <NotificationProvider>
+          <PermissionsProvider>
+            <BrowserRouter>
             <Routes>
               {/* Public Routes */}
               <Route path="/login" element={<PublicRoute><Login /></PublicRoute>} />
@@ -149,5 +152,6 @@ export default function App() {
         </PermissionsProvider>
       </NotificationProvider>
     </AuthProvider>
+    </QueryClientProvider>
   );
 }

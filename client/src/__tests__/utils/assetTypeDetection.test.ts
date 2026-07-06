@@ -1,28 +1,26 @@
 import { describe, it, expect } from 'vitest';
-import { isComputerAsset, isComponentAsset } from '@/utils/assetTypeDetection';
+import { isComputerTypeAsset } from '@/utils/assetTypeDetection';
 
 describe('assetTypeDetection', () => {
-  describe('isComputerAsset', () => {
+  describe('isComputerTypeAsset', () => {
     it('should return true for laptop', () => {
-      expect(isComputerAsset({ name: 'Laptop' }, 'laptop')).toBe(true);
+      expect(isComputerTypeAsset({ id: '1', name: 'Laptop' })).toBe(true);
     });
 
     it('should return false for component', () => {
-      expect(isComputerAsset({ name: 'RAM' }, 'ram')).toBe(false);
+      expect(isComputerTypeAsset({ id: '2', name: 'RAM Module' })).toBe(false);
     });
 
-    it('should return false for null type', () => {
-      expect(isComputerAsset({ name: 'Test' }, null)).toBe(false);
-    });
-  });
-
-  describe('isComponentAsset', () => {
-    it('should return true for component keyword', () => {
-      expect(isComponentAsset('Monitor')).toBe(true);
+    it('should return false for computer when name contains component keywords', () => {
+      expect(isComputerTypeAsset({ id: '3', name: 'Monitor', type: 'Monitor' })).toBe(false);
     });
 
-    it('should return false for computer keyword', () => {
-      expect(isComponentAsset('Laptop')).toBe(false);
+    it('should return true for computer via type field', () => {
+      expect(isComputerTypeAsset({ id: '4', name: 'Asset', type: 'laptop' })).toBe(true);
+    });
+
+    it('should return false for unrelated asset', () => {
+      expect(isComputerTypeAsset({ id: '5', name: 'Test', type: 'Printer' })).toBe(false);
     });
   });
 });

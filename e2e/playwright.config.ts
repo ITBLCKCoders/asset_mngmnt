@@ -49,22 +49,16 @@ export default defineConfig({
   ],
   webServer: [
     {
-      command: `cross-env NODE_ENV=test MYSQL_DB=${TEST_DB} HTTP_PORT=${SERVER_PORT} npm run dev --workspace=server`,
+      command: `node start-db.js`,
       port: SERVER_PORT,
-      timeout: 45_000,
-      reuseExistingServer: !process.env.CI,
-      env: {
-        NODE_ENV: 'test',
-        MYSQL_DB: TEST_DB,
-        HTTP_PORT: String(SERVER_PORT),
-        ...(process.env.CI ? { MYSQL_HOST: '127.0.0.1' } : {}),
-      },
+      timeout: 120_000,
+      reuseExistingServer: false,
     },
     {
       command: `cross-env NODE_ENV=test npm run dev --workspace=client`,
       port: CLIENT_PORT,
       timeout: 45_000,
-      reuseExistingServer: !process.env.CI,
+      reuseExistingServer: false,
       env: {
         NODE_ENV: 'test',
         VITE_API_PROXY_TARGET: `http://localhost:${SERVER_PORT}`,

@@ -1,5 +1,6 @@
 import { Card, CardHeader, CardTitle, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
+import { proxyCloudinaryUrl } from '@/utils/cloudinaryProxy';
 
 import { Badge } from '@/components/ui/badge';
 import {
@@ -99,9 +100,10 @@ export function AllCompaniesList({
                       >
                         {company.logo_url ? (
                           <img
-                            src={company.logo_url}
+                            src={proxyCloudinaryUrl(company.logo_url)}
                             alt={`${company.name} logo`}
                             className="h-full w-full object-contain"
+                            onError={e => { (e.target as HTMLImageElement).style.display = 'none'; }}
                           />
                         ) : (
                           <div

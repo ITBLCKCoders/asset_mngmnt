@@ -1,7 +1,7 @@
 // components/ui/DataTable.tsx
 'use client';
 
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo, useRef } from 'react';
 import {
   useReactTable,
   getCoreRowModel,
@@ -113,6 +113,8 @@ type DataTableProps<T> = {
   getRowClassName?: (row: Row<T>) => string | undefined;
   /** Optional additional classes for mobile cards */
   mobileCardClassName?: string;
+  /** Column filter options for search dropdown. When provided, shows a column selector next to the search input. */
+  searchColumnOptions?: Array<{ label: string; value: string }>;
 };
 
 function getDefaultColumnOrder(columns: ColumnDef<unknown>[]): string[] {
@@ -219,6 +221,7 @@ export function DataTable<T>({
   pageSize: controlledPageSize,
   onSearchChange,
   showSearch = true,
+  searchColumnOptions,
   mobileCardFields,
   getRowClassName,
   mobileCardClassName,
@@ -268,6 +271,19 @@ export function DataTable<T>({
   const [sorting, setSorting] = useState<any[]>([]);
   const [rawFilter, setRawFilter] = useState('');
   const [globalFilter, setGlobalFilter] = useState('');
+  const [searchColumn, setSearchColumn] = useState('all');
+
+  // Force TanStack to re-filter when the column changes (globalFilterFn changes but globalFilter value stays the same)
+  const prevSearchColumnRef = useRef(searchColumn);
+  useEffect(() => {
+    if (prevSearchColumnRef.current !== searchColumn) {
+      prevSearchColumnRef.current = searchColumn;
+      if (rawFilter) {
+        setGlobalFilter('');
+        setTimeout(() => setGlobalFilter(rawFilter), 0);
+      }
+    }
+  }, [searchColumn, rawFilter]);
   const [internalPagination, setInternalPagination] = useState({
     pageIndex: 0,
     pageSize: 10,
@@ -350,6 +366,17 @@ export function DataTable<T>({
     </div>
   );
 
+  const effectiveGlobalFilterFn = useMemo(() => {
+    if (searchColumn !== 'all') {
+      return (row: Row<any>, _columnId: string, filterValue: string) => {
+        const val = row.getValue(searchColumn);
+        if (val == null) return false;
+        return String(val).toLowerCase().includes(String(filterValue).toLowerCase());
+      };
+    }
+    return customGlobalFilterFn;
+  }, [searchColumn, customGlobalFilterFn]);
+
   useEffect(() => {
     const t = setTimeout(() => {
       setGlobalFilter(rawFilter);
@@ -387,7 +414,7 @@ export function DataTable<T>({
     onPaginationChange: setPagination,
     onExpandedChange: setExpanded,
     state: { sorting, globalFilter, pagination, expanded, columnOrder },
-    globalFilterFn: customGlobalFilterFn ?? 'includesString',
+    globalFilterFn: effectiveGlobalFilterFn ?? 'includesString',
     getRowCanExpand: getRowCanExpand,
     meta,
     manualPagination: serverPagination,
@@ -454,14 +481,27 @@ export function DataTable<T>({
         )}
       >
         {showSearch ? (
-          <div className="relative w-full md:max-w-xs">
-            <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-gray-400" />
-            <Input
-              placeholder={searchPlaceholder}
-              value={rawFilter}
-              onChange={e => setRawFilter(e.target.value)}
-              className="pl-10 border-gray-200 focus-visible:ring-0"
-            />
+          <div className="flex items-center gap-2 w-full md:max-w-md">
+            {searchColumnOptions && searchColumnOptions.length > 0 && (
+              <select
+                value={searchColumn}
+                onChange={e => setSearchColumn(e.target.value)}
+                className="h-9 rounded-md border border-gray-200 bg-white px-2 text-xs font-medium text-gray-700 focus:outline-none focus:ring-1 focus:ring-gray-300"
+              >
+                {searchColumnOptions.map(opt => (
+                  <option key={opt.value} value={opt.value}>{opt.label}</option>
+                ))}
+              </select>
+            )}
+            <div className="relative flex-1">
+              <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-gray-400" />
+              <Input
+                placeholder={searchPlaceholder}
+                value={rawFilter}
+                onChange={e => setRawFilter(e.target.value)}
+                className="pl-10 border-gray-200 focus-visible:ring-0"
+              />
+            </div>
           </div>
         ) : null}
 

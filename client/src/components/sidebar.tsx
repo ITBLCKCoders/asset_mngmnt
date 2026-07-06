@@ -1,6 +1,6 @@
 'use client';
 
-import { useLocation, useNavigate } from 'react-router-dom';
+import { useNavigate } from 'react-router-dom';
 import { Button } from '@/components/ui/button';
 import {
   Tooltip,
@@ -51,14 +51,15 @@ import {
 
 interface SidebarProps {
   onLogout?: () => void;
+  currentPath?: string;
+  currentSearch?: string;
 }
 
 
 
-const Sidebar = memo(function Sidebar({ onLogout }: SidebarProps) {
+const Sidebar = memo(function Sidebar({ onLogout, currentPath = '', currentSearch = '' }: SidebarProps) {
 
   const navigate = useNavigate();
-  const location = useLocation();
   const { user, loading } = useCurrentUser();
   const { hasPermission } = useUserPermissions();
   const { previewUrl, clearPreview } = useAvatarPreview();
@@ -99,7 +100,7 @@ const Sidebar = memo(function Sidebar({ onLogout }: SidebarProps) {
   const [userAssetNestedOpen, setUserAssetNestedOpen] = useState<Record<string, boolean>>({});
 
   const formsOpenMatch = useMemo(() => {
-    const p = location.pathname;
+    const p = currentPath;
     return (
       p === '/forms/accountability' ||
       p === '/forms/borrow' ||
@@ -108,29 +109,29 @@ const Sidebar = memo(function Sidebar({ onLogout }: SidebarProps) {
       p === '/forms/transfer' ||
       p === '/approvals'
     );
-  }, [location.pathname]);
+  }, [currentPath]);
   const formsOpen = userFormsOpen || formsOpenMatch;
 
   const reportsOpenMatch = useMemo(() => {
-    const p = location.pathname;
+    const p = currentPath;
     return p.startsWith('/reports') || p.startsWith('/history/');
-  }, [location.pathname]);
+  }, [currentPath]);
   const reportsOpen = userReportsOpen || reportsOpenMatch;
 
   const manualOpenMatch = useMemo(() => {
-    const p = location.pathname;
+    const p = currentPath;
     return p === '/user-manual' || p === '/flow-diagrams';
-  }, [location.pathname]);
+  }, [currentPath]);
   const manualOpen = userManualOpen || manualOpenMatch;
 
   const assetsOpenMatch = useMemo(() => {
-    const p = location.pathname;
+    const p = currentPath;
     return p.startsWith('/assets') && p !== '/assets/my-assets';
-  }, [location.pathname]);
+  }, [currentPath]);
   const assetsOpen = userAssetsOpen || assetsOpenMatch;
 
   const assetNestedOpen = useMemo(() => {
-    const path = location.pathname;
+    const path = currentPath;
     const routeMatch: Record<string, boolean> = {};
     if (
       path === '/assets/borrow' ||
@@ -155,7 +156,7 @@ const Sidebar = memo(function Sidebar({ onLogout }: SidebarProps) {
       routeMatch['assets-return'] = true;
     }
     return { ...userAssetNestedOpen, ...routeMatch };
-  }, [location.pathname, userAssetNestedOpen]);
+  }, [currentPath, userAssetNestedOpen]);
 
   const displayAvatarUrl = previewUrl || user?.avatarUrl;
 
@@ -177,13 +178,13 @@ const Sidebar = memo(function Sidebar({ onLogout }: SidebarProps) {
   const matchesPath = useCallback(
     (path: string) => {
       if (path === '/assets') {
-        return location.pathname === '/assets';
+        return currentPath === '/assets';
       }
-      return location.pathname === path || location.pathname.startsWith(`${path}/`);
+      return currentPath === path || currentPath.startsWith(`${path}/`);
     },
-    [location.pathname]
+    [currentPath]
   );
-  const reportSection = new URLSearchParams(location.search).get('section');
+  const reportSection = new URLSearchParams(currentSearch).get('section');
 
   // Eagerly warm-load all lazy route chunks so navigation feels instant
   useEffect(() => {
@@ -342,12 +343,12 @@ const Sidebar = memo(function Sidebar({ onLogout }: SidebarProps) {
                 <li>
                   <SidebarHoverItem
                     active={
-                      location.pathname === '/forms/accountability' ||
-                      location.pathname === '/forms/borrow' ||
-                      location.pathname === '/forms/checklist' ||
-                      location.pathname === '/forms/return' ||
-                      location.pathname === '/forms/transfer' ||
-                      location.pathname === '/approvals' ||
+                      currentPath === '/forms/accountability' ||
+                      currentPath === '/forms/borrow' ||
+                      currentPath === '/forms/checklist' ||
+                      currentPath === '/forms/return' ||
+                      currentPath === '/forms/transfer' ||
+                      currentPath === '/approvals' ||
                       formsOpen
                     }
                   >
@@ -355,12 +356,12 @@ const Sidebar = memo(function Sidebar({ onLogout }: SidebarProps) {
                       onClick={() => setUserFormsOpen(!formsOpen)} {...prefetchMany(['/forms/accountability', '/forms/checklist', '/forms/borrow', '/forms/return', '/forms/transfer', '/approvals'])}
                       className={cn(
                         'flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium w-full transition-all duration-200 justify-between',
-                        location.pathname === '/forms/accountability' ||
-                          location.pathname === '/forms/borrow' ||
-                          location.pathname === '/forms/checklist' ||
-                          location.pathname === '/forms/return' ||
-                          location.pathname === '/forms/transfer' ||
-                          location.pathname === '/approvals' ||
+                        currentPath === '/forms/accountability' ||
+                          currentPath === '/forms/borrow' ||
+                          currentPath === '/forms/checklist' ||
+                          currentPath === '/forms/return' ||
+                          currentPath === '/forms/transfer' ||
+                          currentPath === '/approvals' ||
                           formsOpen
                           ? 'bg-white/20 text-white shadow-md'
                           : 'text-white/80 hover:bg-white/10 hover:text-white'
@@ -390,13 +391,13 @@ const Sidebar = memo(function Sidebar({ onLogout }: SidebarProps) {
                     <div className="mt-1 space-y-1 pl-10">
                       {hasPermission('Accountability Form', 'view') && (
                         <SidebarHoverItem
-                          active={location.pathname === '/forms/accountability'}
+                          active={currentPath === '/forms/accountability'}
                         >
                           <button
                             onClick={() => go('/forms/accountability')} {...prefetch('/forms/accountability')}
                             className={cn(
                               'flex items-center gap-3 px-3 py-2 rounded-lg text-sm w-full transition-all duration-200',
-                              location.pathname === '/forms/accountability'
+                              currentPath === '/forms/accountability'
                                 ? 'bg-white/15 text-white font-medium'
                                 : 'text-white/70 hover:bg-white/10 hover:text-white'
                             )}
@@ -408,13 +409,13 @@ const Sidebar = memo(function Sidebar({ onLogout }: SidebarProps) {
                       )}
                       {hasPermission('Checklist Form', 'view') && (
                         <SidebarHoverItem
-                          active={location.pathname === '/forms/checklist'}
+                          active={currentPath === '/forms/checklist'}
                         >
                           <button
                             onClick={() => go('/forms/checklist')} {...prefetch('/forms/checklist')}
                             className={cn(
                               'flex items-center gap-3 px-3 py-2 rounded-lg text-sm w-full transition-all duration-200',
-                              location.pathname === '/forms/checklist'
+                              currentPath === '/forms/checklist'
                                 ? 'bg-white/15 text-white font-medium'
                                 : 'text-white/70 hover:bg-white/10 hover:text-white'
                             )}
@@ -426,13 +427,13 @@ const Sidebar = memo(function Sidebar({ onLogout }: SidebarProps) {
                       )}
                       {hasPermission('Borrow Form', 'view') && (
                         <SidebarHoverItem
-                          active={location.pathname === '/forms/borrow'}
+                          active={currentPath === '/forms/borrow'}
                         >
                           <button
                             onClick={() => go('/forms/borrow')} {...prefetch('/forms/borrow')}
                             className={cn(
                               'flex items-center gap-3 px-3 py-2 rounded-lg text-sm w-full transition-all duration-200',
-                              location.pathname === '/forms/borrow'
+                              currentPath === '/forms/borrow'
                                 ? 'bg-white/15 text-white font-medium'
                                 : 'text-white/70 hover:bg-white/10 hover:text-white'
                             )}
@@ -444,13 +445,13 @@ const Sidebar = memo(function Sidebar({ onLogout }: SidebarProps) {
                       )}
                       {hasPermission('Return Form', 'view') && (
                         <SidebarHoverItem
-                          active={location.pathname === '/forms/return'}
+                          active={currentPath === '/forms/return'}
                         >
                           <button
                             onClick={() => go('/forms/return')} {...prefetch('/forms/return')}
                             className={cn(
                               'flex items-center gap-3 px-3 py-2 rounded-lg text-sm w-full transition-all duration-200',
-                              location.pathname === '/forms/return'
+                              currentPath === '/forms/return'
                                 ? 'bg-white/15 text-white font-medium'
                                 : 'text-white/70 hover:bg-white/10 hover:text-white'
                             )}
@@ -462,13 +463,13 @@ const Sidebar = memo(function Sidebar({ onLogout }: SidebarProps) {
                       )}
                       {hasPermission('Transfer Form', 'view') && (
                         <SidebarHoverItem
-                          active={location.pathname === '/forms/transfer'}
+                          active={currentPath === '/forms/transfer'}
                         >
                           <button
                             onClick={() => go('/forms/transfer')} {...prefetch('/forms/transfer')}
                             className={cn(
                               'flex items-center gap-3 px-3 py-2 rounded-lg text-sm w-full transition-all duration-200',
-                              location.pathname === '/forms/transfer'
+                              currentPath === '/forms/transfer'
                                 ? 'bg-white/15 text-white font-medium'
                                 : 'text-white/70 hover:bg-white/10 hover:text-white'
                             )}
@@ -480,13 +481,13 @@ const Sidebar = memo(function Sidebar({ onLogout }: SidebarProps) {
                       )}
                       {hasPermission('Approvals', 'view') && (
                         <SidebarHoverItem
-                          active={location.pathname === '/approvals'}
+                          active={currentPath === '/approvals'}
                         >
                           <button
                             onClick={() => go('/approvals')} {...prefetch('/approvals')}
                             className={cn(
                               'flex items-center gap-3 px-3 py-2 rounded-lg text-sm w-full transition-all duration-200',
-                              location.pathname === '/approvals'
+                              currentPath === '/approvals'
                                 ? 'bg-white/15 text-white font-medium'
                                 : 'text-white/70 hover:bg-white/10 hover:text-white'
                             )}
@@ -520,8 +521,8 @@ const Sidebar = memo(function Sidebar({ onLogout }: SidebarProps) {
                 <li>
                   <SidebarHoverItem
                     active={
-                      (location.pathname.startsWith('/assets') &&
-                        location.pathname !== '/assets/my-assets') ||
+                      (currentPath.startsWith('/assets') &&
+                        currentPath !== '/assets/my-assets') ||
                       assetsOpen
                     }
                   >
@@ -529,8 +530,8 @@ const Sidebar = memo(function Sidebar({ onLogout }: SidebarProps) {
                       onClick={() => setUserAssetsOpen(!assetsOpen)} {...prefetchMany(ASSET_SIDEBAR_ENTRIES.flatMap(e => [e.path, ...(e.children?.map(c => c.path) ?? [])]))}
                       className={cn(
                         'flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium w-full transition-all duration-200 justify-between',
-                        (location.pathname.startsWith('/assets') &&
-                          location.pathname !== '/assets/my-assets') ||
+                        (currentPath.startsWith('/assets') &&
+                          currentPath !== '/assets/my-assets') ||
                           assetsOpen
                           ? 'bg-white/20 text-white shadow-md'
                           : 'text-white/80 hover:bg-white/10 hover:text-white'
@@ -727,7 +728,7 @@ const Sidebar = memo(function Sidebar({ onLogout }: SidebarProps) {
                   <SidebarHoverItem
                     active={
                       matchesPath('/reports') ||
-                      location.pathname.startsWith('/history/') ||
+                      currentPath.startsWith('/history/') ||
                       reportsOpen
                     }
                   >
@@ -737,7 +738,7 @@ const Sidebar = memo(function Sidebar({ onLogout }: SidebarProps) {
                         className={cn(
                           'flex min-w-0 flex-1 items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-all duration-200 text-left',
                           matchesPath('/reports') ||
-                            location.pathname.startsWith('/history/') ||
+                            currentPath.startsWith('/history/') ||
                             reportsOpen
                             ? 'bg-white/20 text-white shadow-md'
                             : 'text-white/80 hover:bg-white/10 hover:text-white'
@@ -778,7 +779,7 @@ const Sidebar = memo(function Sidebar({ onLogout }: SidebarProps) {
                       {hasPermission('Assignment History', 'view') && (
                         <SidebarHoverItem
                           active={
-                            location.pathname === '/reports' &&
+                            currentPath === '/reports' &&
                             reportSection === 'assignment'
                           }
                         >
@@ -786,7 +787,7 @@ const Sidebar = memo(function Sidebar({ onLogout }: SidebarProps) {
                             onClick={() => go('/reports?section=assignment')} {...prefetch('/reports')}
                             className={cn(
                               'flex items-center gap-3 px-3 py-2 rounded-lg text-sm w-full transition-all duration-200',
-                              location.pathname === '/reports' &&
+                              currentPath === '/reports' &&
                                 reportSection === 'assignment'
                                 ? 'bg-white/15 text-white font-medium'
                                 : 'text-white/70 hover:bg-white/10 hover:text-white'
@@ -800,7 +801,7 @@ const Sidebar = memo(function Sidebar({ onLogout }: SidebarProps) {
                       {hasPermission('Return History', 'view') && (
                         <SidebarHoverItem
                           active={
-                            location.pathname === '/reports' &&
+                            currentPath === '/reports' &&
                             reportSection === 'return'
                           }
                         >
@@ -808,7 +809,7 @@ const Sidebar = memo(function Sidebar({ onLogout }: SidebarProps) {
                             onClick={() => go('/reports?section=return')} {...prefetch('/reports')}
                             className={cn(
                               'flex items-center gap-3 px-3 py-2 rounded-lg text-sm w-full transition-all duration-200',
-                              location.pathname === '/reports' &&
+                              currentPath === '/reports' &&
                                 reportSection === 'return'
                                 ? 'bg-white/15 text-white font-medium'
                                 : 'text-white/70 hover:bg-white/10 hover:text-white'
@@ -822,7 +823,7 @@ const Sidebar = memo(function Sidebar({ onLogout }: SidebarProps) {
                       {hasPermission('Transfer History', 'view') && (
                         <SidebarHoverItem
                           active={
-                            location.pathname === '/reports' &&
+                            currentPath === '/reports' &&
                             reportSection === 'transfer'
                           }
                         >
@@ -830,7 +831,7 @@ const Sidebar = memo(function Sidebar({ onLogout }: SidebarProps) {
                             onClick={() => go('/reports?section=transfer')} {...prefetch('/reports')}
                             className={cn(
                               'flex items-center gap-3 px-3 py-2 rounded-lg text-sm w-full transition-all duration-200',
-                              location.pathname === '/reports' &&
+                              currentPath === '/reports' &&
                                 reportSection === 'transfer'
                                 ? 'bg-white/15 text-white font-medium'
                                 : 'text-white/70 hover:bg-white/10 hover:text-white'
@@ -844,7 +845,7 @@ const Sidebar = memo(function Sidebar({ onLogout }: SidebarProps) {
                       {hasPermission('Maintenance History', 'view') && (
                         <SidebarHoverItem
                           active={
-                            location.pathname === '/reports' &&
+                            currentPath === '/reports' &&
                             reportSection === 'maintenance'
                           }
                         >
@@ -852,7 +853,7 @@ const Sidebar = memo(function Sidebar({ onLogout }: SidebarProps) {
                             onClick={() => go('/reports?section=maintenance')} {...prefetch('/reports')}
                             className={cn(
                               'flex items-center gap-3 px-3 py-2 rounded-lg text-sm w-full transition-all duration-200',
-                              location.pathname === '/reports' &&
+                              currentPath === '/reports' &&
                                 reportSection === 'maintenance'
                                 ? 'bg-white/15 text-white font-medium'
                                 : 'text-white/70 hover:bg-white/10 hover:text-white'
@@ -866,7 +867,7 @@ const Sidebar = memo(function Sidebar({ onLogout }: SidebarProps) {
                       {hasPermission('Repair History', 'view') && (
                         <SidebarHoverItem
                           active={
-                            location.pathname === '/reports' &&
+                            currentPath === '/reports' &&
                             reportSection === 'repair'
                           }
                         >
@@ -874,7 +875,7 @@ const Sidebar = memo(function Sidebar({ onLogout }: SidebarProps) {
                             onClick={() => go('/reports?section=repair')} {...prefetch('/reports')}
                             className={cn(
                               'flex items-center gap-3 px-3 py-2 rounded-lg text-sm w-full transition-all duration-200',
-                              location.pathname === '/reports' &&
+                              currentPath === '/reports' &&
                                 reportSection === 'repair'
                                 ? 'bg-white/15 text-white font-medium'
                                 : 'text-white/70 hover:bg-white/10 hover:text-white'
@@ -889,7 +890,7 @@ const Sidebar = memo(function Sidebar({ onLogout }: SidebarProps) {
                         hasPermission('Asset Borrowing', 'view')) && (
                         <SidebarHoverItem
                           active={
-                            location.pathname === '/reports' &&
+                            currentPath === '/reports' &&
                             reportSection === 'borrow'
                           }
                         >
@@ -897,7 +898,7 @@ const Sidebar = memo(function Sidebar({ onLogout }: SidebarProps) {
                             onClick={() => go('/reports?section=borrow')} {...prefetch('/reports')}
                             className={cn(
                               'flex items-center gap-3 px-3 py-2 rounded-lg text-sm w-full transition-all duration-200',
-                              location.pathname === '/reports' &&
+                              currentPath === '/reports' &&
                                 reportSection === 'borrow'
                                 ? 'bg-white/15 text-white font-medium'
                                 : 'text-white/70 hover:bg-white/10 hover:text-white'
@@ -911,7 +912,7 @@ const Sidebar = memo(function Sidebar({ onLogout }: SidebarProps) {
                       {hasPermission('Reports', 'view') && (
                         <SidebarHoverItem
                           active={
-                            location.pathname === '/reports' &&
+                            currentPath === '/reports' &&
                             reportSection === 'finance'
                           }
                         >
@@ -919,7 +920,7 @@ const Sidebar = memo(function Sidebar({ onLogout }: SidebarProps) {
                             onClick={() => go('/reports?section=finance')} {...prefetch('/reports')}
                             className={cn(
                               'flex items-center gap-3 px-3 py-2 rounded-lg text-sm w-full transition-all duration-200',
-                              location.pathname === '/reports' &&
+                              currentPath === '/reports' &&
                                 reportSection === 'finance'
                                 ? 'bg-white/15 text-white font-medium'
                                 : 'text-white/70 hover:bg-white/10 hover:text-white'
@@ -934,7 +935,7 @@ const Sidebar = memo(function Sidebar({ onLogout }: SidebarProps) {
                         hasPermission('Asset Request', 'view')) && (
                         <SidebarHoverItem
                           active={
-                            location.pathname === '/reports' &&
+                            currentPath === '/reports' &&
                             reportSection === 'assetRequest'
                           }
                         >
@@ -942,7 +943,7 @@ const Sidebar = memo(function Sidebar({ onLogout }: SidebarProps) {
                             onClick={() => go('/reports?section=assetRequest')} {...prefetch('/reports')}
                             className={cn(
                               'flex items-center gap-3 px-3 py-2 rounded-lg text-sm w-full transition-all duration-200',
-                              location.pathname === '/reports' &&
+                              currentPath === '/reports' &&
                                 reportSection === 'assetRequest'
                                 ? 'bg-white/15 text-white font-medium'
                                 : 'text-white/70 hover:bg-white/10 hover:text-white'
@@ -1000,8 +1001,8 @@ const Sidebar = memo(function Sidebar({ onLogout }: SidebarProps) {
               <li>
                 <SidebarHoverItem
                   active={
-                    location.pathname === '/user-manual' ||
-                    location.pathname === '/flow-diagrams'
+                    currentPath === '/user-manual' ||
+                    currentPath === '/flow-diagrams'
                   }
                 >
                   <button
@@ -1009,8 +1010,8 @@ const Sidebar = memo(function Sidebar({ onLogout }: SidebarProps) {
                     onClick={() => setUserManualOpen(!manualOpen)} {...prefetchMany(['/user-manual', '/flow-diagrams'])}
                     className={cn(
                       'flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium w-full transition-all duration-200 justify-between',
-                      location.pathname === '/user-manual' ||
-                        location.pathname === '/flow-diagrams'
+                      currentPath === '/user-manual' ||
+                        currentPath === '/flow-diagrams'
                         ? 'bg-white/20 text-white shadow-md'
                         : 'text-white/80 hover:bg-white/10 hover:text-white'
                     )}
@@ -1038,13 +1039,13 @@ const Sidebar = memo(function Sidebar({ onLogout }: SidebarProps) {
                 >
                   <div className="mt-1 space-y-1 pl-10">
                     <SidebarHoverItem
-                      active={location.pathname === '/user-manual'}
+                      active={currentPath === '/user-manual'}
                     >
                       <button
                         onClick={() => go('/user-manual')} {...prefetch('/user-manual')}
                         className={cn(
                           'flex items-center gap-3 px-3 py-2 rounded-lg text-sm w-full transition-all duration-200',
-                          location.pathname === '/user-manual'
+                          currentPath === '/user-manual'
                             ? 'bg-white/15 text-white font-medium'
                             : 'text-white/70 hover:bg-white/10 hover:text-white'
                         )}
@@ -1054,13 +1055,13 @@ const Sidebar = memo(function Sidebar({ onLogout }: SidebarProps) {
                       </button>
                     </SidebarHoverItem>
                     <SidebarHoverItem
-                      active={location.pathname === '/flow-diagrams'}
+                      active={currentPath === '/flow-diagrams'}
                     >
                       <button
                         onClick={() => go('/flow-diagrams')} {...prefetch('/flow-diagrams')}
                         className={cn(
                           'flex items-center gap-3 px-3 py-2 rounded-lg text-sm w-full transition-all duration-200',
-                          location.pathname === '/flow-diagrams'
+                          currentPath === '/flow-diagrams'
                             ? 'bg-white/15 text-white font-medium'
                             : 'text-white/70 hover:bg-white/10 hover:text-white'
                         )}

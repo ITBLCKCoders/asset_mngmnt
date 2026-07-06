@@ -264,6 +264,7 @@ export default function IntangibleAssetDialog({
                         <SelectContent>
                           <SelectItem value="IT scope">IT scope</SelectItem>
                           <SelectItem value="Admin scope">Admin scope</SelectItem>
+                          <SelectItem value="HR scope">HR scope</SelectItem>
                         </SelectContent>
                       </Select>
                     </div>

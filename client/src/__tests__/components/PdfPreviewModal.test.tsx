@@ -41,6 +41,6 @@ describe('PdfPreviewModal', () => {
 
   it('should show download button when pdfUrl is provided', () => {
     render(<PdfPreviewModal isOpen={true} onClose={vi.fn()} pdfUrl="/api/pdf/123" />);
-    expect(screen.getByText('Download')).toBeDefined();
+    expect(screen.getAllByText('Download').length).toBeGreaterThan(0);
   });
 });

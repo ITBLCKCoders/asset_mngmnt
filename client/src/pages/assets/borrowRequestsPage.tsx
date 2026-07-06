@@ -38,6 +38,7 @@ import { DataTable } from '@/components/ui/dataTable';
 import type { ColumnDef } from '@tanstack/react-table';
 import { api } from '@/lib/api';
 import { toast } from 'sonner';
+import { proxyCloudinaryUrl } from '@/utils/cloudinaryProxy';
 import { useUserPermissions } from '@/hooks/useUserPermissions';
 import { useCurrentUser } from '@/hooks/useCurrentUser';
 import { useCompanyContext } from '@/context/CompanyContext';
@@ -1730,7 +1731,7 @@ export default function BorrowRequestsPage() {
                                 onClick={() => window.open(url, '_blank')}
                               >
                                 <img
-                                  src={url}
+                                  src={proxyCloudinaryUrl(url)}
                                   alt={`Pre-usage condition ${idx + 1}`}
                                   className="h-20 w-20 object-cover"
                                 />
@@ -1873,7 +1874,7 @@ export default function BorrowRequestsPage() {
                         onClick={() => window.open(url, '_blank')}
                       >
                         <img
-                          src={url}
+                          src={proxyCloudinaryUrl(url)}
                           alt={`Return condition ${idx + 1}`}
                           className="h-20 w-20 object-cover"
                         />

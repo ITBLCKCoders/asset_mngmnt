@@ -21,7 +21,7 @@ describe('assetErrorHandling', () => {
         message: 'Unauthorized',
         response: { status: 401, data: { error: 'Session expired' } },
       });
-      expect(result).toContain('Session');
+      expect(result).toBe('Authentication failed. Please log in again.');
     });
 
     it('should return 403 error message', () => {
@@ -29,7 +29,7 @@ describe('assetErrorHandling', () => {
         message: 'Forbidden',
         response: { status: 403, data: { error: 'Access denied' } },
       });
-      expect(result).toBe('Access denied');
+      expect(result).toBe('Access denied. You do not have permission to perform this action.');
     });
 
     it('should return 404 error message', () => {
@@ -37,7 +37,7 @@ describe('assetErrorHandling', () => {
         message: 'Not Found',
         response: { status: 404, data: { error: 'Resource not found' } },
       });
-      expect(result).toBe('Resource not found');
+      expect(result).toBe('Resource not found. Please check the URL or try again.');
     });
 
     it('should return 409 error message', () => {
@@ -45,7 +45,7 @@ describe('assetErrorHandling', () => {
         message: 'Conflict',
         response: { status: 409, data: { error: 'Duplicate entry' } },
       });
-      expect(result).toBe('Duplicate entry');
+      expect(result).toBe('Conflict');
     });
 
     it('should return 500 error message', () => {
@@ -53,7 +53,7 @@ describe('assetErrorHandling', () => {
         message: 'Server Error',
         response: { status: 500, data: { error: 'Internal error' } },
       });
-      expect(result).toContain('server');
+      expect(result).toBe('Server error. Please try again later.');
     });
 
     it('should return default message for unknown errors', () => {
