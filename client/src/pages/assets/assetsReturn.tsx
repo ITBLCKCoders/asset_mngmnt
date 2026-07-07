@@ -27,6 +27,8 @@ import {
 } from 'lucide-react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { PageHeader } from '@/components/common/PageHeader';
+import { SearchWithColumnFilter } from '@/components/common/SearchWithColumnFilter';
+import { ASSET_SEARCH_COLUMNS_BASIC } from '@/utils/assetSearchColumns';
 import { Button } from '@/components/ui/button';
 import { useCompanyContext } from '@/context/CompanyContext';
 import {
@@ -1310,34 +1312,15 @@ export default function AssetsReturn() {
                       </Badge>
                     </CardTitle>
 
-                    <div className="flex items-center gap-2 mt-4">
-                      <select
-                        value={searchColumn}
-                        onChange={e => setSearchColumn(e.target.value)}
-                        className="h-9 rounded-md border border-gray-200 bg-white px-2 text-xs font-medium text-gray-700 focus:outline-none focus:ring-1 focus:ring-gray-300"
-                      >
-                        <option value="all">All Columns</option>
-                        <option value="id">Asset Code</option>
-                        <option value="name">Asset Name</option>
-                        <option value="description">Description</option>
-                        <option value="category">Category</option>
-                        <option value="type">Type</option>
-                        <option value="serialNo">Serial No</option>
-                        <option value="modelNo">Model</option>
-                        <option value="brand">Brand</option>
-                        <option value="department">Department</option>
-                        <option value="location">Location</option>
-                      </select>
-                      <div className="relative flex-1">
-                        <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-gray-400" />
-                        <Input
-                          placeholder="Search assets..."
-                          value={searchTerm}
-                          onChange={e => setSearchTerm(e.target.value)}
-                          className="pl-10 border-gray-200 focus:border-red-500 focus:ring-red-500"
-                        />
-                      </div>
-                    </div>
+                    <SearchWithColumnFilter
+                      value={searchTerm}
+                      onChange={setSearchTerm}
+                      placeholder="Search assets..."
+                      columnOptions={ASSET_SEARCH_COLUMNS_BASIC}
+                      searchColumn={searchColumn}
+                      onSearchColumnChange={setSearchColumn}
+                      className="mt-4"
+                    />
                   </CardHeader>
 
                   <CardContent className="pt-0">

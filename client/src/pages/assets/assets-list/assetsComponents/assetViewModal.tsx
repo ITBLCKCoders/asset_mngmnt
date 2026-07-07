@@ -100,9 +100,9 @@ export function AssetViewModal({
 
     // Map depreciation method
     const mapDepreciationMethod = (
-      method: string
+      method: string | null | undefined
     ): AssetFormData['depreciationMethod'] => {
-      switch (method.toLowerCase()) {
+      switch (method?.toLowerCase() ?? '') {
         case 'straight line':
           return 'straight-line';
         case 'declining balance':

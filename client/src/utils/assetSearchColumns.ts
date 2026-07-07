@@ -3,6 +3,26 @@ export interface SearchColumnOption {
   value: string;
 }
 
+export const ASSET_SEARCH_COLUMNS_BASIC: SearchColumnOption[] = [
+  { label: 'All Columns', value: 'all' },
+  { label: 'Asset Code', value: 'id' },
+  { label: 'Asset Name', value: 'name' },
+  { label: 'Description', value: 'description' },
+  { label: 'Category', value: 'category' },
+  { label: 'Type', value: 'type' },
+  { label: 'Serial No', value: 'serialNo' },
+  { label: 'Model', value: 'modelNo' },
+  { label: 'Brand', value: 'brand' },
+  { label: 'Department', value: 'department' },
+  { label: 'Location', value: 'location' },
+];
+
+export const MY_ASSETS_SEARCH_COLUMNS: SearchColumnOption[] = [
+  ...ASSET_SEARCH_COLUMNS_BASIC,
+  { label: 'Assigned To', value: 'assignedTo' },
+  { label: 'Supplier', value: 'supplier' },
+];
+
 export const ASSET_SEARCH_COLUMNS: SearchColumnOption[] = [
   { label: 'All Columns', value: 'all' },
   { label: 'Asset Code', value: 'id' },

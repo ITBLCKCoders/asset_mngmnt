@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useRef, useState } from 'react';
+import { useMemo } from 'react';
 import JsBarcode from 'jsbarcode';
 
 interface BarcodeProps {
@@ -11,34 +11,22 @@ interface BarcodeProps {
 }
 
 export function Barcode({ value, width = 200, format = 'CODE128', className }: BarcodeProps) {
-  const [dataUrl, setDataUrl] = useState('');
-  const [naturalWidth, setNaturalWidth] = useState(0);
-  const mountedRef = useRef(true);
-
-  useEffect(() => {
-    mountedRef.current = true;
-    return () => { mountedRef.current = false; };
-  }, []);
-
-  useEffect(() => {
+  const { dataUrl, naturalWidth } = useMemo(() => {
     try {
       const canvas = document.createElement('canvas');
       const encodedValue = format === 'CODE39' ? value.toUpperCase() : value;
       JsBarcode(canvas, encodedValue, {
         format,
-        width: 6,
+        width: 8,
         height: 120,
         displayValue: false,
-        margin: 20,
+        margin: 16,
         background: '#ffffff',
         lineColor: '#000000',
       });
-      if (mountedRef.current) {
-        setNaturalWidth(canvas.width);
-        setDataUrl(canvas.toDataURL('image/png'));
-      }
+      return { dataUrl: canvas.toDataURL('image/png'), naturalWidth: canvas.width };
     } catch {
-      if (mountedRef.current) setDataUrl('');
+      return { dataUrl: '', naturalWidth: 0 };
     }
   }, [value, format]);
 

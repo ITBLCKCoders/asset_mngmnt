@@ -353,7 +353,7 @@ export const batchAssignIntangibleAssets = async (req: AuthRequest, res: Respons
           : [];
 
         const [intangibleRows] = await pool.execute(
-          `SELECT id, name, type FROM intangible_assets
+          `SELECT id, name, description, type FROM intangible_assets
            WHERE id IN (${assetIds.map(() => '?').join(',')}) AND company_id = ?`,
           [...assetIds, activeCompany.id]
         );
@@ -374,6 +374,7 @@ export const batchAssignIntangibleAssets = async (req: AuthRequest, res: Respons
             id: ia.id,
             code: ia.name || ia.id,
             name: ia.name || '',
+            description: ia.description || '',
             category: 'Intangible',
             type: ia.type || 'Intangible',
             department: deptName,

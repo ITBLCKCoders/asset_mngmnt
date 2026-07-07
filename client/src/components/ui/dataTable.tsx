@@ -34,7 +34,6 @@ import { CSS } from '@dnd-kit/utilities';
 import {
   ArrowUp,
   ArrowDown,
-  Search,
   ChevronDown,
   GripVertical,
 } from 'lucide-react';
@@ -67,6 +66,7 @@ import {
 import { formatDistanceToNow } from 'date-fns';
 import { cn } from '@/lib/utils';
 import { Shimmer } from '@/components/ui/shimmer';
+import { SearchWithColumnFilter } from '@/components/common/SearchWithColumnFilter';
 
 type DataTableProps<T> = {
   data: T[];
@@ -481,28 +481,15 @@ export function DataTable<T>({
         )}
       >
         {showSearch ? (
-          <div className="flex items-center gap-2 w-full md:max-w-md">
-            {searchColumnOptions && searchColumnOptions.length > 0 && (
-              <select
-                value={searchColumn}
-                onChange={e => setSearchColumn(e.target.value)}
-                className="h-9 rounded-md border border-gray-200 bg-white px-2 text-xs font-medium text-gray-700 focus:outline-none focus:ring-1 focus:ring-gray-300"
-              >
-                {searchColumnOptions.map(opt => (
-                  <option key={opt.value} value={opt.value}>{opt.label}</option>
-                ))}
-              </select>
-            )}
-            <div className="relative flex-1">
-              <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-gray-400" />
-              <Input
-                placeholder={searchPlaceholder}
-                value={rawFilter}
-                onChange={e => setRawFilter(e.target.value)}
-                className="pl-10 border-gray-200 focus-visible:ring-0"
-              />
-            </div>
-          </div>
+          <SearchWithColumnFilter
+            value={rawFilter}
+            onChange={setRawFilter}
+            placeholder={searchPlaceholder}
+            columnOptions={searchColumnOptions}
+            searchColumn={searchColumn}
+            onSearchColumnChange={setSearchColumn}
+            className="w-full md:max-w-md"
+          />
         ) : null}
 
         <div className="flex flex-col gap-3 sm:flex-row sm:flex-wrap sm:items-center sm:justify-end">

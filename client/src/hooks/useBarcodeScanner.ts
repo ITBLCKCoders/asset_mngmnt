@@ -1,10 +1,13 @@
 'use client';
 
 import { useEffect, useRef } from 'react';
-import { parseScannedAssetCode } from '@/utils/barcodeScan';
+/** USB scanners on long QR URLs can pause briefly between character bursts. */
+const SCAN_CHAR_GAP_MS = 300;
+const SCAN_COMPLETE_IDLE_MS = 200;
 
-const SCAN_CHAR_GAP_MS = 80;
-const SCAN_COMPLETE_IDLE_MS = 120;
+function looksLikeIncompleteScan(buffer: string): boolean {
+  return /https?:\/\/|:\/\/|\/assets\/details\/|assets\/details\/|details\//i.test(buffer);
+}
 
 function isTypingTarget(target: EventTarget | null): boolean {
   if (!(target instanceof HTMLElement)) return false;
@@ -26,11 +29,11 @@ export function useBarcodeScanner(onScan: (code: string) => void) {
 
   useEffect(() => {
     const flush = () => {
-      const code = parseScannedAssetCode(bufferRef.current);
+      const raw = bufferRef.current.trim();
       bufferRef.current = '';
       clearTimeout(timerRef.current);
-      if (code) {
-        onScanRef.current(code);
+      if (raw) {
+        onScanRef.current(raw);
       }
     };
 
@@ -41,7 +44,11 @@ export function useBarcodeScanner(onScan: (code: string) => void) {
       if (e.key.length > 1 && e.key.startsWith('F') && e.key.length <= 3) return;
 
       const now = Date.now();
-      if (bufferRef.current && now - lastKeyAtRef.current > SCAN_CHAR_GAP_MS) {
+      if (
+        bufferRef.current &&
+        now - lastKeyAtRef.current > SCAN_CHAR_GAP_MS &&
+        !looksLikeIncompleteScan(bufferRef.current)
+      ) {
         bufferRef.current = '';
       }
       lastKeyAtRef.current = now;

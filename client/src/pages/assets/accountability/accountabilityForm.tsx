@@ -335,15 +335,53 @@ const fetchAssignedIntangibleAssetsForForm = (
   );
 };
 
+const getIntangibleAssetDescription = (asset: any): string =>
+  String(asset?.description ?? '').trim();
+
+const enrichIntangibleAssetsWithDescriptions = async (
+  assets: any[],
+  form: AccountabilityForm
+): Promise<any[]> => {
+  if (assets.length === 0) return assets;
+  if (assets.every(asset => getIntangibleAssetDescription(asset))) {
+    return assets;
+  }
+
+  const assignmentIds = new Set(getAccountabilityFormAssignmentIds(form));
+  if (assignmentIds.size === 0) return assets;
+
+  try {
+    const response = await api.get<any[]>('/intangible-assets');
+    const apiById = new Map(
+      (response ?? []).map(asset => [String(asset.id), asset])
+    );
+    return assets.map(asset => {
+      const fromApi = apiById.get(String(asset.id));
+      if (!fromApi) return asset;
+      return {
+        ...asset,
+        description: fromApi.description ?? asset.description ?? '',
+        name: asset.name || fromApi.name,
+        type: asset.type || fromApi.type,
+      };
+    });
+  } catch {
+    return assets;
+  }
+};
+
 // Reusable PDF generation function (exported for issuer decline notification dialog)
 export const generateAccountabilityFormPDF = async (
   form: AccountabilityForm,
   currentUser?: any,
   intangibleAssets?: any[]
 ): Promise<Blob> => {
-  const assignedIntangibleAssets = (intangibleAssets && intangibleAssets.length > 0)
-    ? intangibleAssets
-    : fetchAssignedIntangibleAssetsForForm(form);
+  const assignedIntangibleAssets = await enrichIntangibleAssetsWithDescriptions(
+    intangibleAssets && intangibleAssets.length > 0
+      ? intangibleAssets
+      : fetchAssignedIntangibleAssetsForForm(form),
+    form
+  );
 
   const [{ jsPDF: JsPDFConstructor }, autoTableModule] = await Promise.all([
     import('jspdf'),
@@ -689,27 +727,25 @@ I agree that if any of the items are damaged or lost due to my negligence, I sha
     y = currentY;
   }
 
-  // IT Intangible Assets - font size 12 bold
+  // Intangible Assets - font size 12 bold
   if (itIntangibleAssets.length > 0) {
-    y += 10; // Add spacing before IT Intangible Assets title
+    y += 10; // Add spacing before Intangible Assets title
     doc.setFontSize(12);
     doc.setFont('helvetica', 'bold');
-    doc.text('IT Intangible Assets', 20, y);
+    doc.text('Intangible Assets', 20, y);
 
     // Intangible asset table columns
-    const intangibleTableHead = ['Asset Name', 'Description', 'Type', 'Status'];
+    const intangibleTableHead = ['Asset Name', 'Description', 'Type'];
     const intangibleTableColumnStyles = {
       0: { cellWidth: 80 },
-      1: { cellWidth: 60 },
+      1: { cellWidth: 85.9 },
       2: { cellWidth: 30 },
-      3: { cellWidth: 25.9 },
     };
 
     const intangibleRows = itIntangibleAssets.map((asset: any) => [
       asset.name,
-      asset.description || '',
+      getIntangibleAssetDescription(asset),
       asset.type,
-      asset.status,
     ]);
 
     autoTable(doc, {
@@ -820,26 +856,24 @@ I agree that if any of the items are damaged or lost due to my negligence, I sha
     y = currentY;
   }
 
-  // Admin Intangible Assets - font size 12 bold
+  // Intangible Assets - font size 12 bold
   if (adminIntangibleAssets.length > 0) {
-    y += 10; // Add spacing before Admin Intangible Assets title
+    y += 10; // Add spacing before Intangible Assets title
     doc.setFontSize(12);
     doc.setFont('helvetica', 'bold');
-    doc.text('Admin Intangible Assets', 20, y);
+    doc.text('Intangible Assets', 20, y);
 
-    const intangibleTableHead = ['Asset Name', 'Description', 'Type', 'Status'];
+    const intangibleTableHead = ['Asset Name', 'Description', 'Type'];
     const intangibleTableColumnStyles = {
       0: { cellWidth: 80 },
-      1: { cellWidth: 60 },
+      1: { cellWidth: 85.9 },
       2: { cellWidth: 30 },
-      3: { cellWidth: 25.9 },
     };
 
     const intangibleRows = adminIntangibleAssets.map((asset: any) => [
       asset.name,
-      asset.description || '',
+      getIntangibleAssetDescription(asset),
       asset.type,
-      asset.status,
     ]);
 
     autoTable(doc, {
