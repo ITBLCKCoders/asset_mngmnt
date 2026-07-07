@@ -6,7 +6,6 @@ import {
   User,
   MapPin,
   Building,
-  Search,
   CheckCircle2,
   Users,
   Warehouse,
@@ -20,6 +19,8 @@ import {
 } from 'lucide-react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { PageHeader } from '@/components/common/PageHeader';
+import { SearchWithColumnFilter } from '@/components/common/SearchWithColumnFilter';
+import { ASSET_SEARCH_COLUMNS_BASIC } from '@/utils/assetSearchColumns';
 import { Button } from '@/components/ui/button';
 import { useCompanyContext } from '@/context/CompanyContext';
 import {
@@ -41,6 +42,7 @@ import { toast } from 'sonner';
 import { useCurrentUser } from '@/hooks/useCurrentUser';
 import { useUserPermissions } from '@/hooks/useUserPermissions';
 import { DataTable } from '@/components/ui/dataTable';
+import { Shimmer } from '@/components/ui/shimmer';
 import type { ColumnDef } from '@tanstack/react-table';
 
 type MaintenanceRow = {
@@ -159,6 +161,7 @@ export default function AssetsMaintenance() {
   const [nextMaintenanceDate, setNextMaintenanceDate] = useState<string>('');
   const [scheduling, setScheduling] = useState(false);
   const [searchTerm, setSearchTerm] = useState<string>('');
+const [searchColumn, setSearchColumn] = useState('all');
   const [expandedAssets, setExpandedAssets] = useState<string[]>([]);
 
   /** xl+: scheduling card height matches Maintenance configuration (intrinsic), never taller. */
@@ -390,16 +393,25 @@ export default function AssetsMaintenance() {
   };
 
   const filteredAssets = useMemo(() => {
-    return assets.filter(
-      asset =>
-        asset.status !== 'Disposed' &&
-        (asset.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
-          asset.id.toLowerCase().includes(searchTerm.toLowerCase()) ||
-          asset.category.toLowerCase().includes(searchTerm.toLowerCase()) ||
-          asset.type.toLowerCase().includes(searchTerm.toLowerCase()) ||
-          asset.serialNo.toLowerCase().includes(searchTerm.toLowerCase()))
-    );
-  }, [assets, searchTerm]);
+    const q = searchTerm.toLowerCase().trim();
+    return assets.filter(asset => {
+      if (asset.status === 'Disposed') return false;
+      if (!q) return true;
+      if (searchColumn === 'all') {
+        return (
+          asset.name.toLowerCase().includes(q) ||
+          asset.id.toLowerCase().includes(q) ||
+          asset.category.toLowerCase().includes(q) ||
+          asset.type.toLowerCase().includes(q) ||
+          asset.serialNo.toLowerCase().includes(q) ||
+          asset.department.toLowerCase().includes(q) ||
+          asset.location.toLowerCase().includes(q)
+        );
+      }
+      const val = (asset as any)[searchColumn];
+      return val != null && String(val).toLowerCase().includes(q);
+    });
+  }, [assets, searchTerm, searchColumn]);
 
   /** Next maintenance in 0–5 days; not filtered by search; excludes Disposed. */
   const approachingMaintenanceAssets = useMemo(() => {
@@ -541,11 +553,13 @@ export default function AssetsMaintenance() {
                     </div>
                     <div className="min-h-0 flex-1 space-y-2 overflow-y-auto pr-1 scrollbar-thin scrollbar-thumb-gray-300 scrollbar-track-gray-100">
                       {loading ? (
-                        <div className="flex items-center justify-center py-10">
-                          <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-teal-600" />
-                          <span className="ml-3 text-gray-600 text-sm">
-                            Loading…
-                          </span>
+                        <div className="space-y-2">
+                          {[1, 2, 3].map(i => (
+                            <div key={i} className="rounded-lg border-2 px-3 py-2.5 space-y-2">
+                              <Shimmer className="h-4 w-40 rounded" />
+                              <Shimmer className="h-3 w-24 rounded" />
+                            </div>
+                          ))}
                         </div>
                       ) : approachingMaintenanceAssets.length === 0 ? (
                         <div className="text-center py-8 px-4">
@@ -662,23 +676,27 @@ export default function AssetsMaintenance() {
                           {filteredAssets.length} available
                         </Badge>
                       </div>
-                      <div className="relative">
-                        <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-gray-400" />
-                        <Input
-                          placeholder="Search by name, code, category, type, or serial..."
-                          value={searchTerm}
-                          onChange={e => setSearchTerm(e.target.value)}
-                          className="h-9 border-gray-200 pl-10 text-sm focus:border-teal-500 focus:ring-teal-500"
-                        />
-                      </div>
+                      <SearchWithColumnFilter
+                        value={searchTerm}
+                        onChange={setSearchTerm}
+                        placeholder="Search assets..."
+                        columnOptions={ASSET_SEARCH_COLUMNS_BASIC}
+                        searchColumn={searchColumn}
+                        onSearchColumnChange={setSearchColumn}
+                      />
                     </div>
                     <div className="min-h-0 flex-1 space-y-2 overflow-y-auto pr-1 scrollbar-thin scrollbar-thumb-gray-300 scrollbar-track-gray-100">
                       {loading ? (
-                        <div className="flex items-center justify-center py-10">
-                          <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-teal-600" />
-                          <span className="ml-3 text-gray-600 text-sm">
-                            Loading assets…
-                          </span>
+                        <div className="space-y-2">
+                          {[1, 2, 3, 4, 5].map(i => (
+                            <div key={i} className="rounded-lg border-2 px-3 py-2.5 space-y-2">
+                              <div className="flex items-center gap-2">
+                                <Shimmer className="h-4 w-4 rounded" />
+                                <Shimmer className="h-4 w-36 rounded" />
+                              </div>
+                              <Shimmer className="h-3 w-24 rounded ml-6" />
+                            </div>
+                          ))}
                         </div>
                       ) : filteredAssets.length === 0 ? (
                         <div className="text-center py-8 px-4">

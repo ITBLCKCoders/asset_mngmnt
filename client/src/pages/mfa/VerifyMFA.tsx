@@ -12,9 +12,10 @@ import {
   CardTitle,
 } from '@/components/ui/card';
 import { Alert, AlertDescription } from '@/components/ui/alert';
-import { api } from '@/lib/api';
+import { api, setToken } from '@/lib/api';
 import { toast } from 'sonner';
-import { Shield, KeyRound, ArrowLeft } from 'lucide-react';
+import { Shield, KeyRound, ArrowLeft, Loader2 } from 'lucide-react';
+import { Shimmer } from '@/components/ui/shimmer';
 
 export default function VerifyMFA() {
   const [totp, setTotp] = useState('');
@@ -54,9 +55,8 @@ export default function VerifyMFA() {
       // Clear temp token
       localStorage.removeItem('mfaTempToken');
 
-      // Store auth tokens
-      localStorage.setItem('accessToken', response.accessToken);
-      localStorage.setItem('refreshToken', response.refreshToken);
+      // Signal auth success
+      setToken('authenticated');
 
       toast.success('Login successful!');
       navigate('/dashboard');
@@ -133,7 +133,14 @@ export default function VerifyMFA() {
               disabled={totp.length < 6 || isLoading} 
               className="w-full"
             >
-              {isLoading ? 'Verifying...' : 'Verify'}
+              {isLoading ? (
+                <>
+                  <Loader2 className="w-4 h-4 animate-spin mr-2" />
+                  Verifying...
+                </>
+              ) : (
+                'Verify'
+              )}
             </Button>
           </div>
 

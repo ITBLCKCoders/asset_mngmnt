@@ -6,6 +6,7 @@ export const CreateAssetBorrowRequestDtoSchema = z.object({
   type_id: z.string().uuid(),
   expected_return_at: z.string().min(1),
   purpose: z.string().trim().min(1, 'Purpose is required'),
+  requested_by_signature: z.string().optional(),
 });
 
 export type CreateAssetBorrowRequestDto = z.infer<

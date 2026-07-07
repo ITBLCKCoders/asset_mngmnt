@@ -1,6 +1,7 @@
 import type { Response } from 'express';
 import type { AuthRequest } from '../middleware/authenticate.js';
 import logger from '../logger.js';
+import { createAuditLog } from '../utils/audit.js';
 import * as gatePassService from '../services/gatePass.service.js';
 import { CreateGatePassDtoSchema, UpdateGatePassDtoSchema } from '../dtos/gatePass/CreateGatePassDto.js';
 import {
@@ -42,6 +43,16 @@ export async function createGatePassHandler(req: AuthRequest, res: Response) {
       notes: validationResult.data.notes ?? null,
       createdBy: req.user?.userID || '',
     });
+
+    createAuditLog({
+      userId: req.user?.userID || undefined,
+      action: 'Created Gate Pass',
+      resourceType: 'gate_pass',
+      resourceId: gatePassId,
+      details: `Gate pass created - Purpose: ${validationResult.data.purpose}, User: ${validationResult.data.userId}`,
+      ipAddress: req.ip,
+      userAgent: req.get('User-Agent'),
+    }).catch((err) => logger.warn('Failed to create gate pass audit log:', err));
 
     return createSuccessResponse(res, { gatePassId }, 'Gate pass created successfully');
   } catch (error: any) {
@@ -115,6 +126,19 @@ export async function updateGatePassHandler(req: AuthRequest, res: Response) {
 
     await gatePassService.updateGatePass(gatePassId, finalUpdateData);
 
+    createAuditLog({
+      userId: req.user?.userID || undefined,
+      action: 'Updated Gate Pass',
+      resourceType: 'gate_pass',
+      resourceId: gatePassId,
+      details: finalUpdateData.status
+        ? `Gate pass status updated to "${finalUpdateData.status}"`
+        : 'Gate pass details updated',
+      newValues: { ...finalUpdateData },
+      ipAddress: req.ip,
+      userAgent: req.get('User-Agent'),
+    }).catch((err) => logger.warn('Failed to create gate pass update audit log:', err));
+
     return createSuccessResponse(res, null, 'Gate pass updated successfully');
   } catch (error: any) {
     logger.error('Update gate pass failed:', error);
@@ -129,6 +153,17 @@ export async function deleteGatePassHandler(req: AuthRequest, res: Response) {
       return createErrorResponse(res, 'Gate pass ID is required', [], 400);
     }
     await gatePassService.deleteGatePass(id);
+
+    createAuditLog({
+      userId: req.user?.userID || undefined,
+      action: 'Deleted Gate Pass',
+      resourceType: 'gate_pass',
+      resourceId: id,
+      details: `Gate pass with ID: ${id} deleted`,
+      ipAddress: req.ip,
+      userAgent: req.get('User-Agent'),
+    }).catch((err) => logger.warn('Failed to create gate pass delete audit log:', err));
+
     return createSuccessResponse(res, null, 'Gate pass deleted successfully');
   } catch (error: any) {
     logger.error('Delete gate pass failed:', error);

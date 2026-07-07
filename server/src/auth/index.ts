@@ -6,7 +6,8 @@ export * from './email.js';
 export * from './password.js';
 export * from './cleanup.js';
 export * from './mfa.js';
-export * from './sms.js';
+// SMS OTP replaced by email OTP — kept for reference
+// export * from './sms.js';
 
 export {
   generateTokens,
@@ -21,11 +22,12 @@ export { verifyOTP, sendVerificationOTP } from './email.js';
 export {
   forgotPassword,
   verifyPasswordResetOTP,
-  verifyPasswordResetOTPSms,
+  // verifyPasswordResetOTPSms,
   resetPassword,
 } from './password.js';
 
-export { sendSmsVerification, checkSmsVerification } from './sms.js';
+// SMS OTP replaced by email OTP — kept for reference
+// export { sendSmsVerification, checkSmsVerification } from './sms.js';
 
 export {
   logout,

@@ -18,7 +18,7 @@ export function normalizeOrigin(input: string): string {
 
 function wildcardToRegex(pattern: string): RegExp {
   const escaped = pattern.replace(/[.+?^${}()|[\]\\]/g, '\\$&');
-  const wildcardPattern = escaped.replace(/\\\*/g, '.*');
+  const wildcardPattern = escaped.replace(/\*/g, '.*');
   return new RegExp(`^${wildcardPattern}$`, 'i');
 }
 
@@ -50,21 +50,6 @@ export function compileOriginPattern(pattern: string): RegExp | null {
   );
 }
 
-const isProduction = config.NODE_ENV === 'production';
-
-const allowedOrigins = serverConfig.allowedOrigins.map(normalizeOrigin);
-const allowedOriginPatterns = serverConfig.allowedOriginPatterns
-  .map(compileOriginPattern)
-  .filter((pattern): pattern is RegExp => pattern !== null);
-
-const port = serverConfig.port;
-const selfOrigins = [
-  `http://localhost:${port}`,
-  `http://127.0.0.1:${port}`,
-  `https://localhost:${port}`,
-  `https://127.0.0.1:${port}`,
-].map(normalizeOrigin);
-
 const isLanOrigin = (origin: string): boolean =>
   /^(https?):\/\/(192\.168\.|10\.|172\.(1[6-9]|2[0-9]|3[0-1])\.)/i.test(origin);
 
@@ -79,6 +64,19 @@ export function resolveCorsDecision(origin: string | undefined): CorsDecision {
   if (!origin) return { allowed: true, reason: 'no_origin_header' };
 
   const normalizedOrigin = normalizeOrigin(origin);
+
+  const isProduction = config.NODE_ENV === 'production';
+  const allowedOrigins = serverConfig.allowedOrigins.map(normalizeOrigin);
+  const allowedOriginPatterns = serverConfig.allowedOriginPatterns
+    .map(compileOriginPattern)
+    .filter((pattern): pattern is RegExp => pattern !== null);
+  const port = serverConfig.port;
+  const selfOrigins = [
+    `http://localhost:${port}`,
+    `http://127.0.0.1:${port}`,
+    `https://localhost:${port}`,
+    `https://127.0.0.1:${port}`,
+  ].map(normalizeOrigin);
 
   if (allowedOrigins.includes(normalizedOrigin)) {
     return { allowed: true, reason: 'exact_allowlist' };

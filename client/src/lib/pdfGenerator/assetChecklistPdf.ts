@@ -192,7 +192,11 @@ export const generateAssetChecklistPDF = async (
   const checklist = checklistData.checklist_data || {};
   const statusText = (value: any) =>
     value === true ? '[x] Yes   [ ] No' : value === false ? '[ ] Yes   [x] No' : '[ ] Yes   [ ] No';
-  const sectionDefinitions = [
+  const onboardingSectionDefinitions: {
+    label: string;
+    key: string;
+    items: [string, string][];
+  }[] = [
     {
       label: 'Firmware & Hardware Validation',
       key: 'firmwareHardwareValidation',
@@ -268,8 +272,61 @@ export const generateAssetChecklistPDF = async (
       ],
     },
   ];
+
+  const offboardingSectionDefinitions: {
+    label: string;
+    key: string;
+    items: [string, string][];
+  }[] = [
+    {
+      label: 'Device Inventory & Verification',
+      key: 'deviceInventoryVerification',
+      items: [
+        ['verifyAssetTagSerial', 'Verify asset tag / serial number matches records'],
+        ['inspectPhysicalCondition', 'Inspect physical condition (screen, keyboard, chassis, ports)'],
+        ['checkAccessories', 'Check for accessories: charger, bag, mouse, others'],
+        ['confirmDeviceFunctional', 'Confirm device is powered on and functional'],
+      ],
+    },
+    {
+      label: 'Data & Account Handover',
+      key: 'dataAccountHandover',
+      items: [
+        ['verifyBackup', 'Verify user has backed up personal/work files'],
+        ['confirmSignOutM365', 'Confirm sign-out from Microsoft 365 / Outlook'],
+        ['removePersonalAccounts', 'Remove personal accounts (OneDrive, email, browser profiles)'],
+        ['clearBrowserData', 'Clear browser saved passwords and history'],
+        ['signOutThirdPartyApps', 'Sign out from all third-party apps (Zoom, Teams, etc.)'],
+      ],
+    },
+    {
+      label: 'Security and Access Revocation',
+      key: 'securityAccessRevocation',
+      items: [
+        ['disableDeleteLocalAccount', 'Disable or delete user local account'],
+        ['revokeM365License', 'Revoke M365 license / disable Azure AD account'],
+        ['removeDeviceFromNetwork', 'Remove device from company network / firewall MAC list'],
+        ['rotateBitLockerKey', 'Rotate BitLocker Recovery Key after return'],
+        ['deactivateVpnCredentials', 'Confirm VPN credentials are deactivated'],
+        ['performFactoryReset', 'Perform Windows factory reset or re-image device'],
+        ['applyOsUpdates', 'Re-apply OS updates after reset'],
+        ['verifyBiosSecureBoot', 'Verify BIOS password and Secure Boot still enabled'],
+        ['confirmBitLockerReEnabled', 'Confirm BitLocker re-enabled post-reset'],
+        ['removeDeviceNaming', 'Remove device name from naming registry (CMTH-LPTP-xxxx)'],
+        ['updateCmdbAssetTracker', 'Update CMDB / asset tracker (mark as returned)'],
+        ['recordReturnDateCondition', 'Record return date, condition, and receiving IT staff'],
+        ['archiveBitLockerKey', 'Archive BitLocker Recovery Key or mark as reset'],
+        ['updateNetworkFirewallRecords', 'Update network/firewall records to remove MAC address'],
+      ],
+    },
+  ];
+
+  const isOffboardingChecklist = checklistData.type_offboarding === true;
+  const sectionDefinitions = isOffboardingChecklist ? offboardingSectionDefinitions : onboardingSectionDefinitions;
+  const sectionLabel = isOffboardingChecklist ? 'Section A: Return & Offboarding Checklist' : 'Section A: Checklist';
+
   const checklistRows: any[] = [
-    [{ content: 'Section A: Checklist', colSpan: 3 }],
+    [{ content: sectionLabel, colSpan: 3 }],
     [{ content: 'Item', colSpan: 2 }, 'Status'],
     ['Asset:', { content: checklistData.asset_label || '—', colSpan: 2 }],
   ];

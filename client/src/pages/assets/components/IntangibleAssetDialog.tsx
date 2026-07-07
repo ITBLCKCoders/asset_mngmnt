@@ -127,7 +127,7 @@ export default function IntangibleAssetDialog({
 
       if (mode === 'edit' && editingAsset) {
         // Update single asset
-        await api.patch(`/intangible-assets/${editingAsset.id}`, rows[0]);
+        await api.patch(`/intangible-assets/${editingAsset.id}`, { ...rows[0], status: editingAsset.status });
         toast.success('Intangible asset updated successfully');
       } else {
         // Create bulk assets
@@ -264,6 +264,7 @@ export default function IntangibleAssetDialog({
                         <SelectContent>
                           <SelectItem value="IT scope">IT scope</SelectItem>
                           <SelectItem value="Admin scope">Admin scope</SelectItem>
+                          <SelectItem value="HR scope">HR scope</SelectItem>
                         </SelectContent>
                       </Select>
                     </div>

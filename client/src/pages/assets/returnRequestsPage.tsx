@@ -17,10 +17,15 @@ import {
   AlertTriangle,
   ImagePlus,
   XCircle,
+  FileSignature,
+  FileText,
+  Calendar,
+  Layers,
+  Search,
 } from 'lucide-react';
 import { PageHeader } from '@/components/common/PageHeader';
 import { Button } from '@/components/ui/button';
-import { Card, CardContent, CardHeader } from '@/components/ui/card';
+import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Dialog } from '@/components/ui/dialog';
 import {
@@ -49,8 +54,22 @@ import {
   type AccountabilityForm,
 } from '@/pages/assets/accountability/accountabilityForm';
 import type { Department, Location } from '@/types/assets';
+import {
+  Tabs,
+  TabsContent,
+  TabsList,
+  TabsTrigger,
+  segmentTabsListClassName,
+  segmentTabsTriggerClassName,
+} from '@/components/ui/tabs';
 import SmsOtpDialog from '@/components/auth/SmsOtpDialog';
 import { useRef } from 'react';
+import {
+  AssetChecklistDialog,
+  type AssetChecklistSubmitPayload,
+} from '@/pages/assets/asset-issuance/components/AssetChecklistDialog';
+import { filterComputerTypeAssets } from '@/utils/assetTypeDetection';
+import { proxyCloudinaryUrl } from '@/utils/cloudinaryProxy';
 
 const conditionOptions = [
   {
@@ -92,11 +111,23 @@ type PendingReturn = {
   return_department_id?: string | null;
   return_location_id?: string | null;
   return_location_room_id?: string | null;
-  assignment?: {
-    assignmentID: string;
-    asset?: { code?: string; name?: string; id?: string };
-    user?: { first_name?: string; last_name?: string };
-  };
+    assignment?: {
+      assignmentID: string;
+      asset?: {
+        code?: string;
+        name?: string;
+        id?: string;
+        category_name?: string;
+        type_name?: string;
+      };
+      user?: {
+        first_name?: string;
+        last_name?: string;
+        position?: string | null;
+        company?: { id?: string; name?: string };
+        department?: { id?: string; name?: string };
+      };
+    };
 };
 
 type PendingForm = {
@@ -112,6 +143,7 @@ type PendingForm = {
 export default function ReturnRequestsPage() {
   const navigate = useNavigate();
   const { user: currentUser } = useCurrentUser();
+  const userCompanyId = currentUser?.company_id;
   const [forms, setForms] = useState<PendingForm[]>([]);
   const [departments, setDepartments] = useState<Department[]>([]);
   const [locations, setLocations] = useState<Location[]>([]);
@@ -127,8 +159,7 @@ export default function ReturnRequestsPage() {
     Record<string, string[]>
   >({});
   const [expandedAssets, setExpandedAssets] = useState<Set<string>>(new Set());
-  const [returnTypeReturned, setReturnTypeReturned] = useState(false);
-  const [returnTypeOffboarding, setReturnTypeOffboarding] = useState(false);
+  const [returnType, setReturnType] = useState<string>('');
   const [assignToProcessor, setAssignToProcessor] = useState(false);
   const [verificationTag, setVerificationTag] = useState(false);
   const [verificationCondition, setVerificationCondition] = useState(false);
@@ -152,6 +183,21 @@ export default function ReturnRequestsPage() {
   const [smsOtpDialogDeclineOpen, setSmsOtpDialogDeclineOpen] = useState(false);
   const pendingProcessActionRef = useRef<(() => Promise<void>) | null>(null);
   const pendingDeclineActionRef = useRef<(() => Promise<void>) | null>(null);
+  const processingFormRef = useRef<PendingForm | null>(null);
+  const pendingProcessParamsRef = useRef<{
+    formID: string;
+    assetReturns: { assignmentId: string; condition: string; notes: string; imageUrls: string[]; returnDepartmentId: string; returnLocationId: string; returnAreaId: string | undefined }[];
+    returnType: string;
+    assignToProcessor: boolean;
+    intangibleAssetReturnItems?: { id: string; notes: string }[];
+  } | null>(null);
+  const [checklistDialogOpen, setChecklistDialogOpen] = useState(false);
+  const [checklistStepIndex, setChecklistStepIndex] = useState(0);
+  const [checklistAssets, setChecklistAssets] = useState<{ id: string; name: string; type?: string; category?: string }[]>([]);
+  const pendingReturnChecklistsRef = useRef<any[]>([]);
+  const [intangibleAssets, setIntangibleAssets] = useState<any[]>([]);
+  const [selectedIntangibleAssetIds, setSelectedIntangibleAssetIds] = useState<string[]>([]);
+  const [intangibleNotes, setIntangibleNotes] = useState<Record<string, string>>({});
 
   // Close parent dialog when SMS OTP dialog opens to prevent scrollbar issues
   useEffect(() => {
@@ -178,9 +224,8 @@ export default function ReturnRequestsPage() {
 
   const fetchDepartments = async () => {
     try {
-      const response = await api.get<{ departments?: Department[] }>(
-        '/departments'
-      );
+      const url = userCompanyId ? `/departments?companyId=${userCompanyId}` : '/departments';
+      const response = await api.get<{ departments?: Department[] }>(url);
       setDepartments(response.departments ?? []);
     } catch (error) {
       console.error('Failed to fetch departments:', error);
@@ -190,7 +235,8 @@ export default function ReturnRequestsPage() {
 
   const fetchLocations = async () => {
     try {
-      const response = await api.get<{ locations?: Location[] }>('/locations');
+      const url = userCompanyId ? `/locations?companyId=${userCompanyId}` : '/locations';
+      const response = await api.get<{ locations?: Location[] }>(url);
       setLocations(response.locations ?? []);
     } catch (error) {
       console.error('Failed to fetch locations:', error);
@@ -198,10 +244,21 @@ export default function ReturnRequestsPage() {
     }
   };
 
+  const fetchIntangibleAssets = async () => {
+    try {
+      const response = await api.get('/intangible-assets');
+      setIntangibleAssets(response || []);
+    } catch (error) {
+      console.error('Failed to fetch intangible assets:', error);
+      setIntangibleAssets([]);
+    }
+  };
+
   useEffect(() => {
     fetchPending();
     fetchDepartments();
     fetchLocations();
+    fetchIntangibleAssets();
   }, []);
 
   // Note: wet-upload notification deep-link is handled on `/assets/return`
@@ -241,16 +298,22 @@ export default function ReturnRequestsPage() {
         ''
     );
     const rt = rawRt.toLowerCase();
-    setReturnTypeReturned(
-      rt.includes('returned') ||
-        rt === 'return' ||
-        rt.includes('regular return')
-    );
-    setReturnTypeOffboarding(rt.includes('offboarding'));
+    if (rt.includes('offboarding')) {
+      setReturnType('offboarding');
+    } else if (rt.includes('returned') || rt === 'return' || rt.includes('regular return')) {
+      setReturnType('returned');
+    } else if (rt.includes('return for transfer')) {
+      // Transfer-generated returns default to 'returned' since the employee isn't leaving
+      setReturnType('returned');
+    } else {
+      setReturnType('');
+    }
     setAssignToProcessor(false);
     setVerificationTag(false);
     setVerificationCondition(false);
     setVerificationConfirmSign(false);
+    setSelectedIntangibleAssetIds([]);
+    setIntangibleNotes({});
   };
 
   const toggleAssetExpansion = (assetId: string) => {
@@ -328,8 +391,8 @@ export default function ReturnRequestsPage() {
       toast.error('Please select condition for each asset');
       return;
     }
-    if (!returnTypeReturned && !returnTypeOffboarding) {
-      toast.error('Please select at least one return type');
+    if (!returnType) {
+      toast.error('Please select a return type');
       return;
     }
     if (!sharedReturnDepartmentId || !sharedReturnLocationId) {
@@ -369,18 +432,50 @@ export default function ReturnRequestsPage() {
       };
     });
 
-    const returnTypeParts: string[] = [];
-    if (returnTypeReturned) returnTypeParts.push('Returned');
-    if (returnTypeOffboarding) returnTypeParts.push('Offboarding');
-    const returnType = returnTypeParts.join(',');
+    const intangibleAssetReturnItems = selectedIntangibleAssetIds
+      .filter(id => intangibleAssets.some(ia => ia.id === id))
+      .map(id => ({
+        id,
+        notes: intangibleNotes[id] ?? '',
+      }));
 
-    // Set the pending action and open SMS OTP dialog
+    const returnTypeLabel = returnType === 'offboarding' ? 'Offboarding' : 'Returned';
+
+    // Save form ref for later use
+    processingFormRef.current = processForm;
+
+    // Check for computer-type assets BEFORE opening OTP (matches assignment page flow)
+    const mappedAssets = (processForm?.returns || []).map(r => {
+      const a = r.assignment?.asset;
+      return {
+        id: a?.id || r.assignment_id,
+        name: a?.name || '',
+        type: a?.type_name || '',
+        category: a?.category_name || '',
+      };
+    });
+    const computerReturns = filterComputerTypeAssets(mappedAssets);
+
+    if (computerReturns.length > 0) {
+      pendingProcessParamsRef.current = {
+        formID: processForm.formID,
+        assetReturns,
+        returnType: returnType || '',
+        assignToProcessor,
+        intangibleAssetReturnItems: intangibleAssetReturnItems.length > 0 ? intangibleAssetReturnItems : undefined,
+      };
+      setChecklistAssets(computerReturns);
+      setChecklistStepIndex(0);
+      pendingReturnChecklistsRef.current = [];
+      setChecklistDialogOpen(true);
+      return;
+    }
+
+    // No computer assets — proceed directly to OTP (existing flow)
     pendingProcessActionRef.current = async () => {
       setSubmitting(true);
       try {
-        const processRes = await api.post<{
-          returnerHasRemainingAssets?: boolean;
-        }>(`/asset-returns/forms/${processForm.formID}/process`, {
+        await api.post(`/asset-returns/forms/${processForm.formID}/process`, {
           processSignature: {
             signed_at: new Date().toISOString(),
           },
@@ -388,7 +483,107 @@ export default function ReturnRequestsPage() {
           returnType: returnType || undefined,
           assignToProcessor,
           receivedBy: assignToProcessor ? (currentUser?.id ?? null) : null,
+          intangibleAssetReturnItems: intangibleAssetReturnItems.length > 0 ? intangibleAssetReturnItems : undefined,
         });
+        toast.success('Return processed successfully');
+        setProcessForm(null);
+        await fetchPending();
+      } catch (err: unknown) {
+        const e = err as { data?: { error?: string } };
+        toast.error(e?.data?.error ?? 'Failed to process return');
+      } finally {
+        setSubmitting(false);
+      }
+    };
+    setSmsOtpDialogOpen(true);
+  };
+
+  const handleChecklistNext = async (payload: AssetChecklistSubmitPayload) => {
+    const asset = checklistAssets[checklistStepIndex];
+    const r = processingFormRef.current?.returns.find(
+      ret => (ret.assignment?.asset?.id || ret.assignment_id) === asset.id
+    );
+    pendingReturnChecklistsRef.current.push({
+      assignmentId: r?.assignment?.assignmentID || r?.assignment_id || '',
+      employeeId: processingFormRef.current?.user_id || '',
+      employeeName: processingFormRef.current
+        ? returnerName(processingFormRef.current)
+        : '',
+      employeeDesignation: r?.assignment?.user?.position || '',
+      employeeDepartment: r?.assignment?.user?.department?.name || '',
+      employeeCompany: r?.assignment?.user?.company?.name || '',
+      typeOnboarding: payload.typeOnboarding,
+      typeOffboarding: payload.typeOffboarding,
+      receivedBy: payload.receivedBy,
+      checklistData: payload.checklistData,
+      remarks: payload.remarks,
+    });
+    setChecklistStepIndex(prev => prev + 1);
+  };
+
+  const handleChecklistFinalSubmit = async (payload: AssetChecklistSubmitPayload) => {
+    const asset = checklistAssets[checklistStepIndex];
+    const r = processingFormRef.current?.returns.find(
+      ret => (ret.assignment?.asset?.id || ret.assignment_id) === asset.id
+    );
+    pendingReturnChecklistsRef.current.push({
+      assignmentId: r?.assignment?.assignmentID || r?.assignment_id || '',
+      employeeId: processingFormRef.current?.user_id || '',
+      employeeName: processingFormRef.current
+        ? returnerName(processingFormRef.current)
+        : '',
+      employeeDesignation: r?.assignment?.user?.position || '',
+      employeeDepartment: r?.assignment?.user?.department?.name || '',
+      employeeCompany: r?.assignment?.user?.company?.name || '',
+      typeOnboarding: payload.typeOnboarding,
+      typeOffboarding: payload.typeOffboarding,
+      receivedBy: payload.receivedBy,
+      checklistData: payload.checklistData,
+      remarks: payload.remarks,
+    });
+
+    setChecklistDialogOpen(false);
+
+    // Proceed to OTP, then process + save checklists
+    const params = pendingProcessParamsRef.current;
+    if (!params) return;
+
+    pendingProcessActionRef.current = async () => {
+      setSubmitting(true);
+      try {
+        await api.post(`/asset-returns/forms/${params.formID}/process`, {
+          processSignature: {
+            signed_at: new Date().toISOString(),
+          },
+          assetReturns: params.assetReturns,
+          returnType: params.returnType || undefined,
+          assignToProcessor: params.assignToProcessor,
+          receivedBy: params.assignToProcessor ? (currentUser?.id ?? null) : null,
+          intangibleAssetReturnItems: params.intangibleAssetReturnItems,
+        });
+
+        const digitalSignature =
+          (currentUser as { digitalSignature?: string | null })
+            ?.digitalSignature ?? null;
+        await Promise.all(
+          pendingReturnChecklistsRef.current.map(checklist =>
+            api.post('/asset-returns/checklist', {
+              assignmentId: checklist.assignmentId,
+              employeeId: checklist.employeeId,
+              employeeName: checklist.employeeName,
+              employeeDesignation: checklist.employeeDesignation,
+              employeeDepartment: checklist.employeeDepartment,
+              employeeCompany: checklist.employeeCompany,
+              typeOnboarding: checklist.typeOnboarding,
+              typeOffboarding: checklist.typeOffboarding,
+              receivedBy: checklist.receivedBy,
+              checklistData: checklist.checklistData,
+              remarks: checklist.remarks,
+              digitalSignature,
+            })
+          )
+        );
+
         toast.success('Return processed successfully');
         setProcessForm(null);
         await fetchPending();
@@ -440,7 +635,7 @@ export default function ReturnRequestsPage() {
     allConditionsSelected &&
     allLocationsSelected &&
     allRoomsSelected &&
-    (returnTypeReturned || returnTypeOffboarding) &&
+    !!returnType &&
     verificationTag &&
     verificationCondition &&
     verificationConfirmSign &&
@@ -555,29 +750,45 @@ export default function ReturnRequestsPage() {
             {Array.from({ length: 6 }).map((_, index) => (
               <Card
                 key={index}
-                className="flex flex-col shadow-xl border-0 bg-white/80 backdrop-blur-sm overflow-hidden rounded-2xl border-l-4 border-l-gray-300"
+                className="flex flex-col shadow-md border-slate-200 bg-white overflow-hidden"
               >
-                <CardHeader className="pb-2 bg-gradient-to-r from-slate-50 to-white border-b border-slate-100">
-                  <div className="flex items-center justify-between">
-                    <Shimmer className="h-6 w-24 rounded" />
-                    <Shimmer className="h-5 w-16 rounded-full" />
-                  </div>
-                  <div className="flex items-center gap-2 mt-2">
-                    <Shimmer className="h-4 w-4 rounded" />
-                    <Shimmer className="h-4 w-32 rounded" />
+                <CardHeader className="pb-3">
+                  <div className="flex items-start justify-between">
+                    <div className="flex items-center gap-3">
+                      <Shimmer className="h-10 w-10 rounded-xl shrink-0" />
+                      <div className="space-y-1.5">
+                        <Shimmer className="h-5 w-28 rounded" />
+                        <Shimmer className="h-3.5 w-20 rounded" />
+                      </div>
+                    </div>
+                    <Shimmer className="h-5 w-16 rounded-full shrink-0" />
                   </div>
                 </CardHeader>
-                <CardContent className="flex-1 flex flex-col gap-3 pt-4">
-                  <div className="space-y-1.5">
-                    {Array.from({ length: 5 }).map((_, idx) => (
-                      <div key={idx} className="flex gap-2">
-                        <Shimmer className="h-4 w-20 rounded" />
-                        <Shimmer className="h-4 w-16 rounded" />
-                      </div>
-                    ))}
+                <CardContent className="space-y-4 pt-0">
+                  <div className="flex gap-3">
+                    <Shimmer className="h-4 w-4 rounded shrink-0 mt-0.5" />
+                    <div className="flex-1 space-y-1.5">
+                      <Shimmer className="h-4 w-24 rounded" />
+                      {Array.from({ length: 3 }).map((_, idx) => (
+                        <div key={idx} className="flex items-center gap-2">
+                          <Shimmer className="h-1.5 w-1.5 rounded-full shrink-0" />
+                          <Shimmer className="h-3.5 w-40 rounded" />
+                        </div>
+                      ))}
+                    </div>
                   </div>
-                  <Shimmer className="h-9 w-full rounded-lg mt-auto" />
+                  <div className="flex gap-3">
+                    <Shimmer className="h-4 w-4 rounded shrink-0 mt-0.5" />
+                    <Shimmer className="h-4 w-32 rounded" />
+                  </div>
+                  <div className="flex gap-3">
+                    <Shimmer className="h-4 w-4 rounded shrink-0 mt-0.5" />
+                    <Shimmer className="h-4 w-48 rounded" />
+                  </div>
                 </CardContent>
+                <div className="p-4 mt-auto border-t border-slate-100">
+                  <Shimmer className="h-9 w-full rounded-xl" />
+                </div>
               </Card>
             ))}
           </div>
@@ -597,58 +808,109 @@ export default function ReturnRequestsPage() {
           </Card>
         ) : (
           <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-3">
-            {forms.map(form => (
-              <Card
-                key={form.formID}
-                className="flex flex-col shadow-xl border-0 bg-white/80 backdrop-blur-sm overflow-hidden rounded-2xl border-l-4 border-l-red-500 hover:shadow-2xl transition-shadow"
-              >
-                <CardHeader className="pb-2 bg-gradient-to-r from-slate-50 to-white border-b border-slate-100">
-                  <div className="flex items-center justify-between">
-                    <span className="font-mono font-semibold text-slate-900">
-                      {form.form_number ?? form.formID}
-                    </span>
-                    <Badge className="bg-red-100 text-red-800 hover:bg-red-100">
-                      {form.returns.length} asset
-                      {form.returns.length !== 1 ? 's' : ''}
-                    </Badge>
+            {forms.map(form => {
+              const formNumber = form.form_number ?? form.formID;
+              const notesFromReturns = form.returns.map(r => r.return_notes).filter(Boolean);
+              const returnTypeNote = form.return_type && String(form.return_type).trim() ? form.return_type : null;
+              const returnNotes = [returnTypeNote, ...notesFromReturns].filter(Boolean).join('; ') || '—';
+
+              return (
+                <Card
+                  key={form.formID}
+                  className="flex flex-col shadow-md hover:shadow-xl transition-all duration-200 border-slate-200 bg-white overflow-hidden"
+                >
+                  <CardHeader className="pb-3">
+                    <div className="flex items-start justify-between">
+                      <div className="flex items-center gap-3 min-w-0">
+                        <div className="p-2.5 bg-gradient-to-br from-red-500 to-red-600 shadow-sm rounded-xl shrink-0">
+                          <FileSignature className="h-5 w-5 text-white" />
+                        </div>
+                        <div className="min-w-0">
+                          <CardTitle className="text-lg truncate">{formNumber}</CardTitle>
+                          <p className="text-sm text-gray-500">
+                            Created {new Date(form.created_at).toLocaleDateString()}
+                          </p>
+                        </div>
+                      </div>
+                      <Badge
+                        variant="secondary"
+                        className="bg-amber-100 text-amber-800 shrink-0 ml-2"
+                      >
+                        Pending
+                      </Badge>
+                    </div>
+                  </CardHeader>
+                  <CardContent className="space-y-4 flex-1 pt-0">
+                    <div className="flex items-start gap-3">
+                      <Package className="h-4 w-4 text-gray-400 mt-0.5 flex-shrink-0" />
+                      <div className="flex-1 min-w-0">
+                        <p className="font-medium text-sm">
+                          {form.returns.length === 0
+                            ? 'No assets'
+                            : `${form.returns.length} asset${form.returns.length === 1 ? '' : 's'} to return`}
+                        </p>
+                        {form.returns.length > 0 && (
+                          <ul className="max-h-[120px] overflow-y-auto scrollbar-hide text-xs text-gray-600 mt-1 space-y-0.5 list-none">
+                            {form.returns.slice(0, 10).map(r => (
+                              <li key={r.assignment_id} className="flex items-center">
+                                <span className="w-1.5 h-1.5 bg-gray-400 rounded-full mr-2 flex-shrink-0" />
+                                <span className="truncate">
+                                  {r.assignment?.asset?.name ??
+                                    r.assignment?.asset?.code ??
+                                    'Asset'}
+                                  {r.assignment?.asset?.code && (
+                                    <span className="text-gray-400 font-mono ml-1">
+                                      ({r.assignment.asset.code})
+                                    </span>
+                                  )}
+                                  <span className="text-gray-400 ml-1">
+                                    — {r.return_condition ?? '—'}
+                                  </span>
+                                </span>
+                              </li>
+                            ))}
+                            {form.returns.length > 10 && (
+                              <li className="text-xs text-gray-400">
+                                +{form.returns.length - 10} more
+                              </li>
+                            )}
+                          </ul>
+                        )}
+                      </div>
+                    </div>
+
+                    <div className="flex items-start gap-3">
+                      <User className="h-4 w-4 text-gray-400 mt-0.5 flex-shrink-0" />
+                      <div className="flex-1 min-w-0">
+                        <p className="font-medium text-sm">
+                          Returned by: {returnerName(form)}
+                        </p>
+                      </div>
+                    </div>
+
+                    <div className="flex items-start gap-3">
+                      <FileText className="h-4 w-4 text-gray-400 mt-0.5 flex-shrink-0" />
+                      <div className="flex-1 min-w-0">
+                        <p className="text-sm text-gray-600 line-clamp-2">
+                          Return notes: {returnNotes}
+                        </p>
+                      </div>
+                    </div>
+                  </CardContent>
+
+                  <div className="flex gap-2 p-4 mt-auto border-t border-slate-100">
+                    <Button
+                      className="flex-1 bg-gradient-to-r from-red-500 to-red-600 hover:from-red-600 hover:to-red-700 text-white font-semibold rounded-xl shadow-md"
+                      size="sm"
+                      onClick={() => openProcessModal(form)}
+                    >
+                      <Eye className="h-4 w-4 mr-2" />
+                      View / Return Asset
+                    </Button>
                   </div>
-                  <div className="flex items-center gap-2 text-sm text-slate-600 mt-2">
-                    <User className="h-4 w-4 text-red-500" />
-                    {returnerName(form)}
-                  </div>
-                </CardHeader>
-                <CardContent className="flex-1 flex flex-col gap-3 pt-4">
-                  <ul className="text-sm space-y-1.5 list-disc list-inside text-slate-700">
-                    {form.returns.slice(0, 5).map(r => (
-                      <li key={r.assignment_id}>
-                        <span className="font-mono text-slate-600">
-                          {r.assignment?.asset?.code ??
-                            r.assignment?.asset?.name ??
-                            'Asset'}
-                        </span>
-                        <span className="text-slate-400">
-                          {' '}
-                          — {r.return_condition ?? '—'}
-                        </span>
-                      </li>
-                    ))}
-                    {form.returns.length > 5 && (
-                      <li className="text-slate-400">
-                        +{form.returns.length - 5} more
-                      </li>
-                    )}
-                  </ul>
-                  <Button
-                    className="mt-auto w-full bg-gradient-to-r from-red-500 to-red-600 hover:from-red-600 hover:to-red-700 text-white font-semibold rounded-xl shadow-md"
-                    size="sm"
-                    onClick={() => openProcessModal(form)}
-                  >
-                    <Eye className="h-4 w-4 mr-2" />
-                    View / Return Asset
-                  </Button>
-                </CardContent>
-              </Card>
-            ))}
+                </Card>
+              );
+            })}
           </div>
         )}
 
@@ -701,37 +963,51 @@ export default function ReturnRequestsPage() {
                     </Label>
                     <div className="flex flex-wrap gap-3 mt-3">
                       <label
-                        htmlFor="return-type-returned-req"
                         className={cn(
                           'flex items-center gap-3 px-4 py-3 rounded-lg border-2 cursor-pointer transition-all duration-200 flex-1 min-w-[140px]',
-                          returnTypeReturned
+                          returnType === 'returned'
                             ? 'border-red-500 bg-red-50 shadow-sm'
                             : 'border-slate-200 bg-white hover:border-slate-300 hover:bg-slate-50'
                         )}
+                        onClick={() => setReturnType('returned')}
                       >
-                        <Checkbox
-                          id="return-type-returned-req"
-                          checked={returnTypeReturned}
-                          onCheckedChange={v => setReturnTypeReturned(!!v)}
-                        />
+                        <div
+                          className={cn(
+                            'h-4 w-4 rounded-full border-2 flex items-center justify-center',
+                            returnType === 'returned'
+                              ? 'border-red-500'
+                              : 'border-gray-300'
+                          )}
+                        >
+                          {returnType === 'returned' && (
+                            <div className="h-2 w-2 rounded-full bg-red-500" />
+                          )}
+                        </div>
                         <span className="text-sm font-medium text-slate-800">
                           Returned
                         </span>
                       </label>
                       <label
-                        htmlFor="return-type-offboarding-req"
                         className={cn(
                           'flex items-center gap-3 px-4 py-3 rounded-lg border-2 cursor-pointer transition-all duration-200 flex-1 min-w-[140px]',
-                          returnTypeOffboarding
+                          returnType === 'offboarding'
                             ? 'border-red-500 bg-red-50 shadow-sm'
                             : 'border-slate-200 bg-white hover:border-slate-300 hover:bg-slate-50'
                         )}
+                        onClick={() => setReturnType('offboarding')}
                       >
-                        <Checkbox
-                          id="return-type-offboarding-req"
-                          checked={returnTypeOffboarding}
-                          onCheckedChange={v => setReturnTypeOffboarding(!!v)}
-                        />
+                        <div
+                          className={cn(
+                            'h-4 w-4 rounded-full border-2 flex items-center justify-center',
+                            returnType === 'offboarding'
+                              ? 'border-red-500'
+                              : 'border-gray-300'
+                          )}
+                        >
+                          {returnType === 'offboarding' && (
+                            <div className="h-2 w-2 rounded-full bg-red-500" />
+                          )}
+                        </div>
                         <span className="text-sm font-medium text-slate-800">
                           Offboarding
                         </span>
@@ -739,178 +1015,312 @@ export default function ReturnRequestsPage() {
                     </div>
                   </div>
 
-                  {/* Asset Cards – same as Asset Return page */}
-                  {processForm.returns.map(r => {
-                    const aid = r.assignment?.assignmentID ?? r.assignment_id;
-                    const assetId = r.assignment?.asset?.id ?? aid;
-                    const assetName = r.assignment?.asset?.name ?? 'Asset';
-                    const assetCode = r.assignment?.asset?.code ?? '';
-                    const condition = processorConditions[aid] ?? 'Good';
-                    const notes = processorNotes[aid] ?? '';
-                    const conditionImages =
-                      processorConditionImages[aid] ?? [];
-                    const isExpanded = expandedAssets.has(assetId);
+                  <Tabs defaultValue="physical-assets" className="w-full">
+                    <TabsList className={segmentTabsListClassName + ' grid grid-cols-2 w-full'}>
+                      <TabsTrigger value="physical-assets" className={segmentTabsTriggerClassName + ' flex items-center gap-2'}>
+                        <Package className="h-4 w-4" />
+                        Physical Assets
+                        <Badge variant="secondary" className="ml-1 text-xs">
+                          {processForm.returns.length}
+                        </Badge>
+                      </TabsTrigger>
+                      <TabsTrigger value="intangible-assets" className={segmentTabsTriggerClassName + ' flex items-center gap-2'}>
+                        <Layers className="h-4 w-4" />
+                        Intangible Assets
+                        <Badge variant="secondary" className="ml-1 text-xs">
+                          {(intangibleAssets.filter(a => a.assigned_to === processForm.user_id).length)}
+                        </Badge>
+                      </TabsTrigger>
+                    </TabsList>
 
-                    return (
-                      <div
-                        key={aid}
-                        className="rounded-xl border border-slate-200 bg-white p-5 shadow-sm -mx-3 space-y-3 transition-shadow hover:shadow-md"
-                      >
-                        <div className="flex items-center justify-between">
-                          <div className="flex items-center gap-3">
-                            <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-slate-100 text-slate-600">
-                              <Package className="h-5 w-5" />
-                            </div>
-                            <div>
-                              <h4 className="font-semibold text-slate-900">
-                                {assetName}
-                              </h4>
-                              <p className="text-sm text-slate-500 font-mono">
-                                {assetCode}
-                              </p>
-                            </div>
-                          </div>
-                          <button
-                            type="button"
-                            onClick={() => toggleAssetExpansion(assetId)}
-                            className="p-2 hover:bg-slate-100 rounded-lg transition-colors"
-                            aria-label={isExpanded ? 'Collapse' : 'Expand'}
+                    <TabsContent value="physical-assets" className="mt-4 space-y-4">
+                      {processForm.returns.map(r => {
+                        const aid = r.assignment?.assignmentID ?? r.assignment_id;
+                        const assetId = r.assignment?.asset?.id ?? aid;
+                        const assetName = r.assignment?.asset?.name ?? 'Asset';
+                        const assetCode = r.assignment?.asset?.code ?? '';
+                        const condition = processorConditions[aid] ?? 'Good';
+                        const notes = processorNotes[aid] ?? '';
+                        const conditionImages =
+                          processorConditionImages[aid] ?? [];
+                        const isExpanded = expandedAssets.has(assetId);
+
+                        return (
+                          <div
+                            key={aid}
+                            className="rounded-xl border border-slate-200 bg-white p-5 shadow-sm -mx-3 space-y-3 transition-shadow hover:shadow-md"
                           >
-                            {isExpanded ? (
-                              <ChevronUp className="h-5 w-5 text-gray-600" />
-                            ) : (
-                              <ChevronDown className="h-5 w-5 text-gray-600" />
-                            )}
-                          </button>
-                        </div>
+                            <div className="flex items-center justify-between">
+                              <div className="flex items-center gap-3">
+                                <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-slate-100 text-slate-600">
+                                  <Package className="h-5 w-5" />
+                                </div>
+                                <div>
+                                  <h4 className="font-semibold text-slate-900">
+                                    {assetName}
+                                  </h4>
+                                  <p className="text-sm text-slate-500 font-mono">
+                                    {assetCode}
+                                  </p>
+                                </div>
+                              </div>
+                              <button
+                                type="button"
+                                onClick={() => toggleAssetExpansion(assetId)}
+                                className="p-2 hover:bg-slate-100 rounded-lg transition-colors"
+                                aria-label={isExpanded ? 'Collapse' : 'Expand'}
+                              >
+                                {isExpanded ? (
+                                  <ChevronUp className="h-5 w-5 text-gray-600" />
+                                ) : (
+                                  <ChevronDown className="h-5 w-5 text-gray-600" />
+                                )}
+                              </button>
+                            </div>
 
-                        {isExpanded && (
-                          <div className="space-y-5 pt-2 border-t border-slate-100 animate-in slide-in-from-top-2 duration-200">
-                            <div className="space-y-3">
-                              <Label className="text-sm font-semibold text-slate-700 flex items-center gap-2">
-                                <CheckCircle className="h-4 w-4 text-red-500" />
-                                Asset Condition
+                            {isExpanded && (
+                              <div className="space-y-5 pt-2 border-t border-slate-100 animate-in slide-in-from-top-2 duration-200">
+                                <div className="space-y-3">
+                                  <Label className="text-sm font-semibold text-slate-700 flex items-center gap-2">
+                                    <CheckCircle className="h-4 w-4 text-red-500" />
+                                    Asset Condition
+                                  </Label>
+                                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                                    {conditionOptions.map(opt => {
+                                      const IconComponent = opt.icon;
+                                      const isSelected = condition === opt.value;
+                                      return (
+                                        <div
+                                          key={opt.value}
+                                          className={cn(
+                                            'flex items-center gap-3 p-3 rounded-lg transition-all duration-200 cursor-pointer',
+                                            isSelected
+                                              ? 'border-2 border-red-500 bg-red-50 shadow-sm'
+                                              : 'border-2 border-slate-200 hover:border-slate-300 hover:bg-slate-50'
+                                          )}
+                                          onClick={() =>
+                                            setConditionForAssignment(
+                                              aid,
+                                              opt.value
+                                            )
+                                          }
+                                        >
+                                          <div
+                                            className={cn(
+                                              'h-4 w-4 rounded-full border-2',
+                                              isSelected
+                                                ? 'bg-red-500 border-red-500'
+                                                : 'border-gray-300'
+                                            )}
+                                          />
+                                          <IconComponent
+                                            className={cn(
+                                              'h-5 w-5 shrink-0',
+                                              isSelected
+                                                ? opt.color
+                                                : 'text-slate-400'
+                                            )}
+                                          />
+                                          <span className="font-medium text-slate-800">
+                                            {opt.label}
+                                          </span>
+                                        </div>
+                                      );
+                                    })}
+                                  </div>
+                                </div>
+                                <div className="space-y-2">
+                                  <Label className="text-sm font-medium text-slate-700">
+                                    Return Notes{' '}
+                                    <span className="text-slate-400 font-normal">
+                                      (optional)
+                                    </span>
+                                  </Label>
+                                  <Textarea
+                                    placeholder="Add notes about this asset's return..."
+                                    value={notes}
+                                    onChange={e =>
+                                      setNotesForAssignment(aid, e.target.value)
+                                    }
+                                    className="border-slate-200 focus:border-red-500 focus:ring-red-500/20 rounded-lg resize-none"
+                                    rows={3}
+                                  />
+                                </div>
+                                <div className="space-y-2">
+                                  <Label className="text-sm font-medium text-slate-700">
+                                    Return Condition Photos{' '}
+                                    <span className="text-slate-400 font-normal">
+                                      (optional, up to {MAX_CONDITION_IMAGES})
+                                    </span>
+                                  </Label>
+                                  <div className="flex flex-wrap gap-2 items-start">
+                                    {conditionImages.map((url, idx) => (
+                                      <div
+                                        key={`${aid}-condition-image-${idx}`}
+                                        className="relative group"
+                                      >
+                                        <button
+                                          type="button"
+                                          className="overflow-hidden rounded-lg border border-slate-200 bg-slate-50"
+                                          onClick={() => window.open(url, '_blank')}
+                                        >
+                                            <img
+                                              src={proxyCloudinaryUrl(url)}
+                                              alt={`Return condition photo ${idx + 1}`}
+                                              className="h-20 w-20 object-cover"
+                                            />
+                                        </button>
+                                        <button
+                                          type="button"
+                                          onClick={() =>
+                                            handleImageRemove(aid, idx)
+                                          }
+                                          className="absolute -top-1.5 -right-1.5 h-6 w-6 rounded-full bg-red-500 text-white flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity hover:bg-red-600"
+                                          aria-label="Remove photo"
+                                        >
+                                          <XCircle className="h-4 w-4" />
+                                        </button>
+                                      </div>
+                                    ))}
+                                    {conditionImages.length <
+                                      MAX_CONDITION_IMAGES && (
+                                      <label className="flex h-20 w-20 items-center justify-center rounded-lg border-2 border-dashed border-slate-300 hover:border-slate-400 cursor-pointer transition-colors">
+                                        <input
+                                          type="file"
+                                          accept={VALID_IMAGE_TYPES.join(',')}
+                                          className="hidden"
+                                          onChange={e => {
+                                            const file = e.target.files?.[0];
+                                            if (file) handleImageAdd(aid, file);
+                                            e.target.value = '';
+                                          }}
+                                        />
+                                        <ImagePlus className="h-8 w-8 text-slate-400" />
+                                      </label>
+                                    )}
+                                  </div>
+                                </div>
+                              </div>
+                            )}
+                          </div>
+                        );
+                      })}
+                    </TabsContent>
+
+                    <TabsContent value="intangible-assets" className="mt-4">
+                      <div className="rounded-xl border border-slate-200 bg-white p-5 shadow-sm -mx-3">
+                        {(() => {
+                          const assignedIntangibles = intangibleAssets.filter(a => a.assigned_to === processForm.user_id);
+                          if (assignedIntangibles.length === 0) {
+                            return (
+                              <div className="text-center py-8">
+                                <Layers className="h-10 w-10 text-gray-300 mx-auto mb-3" />
+                                <p className="text-gray-500 text-sm">No intangible assets assigned to this user.</p>
+                              </div>
+                            );
+                          }
+                          return (
+                            <div className="space-y-2">
+                              <Label className="text-sm font-semibold text-slate-800 tracking-tight uppercase flex items-center gap-2">
+                                <Layers className="h-4 w-4 text-red-500" />
+                                Select intangible assets to return
                               </Label>
-                              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-                                {conditionOptions.map(opt => {
-                                  const IconComponent = opt.icon;
-                                  const isSelected = condition === opt.value;
+                              <div className="space-y-2 max-h-[300px] overflow-y-auto mt-3">
+                                {assignedIntangibles.map(asset => {
+                                  const isSelected = selectedIntangibleAssetIds.includes(asset.id);
                                   return (
                                     <div
-                                      key={opt.value}
-                                      className={cn(
-                                        'flex items-center gap-3 p-3 rounded-lg transition-all duration-200 cursor-pointer',
+                                      key={asset.id}
+                                      className={`flex items-center gap-3 p-3 rounded-lg border-2 cursor-pointer transition-all ${
                                         isSelected
-                                          ? 'border-2 border-red-500 bg-red-50 shadow-sm'
-                                          : 'border-2 border-slate-200 hover:border-slate-300 hover:bg-slate-50'
-                                      )}
-                                      onClick={() =>
-                                        setConditionForAssignment(
-                                          aid,
-                                          opt.value
-                                        )
-                                      }
+                                          ? 'border-red-500 bg-red-50'
+                                          : 'border-slate-200 hover:border-red-300 hover:bg-slate-50'
+                                      }`}
+                                      onClick={() => {
+                                        if (isSelected) {
+                                          setSelectedIntangibleAssetIds(prev => prev.filter(id => id !== asset.id));
+                                        } else {
+                                          setSelectedIntangibleAssetIds(prev => [...prev, asset.id]);
+                                        }
+                                      }}
                                     >
-                                      <div
-                                        className={cn(
-                                          'h-4 w-4 rounded-full border-2',
-                                          isSelected
-                                            ? 'bg-red-500 border-red-500'
-                                            : 'border-gray-300'
+                                      <div className={`h-4 w-4 rounded border-2 flex items-center justify-center ${
+                                        isSelected ? 'bg-red-500 border-red-500' : 'border-gray-300'
+                                      }`}>
+                                        {isSelected && (
+                                          <svg className="h-3 w-3 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M5 13l4 4L19 7" />
+                                          </svg>
                                         )}
-                                      />
-                                      <IconComponent
-                                        className={cn(
-                                          'h-5 w-5 shrink-0',
-                                          isSelected
-                                            ? opt.color
-                                            : 'text-slate-400'
+                                      </div>
+                                      <div className="flex-1 min-w-0">
+                                        <div className="flex items-center gap-2">
+                                          <span className="font-medium text-slate-900">{asset.name}</span>
+                                          <Badge variant="outline" className={asset.type === 'IT scope' ? 'bg-red-100 text-red-800 border-red-200' : 'bg-orange-100 text-orange-800 border-orange-200'}>
+                                            {asset.type}
+                                          </Badge>
+                                        </div>
+                                        {asset.description && (
+                                          <p className="text-sm text-gray-500 truncate mt-0.5">{asset.description}</p>
                                         )}
-                                      />
-                                      <span className="font-medium text-slate-800">
-                                        {opt.label}
-                                      </span>
+                                      </div>
                                     </div>
                                   );
                                 })}
                               </div>
                             </div>
-                            <div className="space-y-2">
-                              <Label className="text-sm font-medium text-slate-700">
-                                Return Notes{' '}
-                                <span className="text-slate-400 font-normal">
-                                  (optional)
-                                </span>
-                              </Label>
-                              <Textarea
-                                placeholder="Add notes about this asset's return..."
-                                value={notes}
-                                onChange={e =>
-                                  setNotesForAssignment(aid, e.target.value)
-                                }
-                                className="border-slate-200 focus:border-red-500 focus:ring-red-500/20 rounded-lg resize-none"
-                                rows={3}
-                              />
-                            </div>
-                            <div className="space-y-2">
-                              <Label className="text-sm font-medium text-slate-700">
-                                Return Condition Photos{' '}
-                                <span className="text-slate-400 font-normal">
-                                  (optional, up to {MAX_CONDITION_IMAGES})
-                                </span>
-                              </Label>
-                              <div className="flex flex-wrap gap-2 items-start">
-                                {conditionImages.map((url, idx) => (
-                                  <div
-                                    key={`${aid}-condition-image-${idx}`}
-                                    className="relative group"
-                                  >
-                                    <button
-                                      type="button"
-                                      className="overflow-hidden rounded-lg border border-slate-200 bg-slate-50"
-                                      onClick={() => window.open(url, '_blank')}
-                                    >
-                                      <img
-                                        src={url}
-                                        alt={`Return condition photo ${idx + 1}`}
-                                        className="h-20 w-20 object-cover"
-                                      />
-                                    </button>
-                                    <button
-                                      type="button"
-                                      onClick={() =>
-                                        handleImageRemove(aid, idx)
-                                      }
-                                      className="absolute -top-1.5 -right-1.5 h-6 w-6 rounded-full bg-red-500 text-white flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity hover:bg-red-600"
-                                      aria-label="Remove photo"
-                                    >
-                                      <XCircle className="h-4 w-4" />
-                                    </button>
-                                  </div>
-                                ))}
-                                {conditionImages.length <
-                                  MAX_CONDITION_IMAGES && (
-                                  <label className="flex h-20 w-20 items-center justify-center rounded-lg border-2 border-dashed border-slate-300 hover:border-slate-400 cursor-pointer transition-colors">
-                                    <input
-                                      type="file"
-                                      accept={VALID_IMAGE_TYPES.join(',')}
-                                      className="hidden"
-                                      onChange={e => {
-                                        const file = e.target.files?.[0];
-                                        if (file) handleImageAdd(aid, file);
-                                        e.target.value = '';
-                                      }}
-                                    />
-                                    <ImagePlus className="h-8 w-8 text-slate-400" />
-                                  </label>
-                                )}
-                              </div>
-                            </div>
-                          </div>
-                        )}
+                          );
+                        })()}
                       </div>
-                    );
-                  })}
+                    </TabsContent>
+                  </Tabs>
+
+                  {selectedIntangibleAssetIds.length > 0 && (
+                    <div className="rounded-xl border border-slate-200 bg-white p-5 shadow-sm -mx-3">
+                      <Label className="text-sm font-semibold text-slate-800 tracking-tight uppercase flex items-center gap-2 mb-4">
+                        <Layers className="h-4 w-4 text-red-500" />
+                        Intangible Assets ({selectedIntangibleAssetIds.length})
+                      </Label>
+                      <div className="overflow-x-auto">
+                        <table className="w-full text-sm">
+                          <thead>
+                            <tr className="border-b border-slate-200">
+                              <th className="text-left py-2 px-3 font-semibold text-slate-700">Name</th>
+                              <th className="text-left py-2 px-3 font-semibold text-slate-700">Type</th>
+                              <th className="text-left py-2 px-3 font-semibold text-slate-700">Description</th>
+                              <th className="text-left py-2 px-3 font-semibold text-slate-700">Notes</th>
+                            </tr>
+                          </thead>
+                          <tbody>
+                            {selectedIntangibleAssetIds.map(id => {
+                              const asset = intangibleAssets.find(a => a.id === id);
+                              if (!asset) return null;
+                              return (
+                                <tr key={id} className="border-b border-slate-100 last:border-0">
+                                  <td className="py-2 px-3 text-slate-900 font-medium">{asset.name}</td>
+                                  <td className="py-2 px-3">
+                                    <Badge variant="outline" className={asset.type === 'IT scope' ? 'bg-red-100 text-red-800 border-red-200' : 'bg-orange-100 text-orange-800 border-orange-200'}>
+                                      {asset.type}
+                                    </Badge>
+                                  </td>
+                                  <td className="py-2 px-3 text-slate-600">{asset.description || '—'}</td>
+                                  <td className="py-2 px-3">
+                                    <Textarea
+                                      placeholder="Notes..."
+                                      value={intangibleNotes[id] ?? ''}
+                                      onChange={e => setIntangibleNotes(prev => ({ ...prev, [id]: e.target.value }))}
+                                      className="border-slate-200 focus:border-red-500 focus:ring-red-500/20 rounded-lg resize-none text-xs"
+                                      rows={2}
+                                    />
+                                  </td>
+                                </tr>
+                              );
+                            })}
+                          </tbody>
+                        </table>
+                      </div>
+                    </div>
+                  )}
 
                   <div className="rounded-xl border border-slate-200 bg-white p-5 shadow-sm -mx-3 space-y-3 transition-shadow hover:shadow-md">
                     <Label className="text-sm font-semibold text-slate-800 tracking-tight uppercase flex items-center gap-2">
@@ -1225,6 +1635,56 @@ export default function ReturnRequestsPage() {
             </AppDialogChromeFooter>
           </AppDialogFrame>
         </Dialog>
+
+        <AssetChecklistDialog
+          isOpen={checklistDialogOpen}
+          onOpenChange={open => {
+            if (!open) {
+              setChecklistDialogOpen(false);
+              pendingReturnChecklistsRef.current = [];
+            }
+          }}
+          onCancel={() => {
+            pendingReturnChecklistsRef.current = [];
+          }}
+          checklistVariant="offboarding"
+          selectedAssets={checklistAssets.map(a => a.id)}
+          assets={checklistAssets}
+          computerAssets={checklistAssets}
+          currentIndex={checklistStepIndex}
+          selectedUser={processingFormRef.current?.user_id || ''}
+          users={
+            processingFormRef.current
+              ? [
+                  {
+                    userID: processingFormRef.current.user_id,
+                    first_name:
+                      processingFormRef.current.returns[0]?.assignment?.user
+                        ?.first_name || '',
+                    last_name:
+                      processingFormRef.current.returns[0]?.assignment?.user
+                        ?.last_name || '',
+                    position:
+                      processingFormRef.current.returns[0]?.assignment?.user
+                        ?.position || null,
+                    department_id:
+                      processingFormRef.current.returns[0]?.assignment?.user
+                        ?.department?.id || '',
+                    company:
+                      processingFormRef.current.returns[0]?.assignment?.user
+                        ?.company || null,
+                  },
+                ]
+              : []
+          }
+          departments={departments.map(d => ({
+            departmentID: d.departmentID,
+            name: d.name,
+          }))}
+          currentUserPosition={currentUser?.position || ''}
+          onNext={handleChecklistNext}
+          onFinalSubmit={handleChecklistFinalSubmit}
+        />
       </main>
     </div>
   );

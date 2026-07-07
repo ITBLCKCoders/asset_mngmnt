@@ -1,5 +1,4 @@
 import React, { useState } from 'react';
-import { motion } from 'framer-motion';
 import { ChevronDown } from 'lucide-react';
 import { Switch } from '@/components/ui/switch';
 import { cn } from '@/lib/utils';
@@ -334,21 +333,14 @@ export function ModulePermissionsMatrix({
             const parentMaster = getMasterAllState(module.name);
             return (
               <React.Fragment key={module.name}>
-                <motion.tr
-                  className={`border-t-2 border-gray-100 hover:bg-gradient-to-r hover:from-red-50/50 hover:to-red-50/50 transition-all duration-200 ${idx % 2 === 0 ? 'bg-gray-50/30' : 'bg-white'}`}
-                  whileHover={{ y: -1 }}
-                  transition={{
-                    type: 'spring',
-                    stiffness: 420,
-                    damping: 28,
-                    mass: 0.55,
-                  }}
+                <tr
+                  className={`border-t-2 border-gray-100 hover:bg-gradient-to-r hover:from-red-50/50 hover:to-red-50/50 transition-[transform,background-color] duration-150 hover:-translate-y-0.5 ${idx % 2 === 0 ? 'bg-gray-50/30' : 'bg-white'}`}
                 >
                   <td className="px-3 py-4 align-middle sm:px-6 sm:py-5">
                     <div className="flex min-w-0 items-center gap-3">
                       <div className="h-8 w-2 shrink-0 rounded-full bg-gradient-to-b from-red-500 to-red-600" />
                       {module.children.length > 0 ? (
-                        <motion.button
+                        <button
                           type="button"
                           onClick={() =>
                             setOpenModules(prev => {
@@ -361,14 +353,7 @@ export function ModulePermissionsMatrix({
                               return newSet;
                             })
                           }
-                          className="inline-flex min-w-0 max-w-full items-center gap-2 rounded-md text-left font-bold text-gray-900 transition-colors hover:text-red-600 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red-500/30"
-                          whileHover={{ x: 4 }}
-                          transition={{
-                            type: 'spring',
-                            stiffness: 360,
-                            damping: 24,
-                            mass: 0.6,
-                          }}
+                          className="inline-flex min-w-0 max-w-full items-center gap-2 rounded-md text-left font-bold text-gray-900 transition-[transform,color] duration-150 hover:translate-x-1 hover:text-red-600 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red-500/30"
                         >
                             <span className="truncate text-sm sm:text-base">{module.name}</span>
                           <ChevronDown
@@ -377,7 +362,7 @@ export function ModulePermissionsMatrix({
                               openModules.has(module.name) && 'rotate-180'
                             )}
                           />
-                        </motion.button>
+                        </button>
                       ) : (
                         <span className="truncate text-sm font-bold text-gray-900 sm:text-lg">
                           {module.name}
@@ -417,22 +402,15 @@ export function ModulePermissionsMatrix({
                       </td>
                     )
                   )}
-                </motion.tr>
+                </tr>
                 {openModules.has(module.name) &&
                   module.children.map((child, childIdx) => {
                     if (typeof child === 'string') {
                       const childMaster = getMasterAllState(child);
                       return (
-                        <motion.tr
+                        <tr
                           key={`${module.name}:${child}`}
-                          className={`border-t border-gray-100 hover:bg-gradient-to-r hover:from-red-50/30 hover:to-red-50/30 transition-all duration-200 ${idx % 2 === 0 ? 'bg-gray-50/20' : 'bg-white/50'}`}
-                          whileHover={{ y: -1 }}
-                          transition={{
-                            type: 'spring',
-                            stiffness: 420,
-                            damping: 28,
-                            mass: 0.55,
-                          }}
+                          className={`border-t border-gray-100 hover:bg-gradient-to-r hover:from-red-50/30 hover:to-red-50/30 transition-[transform,background-color] duration-150 hover:-translate-y-0.5 ${idx % 2 === 0 ? 'bg-gray-50/20' : 'bg-white/50'}`}
                         >
                           <td className="px-8 py-4 align-middle sm:px-12">
                             <div className="flex min-w-0 items-center gap-3">
@@ -467,7 +445,7 @@ export function ModulePermissionsMatrix({
                               </td>
                             )
                           )}
-                        </motion.tr>
+                        </tr>
                       );
                     } else {
                       // It's a ModuleTreeNode, render it with its own expand/collapse
@@ -477,36 +455,28 @@ export function ModulePermissionsMatrix({
                       const hasGrandChildren = childModule.children && childModule.children.length > 0;
                       return (
                         <React.Fragment key={`${module.name}:${childModule.name}`}>
-                          <motion.tr
-                            className={`border-t border-gray-100 hover:bg-gradient-to-r hover:from-red-50/30 hover:to-red-50/30 transition-all duration-200 ${idx % 2 === 0 ? 'bg-gray-50/20' : 'bg-white/50'}`}
-                            whileHover={{ y: -1 }}
-                            transition={{
-                              type: 'spring',
-                              stiffness: 420,
-                              damping: 28,
-                              mass: 0.55,
-                            }}
+                          <tr
+                            className={`border-t border-gray-100 hover:bg-gradient-to-r hover:from-red-50/30 hover:to-red-50/30 transition-[transform,background-color] duration-150 hover:-translate-y-0.5 ${idx % 2 === 0 ? 'bg-gray-50/20' : 'bg-white/50'}`}
                           >
                             <td className="px-8 py-4 align-middle sm:px-12">
                               <div className="flex min-w-0 items-center gap-3">
                                 <div className="h-6 w-1.5 shrink-0 rounded-full bg-gradient-to-b from-red-400 to-red-500" />
                                 {hasGrandChildren ? (
-                                  <motion.button
-                                    type="button"
-                                    onClick={() =>
-                                      setOpenModules(prev => {
-                                        const newSet = new Set(prev);
-                                        if (newSet.has(childModule.name)) {
-                                          newSet.delete(childModule.name);
-                                        } else {
-                                          newSet.add(childModule.name);
-                                        }
-                                        return newSet;
-                                      })
-                                    }
-                                    className="inline-flex min-w-0 max-w-full items-center gap-2 rounded-md text-left font-bold text-gray-900 transition-colors hover:text-red-600 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red-500/30"
-                                    whileHover={{ x: 4 }}
-                                  >
+                                    <button
+                                      type="button"
+                                      onClick={() =>
+                                        setOpenModules(prev => {
+                                          const newSet = new Set(prev);
+                                          if (newSet.has(childModule.name)) {
+                                            newSet.delete(childModule.name);
+                                          } else {
+                                            newSet.add(childModule.name);
+                                          }
+                                          return newSet;
+                                        })
+                                      }
+                                      className="inline-flex min-w-0 max-w-full items-center gap-2 rounded-md text-left font-bold text-gray-900 transition-[transform,color] duration-150 hover:translate-x-1 hover:text-red-600 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red-500/30"
+                                    >
                                     <span className="truncate text-xs sm:text-sm">{childModule.name}</span>
                                     <ChevronDown
                                       className={cn(
@@ -514,7 +484,7 @@ export function ModulePermissionsMatrix({
                                         isChildOpen && 'rotate-180'
                                       )}
                                     />
-                                  </motion.button>
+                                  </button>
                                 ) : (
                                   <span className="truncate text-xs font-bold text-gray-900 sm:text-sm">
                                     {childModule.name}
@@ -547,23 +517,16 @@ export function ModulePermissionsMatrix({
                                 </td>
                               )
                             )}
-                          </motion.tr>
+                          </tr>
                           {isChildOpen &&
                             hasGrandChildren &&
                             childModule.children.map((grandChild: string | ModuleTreeNode) => {
                               if (typeof grandChild !== 'string') return null;
                               const grandChildMaster = getMasterAllState(grandChild);
                               return (
-                                <motion.tr
+                                <tr
                                   key={`${module.name}:${childModule.name}:${grandChild}`}
-                                  className={`border-t border-gray-100 hover:bg-gradient-to-r hover:from-red-50/30 hover:to-red-50/30 transition-all duration-200 ${idx % 2 === 0 ? 'bg-gray-50/20' : 'bg-white/50'}`}
-                                  whileHover={{ y: -1 }}
-                                  transition={{
-                                    type: 'spring',
-                                    stiffness: 420,
-                                    damping: 28,
-                                    mass: 0.55,
-                                  }}
+                                  className={`border-t border-gray-100 hover:bg-gradient-to-r hover:from-red-50/30 hover:to-red-50/30 transition-[transform,background-color] duration-150 hover:-translate-y-0.5 ${idx % 2 === 0 ? 'bg-gray-50/20' : 'bg-white/50'}`}
                                 >
                                   <td className="px-12 py-4 align-middle sm:px-16">
                                     <div className="flex min-w-0 items-center gap-3">
@@ -598,7 +561,7 @@ export function ModulePermissionsMatrix({
                                       </td>
                                     )
                                   )}
-                                </motion.tr>
+                </tr>
                               );
                             })}
                         </React.Fragment>

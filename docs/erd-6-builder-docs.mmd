@@ -1,0 +1,42 @@
+erDiagram
+  asset_builders {
+    builderID char(36) PK
+    name varchar
+    status enum
+    company_id char(36) FK
+    created_by char(36) FK
+    updated_by char(36) FK
+    deleted_by char(36) FK
+  }
+  asset_builder_items {
+    itemID char(36) PK
+    builder_id char(36) FK
+    asset_id char(36) FK
+    created_by char(36) FK
+  }
+  asset_documents {
+    documentID char(36) PK
+    asset_id char(36) FK
+    file_name varchar
+    file_url varchar
+    file_size int
+    file_type varchar
+    created_by char(36) FK
+    updated_by char(36) FK
+    deleted_by char(36) FK
+  }
+  asset_counters {
+    company_id char(36)
+    department_id char(36)
+    last_seq int
+  }
+
+  companies ||--o{ asset_builders : has
+  users ||--o{ asset_builders : created_by
+  asset_builders ||--o{ asset_builder_items : includes
+  assets ||--o{ asset_builder_items : component
+  users ||--o{ asset_builder_items : created_by
+  assets ||--o{ asset_documents : has
+  users ||--o{ asset_documents : created_by
+  companies ||--o{ asset_counters : numbering
+  asset_mngmnt_departments ||--o{ asset_counters : numbering

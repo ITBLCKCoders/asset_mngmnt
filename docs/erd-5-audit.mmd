@@ -1,0 +1,21 @@
+erDiagram
+  audit_logs {
+    auditID char(36) PK
+    user_id char(36) FK
+    action varchar
+    details text
+  }
+  audit_logs_archive {
+    archive_id char(36) PK
+    auditID char(36) FK
+    user_id char(36) FK
+  }
+  audit_retention_settings {
+    id char(36) PK
+    company_id char(36) FK
+    retention_months int
+  }
+
+  users ||--o{ audit_logs : actor
+  audit_logs ||--o{ audit_logs_archive : archived_as
+  companies ||--o{ audit_retention_settings : policy

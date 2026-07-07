@@ -17,36 +17,6 @@ const resend =
     ? new Resend(apiKey)
     : null;
 
-interface EmailOptions {
-  from: string;
-  to: string;
-  subject: string;
-  html: string;
-}
-
-let sending = false;
-const queue: EmailOptions[] = [];
-
-async function flush() {
-  if (sending || queue.length === 0 || !resend) return;
-  sending = true;
-  const mail = queue.shift()!;
-  try {
-    const response = await resend.emails.send(mail);
-    console.log(`[EMAIL] Sent → ${mail.to}`);
-    console.log(`[RESEND] Full Response:`, JSON.stringify(response, null, 2));
-    console.log(
-      `[RESEND] Response ID: ${response?.data?.id || 'Email sent successfully'}`
-    );
-  } catch (e: any) {
-    console.error(`[EMAIL] Failed → ${mail.to}: ${e.message}`);
-    console.error(`[RESEND] Error details:`, e.response?.data || e.message);
-  } finally {
-    sending = false;
-    setTimeout(flush, 100);
-  }
-}
-
 export const sendEmail = async (
   to: string,
   subject: string,
@@ -60,11 +30,21 @@ export const sendEmail = async (
     return;
   }
 
-  queue.push({
-    from: emailConfig.fromEmail || 'Asset Management <onboarding@resend.dev>', // Use Resend's verified domain
-    to,
-    subject,
-    html,
-  });
-  flush();
+  try {
+    const response = await resend.emails.send({
+      from: emailConfig.fromEmail || 'Asset Management <onboarding@resend.dev>',
+      to,
+      subject,
+      html,
+    });
+    console.log(`[EMAIL] Sent → ${to}`);
+    console.log(`[RESEND] Full Response:`, JSON.stringify(response, null, 2));
+    console.log(
+      `[RESEND] Response ID: ${response?.data?.id || 'Email sent successfully'}`
+    );
+  } catch (e: any) {
+    console.error(`[EMAIL] Failed → ${to}: ${e.message}`);
+    console.error(`[RESEND] Error details:`, e.response?.data || e.message);
+    throw e;
+  }
 };

@@ -1,0 +1,29 @@
+erDiagram
+  asset_mngmnt_roles {
+    roleID char(36) PK
+    name varchar
+  }
+  role_permissions {
+    permission_id char(36) PK
+    role_id char(36) FK
+    module_name varchar
+    permission_type enum
+    granted tinyint
+  }
+  user_permissions {
+    permission_id char(36) PK
+    user_id char(36) FK
+    module_name varchar
+    permission_type enum
+    granted tinyint
+  }
+  users {
+    userID char(36) PK
+    email varchar
+    company_id char(36)
+    department_id char(36)
+    role_id char(36)
+  }
+
+  asset_mngmnt_roles ||--o{ role_permissions : grants
+  users ||--o{ user_permissions : grants

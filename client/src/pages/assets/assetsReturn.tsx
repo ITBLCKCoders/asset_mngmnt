@@ -1,4 +1,4 @@
-'use client';
+﻿'use client';
 
 import { useEffect, useState, useMemo, useRef } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
@@ -23,9 +23,12 @@ import {
   ImagePlus,
   ImageIcon,
   Crown,
+  Layers,
 } from 'lucide-react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { PageHeader } from '@/components/common/PageHeader';
+import { SearchWithColumnFilter } from '@/components/common/SearchWithColumnFilter';
+import { ASSET_SEARCH_COLUMNS_BASIC } from '@/utils/assetSearchColumns';
 import { Button } from '@/components/ui/button';
 import { useCompanyContext } from '@/context/CompanyContext';
 import {
@@ -65,6 +68,10 @@ import {
 } from '@/lib/pdfGenerator';
 import { FileDown } from 'lucide-react';
 import SmsOtpDialog from '@/components/auth/SmsOtpDialog';
+import { AssetChecklistDialog, type AssetChecklistSubmitPayload } from '@/pages/assets/asset-issuance/components/AssetChecklistDialog';
+import { hasComputerTypeAssets, filterComputerTypeAssets } from '@/utils/assetTypeDetection';
+import { proxyCloudinaryUrl } from '@/utils/cloudinaryProxy';
+import type { OffboardingChecklistItemData } from '../../../../shared/types/dtos/asset.dtos';
 
 interface AssetAssignment {
   assignmentID: string;
@@ -139,6 +146,7 @@ export default function AssetsReturn() {
   const [selectedAssignments, setSelectedAssignments] = useState<string[]>([]);
   const [returning, setReturning] = useState(false);
   const [searchTerm, setSearchTerm] = useState('');
+  const [searchColumn, setSearchColumn] = useState('all');
   const [categories, setCategories] = useState<any[]>([]);
   const [categoriesLoading, setCategoriesLoading] = useState(true);
   const [locations, setLocations] = useState<Location[]>([]);
@@ -171,13 +179,36 @@ export default function AssetsReturn() {
     useState<string>('');
   const [sharedReturnAreaId, setSharedReturnAreaId] = useState<string>('');
   const [ownerAbsent, setOwnerAbsent] = useState(false);
+  const [intangibleAssets, setIntangibleAssets] = useState<any[]>([]);
+  const [selectedIntangibleAssetIds, setSelectedIntangibleAssetIds] = useState<string[]>([]);
   const [smsOtpDialogOpen, setSmsOtpDialogOpen] = useState(false);
   const pendingReturnActionRef = useRef<(() => Promise<void>) | null>(null);
+
+  // Checklist dialog state for return flow
+  const [checklistDialogOpen, setChecklistDialogOpen] = useState(false);
+  const [checklistStepIndex, setChecklistStepIndex] = useState(0);
+  const [checklistComputerAssets, setChecklistComputerAssets] = useState<any[]>([]);
+  const pendingReturnChecklistsRef = useRef<{
+    assignmentId: string;
+    employeeId: string;
+    employeeName: string;
+    employeeDesignation: string | null;
+    employeeDepartment: string | null;
+    employeeCompany: string | null;
+    checklistData: OffboardingChecklistItemData;
+    typeOnboarding: boolean;
+    typeOffboarding: boolean;
+    receivedBy: string;
+    remarks: string;
+  }[]>([]);
 
   const isSuperAdmin = currentUser?.role?.name?.toLowerCase() === 'super admin';
   const isAdmin = currentUser?.role?.name?.toLowerCase() === 'admin';
   const isOverallManager = roleCustodian?.managerRole === 'overallManager';
   const showScopeTabs = isSuperAdmin || isAdmin || isOverallManager;
+  const effectiveCompanyId = isSuperAdmin || isAdmin
+    ? activeCompany?.id || undefined
+    : currentUser?.company_id || undefined;
   const [scope, setScope] = useState<'it' | 'admin'>('it');
   const displayLoading = loading;
 
@@ -343,7 +374,7 @@ export default function AssetsReturn() {
         cell: ({ row }) => {
           const imgs = row.original.conditionImages ?? [];
           if (imgs.length === 0)
-            return <span className="text-slate-400">—</span>;
+            return <span className="text-slate-400">â€”</span>;
           return (
             <Button
               variant="outline"
@@ -367,7 +398,8 @@ export default function AssetsReturn() {
 
   const fetchDepartments = async () => {
     try {
-      const response = await api.get('/departments');
+      const url = effectiveCompanyId ? `/departments?companyId=${effectiveCompanyId}` : '/departments';
+      const response = await api.get(url);
       setDepartments(response.departments || []);
     } catch (error) {
       console.error('Failed to fetch departments:', error);
@@ -377,7 +409,8 @@ export default function AssetsReturn() {
 
   const fetchUsers = async () => {
     try {
-      const response = await api.get('/users');
+      const url = effectiveCompanyId ? `/users?companyId=${effectiveCompanyId}` : '/users';
+      const response = await api.get(url);
       setUsers(response.users || []);
     } catch (error) {
       console.error('Failed to fetch users:', error);
@@ -401,7 +434,8 @@ export default function AssetsReturn() {
 
   const fetchLocations = async () => {
     try {
-      const response = await api.get('/locations');
+      const url = effectiveCompanyId ? `/locations?companyId=${effectiveCompanyId}` : '/locations';
+      const response = await api.get(url);
       setLocations(response.locations || []);
     } catch (error) {
       console.error('Failed to fetch locations:', error);
@@ -460,6 +494,16 @@ export default function AssetsReturn() {
     }
   };
 
+  const fetchIntangibleAssets = async () => {
+    try {
+      const response = await api.get('/intangible-assets');
+      setIntangibleAssets(response || []);
+    } catch (error) {
+      console.error('Failed to fetch intangible assets:', error);
+      setIntangibleAssets([]);
+    }
+  };
+
   useEffect(() => {
     const fetchData = async () => {
       // Fetch assignments and other data
@@ -470,6 +514,7 @@ export default function AssetsReturn() {
         fetchCategories(),
         fetchLocations(),
         fetchAssetBuilders(),
+        fetchIntangibleAssets(),
       ]);
       setLoading(false);
     };
@@ -555,8 +600,8 @@ export default function AssetsReturn() {
   };
 
   const handleReturnClick = () => {
-    if (selectedAssignments.length === 0) {
-      toast.error('Please select at least one asset assignment to return');
+    if (selectedAssignments.length === 0 && selectedIntangibleAssetIds.length === 0) {
+      toast.error('Please select at least one asset or intangible asset to return');
       return;
     }
 
@@ -569,11 +614,6 @@ export default function AssetsReturn() {
         return assignment;
       })
       .filter(Boolean);
-
-    if (selectedAssignmentData.length === 0) {
-      toast.error('No valid assignments found');
-      return;
-    }
 
     // Initialize return data for each asset (condition, notes, images only; return location is shared)
     const initialReturnData = selectedAssignmentData.map(assignment => ({
@@ -742,7 +782,7 @@ export default function AssetsReturn() {
     );
     const locDisplayName =
       returnLoc && room?.room_name
-        ? `${returnLoc.name} — ${room.room_name}`
+        ? `${returnLoc.name} â€” ${room.room_name}`
         : returnLoc?.name ?? '';
     const returnTypeParts: string[] = [];
     if (returnTypeReturned) returnTypeParts.push('Returned');
@@ -866,12 +906,17 @@ export default function AssetsReturn() {
       if (returnTypeOffboarding) returnTypeParts.push('Offboarding');
       const returnType = returnTypeParts.join(',');
 
+      const intangibleAssetReturnItems = selectedIntangibleAssetIds.length > 0
+        ? selectedIntangibleAssetIds.map(id => ({ id }))
+        : undefined;
+
       const response = (await api.post('/asset-returns', {
         assetReturns,
         processSignature,
         returnType,
         assignToProcessor: assignAllToMe,
         ownerAbsent: assignAllToMe && ownerAbsent,
+        intangibleAssetReturnItems,
       })) as {
         message?: string;
         returnForm?: { formID?: string; form_number?: string | null };
@@ -879,16 +924,43 @@ export default function AssetsReturn() {
 
       const serverMsg = response?.message;
       const formNum = response?.returnForm?.form_number ?? null;
+      const totalAssets = selectedAssignments.length + selectedIntangibleAssetIds.length;
       toast.success(
         ownerAbsent && assignAllToMe
           ? serverMsg ??
               'Return request created. Obtain the department head signature on the downloaded form.'
           : assignAllToMe
             ? serverMsg ??
-                'Return request created. The returner must sign the form in Profile → Documents, then the department head must approve before assets are assigned to you.'
+                'Return request created. The returner must sign the form in Profile â†’ Documents, then the department head must approve before assets are assigned to you.'
             : serverMsg ||
-                `Successfully returned ${selectedAssignments.length} asset(s)`
+                `Successfully returned ${totalAssets} asset(s)`
       );
+
+      // Save offboarding checklists after successful return
+      if (pendingReturnChecklistsRef.current.length > 0) {
+        try {
+          await Promise.all(
+            pendingReturnChecklistsRef.current.map(checklist =>
+              api.post('/asset-returns/checklist', {
+                assignmentId: checklist.assignmentId,
+                employeeId: checklist.employeeId,
+                employeeName: checklist.employeeName,
+                employeeDesignation: checklist.employeeDesignation,
+                employeeDepartment: checklist.employeeDepartment,
+                employeeCompany: checklist.employeeCompany,
+                typeOnboarding: checklist.typeOnboarding,
+                typeOffboarding: checklist.typeOffboarding,
+                receivedBy: checklist.receivedBy,
+                checklistData: checklist.checklistData,
+                remarks: checklist.remarks,
+                digitalSignature: processDigitalSignature,
+              })
+            )
+          );
+        } catch (checklistErr) {
+          console.error('Failed to save offboarding checklists:', checklistErr);
+        }
+      }
 
       // Download PDF automatically for processor-initiated returns with owner absent
       if (assignAllToMe && ownerAbsent) {
@@ -911,6 +983,7 @@ export default function AssetsReturn() {
       }
 
       setSelectedAssignments([]);
+      setSelectedIntangibleAssetIds([]);
       setAssetReturnData([]);
       setVerificationTag(false);
       setVerificationCondition(false);
@@ -923,6 +996,10 @@ export default function AssetsReturn() {
       setSharedReturnLocationId('');
       setSharedReturnAreaId('');
       setShowConditionModal(false);
+
+      setChecklistComputerAssets([]);
+      setChecklistDialogOpen(false);
+      pendingReturnChecklistsRef.current = [];
 
       await fetchAssignments();
     } catch (error: unknown) {
@@ -939,6 +1016,78 @@ export default function AssetsReturn() {
 
   const handleReturnAssets = () => {
     if (!validateReturnForm()) return;
+
+    // Check if any selected assets are computer-type
+    const selectedAssetObjects = selectedAssignments
+      .map(assignmentId => assignments.find(a => a.assignmentID === assignmentId))
+      .filter(Boolean) as AssetAssignment[];
+    const typedAssets = selectedAssetObjects.map(a => ({
+      id: a.asset.id,
+      name: a.asset.name,
+      type: a.asset.type_id || '',
+      category: a.asset.category_id || '',
+    }));
+    const hasComputer = hasComputerTypeAssets(typedAssets, typedAssets.map(a => a.id));
+
+    if (hasComputer) {
+      // Open checklist dialog first for computer-type assets
+      const computerAssets = filterComputerTypeAssets(typedAssets);
+      setChecklistComputerAssets(computerAssets);
+      setChecklistStepIndex(0);
+      pendingReturnChecklistsRef.current = [];
+      setChecklistDialogOpen(true);
+      return;
+    }
+
+    // No computer assets, proceed directly to OTP
+    pendingReturnActionRef.current = async () => {
+      await submitReturnRequest();
+    };
+    setSmsOtpDialogOpen(true);
+  };
+
+  const handleReturnChecklistNext = async (payload: AssetChecklistSubmitPayload) => {
+    const currentComputer = checklistComputerAssets[checklistStepIndex];
+    const assignment = assignments.find(a => a.asset.id === currentComputer?.id);
+    if (assignment) {
+      pendingReturnChecklistsRef.current.push({
+        assignmentId: assignment.assignmentID,
+        employeeId: assignment.user.id,
+        employeeName: `${assignment.user.first_name} ${assignment.user.last_name}`,
+        employeeDesignation: assignment.user.position || null,
+        employeeDepartment: assignment.department?.name || null,
+        employeeCompany: null,
+        checklistData: payload.checklistData as OffboardingChecklistItemData,
+        typeOnboarding: payload.typeOnboarding,
+        typeOffboarding: payload.typeOffboarding,
+        receivedBy: payload.receivedBy,
+        remarks: payload.remarks,
+      });
+    }
+    setChecklistStepIndex(prev => prev + 1);
+  };
+
+  const handleReturnChecklistFinalSubmit = async (payload: AssetChecklistSubmitPayload) => {
+    const currentComputer = checklistComputerAssets[checklistStepIndex];
+    const assignment = assignments.find(a => a.asset.id === currentComputer?.id);
+    if (assignment) {
+      pendingReturnChecklistsRef.current.push({
+        assignmentId: assignment.assignmentID,
+        employeeId: assignment.user.id,
+        employeeName: `${assignment.user.first_name} ${assignment.user.last_name}`,
+        employeeDesignation: assignment.user.position || null,
+        employeeDepartment: assignment.department?.name || null,
+        employeeCompany: null,
+        checklistData: payload.checklistData as OffboardingChecklistItemData,
+        typeOnboarding: payload.typeOnboarding,
+        typeOffboarding: payload.typeOffboarding,
+        receivedBy: payload.receivedBy,
+        remarks: payload.remarks,
+      });
+    }
+
+    // Close checklist dialog and open OTP
+    setChecklistDialogOpen(false);
     pendingReturnActionRef.current = async () => {
       await submitReturnRequest();
     };
@@ -1005,10 +1154,11 @@ export default function AssetsReturn() {
     const q = searchTerm.trim().toLowerCase();
     const base = !q
       ? assignments.filter(a => a.status === 'Active')
-      : assignments.filter(
-          assignment =>
-            assignment.status === 'Active' &&
-            (assignment.asset.name?.toLowerCase().includes(q) ||
+      : assignments.filter(assignment => {
+          if (assignment.status !== 'Active') return false;
+          if (searchColumn === 'all') {
+            return (
+              assignment.asset.name?.toLowerCase().includes(q) ||
               assignment.asset.code?.toLowerCase().includes(q) ||
               assignment.department?.name?.toLowerCase().includes(q) ||
               assignment.user.first_name?.toLowerCase().includes(q) ||
@@ -1017,10 +1167,15 @@ export default function AssetsReturn() {
               `${assignment.user.first_name || ''} ${assignment.user.last_name || ''}`
                 .trim()
                 .toLowerCase()
-                .includes(q))
-        );
+                .includes(q)
+            );
+          }
+          const assetField = searchColumn === 'id' ? 'code' : searchColumn;
+          const val = (assignment.asset as any)[assetField];
+          return val != null && String(val).toLowerCase().includes(q);
+        });
     return base.filter(a => !assignmentIdsInBuilders.has(a.assignmentID));
-  }, [assignments, searchTerm, assignmentIdsInBuilders]);
+  }, [assignments, searchTerm, searchColumn, assignmentIdsInBuilders]);
 
   const conditionOptions = [
     {
@@ -1111,7 +1266,7 @@ export default function AssetsReturn() {
           {/* Asset Selection / Asset Built Tabs */}
           <div className="xl:col-span-2">
             <Tabs value={activeTab} onValueChange={(value) => { setActiveTab(value); setTabLoading(true); setTimeout(() => setTabLoading(false), 300); }} className="w-full">
-              <TabsList className={segmentTabsListClassName + ' grid grid-cols-2'}>
+              <TabsList className={segmentTabsListClassName + ' grid grid-cols-3'}>
                 <TabsTrigger
                   value="select-assets"
                   className={segmentTabsTriggerClassName + ' flex items-center gap-2'}
@@ -1132,6 +1287,16 @@ export default function AssetsReturn() {
                     {filteredAssignedBuilders.length}
                   </Badge>
                 </TabsTrigger>
+                <TabsTrigger
+                  value="intangible-assets"
+                  className={segmentTabsTriggerClassName + ' flex items-center gap-2'}
+                >
+                  <Layers className="h-4 w-4" />
+                  Intangible Assets
+                  <Badge variant="secondary" className="ml-1 text-xs">
+                    {intangibleAssets.filter(a => a.status === 'assigned').length}
+                  </Badge>
+                </TabsTrigger>
               </TabsList>
 
               <TabsContent value="select-assets" className="mt-4">
@@ -1147,15 +1312,15 @@ export default function AssetsReturn() {
                       </Badge>
                     </CardTitle>
 
-                    <div className="relative mt-4">
-                      <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-gray-400" />
-                      <Input
-                        placeholder="Search by asset name, asset code, department, or assigned to..."
-                        value={searchTerm}
-                        onChange={e => setSearchTerm(e.target.value)}
-                        className="pl-10 border-gray-200 focus:border-red-500 focus:ring-red-500"
-                      />
-                    </div>
+                    <SearchWithColumnFilter
+                      value={searchTerm}
+                      onChange={setSearchTerm}
+                      placeholder="Search assets..."
+                      columnOptions={ASSET_SEARCH_COLUMNS_BASIC}
+                      searchColumn={searchColumn}
+                      onSearchColumnChange={setSearchColumn}
+                      className="mt-4"
+                    />
                   </CardHeader>
 
                   <CardContent className="pt-0">
@@ -1268,7 +1433,7 @@ export default function AssetsReturn() {
                                   </span>
                                   {assignment.department && (
                                     <span className="ml-2 text-gray-400">
-                                      •
+                                      â€¢
                                     </span>
                                   )}
                                   {assignment.department && (
@@ -1276,7 +1441,7 @@ export default function AssetsReturn() {
                                   )}
                                   {assignment.location && (
                                     <span className="ml-2 text-gray-400">
-                                      •
+                                      â€¢
                                     </span>
                                   )}
                                   {assignment.location && (
@@ -1567,7 +1732,7 @@ export default function AssetsReturn() {
                                               <li
                                                 key={a.assignmentID}
                                                 className={cn(
-                                                  'flex items-center gap-3 p-3 rounded-lg border-2 transition-all cursor-pointer min-w-0 pl-4 relative before:content-["•"] before:absolute before:left-2 before:font-bold before:text-gray-500',
+                                                  'flex items-center gap-3 p-3 rounded-lg border-2 transition-all cursor-pointer min-w-0 pl-4 relative before:content-["â€¢"] before:absolute before:left-2 before:font-bold before:text-gray-500',
                                                   selectedAssignments.includes(
                                                     a.assignmentID
                                                   )
@@ -1644,9 +1809,79 @@ export default function AssetsReturn() {
                   </CardContent>
                 </Card>
               </TabsContent>
+
+              <TabsContent value="intangible-assets" className="mt-4">
+                <Card className="shadow-xl border-0 bg-white/80 backdrop-blur-sm">
+                  <CardHeader className="pb-4">
+                    <CardTitle className="flex items-center gap-3 text-xl">
+                      <div className="p-2 bg-red-100 rounded-lg">
+                        <Layers className="h-5 w-5 text-red-600" />
+                      </div>
+                      Intangible Assets
+                    </CardTitle>
+                  </CardHeader>
+                  <CardContent>
+                    {(() => {
+                      const assignedIntangibles = intangibleAssets.filter(a => a.status === 'assigned');
+                      if (assignedIntangibles.length === 0) {
+                        return (
+                          <div className="text-center py-8">
+                            <Layers className="h-10 w-10 text-gray-300 mx-auto mb-3" />
+                            <p className="text-gray-500 text-sm">No assigned intangible assets.</p>
+                          </div>
+                        );
+                      }
+                      return (
+                        <div className="space-y-2 max-h-[400px] overflow-y-auto">
+                          {assignedIntangibles.map(asset => {
+                            const isSelected = selectedIntangibleAssetIds.includes(asset.id);
+                            return (
+                              <div
+                                key={asset.id}
+                                className={`flex items-center gap-3 p-3 rounded-lg border-2 cursor-pointer transition-all ${
+                                  isSelected
+                                    ? 'border-red-500 bg-red-50'
+                                    : 'border-slate-200 hover:border-red-300 hover:bg-slate-50'
+                                }`}
+                                onClick={() => {
+                                  if (isSelected) {
+                                    setSelectedIntangibleAssetIds(prev => prev.filter(id => id !== asset.id));
+                                  } else {
+                                    setSelectedIntangibleAssetIds(prev => [...prev, asset.id]);
+                                  }
+                                }}
+                              >
+                                <div className={`h-4 w-4 rounded border-2 flex items-center justify-center ${
+                                  isSelected ? 'bg-red-500 border-red-500' : 'border-gray-300'
+                                }`}>
+                                  {isSelected && (
+                                    <svg className="h-3 w-3 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M5 13l4 4L19 7" />
+                                    </svg>
+                                  )}
+                                </div>
+                                <div className="flex-1 min-w-0">
+                                  <div className="flex items-center gap-2">
+                                    <span className="font-medium text-slate-900">{asset.name}</span>
+                                    <Badge variant="outline" className={asset.type === 'IT scope' ? 'bg-red-100 text-red-800 border-red-200' : 'bg-orange-100 text-orange-800 border-orange-200'}>
+                                      {asset.type}
+                                    </Badge>
+                                  </div>
+                                  {asset.description && (
+                                    <p className="text-sm text-gray-500 truncate mt-0.5">{asset.description}</p>
+                                  )}
+                                </div>
+                              </div>
+                            );
+                          })}
+                        </div>
+                      );
+                    })()}
+                  </CardContent>
+                </Card>
+              </TabsContent>
             </Tabs>
           </div>
-
           {/* Return Details Panel */}
           <div>
             <Card className="shadow-xl border-0 bg-white/80 backdrop-blur-sm sticky top-8">
@@ -1670,7 +1905,7 @@ export default function AssetsReturn() {
                   onClick={handleReturnClick}
                   disabled={
                     returning ||
-                    selectedAssignments.length === 0 ||
+                    (selectedAssignments.length === 0 && selectedIntangibleAssetIds.length === 0) ||
                     !hasPermission('Asset Return', 'create') ||
                     !hasPermission('Asset Return', 'edit')
                   }
@@ -1684,7 +1919,7 @@ export default function AssetsReturn() {
                   ) : (
                     <div className="flex items-center gap-2">
                       <RotateCcw className="h-5 w-5" />
-                      Return {selectedAssignments.length} Asset
+                      Return {selectedAssignments.length + selectedIntangibleAssetIds.length} Asset
                       {selectedAssignments.length !== 1 ? 's' : ''}
                     </div>
                   )}
@@ -1999,7 +2234,7 @@ export default function AssetsReturn() {
                               (url, idx) => (
                                 <div key={url} className="relative group">
                                   <img
-                                    src={url}
+                                    src={proxyCloudinaryUrl(url)}
                                     alt={`Condition photo ${idx + 1}`}
                                     className="h-20 w-20 object-cover rounded-lg border border-slate-200"
                                   />
@@ -2170,7 +2405,7 @@ export default function AssetsReturn() {
                 <p className="text-sm text-slate-700">
                   {currentUser?.position?.trim()
                     ? currentUser.position
-                    : '— (add a position on your profile if missing)'}
+                    : 'â€” (add a position on your profile if missing)'}
                 </p>
                 <p className="text-xs text-slate-500">
                   Shown on the return form PDF after processing.
@@ -2327,6 +2562,37 @@ export default function AssetsReturn() {
           </AppDialogFrame>
         </Dialog>
 
+        {/* Asset Checklist Dialog (offboarding variant) - shown before OTP for computer-type assets */}
+        {checklistComputerAssets.length > 0 && (
+          <AssetChecklistDialog
+            isOpen={checklistDialogOpen}
+            onOpenChange={open => {
+              if (!open) {
+                setChecklistDialogOpen(false);
+                pendingReturnChecklistsRef.current = [];
+              }
+            }}
+            onCancel={() => {
+              pendingReturnChecklistsRef.current = [];
+            }}
+            checklistVariant="offboarding"
+            selectedAssets={checklistComputerAssets.map(a => a.id)}
+            assets={checklistComputerAssets}
+            computerAssets={checklistComputerAssets}
+            currentIndex={checklistStepIndex}
+            selectedUser={(() => {
+              const currentComputer = checklistComputerAssets[checklistStepIndex];
+              const assignment = assignments.find(a => a.asset.id === currentComputer?.id);
+              return assignment?.user.id || '';
+            })()}
+            users={users}
+            departments={departments}
+            currentUserPosition={currentUser?.position || ''}
+            onNext={handleReturnChecklistNext}
+            onFinalSubmit={handleReturnChecklistFinalSubmit}
+          />
+        )}
+
         {/* SMS OTP Verification Dialog */}
         <SmsOtpDialog
           isOpen={smsOtpDialogOpen}
@@ -2341,10 +2607,12 @@ export default function AssetsReturn() {
           onVerified={() => {
             setSmsOtpDialogOpen(false);
             pendingReturnActionRef.current = null;
+            pendingReturnChecklistsRef.current = [];
           }}
           onCancel={() => {
             setSmsOtpDialogOpen(false);
             pendingReturnActionRef.current = null;
+            pendingReturnChecklistsRef.current = [];
           }}
           pendingActionRef={pendingReturnActionRef}
           title="OTP SMS Verification"
@@ -2375,7 +2643,7 @@ export default function AssetsReturn() {
                     className="overflow-hidden rounded-lg border border-slate-200"
                   >
                     <img
-                      src={url}
+                      src={proxyCloudinaryUrl(url)}
                       alt={`Condition photo ${idx + 1}`}
                       className="aspect-square w-full object-cover"
                     />

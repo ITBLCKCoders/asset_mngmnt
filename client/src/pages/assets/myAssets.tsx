@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
 import {
   Package,
@@ -14,118 +14,104 @@ import {
 } from 'lucide-react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { PageHeader } from '@/components/common/PageHeader';
+import { SearchWithColumnFilter } from '@/components/common/SearchWithColumnFilter';
+import { MY_ASSETS_SEARCH_COLUMNS } from '@/utils/assetSearchColumns';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { AssetViewModal } from './assets-list/assetsComponents/assetViewModal';
+import { AssetBuilderViewModal } from './assets-list/assetsComponents/AssetBuilderViewModal';
+import { useBarcodeAssetOrBuilderScan } from '@/hooks/useBarcodeAssetOrBuilderScan';
+import type { AssetBuilderRecord } from '@/utils/builderScan';
+import { proxyCloudinaryUrl } from '@/utils/cloudinaryProxy';
+import type { AssetResponseDto } from '@/types/assetsDTOs';
 import { Asset } from './assets-list/assetsComponents/assetTable/assetData';
 import { api } from '@/lib/api';
 import { toast } from 'sonner';
 import { useCurrentUser } from '@/hooks/useCurrentUser';
 import { useUserPermissions } from '@/hooks/useUserPermissions';
+import { useCompanyContext } from '@/context/CompanyContext';
 import { Shimmer } from '@/components/ui/shimmer';
 
-interface ApiAsset {
-  assetID: string;
-  asset_code: string;
-  name: string;
-  description?: string;
-  category_id: string;
-  category_name?: string;
-  supplier?: string;
-  type_id?: string;
-  type_name?: string;
-  brand?: string;
-  model?: string;
-  serial?: string;
-  image_url?: string;
-  purchase_date?: string;
-  asset_value?: number;
-  salvage_value?: number;
-  depreciation_method?: string;
-  useful_life_years?: number;
-  annual_depreciation?: number;
-  depreciation_start_date?: string;
-  company_id?: string;
-  company_name?: string;
-  location_id?: string;
-  location_name?: string;
-  building?: string;
-  location_room_id?: string;
-  room_name?: string;
-  department_id?: string;
-  department?: string;
-  location_notes?: string;
-  warranty_months?: number;
-  condition?: string;
-  maintenance_schedule?: string;
-  last_maintenance_date?: string;
-  next_maintenance_date?: string;
-  status?: string;
-  created_at: string;
-  created_by?: string;
-  created_by_name?: string;
-  updated_at?: string;
-  updated_by?: string;
-  updated_by_name?: string;
-  deleted_at?: string;
-  deleted_by?: string;
-  specifications?: Array<{
-    assetId: string;
-    assetName: string;
-    specDescription: string;
-  }>;
-  documents?: Array<{
-    documentID: string;
-    fileName: string;
-    fileUrl: string;
-    fileSize: number;
-    fileType: string;
-    createdAt: string;
-  }>;
-  currentAssignment?: {
-    assignmentID: string;
-    user: {
-      id: string;
-      name: string;
-      email: string;
-      employeeNumber?: string;
-      position?: string;
-    };
-    department: string;
-    location: string;
-    assignedDate: string;
-    actualReturnDate?: string;
-    status: string;
-    assignedBy?: string;
-    assignmentNotes?: string;
-  };
-  assignmentHistory?: Array<{
-    assignmentID: string;
-    user: {
-      id: string;
-      name: string;
-      email: string;
-      employeeNumber?: string;
-      position?: string;
-    };
-    department: string;
-    location: string;
-    assignedDate: string;
-    actualReturnDate?: string;
-    status: string;
-    assignedBy?: string;
-    assignmentNotes?: string;
-  }>;
+function mapMyAssetDto(apiAsset: AssetResponseDto): Asset {
+  return {
+    id: apiAsset.asset_code,
+    name: apiAsset.name,
+    image: apiAsset.image_url || '',
+    description: apiAsset.description || '',
+    category: apiAsset.category_name || apiAsset.category_id || '',
+    type: apiAsset.type_name || apiAsset.type_id || '',
+    serialNo: apiAsset.serial || '',
+    modelNo: apiAsset.model || '',
+    brand: apiAsset.brand || '',
+    status:
+      (apiAsset.status === 'In Use'
+        ? 'Assigned'
+        : (apiAsset.status as 'Available' | 'Assigned' | 'In Maintenance')) ||
+      'Assigned',
+    assignedTo: apiAsset.currentAssignment?.user?.name || '',
+    department:
+      apiAsset.currentAssignment?.department ||
+      (apiAsset.department ? JSON.parse(apiAsset.department).name : '') ||
+      '',
+    location:
+      apiAsset.currentAssignment?.location ||
+      `${apiAsset.location_name || ''}${apiAsset.room_name ? ` - ${apiAsset.room_name}` : ''}`,
+    currentAssignment: apiAsset.currentAssignment ?? undefined,
+    assignmentHistory: apiAsset.assignmentHistory || [],
+    purchaseDate: apiAsset.purchase_date ? new Date(apiAsset.purchase_date) : null,
+    purchasePrice: apiAsset.asset_value || 0,
+    supplier: apiAsset.supplier || '',
+    warranty: apiAsset.warranty_months ? `${apiAsset.warranty_months} months` : null,
+    warranty_months: apiAsset.warranty_months || null,
+    documents: apiAsset.documents || [],
+    maintenanceSchedule: apiAsset.maintenance_schedule || 'None',
+    lastMaintenanceDate: apiAsset.last_maintenance_date
+      ? new Date(apiAsset.last_maintenance_date)
+      : null,
+    nextMaintenanceDate: apiAsset.next_maintenance_date
+      ? new Date(apiAsset.next_maintenance_date)
+      : null,
+    condition:
+      (apiAsset.condition as
+        | 'Excellent'
+        | 'Good'
+        | 'Needs Repair'
+        | 'Damaged'
+        | 'Obsolete') || 'Good',
+    usefulLifeYears: apiAsset.useful_life_years || 0,
+    salvageValue: apiAsset.salvage_value || 0,
+    depreciationMethod: apiAsset.depreciation_method || '',
+    annualDepreciation: apiAsset.annual_depreciation || 0,
+    depreciationStartDate: apiAsset.depreciation_start_date
+      ? new Date(apiAsset.depreciation_start_date)
+      : null,
+    company_id: apiAsset.company_id || undefined,
+    company: apiAsset.company_name || '',
+    building: apiAsset.building || '',
+    createdAt: new Date(apiAsset.created_at),
+    createdBy: apiAsset.created_by_name || apiAsset.created_by || '',
+    updatedAt: apiAsset.updated_at
+      ? new Date(apiAsset.updated_at)
+      : new Date(apiAsset.created_at),
+    updatedBy: apiAsset.updated_by_name || apiAsset.updated_by || '',
+    specifications: apiAsset.specifications || [],
+  } as Asset;
 }
 
 export default function MyAssetsPage() {
   const { user, loading: userLoading } = useCurrentUser();
   const { hasPermission } = useUserPermissions();
+  const { activeCompany } = useCompanyContext();
   const navigate = useNavigate();
   const [assets, setAssets] = useState<Asset[]>([]);
   const [loading, setLoading] = useState(true);
   const [selectedAsset, setSelectedAsset] = useState<Asset | null>(null);
   const [isViewModalOpen, setIsViewModalOpen] = useState(false);
+  const [selectedBuilderForView, setSelectedBuilderForView] =
+    useState<AssetBuilderRecord | null>(null);
+  const [isBuilderViewModalOpen, setIsBuilderViewModalOpen] = useState(false);
+  const [searchTerm, setSearchTerm] = useState('');
+  const [searchColumn, setSearchColumn] = useState('all');
 
   const fetchMyAssets = async () => {
     if (!user) return;
@@ -133,14 +119,14 @@ export default function MyAssetsPage() {
     try {
       setLoading(true);
       // Use the dedicated endpoint for user's assets
-      const response = await api.get<{ assets: ApiAsset[] }>(
+      const response = await api.get<{ assets: AssetResponseDto[] }>(
         '/assets/my-assets'
       );
 
       console.log('My assets loaded:', response.assets.length, 'assets');
 
       // Transform API data to match the expected format with error handling
-      const transformedAssets = response.assets.map((asset: ApiAsset) => {
+      const transformedAssets = response.assets.map((asset: AssetResponseDto) => {
         // Safely parse department data if it exists
         let departmentName = '';
         if (asset.currentAssignment?.department) {
@@ -179,7 +165,7 @@ export default function MyAssetsPage() {
           location:
             asset.currentAssignment?.location ||
             `${asset.location_name || ''}${asset.room_name ? ` - ${asset.room_name}` : ''}`,
-          currentAssignment: asset.currentAssignment,
+          currentAssignment: asset.currentAssignment ?? undefined,
           assignmentHistory: asset.assignmentHistory || [],
           purchaseDate: asset.purchase_date
             ? new Date(asset.purchase_date)
@@ -240,10 +226,50 @@ export default function MyAssetsPage() {
     }
   }, [user, userLoading]);
 
+  const filteredAssets = useMemo(() => {
+    const q = searchTerm.toLowerCase().trim();
+    if (!q) return assets;
+    return assets.filter(asset => {
+      if (searchColumn === 'all') {
+        return (
+          asset.name.toLowerCase().includes(q) ||
+          asset.id.toLowerCase().includes(q) ||
+          asset.category.toLowerCase().includes(q) ||
+          asset.type.toLowerCase().includes(q) ||
+          asset.serialNo.toLowerCase().includes(q) ||
+          asset.description.toLowerCase().includes(q) ||
+          asset.modelNo.toLowerCase().includes(q) ||
+          asset.brand.toLowerCase().includes(q) ||
+          asset.department.toLowerCase().includes(q) ||
+          asset.location.toLowerCase().includes(q) ||
+          asset.assignedTo.toLowerCase().includes(q) ||
+          asset.supplier.toLowerCase().includes(q)
+        );
+      }
+      const val = (asset as any)[searchColumn];
+      return val != null && String(val).toLowerCase().includes(q);
+    });
+  }, [assets, searchTerm, searchColumn]);
+
   const handleAssetClick = (asset: Asset) => {
     setSelectedAsset(asset);
     setIsViewModalOpen(true);
   };
+
+  useBarcodeAssetOrBuilderScan({
+    assets,
+    assetBuilders: [],
+    activeCompany,
+    mapApiAsset: mapMyAssetDto,
+    onOpenAsset: asset => {
+      setSelectedAsset(asset);
+      setIsViewModalOpen(true);
+    },
+    onOpenBuilder: builder => {
+      setSelectedBuilderForView(builder);
+      setIsBuilderViewModalOpen(true);
+    },
+  });
 
   const getStatusColor = (status: string) => {
     switch (status) {
@@ -425,6 +451,19 @@ export default function MyAssetsPage() {
           </Button>
         </PageHeader>
 
+        {/* Search Bar */}
+        {assets.length > 0 && (
+          <SearchWithColumnFilter
+            value={searchTerm}
+            onChange={setSearchTerm}
+            placeholder="Search assets..."
+            columnOptions={MY_ASSETS_SEARCH_COLUMNS}
+            searchColumn={searchColumn}
+            onSearchColumnChange={setSearchColumn}
+            className="max-w-md"
+          />
+        )}
+
         {assets.length === 0 ? (
           <Card className="border-0 shadow-sm">
             <CardContent className="p-8 sm:p-12 text-center">
@@ -453,9 +492,15 @@ export default function MyAssetsPage() {
               </div>
             </CardContent>
           </Card>
+        ) : filteredAssets.length === 0 && searchTerm ? (
+          <div className="text-center py-12">
+            <Package className="h-12 w-12 text-gray-300 mx-auto mb-4" />
+            <p className="text-gray-500 text-lg">No assets match your search</p>
+            <p className="text-gray-400 text-sm mt-1">Try adjusting your search criteria</p>
+          </div>
         ) : (
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
-            {assets.map(asset => (
+            {filteredAssets.map((asset: Asset) => (
               <Card
                 key={asset.id}
                 className="border border-gray-200 shadow-sm hover:shadow-md transition-shadow cursor-pointer min-h-[420px] flex flex-col rounded-lg"
@@ -491,7 +536,7 @@ export default function MyAssetsPage() {
                   {asset.image ? (
                     <div className="w-full h-32 bg-gray-100 rounded-lg overflow-hidden">
                       <img
-                        src={asset.image}
+                        src={proxyCloudinaryUrl(asset.image)}
                         alt={asset.name}
                         className="w-full h-full object-cover"
                         onError={e => {
@@ -577,6 +622,22 @@ export default function MyAssetsPage() {
         asset={selectedAsset}
         showEditButton={false}
         hideFinancialInfo={true}
+        hideTimeline={true}
+        hideForms={true}
+      />
+
+      <AssetBuilderViewModal
+        isOpen={isBuilderViewModalOpen}
+        onClose={() => {
+          setIsBuilderViewModalOpen(false);
+          setSelectedBuilderForView(null);
+        }}
+        builder={selectedBuilderForView}
+        assets={assets}
+        onAssetSelect={asset => {
+          setSelectedAsset(asset);
+          setIsViewModalOpen(true);
+        }}
       />
     </div>
   );

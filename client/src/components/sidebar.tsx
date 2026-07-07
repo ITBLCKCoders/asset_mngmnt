@@ -1,7 +1,6 @@
 'use client';
 
-import { useLocation, useNavigate } from 'react-router-dom';
-import { motion } from 'framer-motion';
+import { useNavigate } from 'react-router-dom';
 import { Button } from '@/components/ui/button';
 import {
   Tooltip,
@@ -39,226 +38,52 @@ import { useUserPermissions } from '@/hooks/useUserPermissions';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Badge } from '@/components/ui/badge';
 import { useAvatarPreview } from '@/hooks/avatarPreview';
-import { useEffect, useRef, useState, useTransition } from 'react';
+import { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { cn } from '@/lib/utils';
 import { api, setToken } from '@/lib/api';
 import { ASSET_SIDEBAR_ENTRIES } from '@/components/sidebar/sidebarConfig';
-import {
-  SidebarHoverItem,
-  SIDEBAR_HOVER_TRANSITION,
-} from '@/components/sidebar/SidebarHoverItem';
+import { SidebarHoverItem } from '@/components/sidebar/SidebarHoverItem';
 import {
   prefetchRoute,
   prefetchRoutes,
+  SIDEBAR_ROUTE_PATHS,
 } from '@/components/sidebar/routePrefetch';
 
-// ASSET_SIDEBAR_ENTRIES, AssetSidebarEntry / AssetSidebarChild types, the
-// SIDEBAR_HOVER_TRANSITION constant and the SidebarHoverItem helper now live
-// in ./sidebar/sidebarConfig and ./sidebar/SidebarHoverItem.
-
 interface SidebarProps {
   onLogout?: () => void;
+  currentPath?: string;
+  currentSearch?: string;
 }
 
-// Dead-code marker: the legacy ASSET_SIDEBAR_ENTRIES literal lived between
-// the block-comment markers below and was duplicated as a re-declaration.
-// They've been wrapped in a `/* ... */` comment so the TS compiler skips them
-// while the file diff stays minimal. Safe to physically delete in a follow-up.
-/*
-  {
-    label: 'Asset List',
-    perm: 'Asset List',
-    path: '/assets',
-    icon: Package,
-  },
-  {
-    label: 'Asset Assignment',
-    perm: 'Asset Assignment',
-    path: '/assets/assignment',
-    icon: ClipboardList,
-  },
-  {
-    label: 'Asset Request',
-    perm: 'Asset Request',
-    path: '/assets/request',
-    icon: PlusCircle,
-  },
-  {
-    label: 'Request Management',
-    perm: 'Request Management',
-    path: '/assets/request-admin',
-    icon: ClipboardList,
-  },
-  {
-    label: 'Borrow assets',
-    perm: 'Asset Borrowing',
-    path: '/assets/borrow',
-    icon: HandHelping,
-    groupKey: 'assets-borrow',
-    children: [
-      {
-        label: 'Requests',
-        perm: 'Borrow Request Management',
-        path: '/assets/borrow-requests',
-        icon: FileText,
-      },
-    ],
-  },
-  {
-    label: 'Asset Tagging',
-    perm: 'Asset Tagging',
-    path: '/assets/tagging',
-    icon: Tag,
-  },
-  {
-    label: 'Asset Transfer',
-    perm: 'Asset Transfer',
-    path: '/assets/transfer',
-    icon: ArrowRightLeft,
-    groupKey: 'assets-transfer',
-    children: [
-      {
-        label: 'Requests',
-        perm: 'Asset Transfer',
-        path: '/assets/transfer-requests',
-        icon: FileText,
-      },
-    ],
-  },
-  {
-    label: 'Asset Maintenance',
-    perm: 'Asset Maintenance',
-    path: '/assets/maintenance',
-    icon: Wrench,
-  },
-  {
-    label: 'Asset Repair',
-    perm: 'Asset Repair',
-    path: '/assets/repair',
-    icon: Hammer,
-  },
-  {
-    label: 'Asset Return',
-    perm: 'Asset Return',
-    path: '/assets/return',
-    icon: Undo2,
-    groupKey: 'assets-return',
-    children: [
-      {
-        label: 'Requests',
-        perm: 'Asset Return',
-        path: '/assets/return-requests',
-        icon: FileText,
-      },
-    ],
-  },
-  {
-    label: 'Return asset',
-    perm: 'Return Request',
-    path: '/assets/return-request',
-    icon: Undo2,
-    groupKey: 'assets-return-request',
-    children: [
-      {
-        label: 'My Requests',
-        perm: 'Return Request',
-        path: '/assets/return-request/my-requests',
-        icon: FileText,
-      },
-    ],
-  },
-  {
-    label: 'Transfer asset',
-    perm: 'Transfer Request',
-    path: '/assets/transfer-request',
-    icon: ArrowRightLeft,
-    groupKey: 'assets-transfer-request',
-    children: [
-      {
-        label: 'My Requests',
-        perm: 'Transfer Request',
-        path: '/assets/transfer-request/my-requests',
-        icon: FileText,
-      },
-    ],
-  },
-  {
-    label: 'Asset Disposal',
-    perm: 'Asset Disposal',
-    path: '/assets/disposal',
-    icon: Trash2,
-  },
-];
 
-interface SidebarProps {
-  onLogout?: () => void;
-}
 
-const SIDEBAR_HOVER_TRANSITION = {
-  type: 'spring',
-  stiffness: 320,
-  damping: 24,
-  mass: 0.7,
-} as const;
+const Sidebar = memo(function Sidebar({ onLogout, currentPath = '', currentSearch = '' }: SidebarProps) {
 
-function SidebarHoverItem({
-  children,
-  active = false,
-}: {
-  children: ReactNode;
-  active?: boolean;
-}) {
-  return (
-    <motion.div
-      initial={false}
-      whileHover={active ? { scale: 1.01 } : { x: 4, scale: 1.02 }}
-      whileTap={{ scale: 0.98 }}
-      transition={SIDEBAR_HOVER_TRANSITION}
-    >
-      {children}
-    </motion.div>
-  );
-}
-*/
-
-export default function Sidebar({ onLogout }: SidebarProps) {
   const navigate = useNavigate();
-  const location = useLocation();
   const { user, loading } = useCurrentUser();
   const { hasPermission } = useUserPermissions();
   const { previewUrl, clearPreview } = useAvatarPreview();
-  const [, startTransition] = useTransition();
 
-  /**
-   * Wraps `navigate` in a transition so the previous page stays visible while
-   * the next lazy chunk loads, eliminating the `RouteContentFallback` flash.
-   */
-  const go = (path: string) => {
-    startTransition(() => navigate(path));
-  };
+  const go = useCallback((path: string) => {
+    navigate(path);
+  }, [navigate]);
 
-  /**
-   * Hover/focus handlers that warm-load a route's JS chunk before the click.
-   * Spread onto navigable buttons via `{...prefetch(path)}`.
-   */
-  const prefetch = (path: string) => ({
-    onMouseEnter: () => prefetchRoute(path),
-    onFocus: () => prefetchRoute(path),
-  });
-
-  /** Same as `prefetch` but for parent toggle buttons that gate a submenu. */
-  const prefetchMany = (paths: readonly string[]) => ({
-    onMouseEnter: () => prefetchRoutes(paths),
-    onFocus: () => prefetchRoutes(paths),
-  });
-
-  const [assetsOpen, setAssetsOpen] = useState(false);
-  const [formsOpen, setFormsOpen] = useState(false);
-  const [reportsOpen, setReportsOpen] = useState(false);
-  const [userManualOpen, setUserManualOpen] = useState(false);
-  const [assetNestedOpen, setAssetNestedOpen] = useState<Record<string, boolean>>(
-    {}
+  const prefetch = useCallback(
+    (path: string) => ({
+      onMouseEnter: () => prefetchRoute(path),
+      onFocus: () => prefetchRoute(path),
+    }),
+    []
   );
+
+  const prefetchMany = useCallback(
+    (paths: readonly string[]) => ({
+      onMouseEnter: () => prefetchRoutes(paths),
+      onFocus: () => prefetchRoutes(paths),
+    }),
+    []
+  );
+
   const savedAvatarUrlRef = useRef<string | undefined>(undefined);
 
   useEffect(() => {
@@ -268,90 +93,110 @@ export default function Sidebar({ onLogout }: SidebarProps) {
     }
   }, [user?.avatarUrl, clearPreview]);
 
-  useEffect(() => {
-    const path = location.pathname;
+  const [userFormsOpen, setUserFormsOpen] = useState(false);
+  const [userReportsOpen, setUserReportsOpen] = useState(false);
+  const [userManualOpen, setUserManualOpen] = useState(false);
+  const [userAssetsOpen, setUserAssetsOpen] = useState(false);
+  const [userAssetNestedOpen, setUserAssetNestedOpen] = useState<Record<string, boolean>>({});
 
-    if (
-      path === '/forms/accountability' ||
-      path === '/forms/borrow' ||
-      path === '/forms/checklist' ||
-      path === '/forms/return' ||
-      path === '/forms/transfer' ||
-      path === '/approvals'
-    ) {
-      setFormsOpen(true);
-    }
-
-    if (path.startsWith('/reports') || path.startsWith('/history/')) {
-      setReportsOpen(true);
-    }
-
-    setUserManualOpen(
-      path === '/user-manual' || path === '/flow-diagrams'
+  const formsOpenMatch = useMemo(() => {
+    const p = currentPath;
+    return (
+      p === '/forms/accountability' ||
+      p === '/forms/borrow' ||
+      p === '/forms/checklist' ||
+      p === '/forms/return' ||
+      p === '/forms/transfer' ||
+      p === '/approvals'
     );
+  }, [currentPath]);
+  const formsOpen = userFormsOpen || formsOpenMatch;
 
-    if (path.startsWith('/assets') && path !== '/assets/my-assets') {
-      setAssetsOpen(true);
+  const reportsOpenMatch = useMemo(() => {
+    const p = currentPath;
+    return p.startsWith('/reports') || p.startsWith('/history/');
+  }, [currentPath]);
+  const reportsOpen = userReportsOpen || reportsOpenMatch;
+
+  const manualOpenMatch = useMemo(() => {
+    const p = currentPath;
+    return p === '/user-manual' || p === '/flow-diagrams';
+  }, [currentPath]);
+  const manualOpen = userManualOpen || manualOpenMatch;
+
+  const assetsOpenMatch = useMemo(() => {
+    const p = currentPath;
+    return p.startsWith('/assets') && p !== '/assets/my-assets';
+  }, [currentPath]);
+  const assetsOpen = userAssetsOpen || assetsOpenMatch;
+
+  const assetNestedOpen = useMemo(() => {
+    const path = currentPath;
+    const routeMatch: Record<string, boolean> = {};
+    if (
+      path === '/assets/borrow' ||
+      path.startsWith('/assets/borrow-requests')
+    ) {
+      routeMatch['assets-borrow'] = true;
     }
-
-    setAssetNestedOpen(prev => {
-      const next = { ...prev };
-      if (
-        path === '/assets/borrow' ||
-        path.startsWith('/assets/borrow-requests')
-      ) {
-        next['assets-borrow'] = true;
-      }
-      if (path.startsWith('/assets/transfer-request')) {
-        next['assets-transfer-request'] = true;
-      } else if (
-        path === '/assets/transfer' ||
-        path.startsWith('/assets/transfer-requests')
-      ) {
-        next['assets-transfer'] = true;
-      }
-      if (path.startsWith('/assets/return-request')) {
-        next['assets-return-request'] = true;
-      } else if (
-        path === '/assets/return' ||
-        path.startsWith('/assets/return-requests')
-      ) {
-        next['assets-return'] = true;
-      }
-      return next;
-    });
-  }, [location.pathname]);
+    if (path.startsWith('/assets/transfer-request')) {
+      routeMatch['assets-transfer-request'] = true;
+    } else if (
+      path === '/assets/transfer' ||
+      path.startsWith('/assets/transfer-requests')
+    ) {
+      routeMatch['assets-transfer'] = true;
+    }
+    if (path.startsWith('/assets/return-request')) {
+      routeMatch['assets-return-request'] = true;
+    } else if (
+      path === '/assets/return' ||
+      path.startsWith('/assets/return-requests')
+    ) {
+      routeMatch['assets-return'] = true;
+    }
+    return { ...userAssetNestedOpen, ...routeMatch };
+  }, [currentPath, userAssetNestedOpen]);
 
   const displayAvatarUrl = previewUrl || user?.avatarUrl;
 
-  const handleProfileClick = () => {
+  const handleProfileClick = useCallback(() => {
     navigate('/profile');
-  };
+  }, [navigate]);
 
-  const initials =
-    user?.username
-      ?.split(' ')
-      .map(n => n[0])
-      .join('')
-      .toUpperCase()
-      .slice(0, 2) ?? 'GU';
+  const initials = useMemo(
+    () =>
+      user?.username
+        ?.split(' ')
+        .map(n => n[0])
+        .join('')
+        .toUpperCase()
+        .slice(0, 2) ?? 'GU',
+    [user?.username]
+  );
 
-  const matchesPath = (path: string) => {
-    // For /assets, only match exactly - don't match /assets/assignment, /assets/borrow, etc.
-    if (path === '/assets') {
-      return location.pathname === '/assets';
-    }
-    // For other paths, use the original logic
-    return location.pathname === path || location.pathname.startsWith(`${path}/`);
-  };
-  const reportSection = new URLSearchParams(location.search).get('section');
+  const matchesPath = useCallback(
+    (path: string) => {
+      if (path === '/assets') {
+        return currentPath === '/assets';
+      }
+      return currentPath === path || currentPath.startsWith(`${path}/`);
+    },
+    [currentPath]
+  );
+  const reportSection = new URLSearchParams(currentSearch).get('section');
 
-  const handleLogout = async () => {
+  // Eagerly warm-load all lazy route chunks so navigation feels instant
+  useEffect(() => {
+    prefetchRoutes(SIDEBAR_ROUTE_PATHS);
+  }, []);
+
+  const handleLogout = useCallback(async () => {
     try {
       await api.post('/auth/logout').catch(() => {});
     } finally {
       clearCurrentUserCache();
-      localStorage.clear();
+      localStorage.removeItem('mfaTempToken');
       sessionStorage.clear();
       document.cookie.split(';').forEach(c => {
         document.cookie = c
@@ -362,7 +207,7 @@ export default function Sidebar({ onLogout }: SidebarProps) {
       onLogout?.();
       navigate('/login', { replace: true });
     }
-  };
+  }, [navigate, onLogout]);
 
   return (
     <TooltipProvider delayDuration={150}>
@@ -375,12 +220,9 @@ export default function Sidebar({ onLogout }: SidebarProps) {
         <div className="flex shrink-0 flex-col items-center px-3 pb-3 pr-4 pt-6 sm:px-4 sm:pb-4 sm:pr-6 sm:pt-8">
           <Tooltip>
             <TooltipTrigger asChild>
-              <motion.button
+              <button
                 onClick={handleProfileClick}
-                className="group focus:outline-none focus:ring-2 focus:ring-white/30 rounded-full transition-all duration-200 hover:ring-4 hover:ring-white/40"
-                whileHover={{ scale: 1.03 }}
-                whileTap={{ scale: 0.98 }}
-                transition={SIDEBAR_HOVER_TRANSITION}
+                className="group focus:outline-none focus:ring-2 focus:ring-white/30 rounded-full transition-[transform,box-shadow] duration-150 ease-out hover:scale-105 hover:ring-4 hover:ring-white/40 active:scale-95"
               >
                 <Avatar className="h-[clamp(5.5rem,14vh,10rem)] w-[clamp(5.5rem,14vh,10rem)] ring-2 sm:ring-4 ring-white/50 shadow-xl transition-transform group-hover:scale-105">
                   <AvatarImage
@@ -392,7 +234,7 @@ export default function Sidebar({ onLogout }: SidebarProps) {
                     {initials}
                   </AvatarFallback>
                 </Avatar>
-              </motion.button>
+              </button>
             </TooltipTrigger>
             <TooltipContent
               side="right"
@@ -501,25 +343,25 @@ export default function Sidebar({ onLogout }: SidebarProps) {
                 <li>
                   <SidebarHoverItem
                     active={
-                      location.pathname === '/forms/accountability' ||
-                      location.pathname === '/forms/borrow' ||
-                      location.pathname === '/forms/checklist' ||
-                      location.pathname === '/forms/return' ||
-                      location.pathname === '/forms/transfer' ||
-                      location.pathname === '/approvals' ||
+                      currentPath === '/forms/accountability' ||
+                      currentPath === '/forms/borrow' ||
+                      currentPath === '/forms/checklist' ||
+                      currentPath === '/forms/return' ||
+                      currentPath === '/forms/transfer' ||
+                      currentPath === '/approvals' ||
                       formsOpen
                     }
                   >
                     <button
-                      onClick={() => setFormsOpen(!formsOpen)} {...prefetchMany(['/forms/accountability', '/forms/checklist', '/forms/borrow', '/forms/return', '/forms/transfer', '/approvals'])}
+                      onClick={() => setUserFormsOpen(!formsOpen)} {...prefetchMany(['/forms/accountability', '/forms/checklist', '/forms/borrow', '/forms/return', '/forms/transfer', '/approvals'])}
                       className={cn(
                         'flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium w-full transition-all duration-200 justify-between',
-                        location.pathname === '/forms/accountability' ||
-                          location.pathname === '/forms/borrow' ||
-                          location.pathname === '/forms/checklist' ||
-                          location.pathname === '/forms/return' ||
-                          location.pathname === '/forms/transfer' ||
-                          location.pathname === '/approvals' ||
+                        currentPath === '/forms/accountability' ||
+                          currentPath === '/forms/borrow' ||
+                          currentPath === '/forms/checklist' ||
+                          currentPath === '/forms/return' ||
+                          currentPath === '/forms/transfer' ||
+                          currentPath === '/approvals' ||
                           formsOpen
                           ? 'bg-white/20 text-white shadow-md'
                           : 'text-white/80 hover:bg-white/10 hover:text-white'
@@ -549,13 +391,13 @@ export default function Sidebar({ onLogout }: SidebarProps) {
                     <div className="mt-1 space-y-1 pl-10">
                       {hasPermission('Accountability Form', 'view') && (
                         <SidebarHoverItem
-                          active={location.pathname === '/forms/accountability'}
+                          active={currentPath === '/forms/accountability'}
                         >
                           <button
                             onClick={() => go('/forms/accountability')} {...prefetch('/forms/accountability')}
                             className={cn(
                               'flex items-center gap-3 px-3 py-2 rounded-lg text-sm w-full transition-all duration-200',
-                              location.pathname === '/forms/accountability'
+                              currentPath === '/forms/accountability'
                                 ? 'bg-white/15 text-white font-medium'
                                 : 'text-white/70 hover:bg-white/10 hover:text-white'
                             )}
@@ -567,13 +409,13 @@ export default function Sidebar({ onLogout }: SidebarProps) {
                       )}
                       {hasPermission('Checklist Form', 'view') && (
                         <SidebarHoverItem
-                          active={location.pathname === '/forms/checklist'}
+                          active={currentPath === '/forms/checklist'}
                         >
                           <button
                             onClick={() => go('/forms/checklist')} {...prefetch('/forms/checklist')}
                             className={cn(
                               'flex items-center gap-3 px-3 py-2 rounded-lg text-sm w-full transition-all duration-200',
-                              location.pathname === '/forms/checklist'
+                              currentPath === '/forms/checklist'
                                 ? 'bg-white/15 text-white font-medium'
                                 : 'text-white/70 hover:bg-white/10 hover:text-white'
                             )}
@@ -585,13 +427,13 @@ export default function Sidebar({ onLogout }: SidebarProps) {
                       )}
                       {hasPermission('Borrow Form', 'view') && (
                         <SidebarHoverItem
-                          active={location.pathname === '/forms/borrow'}
+                          active={currentPath === '/forms/borrow'}
                         >
                           <button
                             onClick={() => go('/forms/borrow')} {...prefetch('/forms/borrow')}
                             className={cn(
                               'flex items-center gap-3 px-3 py-2 rounded-lg text-sm w-full transition-all duration-200',
-                              location.pathname === '/forms/borrow'
+                              currentPath === '/forms/borrow'
                                 ? 'bg-white/15 text-white font-medium'
                                 : 'text-white/70 hover:bg-white/10 hover:text-white'
                             )}
@@ -603,13 +445,13 @@ export default function Sidebar({ onLogout }: SidebarProps) {
                       )}
                       {hasPermission('Return Form', 'view') && (
                         <SidebarHoverItem
-                          active={location.pathname === '/forms/return'}
+                          active={currentPath === '/forms/return'}
                         >
                           <button
                             onClick={() => go('/forms/return')} {...prefetch('/forms/return')}
                             className={cn(
                               'flex items-center gap-3 px-3 py-2 rounded-lg text-sm w-full transition-all duration-200',
-                              location.pathname === '/forms/return'
+                              currentPath === '/forms/return'
                                 ? 'bg-white/15 text-white font-medium'
                                 : 'text-white/70 hover:bg-white/10 hover:text-white'
                             )}
@@ -621,13 +463,13 @@ export default function Sidebar({ onLogout }: SidebarProps) {
                       )}
                       {hasPermission('Transfer Form', 'view') && (
                         <SidebarHoverItem
-                          active={location.pathname === '/forms/transfer'}
+                          active={currentPath === '/forms/transfer'}
                         >
                           <button
                             onClick={() => go('/forms/transfer')} {...prefetch('/forms/transfer')}
                             className={cn(
                               'flex items-center gap-3 px-3 py-2 rounded-lg text-sm w-full transition-all duration-200',
-                              location.pathname === '/forms/transfer'
+                              currentPath === '/forms/transfer'
                                 ? 'bg-white/15 text-white font-medium'
                                 : 'text-white/70 hover:bg-white/10 hover:text-white'
                             )}
@@ -639,13 +481,13 @@ export default function Sidebar({ onLogout }: SidebarProps) {
                       )}
                       {hasPermission('Approvals', 'view') && (
                         <SidebarHoverItem
-                          active={location.pathname === '/approvals'}
+                          active={currentPath === '/approvals'}
                         >
                           <button
                             onClick={() => go('/approvals')} {...prefetch('/approvals')}
                             className={cn(
                               'flex items-center gap-3 px-3 py-2 rounded-lg text-sm w-full transition-all duration-200',
-                              location.pathname === '/approvals'
+                              currentPath === '/approvals'
                                 ? 'bg-white/15 text-white font-medium'
                                 : 'text-white/70 hover:bg-white/10 hover:text-white'
                             )}
@@ -679,17 +521,17 @@ export default function Sidebar({ onLogout }: SidebarProps) {
                 <li>
                   <SidebarHoverItem
                     active={
-                      (location.pathname.startsWith('/assets') &&
-                        location.pathname !== '/assets/my-assets') ||
+                      (currentPath.startsWith('/assets') &&
+                        currentPath !== '/assets/my-assets') ||
                       assetsOpen
                     }
                   >
                     <button
-                      onClick={() => setAssetsOpen(!assetsOpen)} {...prefetchMany(ASSET_SIDEBAR_ENTRIES.flatMap(e => [e.path, ...(e.children?.map(c => c.path) ?? [])]))}
+                      onClick={() => setUserAssetsOpen(!assetsOpen)} {...prefetchMany(ASSET_SIDEBAR_ENTRIES.flatMap(e => [e.path, ...(e.children?.map(c => c.path) ?? [])]))}
                       className={cn(
                         'flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium w-full transition-all duration-200 justify-between',
-                        (location.pathname.startsWith('/assets') &&
-                          location.pathname !== '/assets/my-assets') ||
+                        (currentPath.startsWith('/assets') &&
+                          currentPath !== '/assets/my-assets') ||
                           assetsOpen
                           ? 'bg-white/20 text-white shadow-md'
                           : 'text-white/80 hover:bg-white/10 hover:text-white'
@@ -810,7 +652,7 @@ export default function Sidebar({ onLogout }: SidebarProps) {
                                       : 'Expand submenu'
                                   }
                                   onClick={() =>
-                                    setAssetNestedOpen(prev => ({
+                                    setUserAssetNestedOpen((prev: Record<string, boolean>) => ({
                                       ...prev,
                                       [gk]: !prev[gk],
                                     }))
@@ -886,7 +728,7 @@ export default function Sidebar({ onLogout }: SidebarProps) {
                   <SidebarHoverItem
                     active={
                       matchesPath('/reports') ||
-                      location.pathname.startsWith('/history/') ||
+                      currentPath.startsWith('/history/') ||
                       reportsOpen
                     }
                   >
@@ -896,7 +738,7 @@ export default function Sidebar({ onLogout }: SidebarProps) {
                         className={cn(
                           'flex min-w-0 flex-1 items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-all duration-200 text-left',
                           matchesPath('/reports') ||
-                            location.pathname.startsWith('/history/') ||
+                            currentPath.startsWith('/history/') ||
                             reportsOpen
                             ? 'bg-white/20 text-white shadow-md'
                             : 'text-white/80 hover:bg-white/10 hover:text-white'
@@ -909,7 +751,7 @@ export default function Sidebar({ onLogout }: SidebarProps) {
                         type="button"
                         aria-expanded={reportsOpen}
                         aria-label={reportsOpen ? 'Collapse reports submenu' : 'Expand reports submenu'}
-                        onClick={() => setReportsOpen(!reportsOpen)} {...prefetch('/reports')}
+                        onClick={() => setUserReportsOpen(!reportsOpen)} {...prefetch('/reports')}
                         className={cn(
                           'flex shrink-0 items-center justify-center rounded-lg px-2 text-white/80 transition-colors hover:bg-white/10 hover:text-white',
                           reportsOpen && 'text-white'
@@ -937,7 +779,7 @@ export default function Sidebar({ onLogout }: SidebarProps) {
                       {hasPermission('Assignment History', 'view') && (
                         <SidebarHoverItem
                           active={
-                            location.pathname === '/reports' &&
+                            currentPath === '/reports' &&
                             reportSection === 'assignment'
                           }
                         >
@@ -945,7 +787,7 @@ export default function Sidebar({ onLogout }: SidebarProps) {
                             onClick={() => go('/reports?section=assignment')} {...prefetch('/reports')}
                             className={cn(
                               'flex items-center gap-3 px-3 py-2 rounded-lg text-sm w-full transition-all duration-200',
-                              location.pathname === '/reports' &&
+                              currentPath === '/reports' &&
                                 reportSection === 'assignment'
                                 ? 'bg-white/15 text-white font-medium'
                                 : 'text-white/70 hover:bg-white/10 hover:text-white'
@@ -959,7 +801,7 @@ export default function Sidebar({ onLogout }: SidebarProps) {
                       {hasPermission('Return History', 'view') && (
                         <SidebarHoverItem
                           active={
-                            location.pathname === '/reports' &&
+                            currentPath === '/reports' &&
                             reportSection === 'return'
                           }
                         >
@@ -967,7 +809,7 @@ export default function Sidebar({ onLogout }: SidebarProps) {
                             onClick={() => go('/reports?section=return')} {...prefetch('/reports')}
                             className={cn(
                               'flex items-center gap-3 px-3 py-2 rounded-lg text-sm w-full transition-all duration-200',
-                              location.pathname === '/reports' &&
+                              currentPath === '/reports' &&
                                 reportSection === 'return'
                                 ? 'bg-white/15 text-white font-medium'
                                 : 'text-white/70 hover:bg-white/10 hover:text-white'
@@ -981,7 +823,7 @@ export default function Sidebar({ onLogout }: SidebarProps) {
                       {hasPermission('Transfer History', 'view') && (
                         <SidebarHoverItem
                           active={
-                            location.pathname === '/reports' &&
+                            currentPath === '/reports' &&
                             reportSection === 'transfer'
                           }
                         >
@@ -989,7 +831,7 @@ export default function Sidebar({ onLogout }: SidebarProps) {
                             onClick={() => go('/reports?section=transfer')} {...prefetch('/reports')}
                             className={cn(
                               'flex items-center gap-3 px-3 py-2 rounded-lg text-sm w-full transition-all duration-200',
-                              location.pathname === '/reports' &&
+                              currentPath === '/reports' &&
                                 reportSection === 'transfer'
                                 ? 'bg-white/15 text-white font-medium'
                                 : 'text-white/70 hover:bg-white/10 hover:text-white'
@@ -1003,7 +845,7 @@ export default function Sidebar({ onLogout }: SidebarProps) {
                       {hasPermission('Maintenance History', 'view') && (
                         <SidebarHoverItem
                           active={
-                            location.pathname === '/reports' &&
+                            currentPath === '/reports' &&
                             reportSection === 'maintenance'
                           }
                         >
@@ -1011,7 +853,7 @@ export default function Sidebar({ onLogout }: SidebarProps) {
                             onClick={() => go('/reports?section=maintenance')} {...prefetch('/reports')}
                             className={cn(
                               'flex items-center gap-3 px-3 py-2 rounded-lg text-sm w-full transition-all duration-200',
-                              location.pathname === '/reports' &&
+                              currentPath === '/reports' &&
                                 reportSection === 'maintenance'
                                 ? 'bg-white/15 text-white font-medium'
                                 : 'text-white/70 hover:bg-white/10 hover:text-white'
@@ -1025,7 +867,7 @@ export default function Sidebar({ onLogout }: SidebarProps) {
                       {hasPermission('Repair History', 'view') && (
                         <SidebarHoverItem
                           active={
-                            location.pathname === '/reports' &&
+                            currentPath === '/reports' &&
                             reportSection === 'repair'
                           }
                         >
@@ -1033,7 +875,7 @@ export default function Sidebar({ onLogout }: SidebarProps) {
                             onClick={() => go('/reports?section=repair')} {...prefetch('/reports')}
                             className={cn(
                               'flex items-center gap-3 px-3 py-2 rounded-lg text-sm w-full transition-all duration-200',
-                              location.pathname === '/reports' &&
+                              currentPath === '/reports' &&
                                 reportSection === 'repair'
                                 ? 'bg-white/15 text-white font-medium'
                                 : 'text-white/70 hover:bg-white/10 hover:text-white'
@@ -1048,7 +890,7 @@ export default function Sidebar({ onLogout }: SidebarProps) {
                         hasPermission('Asset Borrowing', 'view')) && (
                         <SidebarHoverItem
                           active={
-                            location.pathname === '/reports' &&
+                            currentPath === '/reports' &&
                             reportSection === 'borrow'
                           }
                         >
@@ -1056,7 +898,7 @@ export default function Sidebar({ onLogout }: SidebarProps) {
                             onClick={() => go('/reports?section=borrow')} {...prefetch('/reports')}
                             className={cn(
                               'flex items-center gap-3 px-3 py-2 rounded-lg text-sm w-full transition-all duration-200',
-                              location.pathname === '/reports' &&
+                              currentPath === '/reports' &&
                                 reportSection === 'borrow'
                                 ? 'bg-white/15 text-white font-medium'
                                 : 'text-white/70 hover:bg-white/10 hover:text-white'
@@ -1070,7 +912,7 @@ export default function Sidebar({ onLogout }: SidebarProps) {
                       {hasPermission('Reports', 'view') && (
                         <SidebarHoverItem
                           active={
-                            location.pathname === '/reports' &&
+                            currentPath === '/reports' &&
                             reportSection === 'finance'
                           }
                         >
@@ -1078,7 +920,7 @@ export default function Sidebar({ onLogout }: SidebarProps) {
                             onClick={() => go('/reports?section=finance')} {...prefetch('/reports')}
                             className={cn(
                               'flex items-center gap-3 px-3 py-2 rounded-lg text-sm w-full transition-all duration-200',
-                              location.pathname === '/reports' &&
+                              currentPath === '/reports' &&
                                 reportSection === 'finance'
                                 ? 'bg-white/15 text-white font-medium'
                                 : 'text-white/70 hover:bg-white/10 hover:text-white'
@@ -1093,7 +935,7 @@ export default function Sidebar({ onLogout }: SidebarProps) {
                         hasPermission('Asset Request', 'view')) && (
                         <SidebarHoverItem
                           active={
-                            location.pathname === '/reports' &&
+                            currentPath === '/reports' &&
                             reportSection === 'assetRequest'
                           }
                         >
@@ -1101,7 +943,7 @@ export default function Sidebar({ onLogout }: SidebarProps) {
                             onClick={() => go('/reports?section=assetRequest')} {...prefetch('/reports')}
                             className={cn(
                               'flex items-center gap-3 px-3 py-2 rounded-lg text-sm w-full transition-all duration-200',
-                              location.pathname === '/reports' &&
+                              currentPath === '/reports' &&
                                 reportSection === 'assetRequest'
                                 ? 'bg-white/15 text-white font-medium'
                                 : 'text-white/70 hover:bg-white/10 hover:text-white'
@@ -1159,17 +1001,17 @@ export default function Sidebar({ onLogout }: SidebarProps) {
               <li>
                 <SidebarHoverItem
                   active={
-                    location.pathname === '/user-manual' ||
-                    location.pathname === '/flow-diagrams'
+                    currentPath === '/user-manual' ||
+                    currentPath === '/flow-diagrams'
                   }
                 >
                   <button
                     type="button"
-                    onClick={() => setUserManualOpen(!userManualOpen)} {...prefetchMany(['/user-manual', '/flow-diagrams'])}
+                    onClick={() => setUserManualOpen(!manualOpen)} {...prefetchMany(['/user-manual', '/flow-diagrams'])}
                     className={cn(
                       'flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium w-full transition-all duration-200 justify-between',
-                      location.pathname === '/user-manual' ||
-                        location.pathname === '/flow-diagrams'
+                      currentPath === '/user-manual' ||
+                        currentPath === '/flow-diagrams'
                         ? 'bg-white/20 text-white shadow-md'
                         : 'text-white/80 hover:bg-white/10 hover:text-white'
                     )}
@@ -1181,7 +1023,7 @@ export default function Sidebar({ onLogout }: SidebarProps) {
                     <ChevronDown
                       className={cn(
                         'h-4 w-4 transition-transform duration-200',
-                        userManualOpen && 'rotate-180'
+                        manualOpen && 'rotate-180'
                       )}
                     />
                   </button>
@@ -1190,20 +1032,20 @@ export default function Sidebar({ onLogout }: SidebarProps) {
                 <div
                   className={cn(
                     'overflow-hidden transition-all duration-300 ease-in-out',
-                    userManualOpen
+                    manualOpen
                       ? 'max-h-[500px] opacity-100'
                       : 'max-h-0 opacity-0'
                   )}
                 >
                   <div className="mt-1 space-y-1 pl-10">
                     <SidebarHoverItem
-                      active={location.pathname === '/user-manual'}
+                      active={currentPath === '/user-manual'}
                     >
                       <button
                         onClick={() => go('/user-manual')} {...prefetch('/user-manual')}
                         className={cn(
                           'flex items-center gap-3 px-3 py-2 rounded-lg text-sm w-full transition-all duration-200',
-                          location.pathname === '/user-manual'
+                          currentPath === '/user-manual'
                             ? 'bg-white/15 text-white font-medium'
                             : 'text-white/70 hover:bg-white/10 hover:text-white'
                         )}
@@ -1213,13 +1055,13 @@ export default function Sidebar({ onLogout }: SidebarProps) {
                       </button>
                     </SidebarHoverItem>
                     <SidebarHoverItem
-                      active={location.pathname === '/flow-diagrams'}
+                      active={currentPath === '/flow-diagrams'}
                     >
                       <button
                         onClick={() => go('/flow-diagrams')} {...prefetch('/flow-diagrams')}
                         className={cn(
                           'flex items-center gap-3 px-3 py-2 rounded-lg text-sm w-full transition-all duration-200',
-                          location.pathname === '/flow-diagrams'
+                          currentPath === '/flow-diagrams'
                             ? 'bg-white/15 text-white font-medium'
                             : 'text-white/70 hover:bg-white/10 hover:text-white'
                         )}
@@ -1252,4 +1094,6 @@ export default function Sidebar({ onLogout }: SidebarProps) {
       </div>
     </TooltipProvider>
   );
-}
+});
+
+export default Sidebar;

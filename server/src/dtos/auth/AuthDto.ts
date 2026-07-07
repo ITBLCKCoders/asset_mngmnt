@@ -1,6 +1,7 @@
 import { z } from 'zod';
 
-const OtpChannelSchema = z.enum(['email', 'sms']);
+// SMS channel disabled — all OTP now uses email
+const OtpChannelSchema = z.enum(['email' /*, 'sms' */]);
 
 export const LoginDtoSchema = z.object({
   email: z.string().email('Invalid email format'),
@@ -42,13 +43,14 @@ export const VerifyOTPDtoSchema = z
       });
     }
 
-    if (data.channel === 'sms' && !data.contactNumber) {
-      ctx.addIssue({
-        code: z.ZodIssueCode.custom,
-        path: ['contactNumber'],
-        message: 'Contact number is required for SMS OTP',
-      });
-    }
+    // SMS channel validation removed — all OTP now uses email
+    // if (data.channel === 'sms' && !data.contactNumber) {
+    //   ctx.addIssue({
+    //     code: z.ZodIssueCode.custom,
+    //     path: ['contactNumber'],
+    //     message: 'Contact number is required for SMS OTP',
+    //   });
+    // }
   });
 
 export type VerifyOTPDto = z.infer<typeof VerifyOTPDtoSchema>;
@@ -68,13 +70,14 @@ export const ResendOTPDtoSchema = z
       });
     }
 
-    if (data.channel === 'sms' && !data.contactNumber) {
-      ctx.addIssue({
-        code: z.ZodIssueCode.custom,
-        path: ['contactNumber'],
-        message: 'Contact number is required for SMS OTP',
-      });
-    }
+    // SMS channel validation removed — all OTP now uses email
+    // if (data.channel === 'sms' && !data.contactNumber) {
+    //   ctx.addIssue({
+    //     code: z.ZodIssueCode.custom,
+    //     path: ['contactNumber'],
+    //     message: 'Contact number is required for SMS OTP',
+    //   });
+    // }
   });
 
 export type ResendOTPDto = z.infer<typeof ResendOTPDtoSchema>;
@@ -94,13 +97,14 @@ export const ForgotPasswordDtoSchema = z
       });
     }
 
-    if (data.channel === 'sms' && !data.contactNumber && !data.email) {
-      ctx.addIssue({
-        code: z.ZodIssueCode.custom,
-        path: ['contactNumber'],
-        message: 'Email or contact number is required for SMS OTP',
-      });
-    }
+    // SMS channel validation removed — all OTP now uses email
+    // if (data.channel === 'sms' && !data.contactNumber && !data.email) {
+    //   ctx.addIssue({
+    //     code: z.ZodIssueCode.custom,
+    //     path: ['contactNumber'],
+    //     message: 'Email or contact number is required for SMS OTP',
+    //   });
+    // }
   });
 
 export type ForgotPasswordDto = z.infer<typeof ForgotPasswordDtoSchema>;
@@ -121,13 +125,14 @@ export const VerifyResetOTPDtoSchema = z
       });
     }
 
-    if (data.channel === 'sms' && !data.contactNumber && !data.email) {
-      ctx.addIssue({
-        code: z.ZodIssueCode.custom,
-        path: ['contactNumber'],
-        message: 'Email or contact number is required for SMS OTP',
-      });
-    }
+    // SMS channel validation removed — all OTP now uses email
+    // if (data.channel === 'sms' && !data.contactNumber && !data.email) {
+    //   ctx.addIssue({
+    //     code: z.ZodIssueCode.custom,
+    //     path: ['contactNumber'],
+    //     message: 'Email or contact number is required for SMS OTP',
+    //   });
+    // }
   });
 
 export type VerifyResetOTPDto = z.infer<typeof VerifyResetOTPDtoSchema>;

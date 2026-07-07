@@ -15,11 +15,7 @@ import {
   UpdateAssetDtoSchema,
 } from '../dtos/assets/CreateAssetDto.js';
 import { DtoTransformers } from '../utils/dtoTransformers.js';
-import {
-  createSuccessResponse,
-  createErrorResponse,
-} from '../utils/validation.js';
-import { createErrorResponse as createErrorResponseRes } from '../utils/responseWrapper.js';
+import { createErrorResponse } from '../utils/responseWrapper.js';
 import { getActiveCompany } from '../utils/activeCompany.js';
 import {
   getAssetScope,
@@ -589,13 +585,23 @@ export async function getAssetsHandler(req: AuthRequest, res: Response) {
         }
 
         asset.accountabilityForms = (formRows as any[])
-          .filter((f: any) => f.asset_id === asset.assetID)
+          .filter((f: any) => {
+            if (f.asset_id === asset.assetID) return true;
+            if (f.asset_id === null && f.assets_data) {
+              try {
+                const data = typeof f.assets_data === 'string' ? JSON.parse(f.assets_data) : f.assets_data;
+                return data?.assets?.some((a: any) => a.id === asset.assetID);
+              } catch {}
+            }
+            return false;
+          })
           .map((row: any) => ({
             id: row.formID,
             formNumber: row.form_number,
             status: row.status,
             created_at: row.created_at,
             signed_at: row.signed_at,
+            assets_data: row.assets_data,
           }));
       }
     } else {
@@ -655,12 +661,34 @@ export async function createAssetHandler(req: AuthRequest, res: Response) {
     assignedUser,
   } = fields;
 
+  // Validate fields with DTO schema
+  const createValidation = CreateAssetDtoSchema.safeParse({
+    ...fields,
+    assetValue: fields.assetValue ? Number(fields.assetValue) : undefined,
+    salvageValue: fields.salvageValue ? Number(fields.salvageValue) : undefined,
+    usefulLifeYears: fields.usefulLifeYears ? Number(fields.usefulLifeYears) : undefined,
+    annualDepreciation: fields.annualDepreciation ? Number(fields.annualDepreciation) : undefined,
+    warrantyMonths: fields.warrantyMonths ? Number(fields.warrantyMonths) : undefined,
+    isOldUnit: fields.isOldUnit === 'true' || fields.isOldUnit === '1',
+  });
+
+  if (!createValidation.success) {
+    return res.status(400).json({
+      success: false,
+      error: 'Validation failed',
+      errors: createValidation.error.issues.map(err => ({
+        field: err.path.join('.'),
+        message: err.message,
+      })),
+    });
+  }
+
   // For old units, save default purchase date, no depreciation method
   const finalPurchaseDate = purchaseDate;
   const finalDepreciationMethod = isOldUnit === '1' ? null : depreciationMethod;
   const userId = req.user!.userID;
 
-  if (!name || !categoryId) {
+  if (typeof name !== 'string' || typeof categoryId !== 'string') {
     return res.status(400).json({ error: 'Name and category are required' });
   }
 
@@ -731,9 +759,12 @@ export async function createAssetHandler(req: AuthRequest, res: Response) {
     try {
       finalImageUrl = await uploadToCloudinary(imageFile.buffer);
       logger.info('Image uploaded successfully:', finalImageUrl);
-    } catch (uploadError) {
+    } catch (uploadError: any) {
       logger.error('Image upload failed:', uploadError);
-      // Continue with asset creation, image will be null
+      return res.status(502).json({
+        error: 'Image upload to Cloudinary failed',
+        details: uploadError.message,
+      });
     }
   }
 
@@ -986,13 +1017,17 @@ export async function createAssetHandler(req: AuthRequest, res: Response) {
  */
 export async function getAssetPublicHandler(req: Request, res: Response) {
   try {
-    const { assetCode } = req.params;
-    if (!assetCode) {
+    const { assetCode: rawAssetCode } = req.params;
+    if (!rawAssetCode) {
       return res.status(400).json({ error: 'Asset code is required' });
     }
+    const assetCode = decodeURIComponent(rawAssetCode);
 
     const assets = await assetRepo.callGetAllAssets();
-    const asset = assets.find((a: any) => a.asset_code === assetCode);
+    const asset = assets.find(
+      (a: any) =>
+        String(a.asset_code).toUpperCase() === assetCode.toUpperCase()
+    );
 
     if (!asset) {
       return res.status(404).json({ error: 'Asset not found' });
@@ -1037,18 +1072,22 @@ export async function getAssetPublicHandler(req: Request, res: Response) {
 
 export async function getAssetByCodeHandler(req: any, res: Response) {
   try {
-    const { assetCode } = req.params;
+    const { assetCode: rawAssetCode } = req.params;
 
-    if (!assetCode) {
+    if (!rawAssetCode) {
       return res.status(400).json({ error: 'Asset code is required' });
     }
+    const assetCode = decodeURIComponent(rawAssetCode);
 
     // Get the asset by code - don't filter out assets in builders for individual asset lookup
     const assets = await assetRepo.callGetAllAssets();
 
     // Only filter out assets in builders if this is not a specific asset request
     // For individual asset lookup, we want to show all assets including those in builders
-    const asset = assets.find((a: any) => a.asset_code === assetCode);
+    const asset = assets.find(
+      (a: any) =>
+        String(a.asset_code).toUpperCase() === assetCode.toUpperCase()
+    );
 
     if (!asset) {
       return res.status(404).json({ error: 'Asset not found' });
@@ -1058,68 +1097,82 @@ export async function getAssetByCodeHandler(req: any, res: Response) {
     // Add empty specifications array (child asset specifications removed)
     asset.specifications = [];
 
-    const docRows = await assetRepo.getAssetDocumentsByAssetId(asset.assetID);
-    asset.documents = docRows.map((doc: any) => ({
-      documentID: doc.documentID,
-      fileName: doc.file_name,
-      fileUrl: doc.file_url,
-      fileSize: doc.file_size,
-      fileType: doc.file_type,
-      createdAt: doc.created_at,
-    }));
+    try {
+      const docRows = await assetRepo.getAssetDocumentsByAssetId(asset.assetID);
+      asset.documents = docRows.map((doc: any) => ({
+        documentID: doc.documentID,
+        fileName: doc.file_name,
+        fileUrl: doc.file_url,
+        fileSize: doc.file_size,
+        fileType: doc.file_type,
+        createdAt: doc.created_at,
+      }));
+    } catch (docError) {
+      logger.warn(`Failed to fetch documents for asset ${asset.assetID}:`, docError);
+      asset.documents = [];
+    }
 
     // Get current active or reserved assignment
-    const assignment = await assetRepo.getCurrentAssignmentForAssetId(asset.assetID);
+    try {
+      const assignment = await assetRepo.getCurrentAssignmentForAssetId(asset.assetID);
 
-    // Get assignment history for timeline (including Reserved assignments)
-    const historyRows = await assetRepo.getAssignmentHistoryForAssetId(asset.assetID);
-
-    if (assignment) {
-      asset.currentAssignment = {
-        assignmentID: assignment.assignmentID,
-        user: {
-          id: assignment.user_id,
-          name: assignment.assigned_user_name,
-          email: assignment.assigned_user_email,
-          employeeNumber: assignment.employee_number,
-          position: assignment.position,
-        },
-        department: assignment.department_name,
-        location: assignment.location_name
-          ? `${assignment.location_name}${assignment.room_name ? ` - ${assignment.room_name}` : ''}`
-          : null,
-        assignedDate: assignment.assigned_date,
-        status: assignment.status,
-      };
-      // Update assignedTo field for backward compatibility
-      asset.assignedTo = assignment.assigned_user_name;
-      // Keep the original status - assigned assets should show as "Available"
-    } else {
+      if (assignment) {
+        asset.currentAssignment = {
+          assignmentID: assignment.assignmentID,
+          user: {
+            id: assignment.user_id,
+            name: assignment.assigned_user_name,
+            email: assignment.assigned_user_email,
+            employeeNumber: assignment.employee_number,
+            position: assignment.position,
+          },
+          department: assignment.department_name,
+          location: assignment.location_name
+            ? `${assignment.location_name}${assignment.room_name ? ` - ${assignment.room_name}` : ''}`
+            : null,
+          assignedDate: assignment.assigned_date,
+          status: assignment.status,
+        };
+        // Update assignedTo field for backward compatibility
+        asset.assignedTo = assignment.assigned_user_name;
+        // Keep the original status - assigned assets should show as "Available"
+      } else {
+        asset.currentAssignment = null;
+        asset.assignedTo = null;
+        // Keep the original status if no assignment
+      }
+    } catch (assignError) {
+      logger.warn(`Failed to fetch assignment for asset ${asset.assetID}:`, assignError);
       asset.currentAssignment = null;
       asset.assignedTo = null;
-      // Keep the original status if no assignment
     }
 
     // Add assignment history for timeline
-    asset.assignmentHistory = historyRows.map((row: any) => ({
-      assignmentID: row.assignmentID,
-      user: {
-        id: row.user_id,
-        name: row.assigned_user_name,
-        email: row.assigned_user_email,
-        employeeNumber: row.employee_number,
-        position: row.position,
-      },
-      department: row.department_name,
-      location: row.location_name
-        ? `${row.location_name}${row.room_name ? ` - ${row.room_name}` : ''}`
-        : null,
-      assignedDate: row.assigned_date,
-      actualReturnDate: row.actual_return_date,
-      status: row.status,
-      assignedBy: row.assigned_by_name,
-      assignmentNotes: row.assignment_notes,
-    }));
+    try {
+      const historyRows = await assetRepo.getAssignmentHistoryForAssetId(asset.assetID);
+      asset.assignmentHistory = historyRows.map((row: any) => ({
+        assignmentID: row.assignmentID,
+        user: {
+          id: row.user_id,
+          name: row.assigned_user_name,
+          email: row.assigned_user_email,
+          employeeNumber: row.employee_number,
+          position: row.position,
+        },
+        department: row.department_name,
+        location: row.location_name
+          ? `${row.location_name}${row.room_name ? ` - ${row.room_name}` : ''}`
+          : null,
+        assignedDate: row.assigned_date,
+        actualReturnDate: row.actual_return_date,
+        status: row.status,
+        assignedBy: row.assigned_by_name,
+        assignmentNotes: row.assignment_notes,
+      }));
+    } catch (historyError) {
+      logger.warn(`Failed to fetch assignment history for asset ${asset.assetID}:`, historyError);
+      asset.assignmentHistory = [];
+    }
 
     // Get builder history for timeline
     try {
@@ -1224,18 +1277,39 @@ export async function updateAssetHandler(req: AuthRequest, res: Response) {
     assignedUser,
   } = fields;
 
+  // Validate fields with DTO schema
+  const updateValidation = UpdateAssetDtoSchema.safeParse({
+    assetId,
+    ...fields,
+    assetValue: fields.assetValue ? Number(fields.assetValue) : undefined,
+    salvageValue: fields.salvageValue ? Number(fields.salvageValue) : undefined,
+    usefulLifeYears: fields.usefulLifeYears ? Number(fields.usefulLifeYears) : undefined,
+    annualDepreciation: fields.annualDepreciation ? Number(fields.annualDepreciation) : undefined,
+    warrantyMonths: fields.warrantyMonths ? Number(fields.warrantyMonths) : undefined,
+    isOldUnit: fields.isOldUnit === 'true' || fields.isOldUnit === '1',
+  });
+
+  if (!updateValidation.success) {
+    return res.status(400).json({
+      success: false,
+      error: 'Validation failed',
+      errors: updateValidation.error.issues.map(err => ({
+        field: err.path.join('.'),
+        message: err.message,
+      })),
+    });
+  }
+
   // For old units, save default purchase date, no depreciation method
   const finalPurchaseDate = purchaseDate;
   const finalDepreciationMethod = isOldUnit === '1' ? null : depreciationMethod;
 
-  if (!assetId || !name || !categoryId) {
-    return res
-      .status(400)
-      .json({ error: 'Asset ID, name and category are required' });
+  if (typeof name !== 'string' || typeof categoryId !== 'string') {
+    return res.status(400).json({ error: 'Name and category are required' });
   }
 
   // Validate that asset exists
-  const asset = await assetRepo.getAssetByCodeForAssign(assetId);
+  const asset = await assetRepo.getAssetByCodeForAssign(assetId!);
 
   if (!asset) {
     return res.status(404).json({ error: 'Asset not found' });
@@ -1309,14 +1383,17 @@ export async function updateAssetHandler(req: AuthRequest, res: Response) {
   }
 
   // Handle image upload if provided
-  let finalImageUrl = oldAsset.image_url; // Keep existing image by default
+  let finalImageUrl = oldAsset.image_url;
   if (imageFile) {
     try {
       finalImageUrl = await uploadToCloudinary(imageFile.buffer);
       logger.info('Image uploaded successfully:', finalImageUrl);
-    } catch (uploadError) {
+    } catch (uploadError: any) {
       logger.error('Image upload failed:', uploadError);
-      // Continue with update, keep existing image
+      return res.status(502).json({
+        error: 'Image upload to Cloudinary failed',
+        details: uploadError.message,
+      });
     }
   }
 

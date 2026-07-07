@@ -47,9 +47,14 @@ function AuthBackdrop() {
 
 export default function VerifyResetOTP() {
   const [otp, setOtp] = useState(['', '', '', '', '', '']);
-  const [channel, setChannel] = useState<'email' | 'sms'>(
-    (localStorage.getItem('resetChannel') as 'email' | 'sms') || 'email'
-  );
+  // SMS channel disabled — all OTP now uses email
+  // const [channel, setChannel] = useState<'email' | 'sms'>(
+  //   (localStorage.getItem('resetChannel') as 'email' | 'sms') || 'email'
+  // );
+  const [channel] = useState<'email'>('email');
+  const setChannel = (_channel: 'email') => {
+    // channel changes disabled — always email
+  };
   const [status, setStatus] = useState<
     'idle' | 'loading' | 'success' | 'error'
   >('idle');
@@ -65,8 +70,9 @@ export default function VerifyResetOTP() {
   const contactNumber = localStorage.getItem('resetContactNumber') || '';
 
   useEffect(() => {
-    const missingIdentifier =
-      channel === 'email' ? !email : !contactNumber && !email;
+    // const missingIdentifier =
+    //   channel === 'email' ? !email : !contactNumber && !email;
+    const missingIdentifier = !email;
     if (missingIdentifier) {
       navigate('/forgot-password');
       return;
@@ -136,76 +142,77 @@ export default function VerifyResetOTP() {
     }
   };
 
-  const switchOtpChannel = async () => {
-    const nextChannel = channel === 'sms' ? 'email' : 'sms';
-    if (!email) {
-      navigate('/forgot-password');
-      return;
-    }
+  // SMS channel switching disabled — all OTP now uses email
+  // const switchOtpChannel = async () => {
+  //   const nextChannel = channel === 'sms' ? 'email' : 'sms';
+  //   if (!email) {
+  //     navigate('/forgot-password');
+  //     return;
+  //   }
 
-    setSwitchingChannel(true);
-    const loadingToast = toast.loading(
-      `Switching to ${nextChannel === 'sms' ? 'SMS' : 'Email'} OTP...`
-    );
+  //   setSwitchingChannel(true);
+  //   const loadingToast = toast.loading(
+  //     `Switching to ${nextChannel === 'sms' ? 'SMS' : 'Email'} OTP...`
+  //   );
 
-    try {
-      const { contactNumber: resolvedContactNumber, effectiveChannel } = await api.post<{
-        message: string;
-        contactNumber?: string;
-        effectiveChannel?: 'email' | 'sms';
-      }>('/auth/forgot-password', {
-        channel: nextChannel,
-        email,
-      });
+  //   try {
+  //     const { contactNumber: resolvedContactNumber, effectiveChannel } = await api.post<{
+  //       message: string;
+  //       contactNumber?: string;
+  //       effectiveChannel?: 'email' | 'sms';
+  //     }>('/auth/forgot-password', {
+  //       channel: nextChannel,
+  //       email,
+  //     });
 
-      const actualChannel = effectiveChannel || nextChannel;
-      localStorage.setItem('resetChannel', actualChannel);
-      if (actualChannel === 'sms' && resolvedContactNumber) {
-        localStorage.setItem('resetContactNumber', resolvedContactNumber);
-      } else {
-        localStorage.removeItem('resetContactNumber');
-      }
-      localStorage.setItem(
-        'resetOtpExpiryTime',
-        (Date.now() + 10 * 60 * 1000).toString()
-      );
+  //     const actualChannel = effectiveChannel || nextChannel;
+  //     localStorage.setItem('resetChannel', actualChannel);
+  //     if (actualChannel === 'sms' && resolvedContactNumber) {
+  //       localStorage.setItem('resetContactNumber', resolvedContactNumber);
+  //     } else {
+  //       localStorage.removeItem('resetContactNumber');
+  //     }
+  //     localStorage.setItem(
+  //       'resetOtpExpiryTime',
+  //       (Date.now() + 10 * 60 * 1000).toString()
+  //     );
 
-      setChannel(actualChannel);
-      setOtp(['', '', '', '', '', '']);
-      setStatus('idle');
-      setCanResend(false);
-      setResendCooldown(60);
-      setOtpExpiry(600);
-      inputsRef.current[0]?.focus();
+  //     setChannel(actualChannel);
+  //     setOtp(['', '', '', '', '', '']);
+  //     setStatus('idle');
+  //     setCanResend(false);
+  //     setResendCooldown(60);
+  //     setOtpExpiry(600);
+  //     inputsRef.current[0]?.focus();
 
-      if (nextChannel === 'sms' && effectiveChannel === 'email') {
-        toast.success('SMS failed. OTP sent via Email instead.', {
-          id: loadingToast,
-          description: 'Please check your email for the reset code.',
-        });
-      } else {
-        toast.success(
-          `OTP sent via ${actualChannel === 'sms' ? 'SMS' : 'Email'}!`,
-          { id: loadingToast }
-        );
-      }
-    } catch (err: any) {
-      toast.error(err.message || 'Failed to switch OTP channel', {
-        id: loadingToast,
-      });
-    } finally {
-      setSwitchingChannel(false);
-    }
-  };
+  //     if (nextChannel === 'sms' && effectiveChannel === 'email') {
+  //       toast.success('SMS failed. OTP sent via Email instead.', {
+  //         id: loadingToast,
+  //         description: 'Please check your email for the reset code.',
+  //       });
+  //     } else {
+  //       toast.success(
+  //         `OTP sent via ${actualChannel === 'sms' ? 'SMS' : 'Email'}!`,
+  //         { id: loadingToast }
+  //       );
+  //     }
+  //   } catch (err: any) {
+  //     toast.error(err.message || 'Failed to switch OTP channel', {
+  //       id: loadingToast,
+  //     });
+  //   } finally {
+  //     setSwitchingChannel(false);
+  //   }
+  // };
 
   const verify = async (code: string) => {
     setStatus('loading');
     const loadingToast = toast.loading('Verifying OTP...');
     try {
       const { success, userId } = await api.post('/auth/verify-reset-otp', {
-        channel,
+        // channel,
         email,
-        contactNumber,
+        // contactNumber,
         otp: code,
       });
       if (success && userId) {
@@ -236,8 +243,9 @@ export default function VerifyResetOTP() {
   };
 
   const resendOTP = async () => {
-    const identifierMissing =
-      channel === 'email' ? !email : !contactNumber && !email;
+    // const identifierMissing =
+    //   channel === 'email' ? !email : !contactNumber && !email;
+    const identifierMissing = !email;
     if (!canResend || identifierMissing) return;
     setCanResend(false);
     setResendCooldown(60);
@@ -249,36 +257,16 @@ export default function VerifyResetOTP() {
 
     const loadingToast = toast.loading('Sending new OTP...');
     try {
-      const { effectiveChannel } = await api.post<{
-        message: string;
-        effectiveChannel?: 'email' | 'sms';
-      }>('/auth/forgot-password', {
-        channel,
+      await api.post('/auth/forgot-password', {
+        // channel,
         email,
-        contactNumber,
+        // contactNumber,
       });
 
-      const actualChannel = effectiveChannel || channel;
-      if (actualChannel !== channel) {
-        localStorage.setItem('resetChannel', actualChannel);
-        setChannel(actualChannel);
-        if (actualChannel === 'email') {
-          localStorage.removeItem('resetContactNumber');
-        }
-      }
-
-      if (channel === 'sms' && effectiveChannel === 'email') {
-        toast.success('SMS failed. OTP sent via Email instead.', {
-          id: loadingToast,
-          icon: <RotateCw className="w-5 h-5" />,
-          description: 'Please check your email for the reset code.',
-        });
-      } else {
-        toast.success('New OTP sent!', {
-          id: loadingToast,
-          icon: <RotateCw className="w-5 h-5" />,
-        });
-      }
+      toast.success('New OTP sent!', {
+        id: loadingToast,
+        icon: <RotateCw className="w-5 h-5" />,
+      });
     } catch (err: any) {
       toast.error(err.message || 'Failed to resend', { id: loadingToast });
       setCanResend(true);
@@ -315,14 +303,12 @@ export default function VerifyResetOTP() {
             <div className="w-full space-y-6">
               <div className="space-y-1">
                 <p className="text-2xl font-semibold text-black">
-                  Verify Reset Code {channel === 'sms' ? '(SMS)' : '(Email)'}
+                  Verify Reset Code
                 </p>
                 <p className="text-sm text-gray-700">
                   Enter the 6-digit code sent to{' '}
                   <strong>
-                    {channel === 'sms'
-                      ? contactNumber || 'your registered mobile number'
-                      : email}
+                    {email}
                   </strong>
                 </p>
                 <p className="text-sm text-gray-700 mt-2">
@@ -392,7 +378,8 @@ export default function VerifyResetOTP() {
                 </Button>
               </div>
 
-              <div className="text-center">
+              {/* Channel switching disabled — all OTP now uses email */}
+              {/* <div className="text-center">
                 <button
                   type="button"
                   onClick={switchOtpChannel}
@@ -405,7 +392,7 @@ export default function VerifyResetOTP() {
                       ? "Didn't receive the OTP? Change to Email"
                       : "Didn't receive the OTP? Change to SMS"}
                 </button>
-              </div>
+              </div> */}
 
               <div className="text-center">
                 <Button

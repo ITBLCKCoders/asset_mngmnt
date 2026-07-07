@@ -509,37 +509,25 @@ export default function AssetDepartment() {
               </CardTitle>
             </CardHeader>
 
-            <CardContent>
-              {loading ? (
-                <div className="flex items-center justify-center py-12">
-                  <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600"></div>
-                  <span className="ml-3 text-gray-600">
-                    Loading requests...
-                  </span>
-                </div>
-              ) : visibleAssetRequests.length === 0 ? (
-                <div className="text-center py-12">
-                  <PlusCircle className="h-16 w-16 text-gray-300 mx-auto mb-4" />
-                  <p className="text-gray-500 text-lg">
-                    No asset requests found for this filter
-                  </p>
-                  <p className="text-gray-400 text-sm mt-1">
-                    Try another status or submit a new request
-                  </p>
-                </div>
-              ) : (
-                <DataTable<AssetRequest>
-                  tableId="my-asset-requests"
-                  data={visibleAssetRequests}
-                  columns={myAssetRequestColumns}
-                  searchPlaceholder="Search my requests..."
-                  emptyState={
-                    <div className="text-center py-8">
-                      <p className="text-gray-500">No matching requests</p>
-                    </div>
-                  }
-                />
-              )}
+             <CardContent>
+              <DataTable<AssetRequest>
+                tableId="my-asset-requests"
+                data={visibleAssetRequests}
+                columns={myAssetRequestColumns}
+                searchPlaceholder="Search my requests..."
+                isLoading={loading}
+                emptyState={
+                  <div className="text-center py-12">
+                    <PlusCircle className="h-16 w-16 text-gray-300 mx-auto mb-4" />
+                    <p className="text-gray-500 text-lg">
+                      No asset requests found for this filter
+                    </p>
+                    <p className="text-gray-400 text-sm mt-1">
+                      Try another status or submit a new request
+                    </p>
+                  </div>
+                }
+              />
             </CardContent>
           </Card>
         </div>

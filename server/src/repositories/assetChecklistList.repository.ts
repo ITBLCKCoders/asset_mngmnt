@@ -6,7 +6,7 @@ import {
   hasItManagerSignColumns,
 } from './assetChecklist.repository.js';
 
-export async function getAssetChecklists() {
+export async function getAssetChecklists(employeeId?: string) {
   const [includeEmployeeSign, includeDeptHeadSign, includeItManagerSign] =
     await Promise.all([
       hasEmployeeSignColumns(),
@@ -40,6 +40,8 @@ export async function getAssetChecklists() {
       NULL AS it_manager_digital_signature,
       NULL AS it_manager_name,`;
 
+  const whereClause = employeeId ? 'WHERE ac.employee_id = ?' : '';
+
   const query = `
     SELECT
       ac.id,
@@ -65,19 +67,28 @@ export async function getAssetChecklists() {
       aa.asset_id,
       a.asset_code,
       a.name AS asset_name,
-      c.logo_url AS employee_company_logo_url
+      c.logo_url AS employee_company_logo_url,
+      CASE
+        WHEN LOWER(cdept.name) LIKE '%it%' OR LOWER(cdept.name) LIKE '%information technology%' THEN 'IT'
+        WHEN LOWER(cdept.name) LIKE '%admin%' OR LOWER(cdept.name) LIKE '%administration%' THEN 'Admin'
+        ELSE 'Other'
+      END AS asset_scope_type
     FROM asset_checklists ac
     LEFT JOIN asset_assignments aa ON ac.assignment_id = aa.assignmentID
     LEFT JOIN assets a ON aa.asset_id = a.assetID
+    LEFT JOIN asset_categories acat ON a.category_id = acat.categoryID AND acat.deleted_at IS NULL
+    LEFT JOIN asset_mngmnt_departments cdept ON acat.department_id = cdept.departmentID AND cdept.deleted_at IS NULL
     LEFT JOIN users u ON ac.created_by = u.userID
     LEFT JOIN users dh ON ac.dept_head_signed_by = dh.userID
     LEFT JOIN users im ON ac.it_manager_signed_by = im.userID
     LEFT JOIN companies c ON ac.employee_company = c.name AND c.deleted_at IS NULL
+    ${whereClause}
     ORDER BY ac.created_at DESC
   `;
 
   try {
-    const [rows] = await pool.query(query);
+    const params = employeeId ? [employeeId] : [];
+    const [rows] = await pool.query(query, params);
     return (rows as any[]).map(checklist => ({
       ...checklist,
       type_onboarding: checklist.type_onboarding === 1,

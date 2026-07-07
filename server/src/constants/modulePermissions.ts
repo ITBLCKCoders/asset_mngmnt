@@ -46,4 +46,8 @@ export const ALL_MODULE_NAMES = [
   'Locations',
   'Roles',
   'Companies',
+  'Profile',
+  'MFA',
+  'UserManual',
+  'FlowDiagrams',
 ] as const;

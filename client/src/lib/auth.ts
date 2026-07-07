@@ -8,7 +8,7 @@ export const TOKEN_KEY = 'accessToken';
 export const setLocalToken = (_token: string) => {};
 export const getLocalToken = () => null;
 export const clearAuth = () => {
-  localStorage.clear();
+  localStorage.removeItem('mfaTempToken');
   sessionStorage.clear();
 };
 

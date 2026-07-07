@@ -21,11 +21,19 @@
     "test:server:ci": "npm run test:unit --workspace=server -- --runInBand",
     "test:client:ci": "npm run test:run --workspace=client",
     "test:ci": "npm run test:server:ci && npm run test:client:ci",
+    "test:e2e": "playwright test --config=e2e/playwright.config.ts",
+    "test:e2e:ui": "playwright test --config=e2e/playwright.config.ts --ui",
+    "test:e2e:debug": "playwright test --config=e2e/playwright.config.ts --debug",
+    "test:e2e:install": "playwright install chromium",
     "format:check": "prettier --check .",
-    "prepare": "node -e \"if (process.env.CI || process.env.VERCEL) process.exit(0); require('child_process').execSync('husky', { stdio: 'inherit' })\""
+    "prepare": "node -e \"if (process.env.CI || process.env.VERCEL) process.exit(0); require('child_process').execSync('husky', { stdio: 'inherit' })\"",
+    "doc:pdf": "md-to-pdf docs/PROJECT_CLOSURE_REPORT.md --config-file docs/md2pdf.config.json --stylesheet docs/pdf.css",
+    "report:pdf:completion": "node scripts/generate-closure-pdf.js \"docs/Project Completion Report.md\" \"docs/Project Completion Report.pdf\"",
+    "erd:pdf": "node scripts/generate-erd-3page-pdf.js"
   },
   "devDependencies": {
     "@jest/globals": "^30.2.0",
+    "@playwright/test": "^1.60.0",
     "@types/cookie-parser": "^1.4.10",
     "@types/cors": "^2.8.15",
     "@types/express": "^4.17.25",
@@ -35,11 +43,13 @@
     "@types/swagger-ui-express": "^4.1.8",
     "@vitest/browser": "^4.0.18",
     "concurrently": "^9.2.1",
+    "cross-env": "^10.1.0",
     "happy-dom": "^20.8.3",
     "husky": "^9.1.7",
     "prettier": "^3.8.0",
     "supertest": "^7.2.2",
     "vitest": "^4.0.18",
+    "md-to-pdf": "^5.2.4",
     "vitest-dom": "^0.1.1",
     "wait-on": "^7.2.0"
   },
@@ -52,7 +62,6 @@
     "helmet": "^8.1.0",
     "rate-limiter-flexible": "^9.0.1",
     "uuid": "^13.0.0",
-    "xlsx": "^0.18.5",
-    "zod": "^4.3.5"
+    "xlsx": "^0.18.5"
   }
 }

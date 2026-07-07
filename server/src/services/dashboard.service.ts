@@ -163,6 +163,8 @@ export async function getDashboardData(
 
   if (companyIdOverride) {
     companyId = companyIdOverride === 'all' ? null : companyIdOverride;
+  } else if (scope.isSuperAdmin) {
+    companyId = null;
   }
 
   if (scopeOverride) {
@@ -173,7 +175,7 @@ export async function getDashboardData(
     );
   }
 
-  if (!companyId && companyIdOverride !== 'all') {
+  if (!companyId && companyIdOverride !== 'all' && !scope.isSuperAdmin) {
     return getEmptyDashboard();
   }
 
@@ -1060,8 +1062,10 @@ export async function getCategoryIdsForDashboardScope(
   let companyId = assetScope.companyId;
   if (companyIdOverride) {
     companyId = companyIdOverride === 'all' ? null : companyIdOverride;
+  } else if (assetScope.isSuperAdmin) {
+    companyId = null;
   }
-  if (!companyId && companyIdOverride !== 'all') {
+  if (!companyId && companyIdOverride !== 'all' && !assetScope.isSuperAdmin) {
     return [];
   }
 

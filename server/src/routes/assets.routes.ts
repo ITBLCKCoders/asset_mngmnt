@@ -10,11 +10,6 @@ import {
   getAllFormsByAssetIdHandler,
 } from '../controllers/assets.controller.js';
 import { authenticate } from '../middleware/authenticate.js';
-import { validateDto } from '../utils/validation.js';
-import {
-  CreateAssetDtoSchema,
-  UpdateAssetDtoSchema,
-} from '../dtos/assets/CreateAssetDto.js';
 
 const router = Router();
 

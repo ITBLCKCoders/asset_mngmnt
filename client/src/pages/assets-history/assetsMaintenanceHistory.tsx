@@ -1,18 +1,5 @@
-import { Wrench } from 'lucide-react';
-import { PageHeader } from '@/components/common/PageHeader';
+import React from 'react';
 
 export default function AssetsMaintenanceHistory() {
-  return (
-    <div>
-      <div className="flex flex-col min-h-screen bg-[#FFFFFF]">
-        <main className="flex-1 p-6 space-y-6">
-          <PageHeader
-            icon={Wrench}
-            title="Assets Maintenance History"
-            description="View history of asset maintenance records"
-          />
-        </main>
-      </div>
-    </div>
-  );
+  return <h1>Assets Maintenance History</h1>;
 }

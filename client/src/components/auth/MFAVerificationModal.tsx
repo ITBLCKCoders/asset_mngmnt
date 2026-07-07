@@ -56,18 +56,13 @@ export default function MFAVerificationModal({
     setError(null);
 
     try {
-      const response = await api.post<{
-        accessToken: string;
-        refreshToken: string;
-        message: string;
-      }>('/auth/mfa/verify', {
+      await api.post('/auth/mfa/verify', {
         tempToken,
         totp,
       });
 
-      // Store auth tokens
-      setToken(response.accessToken);
-      setRefreshToken(response.refreshToken);
+      // Signal auth success
+      setToken('authenticated');
 
       toast.success('Login successful!');
       onVerified();

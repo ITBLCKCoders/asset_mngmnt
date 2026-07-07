@@ -1,6 +1,7 @@
 'use client';
 
 import { useEffect, useState, useMemo, useRef, useCallback } from 'react';
+import { useQueryClient } from '@tanstack/react-query';
 import {
   Package,
   Boxes,
@@ -25,6 +26,7 @@ import { Checkbox } from '@/components/ui/checkbox';
 import { Shimmer } from '@/components/ui/shimmer';
 import { api } from '@/lib/api';
 import { toast } from 'sonner';
+import { generateUUID } from '@/utils/uuid';
 import { useCurrentUser } from '@/hooks/useCurrentUser';
 import { useUserPermissions } from '@/hooks/useUserPermissions';
 import { useCompanyContext } from '@/context/CompanyContext';
@@ -45,7 +47,7 @@ import {
   filterComputerTypeAssets,
   hasComputerTypeAssets,
 } from '@/utils/assetTypeDetection';
-import type { AssetChecklistItemData } from '../../../../../shared/types/dtos/asset.dtos';
+import type { AssetChecklistItemData, OffboardingChecklistItemData } from '../../../../../shared/types/dtos/asset.dtos';
 
 const logger = createLogger('AssetsIssuance');
 
@@ -59,6 +61,7 @@ interface Asset {
   assignedTo: string;
   department: string;
   location: string;
+  description: string;
   specifications?: Array<{
     assetId: string;
     assetName: string;
@@ -92,6 +95,7 @@ interface User {
 }
 
 export default function AssetsAssignment() {
+  const queryClient = useQueryClient();
   const { user: currentUser } = useCurrentUser();
   const { hasPermission, roleCustodian } = useUserPermissions();
   const { activeCompany } = useCompanyContext();
@@ -110,6 +114,7 @@ export default function AssetsAssignment() {
   const [selectedUser, setSelectedUser] = useState<string>('');
   const [assigning, setAssigning] = useState(false);
   const [searchTerm, setSearchTerm] = useState('');
+  const [searchColumn, setSearchColumn] = useState('all');
   const [builderSearchTerm, setBuilderSearchTerm] = useState('');
   const [departmentSearchTerm, setDepartmentSearchTerm] = useState('');
   const [userSearchTerm, setUserSearchTerm] = useState('');
@@ -118,7 +123,7 @@ export default function AssetsAssignment() {
   const [checklistStepIndex, setChecklistStepIndex] = useState(0);
   type PendingChecklistEntry = {
     assetId: string;
-    checklistData: AssetChecklistItemData;
+    checklistData: AssetChecklistItemData | OffboardingChecklistItemData;
     typeOnboarding: boolean;
     typeOffboarding: boolean;
     receivedBy: string;
@@ -158,6 +163,9 @@ export default function AssetsAssignment() {
   const isSuperAdmin = currentUser?.role?.name?.toLowerCase() === 'super admin';
   const isAdmin = currentUser?.role?.name?.toLowerCase() === 'admin';
   const showScopeTabs = isSuperAdmin || isAdmin;
+  const effectiveCompanyId = isSuperAdmin || isAdmin
+    ? activeCompany?.id || undefined
+    : currentUser?.company_id || undefined;
   const [scope, setScope] = useState<'it' | 'admin'>('it');
 
   const fetchAssets = async () => {
@@ -195,6 +203,7 @@ export default function AssetsAssignment() {
         assignedTo: asset.created_by_name || asset.created_by,
         department: asset.department_name || '',
         location: `${asset.location_name || ''}${asset.room_name ? ` - ${asset.room_name}` : ''}`,
+        description: asset.description || '',
         specifications: asset.specifications || [],
       }));
       setAssets(transformedAssets);
@@ -206,7 +215,15 @@ export default function AssetsAssignment() {
 
   const fetchDepartments = async () => {
     try {
-      const response = await api.get('/departments');
+      let companyId: string | undefined;
+      const userRole = currentUser?.role?.name?.toLowerCase();
+      if (userRole === 'super admin' || userRole === 'admin') {
+        companyId = activeCompany?.id || undefined;
+      } else {
+        companyId = currentUser?.company_id || undefined;
+      }
+      const url = companyId ? `/departments?companyId=${companyId}` : '/departments';
+      const response = await api.get(url);
       setDepartments(response.departments || []);
     } catch (error) {
       console.error('Failed to fetch departments:', error);
@@ -216,7 +233,15 @@ export default function AssetsAssignment() {
 
   const fetchLocations = async () => {
     try {
-      const response = await api.get('/locations');
+      let companyId: string | undefined;
+      const userRole = currentUser?.role?.name?.toLowerCase();
+      if (userRole === 'super admin' || userRole === 'admin') {
+        companyId = activeCompany?.id || undefined;
+      } else {
+        companyId = currentUser?.company_id || undefined;
+      }
+      const url = companyId ? `/locations?companyId=${companyId}` : '/locations';
+      const response = await api.get(url);
       const locs = response.locations || [];
       setLocations(locs);
       setBuildings([
@@ -233,7 +258,8 @@ export default function AssetsAssignment() {
 
   const fetchUsers = async () => {
     try {
-      const response = await api.get('/users');
+      const url = effectiveCompanyId ? `/users?companyId=${effectiveCompanyId}` : '/users';
+      const response = await api.get(url);
       setUsers(response.users || []);
     } catch (error) {
       console.error('Failed to fetch users:', error);
@@ -450,7 +476,7 @@ export default function AssetsAssignment() {
     setConfirmModalOpen(true);
   };
 
-  const handleAssign = async (signAsIssuer: boolean, signITCopy: boolean) => {
+  const handleAssign = async (signAsIssuer: boolean, signITCopy: boolean, tempAccountability: boolean) => {
     if (selectedAssets.length === 0) {
       toast.error('Please select at least one asset');
       return;
@@ -487,6 +513,7 @@ export default function AssetsAssignment() {
           issuerSignature: signAsIssuer ? currentUser?.digitalSignature || null : null,
           signITCopy: signITCopy,
           itCopySignature: signITCopy ? currentUser?.digitalSignature || null : null,
+          tempAccountability: tempAccountability || undefined,
         };
 
         assignmentResponse = await api.post('/asset-assignments', assignmentData);
@@ -496,30 +523,93 @@ export default function AssetsAssignment() {
       if (selectedIntangibleAssets.length > 0 && assignmentResponse) {
         // Use the assignment ID from the tangible assets assignment
         const assignmentId = assignmentResponse.assignments?.[0]?.assignmentID;
-        
-        for (const intangibleAssetId of selectedIntangibleAssets) {
+
+        const selectedIntangibleAssetObjects = selectedIntangibleAssets
+          .map(id => intangibleAssets.find(ia => ia.id === id))
+          .filter((ia): ia is any => ia != null);
+
+        const scopeGroups: Record<string, any[]> = {};
+        for (const ia of selectedIntangibleAssetObjects) {
+          const scope = ia.type === 'Admin scope' ? 'Admin scope' : 'IT scope';
+          if (!scopeGroups[scope]) {
+            scopeGroups[scope] = [];
+          }
+          scopeGroups[scope].push(ia);
+        }
+
+        for (const [scope, scopeAssets] of Object.entries(scopeGroups)) {
           try {
-            await api.post(`/intangible-assets/${intangibleAssetId}/assign`, {
+            const deptKeyword = scope === 'Admin scope' ? 'admin' : 'it';
+            const matchDept = departments.find(d =>
+              d.name?.toLowerCase().includes(deptKeyword)
+            );
+
+            const batchResult = await api.post('/intangible-assets/batch-assign', {
+              assetIds: scopeAssets.map(ia => ia.id),
               assignedTo: selectedUser,
-              assignmentId: assignmentId,
+              assignmentId,
+              departmentId: matchDept?.departmentID || undefined,
+              locationId: selectedLocation || undefined,
+              signAsIssuer,
+              issuerSignature: signAsIssuer ? currentUser?.digitalSignature || null : null,
+              signITCopy,
+              itCopySignature: signITCopy ? currentUser?.digitalSignature || null : null,
+              tempAccountability: tempAccountability || undefined,
             });
+            if (batchResult?.formError) {
+              console.error(`Form error for ${scope}:`, batchResult.formError);
+              toast.error(`Accountability form error: ${batchResult.formError}`);
+            }
           } catch (error) {
-            console.error('Failed to assign intangible asset:', error);
-            toast.error(`Failed to assign intangible asset ${intangibleAssetId}`);
+            console.error(`Failed to assign ${scope} intangible assets:`, error);
+            toast.error(`Failed to assign ${scope} intangible assets`);
           }
         }
       } else if (selectedIntangibleAssets.length > 0 && !assignmentResponse) {
-        // If only intangible assets are selected, create a simple assignment ID
-        const assignmentId = crypto.randomUUID();
-        for (const intangibleAssetId of selectedIntangibleAssets) {
+        // If only intangible assets are selected, group by scope and batch assign
+        const assignmentId = generateUUID();
+
+        const selectedIntangibleAssetObjects = selectedIntangibleAssets
+          .map(id => intangibleAssets.find(ia => ia.id === id))
+          .filter((ia): ia is any => ia != null);
+
+        // Group by scope type
+        const scopeGroups: Record<string, any[]> = {};
+        for (const ia of selectedIntangibleAssetObjects) {
+          const scope = ia.type === 'Admin scope' ? 'Admin scope' : 'IT scope';
+          if (!scopeGroups[scope]) {
+            scopeGroups[scope] = [];
+          }
+          scopeGroups[scope].push(ia);
+        }
+
+        // Send one batch request per scope (server creates accountability form with existing tangible assets)
+        for (const [scope, scopeAssets] of Object.entries(scopeGroups)) {
           try {
-            await api.post(`/intangible-assets/${intangibleAssetId}/assign`, {
+            const deptKeyword = scope === 'Admin scope' ? 'admin' : 'it';
+            const matchDept = departments.find(d =>
+              d.name?.toLowerCase().includes(deptKeyword)
+            );
+
+            const batchResult = await api.post('/intangible-assets/batch-assign', {
+              assetIds: scopeAssets.map(ia => ia.id),
               assignedTo: selectedUser,
-              assignmentId: assignmentId,
+              assignmentId,
+              departmentId: matchDept?.departmentID || undefined,
+              locationId: selectedLocation || undefined,
+              signAsIssuer,
+              issuerSignature: signAsIssuer ? currentUser?.digitalSignature || null : null,
+              signITCopy,
+              itCopySignature: signITCopy ? currentUser?.digitalSignature || null : null,
+              tempAccountability: tempAccountability || undefined,
             });
+            if (batchResult?.formError) {
+              console.error(`Form error for ${scope}:`, batchResult.formError);
+              toast.error(`Accountability form error: ${batchResult.formError}`);
+            }
           } catch (error) {
-            console.error('Failed to assign intangible asset:', error);
-            toast.error(`Failed to assign intangible asset ${intangibleAssetId}`);
+            console.error(`Failed to batch assign ${scope} intangible assets:`, error);
+            toast.error(`Failed to assign ${scope} intangible assets`);
           }
         }
       }
@@ -616,8 +706,8 @@ export default function AssetsAssignment() {
 
       toast.success(message);
 
-      // Dispatch event to refetch assets in other components
-      window.dispatchEvent(new CustomEvent('assetsUpdated'));
+      // Invalidate assets cache to refetch in other components
+      queryClient.invalidateQueries({ queryKey: ['assets'] });
 
       // Reset form
       setSelectedAssets([]);
@@ -666,32 +756,37 @@ export default function AssetsAssignment() {
 
   const filteredAssets = useMemo(() => {
     const searchLower = searchTerm.trim().toLowerCase();
-    const searchText = (asset: Asset) =>
-      [
-        asset.id,
-        asset.name,
-        asset.status,
-        asset.category,
-        asset.type,
-        asset.serialNo,
-        asset.assignedTo,
-        asset.department,
-        asset.location,
-        asset.specifications
-          ?.map(s => s.assetName || s.specDescription)
-          .join(' '),
-      ]
-        .filter(Boolean)
-        .join(' ')
-        .toLowerCase();
 
     return assets
       .filter(
         asset => asset.status === 'Available' || asset.status === 'In Use'
       )
-      .filter(
-        asset => searchLower === '' || searchText(asset).includes(searchLower)
-      )
+      .filter(asset => {
+        if (!searchLower) return true;
+        if (searchColumn === 'all') {
+          return [
+            asset.id,
+            asset.name,
+            asset.status,
+            asset.category,
+            asset.type,
+            asset.serialNo,
+            asset.assignedTo,
+            asset.department,
+            asset.location,
+            asset.description,
+            asset.specifications
+              ?.map(s => s.assetName || s.specDescription)
+              .join(' '),
+          ]
+            .filter(Boolean)
+            .join(' ')
+            .toLowerCase()
+            .includes(searchLower);
+        }
+        const val = (asset as any)[searchColumn];
+        return val != null && String(val).toLowerCase().includes(searchLower);
+      })
       .filter(asset => {
         // Check if user has basic asset assignment permissions
         const hasBasicAccess =
@@ -871,7 +966,7 @@ export default function AssetsAssignment() {
   const filteredUsers = (users || []).filter(
     user =>
       (!selectedDepartment || user.department_id === selectedDepartment) &&
-      (!activeCompany?.id || user.company?.id === activeCompany?.id)
+      (!effectiveCompanyId || user.company?.id === effectiveCompanyId)
   );
 
   // Skeleton component for builder cards
@@ -1090,9 +1185,11 @@ export default function AssetsAssignment() {
                   assets={availableAssets}
                   selectedAssets={selectedAssets}
                   searchTerm={searchTerm}
+                  searchColumn={searchColumn}
                   loading={loading || buildersLoading || tabLoading}
                   hasPermission={hasPermission}
                   onSearchChange={setSearchTerm}
+                  onSearchColumnChange={setSearchColumn}
                   onAssetSelection={handleAssetSelection}
                   onClearAll={() => setSelectedAssets([])}
                 />

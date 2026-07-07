@@ -3,8 +3,8 @@
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Checkbox } from '@/components/ui/checkbox';
-import { Input } from '@/components/ui/input';
-import { Search } from 'lucide-react';
+import { SearchWithColumnFilter } from '@/components/common/SearchWithColumnFilter';
+import { ASSET_SEARCH_COLUMNS_BASIC } from '@/utils/assetSearchColumns';
 import { Button } from '@/components/ui/button';
 import { CheckCircle2, Package } from 'lucide-react';
 import { Shimmer } from '@/components/ui/shimmer';
@@ -30,9 +30,11 @@ interface AssetSelectionPanelProps {
   assets: Asset[];
   selectedAssets: string[];
   searchTerm: string;
+  searchColumn: string;
   loading: boolean;
   hasPermission: (module: string, action: string) => boolean;
   onSearchChange: (value: string) => void;
+  onSearchColumnChange: (value: string) => void;
   onAssetSelection: (assetId: string, checked: boolean | string) => void;
   onClearAll: () => void;
 }
@@ -41,9 +43,11 @@ export function AssetSelectionPanel({
   assets,
   selectedAssets,
   searchTerm,
+  searchColumn,
   loading,
   hasPermission,
   onSearchChange,
+  onSearchColumnChange,
   onAssetSelection,
   onClearAll,
 }: AssetSelectionPanelProps) {
@@ -61,15 +65,15 @@ export function AssetSelectionPanel({
         </CardTitle>
 
         {/* Search Bar */}
-        <div className="relative mt-4">
-          <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-gray-400" />
-          <Input
-            placeholder="Search all columns..."
-            value={searchTerm}
-            onChange={e => onSearchChange(e.target.value)}
-            className="pl-10 border-gray-200 focus:border-red-500 focus:ring-red-500"
-          />
-        </div>
+        <SearchWithColumnFilter
+          value={searchTerm}
+          onChange={onSearchChange}
+          placeholder="Search assets..."
+          columnOptions={ASSET_SEARCH_COLUMNS_BASIC}
+          searchColumn={searchColumn}
+          onSearchColumnChange={onSearchColumnChange}
+          className="mt-4"
+        />
       </CardHeader>
 
       <CardContent className="pt-0 flex-1 flex flex-col overflow-hidden">

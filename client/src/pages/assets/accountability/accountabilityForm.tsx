@@ -69,6 +69,7 @@ import {
   DialogFooter,
 } from '@/components/ui/dialog';
 import { Input } from '@/components/ui/input';
+import { Shimmer } from '@/components/ui/shimmer';
 import {
   addCompanyLogoToPDF,
   getCompanyAccentColor,
@@ -326,20 +327,47 @@ const getAccountabilityFormAssignmentIds = (form: AccountabilityForm): string[] 
   return [...assignmentIds];
 };
 
-const fetchAssignedIntangibleAssetsForForm = async (
+const fetchAssignedIntangibleAssetsForForm = (
+  form: AccountabilityForm
+): any[] => {
+  return (form.assets || []).filter(
+    (asset: any) => String(asset.category ?? '').toLowerCase() === 'intangible'
+  );
+};
+
+const getIntangibleAssetDescription = (asset: any): string =>
+  String(asset?.description ?? '').trim();
+
+const enrichIntangibleAssetsWithDescriptions = async (
+  assets: any[],
   form: AccountabilityForm
 ): Promise<any[]> => {
-  const assignmentIds = new Set(getAccountabilityFormAssignmentIds(form));
-  if (assignmentIds.size === 0) {
-    return [];
+  if (assets.length === 0) return assets;
+  if (assets.every(asset => getIntangibleAssetDescription(asset))) {
+    return assets;
   }
 
-  const response = await api.get('/intangible-assets');
-  return (response || []).filter((asset: any) =>
-    assignmentIds.has(
-      String(asset.assignment_id ?? asset.assignmentId ?? '').trim()
-    )
-  );
+  const assignmentIds = new Set(getAccountabilityFormAssignmentIds(form));
+  if (assignmentIds.size === 0) return assets;
+
+  try {
+    const response = await api.get<any[]>('/intangible-assets');
+    const apiById = new Map(
+      (response ?? []).map(asset => [String(asset.id), asset])
+    );
+    return assets.map(asset => {
+      const fromApi = apiById.get(String(asset.id));
+      if (!fromApi) return asset;
+      return {
+        ...asset,
+        description: fromApi.description ?? asset.description ?? '',
+        name: asset.name || fromApi.name,
+        type: asset.type || fromApi.type,
+      };
+    });
+  } catch {
+    return assets;
+  }
 };
 
 // Reusable PDF generation function (exported for issuer decline notification dialog)
@@ -348,8 +376,12 @@ export const generateAccountabilityFormPDF = async (
   currentUser?: any,
   intangibleAssets?: any[]
 ): Promise<Blob> => {
-  const assignedIntangibleAssets =
-    intangibleAssets ?? (await fetchAssignedIntangibleAssetsForForm(form));
+  const assignedIntangibleAssets = await enrichIntangibleAssetsWithDescriptions(
+    intangibleAssets && intangibleAssets.length > 0
+      ? intangibleAssets
+      : fetchAssignedIntangibleAssetsForForm(form),
+    form
+  );
 
   const [{ jsPDF: JsPDFConstructor }, autoTableModule] = await Promise.all([
     import('jspdf'),
@@ -408,7 +440,8 @@ export const generateAccountabilityFormPDF = async (
   doc.setFontSize(14);
   doc.setFont('helvetica', 'bold');
   doc.setTextColor(0, 0, 0);
-  doc.text('Asset Accountability Form', 105, 40, { align: 'center' });
+  const title = form.formOrigin === 'processor_return' ? 'Asset Accountability Form (TEMPORARY)' : 'Asset Accountability Form';
+  doc.text(title, 105, 40, { align: 'center' });
 
   // Department - font size 12
   doc.setFontSize(12);
@@ -463,20 +496,32 @@ export const generateAccountabilityFormPDF = async (
 
   // Categorize assets based on IT/Admin scope classification
   const sortedAssets = sortAssetsByLast5Digits(form.assets);
-  const itAssets = sortedAssets.filter(
+  const tangibleAssets = sortedAssets.filter(
+    asset => String(asset.category ?? '').toLowerCase() !== 'intangible'
+  );
+  const itAssets = tangibleAssets.filter(
     asset => getAssetScopeType(asset, form) === 'IT'
   );
-  const adminAssets = sortedAssets.filter(
+  const adminAssets = tangibleAssets.filter(
     asset => getAssetScopeType(asset, form) === 'Admin'
   );
 
+  const itIntangibleAssets = assignedIntangibleAssets.filter(
+    (asset: any) => asset.type === 'IT scope' || asset.type === 'HR scope'
+  );
+  const adminIntangibleAssets = assignedIntangibleAssets.filter(
+    (asset: any) => asset.type === 'Admin scope'
+  );
+
   // Determine which department to show in the acknowledgment text
+  const hasIT = itAssets.length > 0 || itIntangibleAssets.length > 0;
+  const hasAdmin = adminAssets.length > 0 || adminIntangibleAssets.length > 0;
   let issuingDepartment = '_______________________________';
-  if (itAssets.length > 0 && adminAssets.length > 0) {
+  if (hasIT && hasAdmin) {
     issuingDepartment = 'IT Department and Admin Department';
-  } else if (itAssets.length > 0) {
+  } else if (hasIT) {
     issuingDepartment = 'IT Department';
-  } else if (adminAssets.length > 0) {
+  } else if (hasAdmin) {
     issuingDepartment = 'Admin Department';
   }
 
@@ -604,13 +649,6 @@ I agree that if any of the items are damaged or lost due to my negligence, I sha
     5: { cellWidth: 27.9 }, // Condition
   };
 
-  const itIntangibleAssets = assignedIntangibleAssets.filter(
-    (asset: any) => asset.type === 'IT scope'
-  );
-  const adminIntangibleAssets = assignedIntangibleAssets.filter(
-    (asset: any) => asset.type === 'Admin scope'
-  );
-
   // IT Asset Details - font size 12 bold
   if (itAssets.length > 0) {
     doc.setFontSize(12);
@@ -689,27 +727,25 @@ I agree that if any of the items are damaged or lost due to my negligence, I sha
     y = currentY;
   }
 
-  // IT Intangible Assets - font size 12 bold
+  // Intangible Assets - font size 12 bold
   if (itIntangibleAssets.length > 0) {
-    y += 10; // Add spacing before IT Intangible Assets title
+    y += 10; // Add spacing before Intangible Assets title
     doc.setFontSize(12);
     doc.setFont('helvetica', 'bold');
-    doc.text('IT Intangible Assets', 20, y);
+    doc.text('Intangible Assets', 20, y);
 
     // Intangible asset table columns
-    const intangibleTableHead = ['Asset Name', 'Description', 'Type', 'Status'];
+    const intangibleTableHead = ['Asset Name', 'Description', 'Type'];
     const intangibleTableColumnStyles = {
       0: { cellWidth: 80 },
-      1: { cellWidth: 60 },
+      1: { cellWidth: 85.9 },
       2: { cellWidth: 30 },
-      3: { cellWidth: 25.9 },
     };
 
     const intangibleRows = itIntangibleAssets.map((asset: any) => [
       asset.name,
-      asset.description || '',
+      getIntangibleAssetDescription(asset),
       asset.type,
-      asset.status,
     ]);
 
     autoTable(doc, {
@@ -820,26 +856,24 @@ I agree that if any of the items are damaged or lost due to my negligence, I sha
     y = currentY;
   }
 
-  // Admin Intangible Assets - font size 12 bold
+  // Intangible Assets - font size 12 bold
   if (adminIntangibleAssets.length > 0) {
-    y += 10; // Add spacing before Admin Intangible Assets title
+    y += 10; // Add spacing before Intangible Assets title
     doc.setFontSize(12);
     doc.setFont('helvetica', 'bold');
-    doc.text('Admin Intangible Assets', 20, y);
+    doc.text('Intangible Assets', 20, y);
 
-    const intangibleTableHead = ['Asset Name', 'Description', 'Type', 'Status'];
+    const intangibleTableHead = ['Asset Name', 'Description', 'Type'];
     const intangibleTableColumnStyles = {
       0: { cellWidth: 80 },
-      1: { cellWidth: 60 },
+      1: { cellWidth: 85.9 },
       2: { cellWidth: 30 },
-      3: { cellWidth: 25.9 },
     };
 
     const intangibleRows = adminIntangibleAssets.map((asset: any) => [
       asset.name,
-      asset.description || '',
+      getIntangibleAssetDescription(asset),
       asset.type,
-      asset.status,
     ]);
 
     autoTable(doc, {
@@ -1209,7 +1243,7 @@ function getChecklistAssetLabel(
 
 function ChecklistSummaryCard({ checklist }: { checklist: FormChecklistEntry }) {
   return (
-    <div className="space-y-3 rounded-xl border border-red-100 bg-gradient-to-br from-red-50/80 via-white to-slate-50 p-4 shadow-sm">
+    <div className="space-y-3 rounded-xl border border-red-200 bg-gradient-to-br from-red-50/80 via-white to-slate-50 p-4 shadow-md">
       <div className="flex items-start justify-between gap-3 border-b border-red-100 pb-3">
         <div>
           <p className="text-xs font-medium uppercase tracking-wide text-red-600">
@@ -1380,9 +1414,6 @@ export function AccountabilityFormCard({
 
   // Fetch all checklists linked to this accountability form
   useEffect(() => {
-    if (lazyLoadDetails) {
-      return;
-    }
     const fetchChecklists = async () => {
       try {
         setChecklistLoading(true);
@@ -1424,7 +1455,7 @@ export function AccountabilityFormCard({
       }
     };
     fetchChecklists();
-  }, [form.id, form.assignment?.id, lazyLoadDetails]);
+  }, [form.id, form.assignment?.id]);
 
   // Fetch intangible assets for the assignment
   useEffect(() => {
@@ -1718,13 +1749,13 @@ export function AccountabilityFormCard({
 
   return (
     <Card
-      className={`hover:shadow-md transition-shadow flex flex-col ${isDeclined ? 'opacity-75' : ''}`}
+      className={`shadow-md hover:shadow-xl transition-all duration-200 border-slate-200 bg-white flex flex-col overflow-hidden ${isDeclined ? 'opacity-75' : ''}`}
     >
       <CardHeader className="pb-3">
         <div className="flex items-start justify-between">
           <div className="flex items-center gap-3">
-            <div className="p-2 bg-blue-100 rounded-lg">
-              <FileText className="h-5 w-5 text-blue-600" />
+            <div className="p-2.5 bg-gradient-to-br from-red-500 to-red-600 shadow-sm rounded-xl">
+              <FileText className="h-5 w-5 text-white" />
             </div>
             <div>
               <CardTitle className="text-lg">{form.formNumber}</CardTitle>
@@ -1793,7 +1824,7 @@ export function AccountabilityFormCard({
         </div>
       </CardHeader>
 
-      <CardContent className="space-y-4 flex-1">
+      <CardContent className="space-y-3 flex-1">
         {hasChecklist ? (
           <Tabs value={activeCardTab} onValueChange={(v) => setActiveCardTab(v as 'accountability' | 'checklist')} className="w-full">
             <TabsList className={segmentTabsListClassName + ' grid grid-cols-2 mb-4'}>
@@ -1811,7 +1842,7 @@ export function AccountabilityFormCard({
               </TabsTrigger>
             </TabsList>
             
-            <TabsContent value="accountability" className="space-y-4">
+            <TabsContent value="accountability" className="space-y-3">
               {(isDeclined || isDisabledWithDeclineReason) && (
                 <div
                   className="rounded-md border border-slate-200 bg-slate-50 px-3 py-2 text-sm text-slate-800"
@@ -1839,20 +1870,14 @@ export function AccountabilityFormCard({
                     : `${form.assets.length} Assets`}
                 </p>
                 {form.assets.length > 0 && (
-                  <div className="text-xs text-gray-500 mt-1">
+                  <div className="max-h-[120px] overflow-y-auto scrollbar-hide text-xs text-gray-500 mt-1">
                     <div className="space-y-0.5">
-                      {form.assets.slice(0, 5).map(asset => (
+                      {form.assets.map(asset => (
                         <div key={asset.id} className="flex items-center">
                           <span className="w-1 h-1 bg-gray-400 rounded-full mr-2 flex-shrink-0"></span>
-                          <span>{asset.code}</span>
+                          <span>{asset.name || asset.code}</span>
                         </div>
                       ))}
-                      {form.assets.length > 5 && (
-                        <div className="flex items-center">
-                          <span className="w-1 h-1 bg-gray-400 rounded-full mr-2 flex-shrink-0"></span>
-                          <span className="text-gray-400">...</span>
-                        </div>
-                      )}
                     </div>
                   </div>
                 )}
@@ -1929,8 +1954,23 @@ export function AccountabilityFormCard({
           
           <TabsContent value="checklist" className="space-y-4">
             {checklistLoading ? (
-              <div className="rounded-xl border border-slate-200 bg-slate-50 px-4 py-8 text-center text-sm text-slate-500">
-                Loading checklist...
+              <div className="space-y-4">
+                <div className="flex gap-2">
+                  {[1, 2, 3].map(i => (
+                    <Shimmer key={i} className="h-8 w-28 rounded-lg" />
+                  ))}
+                </div>
+                <div className="rounded-xl border p-4 space-y-3">
+                  <Shimmer className="h-5 w-48 rounded" />
+                  <div className="space-y-2">
+                    {[1, 2, 3, 4].map(j => (
+                      <div key={j} className="flex items-center gap-3">
+                        <Shimmer className="h-4 w-4 rounded" />
+                        <Shimmer className="h-4 flex-1 rounded" />
+                      </div>
+                    ))}
+                  </div>
+                </div>
               </div>
             ) : activeChecklist ? (
               <div className="space-y-3">
@@ -1968,7 +2008,7 @@ export function AccountabilityFormCard({
           </TabsContent>
         </Tabs>
         ) : (
-          <div className="space-y-4">
+          <div className="space-y-3">
             {(isDeclined || isDisabledWithDeclineReason) && (
               <div
                 className="rounded-md border border-slate-200 bg-slate-50 px-3 py-2 text-sm text-slate-800"
@@ -1995,21 +2035,15 @@ export function AccountabilityFormCard({
                     ? 'No Assets'
                     : `${form.assets.length} Assets`}
                 </p>
-                {form.assets.length > 0 && (
-                  <div className="text-xs text-gray-500 mt-1">
+                  {form.assets.length > 0 && (
+                  <div className="max-h-[120px] overflow-y-auto scrollbar-hide text-xs text-gray-500 mt-1">
                     <div className="space-y-0.5">
-                      {form.assets.slice(0, 5).map(asset => (
+                      {form.assets.map(asset => (
                         <div key={asset.id} className="flex items-center">
                           <span className="w-1 h-1 bg-gray-400 rounded-full mr-2 flex-shrink-0"></span>
-                          <span>{asset.code}</span>
+                          <span>{asset.name || asset.code}</span>
                         </div>
                       ))}
-                      {form.assets.length > 5 && (
-                        <div className="flex items-center">
-                          <span className="w-1 h-1 bg-gray-400 rounded-full mr-2 flex-shrink-0"></span>
-                          <span className="text-gray-400">...</span>
-                        </div>
-                      )}
                     </div>
                   </div>
                 )}
@@ -2087,7 +2121,7 @@ export function AccountabilityFormCard({
       </CardContent>
 
       {/* Footer with Actions */}
-      <div className="flex gap-2 p-4 mt-auto">
+      <div className="flex gap-2 p-4 mt-auto border-t border-slate-100">
         <Button
           variant="outline"
           size="sm"
@@ -2100,7 +2134,7 @@ export function AccountabilityFormCard({
               setShowPreviewModal(true);
             }
           }}
-          className="flex-1 hover:bg-red-600 hover:text-white"
+          className="flex-1 bg-red-600 text-white border-red-600 hover:bg-white hover:text-red-600 hover:border-red-600 shadow-sm"
         >
           <Eye className="h-4 w-4 mr-2" />
           View
@@ -2111,7 +2145,7 @@ export function AccountabilityFormCard({
             variant="outline"
             size="sm"
             onClick={handleDownload}
-            className="flex-1 hover:bg-blue-600 hover:text-white"
+            className="flex-1 bg-white text-red-600 border-red-600 hover:bg-red-600 hover:text-white shadow-sm"
           >
             <Download className="h-4 w-4 mr-2" />
             Download
@@ -2120,9 +2154,10 @@ export function AccountabilityFormCard({
 
         {showReceiveButton && onReceive && (
           <Button
+            variant="outline"
             size="sm"
             onClick={() => onReceive(form)}
-            className="flex-1 bg-amber-600 hover:bg-amber-700 text-white"
+            className="flex-1 bg-red-600 text-white border-red-600 hover:bg-white hover:text-red-600 hover:border-red-600 shadow-sm"
           >
             Receive
           </Button>
@@ -2131,6 +2166,7 @@ export function AccountabilityFormCard({
         {showCardSignButton && (
           <>
             <Button
+              variant="outline"
               size="sm"
               onClick={() => {
                 if (activeCardTab === 'checklist' && hasChecklist) {
@@ -2139,7 +2175,7 @@ export function AccountabilityFormCard({
                   setShowConfirmDialog(true);
                 }
               }}
-              className="flex-1 bg-green-600 hover:bg-green-700 text-white"
+              className="flex-1 bg-red-600 text-white border-red-600 hover:bg-white hover:text-red-600 hover:border-red-600 shadow-sm"
             >
               <CheckCircle2 className="h-4 w-4 mr-2" />
               Sign Form
@@ -2309,7 +2345,7 @@ export function AccountabilityFormCard({
             variant="outline"
             size="sm"
             onClick={openDeclineDialog}
-            className="flex-1 border-red-300 text-red-700 hover:bg-red-50"
+            className="flex-1 border-red-300 text-red-700 hover:bg-red-50 shadow-sm"
           >
             Decline
           </Button>

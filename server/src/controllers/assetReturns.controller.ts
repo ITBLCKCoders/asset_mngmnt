@@ -19,6 +19,7 @@ import {
 } from '../utils/approverNotifications.js';
 import { createNotificationForApi } from '../utils/notificationsApi.js';
 import { createErrorResponse } from '../utils/responseWrapper.js';
+import * as intangibleAssetsService from '../services/intangibleAssets.service.js';
 import {
   AssetReturnModel,
   type AssetReturn,
@@ -42,6 +43,7 @@ import {
   isMysqlUnknownColumnError,
   fetchAssetReturnFormsRowsForUserList,
   fetchPendingDeptHeadApprovalFormRows,
+  fetchPendingDeptHeadApprovalFormRowsByCompany,
   fetchUserPosition,
   fetchUserDigitalSignature,
   resolveProcessorReturnTarget,
@@ -66,6 +68,9 @@ import {
   getAssetCodeByAssetId,
   executeRawWrite,
 } from '../repositories/assetTransferForm.repository.js';
+import * as checklistRepo from '../repositories/assetChecklist.repository.js';
+import { generateChecklistFormNumber, generateChecklistFormNumberFallback } from '../utils/checklistFormNumber.js';
+import { getCategoryDepartmentForAssetIds, getCompanyIdByDepartment } from '../repositories/assetReturn.repository.js';
 
 /** Format process_signed_at for API: we store server local time in DB; return ISO UTC so client shows correct local time. */
 function formatProcessSignedAtForApi(
@@ -285,8 +290,9 @@ export async function submitAssetReturnRequestHandler(
       returnType?: string;
       return_type?: string;
       digitalSignature?: string;
+      intangibleAssetIds?: string[];
     };
-    const { assignmentIds, returnConditions, returnNotes } = body;
+    const { assignmentIds, returnConditions, returnNotes, intangibleAssetIds } = body;
     const returnTypeRaw = body.returnType ?? body.return_type;
 
     const normalizedReturnType = normalizeReturnTypeString(returnTypeRaw);
@@ -340,8 +346,13 @@ export async function submitAssetReturnRequestHandler(
     const categoryDeptRows = await getCategoryDepartmentsByAssetIds(assetIdsForCategoryDept);
     const categoryDeptId = (categoryDeptRows[0] as any)?.departmentID ?? null;
 
+    const returnerUserDeptId = firstAssignment.user_id
+      ? await getUserDepartmentId(firstAssignment.user_id)
+      : null;
+    const effectiveDepartmentId = returnerUserDeptId ?? categoryDeptId ?? firstAssignment.department_id;
+
     let companyId: string | null = null;
-    const deptIdForCompany = categoryDeptId || firstAssignment.department_id;
+    const deptIdForCompany = effectiveDepartmentId;
     if (deptIdForCompany) {
       const dept = await getDepartmentById(deptIdForCompany);
       companyId = dept?.company_id ?? null;
@@ -392,7 +403,7 @@ export async function submitAssetReturnRequestHandler(
     const returnForm = await AssetReturnFormModel.createWithReturnerSignature({
       form_number,
       user_id: firstAssignment.user_id,
-      department_id: categoryDeptId ?? firstAssignment.department_id ?? null,
+      department_id: effectiveDepartmentId,
       location_id: firstAssignment.location_id ?? null,
       location_room_id: firstAssignment.location_room_id ?? null,
       created_by: currentUserId,
@@ -416,9 +427,31 @@ export async function submitAssetReturnRequestHandler(
       });
     }
 
+    // Process intangible asset returns (unassign from user)
+    if (intangibleAssetIds && intangibleAssetIds.length > 0 && companyId) {
+      for (const assetId of intangibleAssetIds) {
+        try {
+          await intangibleAssetsService.unassignIntangibleAsset(assetId, companyId);
+          await createAuditLog({
+            userId: currentUserId,
+            action: 'Requested Return of Intangible Asset',
+            resourceType: 'intangible_asset',
+            resourceId: assetId,
+            resourceName: assetId,
+            details: `Intangible asset return requested as part of return form ${returnForm!.form_number}`,
+            ipAddress: req.ip,
+            userAgent: req.get('User-Agent'),
+            companyId,
+          });
+        } catch (err) {
+          logger.error('Failed to unassign intangible asset on return request', { id: assetId, err });
+        }
+      }
+    }
+
     // Send notification to department heads (Manager Approver 1) in the same department
-    const departmentId = categoryDeptId ?? firstAssignment.department_id;
-    logger.info(`Notification debug - categoryDeptId: ${categoryDeptId}, firstAssignment.department_id: ${firstAssignment.department_id}, final departmentId: ${departmentId}`);
+    const departmentId = effectiveDepartmentId;
+    logger.info(`Notification debug - returnerUserDeptId: ${returnerUserDeptId}, categoryDeptId: ${categoryDeptId}, firstAssignment.department_id: ${firstAssignment.department_id}, final departmentId: ${departmentId}`);
     if (departmentId) {
       try {
         const managerApprover1UserIds = await getManagerApprover1UserIdsInDepartment(departmentId);
@@ -459,6 +492,18 @@ export async function submitAssetReturnRequestHandler(
       logger.warn('No departmentId found, skipping notification');
     }
 
+    createAuditLog({
+      userId: currentUserId,
+      action: 'Submitted Return Request',
+      resourceType: 'asset_return_form',
+      resourceId: form_id,
+      resourceName: returnForm!.form_number,
+      details: `Return request submitted for ${assignmentIds.length} asset(s) with type: ${normalizedReturnType}`,
+      ipAddress: req.ip,
+      userAgent: req.get('User-Agent'),
+      companyId: companyId || undefined,
+    }).catch((err) => logger.warn('Failed to create return request audit log:', err));
+
     return res.status(201).json({
       message: 'Return request submitted successfully',
       formID: form_id,
@@ -483,6 +528,7 @@ export async function createAssetReturnHandler(
       returnType,
       assignToProcessor = false,
       ownerAbsent: ownerAbsentRaw,
+      intangibleAssetReturnItems,
     } = req.body;
     const ownerAbsent =
       ownerAbsentRaw === true ||
@@ -496,18 +542,21 @@ export async function createAssetReturnHandler(
       });
     }
 
+    const hasIntangibleItems = intangibleAssetReturnItems && Array.isArray(intangibleAssetReturnItems) && intangibleAssetReturnItems.length > 0;
     if (
       !assetReturns ||
       !Array.isArray(assetReturns) ||
-      assetReturns.length === 0
+      (assetReturns.length === 0 && !hasIntangibleItems)
     ) {
-      return res.status(400).json({
-        error: 'Asset returns array is required',
-      });
+      if (!hasIntangibleItems) {
+        return res.status(400).json({
+          error: 'Asset returns array is required',
+        });
+      }
     }
 
     // Validate all assignments exist and are active
-    const assignmentIds = assetReturns.map(item => item.assignmentId);
+    const assignmentIds = assetReturns.map((item: any) => item.assignmentId);
 
     const assignmentRows = await getActiveAssignmentsByIds(assignmentIds);
 
@@ -661,6 +710,28 @@ export async function createAssetReturnHandler(
           });
         }
       }
+      // Process intangible asset return items (unassign from user)
+      if (hasIntangibleItems && companyId) {
+        for (const item of intangibleAssetReturnItems) {
+          try {
+            await intangibleAssetsService.unassignIntangibleAsset(item.id, companyId);
+            await createAuditLog({
+              userId: req.user!.userID,
+              action: 'Returned Intangible Asset',
+              resourceType: 'intangible_asset',
+              resourceId: item.id,
+              resourceName: item.id,
+              details: `Intangible asset returned via Asset Return page`,
+              ipAddress: req.ip,
+              userAgent: req.get ? req.get('User-Agent') : 'Unknown',
+              companyId,
+            });
+          } catch (err) {
+            logger.error('Failed to unassign intangible asset on return', { id: item.id, err });
+          }
+        }
+      }
+
       return res.status(201).json({
         message: ownerAbsent
           ? 'Return request created. The asset owner was marked absent—download the return form, obtain the asset owner’s department head signature for processing, then the department head can approve in Approvals. Assets will be assigned to you after approval.'
@@ -674,7 +745,7 @@ export async function createAssetReturnHandler(
     }
 
     // Create asset return records (with form_id) and update assignments (full execute path when not assignToProcessor)
-    const returnPromises = assetReturns.map(async returnData => {
+    const returnPromises = assetReturns.map(async (returnData: any) => {
       let processorAssignAuditData: {
         processorId: string;
         newAssignmentId: string;
@@ -1076,8 +1147,30 @@ export async function createAssetReturnHandler(
       }
     }
 
+    // Process intangible asset return items (unassign from user)
+    if (hasIntangibleItems && companyId) {
+      for (const item of intangibleAssetReturnItems) {
+        try {
+          await intangibleAssetsService.unassignIntangibleAsset(item.id, companyId);
+          await createAuditLog({
+            userId: req.user!.userID,
+            action: 'Returned Intangible Asset',
+            resourceType: 'intangible_asset',
+            resourceId: item.id,
+            resourceName: item.id,
+            details: `Intangible asset returned via Asset Return page`,
+            ipAddress: req.ip,
+            userAgent: req.get ? req.get('User-Agent') : 'Unknown',
+            companyId,
+          });
+        } catch (err) {
+          logger.error('Failed to unassign intangible asset on return', { id: item.id, err });
+        }
+      }
+    }
+
     return res.status(201).json({
-      message: `Successfully returned ${assetReturns.length} asset(s)`,
+      message: `Successfully returned ${assetReturns.length} asset(s)${hasIntangibleItems ? ` and ${intangibleAssetReturnItems.length} intangible asset(s)` : ''}`,
       assetReturns: createdReturns,
       returnForm: returnForm
         ? { formID: returnForm.formID, form_number: returnForm.form_number }
@@ -1316,13 +1409,17 @@ async function runAfterReturnAccountabilityAndProcessorAssign(
         [processorId, ...departmentAssets.map((a: { id: string }) => a.id)]
       )) as any[];
       const loc = firstAssignment?.[0];
+
+      // Use the asset category's department (IT/Admin scope) — same source used by regular accountability forms
+      const originalDeptId = expandedList[0]?.department_id || null;
+
       const accountabilityFormReq = {
         ...req,
         user: { userID: processorId },
         body: {
           assets: departmentAssets,
           userId: processorId,
-          departmentId: deptKey !== 'other' ? deptKey : null,
+          departmentId: originalDeptId,
           locationId: loc?.location_id || null,
           formOrigin: 'processor_return',
           issuerSignature: processorDigitalSignature,
@@ -2525,6 +2622,31 @@ export async function signAssetReturnFormHandler(
       newValues: { signed_at: new Date().toISOString(), signed_by: userId },
     });
 
+    // Auto-sign linked offboarding checklists as employee
+    try {
+      const assignmentIds = await getAssignmentIdsByReturnFormId(formId);
+      if (assignmentIds.length > 0) {
+        const checklists = await checklistRepo.getChecklistsByAssignmentIds(assignmentIds);
+        const unsignedChecklists = checklists.filter(
+          (c: any) => !c.employee_signed_at
+        );
+        if (unsignedChecklists.length > 0) {
+          await checklistRepo.signChecklistsAsEmployee({
+            checklistIds: unsignedChecklists.map((c: any) => c.id),
+            employeeId: userId,
+            digitalSignature: returnerDigitalSignature,
+          });
+          await checklistRepo.backfillEmployeeChecklistSignatures({
+            checklistIds: unsignedChecklists.map((c: any) => c.id),
+            employeeId: userId,
+            digitalSignature: returnerDigitalSignature ?? '',
+          });
+        }
+      }
+    } catch (checklistErr) {
+      logger.error('Failed to auto-sign offboarding checklists:', checklistErr);
+    }
+
     return res.json({
       message: 'Return form signed successfully',
       formID: formId,
@@ -2549,7 +2671,7 @@ export async function signAssetReturnFormHandler(
   }
 }
 
-/** GET pending approvals: return forms with Returner signed but no Dept Head signature. Only Manager Approver 1 users; only forms where returner's user department = approver's department; filtered by company. */
+/** GET pending approvals: return forms with Returner signed but no Dept Head signature. Only Manager Approver 1 users; filtered by company. */
 export async function getPendingApprovalsHandler(
   req: AuthRequest,
   res: Response
@@ -2557,7 +2679,7 @@ export async function getPendingApprovalsHandler(
   try {
     const userId = req.user!.userID;
 
-    const { companyId } = await getAssetScope(pool, userId);
+    const { companyId, departmentIds, isSuperAdmin } = await getAssetScope(pool, userId);
     if (!companyId) {
       return res.json({ assetReturnForms: [] });
     }
@@ -2567,15 +2689,20 @@ export async function getPendingApprovalsHandler(
       return res.json({ assetReturnForms: [] });
     }
 
-    const approverDepartmentId = await getUserDepartmentId(userId);
-    if (approverDepartmentId == null) {
-      return res.json({ assetReturnForms: [] });
+    let pendingForms: any[];
+    if (isSuperAdmin || departmentIds === null) {
+      // Super Admin / full-scope: show all forms in the company (no department filter)
+      pendingForms = await fetchPendingDeptHeadApprovalFormRowsByCompany(companyId);
+    } else {
+      const approverDepartmentId = await getUserDepartmentId(userId);
+      if (approverDepartmentId == null) {
+        return res.json({ assetReturnForms: [] });
+      }
+      pendingForms = await fetchPendingDeptHeadApprovalFormRows(
+        approverDepartmentId,
+        companyId
+      );
     }
-
-    const pendingForms = await fetchPendingDeptHeadApprovalFormRows(
-      approverDepartmentId,
-      companyId
-    );
     const formIds = pendingForms.map((r: any) => r.formID);
 
     if (formIds.length === 0) {
@@ -3387,6 +3514,30 @@ export async function receiveReturnFormHandler(
       },
     });
 
+    // Auto-receive linked offboarding checklists as IT Manager
+    try {
+      const assignmentIds = await getAssignmentIdsByReturnFormId(formId);
+      if (assignmentIds.length > 0) {
+        const checklists = await checklistRepo.getChecklistsByAssignmentIds(assignmentIds);
+        const unreceivedChecklists = checklists.filter(
+          (c: any) => c.dept_head_signed_at && !c.it_manager_signed_at
+        );
+        if (unreceivedChecklists.length > 0) {
+          const formCompanyId = (form as any).form_company_id || (form as any).company_id || null;
+          if (formCompanyId) {
+            await checklistRepo.receiveChecklistsAsItManager({
+              checklistIds: unreceivedChecklists.map((c: any) => c.id),
+              approverUserId: userId,
+              companyId: formCompanyId,
+              digitalSignature: itManagerDigitalSignature,
+            });
+          }
+        }
+      }
+    } catch (checklistErr) {
+      logger.error('Failed to auto-receive offboarding checklists:', checklistErr);
+    }
+
     const rawSignedAt = new Date().toISOString();
     return res.json({
       message: 'Return form received successfully',
@@ -3422,6 +3573,7 @@ export async function processReturnFormHandler(
       returnType,
       assignToProcessor = false,
       receivedBy,
+      intangibleAssetReturnItems,
     } = req.body as {
       processSignature?: { signed_at?: string; digital_signature?: string };
       assetReturns?: {
@@ -3436,6 +3588,7 @@ export async function processReturnFormHandler(
       returnType?: string;
       assignToProcessor?: boolean;
       receivedBy?: string | null;
+      intangibleAssetReturnItems?: { id: string; notes?: string }[];
     };
     const userId = req.user!.userID;
 
@@ -4081,6 +4234,30 @@ export async function processReturnFormHandler(
       },
     });
 
+    // Process intangible asset returns (unassign from user)
+    if (intangibleAssetReturnItems && intangibleAssetReturnItems.length > 0) {
+      const companyId = form.form_company_id;
+      for (const item of intangibleAssetReturnItems) {
+        try {
+          await intangibleAssetsService.unassignIntangibleAsset(item.id, companyId);
+          await createAuditLog({
+            userId: req.user!.userID,
+            action: 'Returned Intangible Asset',
+            resourceType: 'intangible_asset',
+            resourceId: item.id,
+            resourceName: item.id,
+            details: `Intangible asset returned via return form ${form.form_number || formId}`,
+            newValues: { notes: item.notes || null },
+            ipAddress: req.ip || 'unknown',
+            userAgent: req.get('User-Agent') || 'unknown',
+            companyId,
+          });
+        } catch (err) {
+          logger.error('Failed to unassign intangible asset on return', { id: item.id, err });
+        }
+      }
+    }
+
     return res.json({
       message: 'Return form processed successfully',
       formID: formId,
@@ -4378,6 +4555,32 @@ export async function approveReturnFormHandler(
       logger.error('Failed to send notification to asset role users:', notifError);
     }
 
+    // Auto-approve linked offboarding checklists as dept head
+    try {
+      const assignmentIds = await getAssignmentIdsByReturnFormId(formId);
+      if (assignmentIds.length > 0) {
+        const checklists = await checklistRepo.getChecklistsByAssignmentIds(assignmentIds);
+        const unapprovedChecklists = checklists.filter(
+          (c: any) => c.employee_signed_at && !c.dept_head_signed_at
+        );
+        if (unapprovedChecklists.length > 0) {
+          const dHeadDeptId = await getUserDepartmentId(userId);
+          const effectiveCompanyId = companyId || form.company_id || null;
+          if (dHeadDeptId && effectiveCompanyId) {
+            await checklistRepo.approveChecklistsAsDeptHead({
+              checklistIds: unapprovedChecklists.map((c: any) => c.id),
+              approverUserId: userId,
+              approverDepartmentId: dHeadDeptId,
+              companyId: effectiveCompanyId,
+              digitalSignature: deptHeadDigitalSignature,
+            });
+          }
+        }
+      }
+    } catch (checklistErr) {
+      logger.error('Failed to auto-approve offboarding checklists:', checklistErr);
+    }
+
     const rawSignedAt = new Date().toISOString();
     return res.json({
       message: 'Return form approved successfully',
@@ -4622,5 +4825,169 @@ export async function uploadConditionPhotoHandler(
     return res
       .status(500)
       .json({ error: 'Upload failed', details: err.message });
+  }
+}
+
+async function getAssignmentIdsByReturnFormId(formId: string): Promise<string[]> {
+  try {
+    const [rows] = (await pool.execute(
+      'SELECT assignment_id FROM asset_returns WHERE form_id = ?',
+      [formId]
+    )) as any[];
+    return (rows || []).map((r: any) => r.assignment_id).filter(Boolean);
+  } catch {
+    return [];
+  }
+}
+
+export async function createReturnChecklistHandler(
+  req: AuthRequest,
+  res: Response
+) {
+  try {
+    const {
+      assignmentId,
+      employeeId,
+      employeeName,
+      employeeDesignation,
+      employeeDepartment,
+      employeeCompany,
+      typeOnboarding,
+      typeOffboarding,
+      receivedBy,
+      checklistData,
+      remarks,
+      digitalSignature,
+    } = req.body;
+    const createdBy = req.user!.userID;
+
+    if (!assignmentId || !employeeId || !employeeName || !checklistData) {
+      return res.status(400).json({
+        error: 'assignmentId, employeeId, employeeName, and checklistData are required',
+      });
+    }
+
+    const checklistId = crypto.randomUUID();
+    let formNumber = await generateChecklistFormNumberFallback();
+    try {
+      const [assignmentRows] = (await pool.execute(
+        'SELECT asset_id FROM asset_assignments WHERE assignmentID = ?',
+        [assignmentId]
+      )) as any[];
+      const assetId = assignmentRows[0]?.asset_id;
+      if (assetId) {
+        const deptId = await getCategoryDepartmentForAssetIds([assetId]);
+        if (deptId) {
+          const companyId = await getCompanyIdByDepartment(deptId);
+          if (companyId) {
+            formNumber = await generateChecklistFormNumber(companyId, deptId);
+          }
+        }
+      }
+    } catch (numErr) {
+      logger.warn('Failed to generate proper checklist form number, using fallback:', numErr);
+    }
+
+    await checklistRepo.createAssetChecklist({
+      id: checklistId,
+      formNumber,
+      assignmentId,
+      employeeId,
+      employeeName,
+      employeeDesignation: employeeDesignation || null,
+      employeeDepartment: employeeDepartment || null,
+      employeeCompany: employeeCompany || null,
+      typeOnboarding: typeOnboarding ?? false,
+      typeOffboarding: typeOffboarding ?? false,
+      receivedBy: receivedBy || null,
+      checklistData,
+      remarks: remarks || null,
+      createdBy,
+    });
+
+    await createAuditLog({
+      userId: createdBy,
+      action: 'Created Return Offboarding Checklist',
+      resourceType: 'asset_checklist',
+      resourceId: checklistId,
+      resourceName: `Offboarding checklist for assignment ${assignmentId}`,
+      details: `Return offboarding checklist created for employee ${employeeName}`,
+    });
+
+    // Auto-sign as employee if digital signature provided
+    if (digitalSignature && typeof digitalSignature === 'string' && digitalSignature.trim()) {
+      try {
+        await checklistRepo.signChecklistsAsEmployee({
+          checklistIds: [checklistId],
+          employeeId,
+          digitalSignature: digitalSignature.trim(),
+        });
+        await checklistRepo.backfillEmployeeChecklistSignatures({
+          checklistIds: [checklistId],
+          employeeId,
+          digitalSignature: digitalSignature.trim(),
+        });
+      } catch (signErr) {
+        logger.warn('Failed to auto-sign offboarding checklist:', signErr);
+      }
+    }
+
+    return res.status(201).json({
+      message: 'Return offboarding checklist created successfully',
+      checklistId,
+      formNumber,
+    });
+  } catch (error) {
+    logger.error('Create return offboarding checklist failed:', error);
+    return res.status(500).json({ error: 'Failed to create return offboarding checklist' });
+  }
+}
+
+export async function getReturnChecklistByAssignmentIdHandler(
+  req: AuthRequest,
+  res: Response
+) {
+  try {
+    const { assignmentId } = req.params;
+
+    if (!assignmentId) {
+      return res.status(400).json({ error: 'assignmentId is required' });
+    }
+
+    const checklist = await checklistRepo.getChecklistByAssignmentId(assignmentId);
+
+    if (!checklist) {
+      return res.status(404).json({ error: 'Checklist not found' });
+    }
+
+    return res.status(200).json(checklist);
+  } catch (error) {
+    logger.error('Get return checklist by assignment ID failed:', error);
+    return res.status(500).json({ error: 'Failed to get checklist' });
+  }
+}
+
+export async function getReturnFormChecklistsHandler(
+  req: AuthRequest,
+  res: Response
+) {
+  try {
+    const { formId } = req.params;
+
+    if (!formId) {
+      return res.status(400).json({ error: 'Form ID is required' });
+    }
+
+    const assignmentIds = await getAssignmentIdsByReturnFormId(formId);
+    if (assignmentIds.length === 0) {
+      return res.status(200).json({ checklists: [] });
+    }
+
+    const checklists = await checklistRepo.getChecklistsByAssignmentIds(assignmentIds);
+
+    return res.status(200).json({ checklists });
+  } catch (error) {
+    logger.error('Get return form checklists failed:', error);
+    return res.status(500).json({ error: 'Failed to fetch return form checklists' });
   }
 }

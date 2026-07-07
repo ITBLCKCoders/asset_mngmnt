@@ -37,6 +37,7 @@ jest.mock('../../utils/audit.js', () => ({
   createAuditLog: jest.fn().mockResolvedValue(undefined),
 }));
 jest.mock('../../logger.js', () => ({
+  __esModule: true,
   default: {
     warn: jest.fn(),
     error: jest.fn(),

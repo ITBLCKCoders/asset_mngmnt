@@ -28,6 +28,7 @@ import {
 import SignatureCanvas from 'react-signature-canvas';
 import { User, MapPin, Mail, Phone, Building, Calendar, ShieldCheck } from 'lucide-react';
 import { useCurrentUser } from '@/hooks/useCurrentUser';
+import { proxyCloudinaryUrl } from '@/utils/cloudinaryProxy';
 import { format } from 'date-fns';
 import { api } from '@/lib/api';
 import { useAvatarPreview } from '@/hooks/avatarPreview';
@@ -47,6 +48,7 @@ const BasicInfoTab = forwardRef<BasicInfoTabHandle, BasicInfoTabProps>(
     const { user, loading: userLoading, refetch } = useCurrentUser();
     const [formData, setFormData] = useState<any>({});
     const [isSaving, setIsSaving] = useState(false);
+    const [isTabLoading, setIsTabLoading] = useState(true);
     const [signatureReadyToSave, setSignatureReadyToSave] = useState<string | null>(null);
     const [signatureMarkedDone, setSignatureMarkedDone] = useState(false);
     const [signatureSaved, setSignatureSaved] = useState(false);
@@ -77,6 +79,11 @@ const BasicInfoTab = forwardRef<BasicInfoTabHandle, BasicInfoTabProps>(
     const otpResolveRef = useRef<((success: boolean) => void) | null>(null);
     const otpRejectRef = useRef<((value: boolean) => void) | null>(null);
     const otpInputsRef = useRef<(HTMLInputElement | null)[]>([]);
+
+    useEffect(() => {
+      const timer = setTimeout(() => setIsTabLoading(false), 1400);
+      return () => clearTimeout(timer);
+    }, []);
 
     // OTP timer effects
     useEffect(() => {
@@ -577,7 +584,7 @@ const BasicInfoTab = forwardRef<BasicInfoTabHandle, BasicInfoTabProps>(
     };
 
     const handleSave = async () => {
-      if (isSettingInitials()) {
+      if (isSettingInitials() && initialsChanged()) {
         setConsentChecks({ official: false, binding: false, smsOtp: false, terms: false });
         pendingSaveRef.current = executeSave;
         setShowConsentDialog(true);
@@ -591,7 +598,7 @@ const BasicInfoTab = forwardRef<BasicInfoTabHandle, BasicInfoTabProps>(
 
     useImperativeHandle(ref, () => ({ save: handleSave }));
 
-    if (isLoading || !user) {
+    if (isTabLoading || isLoading || !user) {
       return (
         <Card className="shadow-xl rounded-2xl overflow-hidden border-0">
           <CardHeader className="bg-gradient-to-r from-red-600 to-red-800 p-4 text-white sm:p-6 lg:p-8">
@@ -930,13 +937,13 @@ const BasicInfoTab = forwardRef<BasicInfoTabHandle, BasicInfoTabProps>(
                   </p>
                 </div>
                 <div className="p-6 bg-white flex items-center justify-center min-h-[80px]">
-                  {isImageSignature(user?.digitalSignature) && (
-                    <img
-                      src={user.digitalSignature || undefined}
-                      alt="Digital Initials"
-                      className="max-w-full h-32 object-contain mx-auto"
-                    />
-                  )}
+                      {isImageSignature(user?.digitalSignature) && (
+                        <img
+                          src={proxyCloudinaryUrl(user.digitalSignature)}
+                          alt="Digital Initials"
+                          className="max-w-full h-32 object-contain mx-auto"
+                        />
+                      )}
                 </div>
               </div>
             )}

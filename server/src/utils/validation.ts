@@ -89,37 +89,4 @@ export function validateParams<T>(schema: z.ZodSchema<T>) {
   };
 }
 
-export function createApiResponse<T>(
-  success: boolean,
-  data?: T,
-  message?: string,
-  error?: string,
-  errors?: ValidationError[],
-  meta?: any
-) {
-  const response: any = { success };
 
-  if (data !== undefined) response.data = data;
-  if (message) response.message = message;
-  if (error) response.error = error;
-  if (errors && errors.length > 0) response.errors = errors;
-  if (meta) response.meta = meta;
-
-  return response;
-}
-
-export function createSuccessResponse<T>(
-  data: T,
-  message?: string,
-  meta?: any
-) {
-  return createApiResponse(true, data, message, undefined, undefined, meta);
-}
-
-export function createErrorResponse(
-  error: string,
-  errors?: ValidationError[],
-  meta?: any
-) {
-  return createApiResponse(false, undefined, undefined, error, errors, meta);
-}

@@ -26,15 +26,43 @@ const validateTypeFields = (body: any): TypeFields => {
 // GET all types
 export const getAllTypes = async (req: AuthRequest, res: Response) => {
   try {
-    const activeCompany = await getScopedActiveCompany(pool, req.user?.userID);
-    if (!activeCompany) {
-      return res.status(400).json({ error: 'No active company found' });
+    const queryCompanyId = req.query.company_id as string | undefined;
+
+    if (queryCompanyId) {
+      const [rows] = await pool.query<any[][]>('CALL sp_GetAllTypes(?)', [
+        queryCompanyId,
+      ]);
+      return res.json(rows[0] ?? []);
     }
 
-    const [rows] = await pool.query<any[][]>('CALL sp_GetAllTypes(?)', [
-      activeCompany.id,
-    ]);
-    res.json(rows[0] ?? []);
+    const activeCompany = await getScopedActiveCompany(pool, req.user?.userID);
+    if (activeCompany) {
+      const [rows] = await pool.query<any[][]>('CALL sp_GetAllTypes(?)', [
+        activeCompany.id,
+      ]);
+      return res.json(rows[0] ?? []);
+    }
+
+    const [userRows] = await pool.query<any[][]>(
+      `SELECT r.name as role_name FROM users u
+       LEFT JOIN asset_mngmnt_roles r ON u.role_id = r.roleID AND r.deleted_at IS NULL
+       WHERE u.userID = ? LIMIT 1`,
+      [req.user?.userID]
+    );
+    const roleName = String(userRows[0]?.[0]?.role_name ?? '').trim().toLowerCase();
+    if (roleName === 'super admin' || roleName === 'admin') {
+      const [rows] = await pool.query<any[][]>(
+        `SELECT at.typeID, at.name, at.category_id, at.prefix, at.company_id,
+                at.created_at, at.created_by, at.updated_at, at.updated_by,
+                at.deleted_at, at.deleted_by
+         FROM asset_types at
+         WHERE at.deleted_at IS NULL
+         ORDER BY at.created_at DESC`
+      );
+      return res.json(rows[0] ?? []);
+    }
+
+    return res.status(400).json({ error: 'No active company found' });
   } catch (err) {
     logger.error('Get all types error', { err });
     res.status(500).json({ error: 'Failed to fetch types' });
@@ -46,6 +74,44 @@ export const createType = async (req: AuthRequest, res: Response) => {
   const userId = req.user!.userID;
 
   try {
+    const rawName = (req.body.name || '').toString().trim();
+    const isUnknown = ['unknown', 'unkown'].includes(rawName.toLowerCase());
+
+    // Handle global "Unknown" type -- one per company, no category_id
+    if (isUnknown) {
+      const activeCompany = await getScopedActiveCompany(pool, req.user?.userID);
+      if (!activeCompany) {
+        return res.status(400).json({ error: 'No active company found' });
+      }
+
+      const [existing] = await pool.query<any[][]>(
+        `SELECT typeID FROM asset_types WHERE LOWER(name) IN ('unknown','unkown') AND company_id = ? AND deleted_at IS NULL LIMIT 1`,
+        [activeCompany.id]
+      );
+      if ((existing[0] as any[]).length > 0) {
+        return res.status(409).json({ error: 'Unknown type already exists for this company' });
+      }
+
+      const params = ['Unknown', null, '', activeCompany.id, userId];
+      await pool.query(
+        `CALL sp_CreateType(${params.map(() => '?').join(', ')})`,
+        params
+      );
+
+      await createAuditLog({
+        userId,
+        action: 'Created Type',
+        resourceType: 'type',
+        resourceName: 'Unknown',
+        details: 'Created global Unknown type',
+        ipAddress: req.ip,
+        userAgent: req.get('User-Agent'),
+        companyId: activeCompany.id,
+      });
+
+      return res.status(201).json({ success: true, message: 'Unknown type created' });
+    }
+
     const validatedFields = validateTypeFields(req.body);
 
     const activeCompany = await getScopedActiveCompany(pool, req.user?.userID);

@@ -16,6 +16,8 @@ import {
 } from 'lucide-react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { PageHeader } from '@/components/common/PageHeader';
+import { SearchWithColumnFilter } from '@/components/common/SearchWithColumnFilter';
+import { ASSET_SEARCH_COLUMNS_BASIC } from '@/utils/assetSearchColumns';
 import { Button } from '@/components/ui/button';
 import {
   Select,
@@ -122,6 +124,7 @@ export default function GatePass() {
   
   // Filter state
   const [searchTerm, setSearchTerm] = useState('');
+  const [searchColumn, setSearchColumn] = useState('all');
 
   // Form state
   const [formData, setFormData] = useState<GatePassData>({
@@ -156,8 +159,9 @@ export default function GatePass() {
 
   const filteredAssignments = useMemo(() => {
     return assignments.filter((assignment) => {
-      if (searchTerm) {
-        const q = searchTerm.toLowerCase();
+      if (!searchTerm) return true;
+      const q = searchTerm.toLowerCase();
+      if (searchColumn === 'all') {
         return (
           assignment.asset.name.toLowerCase().includes(q) ||
           assignment.asset.code.toLowerCase().includes(q) ||
@@ -170,9 +174,11 @@ export default function GatePass() {
             .includes(q)
         );
       }
-      return true;
+      const assetField = searchColumn === 'id' ? 'code' : searchColumn;
+      const val = (assignment.asset as any)[assetField];
+      return val != null && String(val).toLowerCase().includes(q);
     });
-  }, [assignments, searchTerm]);
+  }, [assignments, searchTerm, searchColumn]);
 
   const filteredAssignedBuilders = useMemo(() => {
     if (!builderSearchTerm) return assetBuilders;
@@ -566,15 +572,15 @@ export default function GatePass() {
                       </Badge>
                     </CardTitle>
 
-                    <div className="relative mt-4">
-                      <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-gray-400" />
-                      <Input
-                        placeholder="Search by asset name, asset code, department, or assigned to..."
-                        value={searchTerm}
-                        onChange={e => setSearchTerm(e.target.value)}
-                        className="pl-10 border-gray-200 focus:border-red-500 focus:ring-red-500"
-                      />
-                    </div>
+                    <SearchWithColumnFilter
+                      value={searchTerm}
+                      onChange={setSearchTerm}
+                      placeholder="Search assets..."
+                      columnOptions={ASSET_SEARCH_COLUMNS_BASIC}
+                      searchColumn={searchColumn}
+                      onSearchColumnChange={setSearchColumn}
+                      className="mt-4"
+                    />
                   </CardHeader>
                   <CardContent className="pt-0">
                     {loading ? (

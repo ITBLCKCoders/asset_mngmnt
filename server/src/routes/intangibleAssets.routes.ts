@@ -14,6 +14,7 @@ import {
   updateIntangibleAsset,
   assignIntangibleAsset,
   unassignIntangibleAsset,
+  batchAssignIntangibleAssets,
 } from '../controllers/intangibleAssets.controller.js';
 
 const router = Router();
@@ -154,6 +155,7 @@ router.patch(
  *       401: { description: Unauthorized }
  *       404: { description: Intangible asset not found }
  */
+router.post('/batch-assign', batchAssignIntangibleAssets);
 router.post('/:id/assign', assignIntangibleAsset);
 
 /**

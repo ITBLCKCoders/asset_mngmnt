@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect, useRef, useState } from 'react';
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { Card, CardContent, CardHeader, CardTitle, CardDescription, CardFooter } from '@/components/ui/card';
 import { Separator } from '@/components/ui/separator';
 import { Dialog } from '@/components/ui/dialog';
 import {
@@ -33,6 +33,7 @@ import {
   XCircle,
   ArrowRightLeft,
   HandHelping,
+  ClipboardList,
 } from 'lucide-react';
 import { Checkbox } from '@/components/ui/checkbox';
 import {
@@ -41,6 +42,7 @@ import {
   AlertDialogCancel,
   AlertDialogAction,
 } from '@/components/ui/alert-dialog';
+import { cn } from '@/lib/utils';
 import { Shimmer } from '@/components/ui/shimmer';
 import { Tabs, TabsList, TabsTrigger, TabsContent, segmentTabsListClassName, segmentTabsTriggerClassName } from '@/components/ui/tabs';
 import { api } from '@/lib/api';
@@ -57,10 +59,12 @@ import {
   generateAssetReturnPDF,
   generateAssetTransferPDF,
   generateAssetBorrowingPDF,
+  generateAssetChecklistPDF,
   downloadPDF,
   type AssetReturnData,
   type AssetTransferData,
   type AssetBorrowingData,
+  type AssetChecklistData,
 } from '@/lib/pdfGenerator';
 import SmsOtpDialog from '@/components/auth/SmsOtpDialog';
 
@@ -658,7 +662,7 @@ export const TransferFormDetail: React.FC<{
 };
 
 /** Shared timeline for return/transfer forms: Submitted → Approved by dept head → Completed */
-function FormTimeline({
+export function FormTimeline({
   type,
   created_at,
   signerName,
@@ -844,10 +848,67 @@ export const ReturnFormCard: React.FC<{
     };
   }, [showConfirmDialog, canSign, batch]);
 
+  const [activeCardTab, setActiveCardTab] = useState<'details' | 'timeline' | 'checklist'>('details');
+  const [checklists, setChecklists] = useState<ReturnFormChecklistEntry[]>([]);
+  const [activeChecklistKey, setActiveChecklistKey] = useState<string>('');
+  const [checklistLoading, setChecklistLoading] = useState(false);
+  const [showChecklistPreview, setShowChecklistPreview] = useState(false);
+  const [checklistPreviewUrl, setChecklistPreviewUrl] = useState<string>('');
+
+  const hasChecklist = checklists.length > 0;
+
+  function getChecklistTabKey(checklist: ReturnFormChecklistEntry): string {
+    return checklist.assignment_id || checklist.id;
+  }
+
+  function getChecklistAssetLabel(
+    checklist: ReturnFormChecklistEntry,
+    allReturns: AssetReturnForm[]
+  ): string {
+    const checklistAsset = checklist.asset;
+    const fallback = allReturns.find(r => r.assignment.asset.id === checklistAsset?.id) ?? allReturns[0];
+    const name = checklistAsset?.name || fallback?.assignment.asset.name || 'Asset';
+    const code = checklistAsset?.code || fallback?.assignment.asset.code || '—';
+    return `${name} (${code})`;
+  }
+
+  const activeChecklist =
+    checklists.find(c => getChecklistTabKey(c) === activeChecklistKey) ??
+    checklists[0] ??
+    null;
+
+  // Fetch all offboarding checklists linked to this return form
+  useEffect(() => {
+    if (!batch.formID) return;
+    const fetchChecklists = async () => {
+      try {
+        setChecklistLoading(true);
+        const response = await api.get<{ checklists: ReturnFormChecklistEntry[] }>(
+          `/asset-returns/forms/${batch.formID}/checklists`
+        );
+        const allChecklists = response?.checklists ?? [];
+        const offboardingOnly = allChecklists.filter(c => c.type_offboarding === true);
+        setChecklists(offboardingOnly);
+        if (offboardingOnly.length > 0) {
+          setActiveChecklistKey(getChecklistTabKey(offboardingOnly[0]!));
+        } else {
+          setActiveChecklistKey('');
+        }
+      } catch (error) {
+        console.error('Failed to fetch return form checklists:', error);
+        setChecklists([]);
+        setActiveChecklistKey('');
+      } finally {
+        setChecklistLoading(false);
+      }
+    };
+    fetchChecklists();
+  }, [batch.formID]);
+
   const first = batch.returns[0];
   if (!first?.assignment?.asset) {
     return (
-      <Card className="hover:shadow-md transition-shadow flex flex-col">
+      <Card className="shadow-md hover:shadow-xl transition-all duration-200 border-slate-200 bg-white flex flex-col overflow-hidden">
         <CardContent className="py-8">
           <div className="text-center text-gray-500">
             <p>Return form data is incomplete or missing</p>
@@ -881,12 +942,13 @@ export const ReturnFormCard: React.FC<{
     Boolean(batch.dept_head_signed_at);
 
   return (
-    <Card className="hover:shadow-md transition-shadow flex flex-col">
+    <>
+    <Card className="shadow-md hover:shadow-xl transition-all duration-200 border-slate-200 bg-white flex flex-col overflow-hidden">
       <CardHeader className="pb-3">
         <div className="flex items-start justify-between">
           <div className="flex items-center gap-3">
-            <div className="p-2 bg-red-100 rounded-lg">
-              <FileSignature className="h-5 w-5 text-red-600" />
+            <div className="p-2.5 bg-gradient-to-br from-red-500 to-red-600 shadow-sm rounded-xl">
+              <FileSignature className="h-5 w-5 text-white" />
             </div>
             <div>
               <CardTitle className="text-lg">{formNumber}</CardTitle>
@@ -908,8 +970,8 @@ export const ReturnFormCard: React.FC<{
         </div>
       </CardHeader>
 
-      <Tabs defaultValue="details" className="flex-1 flex flex-col min-h-0">
-        <TabsList className={segmentTabsListClassName + ' mx-4 mb-2 grid grid-cols-2 w-[calc(100%-2rem)]'}>
+      <Tabs value={activeCardTab} onValueChange={(v) => setActiveCardTab(v as 'details' | 'timeline' | 'checklist')} className="flex-1 flex flex-col min-h-0">
+        <TabsList className={`${segmentTabsListClassName} mx-4 mb-2 grid grid-cols-${hasChecklist ? '3' : '2'} w-[calc(100%-2rem)]`}>
           <TabsTrigger
             value="details"
             className={segmentTabsTriggerClassName}
@@ -922,6 +984,14 @@ export const ReturnFormCard: React.FC<{
           >
             Timeline
           </TabsTrigger>
+          {hasChecklist && (
+            <TabsTrigger
+              value="checklist"
+              className={segmentTabsTriggerClassName}
+            >
+              Checklist
+            </TabsTrigger>
+          )}
         </TabsList>
         <TabsContent value="details" className="mt-0 flex-1">
           <CardContent className="space-y-4 flex-1 pt-0">
@@ -935,8 +1005,8 @@ export const ReturnFormCard: React.FC<{
                     : `${batch.returns.length} asset${batch.returns.length === 1 ? '' : 's'} returned`}
                 </p>
                 {batch.returns.length > 0 && (
-                  <ul className="text-xs text-gray-600 mt-1 space-y-0.5 list-none">
-                    {batch.returns.slice(0, 5).map(r => (
+                  <ul className="max-h-[120px] overflow-y-auto scrollbar-hide text-xs text-gray-600 mt-1 space-y-0.5 list-none">
+                    {batch.returns.map(r => (
                       <li key={r.return_id} className="flex items-center">
                         <span className="w-1.5 h-1.5 bg-gray-400 rounded-full mr-2 flex-shrink-0" />
                         <span className="truncate">
@@ -951,14 +1021,6 @@ export const ReturnFormCard: React.FC<{
                         </span>
                       </li>
                     ))}
-                    {batch.returns.length > 5 && (
-                      <li className="flex items-center">
-                        <span className="w-1.5 h-1.5 bg-gray-400 rounded-full mr-2 flex-shrink-0" />
-                        <span className="text-gray-400">
-                          +{batch.returns.length - 5} more
-                        </span>
-                      </li>
-                    )}
                   </ul>
                 )}
               </div>
@@ -1039,14 +1101,44 @@ export const ReturnFormCard: React.FC<{
             />
           </CardContent>
         </TabsContent>
+        <TabsContent value="checklist" className="mt-0 flex-1">
+          <CardContent className="pt-0">
+            <ReturnChecklistCard
+              checklists={checklists}
+              checklistLoading={checklistLoading}
+              activeChecklistKey={activeChecklistKey}
+              setActiveChecklistKey={setActiveChecklistKey}
+              activeChecklist={activeChecklist}
+              batch={batch}
+              getChecklistTabKey={getChecklistTabKey}
+              getChecklistAssetLabel={getChecklistAssetLabel}
+            />
+          </CardContent>
+        </TabsContent>
       </Tabs>
 
-      <div className="flex gap-2 p-4 mt-auto">
+      <div className="flex gap-2 p-4 mt-auto border-t border-slate-100">
         <Button
           variant="outline"
           size="sm"
-          onClick={onView}
-          className="flex-1 hover:bg-red-600 hover:text-white"
+          onClick={async () => {
+            if (activeCardTab === 'checklist' && activeChecklist) {
+              try {
+                const blob = await generateAssetChecklistPDF({
+                  ...activeChecklist,
+                  asset_label: getChecklistAssetLabel(activeChecklist, batch.returns),
+                });
+                const url = URL.createObjectURL(blob);
+                setChecklistPreviewUrl(url);
+                setShowChecklistPreview(true);
+              } catch {
+                toast.error('Failed to generate checklist preview');
+              }
+            } else {
+              onView();
+            }
+          }}
+          className="flex-1 bg-red-600 text-white border-red-600 hover:bg-white hover:text-red-600 hover:border-red-600 shadow-sm"
         >
           <Eye className="h-4 w-4 mr-2" />
           View
@@ -1054,9 +1146,10 @@ export const ReturnFormCard: React.FC<{
         {canSign && !viewOnly && (
           <>
             <Button
+              variant="outline"
               size="sm"
               onClick={() => setShowConfirmDialog(true)}
-              className="flex-1 bg-green-600 hover:bg-green-700 text-white"
+              className="flex-1 bg-red-600 text-white border-red-600 hover:bg-white hover:text-red-600 hover:border-red-600 shadow-sm"
             >
               <CheckCircle2 className="h-4 w-4 mr-2" />
               Sign Form
@@ -1138,7 +1231,7 @@ export const ReturnFormCard: React.FC<{
                       setShowOtpDialog(true);
                     }}
                     disabled={!agreeReturn}
-                    className="bg-green-600 hover:bg-green-700 text-white disabled:bg-gray-300 disabled:cursor-not-allowed"
+                    className="bg-red-600 hover:bg-white hover:text-red-600 hover:border-red-600 text-white border border-red-600 disabled:bg-gray-300 disabled:cursor-not-allowed shadow-sm"
                   >
                     Sign Form
                   </AlertDialogAction>
@@ -1159,24 +1252,200 @@ export const ReturnFormCard: React.FC<{
                 pendingSignActionRef.current = null;
               }}
               pendingActionRef={pendingSignActionRef}
-              title="OTP SMS Verification"
-              description="OTP SMS Verification has been sent to your registered mobile number for return form signing."
+              title="OTP Email Verification"
+              description="OTP Email Verification has been sent to your registered email for return form signing."
               verifyButtonLabel="Verify & Sign Form"
-              phoneNumber={currentUser?.contactNumber ?? undefined}
             />
           </>
         )}
         <Button
           variant="outline"
           size="sm"
-          onClick={onDownload}
-          className="hover:bg-red-600 hover:text-white"
+          onClick={async () => {
+            if (activeCardTab === 'checklist' && activeChecklist) {
+              try {
+                const blob = await generateAssetChecklistPDF({
+                  ...activeChecklist,
+                  asset_label: getChecklistAssetLabel(activeChecklist, batch.returns),
+                });
+                downloadPDF(blob, `Asset_Checklist_${activeChecklist.form_number || `CHK-${activeChecklist.assignment_id}`}.pdf`);
+                toast.success('Checklist PDF downloaded successfully');
+              } catch {
+                toast.error('Failed to download checklist PDF');
+              }
+            } else {
+              onDownload();
+            }
+          }}
+          className="flex-1 bg-white text-red-600 border-red-600 hover:bg-red-600 hover:text-white shadow-sm"
         >
           <Download className="h-4 w-4 mr-2" />
           Download
         </Button>
       </div>
     </Card>
+    <Dialog open={showChecklistPreview} onOpenChange={(open) => {
+      setShowChecklistPreview(open);
+      if (!open) {
+        setChecklistPreviewUrl(url => {
+          if (url) URL.revokeObjectURL(url);
+          return '';
+        });
+      }
+    }}>
+      <AppDialogFrame className="max-w-4xl max-h-[90vh] overflow-hidden !flex !flex-col !gap-0 !border-0 !p-0">
+        <AppDialogGradientHeader
+          title={activeChecklist ? `${activeChecklist.employee_name} - ${activeChecklist.form_number || `CHK-${activeChecklist.assignment_id}`}` : 'Asset Checklist'}
+          description="Asset Checklist Form Preview"
+        />
+        <AppDialogBody className="min-h-0 flex-1 overflow-auto !p-0">
+          <div className="mx-4 my-4 h-[620px] overflow-hidden rounded-lg border border-slate-200 bg-slate-50 sm:mx-6">
+            {checklistPreviewUrl ? (
+              <PDFViewer pdfUrl={checklistPreviewUrl} className="h-full w-full" />
+            ) : (
+              <div className="flex h-full w-full items-center justify-center text-gray-500">
+                Generating checklist PDF preview...
+              </div>
+            )}
+          </div>
+        </AppDialogBody>
+        <AppDialogChromeFooter className="justify-end gap-3">
+          <Button variant="outline" size="sm" onClick={() => {
+            setShowChecklistPreview(false);
+            if (checklistPreviewUrl) {
+              URL.revokeObjectURL(checklistPreviewUrl);
+              setChecklistPreviewUrl('');
+            }
+          }}>
+            Close
+          </Button>
+        </AppDialogChromeFooter>
+      </AppDialogFrame>
+    </Dialog>
+  </>);
+};
+
+// Borrow Request Card Component for Approvals Page
+export const BorrowRequestCard: React.FC<{
+  batch: any;
+  onView: () => void;
+}> = ({ batch, onView }) => {
+  const formNumber =
+    batch.form_number ?? `Borrow ${new Date(batch.created_at).toLocaleDateString()}`;
+  const borrowerName =
+    `${batch.requester_first_name || ''} ${batch.requester_last_name || ''}`.trim() ||
+    batch.requester_email ||
+    '—';
+  const scope = batch.borrow_scope === 'it' ? 'IT Equipment' : 'Admin Equipment';
+
+  const formatBorrowDateTime = (dateStr: string | null) => {
+    if (!dateStr) return '—';
+    const date = new Date(dateStr);
+    return date.toLocaleDateString('en-US', {
+      month: 'short',
+      day: 'numeric',
+      year: 'numeric',
+      hour: '2-digit',
+      minute: '2-digit',
+    });
+  };
+
+  return (
+    <div
+      className="hover:shadow-md transition-shadow flex flex-col bg-white border border-slate-200 rounded-lg p-4"
+    >
+      <div className="flex items-start justify-between mb-4">
+        <div className="flex items-center gap-3">
+          <div className="p-2 bg-red-100 rounded-lg">
+            <HandHelping className="h-5 w-5 text-red-700" />
+          </div>
+          <div>
+            <p className="text-lg font-semibold">
+              {formNumber}
+            </p>
+            <p className="text-sm text-gray-500">
+              Created {formatBorrowDateTime(batch.created_at)}
+            </p>
+          </div>
+        </div>
+        <Badge variant="secondary" className="bg-green-100 text-green-800">
+          Approved
+        </Badge>
+      </div>
+
+      <div className="space-y-4 flex-1">
+        <div className="flex items-start gap-3">
+          <Package className="h-4 w-4 text-gray-400 mt-0.5 flex-shrink-0" />
+          <div className="flex-1 min-w-0">
+            <p className="font-medium text-sm">Requested equipment</p>
+            <ul className="text-xs text-gray-600 mt-1 space-y-0.5 list-none">
+              <li className="flex items-center">
+                <span className="w-1.5 h-1.5 bg-gray-400 rounded-full mr-2 flex-shrink-0" />
+                <span className="truncate">
+                  {batch.category_name ?? '—'}
+                  {batch.type_name ? (
+                    <span className="text-gray-400 ml-1">
+                      — {batch.type_name}
+                    </span>
+                  ) : null}
+                </span>
+              </li>
+            </ul>
+          </div>
+        </div>
+
+        <div className="flex items-start gap-3">
+          <User className="h-4 w-4 text-gray-400 mt-0.5 flex-shrink-0" />
+          <div className="flex-1 min-w-0">
+            <p className="font-medium text-sm">Requested by: {borrowerName}</p>
+            {batch.requester_department_name?.trim() ? (
+              <p className="text-xs text-gray-600 mt-0.5">
+                Department: {batch.requester_department_name}
+              </p>
+            ) : null}
+          </div>
+        </div>
+
+        <div className="flex items-start gap-3">
+          <Calendar className="h-4 w-4 text-gray-400 mt-0.5 flex-shrink-0" />
+          <div className="flex-1 min-w-0">
+            <p className="text-sm text-gray-600">
+              Expected return:{' '}
+              {formatBorrowDateTime(batch.expected_return_at)}
+            </p>
+          </div>
+        </div>
+
+        <div className="flex items-start gap-3">
+          <FileText className="h-4 w-4 text-gray-400 mt-0.5 flex-shrink-0" />
+          <div className="flex-1 min-w-0">
+            <p className="text-sm text-gray-600 line-clamp-3">
+              Purpose: {batch.purpose || '—'}
+            </p>
+          </div>
+        </div>
+
+        <div className="flex items-start gap-3">
+          <CheckCircle2 className="h-4 w-4 text-gray-400 mt-0.5 flex-shrink-0" />
+          <div className="flex-1 min-w-0">
+            <p className="font-medium text-sm">Processed by: {batch.approved_by_name || '—'}</p>
+          </div>
+        </div>
+
+        <div className="flex items-start gap-3">
+          <CheckCircle2 className="h-4 w-4 text-gray-400 mt-0.5 flex-shrink-0" />
+          <div className="flex-1 min-w-0">
+            <p className="font-medium text-sm">Approved by: {batch.dept_head_name || batch.received_by_name || batch.approved_by_name || '—'}</p>
+          </div>
+        </div>
+      </div>
+
+      <div className="mt-4 pt-4 border-t border-slate-200">
+        <Button onClick={onView} variant="outline" className="w-full">
+          View Details
+        </Button>
+      </div>
+    </div>
   );
 };
 
@@ -1233,7 +1502,7 @@ export const TransferFormCard: React.FC<{
   const first = batch.returns[0];
   if (!first?.assignment?.asset) {
     return (
-      <Card className="hover:shadow-md transition-shadow flex flex-col">
+      <Card className="shadow-md hover:shadow-xl transition-all duration-200 border-slate-200 bg-white flex flex-col overflow-hidden">
         <CardContent className="py-8">
           <div className="text-center text-gray-500">
             Transfer form data is incomplete
@@ -1251,12 +1520,12 @@ export const TransferFormCard: React.FC<{
     `${first.assignment.user.first_name || ''} ${first.assignment.user.last_name || ''}`.trim();
 
   return (
-    <Card className="hover:shadow-md transition-shadow flex flex-col">
+    <Card className="shadow-md hover:shadow-xl transition-all duration-200 border-slate-200 bg-white flex flex-col overflow-hidden">
       <CardHeader className="pb-3">
         <div className="flex items-start justify-between">
           <div className="flex items-center gap-3">
-            <div className="p-2 bg-purple-100 rounded-lg">
-              <ArrowRightLeft className="h-5 w-5 text-purple-600" />
+            <div className="p-2.5 bg-gradient-to-br from-red-500 to-red-600 shadow-sm rounded-xl">
+              <ArrowRightLeft className="h-5 w-5 text-white" />
             </div>
             <div>
               <CardTitle className="text-lg">{formNumber}</CardTitle>
@@ -1304,8 +1573,8 @@ export const TransferFormCard: React.FC<{
                     : `${batch.returns.length} asset${batch.returns.length === 1 ? '' : 's'} transferred`}
                 </p>
                 {batch.returns.length > 0 && (
-                  <ul className="text-xs text-gray-600 mt-1 space-y-0.5 list-none">
-                    {batch.returns.slice(0, 5).map(r => (
+                  <ul className="max-h-[120px] overflow-y-auto scrollbar-hide text-xs text-gray-600 mt-1 space-y-0.5 list-none">
+                    {batch.returns.map(r => (
                       <li key={r.return_id} className="flex items-center">
                         <span className="w-1.5 h-1.5 bg-gray-400 rounded-full mr-2 flex-shrink-0" />
                         <span className="truncate">
@@ -1320,14 +1589,6 @@ export const TransferFormCard: React.FC<{
                         </span>
                       </li>
                     ))}
-                    {batch.returns.length > 5 && (
-                      <li className="flex items-center">
-                        <span className="w-1.5 h-1.5 bg-gray-400 rounded-full mr-2 flex-shrink-0" />
-                        <span className="text-gray-400">
-                          +{batch.returns.length - 5} more
-                        </span>
-                      </li>
-                    )}
                   </ul>
                 )}
               </div>
@@ -1412,12 +1673,12 @@ export const TransferFormCard: React.FC<{
           </CardContent>
         </TabsContent>
       </Tabs>
-      <div className="flex gap-2 p-4 mt-auto">
+      <div className="flex gap-2 p-4 mt-auto border-t border-slate-100">
         <Button
           variant="outline"
           size="sm"
           onClick={onView}
-          className="flex-1 hover:bg-purple-600 hover:text-white"
+          className="flex-1 bg-red-600 text-white border-red-600 hover:bg-white hover:text-red-600 hover:border-red-600 shadow-sm"
         >
           <Eye className="h-4 w-4 mr-2" />
           View
@@ -1425,9 +1686,10 @@ export const TransferFormCard: React.FC<{
         {canSign && !viewOnly && (
           <>
             <Button
+              variant="outline"
               size="sm"
               onClick={() => setShowConfirmDialog(true)}
-              className="flex-1 bg-green-600 hover:bg-green-700 text-white"
+              className="flex-1 bg-red-600 text-white border-red-600 hover:bg-white hover:text-red-600 hover:border-red-600 shadow-sm"
             >
               <CheckCircle2 className="h-4 w-4 mr-2" />
               Sign Form
@@ -1501,7 +1763,7 @@ export const TransferFormCard: React.FC<{
                       setShowConfirmDialog(false);
                       setShowOtpDialog(true);
                     }}
-                    className="bg-green-600 hover:bg-green-700"
+                    className="bg-red-600 hover:bg-white hover:text-red-600 hover:border-red-600 text-white border border-red-600 disabled:bg-gray-300 disabled:cursor-not-allowed shadow-sm"
                   >
                     Sign Form
                   </AlertDialogAction>
@@ -1522,10 +1784,9 @@ export const TransferFormCard: React.FC<{
                 pendingSignActionRef.current = null;
               }}
               pendingActionRef={pendingSignActionRef}
-              title="OTP SMS Verification"
-              description="OTP SMS Verification has been sent to your registered mobile number for transfer form signing."
+              title="OTP Email Verification"
+              description="OTP Email Verification has been sent to your registered email for transfer form signing."
               verifyButtonLabel="Verify & Sign Form"
-              phoneNumber={currentUser?.contactNumber ?? undefined}
             />
           </>
         )}
@@ -1533,7 +1794,7 @@ export const TransferFormCard: React.FC<{
           variant="outline"
           size="sm"
           onClick={onDownload}
-          className="flex-1 hover:bg-green-600 hover:text-white"
+          className="flex-1 bg-white text-red-600 border-red-600 hover:bg-red-600 hover:text-white shadow-sm"
         >
           <Download className="h-4 w-4 mr-2" />
           Download
@@ -1561,6 +1822,7 @@ export interface AssetBorrowFormBatch {
   requester_company_name?: string | null;
   requester_company_logo_url?: string | null;
   dept_head_signed_at?: string | null;
+  dept_head_name?: string | null;
   approved_at?: string | null;
   pre_usage_condition?: string | null;
   asset_name?: string | null;
@@ -1574,6 +1836,17 @@ export interface AssetBorrowFormBatch {
   returned_at?: string | null;
   return_condition?: string | null;
   return_remarks?: string | null;
+  requested_by_signature?: string | null;
+  /** Processor's digital signature when approving the borrow request */
+  processor_signature?: string | null;
+  /** Timestamp when the processor signed the borrow request */
+  processor_signed_at?: string | null;
+  /** Manager Approver 2 who received the borrow request */
+  received_by?: string | null;
+  received_by_name?: string | null;
+  /** Manager Approver 2's digital signature when receiving */
+  received_by_signature?: string | null;
+  received_at?: string | null;
 }
 
 function parseMyBorrowRequestsResponse(res: unknown): AssetBorrowFormBatch[] {
@@ -1645,10 +1918,17 @@ export function buildBorrowDataForPDFFromBatch(
     purpose: batch.purpose || '',
     requestedBy: borrowerName,
     itReceivedBy: batch.approved_by_name?.trim() || '—',
-    itApprovedBy: batch.approved_by_name?.trim() || '—',
+    itReceivedBySignature: batch.processor_signature ?? null,
+    itReceivedBySignedAt: batch.processor_signed_at ?? null,
+    // For the "IT Approved by:" or "Admin Approved by:" section, use the Manager Approver 2 who received
+    itApprovedBy: batch.received_by_name?.trim() || batch.received_by?.trim() || '—',
+    itApprovedBySignature: batch.received_by_signature ?? null,
+    itApprovedBySignedAt: batch.received_at ?? null,
     postUsageCondition: post,
     borrowerCompanyName: batch.requester_company_name ?? null,
     borrowerCompanyLogoUrl: batch.requester_company_logo_url ?? null,
+    requestedBySignature: batch.requested_by_signature ?? null,
+    requestedAt: batch.created_at ?? null,
   };
 }
 
@@ -1844,6 +2124,12 @@ export const BorrowFormCard: React.FC<{
   const pendingStaff =
     !!batch.dept_head_signed_at && !batch.approved_at && !declined;
   const completed = !!batch.approved_at && !declined;
+  const received = Boolean(
+    batch.received_at ||
+    batch.received_by ||
+    batch.received_by_signature ||
+    (batch.received_by_name && batch.received_by_name.trim())
+  );
 
   let badgeClass = 'bg-amber-100 text-amber-800';
   let badgeLabel = 'Pending approval';
@@ -1853,9 +2139,12 @@ export const BorrowFormCard: React.FC<{
   } else if (returned) {
     badgeClass = 'bg-green-100 text-green-800';
     badgeLabel = 'Returned';
+  } else if (received) {
+    badgeClass = 'bg-green-100 text-green-800';
+    badgeLabel = 'Approved';
   } else if (completed) {
     badgeClass = 'bg-green-100 text-green-800';
-    badgeLabel = 'Completed';
+    badgeLabel = 'Approved';
   } else if (pendingStaff) {
     badgeClass = 'bg-blue-100 text-blue-800';
     badgeLabel = 'Pending IT/Admin';
@@ -1865,12 +2154,12 @@ export const BorrowFormCard: React.FC<{
   }
 
   return (
-    <Card className="hover:shadow-md transition-shadow flex flex-col">
+    <Card className="shadow-md hover:shadow-xl transition-all duration-200 border-slate-200 bg-white flex flex-col overflow-hidden">
       <CardHeader className="pb-3">
         <div className="flex items-start justify-between">
           <div className="flex items-center gap-3">
-            <div className="p-2 bg-amber-100 rounded-lg">
-              <HandHelping className="h-5 w-5 text-amber-700" />
+            <div className="p-2.5 bg-gradient-to-br from-red-500 to-red-600 shadow-sm rounded-xl">
+              <HandHelping className="h-5 w-5 text-white" />
             </div>
             <div>
               <CardTitle className="text-lg">{formNumber}</CardTitle>
@@ -1956,6 +2245,24 @@ export const BorrowFormCard: React.FC<{
               </div>
             </div>
 
+            {batch.approved_by_name && (
+              <div className="flex items-start gap-3">
+                <CheckCircle2 className="h-4 w-4 text-gray-400 mt-0.5 flex-shrink-0" />
+                <div className="flex-1 min-w-0">
+                  <p className="font-medium text-sm">Processed by: {batch.approved_by_name}</p>
+                </div>
+              </div>
+            )}
+
+            {(batch.dept_head_name || batch.received_by_name || batch.approved_by_name) && (
+              <div className="flex items-start gap-3">
+                <CheckCircle2 className="h-4 w-4 text-gray-400 mt-0.5 flex-shrink-0" />
+                <div className="flex-1 min-w-0">
+                  <p className="font-medium text-sm">Approved by: {batch.dept_head_name || batch.received_by_name || batch.approved_by_name || '—'}</p>
+                </div>
+              </div>
+            )}
+
             <div className="flex items-start gap-3">
               <FileCheck className="h-4 w-4 text-gray-400 mt-0.5 flex-shrink-0" />
               <div className="flex-1 min-w-0">
@@ -1973,12 +2280,12 @@ export const BorrowFormCard: React.FC<{
         </TabsContent>
       </Tabs>
 
-      <div className="flex gap-2 p-4 mt-auto">
+      <div className="flex gap-2 p-4 mt-auto border-t border-slate-100">
         <Button
           variant="outline"
           size="sm"
           onClick={onView}
-          className="flex-1 hover:bg-amber-600 hover:text-white"
+          className="flex-1 bg-red-600 text-white border-red-600 hover:bg-white hover:text-red-600 hover:border-red-600 shadow-sm"
         >
           <Eye className="h-4 w-4 mr-2" />
           View
@@ -1987,7 +2294,7 @@ export const BorrowFormCard: React.FC<{
           variant="outline"
           size="sm"
           onClick={onDownload}
-          className="hover:bg-green-600 hover:text-white"
+          className="flex-1 bg-white text-red-600 border-red-600 hover:bg-red-600 hover:text-white shadow-sm"
         >
           <Download className="h-4 w-4 mr-2" />
           Download
@@ -2054,19 +2361,20 @@ export const BorrowFormDetail: React.FC<{
     borrowFormBatch.return_condition,
     borrowFormBatch.return_remarks,
     borrowFormBatch.pre_usage_condition,
+    borrowFormBatch.received_at,
+    borrowFormBatch.received_by,
+    borrowFormBatch.received_by_signature,
   ]);
 
   const pdfBody = (
     <div className="flex-1 min-h-0 flex flex-col py-2 overflow-hidden">
-      <div className="w-full flex-1 min-h-0 border rounded-lg overflow-hidden bg-gray-50">
+      <div className="w-full flex-1 min-h-0 border rounded-lg overflow-hidden bg-gray-50 relative">
         {pdfUrl ? (
           <iframe
             src={pdfUrl}
-            className="w-full h-full min-h-0"
+            className="absolute inset-0 w-full h-full"
             title="Equipment Borrowing Form PDF Preview"
             style={{
-              width: '100%',
-              height: '100%',
               border: 'none',
               display: 'block',
             }}
@@ -2252,6 +2560,224 @@ export interface AssetReturnFormBatch {
   returns: AssetReturnForm[];
 }
 
+type ChecklistRow = {
+  id: string;
+  form_number?: string | null;
+  assignment_id: string;
+  employee_id: string;
+  employee_name: string;
+  employee_designation?: string | null;
+  employee_department?: string | null;
+  employee_company?: string | null;
+  employee_company_logo_url?: string | null;
+  type_onboarding: boolean;
+  type_offboarding: boolean;
+  received_by?: string | null;
+  checklist_data: any;
+  remarks?: string | null;
+  created_at: string;
+  creator_name?: string | null;
+  creator_digital_signature?: string | null;
+  employee_signed_at?: string | null;
+  employee_digital_signature?: string | null;
+  dept_head_signed_at?: string | null;
+  dept_head_signed_by?: string | null;
+  dept_head_digital_signature?: string | null;
+  dept_head_name?: string | null;
+  it_manager_signed_at?: string | null;
+  it_manager_signed_by?: string | null;
+  it_manager_digital_signature?: string | null;
+  it_manager_name?: string | null;
+  asset?: {
+    id: string;
+    code?: string | null;
+    name?: string | null;
+  } | null;
+};
+
+type ReturnFormChecklistEntry = AssetChecklistData & {
+  asset?: { id: string; code: string | null; name: string | null } | null;
+};
+
+function ReturnChecklistCard({
+  checklists,
+  checklistLoading,
+  activeChecklistKey,
+  setActiveChecklistKey,
+  activeChecklist,
+  batch,
+  getChecklistTabKey,
+  getChecklistAssetLabel,
+}: {
+  checklists: ReturnFormChecklistEntry[];
+  checklistLoading: boolean;
+  activeChecklistKey: string;
+  setActiveChecklistKey: (key: string) => void;
+  activeChecklist: ReturnFormChecklistEntry | null;
+  batch: AssetReturnFormBatch;
+  getChecklistTabKey: (checklist: ReturnFormChecklistEntry) => string;
+  getChecklistAssetLabel: (checklist: ReturnFormChecklistEntry, allReturns: AssetReturnForm[]) => string;
+}) {
+  if (checklistLoading) {
+    return (
+      <div className="space-y-4">
+        <div className="flex gap-2">
+          {[1, 2, 3].map(i => (
+            <Shimmer key={i} className="h-8 w-28 rounded-lg" />
+          ))}
+        </div>
+        <div className="rounded-xl border p-4 space-y-3">
+          <Shimmer className="h-5 w-48 rounded" />
+          <div className="space-y-2">
+            {[1, 2, 3, 4].map(j => (
+              <div key={j} className="flex items-center gap-3">
+                <Shimmer className="h-4 w-4 rounded" />
+                <Shimmer className="h-4 flex-1 rounded" />
+              </div>
+            ))}
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  if (!activeChecklist) {
+    return (
+      <div className="rounded-xl border border-dashed border-slate-300 bg-slate-50 px-4 py-8 text-center text-sm text-slate-500">
+        No offboarding checklist data available
+      </div>
+    );
+  }
+
+  const checklist = activeChecklist;
+  return (
+    <div className="space-y-3">
+      {checklists.length > 1 && (
+        <Tabs
+          value={activeChecklistKey}
+          onValueChange={setActiveChecklistKey}
+          className="w-full"
+        >
+          <TabsList
+            className={
+              segmentTabsListClassName +
+              ' flex h-auto w-full flex-wrap justify-start gap-1'
+            }
+          >
+            {checklists.map(entry => (
+              <TabsTrigger
+                key={getChecklistTabKey(entry)}
+                value={getChecklistTabKey(entry)}
+                className={segmentTabsTriggerClassName + ' text-xs'}
+              >
+                {getChecklistAssetLabel(entry, batch.returns)}
+              </TabsTrigger>
+            ))}
+          </TabsList>
+        </Tabs>
+      )}
+
+      <div className="space-y-3 rounded-xl border border-red-200 bg-gradient-to-br from-red-50/80 via-white to-slate-50 p-4 shadow-md">
+        {/* Header */}
+        <div className="flex items-start justify-between gap-3 border-b border-red-100 pb-3">
+          <div>
+            <p className="text-xs font-medium uppercase tracking-wide text-red-600">
+              Offboarding Checklist
+            </p>
+            <p className="mt-1 font-mono text-sm font-semibold text-slate-900">
+              {checklist.form_number || `CHK-${checklist.assignment_id}`}
+            </p>
+          </div>
+          <div className="flex flex-wrap justify-end gap-1.5">
+            {checklist.type_onboarding && (
+              <Badge className="bg-emerald-100 text-emerald-800 hover:bg-emerald-100">Onboarding</Badge>
+            )}
+            {checklist.type_offboarding && (
+              <Badge className="bg-blue-100 text-blue-800 hover:bg-blue-100">Offboarding</Badge>
+            )}
+            {checklist.employee_signed_at && (
+              <Badge className="bg-green-100 text-green-800 hover:bg-green-100">Employee Signed</Badge>
+            )}
+            {checklist.dept_head_signed_at && (
+              <Badge className="bg-purple-100 text-purple-800 hover:bg-purple-100">Dept Head Approved</Badge>
+            )}
+            {checklist.it_manager_signed_at && (
+              <Badge className="bg-indigo-100 text-indigo-800 hover:bg-indigo-100">IT Manager Received</Badge>
+            )}
+          </div>
+        </div>
+
+        {/* Employee info */}
+        <div className="grid gap-3 text-sm sm:grid-cols-2">
+          <div className="rounded-lg border border-slate-200 bg-white/80 p-3">
+            <p className="text-xs font-medium uppercase tracking-wide text-slate-500">Date Created</p>
+            <p className="mt-1 font-medium text-slate-900">{new Date(checklist.created_at).toLocaleDateString()}</p>
+          </div>
+          <div className="rounded-lg border border-slate-200 bg-white/80 p-3">
+            <p className="text-xs font-medium uppercase tracking-wide text-slate-500">Employee</p>
+            <p className="mt-1 font-medium text-slate-900">{checklist.employee_name}</p>
+            {checklist.employee_designation && (
+              <p className="text-xs text-slate-500">{checklist.employee_designation}</p>
+            )}
+            {checklist.employee_department && (
+              <p className="text-xs text-slate-500">{checklist.employee_department}</p>
+            )}
+          </div>
+        </div>
+
+        <div className="rounded-lg border border-slate-200 bg-white/80 p-3 text-sm">
+          <p className="text-xs font-medium uppercase tracking-wide text-slate-500">Received By</p>
+          <p className="mt-1 font-medium text-slate-900">{checklist.received_by || 'N/A'}</p>
+        </div>
+
+        {/* Remarks */}
+        {checklist.remarks && (
+          <div className="rounded-lg border border-slate-200 bg-white/80 p-3 text-sm">
+            <p className="text-xs font-medium uppercase tracking-wide text-slate-500">Remarks</p>
+            <p className="mt-1 text-slate-700">{checklist.remarks}</p>
+          </div>
+        )}
+
+        {/* Signatory status */}
+        <div className="grid gap-3 text-sm sm:grid-cols-3">
+          <div className="rounded-lg border border-slate-200 bg-white/80 p-3">
+            <p className="text-xs font-medium uppercase tracking-wide text-slate-500">Employee</p>
+            <p className={`mt-1 font-medium ${checklist.employee_signed_at ? 'text-green-700' : 'text-slate-400'}`}>
+              {checklist.employee_signed_at ? 'Signed' : 'Pending'}
+            </p>
+            {checklist.employee_signed_at && (
+              <p className="text-xs text-slate-500">
+                {new Date(checklist.employee_signed_at).toLocaleDateString()}
+              </p>
+            )}
+          </div>
+          <div className="rounded-lg border border-slate-200 bg-white/80 p-3">
+            <p className="text-xs font-medium uppercase tracking-wide text-slate-500">Department Head</p>
+            <p className={`mt-1 font-medium ${checklist.dept_head_signed_at ? 'text-green-700' : 'text-slate-400'}`}>
+              {checklist.dept_head_signed_at ? 'Approved' : 'Pending'}
+            </p>
+            {checklist.dept_head_signed_at && (
+              <p className="text-xs text-slate-500">
+                {new Date(checklist.dept_head_signed_at).toLocaleDateString()}
+              </p>
+            )}
+          </div>
+          <div className="rounded-lg border border-slate-200 bg-white/80 p-3">
+            <p className="text-xs font-medium uppercase tracking-wide text-slate-500">IT Manager</p>
+            <p className={`mt-1 font-medium ${checklist.it_manager_signed_at ? 'text-green-700' : 'text-slate-400'}`}>
+              {checklist.it_manager_signed_at ? 'Received' : 'Pending'}
+            </p>
+            {checklist.it_manager_signed_at && (
+              <p className="text-xs text-slate-500">
+                {new Date(checklist.it_manager_signed_at).toLocaleDateString()}
+              </p>
+            )}
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
 
 export default function DocumentsTab({
   setActiveTab,
@@ -2293,6 +2819,12 @@ export default function DocumentsTab({
   const [returnSearchQuery, setReturnSearchQuery] = useState('');
   const [transferSearchQuery, setTransferSearchQuery] = useState('');
   const [borrowSearchQuery, setBorrowSearchQuery] = useState('');
+  const [checklistSearchQuery, setChecklistSearchQuery] = useState('');
+  const [assetChecklistForms, setAssetChecklistForms] = useState<ChecklistRow[]>([]);
+  const [filteredChecklistForms, setFilteredChecklistForms] = useState<ChecklistRow[]>([]);
+  const [selectedChecklist, setSelectedChecklist] = useState<ChecklistRow | null>(null);
+  const [showChecklistPreview, setShowChecklistPreview] = useState(false);
+  const [checklistPdfUrl, setChecklistPdfUrl] = useState<string | null>(null);
   const [selectedForm, setSelectedForm] = useState<AccountabilityForm | null>(
     null
   );
@@ -2307,14 +2839,20 @@ export default function DocumentsTab({
   const [selectedBorrowFormBatch, setSelectedBorrowFormBatch] =
     useState<AssetBorrowFormBatch | null>(null);
   const [showBorrowFormDetail, setShowBorrowFormDetail] = useState(false);
-  const [activeTab, setActiveTabState] = useState<'accountability' | 'returns'>(
+  const [activeSubTab, setActiveSubTab] = useState<string>(
     'accountability'
   );
   const [statusFilter, setStatusFilter] = useState<
     'all' | 'active' | 'disabled'
   >('active');
 
+  const [isTabLoading, setIsTabLoading] = useState(true);
   const isLoading = userLoading;
+
+  useEffect(() => {
+    const timer = setTimeout(() => setIsTabLoading(false), 1400);
+    return () => clearTimeout(timer);
+  }, []);
 
   const fetchAccountabilityForms = async () => {
     if (!currentUser?.id) {
@@ -2471,6 +3009,45 @@ export default function DocumentsTab({
     }
   }, [borrowSearchQuery, assetBorrowForms]);
 
+  useEffect(() => {
+    if (!checklistSearchQuery.trim()) {
+      setFilteredChecklistForms(assetChecklistForms);
+    } else {
+      const q = checklistSearchQuery.trim().toLowerCase();
+      const filtered = assetChecklistForms.filter(row =>
+        [
+          row.form_number,
+          row.employee_name,
+          row.employee_department,
+          row.employee_company,
+          row.asset?.name,
+          row.asset?.code,
+        ]
+          .filter(Boolean)
+          .some(value => String(value).toLowerCase().includes(q))
+      );
+      setFilteredChecklistForms(filtered);
+    }
+  }, [checklistSearchQuery, assetChecklistForms]);
+
+  const fetchAssetChecklistForms = async () => {
+    if (!currentUser?.id) {
+      setAssetChecklistForms([]);
+      setFilteredChecklistForms([]);
+      return;
+    }
+    try {
+      const response = await api.get(`/asset-assignments/checklists?employee_id=${currentUser.id}`);
+      const forms: ChecklistRow[] = Array.isArray(response.checklists) ? response.checklists : [];
+      setAssetChecklistForms(forms);
+      setFilteredChecklistForms(forms);
+    } catch (error) {
+      console.error('Failed to fetch checklist forms:', error);
+      setAssetChecklistForms([]);
+      setFilteredChecklistForms([]);
+    }
+  };
+
   const fetchAssetBorrowForms = async () => {
     if (!currentUser?.id) {
       setAssetBorrowForms([]);
@@ -2500,6 +3077,7 @@ export default function DocumentsTab({
         fetchAssetReturnForms(),
         fetchAssetTransferForms(),
         fetchAssetBorrowForms(),
+        fetchAssetChecklistForms(),
       ]);
     };
     loadData();
@@ -2641,7 +3219,57 @@ export default function DocumentsTab({
     }
   };
 
-  if (isLoading || !currentUser) {
+  const handleDownloadChecklist = async (row: ChecklistRow) => {
+    try {
+      const assetLabel = row.asset
+        ? `${row.asset.name || 'Asset'} (${row.asset.code || '—'})`
+        : 'Asset';
+      const blob = await generateAssetChecklistPDF({ ...row, asset_label: assetLabel });
+      const formNumber = row.form_number || `CHK-${row.assignment_id}`;
+      downloadPDF(blob, `Asset_Checklist_${formNumber}.pdf`);
+      toast.success('Checklist PDF downloaded successfully');
+    } catch (error) {
+      console.error('Failed to download checklist PDF:', error);
+      toast.error('Failed to download checklist PDF');
+    }
+  };
+
+  const handleViewChecklist = async (row: ChecklistRow) => {
+    setSelectedChecklist(row);
+    setShowChecklistPreview(true);
+  };
+
+  useEffect(() => {
+    if (!showChecklistPreview || !selectedChecklist) return;
+    let cancelled = false;
+    const generate = async () => {
+      try {
+        const assetLabel = selectedChecklist.asset
+          ? `${selectedChecklist.asset.name || 'Asset'} (${selectedChecklist.asset.code || '—'})`
+          : 'Asset';
+        const blob = await generateAssetChecklistPDF({
+          ...selectedChecklist,
+          asset_label: assetLabel,
+        });
+        if (cancelled) return;
+        const url = URL.createObjectURL(blob);
+        setChecklistPdfUrl(url);
+      } catch (error) {
+        console.error('Failed to generate checklist preview:', error);
+        toast.error('Failed to generate checklist PDF');
+      }
+    };
+    generate();
+    return () => {
+      cancelled = true;
+      setChecklistPdfUrl(prev => {
+        if (prev) URL.revokeObjectURL(prev);
+        return null;
+      });
+    };
+  }, [showChecklistPreview, selectedChecklist]);
+
+  if (isTabLoading || isLoading || !currentUser) {
     return (
       <Card className="shadow-lg rounded-2xl overflow-hidden border-0">
         <CardHeader className="bg-gradient-to-r from-red-600 to-red-800 p-4 text-white sm:p-6 lg:p-8">
@@ -2657,40 +3285,35 @@ export default function DocumentsTab({
         </CardHeader>
 
         <CardContent className="p-4 sm:p-6 lg:p-8">
-          {/* Accountability Forms Section Shimmer */}
+          {/* Tab Triggers Shimmer */}
+          <div className={cn(segmentTabsListClassName, 'grid grid-cols-2 sm:grid-cols-5 mb-6')}>
+            {Array.from({ length: 5 }).map((_, i) => (
+              <div key={i} className="flex h-10 items-center justify-center gap-2 rounded-lg bg-slate-100/90 px-3">
+                <Shimmer className="w-4 h-4 rounded" />
+                <Shimmer className="h-4 w-16 rounded" />
+              </div>
+            ))}
+          </div>
+
+          {/* Content Shimmer — single tab */}
           <div className="mb-8">
             <div className="flex items-center gap-3 mb-6">
               <Shimmer className="w-6 h-6 rounded" />
-              <Shimmer className="h-6 w-64 rounded" />
+              <Shimmer className="h-6 w-48 rounded" />
               <Shimmer className="h-6 w-8 rounded-full" />
             </div>
 
-            {/* Search and Filter Controls Shimmer */}
-            <div className="flex flex-col sm:flex-row gap-4 mb-6">
-              {/* Search Bar */}
-              <div className="relative flex-1">
-                <Shimmer className="absolute left-3 top-1/2 transform -translate-y-1/2 w-4 h-4 rounded" />
-                <Shimmer className="h-10 w-full max-w-md rounded-lg" />
-              </div>
-
-              {/* Status Filter */}
-              <div className="flex gap-2">
-                <Shimmer className="h-10 w-16 rounded-lg" />
-                <Shimmer className="h-10 w-16 rounded-lg" />
-                <Shimmer className="h-10 w-20 rounded-lg" />
-              </div>
+            <div className="relative mb-6">
+              <Shimmer className="absolute left-3 top-1/2 transform -translate-y-1/2 w-4 h-4 rounded" />
+              <Shimmer className="h-10 w-full max-w-md rounded-lg" />
             </div>
 
-            {/* Shimmer cards grid */}
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-              {Array.from({ length: 6 }).map((_, i) => (
-                <div
-                  key={i}
-                  className="border rounded-lg p-6 space-y-4 hover:shadow-md transition-shadow bg-white"
-                >
+              {Array.from({ length: 4 }).map((_, i) => (
+                <div key={i} className="border rounded-lg p-6 space-y-4 hover:shadow-md transition-shadow bg-white">
                   <div className="flex items-start justify-between">
                     <div className="flex items-center gap-3">
-                      <Shimmer className="w-12 h-12 rounded-lg" />
+                      <Shimmer className="w-10 h-10 rounded-lg" />
                       <div>
                         <Shimmer className="h-5 w-32 rounded" />
                         <Shimmer className="h-4 w-24 rounded mt-1" />
@@ -2698,86 +3321,17 @@ export default function DocumentsTab({
                     </div>
                     <Shimmer className="h-6 w-16 rounded-full" />
                   </div>
-
                   <div className="space-y-3">
-                    <div className="flex items-start gap-3">
-                      <Shimmer className="w-4 h-4 rounded-full mt-0.5" />
-                      <Shimmer className="h-4 w-48 rounded" />
-                    </div>
-                    <div className="flex items-start gap-3">
-                      <Shimmer className="w-4 h-4 rounded-full mt-0.5" />
-                      <Shimmer className="h-4 w-36 rounded" />
-                    </div>
-                    <div className="flex items-start gap-3">
-                      <Shimmer className="w-4 h-4 rounded-full mt-0.5" />
-                      <Shimmer className="h-4 w-40 rounded" />
-                    </div>
+                    <Shimmer className="h-4 w-48 rounded" />
+                    <Shimmer className="h-4 w-36 rounded" />
+                    <Shimmer className="h-4 w-40 rounded" />
                   </div>
-
                   <div className="flex gap-2">
                     <Shimmer className="h-10 flex-1 rounded-lg" />
                     <Shimmer className="h-10 w-20 rounded-lg" />
                   </div>
                 </div>
               ))}
-            </div>
-          </div>
-
-          {/* Asset Return Forms Section Shimmer */}
-          <div className="mb-8">
-            <div className="flex items-center gap-3 mb-6">
-              <Shimmer className="w-6 h-6 rounded" />
-              <Shimmer className="h-6 w-64 rounded" />
-              <Shimmer className="h-6 w-8 rounded-full" />
-            </div>
-
-            {/* Return Forms Search Bar Shimmer */}
-            <div className="relative mb-6">
-              <Shimmer className="absolute left-3 top-1/2 transform -translate-y-1/2 w-4 h-4 rounded" />
-              <Shimmer className="h-10 w-full max-w-md rounded-lg" />
-            </div>
-
-            {/* Return Form Cards Shimmer */}
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-              {Array.from({ length: 4 }).map((_, i) => (
-                <div
-                  key={i}
-                  className="border rounded-lg p-6 hover:shadow-md transition-shadow bg-white"
-                >
-                  <div className="flex items-start justify-between mb-4">
-                    <div className="flex-1">
-                      <div className="flex items-center gap-2 mb-2">
-                        <Shimmer className="h-5 w-48 rounded" />
-                        <Shimmer className="h-4 w-20 rounded" />
-                      </div>
-                      <div className="text-sm text-gray-600 mb-2">
-                        <Shimmer className="h-4 w-32 rounded" />
-                      </div>
-                      <div className="text-sm text-gray-600 mb-2">
-                        <Shimmer className="h-4 w-28 rounded" />
-                      </div>
-                      <div className="text-sm text-gray-600">
-                        <Shimmer className="h-4 w-40 rounded" />
-                      </div>
-                    </div>
-                  </div>
-
-                  <div className="flex gap-2">
-                    <Shimmer className="h-10 flex-1 rounded-lg" />
-                    <Shimmer className="h-10 w-20 rounded-lg" />
-                  </div>
-                </div>
-              ))}
-            </div>
-          </div>
-
-          {/* Other Documents Section Shimmer */}
-          <div className="border-t pt-8">
-            <div className="text-center py-12 space-y-4">
-              <Shimmer className="w-16 h-16 mx-auto rounded-full" />
-              <Shimmer className="h-6 w-48 mx-auto rounded" />
-              <Shimmer className="h-4 w-64 mx-auto rounded" />
-              <Shimmer className="h-4 w-32 mx-auto rounded" />
             </div>
           </div>
         </CardContent>
@@ -2805,392 +3359,558 @@ export default function DocumentsTab({
         <Separator className="bg-gray-100" />
 
         <CardContent className="p-4 sm:p-6 lg:p-8">
-          {/* Accountability Forms Section */}
-          <div className="mb-8">
-            <div className="flex items-center gap-3 mb-6">
-              <FileCheck className="w-6 h-6 text-blue-600" />
-              <h3 className="text-xl font-semibold text-gray-900">
-                Asset Accountability Forms
-              </h3>
-              <span className="bg-blue-100 text-blue-800 text-sm px-2 py-1 rounded-full">
-                {filteredForms.length}
-              </span>
-            </div>
+          <Tabs value={activeSubTab} onValueChange={setActiveSubTab} className="w-full">
+            <TabsList className={cn(segmentTabsListClassName, 'grid grid-cols-2 sm:grid-cols-5 mb-6')}>
+              <TabsTrigger value="accountability" className={cn(segmentTabsTriggerClassName, 'text-xs sm:text-sm')}>
+                <FileCheck className="mr-1.5 h-4 w-4" /> Accountability
+              </TabsTrigger>
+              <TabsTrigger value="returns" className={cn(segmentTabsTriggerClassName, 'text-xs sm:text-sm')}>
+                <FileDown className="mr-1.5 h-4 w-4" /> Returns
+              </TabsTrigger>
+              <TabsTrigger value="transfers" className={cn(segmentTabsTriggerClassName, 'text-xs sm:text-sm')}>
+                <ArrowRightLeft className="mr-1.5 h-4 w-4" /> Transfers
+              </TabsTrigger>
+              <TabsTrigger value="borrows" className={cn(segmentTabsTriggerClassName, 'text-xs sm:text-sm')}>
+                <HandHelping className="mr-1.5 h-4 w-4" /> Borrows
+              </TabsTrigger>
+              <TabsTrigger value="checklists" className={cn(segmentTabsTriggerClassName, 'text-xs sm:text-sm')}>
+                <ClipboardList className="mr-1.5 h-4 w-4" /> Checklists
+              </TabsTrigger>
+            </TabsList>
 
-            {/* Search and Filter Controls */}
-            <div className="flex flex-col sm:flex-row gap-4 mb-6">
-              {/* Search Bar */}
-              <div className="relative flex-1">
+            {/* TabsContent: Accountability */}
+            <TabsContent value="accountability" className="mt-0">
+              <div className="flex items-center gap-3 mb-6">
+                <FileCheck className="w-6 h-6 text-blue-600" />
+                <h3 className="text-xl font-semibold text-gray-900">
+                  Asset Accountability Forms
+                </h3>
+                <span className="bg-blue-100 text-blue-800 text-sm px-2 py-1 rounded-full">
+                  {filteredForms.length}
+                </span>
+              </div>
+
+              <div className="flex flex-col sm:flex-row gap-4 mb-6">
+                <div className="relative flex-1">
+                  <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 w-4 h-4" />
+                  <Input
+                    type="text"
+                    placeholder="Search form number, employee, assets, department..."
+                    value={searchQuery}
+                    onChange={e => setSearchQuery(e.target.value)}
+                    className="pl-10 pr-4 py-2 w-full max-w-md"
+                  />
+                </div>
+                <div className="flex gap-2">
+                  <Button
+                    variant={statusFilter === 'all' ? 'default' : 'outline'}
+                    size="sm"
+                    onClick={() => setStatusFilter('all')}
+                    className={
+                      statusFilter === 'all'
+                        ? 'bg-blue-600 hover:bg-blue-700 text-white'
+                        : 'border-gray-300 text-gray-700 hover:bg-gray-50'
+                    }
+                  >
+                    All
+                  </Button>
+                  <Button
+                    variant={statusFilter === 'active' ? 'default' : 'outline'}
+                    size="sm"
+                    onClick={() => setStatusFilter('active')}
+                    className={
+                      statusFilter === 'active'
+                        ? 'bg-green-600 hover:bg-green-700 text-white'
+                        : 'border-gray-300 text-gray-700 hover:bg-gray-50'
+                    }
+                  >
+                    Active
+                  </Button>
+                  <Button
+                    variant={statusFilter === 'disabled' ? 'default' : 'outline'}
+                    size="sm"
+                    onClick={() => setStatusFilter('disabled')}
+                    className={
+                      statusFilter === 'disabled'
+                        ? 'bg-red-600 hover:bg-red-700 text-white'
+                        : 'border-gray-300 text-gray-700 hover:bg-gray-50'
+                    }
+                  >
+                    Disabled
+                  </Button>
+                </div>
+              </div>
+
+              {filteredForms.length === 0 ? (
+                <div className="text-center py-12 rounded-xl border-2 border-dashed border-slate-200 bg-slate-50/50">
+                  <div className="inline-flex p-3 bg-slate-100 rounded-full mb-4">
+                    <FileCheck className="w-10 h-10 text-slate-400" />
+                  </div>
+                  {searchQuery ? (
+                    <>
+                      <p className="text-slate-600 text-lg font-medium">No forms found</p>
+                      <p className="text-slate-400 text-sm mt-1">
+                        No forms match &quot;{searchQuery}&quot;. Try different
+                        keywords (form number, employee, asset, etc.).
+                      </p>
+                    </>
+                  ) : (
+                    <>
+                      <p className="text-slate-600 text-lg font-medium">
+                        No accountability forms yet
+                      </p>
+                      <p className="text-slate-400 text-sm mt-1">
+                        Forms will appear here when assets are assigned to you
+                      </p>
+                    </>
+                  )}
+                </div>
+              ) : (
+                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+                  {filteredForms.map(form => (
+                    <AccountabilityFormCard
+                      key={form.id}
+                      form={form}
+                      onSign={handleSignForm}
+                      onView={handleViewForm}
+                      showDeclineButton
+                      onDecline={handleDeclineAccountabilityForm}
+                      showDownloadButton={false}
+                    />
+                  ))}
+                </div>
+              )}
+            </TabsContent>
+
+            {/* TabsContent: Returns */}
+            <TabsContent value="returns" className="mt-0">
+              <div className="flex items-center gap-3 mb-6">
+                <FileDown className="w-6 h-6 text-green-600" />
+                <h3 className="text-xl font-semibold text-gray-900">
+                  Asset Return Forms
+                </h3>
+                <span className="bg-green-100 text-green-800 text-sm px-2 py-1 rounded-full">
+                  {filteredReturnForms.length}
+                </span>
+              </div>
+
+              <div className="relative mb-6">
                 <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 w-4 h-4" />
                 <Input
                   type="text"
-                  placeholder="Search form number, employee, assets, department..."
-                  value={searchQuery}
-                  onChange={e => setSearchQuery(e.target.value)}
+                  placeholder="Search form number, assets, returner, department, notes..."
+                  value={returnSearchQuery}
+                  onChange={e => setReturnSearchQuery(e.target.value)}
                   className="pl-10 pr-4 py-2 w-full max-w-md"
                 />
               </div>
 
-              {/* Status Filter */}
-              <div className="flex gap-2">
-                <Button
-                  variant={statusFilter === 'all' ? 'default' : 'outline'}
-                  size="sm"
-                  onClick={() => setStatusFilter('all')}
-                  className={
-                    statusFilter === 'all'
-                      ? 'bg-blue-600 hover:bg-blue-700 text-white'
-                      : 'border-gray-300 text-gray-700 hover:bg-gray-50'
-                  }
-                >
-                  All
-                </Button>
-                <Button
-                  variant={statusFilter === 'active' ? 'default' : 'outline'}
-                  size="sm"
-                  onClick={() => setStatusFilter('active')}
-                  className={
-                    statusFilter === 'active'
-                      ? 'bg-green-600 hover:bg-green-700 text-white'
-                      : 'border-gray-300 text-gray-700 hover:bg-gray-50'
-                  }
-                >
-                  Active
-                </Button>
-                <Button
-                  variant={statusFilter === 'disabled' ? 'default' : 'outline'}
-                  size="sm"
-                  onClick={() => setStatusFilter('disabled')}
-                  className={
-                    statusFilter === 'disabled'
-                      ? 'bg-red-600 hover:bg-red-700 text-white'
-                      : 'border-gray-300 text-gray-700 hover:bg-gray-50'
-                  }
-                >
-                  Disabled
-                </Button>
-              </div>
-            </div>
-
-            {filteredForms.length === 0 ? (
-              <div className="text-center py-12 rounded-lg">
-                <FileCheck className="w-16 h-16 text-gray-300 mx-auto mb-4" />
-                {searchQuery ? (
-                  <>
-                    <p className="text-gray-500 text-lg">No forms found</p>
-                    <p className="text-gray-400 text-sm mt-1">
-                      No forms match &quot;{searchQuery}&quot;. Try different
-                      keywords (form number, employee, asset, etc.).
-                    </p>
-                  </>
-                ) : (
-                  <>
-                    <p className="text-gray-500 text-lg">
-                      No accountability forms yet
-                    </p>
-                    <p className="text-gray-400 text-sm mt-1">
-                      Forms will appear here when assets are assigned to you
-                    </p>
-                  </>
-                )}
-              </div>
-            ) : (
-              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-                {filteredForms.map(form => (
-                  <AccountabilityFormCard
-                    key={form.id}
-                    form={form}
-                    onSign={handleSignForm}
-                    onView={handleViewForm}
-                    showDeclineButton
-                    onDecline={handleDeclineAccountabilityForm}
-                    showDownloadButton={false}
-                  />
-                ))}
-              </div>
-            )}
-          </div>
-
-          {/* Asset Return Forms Section */}
-          <div id="asset-return-forms" className="mb-8">
-            <div className="flex items-center gap-3 mb-6">
-              <FileDown className="w-6 h-6 text-green-600" />
-              <h3 className="text-xl font-semibold text-gray-900">
-                Asset Return Forms
-              </h3>
-              <span className="bg-green-100 text-green-800 text-sm px-2 py-1 rounded-full">
-                {filteredReturnForms.length}
-              </span>
-            </div>
-
-            {/* Return Forms Search Bar */}
-            <div className="relative mb-6">
-              <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 w-4 h-4" />
-              <Input
-                type="text"
-                placeholder="Search form number, assets, returner, department, notes..."
-                value={returnSearchQuery}
-                onChange={e => setReturnSearchQuery(e.target.value)}
-                className="pl-10 pr-4 py-2 w-full max-w-md"
-              />
-            </div>
-
-            {filteredReturnForms.length === 0 ? (
-              <div className="text-center py-12 rounded-lg">
-                <FileDown className="w-16 h-16 text-gray-300 mx-auto mb-4" />
-                {returnSearchQuery ? (
-                  <>
-                    <p className="text-gray-500 text-lg">
-                      No return forms found
-                    </p>
-                    <p className="text-gray-400 text-sm mt-1">
-                      No return forms match "{returnSearchQuery}". Try a
-                      different search term.
-                    </p>
-                  </>
-                ) : (
-                  <>
-                    <p className="text-gray-500 text-lg">
-                      No asset return forms yet
-                    </p>
-                    <p className="text-gray-400 text-sm mt-1">
-                      Return forms will appear here when you return assets
-                    </p>
-                  </>
-                )}
-              </div>
-            ) : (
-              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-                {filteredReturnForms.map(batch => (
-                  <ReturnFormCard
-                    key={
-                      batch.formID ??
-                      batch.return_batch_id ??
-                      batch.returns[0]?.return_id ??
-                      ''
-                    }
-                    batch={batch}
-                    onView={() => {
-                      setSelectedReturnFormBatch(batch);
-                      setShowReturnFormDetail(true);
-                    }}
-                    onSign={handleSignReturnForm}
-                    onDownload={async () => {
-                      try {
-                        const signature =
-                          batch.signed_at &&
-                          currentUser?.id === batch.user_id
-                            ? {
-                                signed_at: batch.signed_at,
-                              }
-                            : undefined;
-                        const returnDataForPDF = buildReturnDataForPDFFromBatch(
-                          batch,
-                          signature
-                        );
-                        if (!returnDataForPDF) {
-                          throw new Error(
-                            'Return form data is missing or incomplete'
+              {filteredReturnForms.length === 0 ? (
+                <div className="text-center py-12 rounded-xl border-2 border-dashed border-slate-200 bg-slate-50/50">
+                  <div className="inline-flex p-3 bg-slate-100 rounded-full mb-4">
+                    <FileDown className="w-10 h-10 text-slate-400" />
+                  </div>
+                  {returnSearchQuery ? (
+                    <>
+                      <p className="text-slate-600 text-lg font-medium">
+                        No return forms found
+                      </p>
+                      <p className="text-slate-400 text-sm mt-1">
+                        No return forms match "{returnSearchQuery}". Try a
+                        different search term.
+                      </p>
+                    </>
+                  ) : (
+                    <>
+                      <p className="text-slate-600 text-lg font-medium">
+                        No asset return forms yet
+                      </p>
+                      <p className="text-slate-400 text-sm mt-1">
+                        Return forms will appear here when you return assets
+                      </p>
+                    </>
+                  )}
+                </div>
+              ) : (
+                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+                  {filteredReturnForms.map(batch => (
+                    <ReturnFormCard
+                      key={
+                        batch.formID ??
+                        batch.return_batch_id ??
+                        batch.returns[0]?.return_id ??
+                        ''
+                      }
+                      batch={batch}
+                      onView={() => {
+                        setSelectedReturnFormBatch(batch);
+                        setShowReturnFormDetail(true);
+                      }}
+                      onSign={handleSignReturnForm}
+                      onDownload={async () => {
+                        try {
+                          const signature =
+                            batch.signed_at &&
+                            currentUser?.id === batch.user_id
+                              ? {
+                                  signed_at: batch.signed_at,
+                                }
+                              : undefined;
+                          const returnDataForPDF = buildReturnDataForPDFFromBatch(
+                            batch,
+                            signature
+                          );
+                          if (!returnDataForPDF) {
+                            throw new Error(
+                              'Return form data is missing or incomplete'
+                            );
+                          }
+                          const pdfBlob =
+                            await generateAssetReturnPDF(returnDataForPDF);
+                          const fileName =
+                            batch.returns.length === 1
+                              ? `Asset_Return_Form_${batch.returns[0].assignment?.asset?.code ?? 'return'}_${Date.now()}.pdf`
+                              : `Asset_Return_Form_${batch.returns.length}_assets_${Date.now()}.pdf`;
+                          downloadPDF(pdfBlob, fileName);
+                          toast.success('Return form downloaded successfully');
+                        } catch (error) {
+                          console.error('Failed to download return form:', error);
+                          toast.error(
+                            error instanceof Error
+                              ? error.message
+                              : 'Failed to download return form'
                           );
                         }
-                        const pdfBlob =
-                          await generateAssetReturnPDF(returnDataForPDF);
-                        const fileName =
-                          batch.returns.length === 1
-                            ? `Asset_Return_Form_${batch.returns[0].assignment?.asset?.code ?? 'return'}_${Date.now()}.pdf`
-                            : `Asset_Return_Form_${batch.returns.length}_assets_${Date.now()}.pdf`;
-                        downloadPDF(pdfBlob, fileName);
-                        toast.success('Return form downloaded successfully');
-                      } catch (error) {
-                        console.error('Failed to download return form:', error);
-                        toast.error(
-                          error instanceof Error
-                            ? error.message
-                            : 'Failed to download return form'
-                        );
-                      }
-                    }}
-                  />
-                ))}
-              </div>
-            )}
-          </div>
+                      }}
+                    />
+                  ))}
+                </div>
+              )}
+            </TabsContent>
 
-          {/* Asset Transfer Forms Section */}
-          <div id="asset-transfer-forms" className="mb-8">
-            <div className="flex items-center gap-3 mb-6">
-              <ArrowRightLeft className="w-6 h-6 text-purple-600" />
-              <h3 className="text-xl font-semibold text-gray-900">
-                Asset Transfer Forms
-              </h3>
-              <span className="bg-purple-100 text-purple-800 text-sm px-2 py-1 rounded-full">
-                {filteredTransferForms.length}
-              </span>
-            </div>
-            <div className="relative mb-6">
-              <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 w-4 h-4" />
-              <Input
-                type="text"
-                placeholder="Search form number, assets, users, department, recipient..."
-                value={transferSearchQuery}
-                onChange={e => setTransferSearchQuery(e.target.value)}
-                className="pl-10 pr-4 py-2 w-full max-w-md"
-              />
-            </div>
-            {filteredTransferForms.length === 0 ? (
-              <div className="text-center py-12 rounded-lg">
-                <ArrowRightLeft className="w-16 h-16 text-gray-300 mx-auto mb-4" />
-                {transferSearchQuery ? (
-                  <>
-                    <p className="text-gray-500 text-lg">
-                      No transfer forms found
-                    </p>
-                    <p className="text-gray-400 text-sm mt-1">
-                      No transfer forms match &quot;{transferSearchQuery}&quot;
-                    </p>
-                  </>
-                ) : (
-                  <>
-                    <p className="text-gray-500 text-lg">
-                      No asset transfer forms yet
-                    </p>
-                    <p className="text-gray-400 text-sm mt-1">
-                      Transfer forms will appear here when assets are
-                      transferred from you
-                    </p>
-                  </>
-                )}
+            {/* TabsContent: Transfers */}
+            <TabsContent value="transfers" className="mt-0">
+              <div className="flex items-center gap-3 mb-6">
+                <ArrowRightLeft className="w-6 h-6 text-purple-600" />
+                <h3 className="text-xl font-semibold text-gray-900">
+                  Asset Transfer Forms
+                </h3>
+                <span className="bg-purple-100 text-purple-800 text-sm px-2 py-1 rounded-full">
+                  {filteredTransferForms.length}
+                </span>
               </div>
-            ) : (
-              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-                {filteredTransferForms.map(batch => (
-                  <TransferFormCard
-                    key={batch.formID ?? batch.returns[0]?.return_id ?? ''}
-                    batch={batch}
-                    onView={() => {
-                      setSelectedTransferFormBatch(batch);
-                      setShowTransferFormDetail(true);
-                    }}
-                    onSign={handleSignTransferForm}
-                    onDownload={async () => {
-                      try {
-                        const data = buildTransferDataForPDFFromBatch(batch);
-                        if (!data) {
-                          throw new Error(
-                            'Transfer form data is missing or incomplete'
+
+              <div className="relative mb-6">
+                <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 w-4 h-4" />
+                <Input
+                  type="text"
+                  placeholder="Search form number, assets, users, department, recipient..."
+                  value={transferSearchQuery}
+                  onChange={e => setTransferSearchQuery(e.target.value)}
+                  className="pl-10 pr-4 py-2 w-full max-w-md"
+                />
+              </div>
+
+              {filteredTransferForms.length === 0 ? (
+                <div className="text-center py-12 rounded-xl border-2 border-dashed border-slate-200 bg-slate-50/50">
+                  <div className="inline-flex p-3 bg-slate-100 rounded-full mb-4">
+                    <ArrowRightLeft className="w-10 h-10 text-slate-400" />
+                  </div>
+                  {transferSearchQuery ? (
+                    <>
+                      <p className="text-slate-600 text-lg font-medium">
+                        No transfer forms found
+                      </p>
+                      <p className="text-slate-400 text-sm mt-1">
+                        No transfer forms match &quot;{transferSearchQuery}&quot;
+                      </p>
+                    </>
+                  ) : (
+                    <>
+                      <p className="text-slate-600 text-lg font-medium">
+                        No asset transfer forms yet
+                      </p>
+                      <p className="text-slate-400 text-sm mt-1">
+                        Transfer forms will appear here when assets are
+                        transferred from you
+                      </p>
+                    </>
+                  )}
+                </div>
+              ) : (
+                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+                  {filteredTransferForms.map(batch => (
+                    <TransferFormCard
+                      key={batch.formID ?? batch.returns[0]?.return_id ?? ''}
+                      batch={batch}
+                      onView={() => {
+                        setSelectedTransferFormBatch(batch);
+                        setShowTransferFormDetail(true);
+                      }}
+                      onSign={handleSignTransferForm}
+                      onDownload={async () => {
+                        try {
+                          const data = buildTransferDataForPDFFromBatch(batch);
+                          if (!data) {
+                            throw new Error(
+                              'Transfer form data is missing or incomplete'
+                            );
+                          }
+                          const pdfBlob = await generateAssetTransferPDF(data);
+                          const fileName = `Asset_Transfer_Form_${batch.form_number ?? 'transfer'}_${Date.now()}.pdf`;
+                          downloadPDF(pdfBlob, fileName);
+                          toast.success('Transfer form downloaded successfully');
+                        } catch (error) {
+                          console.error(
+                            'Failed to download transfer form:',
+                            error
+                          );
+                          toast.error(
+                            error instanceof Error
+                              ? error.message
+                              : 'Failed to download transfer form'
                           );
                         }
-                        const pdfBlob = await generateAssetTransferPDF(data);
-                        const fileName = `Asset_Transfer_Form_${batch.form_number ?? 'transfer'}_${Date.now()}.pdf`;
-                        downloadPDF(pdfBlob, fileName);
-                        toast.success('Transfer form downloaded successfully');
-                      } catch (error) {
-                        console.error(
-                          'Failed to download transfer form:',
-                          error
-                        );
-                        toast.error(
-                          error instanceof Error
-                            ? error.message
-                            : 'Failed to download transfer form'
-                        );
-                      }
-                    }}
-                  />
-                ))}
-              </div>
-            )}
-          </div>
+                      }}
+                    />
+                  ))}
+                </div>
+              )}
+            </TabsContent>
 
-          {/* Asset Borrow Forms (equipment borrowing — same cards as staff borrow list) */}
-          <div id="asset-borrow-forms" className="mb-8">
-            <div className="flex items-center gap-3 mb-6">
-              <HandHelping className="w-6 h-6 text-amber-600" />
-              <h3 className="text-xl font-semibold text-gray-900">
-                Asset Borrow Forms
-              </h3>
-              <span className="bg-amber-100 text-amber-800 text-sm px-2 py-1 rounded-full">
-                {filteredBorrowForms.length}
-              </span>
-            </div>
-            <div className="relative mb-6">
-              <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 w-4 h-4" />
-              <Input
-                type="text"
-                placeholder="Search form number, equipment, purpose, status..."
-                value={borrowSearchQuery}
-                onChange={e => setBorrowSearchQuery(e.target.value)}
-                className="pl-10 pr-4 py-2 w-full max-w-md"
-              />
-            </div>
-            {filteredBorrowForms.length === 0 ? (
-              <div className="text-center py-12 rounded-lg">
-                <HandHelping className="w-16 h-16 text-gray-300 mx-auto mb-4" />
-                {borrowSearchQuery ? (
-                  <>
-                    <p className="text-gray-500 text-lg">No borrow forms found</p>
-                    <p className="text-gray-400 text-sm mt-1">
-                      No forms match &quot;{borrowSearchQuery}&quot;.
-                    </p>
-                  </>
-                ) : (
-                  <>
-                    <p className="text-gray-500 text-lg">No borrow forms yet</p>
-                    <p className="text-gray-400 text-sm mt-1">
-                      Submitted equipment borrowing requests appear here
-                    </p>
-                  </>
-                )}
+            {/* TabsContent: Borrows */}
+            <TabsContent value="borrows" className="mt-0">
+              <div className="flex items-center gap-3 mb-6">
+                <HandHelping className="w-6 h-6 text-amber-600" />
+                <h3 className="text-xl font-semibold text-gray-900">
+                  Asset Borrow Forms
+                </h3>
+                <span className="bg-amber-100 text-amber-800 text-sm px-2 py-1 rounded-full">
+                  {filteredBorrowForms.length}
+                </span>
               </div>
-            ) : (
-              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-                {filteredBorrowForms.map(batch => (
-                  <BorrowFormCard
-                    key={batch.borrow_request_id}
-                    batch={batch}
-                    onView={() => {
-                      setSelectedBorrowFormBatch(batch);
-                      setShowBorrowFormDetail(true);
-                    }}
-                    onDownload={async () => {
-                      try {
-                        const data = buildBorrowDataForPDFFromBatch(batch);
-                        if (!data) {
-                          throw new Error(
-                            'Borrow form data is missing or incomplete'
+
+              <div className="relative mb-6">
+                <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 w-4 h-4" />
+                <Input
+                  type="text"
+                  placeholder="Search form number, equipment, purpose, status..."
+                  value={borrowSearchQuery}
+                  onChange={e => setBorrowSearchQuery(e.target.value)}
+                  className="pl-10 pr-4 py-2 w-full max-w-md"
+                />
+              </div>
+
+              {filteredBorrowForms.length === 0 ? (
+                <div className="text-center py-12 rounded-xl border-2 border-dashed border-slate-200 bg-slate-50/50">
+                  <div className="inline-flex p-3 bg-slate-100 rounded-full mb-4">
+                    <HandHelping className="w-10 h-10 text-slate-400" />
+                  </div>
+                  {borrowSearchQuery ? (
+                    <>
+                      <p className="text-slate-600 text-lg font-medium">No borrow forms found</p>
+                      <p className="text-slate-400 text-sm mt-1">
+                        No forms match &quot;{borrowSearchQuery}&quot;.
+                      </p>
+                    </>
+                  ) : (
+                    <>
+                      <p className="text-slate-600 text-lg font-medium">No borrow forms yet</p>
+                      <p className="text-slate-400 text-sm mt-1">
+                        Submitted equipment borrowing requests appear here
+                      </p>
+                    </>
+                  )}
+                </div>
+              ) : (
+                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+                  {filteredBorrowForms.map(batch => (
+                    <BorrowFormCard
+                      key={batch.borrow_request_id}
+                      batch={batch}
+                      onView={() => {
+                        setSelectedBorrowFormBatch(batch);
+                        setShowBorrowFormDetail(true);
+                      }}
+                      onDownload={async () => {
+                        try {
+                          const data = buildBorrowDataForPDFFromBatch(batch);
+                          if (!data) {
+                            throw new Error(
+                              'Borrow form data is missing or incomplete'
+                            );
+                          }
+                          const pdfBlob =
+                            await generateAssetBorrowingPDF(data);
+                          const fileName = `Equipment_Borrow_${batch.form_number ?? batch.borrow_request_id.slice(0, 8)}_${Date.now()}.pdf`;
+                          downloadPDF(pdfBlob, fileName);
+                          toast.success('Borrow form downloaded successfully');
+                        } catch (error) {
+                          console.error('Failed to download borrow form:', error);
+                          toast.error(
+                            error instanceof Error
+                              ? error.message
+                              : 'Failed to download borrow form'
                           );
                         }
-                        const pdfBlob =
-                          await generateAssetBorrowingPDF(data);
-                        const fileName = `Equipment_Borrow_${batch.form_number ?? batch.borrow_request_id.slice(0, 8)}_${Date.now()}.pdf`;
-                        downloadPDF(pdfBlob, fileName);
-                        toast.success('Borrow form downloaded successfully');
-                      } catch (error) {
-                        console.error('Failed to download borrow form:', error);
-                        toast.error(
-                          error instanceof Error
-                            ? error.message
-                            : 'Failed to download borrow form'
-                        );
-                      }
-                    }}
-                  />
-                ))}
-              </div>
-            )}
-          </div>
+                      }}
+                    />
+                  ))}
+                </div>
+              )}
+            </TabsContent>
 
-          {/* Other Documents Placeholder */}
-          <div className="border-t pt-8">
-            <div className="text-center py-12 text-gray-500">
-              <FileText className="w-16 h-16 mx-auto text-gray-300 mb-4" />
-              <p className="text-lg">Other employee documents</p>
-              <p className="text-sm mt-1">
-                Contracts, certificates, payslips, etc.
-              </p>
-              <p className="text-xs text-gray-400 mt-2">Coming soon...</p>
-            </div>
-          </div>
+            {/* TabsContent: Checklists (NEW) */}
+            <TabsContent value="checklists" className="mt-0">
+              <div className="flex items-center gap-3 mb-6">
+                <ClipboardList className="w-6 h-6 text-red-600" />
+                <h3 className="text-xl font-semibold text-gray-900">
+                  Asset Checklist Forms
+                </h3>
+                <span className="bg-red-100 text-red-800 text-sm px-2 py-1 rounded-full">
+                  {filteredChecklistForms.length}
+                </span>
+              </div>
+
+              <div className="relative mb-6">
+                <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 w-4 h-4" />
+                <Input
+                  type="text"
+                  placeholder="Search form number, employee, asset..."
+                  value={checklistSearchQuery}
+                  onChange={e => setChecklistSearchQuery(e.target.value)}
+                  className="pl-10 pr-4 py-2 w-full max-w-md"
+                />
+              </div>
+
+              {filteredChecklistForms.length === 0 ? (
+                <div className="text-center py-12 rounded-xl border-2 border-dashed border-slate-200 bg-slate-50/50">
+                  <div className="inline-flex p-3 bg-slate-100 rounded-full mb-4">
+                    <ClipboardList className="w-10 h-10 text-slate-400" />
+                  </div>
+                  {checklistSearchQuery ? (
+                    <>
+                      <p className="text-slate-600 text-lg font-medium">No checklist forms found</p>
+                      <p className="text-slate-400 text-sm mt-1">
+                        No forms match &quot;{checklistSearchQuery}&quot;.
+                      </p>
+                    </>
+                  ) : (
+                    <>
+                      <p className="text-slate-600 text-lg font-medium">No checklist forms yet</p>
+                      <p className="text-slate-400 text-sm mt-1">
+                        Checklist forms will appear here when assigned.
+                      </p>
+                    </>
+                  )}
+                </div>
+              ) : (
+                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+                  {filteredChecklistForms.map(row => (
+                    <Card key={row.id} className="shadow-md hover:shadow-xl transition-all duration-200 border-slate-200 bg-white flex flex-col overflow-hidden">
+                      <CardHeader className="pb-3">
+                        <div className="flex items-start justify-between">
+                          <div className="flex items-center gap-3">
+                            <div className="p-2.5 bg-gradient-to-br from-red-500 to-red-600 shadow-sm rounded-xl">
+                              <ClipboardList className="h-5 w-5 text-white" />
+                            </div>
+                            <div>
+                              <CardTitle className="text-lg">
+                                {row.form_number || `CHK-${row.assignment_id}`}
+                              </CardTitle>
+                              <p className="text-sm text-gray-500">
+                                Created {new Date(row.created_at).toLocaleDateString()}
+                              </p>
+                            </div>
+                          </div>
+                          <Badge className="bg-red-100 text-red-800 hover:bg-red-100">
+                            {row.type_onboarding && row.type_offboarding
+                              ? 'Onboarding/Offboarding'
+                              : row.type_onboarding
+                                ? 'Onboarding'
+                                : row.type_offboarding
+                                  ? 'Offboarding'
+                                  : 'Checklist'}
+                          </Badge>
+                        </div>
+                      </CardHeader>
+
+                      <CardContent className="flex-1 flex flex-col gap-4">
+                        <div className="flex items-start gap-3">
+                          <User className="h-4 w-4 text-gray-400 mt-0.5 flex-shrink-0" />
+                          <div className="flex-1 min-w-0">
+                            <p className="font-medium text-sm">{row.employee_name}</p>
+                          </div>
+                        </div>
+
+                        <div className="flex items-start gap-3">
+                          <Package className="h-4 w-4 text-gray-400 mt-0.5 flex-shrink-0" />
+                          <div className="flex-1 min-w-0">
+                            <p className="text-sm text-gray-600">
+                              {row.asset
+                                ? `${row.asset.name || 'Asset'} (${row.asset.code || '—'})`
+                                : 'Asset'}
+                            </p>
+                          </div>
+                        </div>
+
+                        {row.employee_department && (
+                          <div className="flex items-start gap-3">
+                            <User className="h-4 w-4 text-gray-400 mt-0.5 flex-shrink-0" />
+                            <div className="flex-1 min-w-0">
+                              <p className="text-sm text-gray-600">
+                                Department: {row.employee_department}
+                              </p>
+                            </div>
+                          </div>
+                        )}
+
+                        {row.received_by && (
+                          <div className="flex items-start gap-3">
+                            <User className="h-4 w-4 text-gray-400 mt-0.5 flex-shrink-0" />
+                            <div className="flex-1 min-w-0">
+                              <p className="text-sm text-gray-600">
+                                Received by: {row.received_by}
+                              </p>
+                            </div>
+                          </div>
+                        )}
+
+                        <div className="flex items-start gap-3">
+                          <Calendar className="h-4 w-4 text-gray-400 mt-0.5 flex-shrink-0" />
+                          <div className="flex-1 min-w-0">
+                            <p className="text-sm text-gray-600">
+                              {new Date(row.created_at).toLocaleDateString()}{' '}
+                              {new Date(row.created_at).toLocaleTimeString()}
+                            </p>
+                          </div>
+                        </div>
+                      </CardContent>
+
+                      <div className="flex gap-2 border-t border-slate-100 p-4">
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          className="flex-1 bg-red-600 text-white border-red-600 hover:bg-white hover:text-red-600 hover:border-red-600 shadow-sm"
+                          onClick={() => handleViewChecklist(row)}
+                        >
+                          <Eye className="mr-2 h-4 w-4" /> View
+                        </Button>
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          className="flex-1 bg-white text-red-600 border-red-600 hover:bg-red-600 hover:text-white shadow-sm"
+                          onClick={() => handleDownloadChecklist(row)}
+                        >
+                          <Download className="mr-2 h-4 w-4" /> Download
+                        </Button>
+                      </div>
+                    </Card>
+                  ))}
+                </div>
+              )}
+            </TabsContent>
+          </Tabs>
         </CardContent>
       </Card>
 
@@ -3436,6 +4156,61 @@ export default function DocumentsTab({
                 >
                   <Download className="mr-2 h-4 w-4" />
                   Download PDF
+                </Button>
+              </AppDialogChromeFooter>
+            </>
+          )}
+        </AppDialogFrame>
+      </Dialog>
+
+      {/* Checklist Preview Dialog */}
+      <Dialog open={showChecklistPreview} onOpenChange={(open) => {
+        if (!open) {
+          setShowChecklistPreview(false);
+          if (checklistPdfUrl) {
+            URL.revokeObjectURL(checklistPdfUrl);
+            setChecklistPdfUrl(null);
+          }
+        }
+      }}>
+        <AppDialogFrame className="max-w-4xl max-h-[90vh] overflow-hidden !flex !flex-col !gap-0 !border-0 !p-0">
+          {selectedChecklist && (
+            <>
+              <AppDialogGradientHeader
+                title={`${selectedChecklist.employee_name} - ${selectedChecklist.form_number || `CHK-${selectedChecklist.assignment_id}`}`}
+                description="Asset Checklist Form Preview"
+              />
+              <AppDialogBody className="min-h-0 flex-1 overflow-auto !p-0">
+                {checklistPdfUrl ? (
+                  <PDFViewer pdfUrl={checklistPdfUrl} className="h-full w-full" />
+                ) : (
+                  <div className="flex h-full w-full items-center justify-center text-gray-500">
+                    Generating checklist PDF preview...
+                  </div>
+                )}
+              </AppDialogBody>
+              <AppDialogChromeFooter className="justify-end gap-3">
+                {selectedChecklist && (
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => handleDownloadChecklist(selectedChecklist)}
+                  >
+                    <Download className="mr-2 h-4 w-4" /> Download PDF
+                  </Button>
+                )}
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => {
+                    setShowChecklistPreview(false);
+                    if (checklistPdfUrl) {
+                      URL.revokeObjectURL(checklistPdfUrl);
+                      setChecklistPdfUrl(null);
+                    }
+                  }}
+                >
+                  Close
                 </Button>
               </AppDialogChromeFooter>
             </>

@@ -1,6 +1,7 @@
 import { randomUUID } from 'crypto';
 import type { Pool } from 'mysql2/promise';
 import { getScopedActiveCompany } from '../utils/activeCompany.js';
+import type { AssetBorrowRequestRow } from '../repositories/assetBorrowRequests.repository.js';
 import {
   classifyDepartmentScopeByName,
   getAssetScope,
@@ -10,18 +11,22 @@ import {
 import { isUserManagerApprover1 } from '../utils/approverNotifications.js';
 import { generateBorrowFormNumber } from '../utils/borrowFormNumber.js';
 import {
+  findApprovedBorrowRequestsForReceive,
   findBorrowRequestsApprovedByDeptHeadMe,
   findAvailableAssetsForBorrowStaffPool,
   findBorrowRequestsForList,
   findBorrowRequestsForUser,
   findPendingDeptHeadBorrowRequests,
+  getAssignmentForBorrowRequest,
   getAvailableAssetByCodeForBorrowStaffPool,
   getBorrowRequestById,
   getCategoryDepartmentForCompany,
   getTypeForCategoryAndCompany,
   insertAssetBorrowRequest,
+  updateAssignmentStatusActive,
   updateBorrowRequestDeptHeadApprove,
   updateBorrowRequestDeptHeadDecline,
+  updateBorrowRequestReceived,
   updateBorrowRequestStaffApprove,
   updateBorrowRequestStaffDecline,
   updateBorrowRequestReturnProcess,
@@ -101,6 +106,7 @@ export class AssetBorrowRequestsService {
       formNumber,
       expectedReturnAt: expectedMysql,
       purpose: body.purpose.trim(),
+      requestedBySignature: body.requested_by_signature ?? null,
     });
 
     return { id };
@@ -108,17 +114,26 @@ export class AssetBorrowRequestsService {
 
   static async listForStaff(
     pool: Pool,
-    userId: string
+    userId: string,
+    companyIdParam?: string
   ): Promise<
     | { rows: Awaited<ReturnType<typeof findBorrowRequestsForList>> }
     | { error: string; status: number }
   > {
-    const { companyId, borrowScope } = await getBorrowRequestListScope(
-      pool,
-      userId
-    );
+    // Use provided companyId if given, otherwise resolve from scope
+    let companyId: string | null;
+    let borrowScope: 'it' | 'admin' | null = null;
+
+    if (companyIdParam) {
+      companyId = companyIdParam;
+    } else {
+      const scope = await getBorrowRequestListScope(pool, userId);
+      companyId = scope.companyId;
+      borrowScope = scope.borrowScope;
+    }
+
     if (!companyId) {
-      return { error: 'Company context required', status: 400 };
+      return { rows: [] };
     }
 
     const rows = await findBorrowRequestsForList(
@@ -354,6 +369,8 @@ export class AssetBorrowRequestsService {
       preUsageCondition: string;
       processorRemarks?: string;
       conditionImages?: string[];
+      processorSignature?: string;
+      processorSignedAt?: string;
     }
   ): Promise<{ ok: true } | { error: string; status: number }> {
     const row = await getBorrowRequestById(pool, params.borrowRequestId);
@@ -368,9 +385,6 @@ export class AssetBorrowRequestsService {
     }
     if (borrowScope !== null && borrowScope !== row.borrow_scope) {
       return { error: 'Not authorized for this scope', status: 403 };
-    }
-    if (!row.dept_head_signed_at) {
-      return { error: 'Borrow request is not approved by department head yet', status: 400 };
     }
     if (row.declined_at) {
       return { error: 'Borrow request was declined', status: 400 };
@@ -410,13 +424,21 @@ export class AssetBorrowRequestsService {
       userId,
     ]);
 
+    // Set assignment status to 'Inactive' - asset will appear in My Assets only after receive approval
+    await pool.execute(
+      `UPDATE asset_assignments SET status = 'Inactive' WHERE assignmentID = ?`,
+      [assignmentId]
+    );
+
     const updated = await updateBorrowRequestStaffApprove(pool, {
       borrowRequestId: params.borrowRequestId,
       approvedBy: userId,
       assetId: asset.assetID,
       preUsageCondition: params.preUsageCondition,
-      processorRemarks: params.processorRemarks,
-      preUsageConditionImages: params.conditionImages,
+      processorRemarks: params.processorRemarks ?? null,
+      preUsageConditionImages: params.conditionImages ?? null,
+      processorSignature: params.processorSignature ?? null,
+      processorSignedAt: params.processorSignedAt ?? null,
     });
     if (!updated) {
       return { error: 'Could not process borrow request', status: 409 };
@@ -447,6 +469,51 @@ export class AssetBorrowRequestsService {
     });
     if (!updated) return { error: 'Could not decline borrow request', status: 409 };
     // Intentionally no in-app / socket notification to the borrower on processor decline.
+    return { ok: true };
+  }
+
+  static async getApprovedBorrowRequestsForReceive(
+    pool: Pool,
+    userId: string
+  ): Promise<{ borrowRequests: AssetBorrowRequestRow[] } | { error: string; status: number }> {
+    const { companyId, borrowScope } = await getBorrowRequestListScope(pool, userId);
+    if (!companyId) return { error: 'Company context required', status: 400 };
+
+    const borrowRequests = await findApprovedBorrowRequestsForReceive(pool, companyId, borrowScope);
+    return { borrowRequests };
+  }
+
+  static async receiveBorrowRequest(
+    pool: Pool,
+    userId: string,
+    borrowRequestId: string,
+    digitalSignature?: string | null
+  ): Promise<{ ok: true } | { error: string; status: number }> {
+    const row = await getBorrowRequestById(pool, borrowRequestId);
+    if (!row) return { error: 'Borrow request not found', status: 404 };
+
+    const { companyId, borrowScope } = await getBorrowRequestListScope(pool, userId);
+    if (!companyId) return { error: 'Company context required', status: 400 };
+    if (row.company_id !== companyId) return { error: 'Not in your company', status: 403 };
+    if (borrowScope !== null && borrowScope !== row.borrow_scope) {
+      return { error: 'Not authorized for this scope', status: 403 };
+    }
+
+    if (!row.approved_at) return { error: 'Borrow request is not processed yet', status: 400 };
+    if (row.returned_at) return { error: 'Borrow request is already returned', status: 400 };
+    if (row.received_at) return { error: 'Borrow request is already received', status: 400 };
+
+    // Activate the assignment so asset appears in user's My Assets
+    if (row.asset_id && row.user_id) {
+      const assignment = await getAssignmentForBorrowRequest(pool, row.asset_id, row.user_id);
+      if (assignment) {
+        await updateAssignmentStatusActive(pool, assignment.assignmentID);
+      }
+    }
+
+    const updated = await updateBorrowRequestReceived(pool, borrowRequestId, userId, digitalSignature);
+    if (!updated) return { error: 'Could not receive borrow request', status: 409 };
+
     return { ok: true };
   }
 
@@ -491,7 +558,7 @@ export class AssetBorrowRequestsService {
     const updated = await updateBorrowRequestReturnProcess(pool, {
       borrowRequestId: params.borrowRequestId,
       returnCondition: params.returnCondition,
-      returnRemarks: params.returnRemarks,
+      returnRemarks: params.returnRemarks ?? null,
       returnConditionImages: params.returnConditionImages,
     });
     if (!updated) return { error: 'Could not process borrow return', status: 409 };

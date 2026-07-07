@@ -4,9 +4,6 @@ import {
   validateDto,
   validateQuery,
   validateParams,
-  createApiResponse,
-  createSuccessResponse,
-  createErrorResponse,
 } from '../../utils/validation.js';
 import { createMockRes } from '../helpers/mockRes.js';
 
@@ -101,45 +98,5 @@ describe('validation', () => {
     });
   });
 
-  describe('createApiResponse', () => {
-    it('should return success object with data', () => {
-      const out = createApiResponse(true, { id: 1 }, 'OK');
-      expect(out).toEqual({ success: true, data: { id: 1 }, message: 'OK' });
-    });
 
-    it('should return error object with error and errors', () => {
-      const errors = [{ field: 'email', message: 'Invalid' }];
-      const out = createApiResponse(
-        false,
-        undefined,
-        undefined,
-        'VALIDATION_ERROR',
-        errors
-      );
-      expect(out).toEqual({
-        success: false,
-        error: 'VALIDATION_ERROR',
-        errors,
-      });
-    });
-  });
-
-  describe('createSuccessResponse (plain object)', () => {
-    it('should return success payload', () => {
-      const out = createSuccessResponse({ list: [] }, 'Done', { page: 1 });
-      expect(out).toEqual({
-        success: true,
-        data: { list: [] },
-        message: 'Done',
-        meta: { page: 1 },
-      });
-    });
-  });
-
-  describe('createErrorResponse (plain object)', () => {
-    it('should return error payload', () => {
-      const out = createErrorResponse('NOT_FOUND', []);
-      expect(out).toEqual({ success: false, error: 'NOT_FOUND' });
-    });
-  });
 });

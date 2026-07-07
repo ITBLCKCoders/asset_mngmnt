@@ -5,9 +5,7 @@ import { TabsList, TabsTrigger, segmentTabsListClassName, segmentTabsTriggerClas
 import { User, Lock, FileText } from 'lucide-react';
 import { cn } from '@/lib/utils';
 
-const Shimmer = ({ className }: { className?: string }) => (
-  <div className={cn('animate-shimmer rounded bg-gray-200/80', className)} />
-);
+import { Shimmer } from '@/components/ui/shimmer';
 
 export default function TabTriggers() {
   const [isLoading, setIsLoading] = useState(true);

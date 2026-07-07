@@ -1,0 +1,48 @@
+erDiagram
+  companies ||--o{ asset_mngmnt_departments : has
+  companies ||--o{ asset_mngmnt_locations : has
+  companies ||--o{ asset_categories : has
+  companies ||--o{ asset_types : has
+  companies ||--o{ users : employs
+
+  asset_mngmnt_departments ||--o{ asset_mngmnt_locations : contains
+  asset_mngmnt_locations ||--o{ asset_mngmnt_location_rooms : has
+
+  asset_categories ||--o{ asset_types : categorizes
+  asset_categories ||--o{ assets : classifies
+  asset_types ||--o{ assets : typed_as
+
+  users ||--o{ assets : created_by
+  users ||--o{ asset_assignments : assigned_by
+  users ||--o{ asset_assignments : assignee
+
+  assets ||--o{ asset_assignments : has
+  asset_assignments ||--o{ accountability_forms : has
+  asset_assignments ||--o{ asset_checklists : has
+  asset_assignments ||--o{ asset_returns : has
+  asset_return_forms ||--o{ asset_returns : groups
+  asset_transfer_forms ||--o{ asset_transfer : details
+
+  users ||--o{ asset_return_forms : signer
+  users ||--o{ asset_transfer_forms : signer
+  users ||--o{ asset_checklists : created_by
+
+  asset_mngmnt_locations ||--o{ assets : hosts
+  asset_mngmnt_location_rooms ||--o{ assets : hosts
+  asset_mngmnt_departments ||--o{ assets : owns
+
+  asset_mngmnt_gate_passes }o--|| asset_assignments : for
+  asset_mngmnt_gate_passes }o--|| assets : item
+  asset_mngmnt_gate_passes }o--|| users : requester
+
+  users ||--o{ audit_logs : actor
+  audit_logs ||--o{ audit_logs_archive : archived_as
+  companies ||--o{ audit_retention_settings : policy
+
+  asset_categories ||--o{ asset_borrow_requests : category
+  asset_types ||--o{ asset_borrow_requests : type
+  companies ||--o{ asset_borrow_requests : scope
+  users ||--o{ asset_borrow_requests : requester
+
+  asset_mngmnt_roles ||--o{ role_permissions : includes
+  users ||--o{ user_permissions : grants

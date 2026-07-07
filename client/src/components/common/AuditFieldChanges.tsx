@@ -203,8 +203,8 @@ function resolvedAuditRecords(
 }
 
 export interface AuditFieldChangesProps {
-  oldValues: Record<string, unknown> | null | undefined;
-  newValues: Record<string, unknown> | null | undefined;
+  oldValues: Record<string, unknown> | string | null | undefined;
+  newValues: Record<string, unknown> | string | null | undefined;
   lookups?: AuditFieldLookups;
   className?: string;
   /** When true, omit wrapper spacing (inline use). */

@@ -81,7 +81,7 @@ describe('assetScope', () => {
         [],
       ]);
       (pool.query as jest.Mock).mockResolvedValue([
-        [{ id: 'co-1', name: 'Company' }],
+        [[{ id: 'co-1', name: 'Company' }]],
         [],
       ]);
 

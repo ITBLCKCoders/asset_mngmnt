@@ -14,6 +14,7 @@ import { api } from '@/lib/api';
 import { toast } from 'sonner';
 import { useUserPermissions } from '@/hooks/useUserPermissions';
 import { cn } from '@/lib/utils';
+import { Shimmer } from '@/components/ui/shimmer';
 import {
   Table,
   TableBody,
@@ -201,14 +202,14 @@ const LocationBuildingCard = () => {
                 key={i}
                 className="h-20 border-b flex items-center space-x-4 p-4"
               >
-                <div className="bg-gray-200 rounded h-6 w-32 animate-shimmer"></div>
-                <div className="bg-gray-200 rounded h-6 w-20 animate-shimmer"></div>
-                <div className="bg-gray-200 rounded h-6 w-48 animate-shimmer"></div>
-                <div className="bg-gray-200 rounded h-6 w-64 animate-shimmer"></div>
-                <div className="bg-gray-200 rounded h-6 w-32 animate-shimmer"></div>
+                <Shimmer className="h-6 w-32" />
+                <Shimmer className="h-6 w-20" />
+                <Shimmer className="h-6 w-48" />
+                <Shimmer className="h-6 w-64" />
+                <Shimmer className="h-6 w-32" />
                 <div className="flex space-x-2 ml-auto">
-                  <div className="bg-gray-200 rounded h-8 w-8 animate-shimmer"></div>
-                  <div className="bg-gray-200 rounded h-8 w-8 animate-shimmer"></div>
+                  <Shimmer className="h-8 w-8" />
+                  <Shimmer className="h-8 w-8" />
                 </div>
               </div>
             ))}

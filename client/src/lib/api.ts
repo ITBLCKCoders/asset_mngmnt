@@ -179,7 +179,7 @@ async function fetchApi<T = any>(
 
       if (err.message === 'ANOTHER_DEVICE_LOGIN') {
         setToken(null);
-        localStorage.clear();
+        localStorage.removeItem('mfaTempToken');
         sessionStorage.clear();
 
         await Swal.fire({

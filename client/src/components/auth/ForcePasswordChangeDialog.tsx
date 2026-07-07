@@ -99,19 +99,14 @@ export default function ForcePasswordChangeDialog({
     setError(null);
 
     try {
-      const response = await api.post<{
-        accessToken: string;
-        refreshToken: string;
-        message: string;
-      }>('/auth/password-change/force', {
+      await api.post('/auth/password-change/force', {
         tempToken,
         newPassword,
         confirmPassword,
         ...(useEmailOtp ? { emailOtp } : { totp }),
       });
 
-      setToken(response.accessToken);
-      setRefreshToken(response.refreshToken);
+      setToken('authenticated');
 
       toast.success('Password changed successfully');
       onChanged();

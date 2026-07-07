@@ -6,12 +6,14 @@ import {
   approveDeptHeadBorrowRequest,
   createAssetBorrowRequest,
   declineDeptHeadBorrowRequest,
+  getApprovedBorrowRequestsForReceive,
   listBorrowRequestAvailableAssets,
   listApprovedByDeptHeadMeBorrowRequests,
   listAssetBorrowRequests,
   listMyAssetBorrowRequests,
   listPendingDeptHeadBorrowRequests,
   processBorrowReturn,
+  receiveBorrowRequest,
   staffDeclineBorrowRequest,
   staffApproveBorrowRequest,
 } from '../controllers/assetBorrowRequests.controller.js';
@@ -23,16 +25,17 @@ import { ProcessBorrowReturnDtoSchema } from '../dtos/assetBorrowRequests/Proces
 const router = Router();
 
 router.get('/mine', authenticate, listMyAssetBorrowRequests);
-router.get(
-  '/pending-dept-approvals',
-  authenticate,
-  listPendingDeptHeadBorrowRequests
-);
-router.get(
-  '/approved-by-dept-head-me',
-  authenticate,
-  listApprovedByDeptHeadMeBorrowRequests
-);
+// Department head approval endpoints removed - borrow requests now go directly to staff
+// router.get(
+//   '/pending-dept-approvals',
+//   authenticate,
+//   listPendingDeptHeadBorrowRequests
+// );
+// router.get(
+//   '/approved-by-dept-head-me',
+//   authenticate,
+//   listApprovedByDeptHeadMeBorrowRequests
+// );
 router.get('/', authenticate, listAssetBorrowRequests);
 router.post(
   '/',
@@ -40,22 +43,29 @@ router.post(
   validateDto(CreateAssetBorrowRequestDtoSchema),
   createAssetBorrowRequest
 );
-router.post(
-  '/:borrowRequestId/dept-head-approve',
-  authenticate,
-  validateDto(DeptHeadApproveBorrowRequestDtoSchema),
-  approveDeptHeadBorrowRequest
-);
-router.post(
-  '/:borrowRequestId/dept-head-decline',
-  authenticate,
-  declineDeptHeadBorrowRequest
-);
+// Department head approval endpoints removed - borrow requests now go directly to staff
+// router.post(
+//   '/:borrowRequestId/dept-head-approve',
+//   authenticate,
+//   validateDto(DeptHeadApproveBorrowRequestDtoSchema),
+//   approveDeptHeadBorrowRequest
+// );
+// router.post(
+//   '/:borrowRequestId/dept-head-decline',
+//   authenticate,
+//   declineDeptHeadBorrowRequest
+// );
 
 router.get(
   '/:borrowRequestId/available-assets',
   authenticate,
   listBorrowRequestAvailableAssets
+);
+
+router.get(
+  '/receive-pending-approvals',
+  authenticate,
+  getApprovedBorrowRequestsForReceive
 );
 
 router.post(
@@ -75,6 +85,11 @@ router.post(
   authenticate,
   validateDto(ProcessBorrowReturnDtoSchema),
   processBorrowReturn
+);
+router.post(
+  '/:borrowRequestId/receive',
+  authenticate,
+  receiveBorrowRequest
 );
 
 export default router;

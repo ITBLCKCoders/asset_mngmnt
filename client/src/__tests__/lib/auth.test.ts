@@ -23,17 +23,15 @@ describe('auth - cookie-based', () => {
   });
 
   describe('clearAuth (deprecated)', () => {
-    it('should clear localStorage and sessionStorage for cleanup', () => {
-      localStorage.setItem(TOKEN_KEY, 'x');
-      localStorage.setItem('pendingVerificationEmail', 'a@b.co');
-      localStorage.setItem('otpExpiryTime', '123');
+    it('should remove mfaTempToken from localStorage and clear sessionStorage', () => {
+      localStorage.setItem('mfaTempToken', 'some-token');
+      localStorage.setItem('someOtherKey', 'should-remain');
       sessionStorage.setItem('someKey', 'someValue');
 
       clearAuth();
 
-      expect(localStorage.getItem(TOKEN_KEY)).toBeNull();
-      expect(localStorage.getItem('pendingVerificationEmail')).toBeNull();
-      expect(localStorage.getItem('otpExpiryTime')).toBeNull();
+      expect(localStorage.getItem('mfaTempToken')).toBeNull();
+      expect(localStorage.getItem('someOtherKey')).toBe('should-remain');
       expect(sessionStorage.getItem('someKey')).toBeNull();
     });
   });

@@ -27,3 +27,12 @@ export const accessTokenCookieOptions = {
   maxAge: 15 * 60 * 1000,
   signed: true,
 };
+
+export const clearCookieOptions = {
+  httpOnly: true,
+  secure: isProd,
+  sameSite,
+  ...(cookieDomain ? { domain: cookieDomain } : {}),
+  path: '/',
+  signed: true,
+};

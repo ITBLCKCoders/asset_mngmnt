@@ -33,8 +33,9 @@ const Card = React.forwardRef<
         'rounded-xl border bg-card text-card-foreground shadow',
         className
       )}
-      whileHover={shouldAnimateHover ? { y: -4, scale: 1.01 } : undefined}
-      transition={{ type: 'spring', stiffness: 320, damping: 26, mass: 0.7 }}
+      style={{ willChange: 'transform' }}
+      whileHover={shouldAnimateHover ? { y: -4 } : undefined}
+      transition={{ type: 'tween', duration: 0.2, ease: 'easeOut' }}
       {...props}
     />
   );

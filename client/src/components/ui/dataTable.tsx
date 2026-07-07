@@ -1,8 +1,7 @@
 // components/ui/DataTable.tsx
 'use client';
 
-import React, { useState, useEffect, useMemo } from 'react';
-import { motion } from 'framer-motion';
+import React, { useState, useEffect, useMemo, useRef } from 'react';
 import {
   useReactTable,
   getCoreRowModel,
@@ -35,7 +34,6 @@ import { CSS } from '@dnd-kit/utilities';
 import {
   ArrowUp,
   ArrowDown,
-  Search,
   ChevronDown,
   GripVertical,
 } from 'lucide-react';
@@ -67,6 +65,8 @@ import {
 } from './tooltip';
 import { formatDistanceToNow } from 'date-fns';
 import { cn } from '@/lib/utils';
+import { Shimmer } from '@/components/ui/shimmer';
+import { SearchWithColumnFilter } from '@/components/common/SearchWithColumnFilter';
 
 type DataTableProps<T> = {
   data: T[];
@@ -113,6 +113,8 @@ type DataTableProps<T> = {
   getRowClassName?: (row: Row<T>) => string | undefined;
   /** Optional additional classes for mobile cards */
   mobileCardClassName?: string;
+  /** Column filter options for search dropdown. When provided, shows a column selector next to the search input. */
+  searchColumnOptions?: Array<{ label: string; value: string }>;
 };
 
 function getDefaultColumnOrder(columns: ColumnDef<unknown>[]): string[] {
@@ -142,15 +144,13 @@ function SortableTableHeader<T>({ header }: { header: Header<T, unknown> }) {
   const def = header.column.columnDef as { size?: number };
   const size = def.size ?? 120;
   return (
-    <motion.th
+    <th
       ref={setNodeRef}
       style={{ width: size, minWidth: size, ...style }}
       className={cn(
-        'h-10 px-2 px-4 py-3 text-left align-middle text-xs font-medium uppercase tracking-wider text-gray-900 cursor-pointer hover:bg-gray-100 whitespace-nowrap',
+        'h-10 px-2 px-4 py-3 text-left align-middle text-xs font-medium uppercase tracking-wider text-gray-900 cursor-pointer hover:bg-gray-100 whitespace-nowrap transition-[transform,background-color] duration-150 hover:-translate-y-0.5',
         isDragging && 'opacity-50 bg-gray-100'
       )}
-      whileHover={isDragging ? undefined : { y: -1 }}
-      transition={{ type: 'spring', stiffness: 420, damping: 28, mass: 0.55 }}
     >
       <div className="flex items-center gap-1">
         <TooltipProvider delayDuration={300}>
@@ -193,7 +193,7 @@ function SortableTableHeader<T>({ header }: { header: Header<T, unknown> }) {
           />
         </div>
       </div>
-    </motion.th>
+    </th>
   );
 }
 
@@ -221,6 +221,7 @@ export function DataTable<T>({
   pageSize: controlledPageSize,
   onSearchChange,
   showSearch = true,
+  searchColumnOptions,
   mobileCardFields,
   getRowClassName,
   mobileCardClassName,
@@ -270,6 +271,19 @@ export function DataTable<T>({
   const [sorting, setSorting] = useState<any[]>([]);
   const [rawFilter, setRawFilter] = useState('');
   const [globalFilter, setGlobalFilter] = useState('');
+  const [searchColumn, setSearchColumn] = useState('all');
+
+  // Force TanStack to re-filter when the column changes (globalFilterFn changes but globalFilter value stays the same)
+  const prevSearchColumnRef = useRef(searchColumn);
+  useEffect(() => {
+    if (prevSearchColumnRef.current !== searchColumn) {
+      prevSearchColumnRef.current = searchColumn;
+      if (rawFilter) {
+        setGlobalFilter('');
+        setTimeout(() => setGlobalFilter(rawFilter), 0);
+      }
+    }
+  }, [searchColumn, rawFilter]);
   const [internalPagination, setInternalPagination] = useState({
     pageIndex: 0,
     pageSize: 10,
@@ -305,38 +319,18 @@ export function DataTable<T>({
   // Skeleton loading component for table header
   const TableHeaderSkeleton = () => (
     <div className="space-y-4">
-      {/* Table header skeleton */}
       <div className="flex space-x-4 mb-4">
         <div className="flex-1 space-y-2">
-          <div
-            className={cn(
-              'animate-shimmer rounded bg-gray-200/80',
-              'h-6 w-full'
-            )}
-          />
-          <div
-            className={cn(
-              'animate-shimmer rounded bg-gray-200/80',
-              'h-4 w-3/4'
-            )}
-          />
+          <Shimmer className="h-6 w-full" />
+          <Shimmer className="h-4 w-3/4" />
         </div>
-        <div
-          className={cn('animate-shimmer rounded bg-gray-200/80', 'h-10 w-32')}
-        />
+        <Shimmer className="h-10 w-32" />
       </div>
-      {/* Table body skeleton - simulate actual table structure */}
       <div className="space-y-3">
         {Array.from({ length: 5 }, (_, i) => (
           <div key={i} className="flex gap-4 border-b border-gray-100 py-3">
             {Array.from({ length: 28 }, (_, j) => (
-              <div
-                key={j}
-                className={cn(
-                  'animate-shimmer rounded bg-gray-200/80',
-                  'h-12 flex-1 min-w-0'
-                )}
-              />
+              <Shimmer key={j} className="h-12 flex-1 min-w-0" />
             ))}
           </div>
         ))}
@@ -352,36 +346,16 @@ export function DataTable<T>({
           <div className="space-y-3">
             {Array.from({ length: 3 }, (_, j) => (
               <div key={j} className="flex justify-between">
-                <div
-                  className={cn(
-                    'animate-shimmer rounded bg-gray-200/80',
-                    'h-3 w-16'
-                  )}
-                />
-                <div
-                  className={cn(
-                    'animate-shimmer rounded bg-gray-200/80',
-                    'h-4 w-24'
-                  )}
-                />
+                <Shimmer className="h-3 w-16" />
+                <Shimmer className="h-4 w-24" />
               </div>
             ))}
             <div className="pt-2 border-t border-gray-100">
               <div className="grid grid-cols-2 gap-2">
                 {Array.from({ length: 4 }, (_, k) => (
                   <div key={k} className="space-y-1">
-                    <div
-                      className={cn(
-                        'animate-shimmer rounded bg-gray-200/80',
-                        'h-3 w-12'
-                      )}
-                    />
-                    <div
-                      className={cn(
-                        'animate-shimmer rounded bg-gray-200/80',
-                        'h-4 w-20'
-                      )}
-                    />
+                    <Shimmer className="h-3 w-12" />
+                    <Shimmer className="h-4 w-20" />
                   </div>
                 ))}
               </div>
@@ -391,6 +365,17 @@ export function DataTable<T>({
       ))}
     </div>
   );
+
+  const effectiveGlobalFilterFn = useMemo(() => {
+    if (searchColumn !== 'all') {
+      return (row: Row<any>, _columnId: string, filterValue: string) => {
+        const val = row.getValue(searchColumn);
+        if (val == null) return false;
+        return String(val).toLowerCase().includes(String(filterValue).toLowerCase());
+      };
+    }
+    return customGlobalFilterFn;
+  }, [searchColumn, customGlobalFilterFn]);
 
   useEffect(() => {
     const t = setTimeout(() => {
@@ -429,7 +414,7 @@ export function DataTable<T>({
     onPaginationChange: setPagination,
     onExpandedChange: setExpanded,
     state: { sorting, globalFilter, pagination, expanded, columnOrder },
-    globalFilterFn: customGlobalFilterFn ?? 'includesString',
+    globalFilterFn: effectiveGlobalFilterFn ?? 'includesString',
     getRowCanExpand: getRowCanExpand,
     meta,
     manualPagination: serverPagination,
@@ -496,15 +481,15 @@ export function DataTable<T>({
         )}
       >
         {showSearch ? (
-          <div className="relative w-full md:max-w-xs">
-            <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-gray-400" />
-            <Input
-              placeholder={searchPlaceholder}
-              value={rawFilter}
-              onChange={e => setRawFilter(e.target.value)}
-              className="pl-10 border-gray-200 focus-visible:ring-0"
-            />
-          </div>
+          <SearchWithColumnFilter
+            value={rawFilter}
+            onChange={setRawFilter}
+            placeholder={searchPlaceholder}
+            columnOptions={searchColumnOptions}
+            searchColumn={searchColumn}
+            onSearchColumnChange={setSearchColumn}
+            className="w-full md:max-w-md"
+          />
         ) : null}
 
         <div className="flex flex-col gap-3 sm:flex-row sm:flex-wrap sm:items-center sm:justify-end">
@@ -732,21 +717,14 @@ export function DataTable<T>({
               const secondaryFields = fields.slice(3);
 
               return (
-                <motion.div
+                <div
                   key={row.id}
                   className={cn(
-                    'cursor-pointer rounded-lg border border-gray-200 bg-white p-4 shadow-sm transition-shadow hover:shadow-md',
+                    'cursor-pointer rounded-lg border border-gray-200 bg-white p-4 shadow-sm transition-[transform,box-shadow] duration-150 hover:-translate-y-1 hover:shadow-md',
                     getRowClassName?.(row),
                     mobileCardClassName
                   )}
                   onClick={() => onRowClick?.(row)}
-                  whileHover={{ y: -3, scale: 1.01 }}
-                  transition={{
-                    type: 'spring',
-                    stiffness: 320,
-                    damping: 26,
-                    mass: 0.7,
-                  }}
                 >
                   <div className="space-y-3">
                     {primaryFields.map(field => (
@@ -793,7 +771,7 @@ export function DataTable<T>({
                       {renderSubComponent({ row })}
                     </div>
                   )}
-                </motion.div>
+                </div>
               );
             })
           ) : (

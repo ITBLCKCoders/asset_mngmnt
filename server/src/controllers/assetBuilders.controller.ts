@@ -1,13 +1,20 @@
 import type { Response } from 'express';
+import { randomUUID } from 'crypto';
 import { pool } from '../db.js';
 import type { AuthRequest } from '../middleware/authenticate.js';
 import logger from '../logger.js';
 import { createAuditLog } from '../utils/audit.js';
 import { getAssetScope, getDepartmentIdsForScope } from '../utils/assetScope.js';
+import { getActiveCompany } from '../utils/activeCompany.js';
 import {
   getTransferredOutBuildersForCompany,
   setAssetBuilderOriginatingCompany,
 } from '../utils/companyTransferVisibility.js';
+import * as assignmentRepo from '../repositories/assetAssignment.repository.js';
+import { createAccountabilityFormHandler } from './accountabilityForms.controller.js';
+import { emitNotification } from '../sockets/socketHandlers.js';
+import { getIoInstance } from '../utils/socketManager.js';
+import { NotificationService } from '../services/notification.service.js';
 
 export async function createAssetBuilderHandler(
   req: AuthRequest,
@@ -60,13 +67,27 @@ export async function createAssetBuilderHandler(
       }
     }
 
-    // Get active company for the user
+    // Get company context: Super Admin uses the active company (switched via UI),
+    // other users use their fixed company_id from the users table.
     const [companyRows] = (await pool.execute(
-      'SELECT company_id FROM users WHERE userID = ?',
+      `SELECT u.company_id, r.name as role_name
+       FROM users u
+       LEFT JOIN asset_mngmnt_roles r ON u.role_id = r.roleID AND r.deleted_at IS NULL
+       WHERE u.userID = ?`,
       [userId]
     )) as any[];
 
-    const companyId = companyRows[0]?.company_id;
+    const isSuperAdmin =
+      String(companyRows?.[0]?.role_name ?? '').trim().toLowerCase() === 'super admin';
+
+    let companyId = companyRows?.[0]?.company_id;
+
+    if (isSuperAdmin) {
+      const activeCompany = await getActiveCompany(pool);
+      if (activeCompany?.id) {
+        companyId = activeCompany.id;
+      }
+    }
 
     // Create asset builder using stored procedure
     const [builderRows] = (await pool.execute(
@@ -197,7 +218,7 @@ export async function getAssetBuildersHandler(req: AuthRequest, res: Response) {
     // For Super Admin, Admin, and overallManager: apply scope override if provided
     if (scopeOverride) {
       const [userRows] = (await pool.execute(
-        `SELECT r.manager_role FROM users u
+        `SELECT r.manager_role, r.name as role_name FROM users u
          LEFT JOIN asset_mngmnt_roles r ON u.role_id = r.roleID AND r.deleted_at IS NULL
          WHERE u.userID = ?`,
         [userId]
@@ -286,7 +307,10 @@ export async function getAssetBuildersHandler(req: AuthRequest, res: Response) {
     // assets all belong to allowed departments. Must run after items are loaded —
     // sp_get_asset_builders does not include items, so filtering earlier always
     // saw empty items and dropped every builder for non–Super Admin users.
-    if (departmentIds && departmentIds.length > 0 && builderRows.length > 0) {
+    const deptByAssetId = new Map<string, string | null>();
+    if (departmentIds && departmentIds.length === 0) {
+      builderRows = [];
+    } else if (departmentIds && departmentIds.length > 0 && builderRows.length > 0) {
       const allItemAssetIds: string[] = [];
       for (const builder of builderRows) {
         if (Array.isArray(builder.items)) {
@@ -308,7 +332,6 @@ export async function getAssetBuildersHandler(req: AuthRequest, res: Response) {
           allItemAssetIds
         )) as any[];
 
-        const deptByAssetId = new Map<string, string | null>();
         for (const row of assetDeptRows as any[]) {
           deptByAssetId.set(String(row.assetID), row.department_id ?? null);
         }
@@ -316,9 +339,6 @@ export async function getAssetBuildersHandler(req: AuthRequest, res: Response) {
         const allowedDeptSet = new Set(departmentIds.map(String));
 
         builderRows = builderRows.filter(builder => {
-          if (builder.transferred_out === true) {
-            return true;
-          }
           if (!Array.isArray(builder.items) || builder.items.length === 0) {
             return false;
           }
@@ -360,9 +380,15 @@ export async function updateAssetBuilderHandler(
       });
     }
 
+    if (!builderId) {
+      return res.status(400).json({
+        error: 'Builder ID is required',
+      });
+    }
+
     // Check if builder exists and belongs to user's company
     const [builderRows] = (await pool.execute(
-      `SELECT ab.*, u.company_id
+      `SELECT ab.*, u.company_id AS creator_company_id
        FROM asset_builders ab
        JOIN users u ON ab.created_by = u.userID
        WHERE ab.builderID = ? AND ab.deleted_at IS NULL`,
@@ -576,6 +602,233 @@ export async function updateAssetBuilderHandler(
       });
     }
 
+    // ------------------------------------------------------------------
+    // When the builder is Assigned, handle assignment side effects for
+    // added/removed assets: create/return assignments, rebuild
+    // accountability forms, and notify the assigned user.
+    // ------------------------------------------------------------------
+    const hasAssetChanges = addedAssets.length > 0 || removedAssets.length > 0;
+    if (builder.status === 'Assigned' && hasAssetChanges) {
+      const refAssignment = await assignmentRepo.getAnyActiveAssignmentForBuilderAssets(builderId);
+
+      if (refAssignment) {
+        const assignedUserId = refAssignment.user_id;
+        const newAssignmentIds: string[] = [];
+        const newAssignedAssets: any[] = [];
+
+        // --- Assign added assets to the builder's assigned user ---
+        for (const addedAsset of addedAssets) {
+          const assignmentId = randomUUID();
+          await assignmentRepo.callCreateAssignment({
+            assignmentId,
+            assetId: addedAsset.assetID,
+            userId: assignedUserId,
+            departmentId: refAssignment.department_id,
+            locationId: refAssignment.location_id,
+            locationRoomId: refAssignment.location_room_id,
+            expectedReturnDate: refAssignment.expected_return_date,
+            assignmentNotes: `Asset added to assigned builder "${name.trim()}" via builder edit`,
+            assignedBy: userId,
+          });
+
+          newAssignmentIds.push(assignmentId);
+          const assetDetails = await assignmentRepo.getAssetDetailsForForm(addedAsset.assetID);
+          newAssignedAssets.push({
+            id: addedAsset.assetID,
+            code: addedAsset.asset_code,
+            name: assetDetails?.name || addedAsset.name || addedAsset.asset_code,
+            category: assetDetails?.category_name || assetDetails?.category_id,
+            type: assetDetails?.type_name || assetDetails?.type_id,
+            serialNo: assetDetails?.serial || '',
+            modelNo: assetDetails?.model || '',
+            brand: assetDetails?.brand || '',
+          });
+
+          await createAuditLog({
+            userId,
+            action: 'Assigned Asset',
+            resourceType: 'asset_assignment',
+            resourceId: assignmentId,
+            resourceName: addedAsset.asset_code,
+            details: `Asset "${addedAsset.asset_code}" auto-assigned to builder's assigned user via builder edit`,
+            newValues: {
+              asset_id: addedAsset.assetID,
+              user_id: assignedUserId,
+              asset_code: addedAsset.asset_code,
+            },
+            ipAddress: req.ip,
+            userAgent: req.get('User-Agent'),
+            companyId: builder.company_id,
+          });
+        }
+
+        // --- Return assignments for removed assets ---
+        for (const removedAsset of removedAssets) {
+          const activeAssignments = await assignmentRepo.getActiveAssignmentsByAssetId(removedAsset.asset_id);
+          for (const activeAssignment of activeAssignments) {
+            await assignmentRepo.callReturnAssignment(
+              activeAssignment.assignmentID,
+              `Asset removed from assigned builder "${name.trim()}" via builder edit`,
+              userId
+            );
+
+            await createAuditLog({
+              userId,
+              action: 'Returned Asset',
+              resourceType: 'asset_assignment',
+              resourceId: activeAssignment.assignmentID,
+              resourceName: removedAsset.asset_code,
+              details: `Asset "${removedAsset.asset_code}" auto-returned because it was removed from assigned builder "${name.trim()}"`,
+              oldValues: { status: 'Active' },
+              newValues: { status: 'Returned' },
+              ipAddress: req.ip,
+              userAgent: req.get('User-Agent'),
+              companyId: builder.company_id,
+            });
+          }
+        }
+
+        // --- Rebuild accountability forms (only if new assets were added) ---
+        if (newAssignedAssets.length > 0) {
+          const assignedAssetCodes = newAssignedAssets.map(a => a.code);
+          const assignedAssetDetails = await assignmentRepo.getCategoryDeptForAssetCodes(assignedAssetCodes);
+
+          const departmentGroups: Record<string, { categories: { id: string; name: string }[]; deptName: string }> = {};
+          for (const row of assignedAssetDetails) {
+            const deptName = row.department_name || 'Other';
+            if (!departmentGroups[deptName]) {
+              departmentGroups[deptName] = { categories: [], deptName };
+            }
+            departmentGroups[deptName].categories.push({
+              id: row.categoryID ?? '',
+              name: row.category_name ?? '',
+            });
+          }
+
+          for (const [deptName, deptInfo] of Object.entries(departmentGroups)) {
+            const categoryIds = [...new Set(
+              deptInfo.categories
+                .map(c => c.id)
+                .filter(id => id != null && String(id).trim() !== '')
+            )];
+
+            let departmentAssetsRows = categoryIds.length > 0
+              ? await assignmentRepo.getActiveAssignmentsByUserAndCategories(assignedUserId, categoryIds)
+              : [];
+
+            const existingForms = await assignmentRepo.getExistingAccountabilityForms(assignedUserId, deptName);
+
+            const seenAssetIds = new Set(departmentAssetsRows.map(r => String(r.assetID)));
+            const candidateExtras = new Set<string>();
+            for (const form of existingForms) {
+              if (form.assets_data == null) continue;
+              try {
+                const data = typeof form.assets_data === 'string' ? JSON.parse(form.assets_data) : form.assets_data;
+                const assets = Array.isArray(data?.assets) ? data.assets : [];
+                for (const a of assets) {
+                  const aid = String(a?.id ?? a?.assetID ?? '').trim();
+                  if (aid && !seenAssetIds.has(aid)) candidateExtras.add(aid);
+                }
+              } catch { /* ignore */ }
+            }
+
+            const extraList = [...candidateExtras];
+            if (extraList.length > 0) {
+              const extraRows = await assignmentRepo.getActiveAssignmentsByUserAndAssetIds(assignedUserId, extraList);
+              departmentAssetsRows = [...departmentAssetsRows, ...extraRows];
+            }
+
+            const departmentAssets = departmentAssetsRows.map(row => ({
+              id: row.assetID,
+              code: row.asset_code,
+              name: row.name || row.asset_code,
+              category: row.category_name,
+              type: row.type_name,
+              department: row.department_name,
+              serialNo: row.serial || '',
+              modelNo: row.model || '',
+              brand: row.brand || '',
+            }));
+
+            if (departmentAssets.length === 0) continue;
+
+            let disabledFormId: string | null = null;
+            let previousFormOriginalStatus: string | null = null;
+            for (const form of existingForms) {
+              previousFormOriginalStatus = form.status;
+              await assignmentRepo.disableAccountabilityForm(form.formID);
+              disabledFormId = form.formID;
+            }
+
+            const accountabilityFormReq = {
+              ...req,
+              body: {
+                assets: departmentAssets,
+                userId: assignedUserId,
+                departmentId: departmentAssetsRows[0]?.department_id ?? refAssignment.department_id,
+                locationId: refAssignment.location_id,
+                assignmentIds: newAssignmentIds,
+                previousFormId: disabledFormId,
+                previousFormOriginalStatus,
+              },
+            } as AuthRequest;
+
+            const accountabilityFormRes = {
+              status: (_code: number) => ({ json: (data: any) => data }),
+            } as Response;
+
+            try {
+              await createAccountabilityFormHandler(accountabilityFormReq, accountabilityFormRes);
+            } catch (formError) {
+              logger.error('Failed to create accountability form during builder edit:', formError);
+            }
+          }
+        }
+
+        // --- Notify the assigned user about new assets ---
+        if (newAssignedAssets.length > 0) {
+          try {
+            const assignerName = await assignmentRepo.getUserFullName(userId);
+            const assetCodesList = newAssignedAssets.map(a => a.code).join(', ');
+            const truncatedCodes = assetCodesList.length > 50 ? assetCodesList.substring(0, 47) + '...' : assetCodesList;
+
+            await NotificationService.createNotification(
+              {
+                user_id: assignedUserId,
+                title: 'New asset added to your assigned builder',
+                message: `by ${assignerName}. Assets: ${truncatedCodes}`,
+                type: 'asset_assignment',
+                status: 'unread',
+                data: JSON.stringify({
+                  description: `by ${assignerName}. Assets: ${truncatedCodes}`,
+                  route: '/my-assets',
+                  actionTarget: 'my_assets',
+                  assignedBy: assignerName,
+                  timestamp: new Date().toISOString(),
+                }),
+              },
+              userId
+            );
+
+            const io = getIoInstance();
+            if (io) {
+              emitNotification(io, assignedUserId, 'notification', {
+                title: 'New asset added to your assigned builder',
+                description: `by ${assignerName}. Assets: ${truncatedCodes}`,
+                type: 'asset_assigned',
+                route: '/my-assets',
+                actionTarget: 'my_assets',
+                assignedBy: assignerName,
+                timestamp: new Date().toISOString(),
+              });
+            }
+          } catch (socketError) {
+            logger.error('Failed to send notification:', socketError);
+          }
+        }
+      }
+    }
+
     // Create audit log for builder update
     const changes = [];
     if (builder.name !== name.trim())
@@ -644,7 +897,7 @@ export async function getAssetBuilderFormsHandler(
 
     // Check if builder exists and belongs to user's company
     const [builderRows] = (await pool.execute(
-      `SELECT ab.*, u.company_id
+      `SELECT ab.*, u.company_id AS creator_company_id
        FROM asset_builders ab
        JOIN users u ON ab.created_by = u.userID
        WHERE ab.builderID = ? AND ab.deleted_at IS NULL`,
@@ -787,7 +1040,7 @@ export async function deleteAssetBuilderHandler(
 
     // Check if builder exists and belongs to user's company
     const [builderRows] = (await pool.execute(
-      `SELECT ab.*, u.company_id
+      `SELECT ab.*, u.company_id AS creator_company_id
        FROM asset_builders ab
        JOIN users u ON ab.created_by = u.userID
        WHERE ab.builderID = ? AND ab.deleted_at IS NULL`,

@@ -54,10 +54,9 @@ export interface ButtonProps
 }
 
 const BUTTON_HOVER_TRANSITION = {
-  type: 'spring',
-  stiffness: 380,
-  damping: 26,
-  mass: 0.6,
+  type: 'tween',
+  duration: 0.15,
+  ease: 'easeOut',
 } as const;
 
 const Button = React.forwardRef<HTMLButtonElement, ButtonProps>(
@@ -68,9 +67,7 @@ const Button = React.forwardRef<HTMLButtonElement, ButtonProps>(
     const Comp = asChild ? Slot : 'button';
     const hoverAnimation =
       hoverEffect && !props.disabled
-        ? variant === 'link'
-          ? { y: -1 }
-          : { y: -1, scale: 1.01 }
+        ? { y: -1 }
         : undefined;
 
     if (asChild) {
@@ -87,6 +84,7 @@ const Button = React.forwardRef<HTMLButtonElement, ButtonProps>(
       <motion.button
         className={cn(buttonVariants({ variant, size, className }))}
         ref={ref}
+        style={{ willChange: 'transform' }}
         whileHover={hoverAnimation}
         whileTap={hoverEffect && !props.disabled ? { scale: 0.98 } : undefined}
         transition={BUTTON_HOVER_TRANSITION}

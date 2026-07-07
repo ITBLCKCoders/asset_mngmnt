@@ -29,3 +29,5 @@ export { generateAssetBorrowingPDF } from './assetBorrowingPdf';
 
 export type { AssetChecklistData } from './assetChecklistPdf';
 export { generateAssetChecklistPDF } from './assetChecklistPdf';
+
+export { generateDashboardPDF } from './dashboardPdf';

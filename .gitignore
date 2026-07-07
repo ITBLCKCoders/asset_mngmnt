@@ -20,3 +20,12 @@ logs/
 
 # Local HR wet-signed accountability PDFs (see ACCOUNTABILITY_WET_PDF_DIR)
 uploads/accountability-wet-pdfs/*.pdf
+
+# Windows reserved device names (can appear as files in some scenarios)
+nul
+
+# E2E test artifacts
+e2e/.env
+e2e/storage/
+e2e/test-results/
+e2e/playwright-report/

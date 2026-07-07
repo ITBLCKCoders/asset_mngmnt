@@ -43,6 +43,10 @@ vi.mock('@/hooks/useAuditFieldLookups', () => ({
   useAuditFieldLookups: vi.fn(() => ({ lookups: {}, mergedIdLabels: {} })),
 }));
 
+vi.mock('@/context/CompanyContext', () => ({
+  useCompanyContext: vi.fn(() => ({ company: null, companies: [], loading: false, switchCompany: vi.fn() })),
+}));
+
 beforeEach(() => {
   vi.mocked(api.get).mockImplementation(async (url: string) => {
     if (url.includes('/dashboard')) {
@@ -71,10 +75,7 @@ beforeEach(() => {
         },
       };
     }
-    if (url.includes('/audit')) {
-      return { auditLogs: [] };
-    }
-    return {};
+    return { data: {} };
   });
 });
 

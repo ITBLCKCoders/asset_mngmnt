@@ -30,7 +30,7 @@ describe('authenticate middleware', () => {
   let next: ReturnType<typeof jest.fn>;
 
   beforeEach(() => {
-    req = { headers: {}, signedCookies: {} };
+    req = { headers: {}, signedCookies: {}, header: jest.fn() };
     res = createMockRes();
     next = jest.fn();
     mockVerifyAccessToken.mockReset();

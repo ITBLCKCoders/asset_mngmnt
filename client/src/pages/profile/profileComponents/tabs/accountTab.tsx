@@ -324,8 +324,7 @@ export default function AccountTab() {
       }).catch(() => {});
 
       setTimeout(() => {
-        navigate('/login');
-        window.location.reload();
+        navigate('/login', { replace: true });
       }, 1500);
     } catch (err: any) {
       toast.error(err.message || 'Failed to change password');

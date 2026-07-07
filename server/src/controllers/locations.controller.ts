@@ -7,13 +7,20 @@ import { createAuditLog } from '../utils/audit.js';
 
 export async function getLocationsHandler(req: AuthRequest, res: Response) {
   try {
-    const activeCompany = await getScopedActiveCompany(pool, req.user?.userID);
-    if (!activeCompany) {
-      return res.status(400).json({ error: 'No active company found' });
+    const companyIdParam = req.query.companyId as string | undefined;
+    let companyId: string;
+    if (companyIdParam) {
+      companyId = companyIdParam;
+    } else {
+      const activeCompany = await getScopedActiveCompany(pool, req.user?.userID);
+      if (!activeCompany) {
+        return res.status(400).json({ error: 'No active company found' });
+      }
+      companyId = activeCompany.id;
     }
 
     const [rows] = (await pool.execute('CALL sp_get_locations(?)', [
-      activeCompany.id,
+      companyId,
     ])) as any[];
 
     const locations = rows[0].map((loc: any) => ({

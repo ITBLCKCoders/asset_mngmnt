@@ -87,7 +87,8 @@ export function LocationsTab({
   const fetchLocations = async () => {
     try {
       setLoading(true);
-      const response = await api.get<{ locations: Location[] }>('/locations');
+      const companyQuery = activeCompany?.id ? `?companyId=${activeCompany.id}` : '';
+      const response = await api.get<{ locations: Location[] }>(`/locations${companyQuery}`);
       setLocations(response.locations);
     } catch (error: any) {
       console.error('Failed to fetch locations:', error);

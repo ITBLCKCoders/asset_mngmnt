@@ -2,13 +2,13 @@ import type { Response, Request } from 'express';
 import jwt from 'jsonwebtoken';
 import { pool } from '../db.js';
 import { config } from '../config/validation.js';
-import { cookieOptions, accessTokenCookieOptions } from '../cookieConfig.js';
+import { cookieOptions, accessTokenCookieOptions, clearCookieOptions } from '../cookieConfig.js';
 import {
   login,
   register,
   forgotPassword,
   verifyPasswordResetOTP,
-  verifyPasswordResetOTPSms,
+  // verifyPasswordResetOTPSms,
   resetPassword,
   verifyRefreshToken,
   revokeRefreshToken,
@@ -24,7 +24,8 @@ import {
   verifyOTP,
   sendVerificationOTP,
 } from '../auth/index.js';
-import { checkSmsVerification, sendSmsVerification } from '../auth/sms.js';
+// SMS OTP replaced by email OTP — kept for reference
+// import { checkSmsVerification, sendSmsVerification } from '../auth/sms.js';
 import type { AuthRequest } from '../middleware/authenticate.js';
 import bcrypt from 'bcryptjs';
 import { BCRYPT_COST } from '../auth/passwordPolicy.js';
@@ -76,21 +77,23 @@ export async function registerHandler(req: AuthRequest, res: Response) {
     return res.status(400).json({ error: result.error });
   }
 
-  if (otpChannel === 'sms') {
-    const normalizedPhone = normalizePhoneToE164PH(contactNumber);
-    if (!normalizedPhone) {
-      return res
-        .status(400)
-        .json({ error: 'Invalid contact number for SMS OTP' });
-    }
+  // SMS OTP replaced by email OTP — kept for reference
+  // if (otpChannel === 'sms') {
+  //   const normalizedPhone = normalizePhoneToE164PH(contactNumber);
+  //   if (!normalizedPhone) {
+  //     return res
+  //       .status(400)
+  //       .json({ error: 'Invalid contact number for SMS OTP' });
+  //   }
 
-    const smsResult = await sendSmsVerification(normalizedPhone);
-    if ('error' in smsResult) {
-      return res.status(400).json({ error: smsResult.error });
-    }
-  } else {
-    await sendVerificationOTP(result.userId, email);
-  }
+  //   const smsResult = await sendSmsVerification(normalizedPhone);
+  //   if ('error' in smsResult) {
+  //     return res.status(400).json({ error: smsResult.error });
+  //   }
+  // } else {
+  //   await sendVerificationOTP(result.userId, email);
+  // }
+  await sendVerificationOTP(result.userId, email);
 
   // Create audit log for user registration
   try {
@@ -120,27 +123,28 @@ export async function verifyOTPHandler(req: AuthRequest, res: Response) {
     return res.status(400).json({ error: 'Invalid OTP format' });
   }
 
-  if (channel === 'sms') {
-    const normalizedPhone = normalizePhoneToE164PH(contactNumber || '');
-    if (!normalizedPhone) {
-      return res.status(400).json({ error: 'Invalid contact number format' });
-    }
+  // SMS OTP replaced by email OTP — kept for reference
+  // if (channel === 'sms') {
+  //   const normalizedPhone = normalizePhoneToE164PH(contactNumber || '');
+  //   if (!normalizedPhone) {
+  //     return res.status(400).json({ error: 'Invalid contact number format' });
+  //   }
 
-    const phoneVariants = buildPhoneLookupVariants(normalizedPhone);
-    const placeholders = phoneVariants.map(() => '?').join(', ');
+  //   const phoneVariants = buildPhoneLookupVariants(normalizedPhone);
+  //   const placeholders = phoneVariants.map(() => '?').join(', ');
 
-    const verificationResult = await checkSmsVerification(normalizedPhone, otp);
-    if ('error' in verificationResult) {
-      return res.status(400).json({ error: verificationResult.error });
-    }
+  //   const verificationResult = await checkSmsVerification(normalizedPhone, otp);
+  //   if ('error' in verificationResult) {
+  //     return res.status(400).json({ error: verificationResult.error });
+  //   }
 
-    await pool.execute(
-      `UPDATE users SET verified = TRUE WHERE contact_number IN (${placeholders}) AND verified = FALSE`,
-      phoneVariants
-    );
+  //   await pool.execute(
+  //     `UPDATE users SET verified = TRUE WHERE contact_number IN (${placeholders}) AND verified = FALSE`,
+  //     phoneVariants
+  //   );
 
-    return res.json({ message: 'SMS verified successfully. You can now log in.' });
-  }
+  //   return res.json({ message: 'SMS verified successfully. You can now log in.' });
+  // }
 
   const result = await verifyOTP(otp);
   if ('error' in result) {
@@ -157,39 +161,40 @@ export async function verifyOTPHandler(req: AuthRequest, res: Response) {
 export async function resendOTPHandler(req: AuthRequest, res: Response) {
   const { channel = 'email', email, contactNumber } = req.body as any;
 
-  if (channel === 'sms') {
-    const normalizedPhone = normalizePhoneToE164PH(contactNumber || '');
-    if (!normalizedPhone) {
-      return res.status(400).json({ error: 'Invalid contact number format' });
-    }
+  // SMS OTP replaced by email OTP — kept for reference
+  // if (channel === 'sms') {
+  //   const normalizedPhone = normalizePhoneToE164PH(contactNumber || '');
+  //   if (!normalizedPhone) {
+  //     return res.status(400).json({ error: 'Invalid contact number format' });
+  //   }
 
-    const phoneVariants = buildPhoneLookupVariants(normalizedPhone);
-    const placeholders = phoneVariants.map(() => '?').join(', ');
+  //   const phoneVariants = buildPhoneLookupVariants(normalizedPhone);
+  //   const placeholders = phoneVariants.map(() => '?').join(', ');
 
-    try {
-      const [rows] = (await pool.execute(
-        `SELECT userID FROM users WHERE contact_number IN (${placeholders}) AND verified = FALSE LIMIT 1`,
-        phoneVariants
-      )) as any[];
+  //   try {
+  //     const [rows] = (await pool.execute(
+  //       `SELECT userID FROM users WHERE contact_number IN (${placeholders}) AND verified = FALSE LIMIT 1`,
+  //       phoneVariants
+  //     )) as any[];
 
-      const user = (rows as any[])[0];
-      if (!user) {
-        return res
-          .status(400)
-          .json({ error: 'No pending verification for this contact number' });
-      }
+  //     const user = (rows as any[])[0];
+  //     if (!user) {
+  //       return res
+  //         .status(400)
+  //         .json({ error: 'No pending verification for this contact number' });
+  //     }
 
-      const smsResult = await sendSmsVerification(normalizedPhone);
-      if ('error' in smsResult) {
-        return res.status(400).json({ error: smsResult.error });
-      }
+  //     const smsResult = await sendSmsVerification(normalizedPhone);
+  //     if ('error' in smsResult) {
+  //       return res.status(400).json({ error: smsResult.error });
+  //     }
 
-      return res.json({ message: 'New OTP sent' });
-    } catch (err: any) {
-      logger.error('Resend SMS OTP failed:', err);
-      return res.status(500).json({ error: 'Failed to resend OTP' });
-    }
-  }
+  //     return res.json({ message: 'New OTP sent' });
+  //   } catch (err: any) {
+  //     logger.error('Resend SMS OTP failed:', err);
+  //     return res.status(500).json({ error: 'Failed to resend OTP' });
+  //   }
+  // }
 
   if (!email) return res.status(400).json({ error: 'Email required' });
 
@@ -332,15 +337,16 @@ export const loginHandler = async (req: Request, res: Response) => {
 
   res.json({
     message: 'Login successful',
-    accessToken: tokenResult.accessToken,
-    refreshToken: tokenResult.refreshToken,
+    authenticated: true,
   });
 };
 // FORGOT & RESET PASSWORD
 export async function forgotPasswordHandler(req: AuthRequest, res: Response) {
-  const { channel = 'email', email, contactNumber } = req.body as any;
+  // const { channel = 'email', email, contactNumber } = req.body as any;
+  const { email, contactNumber } = req.body as any;
 
-  const result = await forgotPassword(channel, {
+  // All OTP now uses email — SMS channel disabled
+  const result = await forgotPassword('email' as const, {
     email,
     contactNumber,
   });
@@ -349,6 +355,17 @@ export async function forgotPasswordHandler(req: AuthRequest, res: Response) {
     return res.status(400).json({ error: result.error });
   }
 
+  createAuditLog({
+    action: 'Password Reset Requested',
+    resourceType: 'auth',
+    resourceName: email || contactNumber || 'unknown',
+    details: `Password reset requested via email for ${email ? email : 'unknown'}`,
+    ipAddress: req.ip,
+    userAgent: req.get('User-Agent'),
+    status: 'success',
+    severity: 'warning',
+  }).catch((err) => logger.warn('Failed to create forgot password audit log:', err));
+
   res.json(result);
 }
 
@@ -356,15 +373,14 @@ export async function verifyPasswordResetOTPHandler(
   req: AuthRequest,
   res: Response
 ) {
-  const { channel = 'email', otp, contactNumber, email } = req.body as any;
+  // const { channel = 'email', otp, contactNumber, email } = req.body as any;
+  const { otp, email } = req.body as any;
   if (!otp || otp.length !== 6 || !/^\d+$/.test(otp)) {
     return res.status(400).json({ error: 'Invalid OTP format' });
   }
 
-  const result =
-    channel === 'sms'
-      ? await verifyPasswordResetOTPSms(contactNumber || '', otp, email)
-      : await verifyPasswordResetOTP(otp);
+  // All OTP now uses email — SMS channel disabled
+  const result = await verifyPasswordResetOTP(otp);
 
   if ('error' in result) {
     return res.status(400).json({ error: result.error });
@@ -384,6 +400,18 @@ export async function resetPasswordHandler(req: AuthRequest, res: Response) {
 
   const result = await resetPassword(userId, password, req);
   if ('error' in result) return res.status(400).json({ error: result.error });
+
+  createAuditLog({
+    userId,
+    action: 'Password Reset',
+    resourceType: 'auth',
+    resourceId: userId,
+    details: 'Password was reset via forgot-password flow',
+    ipAddress: req.ip,
+    userAgent: req.get('User-Agent'),
+    status: 'success',
+    severity: 'warning',
+  }).catch((err) => logger.warn('Failed to create password reset audit log:', err));
 
   return res.json({ message: 'Password reset successful' });
 }
@@ -422,8 +450,8 @@ export async function refreshTokenHandler(req: AuthRequest, res: Response) {
 export async function logoutHandler(req: Request, res: Response) {
   const { isAutoLogout } = req.body as { isAutoLogout?: boolean };
 
-  res.clearCookie(ASSET_ACCESS_COOKIE_NAME, accessTokenCookieOptions);
-  res.clearCookie(ASSET_REFRESH_COOKIE_NAME, cookieOptions);
+  res.clearCookie(ASSET_ACCESS_COOKIE_NAME, clearCookieOptions);
+  res.clearCookie(ASSET_REFRESH_COOKIE_NAME, clearCookieOptions);
 
   // Try to authenticate manually for audit logging
   let userId: string | null = null;
@@ -614,6 +642,18 @@ export async function changePasswordHandler(req: AuthRequest, res: Response) {
     `[CHANGE PASSWORD] SUCCESS → User ID: ${user.userID} | Revoked Sessions: ${revokedCount}`
   );
 
+  createAuditLog({
+    userId: user.userID,
+    action: 'Password Changed',
+    resourceType: 'auth',
+    resourceId: user.userID,
+    details: 'User changed their own password',
+    ipAddress: req.ip,
+    userAgent: req.get('User-Agent'),
+    status: 'success',
+    severity: 'warning',
+  }).catch((err) => logger.warn('Failed to create change password audit log:', err));
+
   return res.json({
     message: 'Password changed successfully. Logged out from all devices.',
     revokedSessions: revokedCount,
@@ -727,6 +767,16 @@ export async function updateProfileHandler(req: AuthRequest, res: Response) {
       ]
     );
 
+    createAuditLog({
+      userId,
+      action: 'Profile Updated',
+      resourceType: 'user',
+      resourceId: userId,
+      details: 'User updated their profile',
+      ipAddress: req.ip,
+      userAgent: req.get('User-Agent'),
+    }).catch((err) => logger.warn('Failed to create profile update audit log:', err));
+
     res.json({ message: 'Profile updated successfully' });
   } catch (error: any) {
     logger.error('Update profile error', { error, stack: error.stack });
@@ -755,7 +805,7 @@ export async function checkInitialsAvailabilityHandler(
   try {
     // Check if any active user (excluding current user) has the same initials
     const [rows] = (await pool.execute(
-      `SELECT userID, username, firstName, lastName, digital_signature
+      `SELECT userID, username, first_name, last_name, digital_signature
        FROM users
        WHERE digital_signature = ?
        AND userID != ?
@@ -770,8 +820,8 @@ export async function checkInitialsAvailabilityHandler(
         error: 'These initials are already in use by another active account',
         conflictingUser: {
           username: conflictingUser.username,
-          firstName: conflictingUser.firstName,
-          lastName: conflictingUser.lastName,
+          firstName: conflictingUser.first_name,
+          lastName: conflictingUser.last_name,
         },
       });
     }
@@ -783,37 +833,40 @@ export async function checkInitialsAvailabilityHandler(
   }
 }
 
-// SEND SMS OTP FOR INITIALS VERIFICATION
+// SEND OTP FOR INITIALS VERIFICATION (uses email instead of SMS)
 export async function sendInitialsOtpHandler(req: AuthRequest, res: Response) {
   const userId = req.user!.userID;
+  const email = req.user!.email;
 
   try {
-    // Get user's contact number
-    const [rows] = (await pool.execute(
-      'SELECT contact_number FROM users WHERE userID = ?',
-      [userId]
-    )) as any[];
+    // SMS OTP replaced by email OTP — kept for reference
+    // const [rows] = (await pool.execute(
+    //   'SELECT contact_number FROM users WHERE userID = ?',
+    //   [userId]
+    // )) as any[];
 
-    if (!rows || rows.length === 0) {
-      return res.status(404).json({ error: 'User not found' });
-    }
+    // if (!rows || rows.length === 0) {
+    //   return res.status(404).json({ error: 'User not found' });
+    // }
 
-    const contactNumber = rows[0].contact_number;
-    if (!contactNumber) {
-      return res.status(400).json({ error: 'No contact number on file' });
-    }
+    // const contactNumber = rows[0].contact_number;
+    // if (!contactNumber) {
+    //   return res.status(400).json({ error: 'No contact number on file' });
+    // }
 
-    const normalizedPhone = normalizePhoneToE164PH(contactNumber);
-    if (!normalizedPhone) {
-      return res
-        .status(400)
-        .json({ error: 'Invalid contact number for SMS OTP' });
-    }
+    // const normalizedPhone = normalizePhoneToE164PH(contactNumber);
+    // if (!normalizedPhone) {
+    //   return res
+    //     .status(400)
+    //     .json({ error: 'Invalid contact number for SMS OTP' });
+    // }
 
-    const smsResult = await sendSmsVerification(normalizedPhone);
-    if ('error' in smsResult) {
-      return res.status(400).json({ error: smsResult.error });
-    }
+    // const smsResult = await sendSmsVerification(normalizedPhone);
+    // if ('error' in smsResult) {
+    //   return res.status(400).json({ error: smsResult.error });
+    // }
+
+    await sendVerificationOTP(userId, email);
 
     res.json({ message: 'OTP sent successfully' });
   } catch (error: any) {
@@ -822,41 +875,45 @@ export async function sendInitialsOtpHandler(req: AuthRequest, res: Response) {
   }
 }
 
-// VERIFY SMS OTP FOR INITIALS VERIFICATION
+// VERIFY OTP FOR INITIALS VERIFICATION (uses email instead of SMS)
 export async function verifyInitialsOtpHandler(req: AuthRequest, res: Response) {
   const { otp } = req.body;
-  const userId = req.user!.userID;
 
   if (!otp || otp.length !== 6 || !/^\d+$/.test(otp)) {
     return res.status(400).json({ error: 'Invalid OTP format' });
   }
 
   try {
-    // Get user's contact number
-    const [rows] = (await pool.execute(
-      'SELECT contact_number FROM users WHERE userID = ?',
-      [userId]
-    )) as any[];
+    // SMS OTP replaced by email OTP — kept for reference
+    // const [rows] = (await pool.execute(
+    //   'SELECT contact_number FROM users WHERE userID = ?',
+    //   [userId]
+    // )) as any[];
 
-    if (!rows || rows.length === 0) {
-      return res.status(404).json({ error: 'User not found' });
-    }
+    // if (!rows || rows.length === 0) {
+    //   return res.status(404).json({ error: 'User not found' });
+    // }
 
-    const contactNumber = rows[0].contact_number;
-    if (!contactNumber) {
-      return res.status(400).json({ error: 'No contact number on file' });
-    }
+    // const contactNumber = rows[0].contact_number;
+    // if (!contactNumber) {
+    //   return res.status(400).json({ error: 'No contact number on file' });
+    // }
 
-    const normalizedPhone = normalizePhoneToE164PH(contactNumber);
-    if (!normalizedPhone) {
-      return res
-        .status(400)
-        .json({ error: 'Invalid contact number format' });
-    }
+    // const normalizedPhone = normalizePhoneToE164PH(contactNumber);
+    // if (!normalizedPhone) {
+    //   return res
+    //     .status(400)
+    //     .json({ error: 'Invalid contact number format' });
+    // }
 
-    const verificationResult = await checkSmsVerification(normalizedPhone, otp);
-    if ('error' in verificationResult) {
-      return res.status(400).json({ error: verificationResult.error });
+    // const verificationResult = await checkSmsVerification(normalizedPhone, otp);
+    // if ('error' in verificationResult) {
+    //   return res.status(400).json({ error: verificationResult.error });
+    // }
+
+    const result = await verifyOTP(otp);
+    if ('error' in result) {
+      return res.status(400).json({ error: result.error });
     }
 
     res.json({ message: 'OTP verified successfully' });
@@ -882,6 +939,17 @@ export async function uploadAvatarHandler(req: AuthRequest, res: Response) {
     logger.info(
       `[AVATAR UPLOAD] Success → User ${req.user!.userID} | URL: ${url}`
     );
+
+    createAuditLog({
+      userId: req.user!.userID,
+      action: 'Avatar Updated',
+      resourceType: 'user',
+      resourceId: req.user!.userID,
+      details: 'User uploaded a new avatar',
+      ipAddress: req.ip,
+      userAgent: req.get('User-Agent'),
+    }).catch((err) => logger.warn('Failed to create avatar upload audit log:', err));
+
     return res.json({ url });
   } catch (err: any) {
     logger.error('Avatar upload failed', { err });
@@ -992,8 +1060,7 @@ export async function verifyMFAHandler(req: Request, res: Response) {
 
   res.json({
     message: 'Login successful',
-    accessToken: tokens.accessToken,
-    refreshToken: tokens.refreshToken,
+    authenticated: true,
   });
 }
 
@@ -1409,8 +1476,7 @@ export async function forceChangePasswordHandler(req: Request, res: Response) {
 
     return res.json({
       message: 'Password changed successfully',
-      accessToken: tokens.accessToken,
-      refreshToken: tokens.refreshToken,
+      authenticated: true,
     });
   } catch (error: any) {
     logger.error('Force change password failed:', error);

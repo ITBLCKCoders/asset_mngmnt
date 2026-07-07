@@ -64,6 +64,13 @@ export async function getUserPermissionsHandler(
       }
     });
 
+    // Auto-grant view permission for general-access modules (profile, mfa, etc.)
+    for (const module of ['Profile', 'MFA', 'UserManual', 'FlowDiagrams']) {
+      if (permissions[module]) {
+        permissions[module].view = true;
+      }
+    }
+
     // Load custodian info: asset_type/manager_role from role; approver flags from user_custodian_settings (per-user)
     let roleCustodian: {
       assetType: string | null;
@@ -84,19 +91,23 @@ export async function getUserPermissionsHandler(
       ? custodianResultSets[0]
       : [];
     const custodian = custodianRows[0];
-    const managerApprover1 = custodian
+    const custodianManagerApprover1 = custodian
       ? Boolean(custodian.manager_approver_1)
       : false;
-    const managerApprover2 = custodian
+    const custodianManagerApprover2 = custodian
       ? Boolean(custodian.manager_approver_2)
       : false;
     if (roleId) {
       const [roleRows] = (await pool.execute(
-        'SELECT asset_type, manager_role FROM asset_mngmnt_roles WHERE roleID = ? AND deleted_at IS NULL',
+        'SELECT asset_type, manager_role, manager_approver_1, manager_approver_2 FROM asset_mngmnt_roles WHERE roleID = ? AND deleted_at IS NULL',
         [roleId]
       )) as any[];
       const role = roleRows[0];
       if (role) {
+        const managerApprover1 =
+          Boolean(role.manager_approver_1) || custodianManagerApprover1;
+        const managerApprover2 =
+          Boolean(role.manager_approver_2) || custodianManagerApprover2;
         roleCustodian = {
           assetType: role.asset_type ?? null,
           managerRole: role.manager_role ?? 'none',
@@ -104,13 +115,13 @@ export async function getUserPermissionsHandler(
           managerApprover2,
         };
       }
-    } else if (custodian && (managerApprover1 || managerApprover2)) {
+    } else if (custodian && (custodianManagerApprover1 || custodianManagerApprover2)) {
       // User has approver flags but no role; still return for UI
       roleCustodian = {
         assetType: null,
         managerRole: 'none',
-        managerApprover1,
-        managerApprover2,
+        managerApprover1: custodianManagerApprover1,
+        managerApprover2: custodianManagerApprover2,
       };
     }
 
@@ -307,6 +318,13 @@ export async function applyRolePermissionsHandler(
         };
       permissions['Accountability Form'].view = true;
       permissions['Accountability Form'].create = true;
+    }
+
+    // Auto-grant view for general-access modules
+    for (const module of ['Profile', 'MFA', 'UserManual', 'FlowDiagrams']) {
+      if (permissions[module]) {
+        permissions[module].view = true;
+      }
     }
 
     await pool.execute('DELETE FROM user_permissions WHERE user_id = ?', [

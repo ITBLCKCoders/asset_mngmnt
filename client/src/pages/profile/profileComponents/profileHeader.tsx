@@ -18,10 +18,8 @@ import { useRef, useEffect, useState } from 'react';
 import { cn } from '@/lib/utils';
 import { useAvatarPreview } from '@/hooks/avatarPreview';
 
-const Shimmer = ({ className }: { className?: string }) => (
-  <div className={cn('animate-shimmer rounded bg-gray-200/80', className)} />
-);
-
+import { Shimmer } from '@/components/ui/shimmer';
+import { proxyCloudinaryUrl } from '@/utils/cloudinaryProxy';
 
 interface ProfileHeaderProps {
   user: any;
@@ -82,7 +80,7 @@ export default function ProfileHeader({
     onCancel();
   };
 
-  const displayAvatar = previewUrl || user?.avatarUrl;
+  const displayAvatar = previewUrl || proxyCloudinaryUrl(user?.avatarUrl);
 
   if (isLoading || !user) {
     return (

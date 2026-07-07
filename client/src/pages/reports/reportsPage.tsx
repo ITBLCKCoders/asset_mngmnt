@@ -1,6 +1,7 @@
 'use client';
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { motion } from 'framer-motion';
 import { useSearchParams } from 'react-router-dom';
 import jsPDF from 'jspdf';
 import autoTable from 'jspdf-autotable';
@@ -1549,24 +1550,30 @@ export default function ReportsPage() {
               ) : historyTypeTotals.every(item => item.total === 0) ? (
                 <p className="text-sm text-muted-foreground">No history records available.</p>
               ) : (
-                <ChartContainer config={reportTypeChartConfig} className="h-[320px]">
-                  <PieChart>
-                    <ChartTooltip content={<ChartTooltipContent hideLabel />} />
-                    <Pie
-                      data={historyTypeTotals}
-                      dataKey="total"
-                      nameKey="reportType"
-                      outerRadius={110}
-                    >
-                      {historyTypeTotals.map(item => (
-                        <Cell key={item.reportType} fill={item.fill} />
-                      ))}
-                    </Pie>
-                    <ChartLegend
-                      content={<ChartLegendContent nameKey="reportType" />}
-                    />
-                  </PieChart>
-                </ChartContainer>
+                <motion.div
+                  initial={{ opacity: 0, scale: 0.95 }}
+                  animate={{ opacity: 1, scale: 1 }}
+                  transition={{ duration: 0.45, ease: 'easeOut' }}
+                >
+                  <ChartContainer config={reportTypeChartConfig} className="h-[320px]">
+                    <PieChart>
+                      <ChartTooltip content={<ChartTooltipContent hideLabel />} />
+                      <Pie
+                        data={historyTypeTotals}
+                        dataKey="total"
+                        nameKey="reportType"
+                        outerRadius={110}
+                      >
+                        {historyTypeTotals.map(item => (
+                          <Cell key={item.reportType} fill={item.fill} />
+                        ))}
+                      </Pie>
+                      <ChartLegend
+                        content={<ChartLegendContent nameKey="reportType" />}
+                      />
+                    </PieChart>
+                  </ChartContainer>
+                </motion.div>
               )}
             </CardContent>
           </Card>
@@ -1604,21 +1611,27 @@ export default function ReportsPage() {
                   No transactions available for the selected period.
                 </p>
               ) : (
-                <ChartContainer config={trendChartConfig} className="h-[320px]">
-                  <LineChart data={monthlyHistoryTrend}>
-                    <CartesianGrid vertical={false} />
-                    <XAxis dataKey="label" tickLine={false} axisLine={false} />
-                    <YAxis allowDecimals={false} tickLine={false} axisLine={false} />
-                    <ChartTooltip content={<ChartTooltipContent />} />
-                    <Line type="monotone" dataKey="assignment" stroke="var(--color-assignment)" strokeWidth={2} dot={{ r: 2 }} />
-                    <Line type="monotone" dataKey="return" stroke="var(--color-return)" strokeWidth={2} dot={{ r: 2 }} />
-                    <Line type="monotone" dataKey="transfer" stroke="var(--color-transfer)" strokeWidth={2} dot={{ r: 2 }} />
-                    <Line type="monotone" dataKey="maintenance" stroke="var(--color-maintenance)" strokeWidth={2} dot={{ r: 2 }} />
-                    <Line type="monotone" dataKey="repair" stroke="var(--color-repair)" strokeWidth={2} dot={{ r: 2 }} />
-                    <Line type="monotone" dataKey="borrow" stroke="var(--color-borrow)" strokeWidth={2} dot={{ r: 2 }} />
-                    <Line type="monotone" dataKey="assetRequest" stroke="var(--color-assetRequest)" strokeWidth={2} dot={{ r: 2 }} />
-                  </LineChart>
-                </ChartContainer>
+                <motion.div
+                  initial={{ opacity: 0, y: 20 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  transition={{ duration: 0.45, ease: 'easeOut' }}
+                >
+                  <ChartContainer config={trendChartConfig} className="h-[320px]">
+                    <LineChart data={monthlyHistoryTrend}>
+                      <CartesianGrid vertical={false} />
+                      <XAxis dataKey="label" tickLine={false} axisLine={false} />
+                      <YAxis allowDecimals={false} tickLine={false} axisLine={false} />
+                      <ChartTooltip content={<ChartTooltipContent />} />
+                      <Line type="monotone" dataKey="assignment" stroke="var(--color-assignment)" strokeWidth={2} dot={{ r: 2 }} />
+                      <Line type="monotone" dataKey="return" stroke="var(--color-return)" strokeWidth={2} dot={{ r: 2 }} />
+                      <Line type="monotone" dataKey="transfer" stroke="var(--color-transfer)" strokeWidth={2} dot={{ r: 2 }} />
+                      <Line type="monotone" dataKey="maintenance" stroke="var(--color-maintenance)" strokeWidth={2} dot={{ r: 2 }} />
+                      <Line type="monotone" dataKey="repair" stroke="var(--color-repair)" strokeWidth={2} dot={{ r: 2 }} />
+                      <Line type="monotone" dataKey="borrow" stroke="var(--color-borrow)" strokeWidth={2} dot={{ r: 2 }} />
+                      <Line type="monotone" dataKey="assetRequest" stroke="var(--color-assetRequest)" strokeWidth={2} dot={{ r: 2 }} />
+                    </LineChart>
+                  </ChartContainer>
+                </motion.div>
               )}
             </CardContent>
           </Card>

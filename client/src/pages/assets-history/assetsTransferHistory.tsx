@@ -1,18 +1,5 @@
-import { ArrowRightLeft } from 'lucide-react';
-import { PageHeader } from '@/components/common/PageHeader';
+import React from 'react';
 
 export default function AssetsTransferHistory() {
-  return (
-    <div>
-      <div className="flex flex-col min-h-screen bg-[#FFFFFF]">
-        <main className="flex-1 p-6 space-y-6">
-          <PageHeader
-            icon={ArrowRightLeft}
-            title="Assets Transfer History"
-            description="View history of asset transfers"
-          />
-        </main>
-      </div>
-    </div>
-  );
+  return <h1>Assets Transfer History</h1>;
 }

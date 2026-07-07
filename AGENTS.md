@@ -101,6 +101,7 @@ Every response MUST follow:
 3. Plan
 4. Execute step-by-step
 5. Review changes
+
 This document gives AI coding assistants accurate, project-specific guidance for working in this repository. It is intentionally practical: follow the real architecture in this codebase, prefer existing patterns over invented abstractions, and keep changes aligned with standard React + Vite + TypeScript and Node + Express + TypeScript best practices.
 
 ## 1. Project Summary
@@ -482,3 +483,62 @@ Keep handoffs concise, but do not omit testing status.
 ## 16. Documentation Goal
 
 This file should help assistants make accurate changes, not generic ones. If the code and this document disagree, trust the code first and update this file so it stays useful.
+
+---
+
+## Goal
+- Add a QR/Barcode type toggle to the Asset Tags Preview modal and make the barcode scannable when printed on paper.
+
+## Constraints & Preferences
+- Barcode encodes the asset code (e.g. `AST-001`), not the URL
+- Barcode displayed below the company name in the tag card (different layout from QR)
+- Scanner listener opens AssetViewModal dialog on scan (same behavior across tagging, asset list, and my assets pages)
+- Barcode format selector: CODE128 (default) and CODE39 only (EAN-13/EAN-8 removed because they require pure numeric values)
+- Barcode uses native jsbarcode canvas resolution (no pre-upscaling) — displayed at `min(naturalWidth, width)` to avoid downscale blur in the browser
+- html2canvas at `scale: 5` for sharp overall capture
+- Barcode images are overlayed onto the captured canvas using `ctx.drawImage` with `imageSmoothingEnabled = false` to bypass html2canvas interpolation blur
+
+## Progress
+
+### Done
+- Installed `jsbarcode` dependency
+- Created `Barcode.tsx` component (jsbarcode canvas → data URL → `<img>` at native resolution, displayed at `min(naturalWidth, width)`)
+- Created `useBarcodeScanner.ts` hook (detects fast keystrokes + Enter/Tab from barcode scanners)
+- Modified `AssetTagModal.tsx` — added QR/Barcode segmented toggle in footer, barcode format `<select>` (CODE128/CODE39)
+- Modified `TagPreviewCard.tsx` — barcode layout: logo → company name → barcode, tighter spacing (`space-y-1`), no divider; width increased to 400px
+- Modified `assetTagging.tsx` — added `useBarcodeScanner` hook with case-insensitive asset lookup; html2canvas scale 5; barcode overlay using `imageSmoothingEnabled = false`
+- Modified `AssetsPage.tsx` — same scanner integration on main asset list page
+- Modified `myAssets.tsx` — same scanner integration on My Assets page
+
+### In Progress
+- Barcode still not readable by physical barcode scanner when printed on paper
+
+### Blocked
+- (none)
+
+## Key Decisions
+- Canvas → data URL → img approach chosen over direct SVG in DOM because html2canvas has unreliable SVG support
+- Native canvas resolution (no pre-upscaling) — displayed at natural width to avoid browser downscale blur, then overlayed onto captured canvas with `imageSmoothingEnabled = false` for sharp output
+- CASE128 and CODE39 only; EAN formats removed as asset codes (e.g. `AST-001`) are alphanumeric
+- html2canvas scale 5 for high overall capture resolution
+- Direct canvas overlay of barcodes post-capture to bypass html2canvas img→canvas blur
+
+## Next Steps
+- Test printed output with a physical scanner
+- If still not scanning: consider programmatic PDF generation (bypassing html2canvas entirely) or reducing to a single barcode per page for larger physical size
+
+## Critical Context
+- html2canvas draws `<img>` elements at their CSS dimensions, then scales by the `scale` factor — this causes bilinear interpolation blur for barcodes
+- The overlay approach (in `handlePrint`) captures the DOM at scale 5, then overwrites each barcode region using `drawImage` with `imageSmoothingEnabled = false` (nearest-neighbor interpolation)
+- Barcode scanner hook listens to `window.addEventListener('keydown', ...)` — requires page focus to work
+- jspdf `addImage` places the full captured canvas onto the PDF at 190mm width
+- The same barcode data URL works when displayed on screen but fails when captured + printed
+
+## Relevant Files
+- `client/src/hooks/useBarcodeScanner.ts` — keyboard-based scanner detection hook
+- `client/src/pages/assets/asset-tagging/components/Barcode.tsx` — jsbarcode canvas → native-res data URL → img
+- `client/src/pages/assets/asset-tagging/components/AssetTagModal.tsx` — QR/Barcode toggle + format selector in footer
+- `client/src/pages/assets/asset-tagging/components/TagPreviewCard.tsx` — conditional QR layout or barcode layout; width increased to 400px
+- `client/src/pages/assets/asset-tagging/assetTagging.tsx` — scanner handler + PDF generation (`handlePrint`) with barcode overlay
+- `client/src/pages/assets/assets-list/AssetsPage.tsx` — scanner handler for asset list
+- `client/src/pages/assets/myAssets.tsx` — scanner handler for my assets

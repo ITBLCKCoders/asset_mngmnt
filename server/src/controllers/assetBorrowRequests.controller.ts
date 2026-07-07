@@ -63,7 +63,9 @@ export async function listAssetBorrowRequests(
       return createErrorResponse(res, 'UNAUTHORIZED', [], 401);
     }
 
-    const result = await AssetBorrowRequestsService.listForStaff(pool, userId);
+    const companyIdParam = req.query.companyId as string | undefined;
+
+    const result = await AssetBorrowRequestsService.listForStaff(pool, userId, companyIdParam);
 
     if ('error' in result) {
       return createErrorResponse(res, result.error, [], result.status);
@@ -345,6 +347,12 @@ export async function staffApproveBorrowRequest(
     if (body.processor_remarks) {
       params.processorRemarks = body.processor_remarks;
     }
+    if (body.processor_signature) {
+      params.processorSignature = body.processor_signature;
+    }
+    if (body.processor_signed_at) {
+      params.processorSignedAt = body.processor_signed_at;
+    }
     const result = await AssetBorrowRequestsService.staffApprove(pool, userId, params);
     if ('error' in result) {
       return createErrorResponse(res, result.error, [], result.status);
@@ -366,6 +374,33 @@ export async function staffApproveBorrowRequest(
     return createErrorResponse(
       res,
       'Failed to process borrow request',
+      [],
+      500
+    );
+  }
+}
+
+export async function getApprovedBorrowRequestsForReceive(
+  req: AuthRequest,
+  res: Response
+): Promise<Response> {
+  try {
+    const userId = req.user?.userID;
+    if (!userId) {
+      return createErrorResponse(res, 'UNAUTHORIZED', [], 401);
+    }
+
+    const result = await AssetBorrowRequestsService.getApprovedBorrowRequestsForReceive(pool, userId);
+    if ('error' in result) {
+      return createErrorResponse(res, result.error, [], result.status);
+    }
+
+    return createSuccessResponse(res, { borrowRequests: result.borrowRequests });
+  } catch (err) {
+    logger.error('[assetBorrowRequests] get approved for receive failed', err);
+    return createErrorResponse(
+      res,
+      'Failed to fetch approved borrow requests',
       [],
       500
     );
@@ -448,6 +483,61 @@ export async function processBorrowReturn(
   } catch (err) {
     logger.error('[assetBorrowRequests] process return failed', err);
     return createErrorResponse(res, 'Failed to process borrow return', [], 500);
+  }
+}
+
+export async function receiveBorrowRequest(
+  req: AuthRequest,
+  res: Response
+): Promise<Response> {
+  try {
+    const userId = req.user?.userID;
+    if (!userId) return createErrorResponse(res, 'UNAUTHORIZED', [], 401);
+    const borrowRequestId = req.params.borrowRequestId;
+    if (!borrowRequestId) return createErrorResponse(res, 'Borrow request ID is required', [], 400);
+
+    // Extract digital signature from request body
+    const bodySignature =
+      typeof req.body?.digitalSignature === 'string'
+        ? req.body.digitalSignature.trim()
+        : '';
+
+    // Get user's stored digital signature if not provided in body
+    let digitalSignature: string | null = bodySignature || null;
+    if (!digitalSignature) {
+      const [userRows] = (await pool.query(
+        'SELECT digital_signature FROM users WHERE userID = ? LIMIT 1',
+        [userId]
+      )) as [{ digital_signature?: string | null }[], unknown];
+      const fromUser = userRows[0]?.digital_signature;
+      digitalSignature =
+        fromUser != null && String(fromUser).trim() !== ''
+          ? String(fromUser).trim()
+          : null;
+    }
+
+    const result = await AssetBorrowRequestsService.receiveBorrowRequest(
+      pool,
+      userId,
+      borrowRequestId,
+      digitalSignature
+    );
+    if ('error' in result) return createErrorResponse(res, result.error, [], result.status);
+
+    await createAuditLog({
+      userId,
+      action: 'receive_borrow_request',
+      resourceType: 'borrow_request',
+      resourceId: borrowRequestId,
+      details: `Received borrow request with ID: ${borrowRequestId}`,
+      ipAddress: req.ip,
+      userAgent: req.get('User-Agent'),
+    });
+
+    return createSuccessResponse(res, { ok: true }, 'Borrow request received successfully');
+  } catch (err) {
+    logger.error('[assetBorrowRequests] receive failed', err);
+    return createErrorResponse(res, 'Failed to receive borrow request', [], 500);
   }
 }
 

@@ -11,85 +11,12 @@ import { Tabs, TabsContent, TabsList, TabsTrigger, segmentTabsListClassName, seg
 import { AssetDetailsPageSkeleton } from '@/components/common/pageSkeletons';
 import { AssetTimeline } from './assets-list/assetsComponents/assetTimeline';
 import { Step4Review } from './assets-list/assetsComponents/modalSteps/step4AssetsReview';
+import type { AssetResponseDto } from '@/types/assetsDTOs';
 import { Asset } from './assets-list/assetsComponents/assetTable/assetData';
 import { mapApiMaintenanceScheduleToForm } from './assets-list/assetsComponents/assetTypes/assetFormTypes';
 import { AssetFormsTab } from './components/AssetFormsTab';
 import { api } from '@/lib/api';
 import { toast } from 'sonner';
-
-interface ApiAsset {
-  assetID: string;
-  asset_code: string;
-  name: string;
-  description?: string;
-  category_id: string;
-  category_name?: string;
-  supplier?: string;
-  type_id?: string;
-  type_name?: string;
-  brand?: string;
-  model?: string;
-  serial?: string;
-  image_url?: string;
-  purchase_date?: string;
-  asset_value?: number;
-  salvage_value?: number;
-  depreciation_method?: string;
-  useful_life_years?: number;
-  annual_depreciation?: number;
-  depreciation_start_date?: string;
-  company_id?: string;
-  company_name?: string;
-  location_id?: string;
-  location_name?: string;
-  building?: string;
-  location_room_id?: string;
-  room_name?: string;
-  department_id?: string;
-  department?: string;
-  location_notes?: string;
-  warranty_months?: number;
-  condition?: string;
-  maintenance_schedule?: string;
-  status?: string;
-  created_at: string;
-  created_by?: string;
-  created_by_name?: string;
-  updated_at?: string;
-  updated_by?: string;
-  updated_by_name?: string;
-  deleted_at?: string;
-  specifications?: Array<{
-    assetId: string;
-    assetName: string;
-    specDescription: string;
-  }>;
-  documents?: Array<{
-    documentID: string;
-    fileName: string;
-    fileUrl: string;
-    fileSize: number;
-    fileType: string;
-    createdAt: string;
-  }>;
-  currentAssignment?: {
-    assignmentID: string;
-    user: {
-      id: string;
-      name: string;
-      email: string;
-      employeeNumber?: string;
-      position?: string;
-    };
-    department: string;
-    location: string;
-    assignedDate: string;
-    actualReturnDate?: string;
-    status: string;
-    assignedBy?: string;
-    assignmentNotes?: string;
-  };
-}
 
 export default function AssetDetails() {
   const { assetId } = useParams<{ assetId: string }>();
@@ -99,10 +26,7 @@ export default function AssetDetails() {
 
   // Check if user has access to financial information (internal users)
   useEffect(() => {
-    // Check for auth token or session to determine if user is internal
-    const token =
-      localStorage.getItem('authToken') || sessionStorage.getItem('authToken');
-    setShowFinancialInfo(!!token);
+    setShowFinancialInfo(true);
   }, []);
 
   const fetchAsset = async () => {
@@ -110,7 +34,7 @@ export default function AssetDetails() {
 
     try {
       // Use public API endpoint for asset details
-      const response = await api.get<{ assets: ApiAsset[] }>(
+      const response = await api.get<{ assets: AssetResponseDto[] }>(
         `/assets/public/${encodeURIComponent(assetId)}`
       );
       const assetData = response.assets?.[0];
@@ -145,7 +69,7 @@ export default function AssetDetails() {
         location:
           assetData.currentAssignment?.location ||
           `${assetData.location_name || ''}${assetData.room_name ? ` - ${assetData.room_name}` : ''}`,
-        currentAssignment: assetData.currentAssignment,
+        currentAssignment: assetData.currentAssignment ?? undefined,
         assignmentHistory: [],
         purchaseDate: assetData.purchase_date
           ? new Date(assetData.purchase_date)

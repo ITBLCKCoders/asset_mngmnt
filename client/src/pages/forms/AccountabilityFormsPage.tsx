@@ -301,17 +301,23 @@ export default function AccountabilityFormsPage() {
       return (
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
           {[1, 2, 3, 4, 5, 6].map(i => (
-            <div key={i} className="rounded-lg border p-4 space-y-3">
+            <div key={i} className="rounded-xl border border-slate-200 bg-white shadow-md p-4 space-y-3 overflow-hidden">
               <div className="flex items-center gap-2">
-                <Shimmer className="w-6 h-6 rounded bg-red-100/80" />
-                <Shimmer className="h-5 w-32 rounded bg-red-100/80" />
-                <Shimmer className="h-6 w-16 rounded-full ml-auto bg-red-100/80" />
+                <Shimmer className="w-10 h-10 rounded-xl bg-red-100/80" />
+                <div className="flex-1">
+                  <Shimmer className="h-5 w-32 rounded bg-red-100/80" />
+                  <Shimmer className="h-3 w-20 rounded mt-1 bg-red-100/80" />
+                </div>
+                <Shimmer className="h-6 w-16 rounded-full bg-red-100/80" />
               </div>
-              <Shimmer className="h-4 w-full rounded" />
-              <Shimmer className="h-4 w-3/4 rounded" />
-              <div className="flex gap-2 pt-2">
-                <Shimmer className="h-9 flex-1 rounded-lg" />
-                <Shimmer className="h-9 w-20 rounded-lg" />
+              <div className="space-y-2">
+                <Shimmer className="h-4 w-full rounded" />
+                <Shimmer className="h-4 w-3/4 rounded" />
+                <Shimmer className="h-4 w-1/2 rounded" />
+              </div>
+              <div className="flex gap-2 pt-2 border-t border-slate-100">
+                <Shimmer className="h-9 flex-1 rounded-lg bg-red-100/80" />
+                <Shimmer className="h-9 flex-1 rounded-lg bg-red-100/80" />
               </div>
             </div>
           ))}
@@ -320,27 +326,29 @@ export default function AccountabilityFormsPage() {
     }
     if (formList.length === 0) {
       return (
-        <div className="text-center py-12">
-          <FileCheck className="w-16 h-16 text-gray-300 mx-auto mb-4" />
+        <div className="text-center py-12 rounded-xl border-2 border-dashed border-slate-200 bg-slate-50/50">
+          <div className="inline-flex p-3 bg-slate-100 rounded-full mb-4">
+            <FileCheck className="w-10 h-10 text-slate-400" />
+          </div>
           {searchQuery ? (
             <>
-              <p className="text-gray-500 text-lg">No forms found</p>
-              <p className="text-gray-400 text-sm mt-1">
+              <p className="text-slate-600 text-lg font-medium">No forms found</p>
+              <p className="text-slate-400 text-sm mt-1">
                 No forms match &quot;{searchQuery}&quot;. Try different keywords
                 (form number, employee, asset, department, etc.).
               </p>
             </>
           ) : hasActiveOrgFilters ? (
             <>
-              <p className="text-gray-500 text-lg">No forms match filters</p>
-              <p className="text-gray-400 text-sm mt-1">
+              <p className="text-slate-600 text-lg font-medium">No forms match filters</p>
+              <p className="text-slate-400 text-sm mt-1">
                 Try clearing company or department filters.
               </p>
             </>
           ) : (
             <>
-              <p className="text-gray-500 text-lg">No accountability forms</p>
-              <p className="text-gray-400 text-sm mt-1">
+              <p className="text-slate-600 text-lg font-medium">No accountability forms</p>
+              <p className="text-slate-400 text-sm mt-1">
                 {activeTab === 'hrCopy'
                   ? 'No forms pending wet-signed PDF for the 201 file copy'
                   : 'Forms will appear here when available.'}

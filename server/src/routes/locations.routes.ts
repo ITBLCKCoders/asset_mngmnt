@@ -19,10 +19,10 @@ const router = Router();
  *     responses:
  *       200: { description: List of locations }
  */
-router.get('/', getLocationsHandler);
-
-// All other routes require authentication
+// All routes require authentication
 router.use(authenticate);
+
+router.get('/', getLocationsHandler);
 
 /**
  * @swagger

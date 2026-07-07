@@ -27,6 +27,16 @@ import {
   generateReturnFormNumberFallback,
 } from '../utils/returnFormNumber.js';
 import {
+  generateChecklistFormNumber,
+  generateChecklistFormNumberFallback,
+} from '../utils/checklistFormNumber.js';
+import * as checklistRepo from '../repositories/assetChecklist.repository.js';
+import * as intangibleAssetsService from '../services/intangibleAssets.service.js';
+import {
+  getCategoryDepartmentForAssetIds,
+  getCompanyIdByDepartment,
+} from '../repositories/assetReturn.repository.js';
+import {
   generateTransferFormNumber,
   generateTransferFormNumberFallback,
 } from '../utils/transferFormNumber.js';
@@ -1079,16 +1089,20 @@ export async function createHeldTransferHandler(
       receivedBy,
       newAssignment,
       processSignature,
+      intangibleAssetItems,
     } = req.body;
 
+    const hasIntangibleItems = intangibleAssetItems && Array.isArray(intangibleAssetItems) && intangibleAssetItems.length > 0;
     if (
       !assetTransfers ||
       !Array.isArray(assetTransfers) ||
-      assetTransfers.length === 0
+      (assetTransfers.length === 0 && !hasIntangibleItems)
     ) {
-      return res.status(400).json({
-        error: 'Asset transfers array is required',
-      });
+      if (!hasIntangibleItems) {
+        return res.status(400).json({
+          error: 'Asset transfers array is required',
+        });
+      }
     }
 
     if (!newAssignment?.userId) {
@@ -1296,6 +1310,7 @@ export async function submitTransferRequestHandler(
       notes?: string;
       transferType?: string;
       digitalSignature?: string;
+      intangibleAssetIds?: string[];
     };
     const rawAssignmentIds = body.assignmentIds;
     const assignmentIds = Array.isArray(rawAssignmentIds)
@@ -1465,6 +1480,29 @@ export async function submitTransferRequestHandler(
         });
       }
       throw assignErr;
+    }
+
+    // Process intangible assets: unassign from current user on transfer request
+    const intangibleAssetIds = body.intangibleAssetIds;
+    if (intangibleAssetIds && intangibleAssetIds.length > 0 && companyId) {
+      for (const assetId of intangibleAssetIds) {
+        try {
+          await intangibleAssetsService.unassignIntangibleAsset(assetId, companyId);
+          await createAuditLog({
+            userId: currentUserId,
+            action: 'Requested Transfer of Intangible Asset',
+            resourceType: 'intangible_asset',
+            resourceId: assetId,
+            resourceName: assetId,
+            details: `Intangible asset unassigned as part of transfer request ${form_number}`,
+            ipAddress: req.ip,
+            userAgent: req.get('User-Agent'),
+            companyId,
+          });
+        } catch (err) {
+          logger.error('Failed to unassign intangible asset on transfer request', { id: assetId, err });
+        }
+      }
     }
 
     return res.status(201).json({
@@ -1775,6 +1813,23 @@ interface RunTransferFormExecutionOptions {
     roomId?: string | null;
     roomName?: string | null;
   };
+  checklists?: Array<{
+    assignmentId: string;
+    employeeId: string;
+    employeeName: string;
+    employeeDesignation?: string;
+    employeeDepartment?: string;
+    employeeCompany?: string;
+    typeOnboarding: boolean;
+    typeOffboarding: boolean;
+    receivedBy?: string;
+    checklistData: any;
+    remarks?: string;
+  }>;
+  intangibleAssetItems?: Array<{
+    id: string;
+    notes?: string;
+  }>;
 }
 
 /** Run transfer execution (assignments, accountability, executed_at). Throws AppError on failure. Exported for use from approveReturnFormHandler when return form has linked transfer. */
@@ -1789,6 +1844,8 @@ export async function runTransferFormExecution(
     transferType,
     receivedBy,
     newAssignment,
+    checklists,
+    intangibleAssetItems,
   } = options;
   const { req, processorId } = context;
   const form = await AssetTransferFormModel.findById(formId);
@@ -2117,6 +2174,59 @@ export async function runTransferFormExecution(
       ]
     );
 
+    // Save matching checklist for this transfer if provided
+    if (checklists && checklists.length > 0) {
+      const matchingChecklist = checklists.find(
+        (c: any) => c.assignmentId === transferData.assignmentId
+      );
+      if (matchingChecklist) {
+        try {
+          const checklistId = crypto.randomUUID();
+          let chkFormNumber = await generateChecklistFormNumberFallback();
+          try {
+            const deptId = await getCategoryDepartmentForAssetIds([
+              assignment.asset_id,
+            ]);
+            if (deptId) {
+              const companyId = await getCompanyIdByDepartment(deptId);
+              if (companyId) {
+                chkFormNumber = await generateChecklistFormNumber(
+                  companyId,
+                  deptId
+                );
+              }
+            }
+          } catch (numErr) {
+            logger.warn(
+              'Failed to generate proper checklist form number, using fallback:',
+              numErr
+            );
+          }
+
+          await checklistRepo.createAssetChecklist({
+            id: checklistId,
+            formNumber: chkFormNumber,
+            assignmentId: newAssignmentId,
+            employeeId: matchingChecklist.employeeId,
+            employeeName: matchingChecklist.employeeName,
+            employeeDesignation:
+              matchingChecklist.employeeDesignation || null,
+            employeeDepartment:
+              matchingChecklist.employeeDepartment || null,
+            employeeCompany: matchingChecklist.employeeCompany || null,
+            typeOnboarding: matchingChecklist.typeOnboarding ? 1 : 0,
+            typeOffboarding: matchingChecklist.typeOffboarding ? 1 : 0,
+            receivedBy: matchingChecklist.receivedBy || null,
+            checklistData: matchingChecklist.checklistData,
+            remarks: matchingChecklist.remarks || null,
+            createdBy: processorId,
+          });
+        } catch (chkErr) {
+          logger.error('Failed to save transfer checklist:', chkErr);
+        }
+      }
+    }
+
     await createAuditLog({
       userId: processorId,
       action: 'Transferred Asset',
@@ -2228,7 +2338,7 @@ export async function runTransferFormExecution(
     transferredAssetIds.map((id: string) => String(id))
   );
   const [existingProcessorTempForms] = (await pool.execute(
-    `SELECT formID, form_number, status, assets_data
+    `SELECT formID, form_number, status, assets_data, department_id
        FROM accountability_forms
       WHERE user_id = ?
         AND deleted_at IS NULL
@@ -2359,6 +2469,9 @@ export async function runTransferFormExecution(
           processSignature?.digital_signature?.trim() ||
           (await fetchUserDigitalSignature(processorId));
 
+        // Use the original employee's department from the existing temp form (same source as Asset Accountability settings)
+        const existingDeptId = (existingProcessorTempForms as any[])[0]?.department_id || null;
+
         for (const group of groupedByDept.values()) {
           if (group.assets.length === 0) continue;
           const tempFormReq = {
@@ -2367,7 +2480,7 @@ export async function runTransferFormExecution(
             body: {
               assets: group.assets,
               userId: processorId,
-              departmentId: group.departmentId,
+              departmentId: existingDeptId,
               locationId: group.locationId,
               locationRoomId: group.locationRoomId,
               formOrigin: 'processor_return',
@@ -2600,6 +2713,34 @@ export async function runTransferFormExecution(
     }
   }
 
+  // Process intangible asset transfers (assign to new user)
+  if (intangibleAssetItems && intangibleAssetItems.length > 0 && companyId) {
+    for (const item of intangibleAssetItems) {
+      try {
+        await intangibleAssetsService.assignIntangibleAsset(
+          item.id,
+          newUserId,
+          formId,
+          companyId
+        );
+        await createAuditLog({
+          userId: processorId,
+          action: 'Transferred Intangible Asset',
+          resourceType: 'intangible_asset',
+          resourceId: item.id,
+          resourceName: item.id,
+          details: `Intangible asset transferred via transfer form ${formId}`,
+          newValues: { assignedTo: newUserId, notes: item.notes || null },
+          ipAddress: req.ip,
+          userAgent: req.get ? req.get('User-Agent') : 'Unknown',
+          companyId,
+        });
+      } catch (err) {
+        logger.error('Failed to assign intangible asset on transfer', { id: item.id, err });
+      }
+    }
+  }
+
   await pool.execute(
     'UPDATE asset_transfer_forms SET executed_at = NOW(), updated_at = NOW() WHERE formID = ?',
     [formId]
@@ -2619,6 +2760,8 @@ export async function executeTransferFormHandler(
       transferType,
       receivedBy,
       newAssignment,
+      checklists,
+      intangibleAssetItems,
     } = req.body;
 
     if (!formId) return res.status(400).json({ error: 'Form ID is required' });
@@ -2645,6 +2788,8 @@ export async function executeTransferFormHandler(
         transferType,
         receivedBy,
         newAssignment,
+        checklists,
+        intangibleAssetItems,
       },
       { req, processorId: req.user!.userID }
     );

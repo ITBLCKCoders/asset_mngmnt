@@ -8,9 +8,7 @@ import { Button } from '@/components/ui/button';
 import { DollarSign, Receipt, PiggyBank, Download } from 'lucide-react';
 import { cn } from '@/lib/utils';
 
-const Shimmer = ({ className }: { className?: string }) => (
-  <div className={cn('animate-shimmer rounded bg-gray-200/80', className)} />
-);
+import { Shimmer } from '@/components/ui/shimmer';
 
 export default function PayrollTab() {
   const [isLoading, setIsLoading] = useState(true);

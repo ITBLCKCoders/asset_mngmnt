@@ -1,5 +1,6 @@
 'use client';
 
+import { motion } from 'framer-motion';
 import {
   Area,
   AreaChart,
@@ -82,63 +83,134 @@ export function DashboardMultiSeriesChart({
 
   if (variant === 'area') {
     return (
-      <ChartContainer config={chartConfig} className={className}>
-        <AreaChart
-          data={data}
-          margin={{ top: 8, right: 12, left: 4, bottom: 8 }}
-        >
-          <CartesianGrid strokeDasharray="3 3" vertical={false} />
-          <XAxis
-            dataKey={indexKey}
-            tick={{ fontSize: 10 }}
-            tickLine={false}
-            axisLine={false}
-          />
-          <YAxis
-            width={36}
-            tick={{ fontSize: 10 }}
-            tickLine={false}
-            axisLine={false}
-          />
-          <ChartTooltip cursor={false} content={<ChartTooltipContent />} />
-          <ChartLegend content={<ChartLegendContent />} />
-          {series.map(s => (
-            <Area
-              key={s.key}
-              type="monotone"
-              dataKey={s.key}
-              stackId={stackId}
-              stroke={`var(--color-${s.key})`}
-              fill={`var(--color-${s.key})`}
-              fillOpacity={stacked ? 0.65 : 0.35}
-              strokeWidth={2}
+      <motion.div
+        key="area"
+        initial={{ opacity: 0, y: 20 }}
+        animate={{ opacity: 1, y: 0 }}
+        exit={{ opacity: 0, y: -20 }}
+        transition={{ duration: 0.35, ease: 'easeOut' }}
+      >
+        <ChartContainer config={chartConfig} className={className}>
+          <AreaChart
+            data={data}
+            margin={{ top: 8, right: 12, left: 4, bottom: 8 }}
+          >
+            <CartesianGrid strokeDasharray="3 3" vertical={false} />
+            <XAxis
+              dataKey={indexKey}
+              tick={{ fontSize: 10 }}
+              tickLine={false}
+              axisLine={false}
             />
-          ))}
-        </AreaChart>
-      </ChartContainer>
+            <YAxis
+              width={36}
+              tick={{ fontSize: 10 }}
+              tickLine={false}
+              axisLine={false}
+            />
+            <ChartTooltip cursor={false} content={<ChartTooltipContent />} />
+            <ChartLegend content={<ChartLegendContent />} />
+            {series.map(s => (
+              <Area
+                key={s.key}
+                type="monotone"
+                dataKey={s.key}
+                stackId={stackId}
+                stroke={`var(--color-${s.key})`}
+                fill={`var(--color-${s.key})`}
+                fillOpacity={stacked ? 0.65 : 0.35}
+                strokeWidth={2}
+              />
+            ))}
+          </AreaChart>
+        </ChartContainer>
+      </motion.div>
     );
   }
 
   if (variant === 'bar') {
     if (barLayout === 'vertical') {
       return (
+        <motion.div
+          key="bar-vertical"
+          initial={{ opacity: 0, y: 20 }}
+          animate={{ opacity: 1, y: 0 }}
+          exit={{ opacity: 0, y: -20 }}
+          transition={{ duration: 0.35, ease: 'easeOut' }}
+        >
+          <ChartContainer config={chartConfig} className={className}>
+            <BarChart
+              layout="vertical"
+              data={data}
+              margin={{ top: 4, right: 12, left: 4, bottom: 4 }}
+            >
+              <CartesianGrid strokeDasharray="3 3" horizontal={false} />
+              <XAxis
+                type="number"
+                tick={{ fontSize: 10 }}
+                tickLine={false}
+                axisLine={false}
+              />
+              <YAxis
+                type="category"
+                dataKey={indexKey}
+                width={108}
+                tick={{ fontSize: 10 }}
+                tickLine={false}
+                axisLine={false}
+              />
+              <ChartTooltip cursor={false} content={<ChartTooltipContent />} />
+              <ChartLegend content={<ChartLegendContent />} />
+              {series.map(s => (
+                <Bar
+                  key={s.key}
+                  dataKey={s.key}
+                  stackId={stackId}
+                  fill={`var(--color-${s.key})`}
+                  radius={[0, 4, 4, 0]}
+                >
+                  {rowFills &&
+                  rowFills.length === data.length &&
+                  series.length === 1 &&
+                  series[0]?.key === s.key
+                    ? rowFills.map((fill, i) => (
+                        <Cell key={i} fill={fill} stroke="transparent" />
+                      ))
+                    : null}
+                </Bar>
+              ))}
+            </BarChart>
+          </ChartContainer>
+        </motion.div>
+      );
+    }
+
+    return (
+      <motion.div
+        key="bar-horizontal"
+        initial={{ opacity: 0, y: 20 }}
+        animate={{ opacity: 1, y: 0 }}
+        exit={{ opacity: 0, y: -20 }}
+        transition={{ duration: 0.35, ease: 'easeOut' }}
+      >
         <ChartContainer config={chartConfig} className={className}>
           <BarChart
-            layout="vertical"
             data={data}
-            margin={{ top: 4, right: 12, left: 4, bottom: 4 }}
+            margin={{ top: 8, right: 12, left: 4, bottom: 48 }}
           >
-            <CartesianGrid strokeDasharray="3 3" horizontal={false} />
+            <CartesianGrid strokeDasharray="3 3" vertical={false} />
             <XAxis
-              type="number"
+              dataKey={indexKey}
               tick={{ fontSize: 10 }}
+              interval={0}
+              angle={-24}
+              textAnchor="end"
+              height={56}
               tickLine={false}
               axisLine={false}
             />
             <YAxis
-              type="category"
-              dataKey={indexKey}
-              width={108}
+              width={32}
               tick={{ fontSize: 10 }}
               tickLine={false}
               axisLine={false}
@@ -151,7 +223,7 @@ export function DashboardMultiSeriesChart({
                 dataKey={s.key}
                 stackId={stackId}
                 fill={`var(--color-${s.key})`}
-                radius={[0, 4, 4, 0]}
+                radius={[4, 4, 0, 0]}
               >
                 {rowFills &&
                 rowFills.length === data.length &&
@@ -165,54 +237,7 @@ export function DashboardMultiSeriesChart({
             ))}
           </BarChart>
         </ChartContainer>
-      );
-    }
-
-    return (
-      <ChartContainer config={chartConfig} className={className}>
-        <BarChart
-          data={data}
-          margin={{ top: 8, right: 12, left: 4, bottom: 48 }}
-        >
-          <CartesianGrid strokeDasharray="3 3" vertical={false} />
-          <XAxis
-            dataKey={indexKey}
-            tick={{ fontSize: 10 }}
-            interval={0}
-            angle={-24}
-            textAnchor="end"
-            height={56}
-            tickLine={false}
-            axisLine={false}
-          />
-          <YAxis
-            width={32}
-            tick={{ fontSize: 10 }}
-            tickLine={false}
-            axisLine={false}
-          />
-          <ChartTooltip cursor={false} content={<ChartTooltipContent />} />
-          <ChartLegend content={<ChartLegendContent />} />
-          {series.map(s => (
-            <Bar
-              key={s.key}
-              dataKey={s.key}
-              stackId={stackId}
-              fill={`var(--color-${s.key})`}
-              radius={[4, 4, 0, 0]}
-            >
-              {rowFills &&
-              rowFills.length === data.length &&
-              series.length === 1 &&
-              series[0]?.key === s.key
-                ? rowFills.map((fill, i) => (
-                    <Cell key={i} fill={fill} stroke="transparent" />
-                  ))
-                : null}
-            </Bar>
-          ))}
-        </BarChart>
-      </ChartContainer>
+      </motion.div>
     );
   }
 
@@ -224,30 +249,38 @@ export function DashboardMultiSeriesChart({
         value: data.reduce((acc, row) => acc + rowNum(row, s.key), 0),
       }));
       return (
-        <ChartContainer config={chartConfig} className={className}>
-          <PieChart margin={{ top: 8, right: 8, bottom: 8, left: 8 }}>
-            <ChartTooltip content={<ChartTooltipContent />} />
-            <ChartLegend content={<ChartLegendContent />} />
-            <Pie
-              data={pieData}
-              dataKey="value"
-              nameKey="name"
-              cx="50%"
-              cy="50%"
-              innerRadius={48}
-              outerRadius={88}
-              paddingAngle={2}
-            >
-              {pieData.map(entry => (
-                <Cell
-                  key={entry.key}
-                  fill={`var(--color-${entry.key})`}
-                  stroke="transparent"
-                />
-              ))}
-            </Pie>
-          </PieChart>
-        </ChartContainer>
+        <motion.div
+          key="pie-multi"
+          initial={{ opacity: 0, scale: 0.95 }}
+          animate={{ opacity: 1, scale: 1 }}
+          exit={{ opacity: 0, scale: 0.95 }}
+          transition={{ duration: 0.35, ease: 'easeOut' }}
+        >
+          <ChartContainer config={chartConfig} className={className}>
+            <PieChart margin={{ top: 8, right: 8, bottom: 8, left: 8 }}>
+              <ChartTooltip content={<ChartTooltipContent />} />
+              <ChartLegend content={<ChartLegendContent />} />
+              <Pie
+                data={pieData}
+                dataKey="value"
+                nameKey="name"
+                cx="50%"
+                cy="50%"
+                innerRadius={48}
+                outerRadius={88}
+                paddingAngle={2}
+              >
+                {pieData.map(entry => (
+                  <Cell
+                    key={entry.key}
+                    fill={`var(--color-${entry.key})`}
+                    stroke="transparent"
+                  />
+                ))}
+              </Pie>
+            </PieChart>
+          </ChartContainer>
+        </motion.div>
       );
     }
 
@@ -264,30 +297,38 @@ export function DashboardMultiSeriesChart({
     const pieConfig = chartConfig;
 
     return (
-      <ChartContainer config={pieConfig} className={className}>
-        <PieChart margin={{ top: 8, right: 8, bottom: 8, left: 8 }}>
-          <ChartTooltip content={<ChartTooltipContent />} />
-          <ChartLegend content={<ChartLegendContent />} />
-          <Pie
-            data={pieSlices}
-            dataKey="value"
-            nameKey="name"
-            cx="50%"
-            cy="50%"
-            innerRadius={48}
-            outerRadius={88}
-            paddingAngle={2}
-          >
-            {pieSlices.map((entry, i) => (
-              <Cell
-                key={`${entry.name}-${i}`}
-                fill={entry.fill}
-                stroke="transparent"
-              />
-            ))}
-          </Pie>
-        </PieChart>
-      </ChartContainer>
+      <motion.div
+        key="pie-single"
+        initial={{ opacity: 0, scale: 0.95 }}
+        animate={{ opacity: 1, scale: 1 }}
+        exit={{ opacity: 0, scale: 0.95 }}
+        transition={{ duration: 0.35, ease: 'easeOut' }}
+      >
+        <ChartContainer config={pieConfig} className={className}>
+          <PieChart margin={{ top: 8, right: 8, bottom: 8, left: 8 }}>
+            <ChartTooltip content={<ChartTooltipContent />} />
+            <ChartLegend content={<ChartLegendContent />} />
+            <Pie
+              data={pieSlices}
+              dataKey="value"
+              nameKey="name"
+              cx="50%"
+              cy="50%"
+              innerRadius={48}
+              outerRadius={88}
+              paddingAngle={2}
+            >
+              {pieSlices.map((entry, i) => (
+                <Cell
+                  key={`${entry.name}-${i}`}
+                  fill={entry.fill}
+                  stroke="transparent"
+                />
+              ))}
+            </Pie>
+          </PieChart>
+        </ChartContainer>
+      </motion.div>
     );
   }
 
@@ -307,34 +348,42 @@ export function DashboardMultiSeriesChart({
     });
 
     return (
-      <ChartContainer config={chartConfig} className={className}>
-        <RadarChart
-          data={radarRows}
-          margin={{ top: 16, right: 24, bottom: 16, left: 24 }}
-        >
-          <ChartTooltip cursor={false} content={<ChartTooltipContent />} />
-          <ChartLegend content={<ChartLegendContent />} />
-          <PolarGrid />
-          <PolarAngleAxis dataKey="subject" tick={{ fontSize: 9 }} />
-          <PolarRadiusAxis
-            angle={30}
-            domain={[0, 'auto']}
-            tick={{ fontSize: 9 }}
-          />
-          {series.map(s => (
-            <Radar
-              key={s.key}
-              name={s.label}
-              dataKey={s.key}
-              stroke={`var(--color-${s.key})`}
-              fill={`var(--color-${s.key})`}
-              fillOpacity={0.35}
-              strokeWidth={2}
-              dot={{ r: 4, fill: `var(--color-${s.key})` }}
+      <motion.div
+        key="radar"
+        initial={{ opacity: 0, y: 20 }}
+        animate={{ opacity: 1, y: 0 }}
+        exit={{ opacity: 0, y: -20 }}
+        transition={{ duration: 0.35, ease: 'easeOut' }}
+      >
+        <ChartContainer config={chartConfig} className={className}>
+          <RadarChart
+            data={radarRows}
+            margin={{ top: 16, right: 24, bottom: 16, left: 24 }}
+          >
+            <ChartTooltip cursor={false} content={<ChartTooltipContent />} />
+            <ChartLegend content={<ChartLegendContent />} />
+            <PolarGrid />
+            <PolarAngleAxis dataKey="subject" tick={{ fontSize: 9 }} />
+            <PolarRadiusAxis
+              angle={30}
+              domain={[0, 'auto']}
+              tick={{ fontSize: 9 }}
             />
-          ))}
-        </RadarChart>
-      </ChartContainer>
+            {series.map(s => (
+              <Radar
+                key={s.key}
+                name={s.label}
+                dataKey={s.key}
+                stroke={`var(--color-${s.key})`}
+                fill={`var(--color-${s.key})`}
+                fillOpacity={0.35}
+                strokeWidth={2}
+                dot={{ r: 4, fill: `var(--color-${s.key})` }}
+              />
+            ))}
+          </RadarChart>
+        </ChartContainer>
+      </motion.div>
     );
   }
 
@@ -360,37 +409,45 @@ export function DashboardMultiSeriesChart({
     }
 
     return (
-      <ChartContainer config={chartConfig} className={className}>
-        <RadialBarChart
-          cx="50%"
-          cy="50%"
-          innerRadius="18%"
-          outerRadius="88%"
-          data={radialData}
-          startAngle={90}
-          endAngle={-270}
-          margin={{ top: 8, right: 8, bottom: 8, left: 8 }}
-        >
-          <ChartTooltip cursor={false} content={<ChartTooltipContent />} />
-          <ChartLegend content={<ChartLegendContent />} />
-          <PolarAngleAxis
-            type="category"
-            dataKey="name"
-            tick={{ fontSize: 9 }}
-            tickLine={false}
-          />
-          <RadialBar
-            dataKey="value"
-            background
-            cornerRadius={4}
-            label={{
-              position: 'insideStart',
-              fill: '#f8fafc',
-              fontSize: 10,
-            }}
-          />
-        </RadialBarChart>
-      </ChartContainer>
+      <motion.div
+        key="radial"
+        initial={{ opacity: 0, y: 20 }}
+        animate={{ opacity: 1, y: 0 }}
+        exit={{ opacity: 0, y: -20 }}
+        transition={{ duration: 0.35, ease: 'easeOut' }}
+      >
+        <ChartContainer config={chartConfig} className={className}>
+          <RadialBarChart
+            cx="50%"
+            cy="50%"
+            innerRadius="18%"
+            outerRadius="88%"
+            data={radialData}
+            startAngle={90}
+            endAngle={-270}
+            margin={{ top: 8, right: 8, bottom: 8, left: 8 }}
+          >
+            <ChartTooltip cursor={false} content={<ChartTooltipContent />} />
+            <ChartLegend content={<ChartLegendContent />} />
+            <PolarAngleAxis
+              type="category"
+              dataKey="name"
+              tick={{ fontSize: 9 }}
+              tickLine={false}
+            />
+            <RadialBar
+              dataKey="value"
+              background
+              cornerRadius={4}
+              label={{
+                position: 'insideStart',
+                fill: '#f8fafc',
+                fontSize: 10,
+              }}
+            />
+          </RadialBarChart>
+        </ChartContainer>
+      </motion.div>
     );
   }
 

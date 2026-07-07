@@ -34,6 +34,7 @@ import gatePassRoutes from './routes/gatePass.routes.js';
 import intangibleAssetsRoutes from './routes/intangibleAssets.routes.js';
 import dashboardRoutes from './routes/dashboard.routes.js';
 import reportsRoutes from './routes/reports.routes.js';
+import proxyRoutes from './routes/proxy.routes.js';
 import { cleanupExpiredSessions } from './auth/cleanup.js';
 import cors from 'cors';
 import { Server as SocketIOServer } from 'socket.io';
@@ -173,6 +174,7 @@ app.use('/api/intangible-assets', intangibleAssetsRoutes);
 app.use('/api/gate-passes', gatePassRoutes);
 app.use('/api/dashboard', dashboardRoutes);
 app.use('/api/reports', reportsRoutes);
+app.use('/api/proxy', proxyRoutes);
 app.get('/api/hello', (_req: Request, res: Response) =>
   res.json({ message: 'Hello from server!' })
 );

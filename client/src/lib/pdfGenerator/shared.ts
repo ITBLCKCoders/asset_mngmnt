@@ -2,8 +2,27 @@ import { jsPDF } from 'jspdf';
 import autoTable from 'jspdf-autotable';
 import { createLogger } from '@/lib/logger';
 import { api } from '@/lib/api';
+import { proxyCloudinaryUrl } from '@/utils/cloudinaryProxy';
 
 export const pdfLogger = createLogger('PDFGenerator');
+
+export const pdfDefaultStyles = {
+  primaryColor: '#C6A364',
+  secondaryColor: '#333333',
+  fontFamily: 'helvetica',
+  fontSize: 10,
+  headerBgColor: '#F5F5F5',
+  borderColor: '#CCCCCC',
+};
+
+export const formatPdfDate = (dateStr: string): string => {
+  if (!dateStr) return '';
+  const [y, m, d] = dateStr.split('-');
+  if (!y || !m || !d) return dateStr;
+  const months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+  const monthIndex = parseInt(m, 10) - 1;
+  return `${months[monthIndex] ?? 'Jan'} ${parseInt(d, 10)}, ${y}`;
+};
 
 /** Cache processed signature data URLs (keyed by remote URL) for PDF generation */
 const signatureImageCache = new Map<string, string>();
@@ -139,10 +158,11 @@ export const addCompanyLogoToPDF = async (
   if (!logoUrl) return;
 
   try {
+    const proxiedUrl = proxyCloudinaryUrl(logoUrl);
     const resolvedLogoUrl =
-      logoUrl.startsWith('/') && typeof window !== 'undefined'
-        ? `${window.location.origin}${logoUrl}`
-        : logoUrl;
+      proxiedUrl.startsWith('/') && typeof window !== 'undefined'
+        ? `${window.location.origin}${proxiedUrl}`
+        : proxiedUrl;
     const response = await fetch(resolvedLogoUrl);
     if (!response.ok) return;
 
@@ -209,14 +229,16 @@ export const addSignatureToPDF = async (
       return;
     }
 
+    const proxiedSignatureUrl = proxyCloudinaryUrl(signatureData);
+
     const img = new Image();
     img.crossOrigin = 'anonymous';
 
-    if (signatureData.startsWith('http://') || signatureData.startsWith('https://')) {
-      const cached = signatureImageCache.get(signatureData);
-      img.src = cached ?? signatureData;
+    if (proxiedSignatureUrl.startsWith('http://') || proxiedSignatureUrl.startsWith('https://')) {
+      const cached = signatureImageCache.get(proxiedSignatureUrl);
+      img.src = cached ?? proxiedSignatureUrl;
     } else {
-      img.src = signatureData;
+      img.src = proxiedSignatureUrl;
     }
 
     await new Promise<void>((resolve, reject) => {

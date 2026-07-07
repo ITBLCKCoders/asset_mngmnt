@@ -39,25 +39,6 @@
   animation: spin 20s linear infinite;
 }
 
-@keyframes shimmer-pro {
-  0% {
-    background-position: 200% 0;
-  }
-  100% {
-    background-position: -200% 0;
-  }
-}
-.animate-shimmer {
-  background-image: linear-gradient(
-    90deg,
-    transparent 0%,
-    rgba(255, 255, 255, 0.5) 50%,
-    transparent 100%
-  );
-  background-size: 300% 100%;
-  animation: shimmer-pro 2s ease-in-out infinite;
-}
-
 [data-radix-popper-content-wrapper] .day_today {
   @apply bg-[#EE1D25] text-white font-extrabold shadow-md;
 }
@@ -74,6 +55,14 @@
 }
 .animate-fade-in {
   animation: fade-in 0.4s ease-out forwards;
+}
+
+.scrollbar-hide {
+  -ms-overflow-style: none;
+  scrollbar-width: none;
+}
+.scrollbar-hide::-webkit-scrollbar {
+  display: none;
 }
 
 nav::-webkit-scrollbar {

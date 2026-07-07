@@ -1,0 +1,100 @@
+erDiagram
+  users {
+    userID char(36) PK
+    email varchar
+    company_id char(36)
+    department_id char(36)
+    role_id char(36)
+  }
+  asset_assignments {
+    assignmentID char(36) PK
+    asset_id char(36) FK
+    user_id char(36) FK
+    department_id char(36) FK
+    location_id char(36) FK
+    location_room_id char(36) FK
+    assigned_by char(36) FK
+    status enum
+  }
+  accountability_forms {
+    formID char(36) PK
+    form_number varchar
+    assignment_id char(36) FK
+    asset_id char(36) FK
+    user_id char(36) FK
+    department_id char(36) FK
+    location_id char(36) FK
+    location_room_id char(36) FK
+    created_by char(36) FK
+    status enum
+  }
+  asset_return_forms {
+    formID char(36) PK
+    form_number varchar
+    user_id char(36) FK
+    department_id char(36) FK
+    location_id char(36) FK
+    location_room_id char(36) FK
+    created_by char(36) FK
+    signed_by char(36) FK
+    dept_head_signed_by char(36) FK
+    it_manager_signed_by char(36) FK
+    declined_by char(36) FK
+    processor_declined_by char(36) FK
+  }
+  asset_returns {
+    return_id char(36) PK
+    assignment_id char(36) FK
+    user_id char(36) FK
+    form_id char(36) FK
+    return_location_id char(36) FK
+    return_location_room_id char(36) FK
+    return_department_id char(36) FK
+  }
+  asset_transfer_forms {
+    formID char(36) PK
+    form_number varchar
+    user_id char(36) FK
+    department_id char(36) FK
+    location_id char(36) FK
+    location_room_id char(36) FK
+    new_assigned_user_id char(36) FK
+    created_by char(36) FK
+    signed_by char(36) FK
+    dept_head_signed_by char(36) FK
+    it_manager_signed_by char(36) FK
+    return_form_id char(36) FK
+  }
+  asset_transfer {
+    record_id char(36) PK
+    form_id char(36) FK
+    assignment_id char(36) FK
+    user_id char(36) FK
+  }
+  asset_checklists {
+    id char(36) PK
+    assignment_id char(36) FK
+    employee_id char(36) FK
+    created_by char(36) FK
+  }
+
+  users ||--o{ asset_assignments : assignee
+  assets ||--o{ asset_assignments : assigned
+  users ||--o{ asset_assignments : assigned_by
+
+  asset_assignments ||--o{ accountability_forms : has
+  assets ||--o{ accountability_forms : covered
+  users ||--o{ accountability_forms : subject
+
+  users ||--o{ asset_return_forms : submitter
+  asset_return_forms ||--o{ asset_returns : groups
+  asset_assignments ||--o{ asset_returns : returned
+  users ||--o{ asset_returns : performer
+
+  users ||--o{ asset_transfer_forms : submitter
+  asset_transfer_forms ||--o{ asset_transfer : details
+  asset_assignments ||--o{ asset_transfer : moved
+  users ||--o{ asset_transfer : actor
+
+  asset_assignments ||--o{ asset_checklists : has
+  users ||--o{ asset_checklists : employee
