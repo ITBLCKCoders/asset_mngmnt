@@ -163,12 +163,21 @@ router.post('/:id/assign', assignIntangibleAsset);
  * /api/intangible-assets/{id}/unassign:
  *   post:
  *     tags: [Intangible Assets]
- *     summary: Unassign an intangible asset
+ *     summary: Unassign an intangible asset from a specific user
  *     parameters:
  *       - in: path
  *         name: id
  *         required: true
  *         schema: { type: string }
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required: [userId]
+ *             properties:
+ *               userId: { type: string }
  *     responses:
  *       200: { description: Intangible asset unassigned }
  *       401: { description: Unauthorized }

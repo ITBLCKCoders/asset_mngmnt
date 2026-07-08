@@ -51,7 +51,14 @@ export const CreateAssetDtoSchema = z.object({
   status: z
     .enum([
       'Available',
+      'Assigned',
       'In Use',
+      'For Investigation',
+      'For Disposal',
+      'Borrowed',
+      'Service Unit',
+      'For Isolation',
+      'Repairing',
       'Under Maintenance',
       'Retired',
       'Disposed',

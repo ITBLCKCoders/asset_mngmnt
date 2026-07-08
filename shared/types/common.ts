@@ -40,7 +40,14 @@ export interface BaseEntity {
 // Common enums
 export enum AssetStatus {
   Available = 'Available',
+  Assigned = 'Assigned',
   InUse = 'In Use',
+  ForInvestigation = 'For Investigation',
+  ForDisposal = 'For Disposal',
+  Borrowed = 'Borrowed',
+  ServiceUnit = 'Service Unit',
+  ForIsolation = 'For Isolation',
+  Repairing = 'Repairing',
   UnderMaintenance = 'Under Maintenance',
   Retired = 'Retired',
   Disposed = 'Disposed',

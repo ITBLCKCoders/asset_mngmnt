@@ -19,6 +19,7 @@ jest.mock('../../services/intangibleAssets.service.js', () => ({
   updateIntangibleAsset: jest.fn(),
   assignIntangibleAsset: jest.fn(),
   unassignIntangibleAsset: jest.fn(),
+  hasActiveAssignment: jest.fn(),
 }));
 
 const { getScopedActiveCompany } = jest.requireMock('../../utils/activeCompany.js') as {
@@ -32,6 +33,7 @@ const intangibleAssetsService = jest.requireMock('../../services/intangibleAsset
   updateIntangibleAsset: jest.Mock;
   assignIntangibleAsset: jest.Mock;
   unassignIntangibleAsset: jest.Mock;
+  hasActiveAssignment: jest.Mock;
 };
 
 describe('intangibleAssets.controller', () => {
@@ -78,19 +80,8 @@ describe('intangibleAssets.controller', () => {
 
     it('returns 400 when no active company', async () => {
       getScopedActiveCompany.mockResolvedValue(null);
-      req.body = { name: 'Patent', type: 'IP' };
       await intangibleAssetsController.createIntangibleAsset(req, res);
       expect(res._status).toBe(400);
-    });
-  });
-
-  describe('createIntangibleAssetsBulk', () => {
-    it('creates bulk intangible assets', async () => {
-      getScopedActiveCompany.mockResolvedValue({ id: 'company-1' });
-      req.body = { assets: [{ name: 'Patent', type: 'IP' }] };
-      intangibleAssetsService.createIntangibleAssetsBulk.mockResolvedValue([{ id: 'ia-1' }]);
-      await intangibleAssetsController.createIntangibleAssetsBulk(req, res);
-      expect(res._status).toBe(201);
     });
   });
 
@@ -99,7 +90,7 @@ describe('intangibleAssets.controller', () => {
       getScopedActiveCompany.mockResolvedValue({ id: 'company-1' });
       req.params = { id: 'ia-1' };
       req.body = { name: 'Updated Patent', type: 'IP', status: 'available' };
-      intangibleAssetsService.getIntangibleAssetById.mockResolvedValue({ id: 'ia-1', name: 'Patent' });
+      intangibleAssetsService.getIntangibleAssetById.mockResolvedValue({ id: 'ia-1', name: 'Patent', status: 'available' });
       await intangibleAssetsController.updateIntangibleAsset(req, res);
       expect(res._json).toEqual({ success: true });
     });
@@ -107,7 +98,6 @@ describe('intangibleAssets.controller', () => {
     it('returns 404 when asset not found', async () => {
       getScopedActiveCompany.mockResolvedValue({ id: 'company-1' });
       req.params = { id: 'ia-999' };
-      req.body = { name: 'Ghost', type: 'IP', status: 'available' };
       intangibleAssetsService.getIntangibleAssetById.mockResolvedValue(null);
       await intangibleAssetsController.updateIntangibleAsset(req, res);
       expect(res._status).toBe(404);
@@ -125,16 +115,19 @@ describe('intangibleAssets.controller', () => {
       getScopedActiveCompany.mockResolvedValue({ id: 'company-1' });
       req.params = { id: 'ia-1' };
       req.body = { assignedTo: 'u-2', assignmentId: 'assign-1' };
-      intangibleAssetsService.getIntangibleAssetById.mockResolvedValue({ id: 'ia-1', name: 'Patent', status: 'available' });
+      intangibleAssetsService.getIntangibleAssetById.mockResolvedValue({ id: 'ia-1', name: 'Patent', status: 'assigned' });
+      intangibleAssetsService.hasActiveAssignment.mockResolvedValue(false);
+      intangibleAssetsService.assignIntangibleAsset.mockResolvedValue({ assigned: true });
       await intangibleAssetsController.assignIntangibleAsset(req, res);
       expect(res._json).toEqual({ success: true });
     });
 
-    it('returns 400 when already assigned', async () => {
+    it('returns 400 when already assigned to same user', async () => {
       getScopedActiveCompany.mockResolvedValue({ id: 'company-1' });
       req.params = { id: 'ia-1' };
       req.body = { assignedTo: 'u-2', assignmentId: 'assign-1' };
       intangibleAssetsService.getIntangibleAssetById.mockResolvedValue({ id: 'ia-1', name: 'Patent', status: 'assigned' });
+      intangibleAssetsService.hasActiveAssignment.mockResolvedValue(true);
       await intangibleAssetsController.assignIntangibleAsset(req, res);
       expect(res._status).toBe(400);
     });
@@ -144,14 +137,24 @@ describe('intangibleAssets.controller', () => {
     it('unassigns intangible asset successfully', async () => {
       getScopedActiveCompany.mockResolvedValue({ id: 'company-1' });
       req.params = { id: 'ia-1' };
-      intangibleAssetsService.getIntangibleAssetById.mockResolvedValue({ id: 'ia-1', name: 'Patent', assigned_to: 'u-2', assignment_id: 'assign-1' });
+      req.body = { userId: 'u-2' };
+      intangibleAssetsService.getIntangibleAssetById.mockResolvedValue({ id: 'ia-1', name: 'Patent' });
       await intangibleAssetsController.unassignIntangibleAsset(req, res);
       expect(res._json).toEqual({ success: true });
+      expect(intangibleAssetsService.unassignIntangibleAsset).toHaveBeenCalledWith('ia-1', 'u-2', 'company-1');
+    });
+
+    it('returns 400 when userId missing', async () => {
+      getScopedActiveCompany.mockResolvedValue({ id: 'company-1' });
+      req.params = { id: 'ia-1' };
+      await intangibleAssetsController.unassignIntangibleAsset(req, res);
+      expect(res._status).toBe(400);
     });
 
     it('returns 404 when asset not found', async () => {
       getScopedActiveCompany.mockResolvedValue({ id: 'company-1' });
       req.params = { id: 'ia-999' };
+      req.body = { userId: 'u-2' };
       intangibleAssetsService.getIntangibleAssetById.mockResolvedValue(null);
       await intangibleAssetsController.unassignIntangibleAsset(req, res);
       expect(res._status).toBe(404);

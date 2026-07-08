@@ -378,50 +378,70 @@ export function AssetsPage() {
         },
       },
       {
-        accessorKey: 'status',
-        header: 'Status',
-        size: 120,
-        cell: ({ row }) => {
-          const status = row.original.status;
-          const badgeClass = status === 'available'
-            ? 'bg-green-100 text-green-800 hover:bg-green-200'
-            : 'bg-amber-100 text-amber-800 hover:bg-amber-200';
-          return (
-            <Badge variant="secondary" className={badgeClass}>
-              {status}
-            </Badge>
-          );
-        },
-      },
-      {
         accessorKey: 'assigned_to',
         header: 'Assigned To',
-        size: 180,
+        size: 220,
         cell: ({ row }) => {
-          const assignedFirstName = row.original.assigned_first_name;
-          const assignedLastName = row.original.assigned_last_name;
-          const status = row.original.status;
-          
-          if (status === 'available' || (!assignedFirstName && !assignedLastName)) {
+          const assignees: Array<{
+            firstName?: string;
+            lastName?: string;
+            email?: string;
+          }> = row.original.assignees || [];
+
+          if (assignees.length === 0) {
             return (
               <span className="text-sm text-gray-500">
                 Not assigned
               </span>
             );
           }
-          
+
+          const visible = assignees.slice(0, 3);
+          const remaining = assignees.length - visible.length;
+
           return (
-            <div className="text-sm">
-              <div className="font-medium text-gray-900">
-                {assignedFirstName} {assignedLastName}
-              </div>
-              {row.original.assigned_email && (
-                <div className="text-xs text-gray-500 truncate">
-                  {row.original.assigned_email}
+            <div className="space-y-1 text-sm">
+              {visible.map((assignee, index) => (
+                <div key={`${assignee.firstName}-${assignee.lastName}-${index}`}>
+                  <div className="font-medium text-gray-900">
+                    {[assignee.firstName, assignee.lastName].filter(Boolean).join(' ') || 'Unknown'}
+                  </div>
+                  {assignee.email && (
+                    <div className="text-xs text-gray-500 truncate">
+                      {assignee.email}
+                    </div>
+                  )}
                 </div>
+              ))}
+              {remaining > 0 && (
+                <div className="text-xs text-gray-500">+{remaining} more</div>
               )}
             </div>
           );
+        },
+      },
+      {
+        accessorKey: 'created_by_name',
+        header: 'Created By',
+        size: 160,
+        cell: ({ row }) => {
+          const displayName =
+            row.original.created_by_name ||
+            row.original.created_by ||
+            '—';
+          return <span className="text-sm text-gray-600">{displayName}</span>;
+        },
+      },
+      {
+        accessorKey: 'updated_by_name',
+        header: 'Updated By',
+        size: 160,
+        cell: ({ row }) => {
+          const displayName =
+            row.original.updated_by_name ||
+            row.original.updated_by ||
+            '—';
+          return <span className="text-sm text-gray-600">{displayName}</span>;
         },
       },
       {

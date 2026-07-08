@@ -37,6 +37,29 @@ const STORED_PROC_ASSET_STATUSES = new Set([
   'Lost',
 ]);
 
+const STORED_PROC_CONDITIONS = new Set([
+  'Excellent',
+  'Good',
+  'Fair',
+  'Poor',
+  'Damaged',
+]);
+
+function normalizeConditionForStoredProcedure(
+  incoming: string | undefined | null
+): string | null {
+  const raw = incoming != null ? String(incoming).trim() : '';
+  if (raw && STORED_PROC_CONDITIONS.has(raw)) return raw;
+  const uiToSp: Record<string, string> = {
+    New: 'Excellent',
+    Bad: 'Poor',
+    'Needs Repair': 'Fair',
+    Obsolete: 'Poor',
+  };
+  if (raw && uiToSp[raw]) return uiToSp[raw];
+  return null;
+}
+
 function normalizeAssetStatusForStoredProcedure(
   incoming: string | undefined | null,
   previous: string | undefined | null
@@ -669,6 +692,7 @@ export async function createAssetHandler(req: AuthRequest, res: Response) {
     usefulLifeYears: fields.usefulLifeYears ? Number(fields.usefulLifeYears) : undefined,
     annualDepreciation: fields.annualDepreciation ? Number(fields.annualDepreciation) : undefined,
     warrantyMonths: fields.warrantyMonths ? Number(fields.warrantyMonths) : undefined,
+    depreciationMethod: fields.depreciationMethod || undefined,
     isOldUnit: fields.isOldUnit === 'true' || fields.isOldUnit === '1',
   });
 
@@ -807,7 +831,7 @@ export async function createAssetHandler(req: AuthRequest, res: Response) {
         validDepartmentId,
         locationNotes?.trim() || null,
         warrantyMonths || null,
-        condition || null,
+        normalizeConditionForStoredProcedure(condition),
         [
           'Monthly',
           'Quarterly',
@@ -1286,6 +1310,7 @@ export async function updateAssetHandler(req: AuthRequest, res: Response) {
     usefulLifeYears: fields.usefulLifeYears ? Number(fields.usefulLifeYears) : undefined,
     annualDepreciation: fields.annualDepreciation ? Number(fields.annualDepreciation) : undefined,
     warrantyMonths: fields.warrantyMonths ? Number(fields.warrantyMonths) : undefined,
+    depreciationMethod: fields.depreciationMethod || undefined,
     isOldUnit: fields.isOldUnit === 'true' || fields.isOldUnit === '1',
   });
 
@@ -1461,11 +1486,7 @@ export async function updateAssetHandler(req: AuthRequest, res: Response) {
           validDepartmentId,
           locationNotes?.trim() || null,
           warrantyMonths || null,
-          ['Excellent', 'Good', 'Fair', 'Poor', 'Damaged'].includes(
-            condition || ''
-          )
-            ? condition
-            : 'Good',
+          normalizeConditionForStoredProcedure(condition),
           [
             'Monthly',
             'Quarterly',
@@ -1523,11 +1544,7 @@ export async function updateAssetHandler(req: AuthRequest, res: Response) {
           validDepartmentId,
           locationNotes?.trim() || null,
           warrantyMonths || null,
-          ['Excellent', 'Good', 'Fair', 'Poor', 'Damaged'].includes(
-            condition || ''
-          )
-            ? condition
-            : 'Good',
+          normalizeConditionForStoredProcedure(condition),
           [
             'Monthly',
             'Quarterly',

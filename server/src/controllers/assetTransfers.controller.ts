@@ -1487,7 +1487,7 @@ export async function submitTransferRequestHandler(
     if (intangibleAssetIds && intangibleAssetIds.length > 0 && companyId) {
       for (const assetId of intangibleAssetIds) {
         try {
-          await intangibleAssetsService.unassignIntangibleAsset(assetId, companyId);
+          await intangibleAssetsService.unassignIntangibleAsset(assetId, currentUserId, companyId);
           await createAuditLog({
             userId: currentUserId,
             action: 'Requested Transfer of Intangible Asset',
@@ -2717,12 +2717,13 @@ export async function runTransferFormExecution(
   if (intangibleAssetItems && intangibleAssetItems.length > 0 && companyId) {
     for (const item of intangibleAssetItems) {
       try {
-        await intangibleAssetsService.assignIntangibleAsset(
-          item.id,
-          newUserId,
-          formId,
-          companyId
-        );
+        await intangibleAssetsService.assignIntangibleAsset({
+          id: item.id,
+          assignedTo: newUserId,
+          assignmentId: formId,
+          companyId,
+          assignedBy: processorId,
+        });
         await createAuditLog({
           userId: processorId,
           action: 'Transferred Intangible Asset',
