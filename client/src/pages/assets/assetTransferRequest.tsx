@@ -16,6 +16,7 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { PageHeader } from '@/components/common/PageHeader';
 import { SearchWithColumnFilter } from '@/components/common/SearchWithColumnFilter';
 import { ASSET_SEARCH_COLUMNS_BASIC } from '@/utils/assetSearchColumns';
+import { isIntangibleAssignedToUser } from '@/utils/intangibleAssets';
 import { Button } from '@/components/ui/button';
 import {
   Select,
@@ -762,7 +763,7 @@ export default function AssetTransferRequest() {
                   <Layers className="h-4 w-4" />
                   Intangible Assets
                   <Badge variant="secondary" className="ml-1 text-xs">
-                    {intangibleAssets.filter(a => a.assigned_to === currentUser?.id).length}
+                    {intangibleAssets.filter(a => isIntangibleAssignedToUser(a, currentUser?.id)).length}
                   </Badge>
                 </TabsTrigger>
               </TabsList>
@@ -1523,7 +1524,7 @@ export default function AssetTransferRequest() {
                   </CardHeader>
                   <CardContent>
                     {(() => {
-                      const myIntangibles = intangibleAssets.filter(a => a.assigned_to === currentUser?.id);
+                      const myIntangibles = intangibleAssets.filter(a => isIntangibleAssignedToUser(a, currentUser?.id));
                       if (myIntangibles.length === 0) {
                         return (
                           <div className="text-center py-8">

@@ -6,6 +6,7 @@ import {
   type AssetChecklistSubmitPayload,
 } from '@/pages/assets/asset-issuance/components/AssetChecklistDialog';
 import { filterComputerTypeAssets } from '@/utils/assetTypeDetection';
+import { isIntangibleAssignedToUser } from '@/utils/intangibleAssets';
 import type { Department } from '@/types/assets';
 import { useNavigate } from 'react-router-dom';
 import {
@@ -811,7 +812,7 @@ export default function TransferRequestsPage() {
 
                 {(() => {
                   const transferrerId = selectedBatch.returns[0]?.assignment?.user?.id || '';
-                  const assignedIntangibles = intangibleAssets.filter(a => a.assigned_to === transferrerId);
+                  const assignedIntangibles = intangibleAssets.filter(a => isIntangibleAssignedToUser(a, transferrerId));
                   return (
                     <Tabs defaultValue="physical-assets" className="w-full">
                       <TabsList className={segmentTabsListClassName + ' grid grid-cols-2 w-full'}>

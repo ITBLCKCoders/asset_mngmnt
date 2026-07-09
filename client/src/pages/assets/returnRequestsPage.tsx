@@ -24,6 +24,7 @@ import {
   Search,
 } from 'lucide-react';
 import { PageHeader } from '@/components/common/PageHeader';
+import { isIntangibleAssignedToUser } from '@/utils/intangibleAssets';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
@@ -1028,7 +1029,7 @@ export default function ReturnRequestsPage() {
                         <Layers className="h-4 w-4" />
                         Intangible Assets
                         <Badge variant="secondary" className="ml-1 text-xs">
-                          {(intangibleAssets.filter(a => a.assigned_to === processForm.user_id).length)}
+                          {(intangibleAssets.filter(a => isIntangibleAssignedToUser(a, processForm.user_id)).length)}
                         </Badge>
                       </TabsTrigger>
                     </TabsList>
@@ -1210,7 +1211,7 @@ export default function ReturnRequestsPage() {
                     <TabsContent value="intangible-assets" className="mt-4">
                       <div className="rounded-xl border border-slate-200 bg-white p-5 shadow-sm -mx-3">
                         {(() => {
-                          const assignedIntangibles = intangibleAssets.filter(a => a.assigned_to === processForm.user_id);
+                          const assignedIntangibles = intangibleAssets.filter(a => isIntangibleAssignedToUser(a, processForm.user_id));
                           if (assignedIntangibles.length === 0) {
                             return (
                               <div className="text-center py-8">

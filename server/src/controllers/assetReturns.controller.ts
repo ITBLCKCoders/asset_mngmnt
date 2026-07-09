@@ -431,7 +431,7 @@ export async function submitAssetReturnRequestHandler(
     if (intangibleAssetIds && intangibleAssetIds.length > 0 && companyId) {
       for (const assetId of intangibleAssetIds) {
         try {
-          await intangibleAssetsService.unassignIntangibleAsset(assetId, companyId);
+          await intangibleAssetsService.unassignIntangibleAsset(assetId, currentUserId, companyId);
           await createAuditLog({
             userId: currentUserId,
             action: 'Requested Return of Intangible Asset',
@@ -714,7 +714,11 @@ export async function createAssetReturnHandler(
       if (hasIntangibleItems && companyId) {
         for (const item of intangibleAssetReturnItems) {
           try {
-            await intangibleAssetsService.unassignIntangibleAsset(item.id, companyId);
+            await intangibleAssetsService.unassignIntangibleAsset(
+              item.id,
+              firstAssignment.user_id,
+              companyId
+            );
             await createAuditLog({
               userId: req.user!.userID,
               action: 'Returned Intangible Asset',
@@ -1151,7 +1155,11 @@ export async function createAssetReturnHandler(
     if (hasIntangibleItems && companyId) {
       for (const item of intangibleAssetReturnItems) {
         try {
-          await intangibleAssetsService.unassignIntangibleAsset(item.id, companyId);
+          await intangibleAssetsService.unassignIntangibleAsset(
+            item.id,
+            firstAssignment.user_id,
+            companyId
+          );
           await createAuditLog({
             userId: req.user!.userID,
             action: 'Returned Intangible Asset',
@@ -4239,7 +4247,11 @@ export async function processReturnFormHandler(
       const companyId = form.form_company_id;
       for (const item of intangibleAssetReturnItems) {
         try {
-          await intangibleAssetsService.unassignIntangibleAsset(item.id, companyId);
+          await intangibleAssetsService.unassignIntangibleAsset(
+            item.id,
+            form.user_id,
+            companyId
+          );
           await createAuditLog({
             userId: req.user!.userID,
             action: 'Returned Intangible Asset',

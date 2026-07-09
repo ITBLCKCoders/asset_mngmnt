@@ -331,9 +331,7 @@ export default function AssetsAssignment() {
     try {
       setIntangibleAssetsLoading(true);
       const response = await api.get('/intangible-assets');
-      // Filter to show only available intangible assets (not assigned)
-      const availableAssets = (response || []).filter((asset: any) => asset.status === 'available');
-      setIntangibleAssets(availableAssets);
+      setIntangibleAssets(response || []);
     } catch (error) {
       console.error('Failed to fetch intangible assets:', error);
       setIntangibleAssets([]);
@@ -1396,7 +1394,7 @@ export default function AssetsAssignment() {
                       </div>
                       <span>Intangible Assets</span>
                       <Badge variant="secondary" className="w-fit">
-                        {scopedIntangibleAssets.length} available
+                        {scopedIntangibleAssets.length} assets
                       </Badge>
                     </CardTitle>
                   </CardHeader>
@@ -1414,6 +1412,7 @@ export default function AssetsAssignment() {
                       <div className="space-y-3 overflow-y-auto flex-1 pr-1 sm:-mr-6 sm:pr-6 scrollbar-thin scrollbar-thumb-gray-300 scrollbar-track-gray-100">
                         {scopedIntangibleAssets.map((asset: any) => {
                           const isSelected = selectedAssets.includes(asset.id);
+                          const assigneeCount = asset.assignees?.length ?? (asset.assigned_to ? 1 : 0);
                           const typeColor = asset.type === 'IT scope' 
                             ? 'bg-red-100 text-red-800 border-red-200' 
                             : 'bg-orange-100 text-orange-800 border-orange-200';
@@ -1471,6 +1470,14 @@ export default function AssetsAssignment() {
                                       >
                                         {asset.status}
                                       </Badge>
+                                      {assigneeCount > 0 && (
+                                        <Badge
+                                          variant="outline"
+                                          className="text-xs font-semibold bg-gray-50 text-gray-700 border-gray-200 px-2.5 py-1"
+                                        >
+                                          {assigneeCount} assigned
+                                        </Badge>
+                                      )}
                                     </div>
                                     <div className="flex items-center gap-2">
                                       {isSelected && (
@@ -1501,10 +1508,10 @@ export default function AssetsAssignment() {
                       <div className="text-center py-12">
                         <Layers className="mx-auto h-12 w-12 text-gray-400 mb-4" />
                         <h3 className="text-lg font-medium text-gray-900 mb-2">
-                          No Available Intangible Assets
+                          No Intangible Assets
                         </h3>
                         <p className="text-sm text-gray-500">
-                          All intangible assets have been assigned or are currently unavailable.
+                          No intangible assets found for this scope.
                         </p>
                       </div>
                     )}

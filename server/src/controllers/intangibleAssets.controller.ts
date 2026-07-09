@@ -125,7 +125,7 @@ export const updateIntangibleAsset = async (req: AuthRequest, res: Response) => 
       return res.status(400).json({ error: 'No active company found' });
     }
 
-    const { name, description, remarks, type, status, assignedTo, assignedDate, assignmentId } = req.body;
+    const { name, description, remarks, type, status } = req.body;
 
     // Get existing asset for audit log
     const existingAsset =
@@ -142,9 +142,6 @@ export const updateIntangibleAsset = async (req: AuthRequest, res: Response) => 
       status: status ?? existingAsset.status,
       companyId: activeCompany.id,
       updatedBy: userId,
-      assignedTo: assignedTo || null,
-      assignedDate: assignedDate || null,
-      assignmentId: assignmentId || null,
     });
 
     await createAuditLog({
@@ -155,7 +152,7 @@ export const updateIntangibleAsset = async (req: AuthRequest, res: Response) => 
       resourceName: name || existingAsset.name,
       details: `Updated intangible asset "${id}"`,
       oldValues: existingAsset,
-      newValues: { name, description, remarks, type, status, assignedTo, assignmentId },
+      newValues: { name, description, remarks, type, status },
       ipAddress: req.ip || 'unknown',
       userAgent: req.get('User-Agent') || 'unknown',
       companyId: activeCompany.id,
@@ -183,7 +180,7 @@ export const assignIntangibleAsset = async (req: AuthRequest, res: Response) => 
       return res.status(400).json({ error: 'No active company found' });
     }
 
-    const { assignedTo, assignmentId } = req.body;
+    const { assignedTo, assignmentId, departmentId, locationId, locationRoomId } = req.body;
 
     if (!assignedTo) {
       return res.status(400).json({ error: 'User ID is required for assignment' });
@@ -200,16 +197,25 @@ export const assignIntangibleAsset = async (req: AuthRequest, res: Response) => 
       return res.status(404).json({ error: 'Intangible asset not found' });
     }
 
-    if (existingAsset.status === 'assigned') {
-      return res.status(400).json({ error: 'Asset is already assigned' });
+    const alreadyAssigned = await intangibleAssetsService.hasActiveAssignment(id, assignedTo);
+    if (alreadyAssigned) {
+      return res.status(400).json({ error: 'Asset is already assigned to this user' });
     }
 
-    await intangibleAssetsService.assignIntangibleAsset(
+    const result = await intangibleAssetsService.assignIntangibleAsset({
       id,
       assignedTo,
       assignmentId,
-      activeCompany.id
-    );
+      companyId: activeCompany.id,
+      assignedBy: userId,
+      departmentId: departmentId || null,
+      locationId: locationId || null,
+      locationRoomId: locationRoomId || null,
+    });
+
+    if (!result.assigned) {
+      return res.status(400).json({ error: 'Asset is already assigned to this user' });
+    }
 
     await createAuditLog({
       userId,
@@ -231,7 +237,7 @@ export const assignIntangibleAsset = async (req: AuthRequest, res: Response) => 
   }
 };
 
-// UNASSIGN intangible asset
+// UNASSIGN intangible asset from a specific user
 export const unassignIntangibleAsset = async (req: AuthRequest, res: Response) => {
   const { id } = req.params;
   const userId = req.user!.userID;
@@ -246,6 +252,11 @@ export const unassignIntangibleAsset = async (req: AuthRequest, res: Response) =
       return res.status(400).json({ error: 'No active company found' });
     }
 
+    const { userId: assigneeUserId } = req.body;
+    if (!assigneeUserId) {
+      return res.status(400).json({ error: 'User ID is required for unassignment' });
+    }
+
     // Get existing asset for audit log
     const existingAsset =
       await intangibleAssetsService.getIntangibleAssetById(id, activeCompany.id);
@@ -253,7 +264,7 @@ export const unassignIntangibleAsset = async (req: AuthRequest, res: Response) =
       return res.status(404).json({ error: 'Intangible asset not found' });
     }
 
-    await intangibleAssetsService.unassignIntangibleAsset(id, activeCompany.id);
+    await intangibleAssetsService.unassignIntangibleAsset(id, assigneeUserId, activeCompany.id);
 
     await createAuditLog({
       userId,
@@ -261,8 +272,8 @@ export const unassignIntangibleAsset = async (req: AuthRequest, res: Response) =
       resourceType: 'intangible_asset',
       resourceId: id,
       resourceName: existingAsset.name,
-      details: `Unassigned intangible asset "${existingAsset.name}"`,
-      oldValues: { assignedTo: existingAsset.assigned_to, assignmentId: existingAsset.assignment_id },
+      details: `Unassigned intangible asset "${existingAsset.name}" from user`,
+      oldValues: { assignedTo: assigneeUserId },
       ipAddress: req.ip || 'unknown',
       userAgent: req.get('User-Agent') || 'unknown',
       companyId: activeCompany.id,
@@ -285,7 +296,7 @@ export const batchAssignIntangibleAssets = async (req: AuthRequest, res: Respons
       return res.status(400).json({ error: 'No active company found' });
     }
 
-    const { assetIds, assignedTo, assignmentId, departmentId, locationId,
+    const { assetIds, assignedTo, assignmentId, departmentId, locationId, locationRoomId,
             signAsIssuer, issuerSignature, signITCopy, itCopySignature } = req.body;
 
     if (!assetIds || !Array.isArray(assetIds) || assetIds.length === 0) {
@@ -298,8 +309,9 @@ export const batchAssignIntangibleAssets = async (req: AuthRequest, res: Respons
       return res.status(400).json({ error: 'Assignment ID is required' });
     }
 
-    // Assign each intangible asset
+    // Assign each intangible asset (allows multiple concurrent assignees)
     const failedAssets: string[] = [];
+    const skippedAssets: string[] = [];
     for (const id of assetIds) {
       try {
         const existingAsset = await intangibleAssetsService.getIntangibleAssetById(id, activeCompany.id);
@@ -307,12 +319,28 @@ export const batchAssignIntangibleAssets = async (req: AuthRequest, res: Respons
           failedAssets.push(id);
           continue;
         }
-        if (existingAsset.status === 'assigned') {
-          failedAssets.push(id);
+
+        const alreadyAssigned = await intangibleAssetsService.hasActiveAssignment(id, assignedTo);
+        if (alreadyAssigned) {
+          skippedAssets.push(id);
           continue;
         }
 
-        await intangibleAssetsService.assignIntangibleAsset(id, assignedTo, assignmentId, activeCompany.id);
+        const result = await intangibleAssetsService.assignIntangibleAsset({
+          id,
+          assignedTo,
+          assignmentId,
+          companyId: activeCompany.id,
+          assignedBy: userId,
+          departmentId: departmentId || null,
+          locationId: locationId || null,
+          locationRoomId: locationRoomId || null,
+        });
+
+        if (!result.assigned) {
+          skippedAssets.push(id);
+          continue;
+        }
 
         await createAuditLog({
           userId,
@@ -509,7 +537,8 @@ export const batchAssignIntangibleAssets = async (req: AuthRequest, res: Respons
 
     res.json({
       success: !formErrorMsg,
-      assigned: assetIds.filter(id => !failedAssets.includes(id)),
+      assigned: assetIds.filter(id => !failedAssets.includes(id) && !skippedAssets.includes(id)),
+      skipped: skippedAssets,
       failed: failedAssets,
       formError: formErrorMsg,
     });

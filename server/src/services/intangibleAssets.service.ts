@@ -13,6 +13,10 @@ export async function getIntangibleAssetById(id: string, companyId: string) {
   return intangibleAssetsRepository.getIntangibleAssetById(id, companyId);
 }
 
+export async function getActiveAssignmentsByUser(userId: string, companyId: string) {
+  return intangibleAssetsRepository.getActiveAssignmentsByUser(userId, companyId);
+}
+
 export async function createIntangibleAsset(data: {
   name: string;
   description: string | null;
@@ -63,31 +67,32 @@ export async function updateIntangibleAsset(
     status?: string;
     companyId: string;
     updatedBy: string;
-    assignedTo?: string | null;
-    assignedDate?: Date | null;
-    assignmentId?: string | null;
   }
 ) {
   return intangibleAssetsRepository.updateIntangibleAsset(id, data);
 }
 
-export async function assignIntangibleAsset(
-  id: string,
-  assignedTo: string,
-  assignmentId: string,
-  companyId: string
-) {
-  return intangibleAssetsRepository.assignIntangibleAsset(
-    id,
-    assignedTo,
-    assignmentId,
-    companyId
-  );
+export async function assignIntangibleAsset(data: {
+  id: string;
+  assignedTo: string;
+  assignmentId: string;
+  companyId: string;
+  assignedBy?: string | null;
+  departmentId?: string | null;
+  locationId?: string | null;
+  locationRoomId?: string | null;
+}) {
+  return intangibleAssetsRepository.assignIntangibleAsset(data);
+}
+
+export async function hasActiveAssignment(intangibleAssetId: string, userId: string) {
+  return intangibleAssetsRepository.hasActiveAssignment(intangibleAssetId, userId);
 }
 
 export async function unassignIntangibleAsset(
   id: string,
+  userId: string,
   companyId: string
 ) {
-  return intangibleAssetsRepository.unassignIntangibleAsset(id, companyId);
+  return intangibleAssetsRepository.unassignIntangibleAsset(id, userId, companyId);
 }

@@ -13,6 +13,7 @@ const {
   getIntangibleAssetById,
   assignIntangibleAsset,
   unassignIntangibleAsset,
+  hasActiveAssignment,
 } = require('../../repositories/intangibleAssets.repository.js');
 
 describe('intangibleAssets.repository', () => {
@@ -21,10 +22,26 @@ describe('intangibleAssets.repository', () => {
   });
 
   describe('getAllIntangibleAssets', () => {
-    it('should call SP with company id', async () => {
-      mockPool.query.mockResolvedValue([[{ id: 'ia-1', name: 'Software License' }], []]);
+    it('should call SP with company id and parse assignees', async () => {
+      mockPool.query.mockResolvedValue([[
+        {
+          id: 'ia-1',
+          name: 'Software License',
+          assignees: JSON.stringify([{ userId: 'u1', firstName: 'Jane', lastName: 'Doe', email: 'jane@example.com' }]),
+          created_by_name: 'Admin User',
+          updated_by_name: 'Admin User',
+        },
+      ], []]);
       const result = await getAllIntangibleAssets('c1');
-      expect(result).toEqual([{ id: 'ia-1', name: 'Software License' }]);
+      expect(result).toEqual([
+        {
+          id: 'ia-1',
+          name: 'Software License',
+          assignees: [{ userId: 'u1', firstName: 'Jane', lastName: 'Doe', email: 'jane@example.com' }],
+          created_by_name: 'Admin User',
+          updated_by_name: 'Admin User',
+        },
+      ]);
       expect(mockPool.query).toHaveBeenCalledWith('CALL sp_GetAllIntangibleAssets(?)', ['c1']);
     });
 
@@ -81,19 +98,54 @@ describe('intangibleAssets.repository', () => {
     });
   });
 
+  describe('hasActiveAssignment', () => {
+    it('should return true when active assignment exists', async () => {
+      mockPool.query.mockResolvedValue([[{ 1: 1 }], []]);
+      const result = await hasActiveAssignment('ia-1', 'u1');
+      expect(result).toBe(true);
+    });
+  });
+
   describe('assignIntangibleAsset', () => {
-    it('should call SP with assignment data', async () => {
-      mockPool.query.mockResolvedValue([[{}], []]);
-      await assignIntangibleAsset('ia-1', 'u1', 'as-1', 'c1');
-      expect(mockPool.query).toHaveBeenCalledWith('CALL sp_AssignIntangibleAsset(?, ?, ?, ?)', ['ia-1', 'u1', 'as-1', 'c1']);
+    it('should call SP with assignment data when not already assigned', async () => {
+      mockPool.query
+        .mockResolvedValueOnce([[], []])
+        .mockResolvedValueOnce([[{}], []]);
+      const result = await assignIntangibleAsset({
+        id: 'ia-1',
+        assignedTo: 'u1',
+        assignmentId: 'as-1',
+        companyId: 'c1',
+        assignedBy: 'admin-1',
+      });
+      expect(result).toEqual({ assigned: true });
+      expect(mockPool.query).toHaveBeenCalledWith(
+        'CALL sp_AssignIntangibleAsset(?, ?, ?, ?, ?, ?, ?, ?)',
+        ['ia-1', 'u1', 'as-1', 'c1', 'admin-1', null, null, null]
+      );
+    });
+
+    it('should skip assignment when user already assigned', async () => {
+      mockPool.query.mockResolvedValueOnce([[{ 1: 1 }], []]);
+      const result = await assignIntangibleAsset({
+        id: 'ia-1',
+        assignedTo: 'u1',
+        assignmentId: 'as-1',
+        companyId: 'c1',
+      });
+      expect(result).toEqual({ assigned: false });
+      expect(mockPool.query).toHaveBeenCalledTimes(1);
     });
   });
 
   describe('unassignIntangibleAsset', () => {
-    it('should call SP', async () => {
+    it('should call SP with asset, user, and company', async () => {
       mockPool.query.mockResolvedValue([[{}], []]);
-      await unassignIntangibleAsset('ia-1', 'c1');
-      expect(mockPool.query).toHaveBeenCalledWith('CALL sp_UnassignIntangibleAsset(?, ?)', ['ia-1', 'c1']);
+      await unassignIntangibleAsset('ia-1', 'u1', 'c1');
+      expect(mockPool.query).toHaveBeenCalledWith(
+        'CALL sp_UnassignIntangibleAsset(?, ?, ?)',
+        ['ia-1', 'u1', 'c1']
+      );
     });
   });
 });

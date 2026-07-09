@@ -33,7 +33,7 @@ export interface CreateAssetDto {
   warrantyMonths?: number | null;
   condition?: AssetCondition;
   maintenanceSchedule?: MaintenanceSchedule;
-  status?: AssetStatus;
+  status?: string;
   isOldUnit?: boolean;
   assignedUser?: string | null;
 }
@@ -611,4 +611,28 @@ export interface AssetChecklistResponseDto {
   remarks: string | null;
   createdAt: string;
   createdBy: string | null;
+}
+
+export interface IntangibleAssetAssigneeDto {
+  userId: string;
+  firstName: string;
+  lastName: string;
+  email: string;
+  assignedDate?: string;
+}
+
+export interface IntangibleAssetListItemDto {
+  id: string;
+  name: string;
+  description: string | null;
+  remarks: string | null;
+  type: string;
+  status: string;
+  created_at: string;
+  created_by: string | null;
+  created_by_name: string | null;
+  updated_at: string;
+  updated_by: string | null;
+  updated_by_name: string | null;
+  assignees: IntangibleAssetAssigneeDto[];
 }
