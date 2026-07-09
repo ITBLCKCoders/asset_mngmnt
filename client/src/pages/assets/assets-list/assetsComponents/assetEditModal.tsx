@@ -722,6 +722,7 @@ export function EditAssetModal({
       maintenanceSchedule:
         originalAsset.maintenanceSchedule !== newData.maintenanceSchedule,
       status: originalAsset.status !== newData.status,
+      image: originalAsset.image !== newData.imageUrl,
     };
 
     // Return true if any field has changed

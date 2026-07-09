@@ -24,14 +24,14 @@ export function useBarcodeScanner(onScan: (code: string) => void) {
   });
 
   const bufferRef = useRef('');
-  const timerRef = useRef<ReturnType<typeof setTimeout>>();
+  const timerRef = useRef<number | undefined>(undefined);
   const lastKeyAtRef = useRef(0);
 
   useEffect(() => {
     const flush = () => {
       const raw = bufferRef.current.trim();
       bufferRef.current = '';
-      clearTimeout(timerRef.current);
+      window.clearTimeout(timerRef.current);
       if (raw) {
         onScanRef.current(raw);
       }
@@ -63,14 +63,14 @@ export function useBarcodeScanner(onScan: (code: string) => void) {
 
       bufferRef.current += e.key;
 
-      clearTimeout(timerRef.current);
-      timerRef.current = setTimeout(flush, SCAN_COMPLETE_IDLE_MS);
+      window.clearTimeout(timerRef.current);
+      timerRef.current = window.setTimeout(flush, SCAN_COMPLETE_IDLE_MS);
     };
 
     window.addEventListener('keydown', handleKeyDown);
     return () => {
       window.removeEventListener('keydown', handleKeyDown);
-      clearTimeout(timerRef.current);
+      window.clearTimeout(timerRef.current);
     };
   }, []);
 }

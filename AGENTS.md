@@ -509,9 +509,12 @@ This file should help assistants make accurate changes, not generic ones. If the
 - Modified `assetTagging.tsx` — added `useBarcodeScanner` hook with case-insensitive asset lookup; html2canvas scale 5; barcode overlay using `imageSmoothingEnabled = false`
 - Modified `AssetsPage.tsx` — same scanner integration on main asset list page
 - Modified `myAssets.tsx` — same scanner integration on My Assets page
+- Fixed `useBarcodeScanner.ts` — removed `null` from `useRef` type, replaced `setTimeout`/`clearTimeout` with `window.` prefixed variants for TS compat
+- Removed spurious `isSelected`/`onSelect` fields from asset mapper in `assetTagging.tsx`
+- Barcode now scannable by physical barcode scanner when printed on paper (overlay fix + bar width increase)
 
 ### In Progress
-- Barcode still not readable by physical barcode scanner when printed on paper
+- (none)
 
 ### Blocked
 - (none)

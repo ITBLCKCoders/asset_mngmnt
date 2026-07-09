@@ -894,9 +894,11 @@ export function AssetsPage() {
       apiFormData.append('status', formData.status || '');
       apiFormData.append('isOldUnit', formData.isOldUnit ? '1' : '0');
 
-      // Append image file if exists
+      // Append image file if exists, or send removal flag
       if (formData.imageFile) {
         apiFormData.append('image', formData.imageFile);
+      } else if (formData.imageUrl === '') {
+        apiFormData.append('removeImage', '1');
       }
 
       // Append documents if exist

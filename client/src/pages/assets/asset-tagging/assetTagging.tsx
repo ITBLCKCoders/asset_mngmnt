@@ -85,8 +85,6 @@ function mapDtoToTaggingAsset(asset: AssetResponseDto): Asset {
       : new Date(asset.created_at),
     updatedBy: asset.updated_by_name || asset.updated_by || '',
     specifications: asset.specifications || [],
-    isSelected: false,
-    onSelect: () => {},
   };
 }
 

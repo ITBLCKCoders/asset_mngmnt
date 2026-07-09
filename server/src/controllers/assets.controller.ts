@@ -1407,9 +1407,11 @@ export async function updateAssetHandler(req: AuthRequest, res: Response) {
     validDepartmentId = oldAsset.department_id ?? null;
   }
 
-  // Handle image upload if provided
+  // Handle image removal or upload
   let finalImageUrl = oldAsset.image_url;
-  if (imageFile) {
+  if (fields.removeImage === '1') {
+    finalImageUrl = null;
+  } else if (imageFile) {
     try {
       finalImageUrl = await uploadToCloudinary(imageFile.buffer);
       logger.info('Image uploaded successfully:', finalImageUrl);
