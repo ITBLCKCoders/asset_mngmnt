@@ -588,6 +588,56 @@ export async function disableAccountabilityForm(formId: string): Promise<void> {
 }
 
 // ---------------------------------------------------------------------------
+// Intangible asset assignments (merged into assigned-assets list)
+// ---------------------------------------------------------------------------
+
+export async function getIntangibleAssignments(
+  companyId: string
+): Promise<any[]> {
+  const [rows] = await pool.execute(`
+    SELECT
+      iaa.assignmentID,
+      iaa.intangible_asset_id,
+      iaa.user_id,
+      iaa.department_id,
+      iaa.location_id,
+      iaa.location_room_id,
+      iaa.assigned_date,
+      iaa.assigned_by,
+      iaa.accountability_assignment_id,
+      iaa.status,
+      iaa.created_at,
+      iaa.updated_at,
+      ia.name AS asset_name,
+      ia.type AS asset_type,
+      u.first_name,
+      u.last_name,
+      u.email,
+      u.employee_number AS employeeNumber,
+      u.position,
+      d.name AS department_name,
+      l.name AS location_name,
+      l.floor_unit,
+      l.building,
+      lr.room_name,
+      ab.first_name AS assigned_by_first_name,
+      ab.last_name AS assigned_by_last_name,
+      ab.employee_number AS assigned_by_employee_number
+    FROM intangible_asset_assignments iaa
+    INNER JOIN intangible_assets ia ON iaa.intangible_asset_id = ia.id
+    INNER JOIN users u ON iaa.user_id = u.userID
+    LEFT JOIN asset_mngmnt_departments d ON iaa.department_id = d.departmentID AND d.deleted_at IS NULL
+    LEFT JOIN asset_mngmnt_locations l ON iaa.location_id = l.locationID AND l.deleted_at IS NULL
+    LEFT JOIN asset_mngmnt_location_rooms lr ON iaa.location_room_id = lr.roomID AND lr.deleted_at IS NULL
+    LEFT JOIN users ab ON iaa.assigned_by = ab.userID
+    WHERE iaa.deleted_at IS NULL
+      AND ia.company_id = ?
+    ORDER BY iaa.assigned_date DESC
+  `, [companyId]);
+  return rows as any[];
+}
+
+// ---------------------------------------------------------------------------
 // Listing / filtering
 // ---------------------------------------------------------------------------
 

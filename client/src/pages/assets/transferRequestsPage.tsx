@@ -815,7 +815,7 @@ export default function TransferRequestsPage() {
                   const assignedIntangibles = intangibleAssets.filter(a => isIntangibleAssignedToUser(a, transferrerId));
                   return (
                     <Tabs defaultValue="physical-assets" className="w-full">
-                      <TabsList className={segmentTabsListClassName + ' grid grid-cols-2 w-full'}>
+                      <TabsList className={segmentTabsListClassName + ' grid grid-cols-1 w-full'}>
                         <TabsTrigger value="physical-assets" className={segmentTabsTriggerClassName + ' flex items-center gap-2'}>
                           <Package className="h-4 w-4" />
                           Physical Assets
@@ -823,14 +823,7 @@ export default function TransferRequestsPage() {
                             {(selectedBatch.returns || []).length}
                           </Badge>
                         </TabsTrigger>
-                        <TabsTrigger value="intangible-assets" className={segmentTabsTriggerClassName + ' flex items-center gap-2'}>
-                          <Layers className="h-4 w-4" />
-                          Intangible Assets
-                          <Badge variant="secondary" className="ml-1 text-xs">
-                            {assignedIntangibles.length}
-                          </Badge>
-                        </TabsTrigger>
-                      </TabsList>
+                        </TabsList>
 
                       <TabsContent value="physical-assets" className="mt-4 space-y-4">
                         {(selectedBatch.returns || []).map(r => (
@@ -969,66 +962,6 @@ export default function TransferRequestsPage() {
                         ))}
                       </TabsContent>
 
-                      <TabsContent value="intangible-assets" className="mt-4">
-                        <div className="rounded-xl border border-slate-200 bg-white p-5 shadow-sm">
-                          {assignedIntangibles.length === 0 ? (
-                            <div className="text-center py-8">
-                              <Layers className="h-10 w-10 text-gray-300 mx-auto mb-3" />
-                              <p className="text-gray-500 text-sm">No intangible assets assigned to this user.</p>
-                            </div>
-                          ) : (
-                            <div className="space-y-2">
-                              <Label className="text-sm font-semibold text-slate-800 tracking-tight uppercase flex items-center gap-2">
-                                <Layers className="h-4 w-4 text-red-500" />
-                                Select intangible assets to transfer
-                              </Label>
-                              <div className="space-y-2 max-h-[300px] overflow-y-auto mt-3">
-                                {assignedIntangibles.map(asset => {
-                                  const isSelected = selectedIntangibleAssetIds.includes(asset.id);
-                                  return (
-                                    <div
-                                      key={asset.id}
-                                      className={`flex items-center gap-3 p-3 rounded-lg border-2 cursor-pointer transition-all ${
-                                        isSelected
-                                          ? 'border-red-500 bg-red-50'
-                                          : 'border-slate-200 hover:border-red-300 hover:bg-slate-50'
-                                      }`}
-                                      onClick={() => {
-                                        if (isSelected) {
-                                          setSelectedIntangibleAssetIds(prev => prev.filter(id => id !== asset.id));
-                                        } else {
-                                          setSelectedIntangibleAssetIds(prev => [...prev, asset.id]);
-                                        }
-                                      }}
-                                    >
-                                      <div className={`h-4 w-4 rounded border-2 flex items-center justify-center ${
-                                        isSelected ? 'bg-red-500 border-red-500' : 'border-gray-300'
-                                      }`}>
-                                        {isSelected && (
-                                          <svg className="h-3 w-3 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M5 13l4 4L19 7" />
-                                          </svg>
-                                        )}
-                                      </div>
-                                      <div className="flex-1 min-w-0">
-                                        <div className="flex items-center gap-2">
-                                          <span className="font-medium text-slate-900">{asset.name}</span>
-                                          <Badge variant="outline" className={asset.type === 'IT scope' ? 'bg-red-100 text-red-800 border-red-200' : 'bg-orange-100 text-orange-800 border-orange-200'}>
-                                            {asset.type}
-                                          </Badge>
-                                        </div>
-                                        {asset.description && (
-                                          <p className="text-sm text-gray-500 truncate mt-0.5">{asset.description}</p>
-                                        )}
-                                      </div>
-                                    </div>
-                                  );
-                                })}
-                              </div>
-                            </div>
-                          )}
-                        </div>
-                      </TabsContent>
                     </Tabs>
                   );
                 })()}

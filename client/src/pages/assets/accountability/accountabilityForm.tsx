@@ -102,7 +102,11 @@ const debounce = <T extends (...args: T[]) => void>(
 };
 
 // Generate cache key from form data
-const generateCacheKey = (form: AccountabilityForm, currentUser?: any, intangibleAssets: any[] = []): string => {
+const generateCacheKey = (
+  form: AccountabilityForm,
+  currentUser?: any,
+  intangibleAssets: any[] = []
+): string => {
   const keyData = {
     formId: form.id,
     formNumber: form.formNumber,
@@ -140,8 +144,12 @@ const addSignatureToPDF = async (
   maxHeight: number = 20
 ): Promise<void> => {
   try {
-    logger.debug('addSignatureToPDF called', { hasSignature: !!signatureData, x, y });
-    
+    logger.debug('addSignatureToPDF called', {
+      hasSignature: !!signatureData,
+      x,
+      y,
+    });
+
     if (!signatureData) {
       logger.debug('No signature data provided');
       return;
@@ -159,9 +167,12 @@ const addSignatureToPDF = async (
 
     const img = new Image();
     img.crossOrigin = 'anonymous';
-    
+
     // Check if signature is a URL (not base64) and if it's cached
-    if (signatureData.startsWith('http://') || signatureData.startsWith('https://')) {
+    if (
+      signatureData.startsWith('http://') ||
+      signatureData.startsWith('https://')
+    ) {
       if (imageCache.has(signatureData)) {
         logger.debug('Using cached signature image');
         img.src = imageCache.get(signatureData)!;
@@ -171,11 +182,14 @@ const addSignatureToPDF = async (
     } else {
       img.src = signatureData;
     }
-    
+
     await new Promise<void>((resolve, reject) => {
       img.onload = () => {
-        logger.debug('Signature image loaded', { width: img.width, height: img.height });
-        
+        logger.debug('Signature image loaded', {
+          width: img.width,
+          height: img.height,
+        });
+
         // Process image to remove white background and make it transparent
         const canvas = document.createElement('canvas');
         canvas.width = img.width;
@@ -185,14 +199,14 @@ const addSignatureToPDF = async (
           ctx.drawImage(img, 0, 0);
           const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
           const data = imageData.data;
-          
+
           // Make white/near-white pixels transparent
           for (let i = 0; i < data.length; i += 4) {
             const r = data[i];
             const g = data[i + 1];
             const b = data[i + 2];
             const a = data[i + 3];
-            
+
             // Check if pixel is white or near-white
             const brightness = (r + g + b) / 3;
             if (brightness > 240 && a > 0) {
@@ -200,11 +214,14 @@ const addSignatureToPDF = async (
               data[i + 3] = 0;
             }
           }
-          
+
           ctx.putImageData(imageData, 0, 0);
-          
+
           // Cache the processed signature image if it's a URL
-          if (signatureData.startsWith('http://') || signatureData.startsWith('https://')) {
+          if (
+            signatureData.startsWith('http://') ||
+            signatureData.startsWith('https://')
+          ) {
             const processedDataUrl = canvas.toDataURL();
             imageCache.set(signatureData, processedDataUrl);
             img.src = processedDataUrl;
@@ -212,7 +229,7 @@ const addSignatureToPDF = async (
             img.src = canvas.toDataURL();
           }
         }
-        
+
         resolve();
       };
       img.onerror = () => {
@@ -224,26 +241,34 @@ const addSignatureToPDF = async (
     const pixelsToMm = 0.264583;
     const sigWidth = img.width * pixelsToMm;
     const sigHeight = img.height * pixelsToMm;
-    
+
     let finalSigWidth = sigWidth;
     let finalSigHeight = sigHeight;
-    
+
     if (sigWidth > maxWidth) {
       const scale = maxWidth / sigWidth;
       finalSigWidth = maxWidth;
       finalSigHeight = sigHeight * scale;
     }
-    
+
     if (finalSigHeight > maxHeight) {
       const scale = maxHeight / finalSigHeight;
       finalSigHeight = maxHeight;
       finalSigWidth = finalSigWidth * scale;
     }
-    
-    logger.debug('Adding signature image to PDF', { finalSigWidth, finalSigHeight, x, y });
+
+    logger.debug('Adding signature image to PDF', {
+      finalSigWidth,
+      finalSigHeight,
+      x,
+      y,
+    });
     doc.addImage(img.src, 'PNG', x, y, finalSigWidth, finalSigHeight);
   } catch (error) {
-    logger.debug('Failed to add signature to PDF', error as Record<string, unknown>);
+    logger.debug(
+      'Failed to add signature to PDF',
+      error as Record<string, unknown>
+    );
   }
 };
 
@@ -310,7 +335,9 @@ interface AccountabilityFormProps {
   lazyLoadDetails?: boolean;
 }
 
-const getAccountabilityFormAssignmentIds = (form: AccountabilityForm): string[] => {
+const getAccountabilityFormAssignmentIds = (
+  form: AccountabilityForm
+): string[] => {
   const assignmentIds = new Set<string>();
   for (const id of form.assignmentIds ?? []) {
     const assignmentId = String(id ?? '').trim();
@@ -412,7 +439,9 @@ export const generateAccountabilityFormPDF = async (
   const companyLogoUrl = form.user.companyLogoUrl ?? undefined;
   const companyAccentColor = getCompanyAccentColor(form.user.company?.name);
   const isBlackCodersCompany = isBlackCoders(form.user.company?.name);
-  const headerFillColor: [number, number, number] = isBlackCodersCompany ? [0, 0, 0] : [companyAccentColor.r, companyAccentColor.g, companyAccentColor.b];
+  const headerFillColor: [number, number, number] = isBlackCodersCompany
+    ? [0, 0, 0]
+    : [companyAccentColor.r, companyAccentColor.g, companyAccentColor.b];
   const headerTextColor: [number, number, number] = [255, 255, 255];
 
   // Add logo first
@@ -440,7 +469,10 @@ export const generateAccountabilityFormPDF = async (
   doc.setFontSize(14);
   doc.setFont('helvetica', 'bold');
   doc.setTextColor(0, 0, 0);
-  const title = form.formOrigin === 'processor_return' ? 'Asset Accountability Form (TEMPORARY)' : 'Asset Accountability Form';
+  const title =
+    form.formOrigin === 'processor_return'
+      ? 'Asset Accountability Form (TEMPORARY)'
+      : 'Asset Accountability Form';
   doc.text(title, 105, 40, { align: 'center' });
 
   // Department - font size 12
@@ -1057,18 +1089,18 @@ I agree that if any of the items are damaged or lost due to my negligence, I sha
   const issuerSignedDate = form.created_at
     ? new Date(form.created_at)
     : new Date();
-  
+
   doc.text(`${issuerSignedDate.toLocaleDateString()}`, 60, signatureY + 10);
   doc.text(`${issuerSignedDate.toLocaleTimeString()}`, 60, signatureY + 15);
   doc.text(issuerName, 20, signatureY + 28);
-  
+
   // Render issuer digital signature if available (to the right of the name)
-  logger.debug('Rendering issuer signature', { 
-    hasIssuerSignature: !!form.issuerSignature, 
-    signatureLength: form.issuerSignature?.length 
+  logger.debug('Rendering issuer signature', {
+    hasIssuerSignature: !!form.issuerSignature,
+    signatureLength: form.issuerSignature?.length,
   });
   await addSignatureToPDF(doc, form.issuerSignature, -20, signatureY, 122, 74);
-  
+
   doc.setLineWidth(0.2);
   doc.line(20, signatureY + 30, 80, signatureY + 30);
   doc.text('Signature over Printed Name', 20, signatureY + 35);
@@ -1084,18 +1116,18 @@ I agree that if any of the items are damaged or lost due to my negligence, I sha
       130,
       signatureY + 28
     );
-    
+
     // Render digital signature from acknowledgments if available
     const digitalSignature = form.acknowledgments?.digitalSignature;
-    logger.debug('Rendering user digital signature in Issued to section', { 
-      hasDigitalSignature: !!digitalSignature, 
+    logger.debug('Rendering user digital signature in Issued to section', {
+      hasDigitalSignature: !!digitalSignature,
       signatureLength: digitalSignature?.length,
-      signaturePrefix: digitalSignature?.substring(0, 50)
+      signaturePrefix: digitalSignature?.substring(0, 50),
     });
     if (digitalSignature) {
       await addSignatureToPDF(doc, digitalSignature, 90, signatureY, 122, 74);
     }
-    
+
     doc.setLineWidth(0.2);
     doc.line(130, signatureY + 30, 190, signatureY + 30);
     doc.text('Signature over Printed Name', 130, signatureY + 35);
@@ -1114,18 +1146,25 @@ I agree that if any of the items are damaged or lost due to my negligence, I sha
   doc.text(copyLabel, 20, signatureY + 60);
 
   const itCopyDate = form.created_at ? new Date(form.created_at) : new Date();
-  
+
   doc.text(`${itCopyDate.toLocaleDateString()}`, 60, signatureY + 70);
   doc.text(`${itCopyDate.toLocaleTimeString()}`, 60, signatureY + 75);
   doc.text(issuerName, 20, signatureY + 88);
-  
+
   // Render IT copy digital signature if available (between name and signature line)
-  logger.debug('Rendering IT copy signature', { 
-    hasITCopySignature: !!form.itCopySignature, 
-    signatureLength: form.itCopySignature?.length 
+  logger.debug('Rendering IT copy signature', {
+    hasITCopySignature: !!form.itCopySignature,
+    signatureLength: form.itCopySignature?.length,
   });
-  await addSignatureToPDF(doc, form.itCopySignature, -20, signatureY + 60, 122, 74);
-  
+  await addSignatureToPDF(
+    doc,
+    form.itCopySignature,
+    -20,
+    signatureY + 60,
+    122,
+    74
+  );
+
   doc.setLineWidth(0.2);
   doc.line(20, signatureY + 90, 80, signatureY + 90);
   doc.text('Signature over Printed Name', 20, signatureY + 95);
@@ -1150,7 +1189,14 @@ I agree that if any of the items are damaged or lost due to my negligence, I sha
     doc.text(rcSignerName, 130, signatureY + 88);
     // Display digital initials
     if (form.receivedCopy201FileSignature) {
-      await addSignatureToPDF(doc, form.receivedCopy201FileSignature, 90, signatureY + 60, 122, 74);
+      await addSignatureToPDF(
+        doc,
+        form.receivedCopy201FileSignature,
+        90,
+        signatureY + 60,
+        122,
+        74
+      );
     }
     doc.setLineWidth(0.2);
     doc.line(130, signatureY + 90, 190, signatureY + 90);
@@ -1241,7 +1287,11 @@ function getChecklistAssetLabel(
   return `${name} (${code})`;
 }
 
-function ChecklistSummaryCard({ checklist }: { checklist: FormChecklistEntry }) {
+function ChecklistSummaryCard({
+  checklist,
+}: {
+  checklist: FormChecklistEntry;
+}) {
   return (
     <div className="space-y-3 rounded-xl border border-red-200 bg-gradient-to-br from-red-50/80 via-white to-slate-50 p-4 shadow-md">
       <div className="flex items-start justify-between gap-3 border-b border-red-100 pb-3">
@@ -1285,7 +1335,9 @@ function ChecklistSummaryCard({ checklist }: { checklist: FormChecklistEntry }) 
           <p className="text-xs font-medium uppercase tracking-wide text-slate-500">
             Employee
           </p>
-          <p className="mt-1 font-medium text-slate-900">{checklist.employee_name}</p>
+          <p className="mt-1 font-medium text-slate-900">
+            {checklist.employee_name}
+          </p>
         </div>
       </div>
 
@@ -1332,7 +1384,8 @@ export function AccountabilityFormCard({
             ? form.status
             : form.status;
   const isDeclined = form.status === 'Declined';
-  const isDisabledWithDeclineReason = form.status === 'Disabled' && form.declineReason;
+  const isDisabledWithDeclineReason =
+    form.status === 'Disabled' && form.declineReason;
   const issuerName = form.issuer
     ? `${form.issuer.first_name} ${form.issuer.last_name}`
     : 'Administrator';
@@ -1349,7 +1402,9 @@ export function AccountabilityFormCard({
   const [showDeclineDialog, setShowDeclineDialog] = useState(false);
   const [declineReasonDraft, setDeclineReasonDraft] = useState('');
   const [isDeclining, setIsDeclining] = useState(false);
-  const [activeCardTab, setActiveCardTab] = useState<'accountability' | 'checklist'>('accountability');
+  const [activeCardTab, setActiveCardTab] = useState<
+    'accountability' | 'checklist'
+  >('accountability');
   const [checklists, setChecklists] = useState<FormChecklistEntry[]>([]);
   const [activeChecklistKey, setActiveChecklistKey] = useState<string>('');
   const [checklistLoading, setChecklistLoading] = useState(false);
@@ -1359,12 +1414,15 @@ export function AccountabilityFormCard({
   const [checklistPdfUrl, setChecklistPdfUrl] = useState<string>('');
   const hasChecklist = checklists.length > 0;
   const hasUnsignedChecklists = checklists.some(c => !c.employee_signed_at);
-  const unsignedChecklistCount = checklists.filter(c => !c.employee_signed_at).length;
+  const unsignedChecklistCount = checklists.filter(
+    c => !c.employee_signed_at
+  ).length;
   const allChecklistsSigned = hasChecklist && !hasUnsignedChecklists;
   const canSignChecklist =
     isAssignedUser && hasChecklist && hasUnsignedChecklists;
   const showCardSignButton =
-    showSignButton && (activeCardTab !== 'checklist' ? canSign : canSignChecklist);
+    showSignButton &&
+    (activeCardTab !== 'checklist' ? canSign : canSignChecklist);
   const showFooterDownload =
     showDownloadButton && activeCardTab !== 'checklist';
   const showFooterDecline =
@@ -1401,7 +1459,9 @@ export function AccountabilityFormCard({
     }
     const fetchOtpExpiry = async () => {
       try {
-        const response = await api.get<{ settings: { otpExpirySeconds?: number } }>('/settings/security');
+        const response = await api.get<{
+          settings: { otpExpirySeconds?: number };
+        }>('/settings/security');
         if (response?.settings?.otpExpirySeconds) {
           setOtpExpiryFromSettings(response.settings.otpExpirySeconds);
         }
@@ -1509,7 +1569,9 @@ export function AccountabilityFormCard({
       if (list.length > 0) {
         const keepKey = activeChecklistKey || getChecklistTabKey(list[0]);
         const stillExists = list.some(c => getChecklistTabKey(c) === keepKey);
-        setActiveChecklistKey(stillExists ? keepKey : getChecklistTabKey(list[0]));
+        setActiveChecklistKey(
+          stillExists ? keepKey : getChecklistTabKey(list[0])
+        );
       }
     } catch (error) {
       console.error('Failed to refresh checklists:', error);
@@ -1563,11 +1625,15 @@ export function AccountabilityFormCard({
         console.log('Starting PDF generation for preview...');
         setIsPdfGenerating(true);
         console.log('Set isPdfGenerating to true');
-        
+
         // Check cache first
-        const cacheKey = generateCacheKey(localForm, currentUser, intangibleAssets);
+        const cacheKey = generateCacheKey(
+          localForm,
+          currentUser,
+          intangibleAssets
+        );
         const cachedPdf = pdfCache.get(cacheKey);
-        
+
         if (cachedPdf) {
           console.log('Using cached PDF');
           const url = URL.createObjectURL(cachedPdf);
@@ -1585,12 +1651,12 @@ export function AccountabilityFormCard({
           currentUser,
           intangibleAssets
         );
-        
+
         console.log('PDF generated, size:', pdfBlob.size, 'bytes');
-        
+
         // Cache the generated PDF
         pdfCache.set(cacheKey, pdfBlob);
-        
+
         const url = URL.createObjectURL(pdfBlob);
         console.log('Created blob URL:', url);
         setPdfUrl(url);
@@ -1624,11 +1690,15 @@ export function AccountabilityFormCard({
       try {
         console.log('Starting PDF generation for decline dialog...');
         setIsPdfGenerating(true);
-        
+
         // Check cache first
-        const cacheKey = generateCacheKey(localForm, currentUser, intangibleAssets);
+        const cacheKey = generateCacheKey(
+          localForm,
+          currentUser,
+          intangibleAssets
+        );
         const cachedPdf = pdfCache.get(cacheKey);
-        
+
         if (cachedPdf) {
           console.log('Using cached PDF for decline dialog');
           const url = URL.createObjectURL(cachedPdf);
@@ -1644,10 +1714,10 @@ export function AccountabilityFormCard({
           currentUser,
           intangibleAssets
         );
-        
+
         // Cache the generated PDF
         pdfCache.set(cacheKey, pdfBlob);
-        
+
         const url = URL.createObjectURL(pdfBlob);
         setPdfUrl(url);
         setIsPdfGenerating(false);
@@ -1669,11 +1739,15 @@ export function AccountabilityFormCard({
       try {
         console.log('Starting PDF generation for confirm dialog...');
         setIsPdfGenerating(true);
-        
+
         // Check cache first
-        const cacheKey = generateCacheKey(localForm, currentUser, intangibleAssets);
+        const cacheKey = generateCacheKey(
+          localForm,
+          currentUser,
+          intangibleAssets
+        );
         const cachedPdf = pdfCache.get(cacheKey);
-        
+
         if (cachedPdf) {
           console.log('Using cached PDF for confirm dialog');
           const url = URL.createObjectURL(cachedPdf);
@@ -1689,10 +1763,10 @@ export function AccountabilityFormCard({
           currentUser,
           intangibleAssets
         );
-        
+
         // Cache the generated PDF
         pdfCache.set(cacheKey, pdfBlob);
-        
+
         const url = URL.createObjectURL(pdfBlob);
         setPdfUrl(url);
         setIsPdfGenerating(false);
@@ -1709,9 +1783,13 @@ export function AccountabilityFormCard({
   const handleDownload = async () => {
     try {
       // Check cache first
-      const cacheKey = generateCacheKey(localForm, currentUser, intangibleAssets);
+      const cacheKey = generateCacheKey(
+        localForm,
+        currentUser,
+        intangibleAssets
+      );
       const cachedPdf = pdfCache.get(cacheKey);
-      
+
       let pdfBlob: Blob;
       if (cachedPdf) {
         logger.debug('Using cached PDF for download');
@@ -1725,7 +1803,7 @@ export function AccountabilityFormCard({
         // Cache the generated PDF
         pdfCache.set(cacheKey, pdfBlob);
       }
-      
+
       const url = URL.createObjectURL(pdfBlob);
       const link = document.createElement('a');
       link.href = url;
@@ -1762,6 +1840,20 @@ export function AccountabilityFormCard({
               <p className="text-sm text-gray-500">
                 Created {new Date(form.created_at).toLocaleDateString()}
               </p>
+              <div className="mt-2 flex flex-wrap gap-1.5">
+                {form.assets.filter(a => getAssetScopeType(a, form) === 'IT')
+                  .length > 0 && (
+                  <span className="inline-flex items-center rounded-md bg-blue-50 px-2 py-0.5 text-xs font-medium text-blue-700 ring-1 ring-inset ring-blue-600/20">
+                    IT Asset Accountability
+                  </span>
+                )}
+                {form.assets.filter(a => getAssetScopeType(a, form) === 'Admin')
+                  .length > 0 && (
+                  <span className="inline-flex items-center rounded-md bg-amber-50 px-2 py-0.5 text-xs font-medium text-amber-700 ring-1 ring-inset ring-amber-600/20">
+                    Admin Asset Accountability
+                  </span>
+                )}
+              </div>
             </div>
           </div>
           <div className="flex flex-col items-end gap-1.5 shrink-0">
@@ -1826,8 +1918,16 @@ export function AccountabilityFormCard({
 
       <CardContent className="space-y-3 flex-1">
         {hasChecklist ? (
-          <Tabs value={activeCardTab} onValueChange={(v) => setActiveCardTab(v as 'accountability' | 'checklist')} className="w-full">
-            <TabsList className={segmentTabsListClassName + ' grid grid-cols-2 mb-4'}>
+          <Tabs
+            value={activeCardTab}
+            onValueChange={v =>
+              setActiveCardTab(v as 'accountability' | 'checklist')
+            }
+            className="w-full"
+          >
+            <TabsList
+              className={segmentTabsListClassName + ' grid grid-cols-2 mb-4'}
+            >
               <TabsTrigger
                 value="accountability"
                 className={segmentTabsTriggerClassName}
@@ -1841,7 +1941,7 @@ export function AccountabilityFormCard({
                 Checklist
               </TabsTrigger>
             </TabsList>
-            
+
             <TabsContent value="accountability" className="space-y-3">
               {(isDeclined || isDisabledWithDeclineReason) && (
                 <div
@@ -1860,8 +1960,178 @@ export function AccountabilityFormCard({
                   )}
                 </div>
               )}
+
               {/* Asset Info */}
               <div className="flex items-start gap-3">
+                <Package className="h-4 w-4 text-gray-400 mt-0.5" />
+                <div className="flex-1">
+                  <p className="font-medium text-sm">
+                    {form.assets.length === 0
+                      ? 'No Assets'
+                      : `${form.assets.length} Assets`}
+                  </p>
+                  {form.assets.length > 0 && (
+                    <div className="max-h-[120px] overflow-y-auto scrollbar-hide text-xs text-gray-500 mt-1">
+                      <div className="space-y-0.5">
+                        {form.assets.map(asset => (
+                          <div key={asset.id} className="flex items-center">
+                            <span className="w-1 h-1 bg-gray-400 rounded-full mr-2 flex-shrink-0"></span>
+                            <span>{asset.name || asset.code}</span>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+                </div>
+              </div>
+
+              {/* Assignment Info */}
+              <div className="flex items-start gap-3">
+                <User className="h-4 w-4 text-gray-400 mt-0.5" />
+                <div className="flex-1">
+                  <p className="font-medium text-sm">
+                    {form.user.first_name} {form.user.last_name}
+                  </p>
+                  <p className="text-xs text-gray-500">
+                    {form.user.position || 'No position'}
+                  </p>
+                </div>
+              </div>
+
+              {/* Issued By Info */}
+              {form.issuer && (
+                <div className="flex items-start gap-3">
+                  <User className="h-4 w-4 text-gray-400 mt-0.5" />
+                  <div className="flex-1">
+                    <p className="font-medium text-sm">
+                      Issued by: {form.issuer.first_name}{' '}
+                      {form.issuer.last_name}
+                    </p>
+                    <p className="text-xs text-gray-500">{form.issuer.email}</p>
+                  </div>
+                </div>
+              )}
+
+              {/* Date Info */}
+              <div className="flex items-start gap-3">
+                <Calendar className="h-4 w-4 text-gray-400 mt-0.5" />
+                <div className="flex-1">
+                  <p className="text-xs text-gray-500">
+                    Assigned:{' '}
+                    {form.created_at &&
+                    !isNaN(new Date(form.created_at).getTime())
+                      ? new Date(form.created_at).toLocaleDateString() +
+                        ' ' +
+                        new Date(form.created_at).toLocaleTimeString()
+                      : 'Not specified'}
+                  </p>
+                  {form.assignment.expected_return_date &&
+                    form.assignment.expected_return_date !==
+                      '1970-01-01T00:00:00.000Z' &&
+                    !form.assignment.expected_return_date.startsWith(
+                      '1970-01-01'
+                    ) && (
+                      <p className="text-xs text-gray-500">
+                        Expected Return:{' '}
+                        {new Date(
+                          form.assignment.expected_return_date
+                        ).toLocaleDateString()}
+                      </p>
+                    )}
+                </div>
+              </div>
+
+              {/* Location Info */}
+              {form.location && (
+                <div className="flex items-start gap-3">
+                  <MapPin className="h-4 w-4 text-gray-400 mt-0.5" />
+                  <div className="flex-1">
+                    <p className="text-xs text-gray-500">
+                      {form.location.name} - {form.location.floor_unit},{' '}
+                      {form.location.building}
+                    </p>
+                  </div>
+                </div>
+              )}
+            </TabsContent>
+
+            <TabsContent value="checklist" className="space-y-4">
+              {checklistLoading ? (
+                <div className="space-y-4">
+                  <div className="flex gap-2">
+                    {[1, 2, 3].map(i => (
+                      <Shimmer key={i} className="h-8 w-28 rounded-lg" />
+                    ))}
+                  </div>
+                  <div className="rounded-xl border p-4 space-y-3">
+                    <Shimmer className="h-5 w-48 rounded" />
+                    <div className="space-y-2">
+                      {[1, 2, 3, 4].map(j => (
+                        <div key={j} className="flex items-center gap-3">
+                          <Shimmer className="h-4 w-4 rounded" />
+                          <Shimmer className="h-4 flex-1 rounded" />
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                </div>
+              ) : activeChecklist ? (
+                <div className="space-y-3">
+                  {checklists.length > 1 && (
+                    <Tabs
+                      value={activeChecklistKey}
+                      onValueChange={setActiveChecklistKey}
+                      className="w-full"
+                    >
+                      <TabsList
+                        className={
+                          segmentTabsListClassName +
+                          ' flex h-auto w-full flex-wrap justify-start gap-1'
+                        }
+                      >
+                        {checklists.map(entry => (
+                          <TabsTrigger
+                            key={getChecklistTabKey(entry)}
+                            value={getChecklistTabKey(entry)}
+                            className={segmentTabsTriggerClassName + ' text-xs'}
+                          >
+                            {getChecklistAssetLabel(entry, form.assets)}
+                          </TabsTrigger>
+                        ))}
+                      </TabsList>
+                    </Tabs>
+                  )}
+                  <ChecklistSummaryCard checklist={activeChecklist} />
+                </div>
+              ) : (
+                <div className="rounded-xl border border-dashed border-slate-300 bg-slate-50 px-4 py-8 text-center text-sm text-slate-500">
+                  No checklist data available
+                </div>
+              )}
+            </TabsContent>
+          </Tabs>
+        ) : (
+          <div className="space-y-3">
+            {(isDeclined || isDisabledWithDeclineReason) && (
+              <div
+                className="rounded-md border border-slate-200 bg-slate-50 px-3 py-2 text-sm text-slate-800"
+                title={form.declineReason || undefined}
+              >
+                <p className="font-semibold text-slate-900">
+                  {isDeclined ? 'Declined' : 'Disabled'}
+                </p>
+                {form.declineReason ? (
+                  <p className="mt-1 line-clamp-3 text-slate-700">
+                    {form.declineReason}
+                  </p>
+                ) : (
+                  <p className="mt-1 text-slate-600">No reason on file.</p>
+                )}
+              </div>
+            )}
+
+            {/* Asset Info */}
+            <div className="flex items-start gap-3">
               <Package className="h-4 w-4 text-gray-400 mt-0.5" />
               <div className="flex-1">
                 <p className="font-medium text-sm">
@@ -1916,173 +2186,8 @@ export function AccountabilityFormCard({
               <div className="flex-1">
                 <p className="text-xs text-gray-500">
                   Assigned:{' '}
-                  {form.created_at && !isNaN(new Date(form.created_at).getTime())
-                    ? new Date(form.created_at).toLocaleDateString() +
-                      ' ' +
-                      new Date(form.created_at).toLocaleTimeString()
-                    : 'Not specified'}
-                </p>
-                {form.assignment.expected_return_date &&
-                  form.assignment.expected_return_date !==
-                    '1970-01-01T00:00:00.000Z' &&
-                  !form.assignment.expected_return_date.startsWith(
-                    '1970-01-01'
-                  ) && (
-                    <p className="text-xs text-gray-500">
-                      Expected Return:{' '}
-                      {new Date(
-                        form.assignment.expected_return_date
-                      ).toLocaleDateString()}
-                    </p>
-                  )}
-              </div>
-            </div>
-
-            {/* Location Info */}
-            {form.location && (
-              <div className="flex items-start gap-3">
-                <MapPin className="h-4 w-4 text-gray-400 mt-0.5" />
-                <div className="flex-1">
-                  <p className="text-xs text-gray-500">
-                    {form.location.name} - {form.location.floor_unit},{' '}
-                    {form.location.building}
-                  </p>
-                </div>
-              </div>
-            )}
-          </TabsContent>
-          
-          <TabsContent value="checklist" className="space-y-4">
-            {checklistLoading ? (
-              <div className="space-y-4">
-                <div className="flex gap-2">
-                  {[1, 2, 3].map(i => (
-                    <Shimmer key={i} className="h-8 w-28 rounded-lg" />
-                  ))}
-                </div>
-                <div className="rounded-xl border p-4 space-y-3">
-                  <Shimmer className="h-5 w-48 rounded" />
-                  <div className="space-y-2">
-                    {[1, 2, 3, 4].map(j => (
-                      <div key={j} className="flex items-center gap-3">
-                        <Shimmer className="h-4 w-4 rounded" />
-                        <Shimmer className="h-4 flex-1 rounded" />
-                      </div>
-                    ))}
-                  </div>
-                </div>
-              </div>
-            ) : activeChecklist ? (
-              <div className="space-y-3">
-                {checklists.length > 1 && (
-                  <Tabs
-                    value={activeChecklistKey}
-                    onValueChange={setActiveChecklistKey}
-                    className="w-full"
-                  >
-                    <TabsList
-                      className={
-                        segmentTabsListClassName +
-                        ' flex h-auto w-full flex-wrap justify-start gap-1'
-                      }
-                    >
-                      {checklists.map(entry => (
-                        <TabsTrigger
-                          key={getChecklistTabKey(entry)}
-                          value={getChecklistTabKey(entry)}
-                          className={segmentTabsTriggerClassName + ' text-xs'}
-                        >
-                          {getChecklistAssetLabel(entry, form.assets)}
-                        </TabsTrigger>
-                      ))}
-                    </TabsList>
-                  </Tabs>
-                )}
-                <ChecklistSummaryCard checklist={activeChecklist} />
-              </div>
-            ) : (
-              <div className="rounded-xl border border-dashed border-slate-300 bg-slate-50 px-4 py-8 text-center text-sm text-slate-500">
-                No checklist data available
-              </div>
-            )}
-          </TabsContent>
-        </Tabs>
-        ) : (
-          <div className="space-y-3">
-            {(isDeclined || isDisabledWithDeclineReason) && (
-              <div
-                className="rounded-md border border-slate-200 bg-slate-50 px-3 py-2 text-sm text-slate-800"
-                title={form.declineReason || undefined}
-              >
-                <p className="font-semibold text-slate-900">
-                  {isDeclined ? 'Declined' : 'Disabled'}
-                </p>
-                {form.declineReason ? (
-                  <p className="mt-1 line-clamp-3 text-slate-700">
-                    {form.declineReason}
-                  </p>
-                ) : (
-                  <p className="mt-1 text-slate-600">No reason on file.</p>
-                )}
-              </div>
-            )}
-            {/* Asset Info */}
-            <div className="flex items-start gap-3">
-              <Package className="h-4 w-4 text-gray-400 mt-0.5" />
-              <div className="flex-1">
-                <p className="font-medium text-sm">
-                  {form.assets.length === 0
-                    ? 'No Assets'
-                    : `${form.assets.length} Assets`}
-                </p>
-                  {form.assets.length > 0 && (
-                  <div className="max-h-[120px] overflow-y-auto scrollbar-hide text-xs text-gray-500 mt-1">
-                    <div className="space-y-0.5">
-                      {form.assets.map(asset => (
-                        <div key={asset.id} className="flex items-center">
-                          <span className="w-1 h-1 bg-gray-400 rounded-full mr-2 flex-shrink-0"></span>
-                          <span>{asset.name || asset.code}</span>
-                        </div>
-                      ))}
-                    </div>
-                  </div>
-                )}
-              </div>
-            </div>
-
-            {/* Assignment Info */}
-            <div className="flex items-start gap-3">
-              <User className="h-4 w-4 text-gray-400 mt-0.5" />
-              <div className="flex-1">
-                <p className="font-medium text-sm">
-                  {form.user.first_name} {form.user.last_name}
-                </p>
-                <p className="text-xs text-gray-500">
-                  {form.user.position || 'No position'}
-                </p>
-              </div>
-            </div>
-
-            {/* Issued By Info */}
-            {form.issuer && (
-              <div className="flex items-start gap-3">
-                <User className="h-4 w-4 text-gray-400 mt-0.5" />
-                <div className="flex-1">
-                  <p className="font-medium text-sm">
-                    Issued by: {form.issuer.first_name} {form.issuer.last_name}
-                  </p>
-                  <p className="text-xs text-gray-500">{form.issuer.email}</p>
-                </div>
-              </div>
-            )}
-
-            {/* Date Info */}
-            <div className="flex items-start gap-3">
-              <Calendar className="h-4 w-4 text-gray-400 mt-0.5" />
-              <div className="flex-1">
-                <p className="text-xs text-gray-500">
-                  Assigned:{' '}
-                  {form.created_at && !isNaN(new Date(form.created_at).getTime())
+                  {form.created_at &&
+                  !isNaN(new Date(form.created_at).getTime())
                     ? new Date(form.created_at).toLocaleDateString() +
                       ' ' +
                       new Date(form.created_at).toLocaleTimeString()
@@ -2261,33 +2366,40 @@ export function AccountabilityFormCard({
                       pendingActionRef.current = async () => {
                         try {
                           // Get user's digital initials from profile
-                          const digitalInitials = (currentUser as any)?.digitalSignature || '';
-                          
+                          const digitalInitials =
+                            (currentUser as any)?.digitalSignature || '';
+
                           // Prepare acknowledgments with digital signature
-                          const acknowledgmentsData = digitalInitials ? {
-                            ...form.acknowledgments,
-                            digitalSignature: digitalInitials,
-                            signedBy: currentUser?.id,
-                            signedByName: `${currentUser?.firstName || ''} ${currentUser?.lastName || ''}`.trim(),
-                          } : form.acknowledgments;
-                          
+                          const acknowledgmentsData = digitalInitials
+                            ? {
+                                ...form.acknowledgments,
+                                digitalSignature: digitalInitials,
+                                signedBy: currentUser?.id,
+                                signedByName:
+                                  `${currentUser?.firstName || ''} ${currentUser?.lastName || ''}`.trim(),
+                              }
+                            : form.acknowledgments;
+
                           await onSign?.(form.id, acknowledgmentsData);
 
                           await refreshFormChecklists();
-                          
+
                           // Create updated form object for PDF generation
                           const updatedForm = {
                             ...form,
                             status: 'Signed' as const,
                             signed_at: new Date().toISOString(),
-                            acknowledgments: digitalInitials ? {
-                              ...form.acknowledgments,
-                              digitalSignature: digitalInitials,
-                              signedBy: currentUser?.id,
-                              signedByName: `${currentUser?.firstName || ''} ${currentUser?.lastName || ''}`.trim(),
-                            } : form.acknowledgments,
+                            acknowledgments: digitalInitials
+                              ? {
+                                  ...form.acknowledgments,
+                                  digitalSignature: digitalInitials,
+                                  signedBy: currentUser?.id,
+                                  signedByName:
+                                    `${currentUser?.firstName || ''} ${currentUser?.lastName || ''}`.trim(),
+                                }
+                              : form.acknowledgments,
                           };
-                          
+
                           // Update localForm state
                           setLocalForm(updatedForm);
 
@@ -2295,9 +2407,13 @@ export function AccountabilityFormCard({
                           const generatePdf = async () => {
                             try {
                               // Check cache first
-                              const cacheKey = generateCacheKey(updatedForm, currentUser, intangibleAssets);
+                              const cacheKey = generateCacheKey(
+                                updatedForm,
+                                currentUser,
+                                intangibleAssets
+                              );
                               const cachedPdf = pdfCache.get(cacheKey);
-                              
+
                               let pdfBlob: Blob;
                               if (cachedPdf) {
                                 logger.debug('Using cached PDF after sign');
@@ -2311,7 +2427,7 @@ export function AccountabilityFormCard({
                                 // Cache the generated PDF
                                 pdfCache.set(cacheKey, pdfBlob);
                               }
-                              
+
                               const url = URL.createObjectURL(pdfBlob);
                               setPdfUrl(url);
                             } catch (error) {
@@ -2495,8 +2611,12 @@ export function AccountabilityFormCard({
               <div className="flex h-full w-full items-center justify-center text-gray-500 bg-gray-100">
                 <div className="flex flex-col items-center gap-4 p-8 bg-white rounded-lg shadow-md">
                   <div className="h-12 w-12 animate-spin rounded-full border-4 border-gray-200 border-t-blue-600" />
-                  <p className="text-lg font-medium text-gray-700">Generating PDF preview...</p>
-                  <p className="text-sm text-gray-500">This may take a few seconds</p>
+                  <p className="text-lg font-medium text-gray-700">
+                    Generating PDF preview...
+                  </p>
+                  <p className="text-sm text-gray-500">
+                    This may take a few seconds
+                  </p>
                 </div>
               </div>
             ) : pdfUrl ? (
@@ -2603,7 +2723,9 @@ export function AccountabilityFormCard({
                 <Checkbox
                   id="agree-checklist"
                   checked={agreeChecklist}
-                  onCheckedChange={checked => setAgreeChecklist(checked as boolean)}
+                  onCheckedChange={checked =>
+                    setAgreeChecklist(checked as boolean)
+                  }
                   className="mt-1"
                 />
                 <label
@@ -2755,8 +2877,12 @@ export function AccountabilityFormDetail({
   const [showReceiveOtpDialog, setShowReceiveOtpDialog] = useState(false);
   const [showOtpDialog, setShowOtpDialog] = useState(false);
   const [otpExpiryFromSettings, setOtpExpiryFromSettings] = useState(300);
-  const [pendingActionType, setPendingActionType] = useState<'sign' | 'decline' | null>(null);
-  const [pendingDigitalInitials, setPendingDigitalInitials] = useState<string | null>(null);
+  const [pendingActionType, setPendingActionType] = useState<
+    'sign' | 'decline' | null
+  >(null);
+  const [pendingDigitalInitials, setPendingDigitalInitials] = useState<
+    string | null
+  >(null);
   const pendingActionRef = useRef<(() => Promise<void>) | null>(null);
   const pendingReceiveActionRef = useRef<(() => Promise<void>) | null>(null);
   const [intangibleAssets, setIntangibleAssets] = useState<any[]>([]);
@@ -2824,9 +2950,13 @@ export function AccountabilityFormDetail({
     const generatePdf = async () => {
       try {
         // Check cache first
-        const cacheKey = generateCacheKey(localForm, currentUser, intangibleAssets);
+        const cacheKey = generateCacheKey(
+          localForm,
+          currentUser,
+          intangibleAssets
+        );
         const cachedPdf = pdfCache.get(cacheKey);
-        
+
         if (cachedPdf) {
           logger.debug('Using cached PDF (detail view)');
           const url = URL.createObjectURL(cachedPdf);
@@ -2840,10 +2970,10 @@ export function AccountabilityFormDetail({
           currentUser,
           intangibleAssets
         );
-        
+
         // Cache the generated PDF
         pdfCache.set(cacheKey, pdfBlob);
-        
+
         const url = URL.createObjectURL(pdfBlob);
         setPdfUrl(url);
       } catch (error) {
@@ -2897,10 +3027,9 @@ export function AccountabilityFormDetail({
       ? 'flex min-h-0 w-full min-w-0 flex-1 flex-col gap-1.5 px-3 pb-2 pt-2 sm:px-4'
       : 'flex min-h-0 flex-1 flex-col gap-2 p-2 sm:p-3';
 
-  const previewPaneClass =
-    headerInParentChrome
-      ? 'h-[70vh] w-full min-w-0 overflow-auto border-0 bg-gray-100'
-      : 'h-[70vh] w-full overflow-auto rounded-md border border-slate-200 bg-slate-50';
+  const previewPaneClass = headerInParentChrome
+    ? 'h-[70vh] w-full min-w-0 overflow-auto border-0 bg-gray-100'
+    : 'h-[70vh] w-full overflow-auto rounded-md border border-slate-200 bg-slate-50';
 
   const actionBar = (
     <>
@@ -2932,9 +3061,9 @@ export function AccountabilityFormDetail({
               <AppAlertDialogGradientHeader title="Confirm Form Signing" />
               <div className="px-6 py-4 pb-2">
                 <p className="text-base text-gray-600">
-                  Please review your accountability form below. By signing
-                  this form, you agree to all the terms and conditions stated in
-                  the document.
+                  Please review your accountability form below. By signing this
+                  form, you agree to all the terms and conditions stated in the
+                  document.
                 </p>
               </div>
 
@@ -3192,8 +3321,7 @@ export function AccountabilityFormDetail({
                         .trim();
                       setLocalForm(prev => ({
                         ...prev,
-                        receivedCopy201FileSignedAt:
-                          new Date().toISOString(),
+                        receivedCopy201FileSignedAt: new Date().toISOString(),
                         ...(signerDisplay
                           ? {
                               receivedCopy201FileSignedByName: signerDisplay,
@@ -3232,7 +3360,8 @@ export function AccountabilityFormDetail({
               <AppAlertDialogGradientHeader title="Receive Copy for 201 File" />
               <AppAlertDialogMessage>
                 <AlertDialogDescription className="text-base text-gray-600">
-                  I am receiving this copy as an official accountability and for safe keeping of 201 file of the user.
+                  I am receiving this copy as an official accountability and for
+                  safe keeping of 201 file of the user.
                 </AlertDialogDescription>
               </AppAlertDialogMessage>
               <AppAlertDialogChromeFooter>
@@ -3246,19 +3375,24 @@ export function AccountabilityFormDetail({
                     // Use user's saved digital signature/initials instead of auto-generating from name
                     const firstName = currentUser?.firstName || '';
                     const lastName = currentUser?.lastName || '';
-                    const digitalInitials = (currentUser as any)?.digitalSignature || '';
+                    const digitalInitials =
+                      (currentUser as any)?.digitalSignature || '';
                     setPendingDigitalInitials(digitalInitials);
                     pendingReceiveActionRef.current = async () => {
-                      await api.post(`/accountability-forms/${form.id}/sign-received-copy`, {
-                        digitalInitials,
-                      });
+                      await api.post(
+                        `/accountability-forms/${form.id}/sign-received-copy`,
+                        {
+                          digitalInitials,
+                        }
+                      );
                       toast.success('Copy received successfully');
                       setLocalForm(prev => ({
                         ...prev,
                         receivedCopy201FileSignature: digitalInitials,
                         receivedCopy201FileSignedAt: new Date().toISOString(),
                         receivedCopy201FileSignedById: currentUser?.id,
-                        receivedCopy201FileSignedByName: `${firstName} ${lastName}`.trim(),
+                        receivedCopy201FileSignedByName:
+                          `${firstName} ${lastName}`.trim(),
                       }));
                       onClose();
                     };
@@ -3295,17 +3429,18 @@ export function AccountabilityFormDetail({
         </div>
       )}
 
-      {!(headerInParentChrome && !hrViewMode) && localForm.status === 'Declined' && (
-        <div
-          className="rounded-md border border-slate-200 bg-slate-50 px-3 py-2 text-sm text-slate-800"
-          title={localForm.declineReason || undefined}
-        >
-          <p className="font-semibold text-slate-900">Declined</p>
-          {localForm.declineReason ? (
-            <p className="mt-1">{localForm.declineReason}</p>
-          ) : null}
-        </div>
-      )}
+      {!(headerInParentChrome && !hrViewMode) &&
+        localForm.status === 'Declined' && (
+          <div
+            className="rounded-md border border-slate-200 bg-slate-50 px-3 py-2 text-sm text-slate-800"
+            title={localForm.declineReason || undefined}
+          >
+            <p className="font-semibold text-slate-900">Declined</p>
+            {localForm.declineReason ? (
+              <p className="mt-1">{localForm.declineReason}</p>
+            ) : null}
+          </div>
+        )}
 
       {headerInParentChrome && !hrViewMode ? (
         <div className="flex min-h-0 w-full min-w-0 flex-1 flex-col px-4 pt-2 pb-2 sm:px-6">
@@ -3332,13 +3467,13 @@ export function AccountabilityFormDetail({
         </div>
       ) : (
         <div className={previewClassName}>
-        {pdfUrl ? (
-          <PDFViewer pdfUrl={pdfUrl} className="h-full w-full" />
-        ) : (
-          <div className="flex h-full w-full items-center justify-center text-gray-500">
-            Generating PDF preview...
-          </div>
-        )}
+          {pdfUrl ? (
+            <PDFViewer pdfUrl={pdfUrl} className="h-full w-full" />
+          ) : (
+            <div className="flex h-full w-full items-center justify-center text-gray-500">
+              Generating PDF preview...
+            </div>
+          )}
         </div>
       )}
     </>

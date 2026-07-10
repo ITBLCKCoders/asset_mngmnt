@@ -352,7 +352,12 @@ export async function getAssetsHandler(req: AuthRequest, res: Response) {
       ? String(req.query.search).toLowerCase()
       : '';
 
-    logger.info(`getAssetsHandler called with search: "${search}", companyId: ${req.query.companyId}, scope: ${req.query.scope}`);
+    const rawLimit = parseInt(String(req.query.limit));
+    const isAll = rawLimit === -1;
+    const page = isAll ? 1 : Math.max(1, parseInt(String(req.query.page)) || 1);
+    const limit = isAll ? -1 : Math.max(1, Math.min(100, rawLimit || 10));
+
+    logger.info(`getAssetsHandler called with search: "${search}", companyId: ${req.query.companyId}, scope: ${req.query.scope}, page: ${page}, limit: ${limit}`);
 
     let assets = await assetRepo.callGetAllAssets();
     logger.info(`Stored procedure returned ${assets.length} total assets`);
@@ -559,6 +564,8 @@ export async function getAssetsHandler(req: AuthRequest, res: Response) {
             status: currentAssignment.status,
           };
           asset.assignedTo = currentAssignment.assigned_user_name;
+          // Assigned assets should show as "Assigned"
+          asset.status = 'Assigned';
         } else {
           asset.currentAssignment = null;
           asset.assignedTo = null;
@@ -641,7 +648,25 @@ export async function getAssetsHandler(req: AuthRequest, res: Response) {
     }
 
     logger.debug('Assets being returned', { count: assets.length });
-    return res.json({ assets });
+
+    const total = assets.length;
+
+    if (limit === -1) {
+      // Return all assets (used by Asset Tagging page etc.)
+      return res.json({
+        assets,
+        meta: { page: 1, limit: total, total, totalPages: 1 },
+      });
+    }
+
+    const totalPages = Math.ceil(total / limit);
+    const startIdx = (page - 1) * limit;
+    const paginatedAssets = assets.slice(startIdx, startIdx + limit);
+
+    return res.json({
+      assets: paginatedAssets,
+      meta: { page, limit, total, totalPages },
+    });
   } catch (error: any) {
     logger.error('Get assets failed:', error);
     return res.status(500).json({ error: 'Failed to fetch assets' });

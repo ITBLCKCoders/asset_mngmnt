@@ -519,6 +519,15 @@ This file should help assistants make accurate changes, not generic ones. If the
 ### Blocked
 - (none)
 
+## API Pagination
+
+- `GET /api/assets` supports `page` (default 1) and `limit` (default 10, max 100) query params
+- `limit=-1` returns ALL assets (no pagination) — used by Asset Tagging page for tag generation re-fetch
+- Server always returns `meta: { page, limit, total, totalPages }` in the response
+- Server applies pagination AFTER all in-memory filtering (search, company, scope/department), so it still fetches all rows from `sp_get_assets()` but returns only the requested slice
+- Client `DataTable` uses `serverPagination` mode on Asset List and Asset Tagging pages — page size changes trigger API re-fetch via `onPaginationChange` callback
+- Changing company/scope resets the page index to 0 on both pages
+
 ## Key Decisions
 - Canvas → data URL → img approach chosen over direct SVG in DOM because html2canvas has unreliable SVG support
 - Native canvas resolution (no pre-upscaling) — displayed at natural width to avoid browser downscale blur, then overlayed onto captured canvas with `imageSmoothingEnabled = false` for sharp output

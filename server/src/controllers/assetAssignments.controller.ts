@@ -628,6 +628,55 @@ export async function getMyAssignmentsHandler(req: AuthRequest, res: Response) {
   }
 }
 
+function mapIntangibleAssignmentRow(row: any) {
+  return {
+    assignmentID: row.assignmentID,
+    asset: {
+      id: row.intangible_asset_id,
+      code: '',
+      name: row.asset_name,
+      category_id: '',
+      type_id: row.asset_type,
+    },
+    user: {
+      id: row.user_id,
+      first_name: row.first_name,
+      last_name: row.last_name,
+      email: row.email,
+      employeeNumber: row.employeeNumber,
+      position: row.position,
+    },
+    department: row.department_id
+      ? { id: row.department_id, name: row.department_name }
+      : null,
+    location: row.location_id
+      ? {
+          id: row.location_id,
+          name: row.location_name,
+          floor_unit: row.floor_unit,
+          building: row.building,
+          room_name: row.room_name,
+        }
+      : null,
+    assigned_date: row.assigned_date,
+    expected_return_date: null,
+    actual_return_date: null,
+    assignment_notes: null,
+    status: row.status,
+    assigned_by: row.assigned_by
+      ? {
+          id: row.assigned_by,
+          first_name: row.assigned_by_first_name,
+          last_name: row.assigned_by_last_name,
+          employeeNumber: row.assigned_by_employee_number,
+        }
+      : { id: '', first_name: '', last_name: '', employeeNumber: '' },
+    created_at: row.created_at,
+    updated_at: row.updated_at,
+    assetType: 'intangible',
+  };
+}
+
 // ---------------------------------------------------------------------------
 // GET /asset-assignments
 // ---------------------------------------------------------------------------
@@ -637,24 +686,54 @@ export async function getAssetAssignmentsHandler(
   res: Response
 ) {
   try {
-    const { assetId, userId, status } = req.query;
+    const { assetId, userId, status, companyId } = req.query;
 
-    const rows = await repo.callGetAssignments(
-      (assetId as string) ?? null,
-      (userId as string) ?? null,
-      (status as string) ?? null
-    );
+    let physicalRows: any[] = [];
+    let intangibleRows: any[] = [];
 
-    const formMap = await buildAccountabilityFormMap(rows);
+    if (companyId) {
+      let where = ' AND a.company_id = ?';
+      const params: unknown[] = [companyId];
+      if (assetId) {
+        where += ' AND aa.asset_id = (SELECT assetID FROM assets WHERE asset_code = ?)';
+        params.push(assetId);
+      }
+      if (userId) {
+        where += ' AND aa.user_id = ?';
+        params.push(userId);
+      }
+      if (status) {
+        where += ' AND aa.status = ?';
+        params.push(status);
+      }
+      physicalRows = await repo.listAssignmentsRaw(
+        where,
+        ' ORDER BY aa.assigned_date DESC',
+        params
+      );
 
-    const assignments = rows.map(row =>
-      mapAssignmentRow(
-        row,
-        formMap.get(String((row as { assignmentID?: string }).assignmentID)) ??
-          null,
-        true
-      )
-    );
+      intangibleRows = await repo.getIntangibleAssignments(companyId as string);
+    } else {
+      physicalRows = await repo.callGetAssignments(
+        (assetId as string) ?? null,
+        (userId as string) ?? null,
+        (status as string) ?? null
+      );
+    }
+
+    const formMap = await buildAccountabilityFormMap(physicalRows);
+
+    const assignments = [
+      ...physicalRows.map(row =>
+        mapAssignmentRow(
+          row,
+          formMap.get(String((row as { assignmentID?: string }).assignmentID)) ??
+            null,
+          true
+        )
+      ),
+      ...intangibleRows.map(row => mapIntangibleAssignmentRow(row)),
+    ];
 
     return res.json({ assignments });
   } catch (error: any) {

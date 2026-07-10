@@ -61,6 +61,7 @@ import { useAssetExport } from './useAssetExport';
 import { Shimmer } from '@/components/ui/shimmer';
 import { createLogger } from '@/lib/logger';
 import { formatCurrency } from '@/lib/currency';
+import { format } from 'date-fns';
 import {
   handleAssetUpdateError,
   handleAssetValidationError,
@@ -129,10 +130,14 @@ export function AssetsPage() {
   const isOverallManager = roleCustodian?.managerRole === 'overallManager';
   const showScopeTabs = isSuperAdmin || isAdmin || isOverallManager;
   const [scope, setScope] = useState<'it' | 'admin'>('it');
+  const [pageIndex, setPageIndex] = useState(0);
+  const [pageSize, setPageSize] = useState(10);
 
   const { assets, loading, fetchAssets, meta } = useAssetsData(
     activeCompany?.id || null,
-    showScopeTabs ? scope : null
+    showScopeTabs ? scope : null,
+    pageIndex + 1,
+    pageSize
   );
   const isInitialLoading = loading && assets.length === 0;
 
@@ -453,6 +458,19 @@ export function AssetsPage() {
           return (
             <span className="text-sm text-gray-600">
               {date.toLocaleDateString()}
+            </span>
+          );
+        },
+      },
+      {
+        accessorKey: 'updated_at',
+        header: 'Updated At',
+        size: 160,
+        cell: ({ row }) => {
+          const date = new Date(row.original.updated_at);
+          return (
+            <span className="text-sm text-gray-600">
+              {!isNaN(date.getTime()) ? format(date, 'MMM dd, yyyy h:mm a') : '—'}
             </span>
           );
         },
@@ -1054,6 +1072,17 @@ export function AssetsPage() {
                   isLoading={isInitialLoading || tabLoading}
                   globalFilterFn={customFilterFn}
                   searchColumnOptions={ASSET_SEARCH_COLUMNS}
+                  serverPagination={true}
+                  pageCount={meta.totalPages}
+                  totalRowCount={meta.total}
+                  pageIndex={pageIndex}
+                  pageSize={pageSize}
+                  onPaginationChange={(newPageIndex, newPageSize) => {
+                    setPageIndex(newPageIndex);
+                    if (newPageSize !== pageSize) {
+                      setPageSize(newPageSize);
+                    }
+                  }}
                   mobileCardClassName="overflow-hidden rounded-2xl border border-red-100 bg-gradient-to-br from-white via-white to-red-50/40 p-4 shadow-sm shadow-red-100/40"
                   mobileCardFields={[
                     {

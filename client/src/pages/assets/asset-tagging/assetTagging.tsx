@@ -115,6 +115,11 @@ export default function AssetsTagging() {
   const [selectedBuilders, setSelectedBuilders] = useState<Set<string>>(new Set());
   const [builderSearchTerm, setBuilderSearchTerm] = useState('');
   const [modalTagAssets, setModalTagAssets] = useState<{ id: string; name: string }[]>([]);
+  const [pageIndex, setPageIndex] = useState(0);
+  const [pageSize, setPageSize] = useState(10);
+  const [meta, setMeta] = useState<{ page: number; limit: number; total: number; totalPages: number }>({
+    page: 1, limit: 10, total: 0, totalPages: 1,
+  });
   const handleColumnsChange = (cols: number) => {
     setColumns(cols === 2 ? 2 : 3);
   };
@@ -199,28 +204,30 @@ export default function AssetsTagging() {
     }
   };
 
-  const fetchAssets = async () => {
+  const fetchAssets = async (overridePage?: number, overrideLimit?: number) => {
     try {
+      const p = overridePage ?? pageIndex + 1;
+      const l = overrideLimit ?? pageSize;
+
       // Determine companyId based on user role
       let companyId: string | undefined;
       const userRole = currentUser?.role?.name?.toLowerCase();
       if (userRole === 'super admin' || userRole === 'admin') {
-        // Super Admin and Admin use active company
         companyId = activeCompany?.id || undefined;
       } else {
-        // IT asset and Admin asset users use their assigned company
         companyId = currentUser?.company_id || undefined;
       }
 
       const queryParams = new URLSearchParams();
-      queryParams.append('limit', '-1');
+      queryParams.append('page', String(p));
+      queryParams.append('limit', String(l));
       if (companyId) {
         queryParams.append('companyId', companyId);
       }
       if (showScopeTabs) {
         queryParams.append('scope', scope);
       }
-      const response = await api.get<{ assets: AssetResponseDto[] }>(
+      const response = await api.get<{ assets: AssetResponseDto[]; meta?: { page: number; limit: number; total: number; totalPages: number } }>(
         `/assets?${queryParams.toString()}`
       );
       const transformedAssets = response.assets.map((asset: AssetResponseDto) => ({
@@ -238,6 +245,9 @@ export default function AssetsTagging() {
         },
       }));
       setAssets(transformedAssets);
+      if (response.meta) {
+        setMeta(response.meta);
+      }
     } catch (error) {
       console.error('Failed to fetch assets:', error);
       toast.error('Failed to load assets');
@@ -251,6 +261,7 @@ export default function AssetsTagging() {
     setBuildersLoading(true);
     setSelectedAssets(new Set());
     setSelectedBuilders(new Set());
+    setPageIndex(0);
     Promise.all([fetchAssets(), fetchAssetBuilders()]);
   }, [activeCompany?.id, scope, currentUser?.company_id]);
 
@@ -566,10 +577,21 @@ export default function AssetsTagging() {
               columns={taggingColumns}
               searchPlaceholder="Search assets..."
               title="Asset List"
-              titleBadge={`${availableAssets.length} assets`}
+              titleBadge={`${meta.total} assets`}
               onRowClick={handleRowClick}
               isLoading={displayLoading}
               searchColumnOptions={ASSET_SEARCH_COLUMNS}
+              serverPagination={true}
+              pageCount={meta.totalPages}
+              totalRowCount={meta.total}
+              pageIndex={pageIndex}
+              pageSize={pageSize}
+              onPaginationChange={(newPageIndex, newPageSize) => {
+                setPageIndex(newPageIndex);
+                setPageSize(newPageSize);
+                setLoading(true);
+                fetchAssets(newPageIndex + 1, newPageSize);
+              }}
               mobileCardFields={[
                 {
                   key: 'asset-code',
