@@ -6,6 +6,15 @@ export interface ValidationError {
   value?: any;
 }
 
+export interface AssetSummary {
+  assigned: number;
+  available: number;
+  inMaintenance: number;
+  needsAttention: number;
+  forDisposal: number;
+  totalValue: number;
+}
+
 export interface ApiResponse<T = any> {
   success: boolean;
   data?: T;
@@ -17,6 +26,7 @@ export interface ApiResponse<T = any> {
     limit?: number;
     total?: number;
     totalPages?: number;
+    summary?: AssetSummary;
   };
 }
 

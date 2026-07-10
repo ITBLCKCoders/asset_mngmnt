@@ -6,14 +6,114 @@ import autoTable from 'jspdf-autotable';
 import ExcelJS from 'exceljs';
 import { formatCurrency } from '@/lib/currency';
 import { toast } from 'sonner';
+import { api } from '@/lib/api';
 import { Asset } from './assetsComponents/assetTable/assetData';
 import type { Company } from '@/types/assets.d';
+import type { AssetResponseDto } from '@/types/assetsDTOs';
 import {
   addCompanyLogoToPDF,
-  formatBuilderItems,
   getCompanyAccentColor,
   isBlackCoders,
 } from '@/lib/pdfGenerator/shared';
+
+/**
+ * Fetch ALL assets matching the given filters (bypasses table pagination).
+ */
+async function fetchAllAssets(
+  companyId?: string | null,
+  scope?: string | null,
+): Promise<Asset[]> {
+  const params = new URLSearchParams({ limit: '-1' });
+  if (companyId) params.append('companyId', companyId);
+  if (scope) params.append('scope', scope);
+
+  const res = await api.get<{ assets: AssetResponseDto[] }>(
+    `/assets?${params.toString()}`,
+  );
+
+  return (res.assets ?? []).map(mapDtoToAsset);
+}
+
+function mapDtoToAsset(dto: AssetResponseDto): Asset {
+  const createdAtParsed = dto.created_at
+    ? new Date(
+        dto.created_at.replace(' ', 'T') +
+          (dto.created_at.includes('Z') ? '' : 'Z'),
+      )
+    : new Date();
+
+  const nextMaintenanceDate = dto.next_maintenance_date
+    ? new Date(dto.next_maintenance_date)
+    : null;
+
+  const lastMaintenanceDate = dto.last_maintenance_date
+    ? new Date(dto.last_maintenance_date)
+    : null;
+
+  return {
+    id: dto.asset_code,
+    assetID: dto.assetID,
+    name: dto.name,
+    image: dto.image_url || '',
+    description: dto.description || '',
+    category: dto.category_name || dto.category_id || '',
+    categoryId: dto.category_id || '',
+    type: dto.type_name || dto.type_id || '',
+    typeId: dto.type_id || '',
+    serialNo: dto.serial || '',
+    modelNo: dto.model || '',
+    brand: dto.brand || '',
+    status:
+      dto.status === 'In Use' ? 'Assigned' : dto.status || 'Available',
+    transferred_out: Boolean(dto.transferred_out),
+    transferred_to_company_name: dto.transferred_to_company_name ?? null,
+    assignedTo: dto.currentAssignment?.user?.name || '',
+    department:
+      dto.currentAssignment?.department ||
+      (dto.department ? JSON.parse(dto.department).name : '') ||
+      '',
+    location:
+      dto.currentAssignment?.location ||
+      `${dto.location_name || ''}${dto.room_name ? ` - ${dto.room_name}` : ''}`,
+    currentAssignment: dto.currentAssignment ?? undefined,
+    assignmentHistory: dto.assignmentHistory,
+    builderHistory: dto.builderHistory ?? undefined,
+    purchaseDate: dto.purchase_date ? new Date(dto.purchase_date) : null,
+    purchasePrice: dto.asset_value || 0,
+    supplier: dto.supplier || '',
+    warranty: dto.warranty_months
+      ? `${dto.warranty_months} months`
+      : null,
+    warranty_months: dto.warranty_months || null,
+    documents: dto.documents || [],
+    maintenanceSchedule: dto.maintenance_schedule || 'None',
+    lastMaintenanceDate:
+      lastMaintenanceDate && !Number.isNaN(lastMaintenanceDate.getTime())
+        ? lastMaintenanceDate
+        : null,
+    nextMaintenanceDate:
+      nextMaintenanceDate && !Number.isNaN(nextMaintenanceDate.getTime())
+        ? nextMaintenanceDate
+        : createdAtParsed,
+    condition: (dto.condition as Asset['condition']) || 'Good',
+    usefulLifeYears: dto.useful_life_years || 0,
+    salvageValue: dto.salvage_value || 0,
+    depreciationMethod: dto.depreciation_method || '',
+    annualDepreciation: dto.annual_depreciation || 0,
+    depreciationStartDate: dto.depreciation_start_date
+      ? new Date(dto.depreciation_start_date)
+      : null,
+    company: dto.company_name || '',
+    company_id: dto.company_id || '',
+    building: dto.building || '',
+    createdAt: createdAtParsed,
+    createdBy: dto.created_by_name || dto.created_by || '',
+    updatedAt: dto.updated_at
+      ? new Date(dto.updated_at)
+      : new Date(dto.created_at),
+    updatedBy: dto.updated_by_name || dto.updated_by || '',
+  };
+}
 
 /**
  * Trigger a browser download for an ExcelJS-generated .xlsx buffer. ExcelJS
@@ -93,7 +193,6 @@ export const useAssetExport = () => {
   const getExportValue = (
     asset: Asset,
     colKey: string,
-    format: 'pdf' | 'excel'
   ): string | number => {
     const a = asset as any;
     let value = a[colKey];
@@ -117,17 +216,11 @@ export const useAssetExport = () => {
       return !isNaN(d.getTime()) ? d.toLocaleDateString() : '';
     }
     if (colKey === 'purchasePrice' && value)
-      return format === 'pdf'
-        ? `PHP ${value.toLocaleString()}`
-        : formatCurrency(value);
+      return formatCurrency(value);
     if (colKey === 'salvageValue' && value)
-      return format === 'pdf'
-        ? `PHP ${value.toLocaleString()}`
-        : formatCurrency(value);
+      return formatCurrency(value);
     if (colKey === 'annualDepreciation' && value)
-      return format === 'pdf'
-        ? `PHP ${value.toLocaleString()}`
-        : formatCurrency(value);
+      return formatCurrency(value);
     return value ?? '';
   };
 
@@ -159,12 +252,12 @@ export const useAssetExport = () => {
     let currentY = 35;
 
     // Prepare table data with selected columns
-    // Group assets by builder for display
-    const flattenedAssets: Asset[] = [];
-    const childRowIndices: number[] = [];
+    // Process assets with builder grouping logic (same as Excel)
+    const flattenedAssets: (Asset & { isChild?: boolean; builderName?: string })[] = [];
     const processedAssetIds = new Set<string>();
+    const builderGroups: { name: string; startIndex: number; endIndex: number }[] = [];
 
-    // Process builders first - add builder items as children (no parent row)
+    // Process builders first
     if (assetBuilders && assetBuilders.length > 0) {
       assetBuilders.forEach(builder => {
         if (!builder.items || !Array.isArray(builder.items)) return;
@@ -183,15 +276,21 @@ export const useAssetExport = () => {
           return aNum - bNum;
         });
 
-        // Add builder items as children (no parent row for builder name)
+        // Record the start index for this builder group
+        const groupStartIndex = flattenedAssets.length;
+
+        // Add builder items as children
         sortedItems.forEach((item: any) => {
           const matchingAsset = assets.find(a => a.id === item.asset_code);
           if (matchingAsset) {
             // Exclude parent assets (those with CMTH-ITOFE-LAP- prefix) from being marked as children
             const isParentAsset = item.asset_code.startsWith('CMTH-ITOFE-LAP-');
             if (!isParentAsset) {
-              flattenedAssets.push({ ...matchingAsset, isChild: true } as Asset & { isChild?: boolean });
-              childRowIndices.push(flattenedAssets.length - 1);
+              flattenedAssets.push({ 
+                ...matchingAsset, 
+                isChild: true,
+                builderName: builder.builderName 
+              } as Asset & { isChild?: boolean; builderName?: string });
               processedAssetIds.add(item.asset_code);
             } else {
               // Parent asset is added as normal (not italic)
@@ -200,6 +299,16 @@ export const useAssetExport = () => {
             }
           }
         });
+
+        // Record the end index for this builder group
+        const groupEndIndex = flattenedAssets.length - 1;
+        if (groupStartIndex <= groupEndIndex) {
+          builderGroups.push({
+            name: builder.builderName,
+            startIndex: groupStartIndex,
+            endIndex: groupEndIndex,
+          });
+        }
       });
     }
 
@@ -210,24 +319,93 @@ export const useAssetExport = () => {
       }
     });
 
-    console.log('Total assets:', assets.length, 'Flattened assets:', flattenedAssets.length, 'Child rows:', childRowIndices.length, 'Builders processed:', assetBuilders?.length || 0);
-    console.log('Flattened assets with isChild flag:', flattenedAssets.filter(a => (a as any).isChild).map(a => ({ id: a.id, name: a.name, isChild: (a as any).isChild, isAssetBuilder: (a as any).isAssetBuilder })));
+    // Build table body rows with builder separator rows (like Excel)
+    const bodyRows: { cells: string[]; isSeparator: boolean; isChild: boolean }[] = [];
 
-    const tableData = flattenedAssets.map((asset, rowIndex) => {
-      return selectedCols.map(col => {
-        const value = getExportValue(asset, col.key, 'pdf');
-        // No indentation, child rows will be styled with italic in didParseCell
-        return String(value);
-      });
+    builderGroups.forEach(group => {
+      // Add separator row with builder name
+      const separatorCells = selectedCols.map((col, idx) =>
+        idx === 0 ? group.name : ''
+      );
+      bodyRows.push({ cells: separatorCells, isSeparator: true, isChild: false });
+
+      // Add builder items
+      for (let i = group.startIndex; i <= group.endIndex; i++) {
+        const asset = flattenedAssets[i];
+        const cells = selectedCols.map(col => {
+          return String(getExportValue(asset, col.key));
+        });
+        bodyRows.push({ cells, isSeparator: false, isChild: !!asset.isChild });
+      }
     });
 
-    // Calculate column widths dynamically
-    const totalWidth = 320; // Available width minus margins
-    const columnWidth = totalWidth / selectedCols.length;
+    // Add remaining non-builder assets
+    for (let i = 0; i < flattenedAssets.length; i++) {
+      const asset = flattenedAssets[i];
+      if (!asset.isChild) {
+        const alreadyGrouped = builderGroups.some(
+          g => i >= g.startIndex && i <= g.endIndex
+        );
+        if (!alreadyGrouped) {
+          const cells = selectedCols.map(col => {
+            return String(getExportValue(asset, col.key));
+          });
+          bodyRows.push({ cells, isSeparator: false, isChild: false });
+        }
+      }
+    }
+
+    const tableData = bodyRows.map(row => row.cells);
+
+    // Define column widths based on content type (same as Excel)
+    const columnWidths: Record<string, number> = {
+      id: 15,
+      name: 25,
+      description: 40,
+      category: 20,
+      type: 20,
+      serialNo: 18,
+      brand: 18,
+      modelNo: 18,
+      status: 15,
+      assignedTo: 30,
+      department: 25,
+      location: 25,
+      purchasePrice: 18,
+      purchaseDate: 18,
+      supplier: 25,
+      warranty: 18,
+      documents: 18,
+      maintenanceSchedule: 25,
+      lastMaintenanceDate: 20,
+      nextMaintenanceDate: 20,
+      condition: 18,
+      usefulLifeYears: 20,
+      salvageValue: 18,
+      depreciationMethod: 25,
+      annualDepreciation: 20,
+      depreciationStartDate: 22,
+      company: 25,
+      building: 20,
+      createdBy: 25,
+      createdAt: 18,
+      updatedBy: 25,
+      updatedAt: 18,
+    };
+
+    // Calculate proportional column widths based on total width of 320mm
+    const totalWidth = 320;
+    const totalDefinedWidth = selectedCols.reduce(
+      (sum, col) => sum + (columnWidths[col.key] || 20),
+      0,
+    );
+    const scaleFactor = totalWidth / totalDefinedWidth;
 
     const columnStyles: any = {};
-    selectedCols.forEach((_, index) => {
-      columnStyles[index] = { cellWidth: columnWidth };
+    selectedCols.forEach((col, index) => {
+      columnStyles[index] = {
+        cellWidth: Math.max(10, (columnWidths[col.key] || 20) * scaleFactor),
+      };
     });
 
     // Add table
@@ -240,24 +418,22 @@ export const useAssetExport = () => {
         cellPadding: 1,
       },
       headStyles: {
-        fillColor: isBlackCoders(activeCompany?.name)
-          ? [0, 0, 0]
-          : [
-              getCompanyAccentColor(activeCompany?.name).r,
-              getCompanyAccentColor(activeCompany?.name).g,
-              getCompanyAccentColor(activeCompany?.name).b,
-            ],
+        fillColor: [224, 224, 224],
         fontSize: Math.max(6, 9 - selectedCols.length * 0.2),
       },
       columnStyles,
       margin: { left: 5, right: 5 },
       didParseCell: data => {
-        // Apply italic styling to child rows for visual distinction
-        const asset = flattenedAssets[data.row.index];
-        if ((asset as any).isChild && !(asset as any).isAssetBuilder) {
+        const row = bodyRows[data.row.index];
+        if (row.isSeparator) {
+          data.cell.styles.fillColor = [211, 211, 211];
+          data.cell.styles.fontStyle = 'bold';
+          data.cell.styles.fontSize = Math.max(8, 14 - selectedCols.length * 0.2);
+          data.cell.styles.halign = 'center';
+          data.cell.styles.cellPadding = { top: 3, bottom: 3, left: 1, right: 1 };
+        } else if (row.isChild) {
           data.cell.styles.fontStyle = 'italic';
         } else {
-          // Ensure non-child rows and builder parent assets are not italic
           data.cell.styles.fontStyle = 'normal';
         }
       },
@@ -300,7 +476,10 @@ export const useAssetExport = () => {
     doc.line(5, footerLineY, 325, footerLineY);
 
     // Save the PDF
-    doc.save('asset_list.pdf');
+    const fileName = activeCompany 
+      ? `${activeCompany.name}_asset_list.pdf` 
+      : 'asset_list.pdf';
+    doc.save(fileName);
     toast.success('PDF exported successfully');
     setIsExportDialogOpen(false);
   };
@@ -466,7 +645,7 @@ export const useAssetExport = () => {
         const asset = flattenedAssets[i];
         const row: Record<string, string | number> = {};
         selectedCols.forEach(col => {
-          row[col.key] = getExportValue(asset, col.key, 'excel');
+          row[col.key] = getExportValue(asset, col.key);
         });
         const dataRow = assetsSheet.addRow(row);
         
@@ -498,7 +677,7 @@ export const useAssetExport = () => {
         if (!alreadyProcessed) {
           const row: Record<string, string | number> = {};
           selectedCols.forEach(col => {
-            row[col.key] = getExportValue(asset, col.key, 'excel');
+          row[col.key] = getExportValue(asset, col.key);
           });
           const dataRow = assetsSheet.addRow(row);
           dataRow.eachCell((cell) => {
@@ -535,15 +714,22 @@ export const useAssetExport = () => {
   };
 
   const handleExportConfirm = async (
-    assets: Asset[],
+    _assets: Asset[],
     activeCompany: Company | null,
     currentUser?: { name: string } | null,
-    assetBuilders?: any[] | null
+    assetBuilders?: any[] | null,
+    companyId?: string | null,
+    scope?: string | null
   ) => {
-    if (exportType === 'pdf') {
-      await exportToPDF(assets, activeCompany, currentUser, assetBuilders);
-    } else if (exportType === 'excel') {
-      await exportToExcel(assets, activeCompany, assetBuilders);
+    try {
+      const allAssets = await fetchAllAssets(companyId, scope);
+      if (exportType === 'pdf') {
+        await exportToPDF(allAssets, activeCompany, currentUser, assetBuilders);
+      } else if (exportType === 'excel') {
+        await exportToExcel(allAssets, activeCompany, assetBuilders);
+      }
+    } catch (err) {
+      toast.error('Failed to fetch assets for export');
     }
   };
 

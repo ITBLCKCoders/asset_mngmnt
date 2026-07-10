@@ -4,14 +4,25 @@ import { Package, Wrench, AlertTriangle, Trash2 } from 'lucide-react';
 import { Asset } from './assetTable/assetData';
 import { formatCurrency } from '@/lib/currency';
 
+interface AssetSummary {
+  assigned: number;
+  available: number;
+  inMaintenance: number;
+  needsAttention: number;
+  forDisposal: number;
+  totalValue: number;
+}
+
 interface AssetStatsProps {
   assets: Asset[];
   loading: boolean;
   /** Total asset count from server (for paginated lists) */
   totalCount?: number;
+  /** Summary stats computed server-side from full dataset (bypasses pagination skew) */
+  summary?: AssetSummary;
 }
 
-export function AssetStats({ assets, loading, totalCount }: AssetStatsProps) {
+export function AssetStats({ assets, loading, totalCount, summary }: AssetStatsProps) {
   if (loading) {
     return (
       <div className="grid grid-cols-2 gap-3 sm:grid-cols-2 md:grid-cols-3 xl:grid-cols-4 2xl:grid-cols-7">
@@ -35,23 +46,24 @@ export function AssetStats({ assets, loading, totalCount }: AssetStatsProps) {
     );
   }
 
-  const totalValue =
-    assets.length > 0
+  const totalValue = summary
+    ? summary.totalValue
+    : assets.length > 0
       ? assets.reduce(
           (sum, asset) =>
             sum + (parseFloat(asset.purchasePrice.toString()) || 0),
           0
         )
       : 0;
-  const assignedCount = assets.filter(a => a.status === 'Assigned').length;
-  const availableCount = assets.filter(a => a.status === 'Available').length;
-  const inMaintenanceCount = assets.filter(
+  const assignedCount = summary?.assigned ?? assets.filter(a => a.status === 'Assigned').length;
+  const availableCount = summary?.available ?? assets.filter(a => a.status === 'Available').length;
+  const inMaintenanceCount = summary?.inMaintenance ?? assets.filter(
     a => a.status === 'In Maintenance'
   ).length;
-  const needsAttentionCount = assets.filter(a =>
+  const needsAttentionCount = summary?.needsAttention ?? assets.filter(a =>
     ['Needs Repair', 'Damaged'].includes(a.condition)
   ).length;
-  const forDisposalCount = assets.filter(a =>
+  const forDisposalCount = summary?.forDisposal ?? assets.filter(a =>
     ['Obsolete', 'Damaged'].includes(a.condition)
   ).length;
 
