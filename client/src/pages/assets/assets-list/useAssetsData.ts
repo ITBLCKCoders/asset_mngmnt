@@ -9,7 +9,7 @@ import type { AssetResponseDto } from '@/types/assetsDTOs';
 import { Asset } from './assetsComponents/assetTable/assetData';
 import type { AccountabilityForm } from '@/pages/assets/accountability/accountabilityFormTypes';
 
-export const useAssetsData = (companyFilter?: string | null, scope?: string | null, page: number = 1, pageSize: number = 10) => {
+export const useAssetsData = (companyFilter?: string | null, scope?: string | null, page: number = 1, pageSize: number = 10, search?: string) => {
   const queryClient = useQueryClient();
 
   let url = '/assets';
@@ -20,6 +20,9 @@ export const useAssetsData = (companyFilter?: string | null, scope?: string | nu
   if (scope) {
     params.append('scope', scope);
   }
+  if (search) {
+    params.append('search', search);
+  }
   params.append('page', String(page));
   params.append('limit', String(pageSize));
   const queryString = params.toString();
@@ -27,7 +30,7 @@ export const useAssetsData = (companyFilter?: string | null, scope?: string | nu
     url += `?${queryString}`;
   }
 
-  const queryKey = ['assets', companyFilter, scope, page, pageSize] as const;
+  const queryKey = ['assets', companyFilter, scope, page, pageSize, search] as const;
 
   const { data, isLoading, error } = useApiQuery<{
     assets: AssetResponseDto[];
@@ -36,6 +39,14 @@ export const useAssetsData = (companyFilter?: string | null, scope?: string | nu
       limit: number;
       total: number;
       totalPages: number;
+      summary?: {
+        assigned: number;
+        available: number;
+        inMaintenance: number;
+        needsAttention: number;
+        forDisposal: number;
+        totalValue: number;
+      };
     };
   }>(queryKey, url);
 
@@ -164,6 +175,7 @@ export const useAssetsData = (companyFilter?: string | null, scope?: string | nu
     limit: data?.meta?.limit ?? -1,
     total: data?.meta?.total ?? (data?.assets?.length ?? 0),
     totalPages: data?.meta?.totalPages ?? 1,
+    summary: data?.meta?.summary,
   };
 
   return {

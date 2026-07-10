@@ -132,14 +132,21 @@ export function AssetsPage() {
   const [scope, setScope] = useState<'it' | 'admin'>('it');
   const [pageIndex, setPageIndex] = useState(0);
   const [pageSize, setPageSize] = useState(10);
+  const [searchTerm, setSearchTerm] = useState('');
 
   const { assets, loading, fetchAssets, meta } = useAssetsData(
     activeCompany?.id || null,
     showScopeTabs ? scope : null,
     pageIndex + 1,
-    pageSize
+    pageSize,
+    searchTerm
   );
   const isInitialLoading = loading && assets.length === 0;
+
+  // Reset to first page when search term changes
+  useEffect(() => {
+    setPageIndex(0);
+  }, [searchTerm]);
 
   // Filtering is handled on server-side, no need for client-side filtering
   const filteredAssets = useMemo(() => {
@@ -150,7 +157,6 @@ export function AssetsPage() {
   const [buildersLoading, setBuildersLoading] = useState(false);
   const [selectedBuilder, setSelectedBuilder] = useState<AssetBuilderRecord | null>(null);
   const [isBuilderDialogOpen, setIsBuilderDialogOpen] = useState(false);
-  const [searchTerm, setSearchTerm] = useState('');
   const [activeTab, setActiveTab] = useState('asset-list');
   const [tabLoading, setTabLoading] = useState(false);
 
@@ -249,29 +255,6 @@ export function AssetsPage() {
       hasDeletePermission &&
       hasViewPermission
     );
-  };
-
-  // Custom filter function that searches accountability form number as well
-  const customFilterFn: any = (row: any, _columnId: any, filterValue: string) => {
-    if (!filterValue) return true;
-    
-    const filterValueLower = filterValue.toLowerCase();
-    
-    // Search all standard columns
-    const standardColumns = ['id', 'name', 'description', 'category', 'type', 'serialNo', 'modelNo', 'brand', 'status', 'assignedTo', 'department', 'location'];
-    for (const col of standardColumns) {
-      if (row.original[col] && String(row.original[col]).toLowerCase().includes(filterValueLower)) {
-        return true;
-      }
-    }
-    
-    // Search accountability form number
-    if (row.original.accountabilityForm?.formNumber && 
-        String(row.original.accountabilityForm.formNumber).toLowerCase().includes(filterValueLower)) {
-      return true;
-    }
-    
-    return false;
   };
 
   // Check if user has permission to edit a specific asset
@@ -1019,6 +1002,7 @@ export function AssetsPage() {
           assets={assets}
           loading={isInitialLoading}
           totalCount={meta.total}
+          summary={meta.summary}
         />
 
         <Tabs value={activeTab} onValueChange={(value) => { setActiveTab(value); setTabLoading(true); setTimeout(() => setTabLoading(false), 300); }} className="w-full">
@@ -1059,6 +1043,7 @@ export function AssetsPage() {
                   data={isInitialLoading ? [] : displayAssets}
                   columns={assetColumns}
                   searchPlaceholder="Search all columns..."
+                  onSearchChange={setSearchTerm}
                   title="Asset List"
                   titleBadge={`${meta.total} assets`}
                   lastModifiedAt={
@@ -1070,7 +1055,6 @@ export function AssetsPage() {
                   }
                   onRowClick={handleRowClick}
                   isLoading={isInitialLoading || tabLoading}
-                  globalFilterFn={customFilterFn}
                   searchColumnOptions={ASSET_SEARCH_COLUMNS}
                   serverPagination={true}
                   pageCount={meta.totalPages}
@@ -1546,7 +1530,7 @@ export function AssetsPage() {
               Cancel
             </Button>
             <Button
-              onClick={() => handleExportConfirm(displayAssets, activeCompany, user, assetBuilders)}
+              onClick={() => handleExportConfirm(displayAssets, activeCompany, user, assetBuilders, activeCompany?.id, showScopeTabs ? scope : null)}
               disabled={selectedColumns.size === 0}
               className="bg-red-600 hover:bg-red-700 text-white"
             >

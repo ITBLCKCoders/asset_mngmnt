@@ -362,30 +362,6 @@ export async function getAssetsHandler(req: AuthRequest, res: Response) {
     let assets = await assetRepo.callGetAllAssets();
     logger.info(`Stored procedure returned ${assets.length} total assets`);
 
-    // Filter by search term if provided
-    if (search) {
-      assets = assets.filter((asset: any) => {
-        const searchableText = [
-          asset.asset_code,
-          asset.name,
-          asset.description,
-          asset.category_name,
-          asset.type_name,
-          asset.brand,
-          asset.model,
-          asset.serial,
-          asset.status,
-          asset.company_name,
-          asset.location_name,
-          asset.room_name,
-          asset.department,
-        ]
-          .join(' ')
-          .toLowerCase();
-        return searchableText.includes(search);
-      });
-    }
-
     // Check if user is Super Admin or Admin
     const user = await assetRepo.getUserRoleById(req.user!.userID);
     const normalizedRoleName = String(user?.role_name ?? '').trim().toLowerCase();
@@ -492,6 +468,40 @@ export async function getAssetsHandler(req: AuthRequest, res: Response) {
         ...asset,
         asset_scope_type: classifyDepartmentScopeByName(asset.department),
       }));
+    }
+
+    // Compute summary stats from company/scope-filtered assets (before search narrowing)
+    const fullSummary = {
+      assigned: assets.filter((a: any) => String(a.status).toLowerCase() === 'assigned').length,
+      available: assets.filter((a: any) => String(a.status).toLowerCase() === 'available').length,
+      inMaintenance: assets.filter((a: any) => String(a.status).toLowerCase() === 'in maintenance').length,
+      needsAttention: assets.filter((a: any) => ['Needs Repair', 'Damaged'].includes(a.condition)).length,
+      forDisposal: assets.filter((a: any) => ['Obsolete', 'Damaged'].includes(a.condition)).length,
+      totalValue: assets.reduce((sum: number, a: any) => sum + (parseFloat(a.asset_value) || 0), 0),
+    };
+
+    // Filter by search term if provided (moved after company/scope filtering so stats stay accurate)
+    if (search) {
+      assets = assets.filter((asset: any) => {
+        const searchableText = [
+          asset.asset_code,
+          asset.name,
+          asset.description,
+          asset.category_name,
+          asset.type_name,
+          asset.brand,
+          asset.model,
+          asset.serial,
+          asset.status,
+          asset.company_name,
+          asset.location_name,
+          asset.room_name,
+          asset.department,
+        ]
+          .join(' ')
+          .toLowerCase();
+        return searchableText.includes(search);
+      });
     }
 
     const assetIds = assets.map((a: any) => a.assetID);
@@ -651,11 +661,14 @@ export async function getAssetsHandler(req: AuthRequest, res: Response) {
 
     const total = assets.length;
 
+    // Use the pre-search fullSummary for stats cards (computed after company/scope, before search)
+    const summary = fullSummary;
+
     if (limit === -1) {
       // Return all assets (used by Asset Tagging page etc.)
       return res.json({
         assets,
-        meta: { page: 1, limit: total, total, totalPages: 1 },
+        meta: { page: 1, limit: total, total, totalPages: 1, summary },
       });
     }
 
@@ -665,7 +678,7 @@ export async function getAssetsHandler(req: AuthRequest, res: Response) {
 
     return res.json({
       assets: paginatedAssets,
-      meta: { page, limit, total, totalPages },
+      meta: { page, limit, total, totalPages, summary },
     });
   } catch (error: any) {
     logger.error('Get assets failed:', error);
