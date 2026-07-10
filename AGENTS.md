@@ -509,12 +509,24 @@ This file should help assistants make accurate changes, not generic ones. If the
 - Modified `assetTagging.tsx` — added `useBarcodeScanner` hook with case-insensitive asset lookup; html2canvas scale 5; barcode overlay using `imageSmoothingEnabled = false`
 - Modified `AssetsPage.tsx` — same scanner integration on main asset list page
 - Modified `myAssets.tsx` — same scanner integration on My Assets page
+- Fixed `useBarcodeScanner.ts` — removed `null` from `useRef` type, replaced `setTimeout`/`clearTimeout` with `window.` prefixed variants for TS compat
+- Removed spurious `isSelected`/`onSelect` fields from asset mapper in `assetTagging.tsx`
+- Barcode now scannable by physical barcode scanner when printed on paper (overlay fix + bar width increase)
 
 ### In Progress
-- Barcode still not readable by physical barcode scanner when printed on paper
+- (none)
 
 ### Blocked
 - (none)
+
+## API Pagination
+
+- `GET /api/assets` supports `page` (default 1) and `limit` (default 10, max 100) query params
+- `limit=-1` returns ALL assets (no pagination) — used by Asset Tagging page for tag generation re-fetch
+- Server always returns `meta: { page, limit, total, totalPages }` in the response
+- Server applies pagination AFTER all in-memory filtering (search, company, scope/department), so it still fetches all rows from `sp_get_assets()` but returns only the requested slice
+- Client `DataTable` uses `serverPagination` mode on Asset List and Asset Tagging pages — page size changes trigger API re-fetch via `onPaginationChange` callback
+- Changing company/scope resets the page index to 0 on both pages
 
 ## Key Decisions
 - Canvas → data URL → img approach chosen over direct SVG in DOM because html2canvas has unreliable SVG support

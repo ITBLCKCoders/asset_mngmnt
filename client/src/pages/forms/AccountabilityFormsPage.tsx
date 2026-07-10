@@ -73,10 +73,10 @@ export default function AccountabilityFormsPage() {
   const showCompanyFilter = !userCompanyScope || isSuperAdminOrAdmin || hasHrAccountabilityReceiver;
   
   useEffect(() => {
-    if (userCompanyScope && !isSuperAdminOrAdmin && !hasHrAccountabilityReceiver && companyFilterId !== userCompanyScope) {
+    if (userCompanyScope && companyFilterId !== userCompanyScope) {
       setCompanyFilterId(userCompanyScope);
     }
-  }, [userCompanyScope, isSuperAdminOrAdmin, hasHrAccountabilityReceiver]);
+  }, [userCompanyScope]);
   
   // Get user's role asset type for scoping
   const userRoleAssetType = currentUser?.role?.asset_type || 'none';
@@ -451,16 +451,15 @@ export default function AccountabilityFormsPage() {
                           Company
                         </Label>
                         <Select
-                          value={companyFilterId || 'all'}
+                          value={companyFilterId}
                           onValueChange={v =>
-                            setCompanyFilterId(v === 'all' ? '' : v)
+                            setCompanyFilterId(v)
                           }
                         >
                           <SelectTrigger className="w-full">
-                            <SelectValue placeholder="All companies" />
+                            <SelectValue placeholder="Select company" />
                           </SelectTrigger>
                           <SelectContent>
-                            <SelectItem value="all">All companies</SelectItem>
                             {companyOptions.map(c => (
                               <SelectItem key={c.id} value={c.id}>
                                 {c.name}
@@ -618,16 +617,15 @@ export default function AccountabilityFormsPage() {
                           Company
                         </Label>
                         <Select
-                          value={companyFilterId || 'all'}
+                          value={companyFilterId}
                           onValueChange={v =>
-                            setCompanyFilterId(v === 'all' ? '' : v)
+                            setCompanyFilterId(v)
                           }
                         >
                           <SelectTrigger className="w-full">
-                            <SelectValue placeholder="All companies" />
+                            <SelectValue placeholder="Select company" />
                           </SelectTrigger>
                           <SelectContent>
-                            <SelectItem value="all">All companies</SelectItem>
                             {companyOptions.map(c => (
                               <SelectItem key={c.id} value={c.id}>
                                 {c.name}

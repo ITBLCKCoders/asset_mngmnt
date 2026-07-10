@@ -3,7 +3,7 @@
 import { useState } from 'react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
-import { UserCheck } from 'lucide-react';
+import { UserCheck, Layers } from 'lucide-react';
 import { DataTable } from '@/components/ui/dataTable';
 import type { ColumnDef } from '@tanstack/react-table';
 import { Dialog } from '@/components/ui/dialog';
@@ -71,6 +71,7 @@ export interface AssetAssignment {
     last_name: string;
     employeeNumber?: string;
   };
+  assetType?: 'physical' | 'intangible';
 }
 
 interface AssignedAssetsTableProps {
@@ -106,13 +107,29 @@ const assignedAssetsColumns: ColumnDef<AssetAssignment>[] = [
     id: 'asset',
     header: 'Asset',
     accessorFn: row => `${row.asset.name} ${row.asset.code}`,
-    size: 200,
+    size: 220,
     cell: ({ row }) => (
-      <div>
-        <div className="font-medium text-gray-900">
-          {row.original.asset.name}
+      <div className="flex items-center gap-2">
+        {row.original.assetType === 'intangible' && (
+          <Layers className="h-4 w-4 shrink-0 text-orange-500" />
+        )}
+        <div className="min-w-0">
+          <div className="flex items-center gap-1.5">
+            <span className="font-medium text-gray-900 truncate">
+              {row.original.asset.name}
+            </span>
+            {row.original.assetType === 'intangible' && (
+              <Badge variant="outline" className="text-[10px] px-1.5 py-0 h-4 border-orange-200 text-orange-700 bg-orange-50 shrink-0 leading-none">
+                Intangible
+              </Badge>
+            )}
+          </div>
+          <div className="text-sm text-gray-500">
+            {row.original.assetType === 'intangible'
+              ? row.original.asset.type_id
+              : row.original.asset.code}
+          </div>
         </div>
-        <div className="text-sm text-gray-500">{row.original.asset.code}</div>
       </div>
     ),
   },
@@ -243,7 +260,8 @@ function assignmentSearchText(a: AssetAssignment): string {
     a.assigned_date ?? '',
     a.expected_return_date ?? '',
     a.assignment_notes ?? '',
-    a.status ?? ''
+    a.status ?? '',
+    a.assetType ?? ''
   );
   if (a.accountabilityForm) {
     parts.push(
@@ -340,6 +358,11 @@ export function AssignedAssetsTable({ assignments }: AssignedAssetsTableProps) {
   const handleRowClick = async (row: { original: AssetAssignment }) => {
     const assignment = row.original;
 
+    if (assignment.assetType === 'intangible') {
+      toast.info('Accountability forms are not available for intangible assets.');
+      return;
+    }
+
     setPreviewAssetCode(assignment.asset.code);
     setSelectedForm(null);
     setIsPreviewLoading(true);
@@ -418,12 +441,26 @@ export function AssignedAssetsTable({ assignments }: AssignedAssetsTableProps) {
                   key: 'asset',
                   label: 'Asset',
                   render: row => (
-                    <div>
-                      <div className="font-medium text-gray-900">
-                        {row.asset.name}
-                      </div>
-                      <div className="text-xs text-gray-500">
-                        {row.asset.code}
+                    <div className="flex items-center gap-2">
+                      {row.assetType === 'intangible' && (
+                        <Layers className="h-3.5 w-3.5 shrink-0 text-orange-500" />
+                      )}
+                      <div className="min-w-0">
+                        <div className="flex items-center gap-1.5">
+                          <span className="font-medium text-gray-900 truncate">
+                            {row.asset.name}
+                          </span>
+                          {row.assetType === 'intangible' && (
+                            <Badge variant="outline" className="text-[10px] px-1 py-0 h-3.5 border-orange-200 text-orange-700 bg-orange-50 shrink-0 leading-none">
+                              Intangible
+                            </Badge>
+                          )}
+                        </div>
+                        <div className="text-xs text-gray-500">
+                          {row.assetType === 'intangible'
+                            ? row.asset.type_id
+                            : row.asset.code}
+                        </div>
                       </div>
                     </div>
                   ),

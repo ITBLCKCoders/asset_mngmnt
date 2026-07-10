@@ -270,7 +270,15 @@ export default function AssetsAssignment() {
 
   const fetchAssignments = async () => {
     try {
-      const response = await api.get('/asset-assignments');
+      let companyId: string | undefined;
+      const userRole = currentUser?.role?.name?.toLowerCase();
+      if (userRole === 'super admin' || userRole === 'admin') {
+        companyId = activeCompany?.id || undefined;
+      } else {
+        companyId = currentUser?.company_id || undefined;
+      }
+      const url = companyId ? `/asset-assignments?companyId=${companyId}` : '/asset-assignments';
+      const response = await api.get(url);
       setAssignments(response.assignments || []);
     } catch (error) {
       console.error('Failed to fetch assignments:', error);
@@ -757,7 +765,7 @@ export default function AssetsAssignment() {
 
     return assets
       .filter(
-        asset => asset.status === 'Available' || asset.status === 'In Use'
+        asset => asset.status === 'Available'
       )
       .filter(asset => {
         if (!searchLower) return true;
@@ -858,7 +866,7 @@ export default function AssetsAssignment() {
   // For builder selection, include assets that are in builders but available
   const allSelectableAssets = useMemo(() => {
     return filteredAssets.filter(
-      asset => asset.status === 'Available' || asset.status === 'In Use'
+      asset => asset.status === 'Available'
     );
   }, [filteredAssets]);
 
@@ -1460,24 +1468,6 @@ export default function AssetsAssignment() {
                                       >
                                         {asset.type}
                                       </Badge>
-                                      <Badge
-                                        variant="secondary"
-                                        className={`text-xs font-semibold ${
-                                          asset.status === 'available'
-                                            ? 'bg-green-100 text-green-800 border-green-200'
-                                            : 'bg-blue-100 text-blue-800 border-blue-200'
-                                        } px-2.5 py-1`}
-                                      >
-                                        {asset.status}
-                                      </Badge>
-                                      {assigneeCount > 0 && (
-                                        <Badge
-                                          variant="outline"
-                                          className="text-xs font-semibold bg-gray-50 text-gray-700 border-gray-200 px-2.5 py-1"
-                                        >
-                                          {assigneeCount} assigned
-                                        </Badge>
-                                      )}
                                     </div>
                                     <div className="flex items-center gap-2">
                                       {isSelected && (

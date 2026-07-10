@@ -1,0 +1,41 @@
+Section,Field,Value
+Project Information,System,Asset Management System
+Project Information,UAT Period,July 13-17 2026
+Project Information,Location,On-premises / Local
+Project Information,Facilitator,Ryan Rey Magdalita
+Project Information,Participating Companies,CMTH and all subsidiaries
+,,
+Test Summary,Total Test Cases,58
+Test Summary,Passed,
+Test Summary,Failed,
+Test Summary,N/A,
+Test Summary,Pass Rate (%),
+,,
+Known Issues,Issue #1 Description,Severity,Workaround,Accepted By
+Known Issues,Issue #2 Description,Severity,Workaround,Accepted By
+Known Issues,Issue #3 Description,Severity,Workaround,Accepted By
+Known Issues,Issue #4 Description,Severity,Workaround,Accepted By
+Known Issues,Issue #5 Description,Severity,Workaround,Accepted By
+,,
+Acceptance Decision,Approved for Production,
+Acceptance Decision,Approved with Conditions,
+Acceptance Decision,Not Approved,
+,,
+UAT Facilitator,Name,Signature,Date
+UAT Facilitator,Ryan Rey Magdalita,,
+,,
+Participant Signatures,Name,Company,Role,Signature,Date
+Participant Signatures,,CMTH,End User,,,
+Participant Signatures,,CMTH,IT Asset User,,,
+Participant Signatures,,CMTH,Asset Administrator,,,
+Participant Signatures,,,,,,
+Participant Signatures,,,,,,
+Participant Signatures,,,,,,
+Participant Signatures,,,,,,
+Participant Signatures,,,,,,
+Participant Signatures,,,,,,
+Participant Signatures,,,,,,
+,,
+Approval Sign-off,Name,Position,Signature,Date
+Approval Sign-off,,Project Lead / Stakeholder,,
+Approval Sign-off,,IT Head / Department Head,,

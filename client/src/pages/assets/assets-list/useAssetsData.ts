@@ -9,7 +9,7 @@ import type { AssetResponseDto } from '@/types/assetsDTOs';
 import { Asset } from './assetsComponents/assetTable/assetData';
 import type { AccountabilityForm } from '@/pages/assets/accountability/accountabilityFormTypes';
 
-export const useAssetsData = (companyFilter?: string | null, scope?: string | null) => {
+export const useAssetsData = (companyFilter?: string | null, scope?: string | null, page: number = 1, pageSize: number = 10) => {
   const queryClient = useQueryClient();
 
   let url = '/assets';
@@ -20,12 +20,14 @@ export const useAssetsData = (companyFilter?: string | null, scope?: string | nu
   if (scope) {
     params.append('scope', scope);
   }
+  params.append('page', String(page));
+  params.append('limit', String(pageSize));
   const queryString = params.toString();
   if (queryString) {
     url += `?${queryString}`;
   }
 
-  const queryKey = ['assets', companyFilter, scope] as const;
+  const queryKey = ['assets', companyFilter, scope, page, pageSize] as const;
 
   const { data, isLoading, error } = useApiQuery<{
     assets: AssetResponseDto[];
