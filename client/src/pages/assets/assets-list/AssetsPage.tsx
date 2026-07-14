@@ -1001,7 +1001,7 @@ export function AssetsPage() {
         <AssetStats
           assets={assets}
           loading={isInitialLoading}
-          totalCount={meta.total}
+          totalCount={meta.unfilteredTotal}
           summary={meta.summary}
         />
 

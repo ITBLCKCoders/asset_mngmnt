@@ -47,6 +47,7 @@ export const useAssetsData = (companyFilter?: string | null, scope?: string | nu
         forDisposal: number;
         totalValue: number;
       };
+      unfilteredTotal?: number;
     };
   }>(queryKey, url);
 
@@ -176,6 +177,7 @@ export const useAssetsData = (companyFilter?: string | null, scope?: string | nu
     total: data?.meta?.total ?? (data?.assets?.length ?? 0),
     totalPages: data?.meta?.totalPages ?? 1,
     summary: data?.meta?.summary,
+    unfilteredTotal: data?.meta?.unfilteredTotal ?? data?.meta?.total ?? (data?.assets?.length ?? 0),
   };
 
   return {

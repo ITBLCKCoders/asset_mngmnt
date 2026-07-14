@@ -480,6 +480,8 @@ export async function getAssetsHandler(req: AuthRequest, res: Response) {
       totalValue: assets.reduce((sum: number, a: any) => sum + (parseFloat(a.asset_value) || 0), 0),
     };
 
+    const unfilteredTotal = assets.length;
+
     // Filter by search term if provided (moved after company/scope filtering so stats stay accurate)
     if (search) {
       assets = assets.filter((asset: any) => {
@@ -668,7 +670,7 @@ export async function getAssetsHandler(req: AuthRequest, res: Response) {
       // Return all assets (used by Asset Tagging page etc.)
       return res.json({
         assets,
-        meta: { page: 1, limit: total, total, totalPages: 1, summary },
+        meta: { page: 1, limit: total, total, totalPages: 1, summary, unfilteredTotal },
       });
     }
 
@@ -678,7 +680,7 @@ export async function getAssetsHandler(req: AuthRequest, res: Response) {
 
     return res.json({
       assets: paginatedAssets,
-      meta: { page, limit, total, totalPages, summary },
+      meta: { page, limit, total, totalPages, summary, unfilteredTotal },
     });
   } catch (error: any) {
     logger.error('Get assets failed:', error);
