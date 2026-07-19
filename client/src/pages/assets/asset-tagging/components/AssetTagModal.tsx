@@ -11,15 +11,15 @@ import {
 } from '@/components/common/appDialogChrome';
 import { Printer, QrCode, Barcode, ChevronUp, Loader2 } from 'lucide-react';
 import { TagPreviewCard } from './TagPreviewCard';
-import { Company } from '@/pages/settings/settingsComponents/settingsTabs/generalTab/components/utils/companyTypes';
 
 const BARCODE_WIDTH_MAP: Record<number, number> = { 2: 520, 3: 460 };
+
+interface TagAssetData { id: string; name: string; company_logo?: string; company_name?: string }
 
 interface AssetTagModalProps {
   isOpen: boolean;
   onOpenChange: (open: boolean) => void;
-  selectedAssetsData: any[];
-  activeCompany: Company | null;
+  selectedAssetsData: TagAssetData[];
   onPrint: () => Promise<void>;
   columns: number;
   onColumnsChange: (cols: number) => void;
@@ -29,7 +29,6 @@ export function AssetTagModal({
   isOpen,
   onOpenChange,
   selectedAssetsData,
-  activeCompany,
   onPrint,
   columns,
   onColumnsChange,
@@ -143,7 +142,6 @@ export function AssetTagModal({
                   <TagPreviewCard
                     key={asset.id}
                     asset={asset}
-                    activeCompany={activeCompany}
                     qrData={qrData}
                     tagType={tagType}
                     barcodeFormat="CODE128"

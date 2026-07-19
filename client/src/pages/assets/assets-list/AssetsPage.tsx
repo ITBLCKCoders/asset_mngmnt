@@ -7,6 +7,7 @@ import {
   Plus,
   FileText,
   FileSpreadsheet,
+  Download,
   Eye,
   Search,
   RefreshCw,
@@ -15,6 +16,7 @@ import {
   Crown,
   Layers,
   Edit,
+  Loader2,
 } from 'lucide-react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { PageHeader } from '@/components/common/PageHeader';
@@ -89,6 +91,7 @@ export function AssetsPage() {
   const [currentPdfUrl, setCurrentPdfUrl] = useState<string | null>(null);
   const [currentPdfTitle, setCurrentPdfTitle] = useState<string>('');
   const [wasViewModalOpenBeforePdf, setWasViewModalOpenBeforePdf] = useState(false);
+  const [isExportOptionsOpen, setIsExportOptionsOpen] = useState(false);
 
   const handleOpenPdfPreview = (pdfUrl: string, title: string) => {
     setCurrentPdfUrl(pdfUrl);
@@ -486,6 +489,25 @@ export function AssetsPage() {
     handleColumnToggle,
     handleExportConfirm,
     setIsExportDialogOpen,
+    isSummaryExportDialogOpen,
+    summaryStep,
+    summaryExportType,
+    setSummaryExportType,
+    summaryScope,
+    summarySelectedTypes,
+    summaryAvailableTypes,
+    summaryIncludeCondition,
+    setSummaryIncludeCondition,
+    summarySelectedColumns,
+    handleSummaryColumnToggle,
+    handleSummaryExportClick,
+    handleSummaryNextStep,
+    handleSummaryPrevStep,
+    handleSummaryTypeToggle,
+    handleSummaryTypesToggleAll,
+    handleSummaryScopeChange,
+    handleSummaryExportConfirm,
+    setIsSummaryExportDialogOpen,
   } = useAssetExport();
 
   // Server handles filtering by active company (Super Admin) or user company + asset type (other roles)
@@ -1177,26 +1199,15 @@ export function AssetsPage() {
                     </div>
                   }
                 >
-                  <div className="flex gap-2">
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      onClick={() => handleExportClick('pdf')}
-                      className="flex items-center gap-2"
-                    >
-                      <Eye className="h-4 w-4" />
-                      Export PDF
-                    </Button>
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      onClick={() => handleExportClick('excel')}
-                      className="flex items-center gap-2"
-                    >
-                      <FileSpreadsheet className="h-4 w-4" />
-                      Export Excel
-                    </Button>
-                  </div>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => setIsExportOptionsOpen(true)}
+                    className="flex items-center gap-2"
+                  >
+                    <Download className="h-4 w-4" />
+                    Export
+                  </Button>
                 </DataTable>
               </CardContent>
             </Card>
@@ -1495,6 +1506,51 @@ export function AssetsPage() {
         </AppDialogFrame>
       </Dialog>
 
+      <Dialog open={isExportOptionsOpen} onOpenChange={setIsExportOptionsOpen}>
+        <AppDialogFrame className="max-w-lg">
+          <AppDialogGradientHeader
+            title="Export Options"
+            description="Choose the type of export to generate."
+          />
+          <AppDialogBody className="py-6">
+            <div className="grid grid-cols-3 gap-4">
+              <button
+                type="button"
+                onClick={() => { setIsExportOptionsOpen(false); handleExportClick('pdf'); }}
+                className="flex flex-col items-center gap-3 rounded-xl border border-gray-200 bg-white p-5 transition hover:border-red-300 hover:shadow-md cursor-pointer"
+              >
+                <Eye className="h-8 w-8 text-red-600" />
+                <span className="text-sm font-semibold text-gray-800">Export PDF</span>
+                <span className="text-xs text-gray-500 text-center">Detailed asset list in PDF format</span>
+              </button>
+              <button
+                type="button"
+                onClick={() => { setIsExportOptionsOpen(false); handleExportClick('excel'); }}
+                className="flex flex-col items-center gap-3 rounded-xl border border-gray-200 bg-white p-5 transition hover:border-green-300 hover:shadow-md cursor-pointer"
+              >
+                <FileSpreadsheet className="h-8 w-8 text-green-600" />
+                <span className="text-sm font-semibold text-gray-800">Export Excel</span>
+                <span className="text-xs text-gray-500 text-center">Detailed asset list in Excel format</span>
+              </button>
+              <button
+                type="button"
+                onClick={() => { setIsExportOptionsOpen(false); handleSummaryExportClick(); }}
+                className="flex flex-col items-center gap-3 rounded-xl border border-gray-200 bg-white p-5 transition hover:border-blue-300 hover:shadow-md cursor-pointer"
+              >
+                <FileText className="h-8 w-8 text-blue-600" />
+                <span className="text-sm font-semibold text-gray-800">Export Summary</span>
+                <span className="text-xs text-gray-500 text-center">Device type & employee summary</span>
+              </button>
+            </div>
+          </AppDialogBody>
+          <AppDialogChromeFooter>
+            <Button variant="outline" onClick={() => setIsExportOptionsOpen(false)}>
+              Cancel
+            </Button>
+          </AppDialogChromeFooter>
+        </AppDialogFrame>
+      </Dialog>
+
       <Dialog open={isExportDialogOpen} onOpenChange={setIsExportDialogOpen}>
         <AppDialogFrame className="max-w-2xl max-h-[80vh] overflow-hidden !flex !flex-col">
           <AppDialogGradientHeader
@@ -1530,12 +1586,230 @@ export function AssetsPage() {
               Cancel
             </Button>
             <Button
-              onClick={() => handleExportConfirm(displayAssets, activeCompany, user, assetBuilders, activeCompany?.id, showScopeTabs ? scope : null)}
+              onClick={() => handleExportConfirm(displayAssets, activeCompany, user, assetBuilders, activeCompany?.id, showScopeTabs ? scope : null, searchTerm)}
               disabled={selectedColumns.size === 0}
               className="bg-red-600 hover:bg-red-700 text-white"
             >
               Export {exportType?.toUpperCase()}
             </Button>
+          </AppDialogChromeFooter>
+        </AppDialogFrame>
+      </Dialog>
+
+      <Dialog open={isSummaryExportDialogOpen} onOpenChange={setIsSummaryExportDialogOpen}>
+        <AppDialogFrame className="max-w-2xl max-h-[80vh] overflow-hidden !flex !flex-col">
+          <AppDialogGradientHeader
+            title={summaryStep === 1 ? 'Export Summary Report — Step 1: Columns' : 'Export Summary Report — Step 2: Format & Filters'}
+            description={summaryStep === 1 ? 'Select columns for the asset list section.' : 'Choose format, category scope, and optional type filters.'}
+          />
+
+          <AppDialogBody className="max-h-[50vh] overflow-y-auto py-4">
+            {summaryStep === 1 && (
+              <div>
+                <Label className="text-base font-semibold mb-3 block">Asset List Columns</Label>
+                <div className="grid grid-cols-3 gap-4">
+                  {availableColumns.map(column => (
+                    <div key={column.key} className="flex items-center space-x-2">
+                      <Checkbox
+                        id={`summary-${column.key}`}
+                        checked={summarySelectedColumns.has(column.key)}
+                        onCheckedChange={() => handleSummaryColumnToggle(column.key)}
+                      />
+                      <Label
+                        htmlFor={`summary-${column.key}`}
+                        className="text-sm font-medium leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70"
+                      >
+                        {column.label}
+                      </Label>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {summaryStep === 2 && (
+              <div className="space-y-5">
+                {/* Format */}
+                <div>
+                  <Label className="text-base font-semibold mb-2 block">Export Format</Label>
+                  <div className="flex gap-3">
+                    <button
+                      type="button"
+                      onClick={() => setSummaryExportType('pdf')}
+                      className={`flex-1 rounded-lg border-2 p-3 text-center transition cursor-pointer ${
+                        summaryExportType === 'pdf'
+                          ? 'border-red-500 bg-red-50'
+                          : 'border-gray-200 hover:border-gray-300'
+                      }`}
+                    >
+                      <span className="text-sm font-semibold">PDF</span>
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setSummaryExportType('excel')}
+                      className={`flex-1 rounded-lg border-2 p-3 text-center transition cursor-pointer ${
+                        summaryExportType === 'excel'
+                          ? 'border-green-500 bg-green-50'
+                          : 'border-gray-200 hover:border-gray-300'
+                      }`}
+                    >
+                      <span className="text-sm font-semibold">Excel</span>
+                    </button>
+                  </div>
+                </div>
+
+                {/* Category scope */}
+                <div>
+                  <Label className="text-base font-semibold mb-2 block">Category Scope</Label>
+                  <div className="flex gap-3">
+                    <button
+                      type="button"
+                      onClick={() => handleSummaryScopeChange('it', activeCompany?.id)}
+                      className={`flex-1 rounded-lg border-2 p-3 text-center transition cursor-pointer ${
+                        summaryScope === 'it'
+                          ? 'border-blue-500 bg-blue-50'
+                          : 'border-gray-200 hover:border-gray-300'
+                      }`}
+                    >
+                      <span className="text-xs font-semibold">IT Assets</span>
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => handleSummaryScopeChange('admin', activeCompany?.id)}
+                      className={`flex-1 rounded-lg border-2 p-3 text-center transition cursor-pointer ${
+                        summaryScope === 'admin'
+                          ? 'border-purple-500 bg-purple-50'
+                          : 'border-gray-200 hover:border-gray-300'
+                      }`}
+                    >
+                      <span className="text-xs font-semibold">Admin Assets</span>
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => handleSummaryScopeChange('all', activeCompany?.id)}
+                      className={`flex-1 rounded-lg border-2 p-3 text-center transition cursor-pointer ${
+                        summaryScope === 'all'
+                          ? 'border-gray-700 bg-gray-100'
+                          : 'border-gray-200 hover:border-gray-300'
+                      }`}
+                    >
+                      <span className="text-xs font-semibold">All</span>
+                    </button>
+                  </div>
+                </div>
+
+                {/* Type filters */}
+                <div>
+                  <div className="mb-2 flex items-center justify-between gap-3">
+                    <Label className="text-base font-semibold">
+                      Asset Types
+                      {summaryAvailableTypes.length > 0 && (
+                        <span className="text-xs font-normal text-muted-foreground ml-2">
+                          ({summaryAvailableTypes.length} types available)
+                        </span>
+                      )}
+                    </Label>
+                    {summaryAvailableTypes.length > 0 && (
+                      <Button
+                        type="button"
+                        variant="outline"
+                        size="sm"
+                        onClick={handleSummaryTypesToggleAll}
+                      >
+                        {summarySelectedTypes.length === summaryAvailableTypes.length
+                          ? 'Deselect All'
+                          : 'Select All'}
+                      </Button>
+                    )}
+                  </div>
+                  {summaryAvailableTypes.length === 0 ? (
+                    <p className="text-sm text-muted-foreground flex items-center gap-2">
+                      <Loader2 className="h-4 w-4 animate-spin" />
+                      Loading types…
+                    </p>
+                  ) : (
+                    <div className="grid grid-cols-3 gap-2 max-h-48 overflow-y-auto border rounded-lg p-3">
+                      {summaryAvailableTypes.map(({ name, count }) => (
+                        <label
+                          key={name}
+                          className={`flex items-center gap-2 rounded px-2 py-1.5 text-sm cursor-pointer transition ${
+                            summarySelectedTypes.includes(name)
+                              ? 'bg-blue-50 border border-blue-200'
+                              : 'hover:bg-gray-50 border border-transparent'
+                          }`}
+                        >
+                          <input
+                            type="checkbox"
+                            checked={summarySelectedTypes.includes(name)}
+                            onChange={() => handleSummaryTypeToggle(name)}
+                            className="h-4 w-4 rounded border-gray-300 text-blue-600"
+                          />
+                          <span className="flex-1">{name}</span>
+                          <span className="text-xs text-muted-foreground">({count})</span>
+                        </label>
+                      ))}
+                    </div>
+                  )}
+                  {summarySelectedTypes.length > 0 && (
+                    <p className="text-xs text-muted-foreground mt-1">
+                      {summarySelectedTypes.length} type{summarySelectedTypes.length > 1 ? 's' : ''} selected
+                      {summarySelectedTypes.length < summaryAvailableTypes.length && ' (only selected types will be exported)'}
+                    </p>
+                  )}
+                </div>
+
+                {/* Condition toggle */}
+                <div>
+                  <label className="flex items-center gap-2 cursor-pointer">
+                    <input
+                      type="checkbox"
+                      checked={summaryIncludeCondition}
+                      onChange={(e) => setSummaryIncludeCondition(e.target.checked)}
+                      className="h-4 w-4 rounded border-gray-300 text-blue-600"
+                    />
+                    <span className="text-sm font-medium">
+                      Include condition breakdown columns (Excellent, Good, Fair, Poor, Damaged)
+                    </span>
+                  </label>
+                  <p className="text-xs text-muted-foreground mt-1 ml-6">
+                    When unchecked, the Device Type table shows only type, unit count, working, and defective counts.
+                  </p>
+                </div>
+              </div>
+            )}
+          </AppDialogBody>
+
+          <AppDialogChromeFooter className="flex justify-between">
+            <div className="flex gap-2">
+              {summaryStep === 2 && (
+                <Button variant="outline" onClick={handleSummaryPrevStep}>
+                  Back
+                </Button>
+              )}
+              <Button
+                variant="outline"
+                onClick={() => setIsSummaryExportDialogOpen(false)}
+              >
+                Cancel
+              </Button>
+            </div>
+            {summaryStep === 1 ? (
+              <Button
+                onClick={() => handleSummaryNextStep(summaryScope, activeCompany?.id)}
+                disabled={summarySelectedColumns.size === 0}
+                className="bg-red-600 hover:bg-red-700 text-white"
+              >
+                Next
+              </Button>
+            ) : (
+              <Button
+                onClick={() => handleSummaryExportConfirm(activeCompany, user, assetBuilders, activeCompany?.id, showScopeTabs ? scope : null, searchTerm)}
+                disabled={summarySelectedColumns.size === 0}
+                className="bg-red-600 hover:bg-red-700 text-white"
+              >
+                Export
+              </Button>
+            )}
           </AppDialogChromeFooter>
         </AppDialogFrame>
       </Dialog>

@@ -82,6 +82,8 @@ type ReportFilterState = {
   to: string;
   companyId: string;
   departmentId: string;
+  searchUser: string;
+  searchAsset: string;
 };
 
 type HistoryTypeCount = {
@@ -124,6 +126,10 @@ type ReportRow = {
   returnDate?: string;
   transferee?: string;
   notes: string;
+  accountabilityFormNumber?: string;
+  accountabilityFormDate?: string;
+  condition?: string;
+  assetValue?: number | null;
 };
 
 type CompanyOption = { id: string; name: string; logo_url?: string | null };
@@ -167,6 +173,8 @@ const emptyFilters = (): ReportFilterState => ({
   to: '',
   companyId: 'all',
   departmentId: 'all',
+  searchUser: '',
+  searchAsset: '',
 });
 
 const initialFilters = (): Record<ReportTableKey, ReportFilterState> => ({
@@ -487,11 +495,51 @@ export default function ReportsPage() {
             )
           : labelAdjustedColumns;
 
+      const assignmentColumns =
+        focusedTableKey === 'assignment'
+          ? transferColumns.flatMap(column =>
+              column.id === 'person'
+                ? [
+                    column,
+                    {
+                      id: 'accountabilityFormNumber',
+                      header: 'Accountability Form #',
+                      accessorKey: 'accountabilityFormNumber',
+                      size: 160,
+                    },
+                    {
+                      id: 'accountabilityFormDate',
+                      header: 'Form Date',
+                      accessorKey: 'accountabilityFormDate',
+                      size: 170,
+                      cell: ({ row }: { row: { original: ReportRow } }) => formatDateLabel(row.original.accountabilityFormDate ?? ''),
+                    },
+                    {
+                      id: 'condition',
+                      header: 'Condition',
+                      accessorKey: 'condition',
+                      size: 120,
+                    },
+                    {
+                      id: 'assetValue',
+                      header: 'Asset Value',
+                      accessorKey: 'assetValue',
+                      size: 130,
+                      cell: ({ row }: { row: { original: ReportRow } }) =>
+                        row.original.assetValue != null
+                          ? `₱${Number(row.original.assetValue).toLocaleString()}`
+                          : '-',
+                    },
+                  ]
+                : [column]
+            )
+          : transferColumns;
+
       if (focusedTableKey !== 'gatePass' && focusedTableKey !== 'borrow') {
-        return transferColumns;
+        return assignmentColumns;
       }
 
-      return transferColumns.flatMap(column =>
+      return assignmentColumns.flatMap(column =>
         column.id === 'date'
           ? [
               {
@@ -543,6 +591,20 @@ export default function ReportsPage() {
       focusedTableKey === 'transfer'
         ? visibleFields
         : visibleFields.filter(field => field.key !== 'transferee');
+    const assignmentFields =
+      focusedTableKey === 'assignment'
+        ? transferFields.flatMap(field =>
+            field.key === 'person'
+              ? [
+                  field,
+                  { key: 'accountabilityFormNumber', label: 'Accountability Form #', render: (row: ReportRow) => row.accountabilityFormNumber ?? '' },
+                  { key: 'accountabilityFormDate', label: 'Form Date', render: (row: ReportRow) => formatDateLabel(row.accountabilityFormDate ?? '') },
+                  { key: 'condition', label: 'Condition', render: (row: ReportRow) => row.condition ?? '' },
+                  { key: 'assetValue', label: 'Asset Value', render: (row: ReportRow) => row.assetValue != null ? `₱${Number(row.assetValue).toLocaleString()}` : '-' },
+                ]
+              : [field]
+          )
+        : transferFields;
     return focusedTableKey === 'gatePass' || focusedTableKey === 'borrow'
       ? transferFields.flatMap(field =>
           field.key === 'date'
@@ -560,7 +622,7 @@ export default function ReportsPage() {
               ]
             : [field]
         )
-      : transferFields;
+      : assignmentFields;
   }, [focusedTableKey]);
 
   const scopedRows = useMemo(
@@ -922,12 +984,25 @@ export default function ReportsPage() {
               return false;
             }
           }
+          if (
+            exportFilters.searchUser &&
+            !row.person.toLowerCase().includes(exportFilters.searchUser.toLowerCase())
+          ) {
+            return false;
+          }
+          if (
+            exportFilters.searchAsset &&
+            !row.asset.toLowerCase().includes(exportFilters.searchAsset.toLowerCase())
+          ) {
+            return false;
+          }
           return rowMatchesFilters(row, exportFilters);
         });
         const showStatus = REPORTS_WITH_STATUS.has(tableKey);
         const showGatePassDates = tableKey === 'gatePass';
         const showBorrowDates = tableKey === 'borrow';
         const showTransferee = tableKey === 'transfer';
+        const showAssignmentFields = tableKey === 'assignment';
         const personHeader =
           tableKey === 'return'
             ? 'Returner'
@@ -966,6 +1041,9 @@ export default function ReportsPage() {
               'Asset',
               personHeader,
               ...(showTransferee ? ['Transferee'] : []),
+              ...(showAssignmentFields
+                ? ['Accountability Form #', 'Form Date', 'Condition', 'Asset Value']
+                : []),
               'Department',
               'Processed By',
               'Company',
@@ -985,6 +1063,14 @@ export default function ReportsPage() {
                   row.asset,
                   row.person,
                   ...(showTransferee ? [row.transferee ?? ''] : []),
+                  ...(showAssignmentFields
+                    ? [
+                        row.accountabilityFormNumber ?? '',
+                        formatDateLabel(row.accountabilityFormDate ?? ''),
+                        row.condition ?? '',
+                        row.assetValue != null ? `₱${Number(row.assetValue).toLocaleString()}` : '-',
+                      ]
+                    : []),
                   row.departmentName,
                   row.processor,
                   row.companyName,
@@ -1002,8 +1088,9 @@ export default function ReportsPage() {
                     'No records found',
                     '',
                     '',
-                    '',
                     ...(showTransferee ? [''] : []),
+                    ...(showAssignmentFields ? ['', '', '', ''] : []),
+                    '',
                     '',
                     '',
                     ...(showStatus ? [''] : []),
@@ -1140,6 +1227,10 @@ export default function ReportsPage() {
             status: assignment.status ?? 'Unknown',
             date: assignment.assigned_date ?? assignment.created_at ?? '',
             notes: assignment.assignment_notes ?? 'No notes',
+            accountabilityFormNumber: assignment.accountabilityForm?.formNumber ?? '',
+            accountabilityFormDate: assignment.accountabilityForm?.created_at ?? '',
+            condition: assignment.asset?.condition ?? '',
+            assetValue: assignment.asset?.asset_value ?? null,
           }))
         );
 
@@ -1944,6 +2035,39 @@ export default function ReportsPage() {
                       ))}
                     </SelectContent>
                   </Select>
+                </div>
+              </div>
+
+              <div className="grid gap-4 md:grid-cols-2">
+                <div className="space-y-2">
+                  <Label htmlFor="export-search-user">Search User</Label>
+                  <Input
+                    id="export-search-user"
+                    type="text"
+                    placeholder="Filter by user name..."
+                    value={exportFilters.searchUser}
+                    onChange={event =>
+                      setExportFilters(prev => ({
+                        ...prev,
+                        searchUser: event.target.value,
+                      }))
+                    }
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="export-search-asset">Search Asset</Label>
+                  <Input
+                    id="export-search-asset"
+                    type="text"
+                    placeholder="Filter by asset code or name..."
+                    value={exportFilters.searchAsset}
+                    onChange={event =>
+                      setExportFilters(prev => ({
+                        ...prev,
+                        searchAsset: event.target.value,
+                      }))
+                    }
+                  />
                 </div>
               </div>
 

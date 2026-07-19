@@ -76,6 +76,7 @@ function mapDtoToTaggingAsset(asset: AssetResponseDto): Asset {
       ? new Date(asset.depreciation_start_date)
       : null,
     company_id: asset.company_id || undefined,
+    company_logo: asset.company_logo_url || undefined,
     company: asset.company_name || '',
     building: asset.building || '',
     createdAt: new Date(asset.created_at),
@@ -114,7 +115,8 @@ export default function AssetsTagging() {
   const [buildersLoading, setBuildersLoading] = useState(true);
   const [selectedBuilders, setSelectedBuilders] = useState<Set<string>>(new Set());
   const [builderSearchTerm, setBuilderSearchTerm] = useState('');
-  const [modalTagAssets, setModalTagAssets] = useState<{ id: string; name: string }[]>([]);
+  interface TagAssetData { id: string; name: string; company_logo?: string; company_name?: string }
+  const [modalTagAssets, setModalTagAssets] = useState<TagAssetData[]>([]);
   const [pageIndex, setPageIndex] = useState(0);
   const [pageSize, setPageSize] = useState(10);
   const [meta, setMeta] = useState<{ page: number; limit: number; total: number; totalPages: number }>({
@@ -286,19 +288,21 @@ export default function AssetsTagging() {
     }
   };
 
-  const buildTagAssetsFromBuilders = (builderIds: Set<string>) => {
-    return [...builderIds]
-      .map(builderId => {
-        const builder = assetBuilders.find(b => b.builderID === builderId);
-        const parent =
-          builder?.items?.find((item: any) => item.is_parent) ?? builder?.items?.[0];
-        if (!parent?.asset_code) return null;
-        return {
-          id: parent.asset_code,
-          name: parent.asset_name || builder?.name || parent.asset_code,
-        };
-      })
-      .filter((item): item is { id: string; name: string } => item !== null);
+  const buildTagAssetsFromBuilders = (builderIds: Set<string>, assetsByCode: Map<string, TagAssetData>): TagAssetData[] => {
+    const result: TagAssetData[] = [];
+    for (const builderId of builderIds) {
+      const builder = assetBuilders.find(b => b.builderID === builderId);
+      const parent = builder?.items?.find((item: any) => item.is_parent) ?? builder?.items?.[0];
+      if (!parent?.asset_code) continue;
+      const fromAssets = assetsByCode.get(parent.asset_code);
+      result.push({
+        id: parent.asset_code,
+        name: parent.asset_name || builder?.name || parent.asset_code,
+        company_logo: fromAssets?.company_logo,
+        company_name: fromAssets?.company_name,
+      });
+    }
+    return result;
   };
 
   const handleGenerateTags = async () => {
@@ -307,7 +311,8 @@ export default function AssetsTagging() {
       return;
     }
 
-    let assetTagData: { id: string; name: string }[] = [];
+    let assetTagData: TagAssetData[] = [];
+    const assetsByCode = new Map<string, TagAssetData>();
 
     if (selectedAssets.size > 0) {
       // Re-fetch to ensure tags use current asset codes. Asset codes may have
@@ -347,11 +352,15 @@ export default function AssetsTagging() {
       assetTagData = transformedAssets
         .filter(asset => finalSelected.has(asset.id))
         .filter(asset => !groupedAssetIds.has(asset.id.trim()))
-        .map(asset => ({ id: asset.id, name: asset.name }));
+        .map(asset => {
+          const entry: TagAssetData = { id: asset.id, name: asset.name, company_logo: asset.company_logo, company_name: asset.company };
+          assetsByCode.set(asset.id, entry);
+          return entry;
+        });
     }
 
     const builtTagData =
-      selectedBuilders.size > 0 ? buildTagAssetsFromBuilders(selectedBuilders) : [];
+      selectedBuilders.size > 0 ? buildTagAssetsFromBuilders(selectedBuilders, assetsByCode) : [];
 
     const combinedTagData = [...assetTagData, ...builtTagData];
     if (combinedTagData.length === 0) {
@@ -775,7 +784,6 @@ export default function AssetsTagging() {
           isOpen={isTagModalOpen}
           onOpenChange={setIsTagModalOpen}
           selectedAssetsData={selectedAssetsData}
-          activeCompany={activeCompany}
           onPrint={handlePrint}
           columns={columns}
           onColumnsChange={handleColumnsChange}

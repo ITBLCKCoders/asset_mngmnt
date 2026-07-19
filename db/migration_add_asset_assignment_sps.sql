@@ -28,6 +28,8 @@ BEGIN
     a.name AS asset_name,
     a.category_id,
     a.type_id,
+    a.condition,
+    a.asset_value,
     u.first_name,
     u.last_name,
     u.email,

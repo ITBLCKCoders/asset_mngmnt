@@ -70,6 +70,7 @@ export interface Asset {
   assetID?: string; // Database ID for matching with builders
   name: string;
   company_id?: string;
+  company_logo?: string;
   image: string;
   description: string;
   category: string;

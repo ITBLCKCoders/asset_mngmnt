@@ -58,6 +58,8 @@ function mapAssignmentRow(
       name: row.asset_name,
       category_id: row.category_id,
       type_id: row.type_id,
+      condition: row.condition ?? null,
+      asset_value: row.asset_value ?? null,
       ...(includeScopeType && {
         scopeType: classifyDepartmentScopeByName(row.department_name),
       }),

@@ -1,7 +1,6 @@
 'use client';
 
 import { memo } from 'react';
-import { Company } from '@/pages/settings/settingsComponents/settingsTabs/generalTab/components/utils/companyTypes';
 import QRCode from 'react-qr-code';
 import { Barcode } from './Barcode';
 import { proxyCloudinaryUrl } from '@/utils/cloudinaryProxy';
@@ -10,8 +9,9 @@ interface TagPreviewCardProps {
   asset: {
     id: string;
     name: string;
+    company_logo?: string;
+    company_name?: string;
   };
-  activeCompany: Company | null;
   qrData: string;
   tagType: 'qr' | 'barcode' | 'both';
   barcodeFormat?: string;
@@ -22,23 +22,46 @@ interface TagPreviewCardProps {
   showAssetCode?: boolean;
 }
 
-function LogoSection({ activeCompany, showLogo, showName }: { activeCompany: Company | null; showLogo: boolean; showName: boolean }) {
-  if (!activeCompany || (!showLogo && !showName)) return null;
+function LogoSection({ asset, showLogo, showName }: { asset: { company_logo?: string; company_name?: string }; showLogo: boolean; showName: boolean }) {
+  if ((!showLogo || !asset.company_logo) && (!showName || !asset.company_name)) return null;
   return (
     <div className="flex flex-col items-center space-y-0.5">
-      {showLogo && activeCompany.logo_url && (
+      {showLogo && asset.company_logo && (
         <div className="p-1 bg-white rounded shadow-sm">
           <img
-            src={proxyCloudinaryUrl(activeCompany.logo_url)}
-            alt={`${activeCompany.name} logo`}
+            src={proxyCloudinaryUrl(asset.company_logo)}
+            alt={`${asset.company_name || ''} logo`}
             className="h-10 w-auto max-w-20 object-contain"
             onError={e => { (e.target as HTMLImageElement).style.display = 'none'; }}
           />
         </div>
       )}
-      {showName && (
+      {showName && asset.company_name && (
         <div className="text-[10px] font-bold text-black text-center uppercase tracking-wide leading-tight">
-          {activeCompany.name}
+          {asset.company_name}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function CompanySection({ asset, showLogo, showName }: { asset: { company_logo?: string; company_name?: string }; showLogo: boolean; showName: boolean }) {
+  if ((!showLogo || !asset.company_logo) && (!showName || !asset.company_name)) return null;
+  return (
+    <div className="flex flex-col items-center flex-shrink-0 space-y-1">
+      {showLogo && asset.company_logo && (
+        <div className="p-1 bg-white rounded shadow-sm">
+          <img
+            src={proxyCloudinaryUrl(asset.company_logo)}
+            alt={`${asset.company_name || ''} logo`}
+            className="h-10 w-auto max-w-20 object-contain"
+            onError={e => { (e.target as HTMLImageElement).style.display = 'none'; }}
+          />
+        </div>
+      )}
+      {showName && asset.company_name && (
+        <div className="text-[10px] font-bold text-black text-center max-w-20 uppercase tracking-wide leading-tight">
+          {asset.company_name}
         </div>
       )}
     </div>
@@ -65,7 +88,6 @@ function AssetInfo({ name, id, showName, showCode }: { name: string; id: string;
 
 const TagPreviewCard = memo(function TagPreviewCard({
   asset,
-  activeCompany,
   qrData,
   tagType,
   barcodeFormat = 'CODE128',
@@ -84,24 +106,8 @@ const TagPreviewCard = memo(function TagPreviewCard({
         {tagType === 'qr' && (
           <>
             <div className="flex items-center justify-center gap-3">
-              {activeCompany && (showCompanyLogo || showCompanyName) && (
-                <div className="flex flex-col items-center flex-shrink-0 space-y-1">
-                  {showCompanyLogo && activeCompany.logo_url && (
-                    <div className="p-1 bg-white rounded shadow-sm">
-                      <img
-                        src={proxyCloudinaryUrl(activeCompany.logo_url)}
-                        alt={`${activeCompany.name} logo`}
-                        className="h-10 w-auto max-w-20 object-contain"
-                        onError={e => { (e.target as HTMLImageElement).style.display = 'none'; }}
-                      />
-                    </div>
-                  )}
-                  {showCompanyName && (
-                    <div className="text-[10px] font-bold text-black text-center max-w-20 uppercase tracking-wide leading-tight">
-                      {activeCompany.name}
-                    </div>
-                  )}
-                </div>
+              {(showCompanyLogo || showCompanyName) && (asset.company_logo || asset.company_name) && (
+                <CompanySection asset={asset} showLogo={showCompanyLogo} showName={showCompanyName} />
               )}
               <div className="p-2 bg-white rounded-lg shadow-sm flex items-center justify-center">
                 <QRCode value={qrData} size={70} className="flex-shrink-0" />
@@ -113,7 +119,7 @@ const TagPreviewCard = memo(function TagPreviewCard({
 
         {tagType === 'barcode' && (
           <>
-            <LogoSection activeCompany={activeCompany} showLogo={showCompanyLogo} showName={showCompanyName} />
+            <LogoSection asset={asset} showLogo={showCompanyLogo} showName={showCompanyName} />
             <div className="flex justify-center w-full">
               <Barcode value={asset.id} width={barcodeWidth} format={barcodeFormat} />
             </div>
@@ -124,24 +130,8 @@ const TagPreviewCard = memo(function TagPreviewCard({
         {tagType === 'both' && (
           <>
             <div className="flex items-center justify-center gap-3">
-              {activeCompany && (showCompanyLogo || showCompanyName) && (
-                <div className="flex flex-col items-center flex-shrink-0 space-y-1">
-                  {showCompanyLogo && activeCompany.logo_url && (
-                    <div className="p-1 bg-white rounded shadow-sm">
-                      <img
-                        src={proxyCloudinaryUrl(activeCompany.logo_url)}
-                        alt={`${activeCompany.name} logo`}
-                        className="h-10 w-auto max-w-20 object-contain"
-                        onError={e => { (e.target as HTMLImageElement).style.display = 'none'; }}
-                      />
-                    </div>
-                  )}
-                  {showCompanyName && (
-                    <div className="text-[10px] font-bold text-black text-center max-w-20 uppercase tracking-wide leading-tight">
-                      {activeCompany.name}
-                    </div>
-                  )}
-                </div>
+              {(showCompanyLogo || showCompanyName) && (asset.company_logo || asset.company_name) && (
+                <CompanySection asset={asset} showLogo={showCompanyLogo} showName={showCompanyName} />
               )}
               <div className="p-1.5 bg-white rounded-lg shadow-sm flex items-center justify-center">
                 <QRCode value={qrData} size={60} className="flex-shrink-0" />

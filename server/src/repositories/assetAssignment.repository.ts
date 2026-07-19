@@ -709,6 +709,8 @@ SELECT
   a.name as asset_name,
   a.category_id,
   a.type_id,
+  a.condition,
+  a.asset_value,
   ac.department_id as category_department_id,
   u.first_name,
   u.last_name,
