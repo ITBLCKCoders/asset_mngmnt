@@ -1598,7 +1598,7 @@ export function AssetsPage() {
               <button
                 type="button"
                 onClick={() => { setIsExportOptionsOpen(false); handleExportClick('pdf'); }}
-                className="flex flex-col items-center gap-3 rounded-xl border border-gray-200 bg-white p-5 transition hover:border-red-300 hover:shadow-md cursor-pointer"
+                className="flex h-full flex-col items-center gap-3 rounded-xl border border-gray-200 bg-white p-5 transition hover:border-red-300 hover:shadow-md cursor-pointer"
               >
                 <Eye className="h-8 w-8 text-red-600" />
                 <span className="text-sm font-semibold text-gray-800">Export PDF</span>
@@ -1607,7 +1607,7 @@ export function AssetsPage() {
               <button
                 type="button"
                 onClick={() => { setIsExportOptionsOpen(false); handleExportClick('excel'); }}
-                className="flex flex-col items-center gap-3 rounded-xl border border-gray-200 bg-white p-5 transition hover:border-green-300 hover:shadow-md cursor-pointer"
+                className="flex h-full flex-col items-center gap-3 rounded-xl border border-gray-200 bg-white p-5 transition hover:border-green-300 hover:shadow-md cursor-pointer"
               >
                 <FileSpreadsheet className="h-8 w-8 text-green-600" />
                 <span className="text-sm font-semibold text-gray-800">Export Excel</span>
@@ -1616,7 +1616,7 @@ export function AssetsPage() {
               <button
                 type="button"
                 onClick={() => { setIsExportOptionsOpen(false); handleSummaryExportClick(showScopeTabs ? scope : null); }}
-                className="flex flex-col items-center gap-3 rounded-xl border border-gray-200 bg-white p-5 transition hover:border-blue-300 hover:shadow-md cursor-pointer"
+                className="flex h-full flex-col items-center gap-3 rounded-xl border border-gray-200 bg-white p-5 transition hover:border-blue-300 hover:shadow-md cursor-pointer"
               >
                 <FileText className="h-8 w-8 text-blue-600" />
                 <span className="text-sm font-semibold text-gray-800">Export Summary</span>

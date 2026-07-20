@@ -341,7 +341,7 @@ export const useAssetExport = () => {
               flattenedAssets.push({
                 ...matchingAsset,
                 isChild: true,
-                builderName: builder.builderName,
+                builderName: builder.name,
               } as Asset & { isChild?: boolean; builderName?: string });
               processedAssetIds.add(item.asset_code);
             } else {
@@ -354,7 +354,7 @@ export const useAssetExport = () => {
         const groupEndIndex = flattenedAssets.length - 1;
         if (groupStartIndex <= groupEndIndex) {
           builderGroups.push({
-            name: builder.builderName,
+            name: builder.name,
             startIndex: groupStartIndex,
             endIndex: groupEndIndex,
           });
@@ -370,9 +370,9 @@ export const useAssetExport = () => {
 
     const rows: { cells: string[]; isSeparator: boolean; isChild: boolean }[] = [];
 
-    builderGroups.forEach(group => {
+builderGroups.forEach(group => {
       rows.push({
-        cells: cols.map((_, idx) => (idx === 0 ? group.name : '')),
+        cells: cols.map((_, idx) => idx === 0 ? group.name : ''),
         isSeparator: true,
         isChild: false,
       });
@@ -479,7 +479,7 @@ export const useAssetExport = () => {
               flattenedAssets.push({ 
                 ...matchingAsset, 
                 isChild: true,
-                builderName: builder.builderName 
+                builderName: builder.name 
               } as Asset & { isChild?: boolean; builderName?: string });
               processedAssetIds.add(item.asset_code);
             } else {
@@ -494,7 +494,7 @@ export const useAssetExport = () => {
         const groupEndIndex = flattenedAssets.length - 1;
         if (groupStartIndex <= groupEndIndex) {
           builderGroups.push({
-            name: builder.builderName,
+            name: builder.name,
             startIndex: groupStartIndex,
             endIndex: groupEndIndex,
           });
@@ -513,10 +513,8 @@ export const useAssetExport = () => {
     const bodyRows: { cells: string[]; isSeparator: boolean; isChild: boolean }[] = [];
 
     builderGroups.forEach(group => {
-      // Add separator row with builder name
-      const separatorCells = selectedCols.map((_, idx) =>
-        idx === 0 ? group.name : ''
-      );
+      // Add separator row with builder name only in first cell (colSpan handles visual merge)
+      const separatorCells = selectedCols.map((_, idx) => idx === 0 ? group.name : '');
       bodyRows.push({ cells: separatorCells, isSeparator: true, isChild: false });
 
       // Add builder items
@@ -628,8 +626,12 @@ export const useAssetExport = () => {
           data.cell.styles.fillColor = headerFill;
           data.cell.styles.textColor = [255, 255, 255];
           data.cell.styles.fontStyle = 'bold';
-          data.cell.styles.fontSize = Math.max(8, 14 - selectedCols.length * 0.2);
+          data.cell.styles.fontSize = Math.max(6, 9 - selectedCols.length * 0.2);
           data.cell.styles.halign = 'center';
+          if (data.column.index !== 0) {
+            data.cell.styles.cellWidth = 0;
+            data.cell.styles.minCellWidth = 0;
+          }
         } else if (row.isChild) {
           data.cell.styles.fontStyle = 'italic';
         }
@@ -688,8 +690,9 @@ export const useAssetExport = () => {
   const exportToExcel = async (
     assets: Asset[],
     activeCompany: Company | null,
+    currentUser?: { name: string } | null,
     assetBuilders?: any[] | null,
-    filterLabel?: string
+filterLabel?: string
   ) => {
     const selectedCols = availableColumns.filter(col =>
       selectedColumns.has(col.key)
@@ -700,12 +703,81 @@ export const useAssetExport = () => {
     // Assets sheet — header row + data rows derived from selected columns.
     const assetsSheet = workbook.addWorksheet('Assets');
 
-    // Add filter label row at top if present
-    if (filterLabel) {
-      const filterRow = assetsSheet.insertRow(1, [filterLabel]);
-      filterRow.font = { italic: true, size: 10, color: { argb: 'FF666666' } };
-      assetsSheet.mergeCells(1, 1, 1, selectedCols.length || 5);
+    const lastCol = (selectedCols.length || 5) + 1; // 1-based column index for last data column
+    const logoEndCol = 3; // Logo spans columns A-C (1-3)
+
+    // Add company logo if available - place in columns A-C, rows 1-3
+    if (activeCompany?.logo_url) {
+      try {
+        const proxiedUrl = activeCompany.logo_url;
+        const resolvedLogoUrl = proxiedUrl.startsWith('/') && typeof window !== 'undefined'
+          ? `${window.location.origin}${proxiedUrl}`
+          : proxiedUrl;
+        const response = await fetch(resolvedLogoUrl);
+        if (response.ok) {
+          const blob = await response.blob();
+          const dataUrl = await new Promise<string>((resolve, reject) => {
+            const reader = new FileReader();
+            reader.onload = () => resolve(reader.result as string);
+            reader.onerror = reject;
+            reader.readAsDataURL(blob);
+          });
+
+          // Set column widths for A, B, C to make room for logo spanning 3 columns
+          assetsSheet.getColumn(1).width = 15; // Column A
+          assetsSheet.getColumn(2).width = 15; // Column B
+          assetsSheet.getColumn(3).width = 15; // Column C
+
+          // Add image to workbook and worksheet - place in columns A-C (0-2), rows 1-3 (0-2)
+          const imageId = workbook.addImage({
+            base64: dataUrl.split(',')[1],
+            extension: dataUrl.includes('jpeg') || dataUrl.includes('jpg') ? 'jpeg' : 'png',
+          });
+          assetsSheet.addImage(imageId, {
+            tl: { col: 0, row: 0 },
+            ext: { width: 360, height: 60 }, // width ~3 columns * 120px
+            editAs: 'oneCell',
+          });
+        }
+      } catch (error) {
+        console.debug('Company logo not found for Excel export, continuing without it');
+      }
     }
+
+    // Row 1: "Asset List Report" centered in the full table (columns A to lastCol)
+    const reportTitleRow = assetsSheet.addRow(['Asset List Report']);
+    reportTitleRow.font = { bold: true, size: 14, color: { argb: 'FF333333' } };
+    assetsSheet.mergeCells(1, 1, 1, lastCol);
+    reportTitleRow.alignment = { horizontal: 'center', vertical: 'middle' };
+
+    // Row 2: "Total Assets: X" centered in the full table
+    const totalAssetsRow = assetsSheet.addRow([`Total Assets: ${assets.length}`]);
+    totalAssetsRow.font = { size: 11, color: { argb: 'FF666666' } };
+    assetsSheet.mergeCells(2, 1, 2, lastCol);
+    totalAssetsRow.alignment = { horizontal: 'center', vertical: 'middle' };
+
+    // Row 3: Scope/Filter label if present
+    if (filterLabel) {
+      const filterRow = assetsSheet.addRow([filterLabel]);
+      filterRow.font = { italic: true, size: 10, color: { argb: 'FF666666' } };
+      assetsSheet.mergeCells(3, 1, 3, lastCol);
+      filterRow.alignment = { horizontal: 'center', vertical: 'middle' };
+    }
+
+    // Row 4: empty spacer
+    assetsSheet.addRow([]);
+
+    // Row 5: "Generated on: date time by user" at far right - last 3 columns only
+    const now = new Date();
+    const generatedBy = currentUser?.name || 'Unknown';
+    const genColStart = Math.max(1, lastCol - 2); // Last 3 columns
+    const generatedRow = assetsSheet.addRow([`Generated on: ${now.toLocaleDateString()} ${now.toLocaleTimeString()} by ${generatedBy}`]);
+    generatedRow.font = { size: 9, color: { argb: 'FF999999' }, italic: true };
+    assetsSheet.mergeCells(5, genColStart, 5, lastCol);
+    generatedRow.alignment = { horizontal: 'right', vertical: 'middle' };
+
+    // Row 6: empty spacer before header
+    assetsSheet.addRow([]);
 
     // Define column widths based on content type
     const columnWidths: Record<string, number> = {
@@ -745,7 +817,6 @@ export const useAssetExport = () => {
     };
 
     assetsSheet.columns = selectedCols.map(col => ({
-      header: col.label,
       key: col.key,
       width: columnWidths[col.key] || 20,
     }));
@@ -787,7 +858,7 @@ export const useAssetExport = () => {
               flattenedAssets.push({ 
                 ...matchingAsset, 
                 isChild: true,
-                builderName: builder.builderName 
+                builderName: builder.name 
               } as Asset & { isChild?: boolean; builderName?: string });
               processedAssetIds.add(item.asset_code);
             } else {
@@ -802,7 +873,7 @@ export const useAssetExport = () => {
         const groupEndIndex = flattenedAssets.length - 1;
         if (groupStartIndex <= groupEndIndex) {
           builderGroups.push({
-            name: builder.builderName,
+            name: builder.name,
             startIndex: groupStartIndex,
             endIndex: groupEndIndex,
           });
@@ -832,7 +903,7 @@ export const useAssetExport = () => {
     headerRow.alignment = { wrapText: true, vertical: 'top' };
 
     // Add data rows with builder grouping
-    let currentRowIndex = 2; // Header is row 1
+    let currentRowIndex = headerRow.number + 1; // Start after header row
     let currentGroupIndex = 0;
 
     builderGroups.forEach(group => {
@@ -844,11 +915,11 @@ export const useAssetExport = () => {
       assetsSheet.mergeCells(`A${currentRowIndex}:${String.fromCharCode(64 + selectedCols.length)}${currentRowIndex}`);
       const separatorCell = assetsSheet.getCell(`A${currentRowIndex}`);
       separatorCell.value = group.name;
-      separatorCell.font = { bold: true, size: 14 };
+      separatorCell.font = { bold: true, size: 14, color: { argb: 'FFFFFFFF' } };
       separatorCell.fill = {
         type: 'pattern',
         pattern: 'solid',
-        fgColor: { argb: 'FFD3D3D3' },
+        fgColor: { argb: headerArgb },
       };
       separatorCell.alignment = { horizontal: 'center', vertical: 'middle' };
       
@@ -969,7 +1040,7 @@ export const useAssetExport = () => {
     ])
   );
 
-  interface TypeSummary {
+interface TypeSummary {
     units: number;
     working: number;
     defective: number;
@@ -980,6 +1051,22 @@ export const useAssetExport = () => {
     Damaged: number;
   }
 
+  // Use separate interface for objects with dynamic condition properties
+  interface TypeSummaryDynamic extends TypeSummary {
+    [key: string]: number | string;
+  }
+
+  interface TypeSummaryWithMeta extends TypeSummaryDynamic {
+    category: string;
+    type: string;
+  }
+
+  interface CategoryTypeSummary {
+    category: string;
+    types: TypeSummaryWithMeta[];
+    subtotal: TypeSummaryDynamic;
+  }
+
   interface EmployeeSummary {
     name: string;
     department: string;
@@ -988,7 +1075,7 @@ export const useAssetExport = () => {
   }
 
   function computeSummaryData(assets: Asset[]) {
-    const typeMap: Record<string, TypeSummary> = {};
+    const typeMap: Record<string, TypeSummaryWithMeta> = {};
     const empMap: Record<string, EmployeeSummary> = {};
     const deptMap: Record<string, { department: string; company: string; count: number }> = {};
 
@@ -997,15 +1084,19 @@ export const useAssetExport = () => {
     ]);
 
     assets.forEach(asset => {
-      // Device Type summary
+      // Device Type summary (grouped by category)
       const type = asset.type || 'Uncategorized';
-      if (!typeMap[type]) {
-        typeMap[type] = {
+      const category = asset.category || 'Uncategorized';
+      const typeKey = `${category}|${type}`;
+      if (!typeMap[typeKey]) {
+        typeMap[typeKey] = {
+          category,
+          type,
           units: 0, working: 0, defective: 0,
           Excellent: 0, Good: 0, Fair: 0, Poor: 0, Damaged: 0,
         };
       }
-      const t = typeMap[type];
+      const t = typeMap[typeKey];
       t.units++;
       if (workingStatuses.has(asset.status)) {
         t.working++;
@@ -1036,7 +1127,41 @@ export const useAssetExport = () => {
       }
     });
 
-    const typeRows = Object.entries(typeMap).map(([type, d]) => ({ type, ...d }));
+    // Group types by category and compute subtotals
+    const categoryMap: Record<string, CategoryTypeSummary> = {};
+    Object.values(typeMap).forEach(t => {
+      const cat = t.category;
+      if (!categoryMap[cat]) {
+        categoryMap[cat] = {
+          category: cat,
+          types: [],
+          subtotal: {
+            units: 0, working: 0, defective: 0,
+            Excellent: 0, Good: 0, Fair: 0, Poor: 0, Damaged: 0,
+          },
+        };
+      }
+      categoryMap[cat].types.push(t);
+      // Add to subtotal
+      const sub = categoryMap[cat].subtotal;
+      sub.units += t.units;
+      sub.working += t.working;
+      sub.defective += t.defective;
+      sub.Excellent += t.Excellent;
+      sub.Good += t.Good;
+      sub.Fair += t.Fair;
+      sub.Poor += t.Poor;
+      sub.Damaged += t.Damaged;
+    });
+
+    // Sort categories and types within each category
+    const sortedCategories = Object.values(categoryMap).sort((a, b) => a.category.localeCompare(b.category));
+    sortedCategories.forEach(cat => {
+      cat.types.sort((a, b) => a.type.localeCompare(b.type));
+    });
+
+    // Flatten for backward compatibility (if needed elsewhere)
+    const typeRows = Object.values(typeMap).map(t => ({ type: t.type, category: t.category, units: t.units, working: t.working, defective: t.defective, Excellent: t.Excellent, Good: t.Good, Fair: t.Fair, Poor: t.Poor, Damaged: t.Damaged }));
     const empRows = Object.values(empMap).sort((a, b) => b.count - a.count);
     const deptRows = Object.values(deptMap).sort((a, b) => b.count - a.count);
 
@@ -1049,10 +1174,10 @@ export const useAssetExport = () => {
     });
     const empByCompany = Object.entries(grouped).sort(([a], [b]) => a.localeCompare(b));
 
-    return { typeRows, empRows, deptRows, empByCompany };
+    return { typeRows, categoryRows: sortedCategories, empRows, deptRows, empByCompany };
   }
 
-  const exportSummaryToPDF = async (
+const exportSummaryToPDF = async (
     assets: Asset[],
     activeCompany: Company | null,
     currentUser?: { name: string } | null,
@@ -1060,7 +1185,7 @@ export const useAssetExport = () => {
     filterLabel?: string,
     assetBuilders?: any[] | null
   ) => {
-    const { typeRows, empByCompany, deptRows } = computeSummaryData(assets);
+    const { categoryRows, empByCompany, deptRows } = computeSummaryData(assets);
 
     const doc = new jsPDF('l', 'mm', [330, 216]);
     const accentColor = getCompanyAccentColor(activeCompany?.name);
@@ -1094,30 +1219,41 @@ export const useAssetExport = () => {
 
     const tableY = infoY + 4;
 
-    // ── Table 1: Device Type Summary (left) ──
+    // ── Table 1: Device Type Summary (left) - grouped by Category with subtotals and grand total ──
     const conditionsToInclude = summaryIncludeCondition
       ? SUMMARY_CONDITIONS.filter(c => summarySelectedConditions.includes(c))
       : [];
     const typeColumns = ['Device Type', '# Units', 'Working', 'Defective', ...conditionsToInclude];
-    const typeData = typeRows.map(r => {
-      const row: (string | number)[] = [r.type, r.units, r.working, r.defective];
-      conditionsToInclude.forEach(c => row.push((r as any)[c]));
-      return row;
+    const typeData: (string | number)[][] = [];
+
+    // Build rows grouped by category with subtotals
+    categoryRows.forEach(cat => {
+      // Category header row
+      typeData.push([cat.category, '', '', '', ...conditionsToInclude.map(() => '')]);
+      // Type rows
+      cat.types.forEach(t => {
+        const row: (string | number)[] = [t.type, t.units, t.working, t.defective];
+        conditionsToInclude.forEach(c => row.push((t as any)[c]));
+        typeData.push(row);
+      });
+      // Category subtotal row
+      const sub = cat.subtotal;
+      const subRow: (string | number)[] = [`${cat.category} Total`, sub.units, sub.working, sub.defective];
+      conditionsToInclude.forEach(c => subRow.push(sub[c]));
+      typeData.push(subRow);
     });
 
-    // Compute type totals (dynamic based on selected conditions)
-    const typeTotalsInit: Record<string, number> = { units: 0, working: 0, defective: 0 };
-    conditionsToInclude.forEach(c => { typeTotalsInit[c] = 0; });
-    const typeTotals = typeRows.reduce((acc, r) => {
-      acc.units += r.units;
-      acc.working += r.working;
-      acc.defective += r.defective;
-      conditionsToInclude.forEach(c => { acc[c] += (r as any)[c]; });
+    // Grand total row
+    const grandTotals = categoryRows.reduce((acc: TypeSummaryDynamic, cat) => {
+      acc.units += cat.subtotal.units;
+      acc.working += cat.subtotal.working;
+      acc.defective += cat.subtotal.defective;
+      conditionsToInclude.forEach(c => { acc[c] = ((acc[c] as number) ?? 0) + ((cat.subtotal[c] as number) ?? 0); });
       return acc;
-    }, typeTotalsInit);
-    const typeTotalRow: (string | number)[] = ['Grand Total', typeTotals.units, typeTotals.working, typeTotals.defective];
-    conditionsToInclude.forEach(c => typeTotalRow.push(typeTotals[c]));
-    typeData.push(typeTotalRow);
+    }, { units: 0, working: 0, defective: 0, Excellent: 0, Good: 0, Fair: 0, Poor: 0, Damaged: 0, ...Object.fromEntries(conditionsToInclude.map(c => [c, 0])) } as TypeSummaryDynamic);
+    const grandTotalRow: (string | number)[] = ['Grand Total', grandTotals.units, grandTotals.working, grandTotals.defective];
+    conditionsToInclude.forEach(c => grandTotalRow.push(grandTotals[c] ?? 0));
+    typeData.push(grandTotalRow);
 
     const typeColStyles: Record<number, { cellWidth: number }> = {
       0: { cellWidth: 30 },
@@ -1140,9 +1276,23 @@ export const useAssetExport = () => {
       headStyles: { fillColor: headerFill, textColor: [255, 255, 255], fontSize: 7, fontStyle: 'bold' },
       columnStyles: typeColStyles,
       didParseCell: data => {
-        if (data.row.index === typeData.length - 1) {
+        const row = typeData[data.row.index];
+        if (!row) return;
+        const isCategoryHeader = row[1] === '' && row[2] === '' && row[3] === '';
+        const isSubtotal = typeof row[0] === 'string' && row[0].endsWith(' Total') && row[0] !== 'Grand Total';
+        const isGrandTotal = row[0] === 'Grand Total';
+
+        if (isCategoryHeader) {
+          data.cell.styles.fillColor = headerFill as any;
+          data.cell.styles.textColor = [255, 255, 255];
           data.cell.styles.fontStyle = 'bold';
-          data.cell.styles.fillColor = headerFill;
+          data.cell.styles.fontSize = 7;
+        } else if (isSubtotal) {
+          data.cell.styles.fontStyle = 'bold';
+          data.cell.styles.fillColor = [240, 240, 240];
+        } else if (isGrandTotal) {
+          data.cell.styles.fontStyle = 'bold';
+          data.cell.styles.fillColor = headerFill as any;
           data.cell.styles.textColor = [255, 255, 255];
         }
       },
@@ -1305,7 +1455,12 @@ export const useAssetExport = () => {
           data.cell.styles.fillColor = headerFill;
           data.cell.styles.textColor = [255, 255, 255];
           data.cell.styles.fontStyle = 'bold';
+          data.cell.styles.fontSize = listFontSize;
           data.cell.styles.halign = 'center';
+          if (data.column.index !== 0) {
+            data.cell.styles.cellWidth = 0;
+            data.cell.styles.minCellWidth = 0;
+          }
         } else if (row?.isChild) {
           data.cell.styles.fontStyle = 'italic';
         }
@@ -1349,14 +1504,14 @@ export const useAssetExport = () => {
     setIsSummaryExportDialogOpen(false);
   };
 
-  const exportSummaryToExcel = async (
+const exportSummaryToExcel = async (
     assets: Asset[],
     activeCompany: Company | null,
     listCols?: { key: string; label: string }[],
     filterLabel?: string,
     assetBuilders?: any[] | null
   ) => {
-    const { typeRows, empByCompany, deptRows } = computeSummaryData(assets);
+    const { categoryRows, empByCompany, deptRows } = computeSummaryData(assets);
 
     const workbook = new ExcelJS.Workbook();
     const ws = workbook.addWorksheet('Summary');
@@ -1387,23 +1542,58 @@ export const useAssetExport = () => {
       fgColor: { argb: 'FF333333' },
     };
 
-    typeRows.forEach(r => {
-      const row: (string | number)[] = [r.type, r.units, r.working, r.defective];
-      conditionLabels.forEach(c => row.push((r as any)[c]));
-      ws.addRow(row);
+    // Track row numbers for styling
+    let currentRowNum = typeHeaderRow.number + 1;
+
+    // Build rows grouped by category with subtotals
+    const categorySubtotals: Array<{ category: string; subtotal: TypeSummaryDynamic }> = [];
+
+    categoryRows.forEach(cat => {
+      // Category header row
+      const catHeaderRow = ws.addRow([cat.category, '', '', '', ...conditionLabels.map(() => '')]);
+      catHeaderRow.font = { bold: true, color: { argb: 'FFFFFFFF' } };
+      catHeaderRow.fill = {
+        type: 'pattern',
+        pattern: 'solid',
+        fgColor: { argb: 'FF333333' },
+      };
+      currentRowNum++;
+
+      // Type rows
+      cat.types.forEach(t => {
+        const row: (string | number)[] = [t.type, t.units, t.working, t.defective];
+        conditionLabels.forEach(c => row.push((t as any)[c]));
+        ws.addRow(row);
+        currentRowNum++;
+      });
+
+      // Category subtotal row
+      const sub: TypeSummaryDynamic = cat.subtotal;
+      const subRow: (string | number)[] = [`${cat.category} Total`, sub.units, sub.working, sub.defective];
+      conditionLabels.forEach(c => subRow.push(sub[c]));
+      const subRowExcel = ws.addRow(subRow);
+      subRowExcel.font = { bold: true };
+      subRowExcel.fill = {
+        type: 'pattern',
+        pattern: 'solid',
+        fgColor: { argb: 'FFF0F0F0' },
+      };
+      currentRowNum++;
+
+categorySubtotals.push({ category: cat.category, subtotal: sub } as { category: string; subtotal: TypeSummaryDynamic });
     });
-    // Total row (dynamic based on selected conditions)
-    const typeETotalsInit: Record<string, number> = { units: 0, working: 0, defective: 0 };
-    conditionLabels.forEach(c => { typeETotalsInit[c] = 0; });
-    const typeETotals = typeRows.reduce((acc, r) => {
-      acc.units += r.units;
-      acc.working += r.working;
-      acc.defective += r.defective;
-      conditionLabels.forEach(c => { acc[c] += (r as any)[c]; });
+
+// Grand total row
+    const grandTotals = categorySubtotals.reduce((acc: TypeSummaryDynamic, cat) => {
+      acc.units += cat.subtotal.units;
+      acc.working += cat.subtotal.working;
+      acc.defective += cat.subtotal.defective;
+      conditionLabels.forEach(c => { acc[c] = ((acc[c] as number) ?? 0) + ((cat.subtotal[c] as number) ?? 0); });
       return acc;
-    }, typeETotalsInit);
-    const eTotalRow: (string | number)[] = ['Grand Total', typeETotals.units, typeETotals.working, typeETotals.defective];
-    conditionLabels.forEach(c => eTotalRow.push(typeETotals[c]));
+    }, { units: 0, working: 0, defective: 0, Excellent: 0, Good: 0, Fair: 0, Poor: 0, Damaged: 0, ...Object.fromEntries(conditionLabels.map(c => [c, 0])) } as TypeSummaryDynamic);
+
+    const eTotalRow: (string | number)[] = ['Grand Total', grandTotals.units, grandTotals.working, grandTotals.defective];
+    conditionLabels.forEach(c => eTotalRow.push(grandTotals[c] ?? 0));
     const totalRowExcel = ws.addRow(eTotalRow);
     totalRowExcel.font = { bold: true, color: { argb: 'FFFFFFFF' } };
     totalRowExcel.fill = {
@@ -1543,11 +1733,11 @@ export const useAssetExport = () => {
         ws.mergeCells(dataRow.number, 1, dataRow.number, summaryAssetColumns.length);
         dataRow.height = 25;
         const separatorCell = dataRow.getCell(1);
-        separatorCell.font = { bold: true, size: 14 };
+        separatorCell.font = { bold: true, size: 14, color: { argb: 'FFFFFFFF' } };
         separatorCell.fill = {
           type: 'pattern',
           pattern: 'solid',
-          fgColor: { argb: 'FFD3D3D3' },
+          fgColor: { argb: headerArgb },
         };
         separatorCell.alignment = { horizontal: 'center', vertical: 'middle' };
       } else {
@@ -1998,10 +2188,11 @@ export const useAssetExport = () => {
       if (exportType === 'pdf') {
         await exportToPDF(allAssets, activeCompany, currentUser, assetBuilders, filterLabel);
       } else if (exportType === 'excel') {
-        await exportToExcel(allAssets, activeCompany, assetBuilders, filterLabel);
+        await exportToExcel(allAssets, activeCompany, currentUser, assetBuilders, filterLabel);
       }
     } catch (err) {
-      toast.error('Failed to fetch assets for export');
+      console.error('Export failed:', err);
+      toast.error('Failed to export: ' + (err instanceof Error ? err.message : String(err)));
     }
   };
 
