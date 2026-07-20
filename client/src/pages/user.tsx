@@ -143,7 +143,7 @@ function UserPermissions() {
   const stats = React.useMemo(() => {
     const total = companyUsers.length;
     const admin = companyUsers.filter(
-      u => u.role?.name === 'Admin' || u.role?.name === 'Super Admin'
+      u => u.role?.name === 'Admin' || u.role?.name === 'Global Admin'
     ).length;
     const activeToday = companyUsers.filter(
       u => isToday(u.last_login) || isToday(u.updated_at)
@@ -173,8 +173,8 @@ function UserPermissions() {
         // Determine companyId based on user role
         let companyId: string | undefined;
         const userRole = currentUser?.role?.name?.toLowerCase();
-        if (userRole === 'super admin' || userRole === 'admin') {
-          // Super Admin and Admin use active company from CompanyContext
+        if (userRole === 'global admin' || userRole === 'admin') {
+          // Global Admin and Admin use active company from CompanyContext
           companyId = activeCompany?.id || undefined;
         } else {
           // IT asset and Admin asset users use their assigned company
@@ -710,7 +710,7 @@ function UserPermissions() {
                                                 className={cn(
                                                   'h-2 w-2 rounded-full',
                                                   role.name === 'Admin' ||
-                                                    role.name === 'Super Admin'
+                                                    role.name === 'Global Admin'
                                                     ? 'bg-red-600'
                                                     : 'bg-blue-500'
                                                 )}

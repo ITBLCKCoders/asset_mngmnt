@@ -255,7 +255,7 @@ export function AddAssetModal({
   }, [suppliers, categoriesForStep1]);
 
   const canAddLocation = useMemo(() => {
-    if (user?.role?.name === 'Super Admin' || user?.role?.name === 'Admin')
+    if (user?.role?.name === 'Global Admin' || user?.role?.name === 'Admin')
       return true;
     if (
       roleCustodian &&
@@ -322,7 +322,7 @@ export function AddAssetModal({
   const fetchActiveCompany = async () => {
     try {
       const isSuperAdminOrAdmin =
-        user?.role?.name === 'Super Admin' || user?.role?.name === 'Admin';
+        user?.role?.name === 'Global Admin' || user?.role?.name === 'Admin';
       const endpoint = isSuperAdminOrAdmin ? '/companies/active' : '/companies/my';
       const data = await api.get(endpoint);
       setActiveCompany(data?.data?.[0] || null);

@@ -2699,7 +2699,7 @@ export async function getPendingApprovalsHandler(
 
     let pendingForms: any[];
     if (isSuperAdmin || departmentIds === null) {
-      // Super Admin / full-scope: show all forms in the company (no department filter)
+      // Global Admin / full-scope: show all forms in the company (no department filter)
       pendingForms = await fetchPendingDeptHeadApprovalFormRowsByCompany(companyId);
     } else {
       const approverDepartmentId = await getUserDepartmentId(userId);

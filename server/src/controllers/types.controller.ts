@@ -50,7 +50,7 @@ export const getAllTypes = async (req: AuthRequest, res: Response) => {
       [req.user?.userID]
     );
     const roleName = String(userRows[0]?.[0]?.role_name ?? '').trim().toLowerCase();
-    if (roleName === 'super admin' || roleName === 'admin') {
+    if (roleName === 'global admin' || roleName === 'admin') {
       const [rows] = await pool.query<any[][]>(
         `SELECT at.typeID, at.name, at.category_id, at.prefix, at.company_id,
                 at.created_at, at.created_by, at.updated_at, at.updated_by,

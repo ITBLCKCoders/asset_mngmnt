@@ -67,7 +67,7 @@ export async function createAssetBuilderHandler(
       }
     }
 
-    // Get company context: Super Admin uses the active company (switched via UI),
+    // Get company context: Global Admin uses the active company (switched via UI),
     // other users use their fixed company_id from the users table.
     const [companyRows] = (await pool.execute(
       `SELECT u.company_id, r.name as role_name
@@ -78,7 +78,7 @@ export async function createAssetBuilderHandler(
     )) as any[];
 
     const isSuperAdmin =
-      String(companyRows?.[0]?.role_name ?? '').trim().toLowerCase() === 'super admin';
+      String(companyRows?.[0]?.role_name ?? '').trim().toLowerCase() === 'global admin';
 
     let companyId = companyRows?.[0]?.company_id;
 
@@ -215,7 +215,7 @@ export async function getAssetBuildersHandler(req: AuthRequest, res: Response) {
 
     let departmentIds = scopeDeptIds;
 
-    // For Super Admin, Admin, and overallManager: apply scope override if provided
+    // For Global Admin, Admin, and overallManager: apply scope override if provided
     if (scopeOverride) {
       const [userRows] = (await pool.execute(
         `SELECT r.manager_role, r.name as role_name FROM users u
@@ -306,7 +306,7 @@ export async function getAssetBuildersHandler(req: AuthRequest, res: Response) {
     // Scoped roles (IT / Admin asset managers): keep only builders whose component
     // assets all belong to allowed departments. Must run after items are loaded —
     // sp_get_asset_builders does not include items, so filtering earlier always
-    // saw empty items and dropped every builder for non–Super Admin users.
+    // saw empty items and dropped every builder for non–Global Admin users.
     const deptByAssetId = new Map<string, string | null>();
     if (departmentIds && departmentIds.length === 0) {
       builderRows = [];

@@ -160,7 +160,7 @@ export default function AssetsAssignment() {
   const [tabLoading, setTabLoading] = useState(false);
   const displayLoading = loading;
 
-  const isSuperAdmin = currentUser?.role?.name?.toLowerCase() === 'super admin';
+  const isSuperAdmin = currentUser?.role?.name?.toLowerCase() === 'global admin';
   const isAdmin = currentUser?.role?.name?.toLowerCase() === 'admin';
   const showScopeTabs = isSuperAdmin || isAdmin;
   const effectiveCompanyId = isSuperAdmin || isAdmin
@@ -173,8 +173,8 @@ export default function AssetsAssignment() {
       // Determine companyId based on user role
       let companyId: string | undefined;
       const userRole = currentUser?.role?.name?.toLowerCase();
-      if (userRole === 'super admin' || userRole === 'admin') {
-        // Super Admin and Admin use active company from CompanyContext
+      if (userRole === 'global admin' || userRole === 'admin') {
+        // Global Admin and Admin use active company from CompanyContext
         companyId = activeCompany?.id || undefined;
       } else {
         // IT asset and Admin asset users use their assigned company
@@ -217,7 +217,7 @@ export default function AssetsAssignment() {
     try {
       let companyId: string | undefined;
       const userRole = currentUser?.role?.name?.toLowerCase();
-      if (userRole === 'super admin' || userRole === 'admin') {
+      if (userRole === 'global admin' || userRole === 'admin') {
         companyId = activeCompany?.id || undefined;
       } else {
         companyId = currentUser?.company_id || undefined;
@@ -235,7 +235,7 @@ export default function AssetsAssignment() {
     try {
       let companyId: string | undefined;
       const userRole = currentUser?.role?.name?.toLowerCase();
-      if (userRole === 'super admin' || userRole === 'admin') {
+      if (userRole === 'global admin' || userRole === 'admin') {
         companyId = activeCompany?.id || undefined;
       } else {
         companyId = currentUser?.company_id || undefined;
@@ -272,7 +272,7 @@ export default function AssetsAssignment() {
     try {
       let companyId: string | undefined;
       const userRole = currentUser?.role?.name?.toLowerCase();
-      if (userRole === 'super admin' || userRole === 'admin') {
+      if (userRole === 'global admin' || userRole === 'admin') {
         companyId = activeCompany?.id || undefined;
       } else {
         companyId = currentUser?.company_id || undefined;

@@ -51,7 +51,7 @@ export const getAllCategories = async (req: AuthRequest, res: Response) => {
       return res.json(rows[0] ?? []);
     }
 
-    // No scoped company — for Super Admin/Admin, return all categories
+    // No scoped company — for Global Admin/Admin, return all categories
     const [userRows] = await pool.query<any[][]>(
       `SELECT r.name as role_name FROM users u
        LEFT JOIN asset_mngmnt_roles r ON u.role_id = r.roleID AND r.deleted_at IS NULL
@@ -59,7 +59,7 @@ export const getAllCategories = async (req: AuthRequest, res: Response) => {
       [req.user?.userID]
     );
     const roleName = String(userRows[0]?.[0]?.role_name ?? '').trim().toLowerCase();
-    if (roleName === 'super admin' || roleName === 'admin') {
+    if (roleName === 'global admin' || roleName === 'admin') {
       const [rows] = await pool.query<any[][]>(
         `SELECT ac.categoryID, ac.name, ac.prefix, ac.gl_code, ac.department_id, ac.company_id,
                 ac.created_at, ac.created_by, ac.updated_at, ac.updated_by,

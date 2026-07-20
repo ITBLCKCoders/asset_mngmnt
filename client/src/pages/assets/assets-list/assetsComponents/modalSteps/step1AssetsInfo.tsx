@@ -72,7 +72,7 @@ export function Step1AssetInfo({
   const { user } = useCurrentUser();
   const { roleCustodian } = useUserPermissions();
   const canAdd =
-    user?.role?.name === 'Super Admin' ||
+    user?.role?.name === 'Global Admin' ||
     user?.role?.name === 'Admin' ||
     (!!roleCustodian &&
       (roleCustodian.assetType === 'it' ||

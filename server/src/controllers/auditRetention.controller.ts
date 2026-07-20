@@ -170,5 +170,5 @@ async function checkSuperAdmin(userId: string): Promise<boolean> {
      WHERE u.userID = ?`,
     [userId]
   );
-  return rows[0]?.role_name === 'Super Admin';
+  return rows[0]?.role_name === 'Global Admin';
 }

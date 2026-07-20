@@ -88,7 +88,7 @@ describe('assetBuilders.controller', () => {
       expect(res._json).toEqual({ builders: [] });
     });
 
-    it('handles scope override for super admin', async () => {
+    it('handles scope override for global admin', async () => {
       req.query.scope = 'it';
       getAssetScope.mockResolvedValue({ companyId: 10, departmentIds: null, isSuperAdmin: true });
       getDepartmentIdsForScope.mockResolvedValue([1, 2, 3]);

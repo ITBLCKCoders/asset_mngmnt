@@ -131,7 +131,7 @@ SELECT arf.formID, arf.form_number, arf.user_id, arf.department_id, arf.location
  WHERE arf.deleted_at IS NULL AND (arf.signed_at IS NOT NULL) AND arf.dept_head_signed_at IS NULL
    AND arf.department_id <=> ? AND d.company_id = ?`;
 
-/** Same as FULL but without department filter — for Super Admin / full-scope users */
+/** Same as FULL but without department filter — for Global Admin / full-scope users */
 export const PENDING_DH_APPROVAL_FORMS_SQL_FULL_NO_DEPT = `
 SELECT arf.formID, arf.form_number, arf.user_id, arf.department_id, arf.location_id, arf.location_room_id, arf.created_by, arf.created_at, arf.updated_at, arf.deleted_at,
   arf.signed_at, arf.signed_by, arf.signed_digital_signature,

@@ -100,7 +100,7 @@ describe('dashboard.service', () => {
       );
     });
 
-    it('should call getDepartmentIdsForScope when super admin with scope override', async () => {
+    it('should call getDepartmentIdsForScope when global admin with scope override', async () => {
       (getAssetScope as jest.Mock).mockResolvedValue({
         companyId: 'company-1',
         departmentIds: null,

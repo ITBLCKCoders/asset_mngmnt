@@ -91,14 +91,14 @@ describe('auditRetention.controller', () => {
   });
 
   describe('getSystemDefaultsHandler', () => {
-    it('returns system defaults for super admin', async () => {
-      mockPool.pool.execute.mockResolvedValue([[{ role_name: 'Super Admin' }]]);
+    it('returns system defaults for global admin', async () => {
+      mockPool.pool.execute.mockResolvedValue([[{ role_name: 'Global Admin' }]]);
       AuditRetentionService.getSystemDefaults.mockResolvedValue({ default_months: 24, minimum_months: 12 });
       await auditRetentionController.getSystemDefaultsHandler(req, res);
       expect(res._json).toEqual({ success: true, data: { default_months: 24, minimum_months: 12 } });
     });
 
-    it('returns 403 for non-super-admin', async () => {
+    it('returns 403 for non-global-admin', async () => {
       mockPool.pool.execute.mockResolvedValue([[{ role_name: 'User' }]]);
       await auditRetentionController.getSystemDefaultsHandler(req, res);
       expect(res._status).toBe(403);
@@ -107,14 +107,14 @@ describe('auditRetention.controller', () => {
 
   describe('updateSystemDefaultsHandler', () => {
     it('updates system defaults successfully', async () => {
-      mockPool.pool.execute.mockResolvedValue([[{ role_name: 'Super Admin' }]]);
+      mockPool.pool.execute.mockResolvedValue([[{ role_name: 'Global Admin' }]]);
       req.body = { default_months: 36, minimum_months: 12 };
       await auditRetentionController.updateSystemDefaultsHandler(req, res);
       expect(res._json).toEqual({ success: true, data: { success: true } });
     });
 
     it('validates month ranges', async () => {
-      mockPool.pool.execute.mockResolvedValue([[{ role_name: 'Super Admin' }]]);
+      mockPool.pool.execute.mockResolvedValue([[{ role_name: 'Global Admin' }]]);
       req.body = { default_months: 5, minimum_months: 12 };
       await auditRetentionController.updateSystemDefaultsHandler(req, res);
       expect(res._status).toBe(400);

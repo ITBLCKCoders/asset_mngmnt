@@ -69,13 +69,13 @@ async function userIsAdminOrSuperAdmin(
   const roleName = String(userRows[0]?.role_name ?? '')
     .trim()
     .toLowerCase();
-  return roleName === 'super admin' || roleName === 'admin';
+  return roleName === 'global admin' || roleName === 'admin';
 }
 
 /**
  * Resolves a company context for an authenticated user.
  *
- * Super Admin and Admin use the global active company (header company switch)
+ * Global Admin and Admin use the global active company (header company switch)
  * so categories, types, and settings match the asset list for the selected company.
  *
  * Other users prefer their assigned company, then fall back to the global active company.

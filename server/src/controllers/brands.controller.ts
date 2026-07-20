@@ -50,7 +50,7 @@ export const getAllBrands = async (req: AuthRequest, res: Response) => {
       [req.user?.userID]
     );
     const roleName = String(userRows[0]?.[0]?.role_name ?? '').trim().toLowerCase();
-    if (roleName === 'super admin' || roleName === 'admin') {
+    if (roleName === 'global admin' || roleName === 'admin') {
       const [rows] = await pool.query<any[][]>(
         `SELECT ab.brandID, ab.name, ab.type_id, ab.prefix, ab.company_id,
                 ab.created_at, ab.created_by, ab.updated_at, ab.updated_by,

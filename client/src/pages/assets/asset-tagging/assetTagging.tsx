@@ -103,7 +103,7 @@ export default function AssetsTagging() {
   const [selectedBuilderForView, setSelectedBuilderForView] =
     useState<AssetBuilderRecord | null>(null);
   const [isBuilderViewModalOpen, setIsBuilderViewModalOpen] = useState(false);
-  const isSuperAdmin = currentUser?.role?.name?.toLowerCase() === 'super admin';
+  const isSuperAdmin = currentUser?.role?.name?.toLowerCase() === 'global admin';
   const isAdmin = currentUser?.role?.name?.toLowerCase() === 'admin';
   const isOverallManager = roleCustodian?.managerRole === 'overallManager';
   const showScopeTabs = isSuperAdmin || isAdmin || isOverallManager;
@@ -214,7 +214,7 @@ export default function AssetsTagging() {
       // Determine companyId based on user role
       let companyId: string | undefined;
       const userRole = currentUser?.role?.name?.toLowerCase();
-      if (userRole === 'super admin' || userRole === 'admin') {
+      if (userRole === 'global admin' || userRole === 'admin') {
         companyId = activeCompany?.id || undefined;
       } else {
         companyId = currentUser?.company_id || undefined;

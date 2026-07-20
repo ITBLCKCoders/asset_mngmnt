@@ -118,7 +118,7 @@ export function EditAssetModal({
   const { activeCompany: contextActiveCompany } = useCompanyContext();
   const activeCompany = useMemo(() => {
     const isSuperAdminOrAdmin =
-      user?.role?.name === 'Super Admin' || user?.role?.name === 'Admin';
+      user?.role?.name === 'Global Admin' || user?.role?.name === 'Admin';
     if (isSuperAdminOrAdmin) return contextActiveCompany;
     if (user?.company_id) return { id: user.company_id, name: user.company || '' };
     return contextActiveCompany;
@@ -253,7 +253,7 @@ export function EditAssetModal({
   }, [suppliers, categoriesForStep1]);
 
   const canAddLocation = useMemo(() => {
-    if (user?.role?.name === 'Super Admin' || user?.role?.name === 'Admin')
+    if (user?.role?.name === 'Global Admin' || user?.role?.name === 'Admin')
       return true;
     if (
       roleCustodian &&

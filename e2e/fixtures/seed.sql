@@ -8,14 +8,14 @@ VALUES ('10000000-0000-0000-0000-000000000001', 'E2E Test Corp', 'e2e@test.com',
 -- 2. Roles
 INSERT INTO `asset_mngmnt_roles` (`roleID`, `name`, `description`, `asset_type`, `manager_role`, `access_add_edit`, `access_assignment`, `access_return`)
 VALUES
-('30000000-0000-0000-0000-000000000001', 'Super Admin', 'E2E Super Admin', 'it', 'overallManager', 1, 1, 1),
+('30000000-0000-0000-0000-000000000001', 'Global Admin', 'E2E Super Admin', 'it', 'overallManager', 1, 1, 1),
 ('30000000-0000-0000-0000-000000000002', 'Manager', 'E2E Manager', 'it', 'itManager', 0, 1, 1),
 ('30000000-0000-0000-0000-000000000003', 'User', 'E2E Regular User', 'it', 'none', 0, 0, 0);
 
 -- 3. Role permissions (admin gets all, manager gets some, user gets view-only on Dashboard)
 INSERT INTO `role_permissions` (`role_id`, `module_name`, `permission_type`, `granted`)
 VALUES
--- Super Admin: all modules, all permissions
+-- Global Admin: all modules, all permissions
 ('30000000-0000-0000-0000-000000000001', 'Dashboard', 'view', 1),
 ('30000000-0000-0000-0000-000000000001', 'Dashboard', 'create', 1),
 ('30000000-0000-0000-0000-000000000001', 'Dashboard', 'edit', 1),

@@ -405,9 +405,9 @@ export default function BorrowRequestsPage() {
   const { user } = useCurrentUser();
   const { activeCompany } = useCompanyContext();
   
-  // Check if user is Super Admin or Admin (can select any company)
+  // Check if user is Global Admin or Admin (can select any company)
   const isSuperAdmin = Boolean(
-    user?.role?.name?.toLowerCase() === 'super admin' ||
+    user?.role?.name?.toLowerCase() === 'global admin' ||
       user?.role?.name?.toLowerCase() === 'admin'
   );
   const isOverallManager = roleCustodian?.managerRole === 'overallManager';

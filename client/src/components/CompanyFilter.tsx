@@ -29,9 +29,9 @@ export function CompanyFilter() {
     }
   }, [isOpen]);
 
-  // Check if user has Super Admin or Admin role
+  // Check if user has Global Admin or Admin role
   const normalizedRoleName = user?.role?.name?.trim().toLowerCase() || '';
-  const isSuperAdmin = normalizedRoleName === 'super admin';
+  const isSuperAdmin = normalizedRoleName === 'global admin';
   const isAdmin = normalizedRoleName === 'admin';
   const canShowFilter = isSuperAdmin || isAdmin;
 

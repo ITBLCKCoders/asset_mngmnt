@@ -125,6 +125,8 @@ export interface AssetIdMiniRow extends RowDataPacket {
 
 export interface UserRoleRow extends RowDataPacket {
   role_name: string | null;
+  company_id: string | null;
+  manager_role: string | null;
 }
 
 export interface CategoryIdRow extends RowDataPacket {
@@ -584,6 +586,48 @@ export async function getAssetIdFormatSettings(
   return rows[0] ?? null;
 }
 
+export async function getCategoryIdByIdOrName(
+  categoryIdOrName: string
+): Promise<string | null> {
+  const isUUID =
+    /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(
+      categoryIdOrName
+    );
+  const query = isUUID
+    ? 'SELECT categoryID FROM asset_categories WHERE categoryID = ? AND deleted_at IS NULL'
+    : 'SELECT categoryID FROM asset_categories WHERE name = ? AND deleted_at IS NULL';
+  const [rows] = await pool.execute<RowDataPacket[]>(query, [categoryIdOrName]);
+  return (rows[0]?.categoryID as string) ?? null;
+}
+
+export async function getTypeIdByIdOrName(
+  typeIdOrName: string
+): Promise<string | null> {
+  const isUUID =
+    /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(
+      typeIdOrName
+    );
+  const query = isUUID
+    ? 'SELECT typeID FROM asset_types WHERE typeID = ? AND deleted_at IS NULL'
+    : 'SELECT typeID FROM asset_types WHERE name = ? AND deleted_at IS NULL';
+  const [rows] = await pool.execute<RowDataPacket[]>(query, [typeIdOrName]);
+  return (rows[0]?.typeID as string) ?? null;
+}
+
+export async function getLocationIdByIdOrName(
+  locationIdOrName: string
+): Promise<string | null> {
+  const isUUID =
+    /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(
+      locationIdOrName
+    );
+  const query = isUUID
+    ? 'SELECT locationID FROM asset_mngmnt_locations WHERE locationID = ? AND deleted_at IS NULL'
+    : 'SELECT locationID FROM asset_mngmnt_locations WHERE name = ? AND deleted_at IS NULL';
+  const [rows] = await pool.execute<RowDataPacket[]>(query, [locationIdOrName]);
+  return (rows[0]?.locationID as string) ?? null;
+}
+
 // ---------------------------------------------------------------------------
 // Asset CRUD helpers
 // ---------------------------------------------------------------------------
@@ -641,7 +685,7 @@ export async function getUserRoleById(
   userId: string
 ): Promise<UserRoleRow | null> {
   const [rows] = await pool.execute<UserRoleRow[]>(
-    `SELECT r.name as role_name
+    `SELECT r.name as role_name, u.company_id, r.manager_role
      FROM users u
      LEFT JOIN asset_mngmnt_roles r ON u.role_id = r.roleID AND r.deleted_at IS NULL
      WHERE u.userID = ?`,

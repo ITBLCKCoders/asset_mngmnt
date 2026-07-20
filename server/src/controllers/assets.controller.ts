@@ -362,14 +362,14 @@ export async function getAssetsHandler(req: AuthRequest, res: Response) {
     let assets = await assetRepo.callGetAllAssets();
     logger.info(`Stored procedure returned ${assets.length} total assets`);
 
-    // Check if user is Super Admin or Admin
+    // Check user role and scope
     const user = await assetRepo.getUserRoleById(req.user!.userID);
     const normalizedRoleName = String(user?.role_name ?? '').trim().toLowerCase();
-    const isSuperAdmin = normalizedRoleName === 'super admin';
+    const isSuperAdmin = normalizedRoleName === 'global admin';
     const isAdmin = normalizedRoleName === 'admin';
     const isOverallManager = String(user?.manager_role ?? '').trim() === 'overallManager';
 
-    // Use companyId from query parameter if provided and user is Super Admin or Admin
+    // Use companyId from query parameter if provided (Global Admin only, for company switching)
     const queryCompanyId = req.query.companyId
       ? String(req.query.companyId)
       : null;
@@ -382,26 +382,27 @@ export async function getAssetsHandler(req: AuthRequest, res: Response) {
     let companyId: string | null = null;
     let departmentIds: string[] | null = null;
 
-    if (isSuperAdmin || isAdmin || isOverallManager) {
-      // For Super Admin, Admin, and overallManager, use query parameter if provided
+    if (isSuperAdmin) {
+      // Global admin: can switch companies via query param
       if (queryCompanyId) {
         companyId = queryCompanyId;
-      } else if (!isSuperAdmin && !isAdmin) {
-        // overallManager: use their company
-        companyId = user?.company_id ?? null;
       }
-      // else Super Admin/Admin with no companyId: show all companies (companyId stays null)
-
-      // Apply scope override if provided
+      // else companyId stays null (all companies)
+      if (scopeOverride) {
+        departmentIds = await getDepartmentIdsForScope(pool, scopeOverride, companyId || undefined);
+      } else {
+        departmentIds = null;
+      }
+    } else if (isAdmin || isOverallManager) {
+      // Scoped to own company, sees all departments (both IT and Admin) unless scopeOverride applied
+      companyId = user?.company_id ?? null;
       if (scopeOverride && companyId) {
         departmentIds = await getDepartmentIdsForScope(pool, scopeOverride, companyId);
-      } else if (scopeOverride && !companyId) {
-        departmentIds = await getDepartmentIdsForScope(pool, scopeOverride);
       } else {
         departmentIds = null;
       }
     } else {
-      // For other users, always use role-based scope
+      // For other users, use role-based scope
       const scope = await getAssetScope(pool, req.user!.userID);
       companyId = scope.companyId;
       departmentIds = scope.departmentIds;
@@ -425,11 +426,11 @@ export async function getAssetsHandler(req: AuthRequest, res: Response) {
         ) as any[]),
       ];
       logger.info(`Total assets after merging: ${assets.length}`);
-    } else if (!isSuperAdmin && !isAdmin) {
-      // If no company is associated and user is not Super Admin or Admin, show nothing
+    } else if (!isSuperAdmin) {
+      // If no company is associated and user is not Global Admin, show nothing
       assets = [];
     }
-    // For Super Admin and Admin, when companyId is null, show all assets (no filtering)
+    // For Global Admin, when companyId is null, show all assets (no filtering)
 
     // Separate transferred-out assets before scope filtering so both groups can be
     // evaluated consistently against active scope/category filters.

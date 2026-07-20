@@ -387,7 +387,7 @@ export default function Dashboard() {
   const [exporting, setExporting] = useState(false);
 
   const normalizedRoleName = (user?.role?.name ?? '').trim().toLowerCase();
-  const isSuperAdmin = normalizedRoleName === 'super admin';
+  const isSuperAdmin = normalizedRoleName === 'global admin';
   const isAdmin = normalizedRoleName === 'admin' || isSuperAdmin;
   const isEmployee =
     normalizedRoleName === 'user' ||

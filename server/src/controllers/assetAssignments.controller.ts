@@ -792,7 +792,7 @@ export async function getFilteredAssetAssignmentsHandler(
 
     let departmentIds = scopeDeptIds;
 
-    // For Super Admin, Admin, and overallManager: apply scope override if provided
+    // For Global Admin, Admin, and overallManager: apply scope override if provided
     if (scopeOverride) {
       const [userRows] = (await pool.execute(
         `SELECT r.manager_role FROM users u

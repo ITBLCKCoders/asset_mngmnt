@@ -29,7 +29,7 @@ export async function getAssetScope(
   const normalizedRoleName = String(user.role_name ?? '')
     .trim()
     .toLowerCase();
-  const isSuperAdmin = normalizedRoleName === 'super admin';
+  const isSuperAdmin = normalizedRoleName === 'global admin';
   let companyId = user.company_id;
 
   if (isSuperAdmin) {
@@ -43,9 +43,14 @@ export async function getAssetScope(
 
   let departmentIds: string[] | null = null;
 
-  // For Super Admin, we show everything for the company
+  // For Global Admin, we show everything for the company
   if (isSuperAdmin) {
     return { companyId, departmentIds: null, isSuperAdmin };
+  }
+
+  // Admin role: scoped to own company, sees ALL departments (both IT and Admin)
+  if (normalizedRoleName === 'admin') {
+    return { companyId: user.company_id, departmentIds: null, isSuperAdmin: false };
   }
 
   const managerRole = user.manager_role ?? 'none';
@@ -94,7 +99,7 @@ export async function getAssetScope(
   return { companyId, departmentIds, isSuperAdmin };
 }
 
-/** For borrow-request queue: Super Admin / unscoped managers see all scopes in company; IT/Admin roles see only their scope. */
+/** For borrow-request queue: Global Admin / unscoped managers see all scopes in company; IT/Admin roles see only their scope. */
 export async function getBorrowRequestListScope(
   pool: Pool,
   userId: string
@@ -118,7 +123,7 @@ export async function getBorrowRequestListScope(
   const normalizedRoleName = String(user.role_name ?? '')
     .trim()
     .toLowerCase();
-  const isSuperAdmin = normalizedRoleName === 'super admin';
+  const isSuperAdmin = normalizedRoleName === 'global admin';
   let companyId = user.company_id;
 
   if (isSuperAdmin) {
@@ -129,6 +134,11 @@ export async function getBorrowRequestListScope(
       companyId = null;
     }
     return { companyId, borrowScope: null };
+  }
+
+  // Admin role: sees all scopes (both IT and Admin)
+  if (normalizedRoleName === 'admin') {
+    return { companyId: user.company_id, borrowScope: null };
   }
 
   const managerRole = user.manager_role ?? 'none';
@@ -165,7 +175,7 @@ export function classifyDepartmentScopeByName(
 }
 
 /**
- * Get department IDs for a given scope (it | admin). Used by dashboard when Super Admin
+ * Get department IDs for a given scope (it | admin). Used by dashboard when Global Admin
  * requests a specific scope. When companyId is provided, only departments for that company
  * are returned so that changing company shows correct data (e.g. available in movement chart).
  */

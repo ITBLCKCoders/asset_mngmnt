@@ -30,9 +30,9 @@ describe('requireRole middleware', () => {
 
   describe('getUserRoleName', () => {
     it('should return role name when found', async () => {
-      mockPool.execute.mockResolvedValue([[{ role_name: 'Super Admin' }], []]);
+      mockPool.execute.mockResolvedValue([[{ role_name: 'Global Admin' }], []]);
       const result = await getUserRoleName('u1');
-      expect(result).toBe('Super Admin');
+      expect(result).toBe('Global Admin');
       expect(mockPool.execute).toHaveBeenCalledWith(
         expect.stringContaining('LEFT JOIN asset_mngmnt_roles'),
         ['u1']
@@ -54,7 +54,7 @@ describe('requireRole middleware', () => {
 
   describe('requireRole middleware', () => {
     it('should call next when user has required role', async () => {
-      mockPool.execute.mockResolvedValue([[{ role_name: 'Super Admin' }], []]);
+      mockPool.execute.mockResolvedValue([[{ role_name: 'Global Admin' }], []]);
       const middleware = requireRole(ROLES.SUPER_ADMIN);
       await middleware(req, res, next);
       expect(next).toHaveBeenCalled();

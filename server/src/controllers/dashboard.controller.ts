@@ -10,7 +10,7 @@ import logger from '../logger.js';
 
 /**
  * GET /api/dashboard/stats
- * Optional query: scope=it|admin (only applied when user is Super Admin)
+ * Optional query: scope=it|admin (only applied when user is Global Admin)
  */
 export async function getDashboardStatsHandler(
   req: AuthRequest,

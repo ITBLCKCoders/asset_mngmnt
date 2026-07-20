@@ -52,10 +52,10 @@ export function SettingsTabs({ children }: SettingsTabsProps) {
   });
   const action = searchParams.get('action');
 
-  // Check if user is admin or super admin
+  // Check if user is admin or global admin
   const isAdminOrSuperAdmin = () => {
     const normalizedRoleName = (user?.role?.name ?? '').trim().toLowerCase();
-    return normalizedRoleName === 'admin' || normalizedRoleName === 'super admin';
+    return normalizedRoleName === 'admin' || normalizedRoleName === 'global admin';
   };
 
   // Filter tabs based on user role

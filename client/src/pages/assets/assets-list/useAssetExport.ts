@@ -17,6 +17,32 @@ import {
   isBlackCoders,
 } from '@/lib/pdfGenerator/shared';
 
+const SUMMARY_CONDITIONS = ['Excellent', 'Good', 'Fair', 'Poor', 'Damaged'];
+
+function getConditionFillColor(condition: string): [number, number, number] | null {
+  switch (condition) {
+    case 'Excellent': return [212, 237, 218];
+    case 'Good': return [207, 226, 243];
+    case 'Fair': return [210, 244, 244];
+    case 'Poor': return [255, 243, 205];
+    case 'Damaged': return [248, 215, 218];
+    default: return null;
+  }
+}
+
+function getConditionExcelArgb(condition: string): string | null {
+  switch (condition) {
+    case 'Excellent': return 'FFD4EDDA';
+    case 'Good': return 'FFCFE2F3';
+    case 'Fair': return 'FFD2F4F4';
+    case 'Poor': return 'FFFFF3CD';
+    case 'Damaged': return 'FFF8D7DA';
+    default: return null;
+  }
+}
+
+export const EXPORT_SUMMARY_CONDITIONS = SUMMARY_CONDITIONS;
+
 /**
  * Fetch ALL assets matching the given filters (bypasses table pagination).
  */
@@ -30,8 +56,15 @@ async function fetchAllAssets(
   if (scope) params.append('scope', scope);
   if (search) params.append('search', search);
 
-  const res = await api.get<{ assets: AssetResponseDto[] }>(
-    `/assets?${params.toString()}`,
+  const apiUrl = `/assets?${params.toString()}`;
+  const res = await api.get<{ assets: AssetResponseDto[] }>(apiUrl);
+
+  console.log(
+    '[AssetExport fetchAllAssets]',
+    apiUrl,
+    '→',
+    res.assets?.length ?? 0,
+    'assets returned',
   );
 
   return (res.assets ?? []).map(mapDtoToAsset);
@@ -177,6 +210,11 @@ async function downloadXlsx(workbook: ExcelJS.Workbook, fileName: string) {
 export const useAssetExport = () => {
   const [isExportDialogOpen, setIsExportDialogOpen] = useState(false);
   const [exportType, setExportType] = useState<'pdf' | 'excel' | null>(null);
+  const [exportStep, setExportStep] = useState<1 | 2>(1);
+  const [exportEmployeeOptions, setExportEmployeeOptions] = useState<string[]>([]);
+  const [exportFormOptions, setExportFormOptions] = useState<string[]>([]);
+  const [exportLocationOptions, setExportLocationOptions] = useState<string[]>([]);
+  const [exportDepartmentOptions, setExportDepartmentOptions] = useState<string[]>([]);
   const [selectedColumns, setSelectedColumns] = useState<Set<string>>(
     new Set([
       'id',
@@ -392,19 +430,19 @@ export const useAssetExport = () => {
     // Add total asset count below title
     doc.setFontSize(12);
     doc.setFont('helvetica', 'normal');
-    doc.text(`Total Assets: ${assets.length}`, 165, 32, { align: 'center' });
+    doc.text(`Total Assets: ${assets.length}`, 165, 30, { align: 'center' });
 
     // Add filter label below total assets if present
     if (filterLabel) {
       doc.setFontSize(9);
       doc.setFont('helvetica', 'italic');
-      doc.text(filterLabel, 165, 38, { align: 'center' });
+      doc.text(filterLabel, 165, 35, { align: 'center' });
     }
 
-    let currentY = filterLabel ? 42 : 35;
+    let currentY = filterLabel ? 37 : 32;
 
     // Prepare table data with selected columns
-    // Process assets with builder grouping logic (same as Excel)
+    // Process assets with builder grouping (items go right after parent, no separator rows)
     const flattenedAssets: (Asset & { isChild?: boolean; builderName?: string })[] = [];
     const processedAssetIds = new Set<string>();
     const builderGroups: { name: string; startIndex: number; endIndex: number }[] = [];
@@ -471,12 +509,12 @@ export const useAssetExport = () => {
       }
     });
 
-    // Build table body rows with builder separator rows (like Excel)
+    // Build table body rows with builder separator rows
     const bodyRows: { cells: string[]; isSeparator: boolean; isChild: boolean }[] = [];
 
     builderGroups.forEach(group => {
       // Add separator row with builder name
-      const separatorCells = selectedCols.map((col, idx) =>
+      const separatorCells = selectedCols.map((_, idx) =>
         idx === 0 ? group.name : ''
       );
       bodyRows.push({ cells: separatorCells, isSeparator: true, isChild: false });
@@ -571,7 +609,7 @@ export const useAssetExport = () => {
     autoTable(doc, {
       head: [selectedCols.map(col => col.label)],
       body: tableData,
-      startY: currentY + 8,
+      startY: currentY + 4,
       styles: {
         fontSize: Math.max(5, 8 - selectedCols.length * 0.2),
         cellPadding: 1,
@@ -585,16 +623,21 @@ export const useAssetExport = () => {
       margin: { left: 5, right: 5 },
       didParseCell: data => {
         const row = bodyRows[data.row.index];
+        const colKey = selectedCols[data.column.index]?.key;
         if (row.isSeparator) {
-          data.cell.styles.fillColor = [211, 211, 211];
+          data.cell.styles.fillColor = headerFill;
+          data.cell.styles.textColor = [255, 255, 255];
           data.cell.styles.fontStyle = 'bold';
           data.cell.styles.fontSize = Math.max(8, 14 - selectedCols.length * 0.2);
           data.cell.styles.halign = 'center';
-          data.cell.styles.cellPadding = { top: 3, bottom: 3, left: 1, right: 1 };
         } else if (row.isChild) {
           data.cell.styles.fontStyle = 'italic';
-        } else {
-          data.cell.styles.fontStyle = 'normal';
+        }
+        if (colKey === 'condition') {
+          const condColor = getConditionFillColor(String(data.cell.raw ?? ''));
+          if (condColor) {
+            data.cell.styles.fillColor = condColor;
+          }
         }
       },
     });
@@ -774,13 +817,17 @@ export const useAssetExport = () => {
       }
     });
 
+    // Compute company accent color for header
+    const accentColor = getCompanyAccentColor(activeCompany?.name);
+    const headerArgb = `FF${accentColor.r.toString(16).padStart(2, '0')}${accentColor.g.toString(16).padStart(2, '0')}${accentColor.b.toString(16).padStart(2, '0')}`;
+
     // Add header row with styling
     const headerRow = assetsSheet.addRow(selectedCols.map(col => col.label));
-    headerRow.font = { bold: true };
+    headerRow.font = { bold: true, color: { argb: 'FFFFFFFF' } };
     headerRow.fill = {
       type: 'pattern',
       pattern: 'solid',
-      fgColor: { argb: 'FFE0E0E0' },
+      fgColor: { argb: headerArgb },
     };
     headerRow.alignment = { wrapText: true, vertical: 'top' };
 
@@ -818,12 +865,22 @@ export const useAssetExport = () => {
         
         // Apply indentation and text wrapping to builder items
         if (asset.isChild) {
-          dataRow.eachCell((cell) => {
+          dataRow.eachCell((cell, colIdx) => {
             cell.alignment = { wrapText: true, vertical: 'top', indent: 1 };
+            const key = selectedCols[colIdx]?.key;
+            if (key === 'condition' && cell.value) {
+              const argb = getConditionExcelArgb(String(cell.value));
+              if (argb) cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb } };
+            }
           });
         } else {
-          dataRow.eachCell((cell) => {
+          dataRow.eachCell((cell, colIdx) => {
             cell.alignment = { wrapText: true, vertical: 'top' };
+            const key = selectedCols[colIdx]?.key;
+            if (key === 'condition' && cell.value) {
+              const argb = getConditionExcelArgb(String(cell.value));
+              if (argb) cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb } };
+            }
           });
         }
         currentRowIndex++;
@@ -847,8 +904,13 @@ export const useAssetExport = () => {
           row[col.key] = getExportValue(asset, col.key);
           });
           const dataRow = assetsSheet.addRow(row);
-          dataRow.eachCell((cell) => {
+          dataRow.eachCell((cell, colIdx) => {
             cell.alignment = { wrapText: true, vertical: 'top' };
+            const key = selectedCols[colIdx]?.key;
+            if (key === 'condition' && cell.value) {
+              const argb = getConditionExcelArgb(String(cell.value));
+              if (argb) cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb } };
+            }
           });
           currentRowIndex++;
         }
@@ -873,6 +935,23 @@ export const useAssetExport = () => {
   const [summarySelectedTypes, setSummarySelectedTypes] = useState<string[]>([]);
   const [summaryAvailableTypes, setSummaryAvailableTypes] = useState<{ name: string; count: number }[]>([]);
   const [summaryIncludeCondition, setSummaryIncludeCondition] = useState(true);
+  const [summarySelectedConditions, setSummarySelectedConditions] = useState<string[]>([...SUMMARY_CONDITIONS]);
+  const [summaryDateAddedFrom, setSummaryDateAddedFrom] = useState('');
+  const [summaryDateAddedTo, setSummaryDateAddedTo] = useState('');
+  const [summaryDateBoughtFrom, setSummaryDateBoughtFrom] = useState('');
+  const [summaryDateBoughtTo, setSummaryDateBoughtTo] = useState('');
+  const [summaryWarrantyMonthsMin, setSummaryWarrantyMonthsMin] = useState('');
+  const [summaryWarrantyMonthsMax, setSummaryWarrantyMonthsMax] = useState('');
+  const [summaryMaintenanceFrom, setSummaryMaintenanceFrom] = useState('');
+  const [summaryMaintenanceTo, setSummaryMaintenanceTo] = useState('');
+  const [summaryEmployeeName, setSummaryEmployeeName] = useState('');
+  const [summaryAccountabilityForm, setSummaryAccountabilityForm] = useState('');
+  const [summaryEmployeeOptions, setSummaryEmployeeOptions] = useState<string[]>([]);
+  const [summaryFormOptions, setSummaryFormOptions] = useState<string[]>([]);
+  const [summaryLocation, setSummaryLocation] = useState('');
+  const [summaryDepartment, setSummaryDepartment] = useState('');
+  const [summaryLocationOptions, setSummaryLocationOptions] = useState<string[]>([]);
+  const [summaryDepartmentOptions, setSummaryDepartmentOptions] = useState<string[]>([]);
   const [summarySelectedColumns, setSummarySelectedColumns] = useState<Set<string>>(
     new Set([
       'id',
@@ -998,14 +1077,14 @@ export const useAssetExport = () => {
 
     doc.setFontSize(10);
     doc.setFont('helvetica', 'normal');
-    doc.text(`Total Assets: ${assets.length}`, 165, 31, { align: 'center' });
+    doc.text(`Total Assets: ${assets.length}`, 165, 28, { align: 'center' });
 
-    let infoY = 36;
+    let infoY = 31;
     if (filterLabel) {
       doc.setFontSize(8);
       doc.setFont('helvetica', 'italic');
-      doc.text(filterLabel, 165, 34, { align: 'center' });
-      infoY = 39;
+      doc.text(filterLabel, 165, 31, { align: 'center' });
+      infoY = 34;
     }
 
     const now = new Date();
@@ -1013,20 +1092,32 @@ export const useAssetExport = () => {
     doc.setFontSize(7);
     doc.text(footerUserText, 315, infoY, { align: 'right' });
 
-    const tableY = infoY + 5;
+    const tableY = infoY + 4;
 
     // ── Table 1: Device Type Summary (left) ──
-    const typeColumns = ['Device Type', '# Units', 'Working', 'Defective'];
-    if (summaryIncludeCondition) {
-      typeColumns.push('Excellent', 'Good', 'Fair', 'Poor', 'Damaged');
-    }
+    const conditionsToInclude = summaryIncludeCondition
+      ? SUMMARY_CONDITIONS.filter(c => summarySelectedConditions.includes(c))
+      : [];
+    const typeColumns = ['Device Type', '# Units', 'Working', 'Defective', ...conditionsToInclude];
     const typeData = typeRows.map(r => {
       const row: (string | number)[] = [r.type, r.units, r.working, r.defective];
-      if (summaryIncludeCondition) {
-        row.push(r.Excellent, r.Good, r.Fair, r.Poor, r.Damaged);
-      }
+      conditionsToInclude.forEach(c => row.push((r as any)[c]));
       return row;
     });
+
+    // Compute type totals (dynamic based on selected conditions)
+    const typeTotalsInit: Record<string, number> = { units: 0, working: 0, defective: 0 };
+    conditionsToInclude.forEach(c => { typeTotalsInit[c] = 0; });
+    const typeTotals = typeRows.reduce((acc, r) => {
+      acc.units += r.units;
+      acc.working += r.working;
+      acc.defective += r.defective;
+      conditionsToInclude.forEach(c => { acc[c] += (r as any)[c]; });
+      return acc;
+    }, typeTotalsInit);
+    const typeTotalRow: (string | number)[] = ['Grand Total', typeTotals.units, typeTotals.working, typeTotals.defective];
+    conditionsToInclude.forEach(c => typeTotalRow.push(typeTotals[c]));
+    typeData.push(typeTotalRow);
 
     const typeColStyles: Record<number, { cellWidth: number }> = {
       0: { cellWidth: 30 },
@@ -1034,41 +1125,46 @@ export const useAssetExport = () => {
       2: { cellWidth: 14 },
       3: { cellWidth: 16 },
     };
-    if (summaryIncludeCondition) {
-      typeColStyles[4] = { cellWidth: 14 };
-      typeColStyles[5] = { cellWidth: 12 };
-      typeColStyles[6] = { cellWidth: 12 };
-      typeColStyles[7] = { cellWidth: 12 };
-      typeColStyles[8] = { cellWidth: 14 };
-    }
+    conditionsToInclude.forEach((_, idx) => {
+      typeColStyles[4 + idx] = { cellWidth: 14 };
+    });
 
     autoTable(doc, {
       head: [typeColumns],
       body: typeData,
       startY: tableY,
       margin: { left: 5 },
-      tableWidth: summaryIncludeCondition ? 130 : 80,
+      tableWidth: conditionsToInclude.length > 0 ? 80 + conditionsToInclude.length * 14 : 80,
       theme: 'grid',
       styles: { fontSize: 7, cellPadding: 0.8, lineColor: [0, 0, 0], lineWidth: 0.1 },
       headStyles: { fillColor: headerFill, textColor: [255, 255, 255], fontSize: 7, fontStyle: 'bold' },
       columnStyles: typeColStyles,
+      didParseCell: data => {
+        if (data.row.index === typeData.length - 1) {
+          data.cell.styles.fontStyle = 'bold';
+          data.cell.styles.fillColor = headerFill;
+          data.cell.styles.textColor = [255, 255, 255];
+        }
+      },
     });
 
     const leftEndY = (doc as any).lastAutoTable?.finalY || tableY;
 
     // ── Table 2: Employee by Company (right, same Y, grouped with separator rows) ──
     const empColumns = ['Employee Name', 'Department', '# Assets'];
-    const empBodyRows: { cells: string[]; isSeparator: boolean }[] = [];
+    const empBodyRows: { cells: string[]; isSeparator: boolean; isTotal: boolean }[] = [];
+    let empGrandTotal = 0;
 
     empByCompany.forEach(([company, employees]) => {
       const sepCells = ['', '', ''];
       sepCells[0] = company;
-      empBodyRows.push({ cells: sepCells, isSeparator: true });
+      empBodyRows.push({ cells: sepCells, isSeparator: true, isTotal: false });
       employees.forEach(emp => {
-        empBodyRows.push({ cells: [emp.name, emp.department, String(emp.count)], isSeparator: false });
+        empBodyRows.push({ cells: [emp.name, emp.department, String(emp.count)], isSeparator: false, isTotal: false });
+        empGrandTotal += emp.count;
       });
     });
-
+    empBodyRows.push({ cells: ['Total', '', String(empGrandTotal)], isSeparator: false, isTotal: true });
     autoTable(doc, {
       head: [empColumns],
       body: empBodyRows.map(r => r.cells),
@@ -1091,6 +1187,11 @@ export const useAssetExport = () => {
           data.cell.styles.fontStyle = 'bold';
           data.cell.styles.fontSize = 7;
           data.cell.styles.halign = 'center';
+        } else if (row?.isTotal) {
+          data.cell.styles.fontStyle = 'bold';
+          data.cell.styles.fillColor = headerFill as any;
+          data.cell.styles.textColor = [255, 255, 255];
+          data.cell.styles.fontSize = 7;
         }
       },
     });
@@ -1113,7 +1214,9 @@ export const useAssetExport = () => {
     deptStartY += 7;
 
     const deptColumns = ['Department', 'Company', '# Assets'];
+    const deptTotal = deptRows.reduce((sum, r) => sum + r.count, 0);
     const deptData = deptRows.map(r => [r.department, r.company, r.count]);
+    deptData.push(['Total', '', deptTotal]);
 
     autoTable(doc, {
       head: [deptColumns],
@@ -1128,6 +1231,13 @@ export const useAssetExport = () => {
         0: { cellWidth: 120 },
         1: { cellWidth: 120 },
         2: { cellWidth: 30 },
+      },
+      didParseCell: data => {
+        if (data.row.index === deptData.length - 1) {
+          data.cell.styles.fontStyle = 'bold';
+          data.cell.styles.fillColor = headerFill;
+          data.cell.styles.textColor = [255, 255, 255];
+        }
       },
     });
 
@@ -1190,12 +1300,20 @@ export const useAssetExport = () => {
       columnStyles: colStyles,
       didParseCell: data => {
         const row = listRows[data.row.index];
+        const colKey = summaryAssetColumns[data.column.index]?.key;
         if (row?.isSeparator) {
-          data.cell.styles.fillColor = [211, 211, 211];
+          data.cell.styles.fillColor = headerFill;
+          data.cell.styles.textColor = [255, 255, 255];
           data.cell.styles.fontStyle = 'bold';
           data.cell.styles.halign = 'center';
         } else if (row?.isChild) {
           data.cell.styles.fontStyle = 'italic';
+        }
+        if (colKey === 'condition') {
+          const condColor = getConditionFillColor(String(data.cell.raw ?? ''));
+          if (condColor) {
+            data.cell.styles.fillColor = condColor;
+          }
         }
       },
     });
@@ -1243,6 +1361,10 @@ export const useAssetExport = () => {
     const workbook = new ExcelJS.Workbook();
     const ws = workbook.addWorksheet('Summary');
 
+    // Compute company accent color for header
+    const accentColor = getCompanyAccentColor(activeCompany?.name);
+    const headerArgb = `FF${accentColor.r.toString(16).padStart(2, '0')}${accentColor.g.toString(16).padStart(2, '0')}${accentColor.b.toString(16).padStart(2, '0')}`;
+
     // Add filter label row at top if present
     if (filterLabel) {
       const filterRow = ws.addRow([filterLabel]);
@@ -1251,7 +1373,7 @@ export const useAssetExport = () => {
     }
 
     // ── Table 1: Device Type Summary (cols A-I) ──
-    const conditionLabels = ['Excellent', 'Good', 'Fair', 'Poor', 'Damaged'];
+    const conditionLabels = SUMMARY_CONDITIONS.filter(c => summarySelectedConditions.includes(c));
     const typeHeaders = ['Device Type', '# Units', 'Working', 'Defective'];
     if (summaryIncludeCondition) {
       typeHeaders.push(...conditionLabels);
@@ -1267,23 +1389,36 @@ export const useAssetExport = () => {
 
     typeRows.forEach(r => {
       const row: (string | number)[] = [r.type, r.units, r.working, r.defective];
-      if (summaryIncludeCondition) {
-        row.push(r.Excellent, r.Good, r.Fair, r.Poor, r.Damaged);
-      }
+      conditionLabels.forEach(c => row.push((r as any)[c]));
       ws.addRow(row);
     });
+    // Total row (dynamic based on selected conditions)
+    const typeETotalsInit: Record<string, number> = { units: 0, working: 0, defective: 0 };
+    conditionLabels.forEach(c => { typeETotalsInit[c] = 0; });
+    const typeETotals = typeRows.reduce((acc, r) => {
+      acc.units += r.units;
+      acc.working += r.working;
+      acc.defective += r.defective;
+      conditionLabels.forEach(c => { acc[c] += (r as any)[c]; });
+      return acc;
+    }, typeETotalsInit);
+    const eTotalRow: (string | number)[] = ['Grand Total', typeETotals.units, typeETotals.working, typeETotals.defective];
+    conditionLabels.forEach(c => eTotalRow.push(typeETotals[c]));
+    const totalRowExcel = ws.addRow(eTotalRow);
+    totalRowExcel.font = { bold: true, color: { argb: 'FFFFFFFF' } };
+    totalRowExcel.fill = {
+      type: 'pattern',
+      pattern: 'solid',
+      fgColor: { argb: headerArgb },
+    };
 
     ws.getColumn(1).width = 22;
     ws.getColumn(2).width = 10;
     ws.getColumn(3).width = 10;
     ws.getColumn(4).width = 12;
-    if (summaryIncludeCondition) {
-      ws.getColumn(5).width = 12;
-      ws.getColumn(6).width = 10;
-      ws.getColumn(7).width = 10;
-      ws.getColumn(8).width = 10;
-      ws.getColumn(9).width = 12;
-    }
+    conditionLabels.forEach((_, idx) => {
+      ws.getColumn(5 + idx).width = 12;
+    });
 
     // ── Table 2: Employee by Company (starting at column L) ──
     const empColOffset = 12;
@@ -1302,6 +1437,7 @@ export const useAssetExport = () => {
     });
 
     let dataRowNum = gapRow.number + 1;
+    let empTotal = 0;
 
     empByCompany.forEach(([company, employees]) => {
       // Company separator row
@@ -1333,9 +1469,20 @@ export const useAssetExport = () => {
         row.getCell(empColOffset).value = emp.name;
         row.getCell(empColOffset + 1).value = emp.department;
         row.getCell(empColOffset + 2).value = emp.count;
+        empTotal += emp.count;
         dataRowNum++;
       });
     });
+    // Total row
+    const empTotalRow = ws.getRow(dataRowNum);
+    empTotalRow.getCell(empColOffset).value = 'Total';
+    empTotalRow.getCell(empColOffset).font = { bold: true, color: { argb: 'FFFFFFFF' } };
+    empTotalRow.getCell(empColOffset).fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: headerArgb } };
+    empTotalRow.getCell(empColOffset + 2).value = empTotal;
+    empTotalRow.getCell(empColOffset + 2).font = { bold: true, color: { argb: 'FFFFFFFF' } };
+    empTotalRow.getCell(empColOffset + 2).fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: headerArgb } };
+    empTotalRow.getCell(empColOffset + 1).fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: headerArgb } };
+    dataRowNum++;
 
     ws.getColumn(empColOffset).width = 30;
     ws.getColumn(empColOffset + 1).width = 22;
@@ -1353,9 +1500,17 @@ export const useAssetExport = () => {
       fgColor: { argb: 'FF333333' },
     };
 
+    const deptETotal = deptRows.reduce((sum, r) => sum + r.count, 0);
     deptRows.forEach(r => {
       ws.addRow([r.department, r.company, r.count]);
     });
+    const deptTotalExcelRow = ws.addRow(['Total', '', deptETotal]);
+    deptTotalExcelRow.font = { bold: true, color: { argb: 'FFFFFFFF' } };
+    deptTotalExcelRow.fill = {
+      type: 'pattern',
+      pattern: 'solid',
+      fgColor: { argb: headerArgb },
+    };
 
     // ── Full Asset List (below department table) ──
     ws.addRow([]);
@@ -1396,7 +1551,7 @@ export const useAssetExport = () => {
         };
         separatorCell.alignment = { horizontal: 'center', vertical: 'middle' };
       } else {
-        dataRow.eachCell(cell => {
+        dataRow.eachCell((cell, colIdx) => {
           cell.alignment = {
             wrapText: true,
             vertical: 'top',
@@ -1404,6 +1559,11 @@ export const useAssetExport = () => {
           };
           if (row.isChild) {
             cell.font = { italic: true };
+          }
+          const key = summaryAssetColumns[colIdx]?.key;
+          if (key === 'condition' && cell.value) {
+            const argb = getConditionExcelArgb(String(cell.value));
+            if (argb) cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb } };
           }
         });
       }
@@ -1432,12 +1592,28 @@ export const useAssetExport = () => {
     setIsSummaryExportDialogOpen(false);
   };
 
-  const handleSummaryExportClick = () => {
+  const handleSummaryExportClick = (currentScope?: string | null) => {
     setSummaryStep(1);
-    setSummaryScope('it');
+    setSummaryScope(currentScope === 'it' || currentScope === 'admin' ? currentScope : 'all');
     setSummarySelectedTypes([]);
     setSummaryAvailableTypes([]);
     setSummaryExportType('pdf');
+    setSummaryDateAddedFrom('');
+    setSummaryDateAddedTo('');
+    setSummaryDateBoughtFrom('');
+    setSummaryDateBoughtTo('');
+    setSummaryWarrantyMonthsMin('');
+    setSummaryWarrantyMonthsMax('');
+    setSummaryMaintenanceFrom('');
+    setSummaryMaintenanceTo('');
+    setSummaryEmployeeName('');
+    setSummaryAccountabilityForm('');
+    setSummaryEmployeeOptions([]);
+    setSummaryFormOptions([]);
+    setSummaryLocation('');
+    setSummaryDepartment('');
+    setSummaryLocationOptions([]);
+    setSummaryDepartmentOptions([]);
     setIsSummaryExportDialogOpen(true);
   };
 
@@ -1462,8 +1638,29 @@ export const useAssetExport = () => {
         .sort(([, a], [, b]) => b - a)
         .map(([name, count]) => ({ name, count }));
       setSummaryAvailableTypes(available);
+
+      // Extract unique employee names, form numbers, locations, departments
+      const employeeSet = new Set<string>();
+      const formSet = new Set<string>();
+      const locationSet = new Set<string>();
+      const departmentSet = new Set<string>();
+      allAssets.forEach(a => {
+        if (a.assignedTo) employeeSet.add(a.assignedTo);
+        const formNum = a.accountabilityForm?.formNumber;
+        if (formNum) formSet.add(formNum);
+        if (a.location) locationSet.add(a.location);
+        if (a.department) departmentSet.add(a.department);
+      });
+      setSummaryEmployeeOptions(Array.from(employeeSet).sort());
+      setSummaryFormOptions(Array.from(formSet).sort());
+      setSummaryLocationOptions(Array.from(locationSet).sort());
+      setSummaryDepartmentOptions(Array.from(departmentSet).sort());
     } catch {
       setSummaryAvailableTypes([]);
+      setSummaryEmployeeOptions([]);
+      setSummaryFormOptions([]);
+      setSummaryLocationOptions([]);
+      setSummaryDepartmentOptions([]);
       toast.error('Failed to load asset types for this scope');
     }
 
@@ -1472,6 +1669,12 @@ export const useAssetExport = () => {
 
   const handleSummaryPrevStep = () => {
     setSummaryStep(1);
+  };
+
+  const handleSummaryConditionToggle = (condition: string) => {
+    setSummarySelectedConditions(prev =>
+      prev.includes(condition) ? prev.filter(c => c !== condition) : [...prev, condition],
+    );
   };
 
   const handleSummaryTypeToggle = (type: string) => {
@@ -1507,11 +1710,92 @@ export const useAssetExport = () => {
       // Use the dialog's scope override. 'all' means no scope filter.
       const scopeParam = summaryScope === 'all' ? null : summaryScope;
       const allAssets = await fetchAllAssets(companyId, scopeParam, searchTerm);
+      const normalizeType = (t: string) => ((t || 'Uncategorized').trim().toLowerCase().replace(/\s+/g, ''));
+      const normalizedSelected = summarySelectedTypes.map(normalizeType);
 
-      // Filter by selected types
-      const filteredAssets = summarySelectedTypes.length > 0
-        ? allAssets.filter(a => summarySelectedTypes.includes(a.type))
+      // Filter by selected types (case/whitespace-insensitive comparison)
+      let filteredAssets = summarySelectedTypes.length > 0
+        ? allAssets.filter(a => normalizedSelected.includes(normalizeType(a.type)))
         : allAssets;
+
+      // Date added filter
+      if (summaryDateAddedFrom) {
+        const from = new Date(summaryDateAddedFrom);
+        filteredAssets = filteredAssets.filter(a => a.createdAt >= from);
+      }
+      if (summaryDateAddedTo) {
+        const to = new Date(summaryDateAddedTo);
+        to.setHours(23, 59, 59, 999);
+        filteredAssets = filteredAssets.filter(a => a.createdAt <= to);
+      }
+
+      // Purchase date filter
+      if (summaryDateBoughtFrom) {
+        const from = new Date(summaryDateBoughtFrom);
+        filteredAssets = filteredAssets.filter(a => a.purchaseDate && a.purchaseDate >= from);
+      }
+      if (summaryDateBoughtTo) {
+        const to = new Date(summaryDateBoughtTo);
+        to.setHours(23, 59, 59, 999);
+        filteredAssets = filteredAssets.filter(a => a.purchaseDate && a.purchaseDate <= to);
+      }
+
+      // Warranty months filter
+      if (summaryWarrantyMonthsMin) {
+        const min = parseInt(summaryWarrantyMonthsMin, 10);
+        if (!isNaN(min)) {
+          filteredAssets = filteredAssets.filter(a => (a.warranty_months ?? 0) >= min);
+        }
+      }
+      if (summaryWarrantyMonthsMax) {
+        const max = parseInt(summaryWarrantyMonthsMax, 10);
+        if (!isNaN(max)) {
+          filteredAssets = filteredAssets.filter(a => (a.warranty_months ?? 0) <= max);
+        }
+      }
+
+      // Maintenance date filter (matches if either last or next maintenance date is in range)
+      if (summaryMaintenanceFrom) {
+        const from = new Date(summaryMaintenanceFrom);
+        filteredAssets = filteredAssets.filter(a =>
+          (a.lastMaintenanceDate && a.lastMaintenanceDate >= from) ||
+          (a.nextMaintenanceDate && a.nextMaintenanceDate >= from)
+        );
+      }
+      if (summaryMaintenanceTo) {
+        const to = new Date(summaryMaintenanceTo);
+        to.setHours(23, 59, 59, 999);
+        filteredAssets = filteredAssets.filter(a =>
+          (a.lastMaintenanceDate && a.lastMaintenanceDate <= to) ||
+          (a.nextMaintenanceDate && a.nextMaintenanceDate <= to)
+        );
+      }
+
+      // Employee name filter
+      if (summaryEmployeeName) {
+        const term = summaryEmployeeName.toLowerCase();
+        filteredAssets = filteredAssets.filter(a =>
+          a.assignedTo.toLowerCase().includes(term)
+        );
+      }
+
+      // Accountability form filter
+      if (summaryAccountabilityForm) {
+        const term = summaryAccountabilityForm.toLowerCase();
+        filteredAssets = filteredAssets.filter(a =>
+          (a.accountabilityForm?.formNumber ?? '').toLowerCase().includes(term)
+        );
+      }
+
+      // Location filter
+      if (summaryLocation) {
+        filteredAssets = filteredAssets.filter(a => a.location === summaryLocation);
+      }
+
+      // Department filter
+      if (summaryDepartment) {
+        filteredAssets = filteredAssets.filter(a => a.department === summaryDepartment);
+      }
 
       const selectedCols = availableColumns.filter(col =>
         summarySelectedColumns.has(col.key)
@@ -1519,6 +1803,18 @@ export const useAssetExport = () => {
       const parts: string[] = [];
       if (searchTerm) parts.push(`Search: "${searchTerm}"`);
       if (scopeParam) parts.push(`Scope: ${formatScopeLabel(scopeParam)}`);
+      if (summaryDateAddedFrom || summaryDateAddedTo) {
+        const d = [summaryDateAddedFrom || '…', summaryDateAddedTo || '…'].join(' – ');
+        parts.push(`Added: ${d}`);
+      }
+      if (summaryDateBoughtFrom || summaryDateBoughtTo) {
+        const d = [summaryDateBoughtFrom || '…', summaryDateBoughtTo || '…'].join(' – ');
+        parts.push(`Bought: ${d}`);
+      }
+      if (summaryEmployeeName) parts.push(`Employee: "${summaryEmployeeName}"`);
+      if (summaryAccountabilityForm) parts.push(`Form#: "${summaryAccountabilityForm}"`);
+      if (summaryLocation) parts.push(`Location: "${summaryLocation}"`);
+      if (summaryDepartment) parts.push(`Dept: "${summaryDepartment}"`);
       const filterLabel = parts.length > 0 ? parts.join(' | ') : undefined;
       if (summaryExportType === 'pdf') {
         await exportSummaryToPDF(filteredAssets, activeCompany, currentUser, selectedCols, filterLabel, assetBuilders);
@@ -1540,8 +1836,45 @@ export const useAssetExport = () => {
     setSummarySelectedColumns(newSelected);
   };
 
+  const handleExportNextStep = (assets: Asset[]) => {
+    // Extract unique employee names, form numbers, locations, departments from current data
+    const employeeSet = new Set<string>();
+    const formSet = new Set<string>();
+    const locationSet = new Set<string>();
+    const departmentSet = new Set<string>();
+    assets.forEach(a => {
+      if (a.assignedTo) employeeSet.add(a.assignedTo);
+      const formNum = a.accountabilityForm?.formNumber;
+      if (formNum) formSet.add(formNum);
+      if (a.location) locationSet.add(a.location);
+      if (a.department) departmentSet.add(a.department);
+    });
+    setExportEmployeeOptions(Array.from(employeeSet).sort());
+    setExportFormOptions(Array.from(formSet).sort());
+    setExportLocationOptions(Array.from(locationSet).sort());
+    setExportDepartmentOptions(Array.from(departmentSet).sort());
+    setExportStep(2);
+  };
+
+  const handleExportPrevStep = () => {
+    setExportStep(1);
+  };
+
   const handleExportClick = (type: 'pdf' | 'excel') => {
     setExportType(type);
+    setExportStep(1);
+    setSummaryDateAddedFrom('');
+    setSummaryDateAddedTo('');
+    setSummaryDateBoughtFrom('');
+    setSummaryDateBoughtTo('');
+    setSummaryWarrantyMonthsMin('');
+    setSummaryWarrantyMonthsMax('');
+    setSummaryMaintenanceFrom('');
+    setSummaryMaintenanceTo('');
+    setSummaryEmployeeName('');
+    setSummaryAccountabilityForm('');
+    setSummaryLocation('');
+    setSummaryDepartment('');
     setIsExportDialogOpen(true);
   };
 
@@ -1565,10 +1898,102 @@ export const useAssetExport = () => {
     searchTerm?: string | null
   ) => {
     try {
-      const allAssets = await fetchAllAssets(companyId, scope, searchTerm);
+      let allAssets = await fetchAllAssets(companyId, scope, searchTerm);
+
+      // Date added filter
+      if (summaryDateAddedFrom) {
+        const from = new Date(summaryDateAddedFrom);
+        allAssets = allAssets.filter(a => a.createdAt >= from);
+      }
+      if (summaryDateAddedTo) {
+        const to = new Date(summaryDateAddedTo);
+        to.setHours(23, 59, 59, 999);
+        allAssets = allAssets.filter(a => a.createdAt <= to);
+      }
+
+      // Purchase date filter
+      if (summaryDateBoughtFrom) {
+        const from = new Date(summaryDateBoughtFrom);
+        allAssets = allAssets.filter(a => a.purchaseDate && a.purchaseDate >= from);
+      }
+      if (summaryDateBoughtTo) {
+        const to = new Date(summaryDateBoughtTo);
+        to.setHours(23, 59, 59, 999);
+        allAssets = allAssets.filter(a => a.purchaseDate && a.purchaseDate <= to);
+      }
+
+      // Warranty months filter
+      if (summaryWarrantyMonthsMin) {
+        const min = parseInt(summaryWarrantyMonthsMin, 10);
+        if (!isNaN(min)) {
+          allAssets = allAssets.filter(a => (a.warranty_months ?? 0) >= min);
+        }
+      }
+      if (summaryWarrantyMonthsMax) {
+        const max = parseInt(summaryWarrantyMonthsMax, 10);
+        if (!isNaN(max)) {
+          allAssets = allAssets.filter(a => (a.warranty_months ?? 0) <= max);
+        }
+      }
+
+      // Maintenance date filter
+      if (summaryMaintenanceFrom) {
+        const from = new Date(summaryMaintenanceFrom);
+        allAssets = allAssets.filter(a =>
+          (a.lastMaintenanceDate && a.lastMaintenanceDate >= from) ||
+          (a.nextMaintenanceDate && a.nextMaintenanceDate >= from)
+        );
+      }
+      if (summaryMaintenanceTo) {
+        const to = new Date(summaryMaintenanceTo);
+        to.setHours(23, 59, 59, 999);
+        allAssets = allAssets.filter(a =>
+          (a.lastMaintenanceDate && a.lastMaintenanceDate <= to) ||
+          (a.nextMaintenanceDate && a.nextMaintenanceDate <= to)
+        );
+      }
+
+      // Employee name filter
+      if (summaryEmployeeName) {
+        const term = summaryEmployeeName.toLowerCase();
+        allAssets = allAssets.filter(a =>
+          a.assignedTo.toLowerCase().includes(term)
+        );
+      }
+
+      // Accountability form filter
+      if (summaryAccountabilityForm) {
+        const term = summaryAccountabilityForm.toLowerCase();
+        allAssets = allAssets.filter(a =>
+          (a.accountabilityForm?.formNumber ?? '').toLowerCase().includes(term)
+        );
+      }
+
+      // Location filter
+      if (summaryLocation) {
+        allAssets = allAssets.filter(a => a.location === summaryLocation);
+      }
+
+      // Department filter
+      if (summaryDepartment) {
+        allAssets = allAssets.filter(a => a.department === summaryDepartment);
+      }
+
       const parts: string[] = [];
       if (searchTerm) parts.push(`Search: "${searchTerm}"`);
       if (scope) parts.push(`Scope: ${formatScopeLabel(scope)}`);
+      if (summaryDateAddedFrom || summaryDateAddedTo) {
+        const d = [summaryDateAddedFrom || '…', summaryDateAddedTo || '…'].join(' – ');
+        parts.push(`Added: ${d}`);
+      }
+      if (summaryDateBoughtFrom || summaryDateBoughtTo) {
+        const d = [summaryDateBoughtFrom || '…', summaryDateBoughtTo || '…'].join(' – ');
+        parts.push(`Bought: ${d}`);
+      }
+      if (summaryEmployeeName) parts.push(`Employee: "${summaryEmployeeName}"`);
+      if (summaryAccountabilityForm) parts.push(`Form#: "${summaryAccountabilityForm}"`);
+      if (summaryLocation) parts.push(`Location: "${summaryLocation}"`);
+      if (summaryDepartment) parts.push(`Dept: "${summaryDepartment}"`);
       const filterLabel = parts.length > 0 ? parts.join(' | ') : undefined;
       if (exportType === 'pdf') {
         await exportToPDF(allAssets, activeCompany, currentUser, assetBuilders, filterLabel);
@@ -1583,12 +2008,19 @@ export const useAssetExport = () => {
   return {
     isExportDialogOpen,
     exportType,
+    exportStep,
     selectedColumns,
     availableColumns,
     handleExportClick,
+    handleExportNextStep,
+    handleExportPrevStep,
     handleColumnToggle,
     handleExportConfirm,
     setIsExportDialogOpen,
+    exportEmployeeOptions,
+    exportFormOptions,
+    exportLocationOptions,
+    exportDepartmentOptions,
     isSummaryExportDialogOpen,
     summaryStep,
     summaryExportType,
@@ -1598,6 +2030,8 @@ export const useAssetExport = () => {
     summaryAvailableTypes,
     summaryIncludeCondition,
     setSummaryIncludeCondition,
+    summarySelectedConditions,
+    handleSummaryConditionToggle,
     summarySelectedColumns,
     handleSummaryColumnToggle,
     handleSummaryExportClick,
@@ -1608,5 +2042,33 @@ export const useAssetExport = () => {
     handleSummaryScopeChange,
     handleSummaryExportConfirm,
     setIsSummaryExportDialogOpen,
+    summaryDateAddedFrom,
+    setSummaryDateAddedFrom,
+    summaryDateAddedTo,
+    setSummaryDateAddedTo,
+    summaryDateBoughtFrom,
+    setSummaryDateBoughtFrom,
+    summaryDateBoughtTo,
+    setSummaryDateBoughtTo,
+    summaryWarrantyMonthsMin,
+    setSummaryWarrantyMonthsMin,
+    summaryWarrantyMonthsMax,
+    setSummaryWarrantyMonthsMax,
+    summaryMaintenanceFrom,
+    setSummaryMaintenanceFrom,
+    summaryMaintenanceTo,
+    setSummaryMaintenanceTo,
+    summaryEmployeeName,
+    setSummaryEmployeeName,
+    summaryAccountabilityForm,
+    setSummaryAccountabilityForm,
+    summaryEmployeeOptions,
+    summaryFormOptions,
+    summaryLocation,
+    setSummaryLocation,
+    summaryDepartment,
+    setSummaryDepartment,
+    summaryLocationOptions,
+    summaryDepartmentOptions,
   };
 };

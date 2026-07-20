@@ -19,7 +19,7 @@ async function getAdminAndSuperAdminUsers() {
       `SELECT u.userID, u.email, u.username 
        FROM users u
        JOIN asset_mngmnt_roles r ON u.role_id = r.roleID
-       WHERE r.name IN ('Admin', 'Super Admin')
+       WHERE r.name IN ('Admin', 'Global Admin')
        AND u.is_active = 1`
     );
     return rows as any[];
@@ -229,7 +229,7 @@ export async function login(email: string, password: string, req: Request) {
         `[LOGIN] Account locked for ${email}, ${progressiveMinutes} minutes (lockout #${lockoutCount})`
       );
 
-      // Send notification to Admin and Super Admin users
+      // Send notification to Admin and Global Admin users
       await sendLockoutNotification(user.userID, user.username || email, progressiveMinutes);
 
       return {
