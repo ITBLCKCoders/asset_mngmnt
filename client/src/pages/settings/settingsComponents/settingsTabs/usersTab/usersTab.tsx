@@ -27,13 +27,13 @@ export function UsersTab({ isActive }: { isActive?: boolean }) {
   const userManagement = useUserManagement(isActive ?? false);
   const roleManagement = useRoleManagement(userManagement.setRoles);
 
-  const isSuperAdmin = currentUser?.role?.name === 'Super Admin';
+  const isSuperAdmin = currentUser?.role?.name === 'Global Admin';
   const filteredUsers = isSuperAdmin
     ? userManagement.users
-    : userManagement.users.filter(user => user.role?.name !== 'Super Admin');
+    : userManagement.users.filter(user => user.role?.name !== 'Global Admin');
   const filteredRoles = isSuperAdmin
     ? userManagement.roles
-    : userManagement.roles.filter(role => role.name !== 'Super Admin');
+    : userManagement.roles.filter(role => role.name !== 'Global Admin');
 
   useEffect(() => {
     if (!isActive) {
@@ -152,7 +152,7 @@ export function UsersTab({ isActive }: { isActive?: boolean }) {
                 Users & Roles Management
               </h2>
               <p className="text-white/80 mt-2">
-                Manage user accounts, roles, and permissions for super admin
+                Manage user accounts, roles, and permissions for global admin
               </p>
             </div>
 

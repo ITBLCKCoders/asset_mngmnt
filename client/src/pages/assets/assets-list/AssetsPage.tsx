@@ -17,6 +17,7 @@ import {
   Layers,
   Edit,
   Loader2,
+  Upload,
 } from 'lucide-react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { PageHeader } from '@/components/common/PageHeader';
@@ -59,7 +60,9 @@ import { useUserPermissions } from '@/hooks/useUserPermissions';
 import { useCurrentUser } from '@/hooks/useCurrentUser';
 import { useCompanyContext } from '@/context/CompanyContext';
 import { useAssetsData } from './useAssetsData';
-import { useAssetExport } from './useAssetExport';
+import { useAssetExport, EXPORT_SUMMARY_CONDITIONS } from './useAssetExport';
+import { useAssetImport } from '@/hooks/useAssetImport';
+import { ImportDialog } from './assetsComponents/ImportDialog';
 import { Shimmer } from '@/components/ui/shimmer';
 import { createLogger } from '@/lib/logger';
 import { formatCurrency } from '@/lib/currency';
@@ -122,13 +125,13 @@ export function AssetsPage() {
     };
   }, [isViewModalOpen]);
 
-  // Check if user is Super Admin or Admin (can select any company)
+  // Check if user is Global Admin or Admin (can select any company)
   const isSuperAdminOrAdmin = Boolean(
-    user?.role?.name?.toLowerCase() === 'super admin' ||
+    user?.role?.name?.toLowerCase() === 'global admin' ||
       user?.role?.name?.toLowerCase() === 'admin'
   );
 
-  const isSuperAdmin = user?.role?.name?.toLowerCase() === 'super admin';
+  const isSuperAdmin = user?.role?.name?.toLowerCase() === 'global admin';
   const isAdmin = user?.role?.name?.toLowerCase() === 'admin';
   const isOverallManager = roleCustodian?.managerRole === 'overallManager';
   const showScopeTabs = isSuperAdmin || isAdmin || isOverallManager;
@@ -483,12 +486,19 @@ export function AssetsPage() {
   const {
     isExportDialogOpen,
     exportType,
+    exportStep,
     selectedColumns,
     availableColumns,
     handleExportClick,
+    handleExportNextStep,
+    handleExportPrevStep,
     handleColumnToggle,
     handleExportConfirm,
     setIsExportDialogOpen,
+    exportEmployeeOptions,
+    exportFormOptions,
+    exportLocationOptions,
+    exportDepartmentOptions,
     isSummaryExportDialogOpen,
     summaryStep,
     summaryExportType,
@@ -498,6 +508,8 @@ export function AssetsPage() {
     summaryAvailableTypes,
     summaryIncludeCondition,
     setSummaryIncludeCondition,
+    summarySelectedConditions,
+    handleSummaryConditionToggle,
     summarySelectedColumns,
     handleSummaryColumnToggle,
     handleSummaryExportClick,
@@ -508,9 +520,52 @@ export function AssetsPage() {
     handleSummaryScopeChange,
     handleSummaryExportConfirm,
     setIsSummaryExportDialogOpen,
+    summaryDateAddedFrom,
+    setSummaryDateAddedFrom,
+    summaryDateAddedTo,
+    setSummaryDateAddedTo,
+    summaryDateBoughtFrom,
+    setSummaryDateBoughtFrom,
+    summaryDateBoughtTo,
+    setSummaryDateBoughtTo,
+    summaryWarrantyMonthsMin,
+    setSummaryWarrantyMonthsMin,
+    summaryWarrantyMonthsMax,
+    setSummaryWarrantyMonthsMax,
+    summaryMaintenanceFrom,
+    setSummaryMaintenanceFrom,
+    summaryMaintenanceTo,
+    setSummaryMaintenanceTo,
+    summaryEmployeeName,
+    setSummaryEmployeeName,
+    summaryAccountabilityForm,
+    setSummaryAccountabilityForm,
+    summaryEmployeeOptions,
+    summaryFormOptions,
+    summaryLocation,
+    setSummaryLocation,
+    summaryDepartment,
+    setSummaryDepartment,
+    summaryLocationOptions,
+    summaryDepartmentOptions,
   } = useAssetExport();
 
-  // Server handles filtering by active company (Super Admin) or user company + asset type (other roles)
+  const {
+    isImportDialogOpen,
+    setIsImportDialogOpen,
+    parsedAssets,
+    parsedBuilders,
+    validationErrors,
+    importResult,
+    isUploading,
+    fileName,
+    handleFileUpload,
+    handleImport,
+    downloadTemplate,
+    reset: resetImport,
+  } = useAssetImport();
+
+  // Server handles filtering by active company (Global Admin) or user company + asset type (other roles)
   const displayAssets = filteredAssets;
 
   const availableBuilders = useMemo(() => {
@@ -1199,15 +1254,26 @@ export function AssetsPage() {
                     </div>
                   }
                 >
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    onClick={() => setIsExportOptionsOpen(true)}
-                    className="flex items-center gap-2"
-                  >
-                    <Download className="h-4 w-4" />
-                    Export
-                  </Button>
+                  <div className="flex items-center gap-2">
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() => setIsImportDialogOpen(true)}
+                      className="flex items-center gap-2"
+                    >
+                      <Upload className="h-4 w-4" />
+                      Import
+                    </Button>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() => setIsExportOptionsOpen(true)}
+                      className="flex items-center gap-2"
+                    >
+                      <Download className="h-4 w-4" />
+                      Export
+                    </Button>
+                  </div>
                 </DataTable>
               </CardContent>
             </Card>
@@ -1506,6 +1572,21 @@ export function AssetsPage() {
         </AppDialogFrame>
       </Dialog>
 
+      <ImportDialog
+        open={isImportDialogOpen}
+        onOpenChange={setIsImportDialogOpen}
+        parsedAssets={parsedAssets}
+        parsedBuilders={parsedBuilders}
+        validationErrors={validationErrors}
+        importResult={importResult}
+        isUploading={isUploading}
+        fileName={fileName}
+        onFileUpload={handleFileUpload}
+        onImport={handleImport}
+        onDownloadTemplate={downloadTemplate}
+        onReset={resetImport}
+      />
+
       <Dialog open={isExportOptionsOpen} onOpenChange={setIsExportOptionsOpen}>
         <AppDialogFrame className="max-w-lg">
           <AppDialogGradientHeader
@@ -1517,7 +1598,7 @@ export function AssetsPage() {
               <button
                 type="button"
                 onClick={() => { setIsExportOptionsOpen(false); handleExportClick('pdf'); }}
-                className="flex flex-col items-center gap-3 rounded-xl border border-gray-200 bg-white p-5 transition hover:border-red-300 hover:shadow-md cursor-pointer"
+                className="flex h-full flex-col items-center gap-3 rounded-xl border border-gray-200 bg-white p-5 transition hover:border-red-300 hover:shadow-md cursor-pointer"
               >
                 <Eye className="h-8 w-8 text-red-600" />
                 <span className="text-sm font-semibold text-gray-800">Export PDF</span>
@@ -1526,7 +1607,7 @@ export function AssetsPage() {
               <button
                 type="button"
                 onClick={() => { setIsExportOptionsOpen(false); handleExportClick('excel'); }}
-                className="flex flex-col items-center gap-3 rounded-xl border border-gray-200 bg-white p-5 transition hover:border-green-300 hover:shadow-md cursor-pointer"
+                className="flex h-full flex-col items-center gap-3 rounded-xl border border-gray-200 bg-white p-5 transition hover:border-green-300 hover:shadow-md cursor-pointer"
               >
                 <FileSpreadsheet className="h-8 w-8 text-green-600" />
                 <span className="text-sm font-semibold text-gray-800">Export Excel</span>
@@ -1534,8 +1615,8 @@ export function AssetsPage() {
               </button>
               <button
                 type="button"
-                onClick={() => { setIsExportOptionsOpen(false); handleSummaryExportClick(); }}
-                className="flex flex-col items-center gap-3 rounded-xl border border-gray-200 bg-white p-5 transition hover:border-blue-300 hover:shadow-md cursor-pointer"
+                onClick={() => { setIsExportOptionsOpen(false); handleSummaryExportClick(showScopeTabs ? scope : null); }}
+                className="flex h-full flex-col items-center gap-3 rounded-xl border border-gray-200 bg-white p-5 transition hover:border-blue-300 hover:shadow-md cursor-pointer"
               >
                 <FileText className="h-8 w-8 text-blue-600" />
                 <span className="text-sm font-semibold text-gray-800">Export Summary</span>
@@ -1554,44 +1635,247 @@ export function AssetsPage() {
       <Dialog open={isExportDialogOpen} onOpenChange={setIsExportDialogOpen}>
         <AppDialogFrame className="max-w-2xl max-h-[80vh] overflow-hidden !flex !flex-col">
           <AppDialogGradientHeader
-            title={`Select Columns to Export (${exportType?.toUpperCase() ?? ''})`}
-            description="Choose which columns to include in your export file."
+            title={
+              exportStep === 1
+                ? `Export ${exportType?.toUpperCase() ?? ''} — Step 1: Columns`
+                : `Export ${exportType?.toUpperCase() ?? ''} — Step 2: Filters`
+            }
+            description={
+              exportStep === 1
+                ? 'Choose which columns to include in your export file.'
+                : 'Apply optional filters to narrow down the exported data.'
+            }
           />
 
           <AppDialogBody className="max-h-[50vh] overflow-y-auto py-4">
-            <div className="grid grid-cols-3 gap-4">
-              {availableColumns.map(column => (
-                <div key={column.key} className="flex items-center space-x-2">
-                  <Checkbox
-                    id={column.key}
-                    checked={selectedColumns.has(column.key)}
-                    onCheckedChange={() => handleColumnToggle(column.key)}
-                  />
-                  <Label
-                    htmlFor={column.key}
-                    className="text-sm font-medium leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70"
-                  >
-                    {column.label}
-                  </Label>
+            {exportStep === 1 && (
+              <div>
+                <Label className="text-base font-semibold mb-3 block">Select Columns</Label>
+                <div className="grid grid-cols-3 gap-4">
+                  {availableColumns.map(column => (
+                    <div key={column.key} className="flex items-center space-x-2">
+                      <Checkbox
+                        id={column.key}
+                        checked={selectedColumns.has(column.key)}
+                        onCheckedChange={() => handleColumnToggle(column.key)}
+                      />
+                      <Label
+                        htmlFor={column.key}
+                        className="text-sm font-medium leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70"
+                      >
+                        {column.label}
+                      </Label>
+                    </div>
+                  ))}
                 </div>
-              ))}
-            </div>
+              </div>
+            )}
+
+            {exportStep === 2 && (
+              <div className="space-y-5">
+                {/* Filters */}
+                <div className="border rounded-lg p-4 space-y-4">
+                  <Label className="text-base font-semibold">Filters</Label>
+
+                  {/* Date Added */}
+                  <div className="grid grid-cols-2 gap-4">
+                    <div>
+                      <Label className="text-xs font-medium">Date Added From</Label>
+                      <Input
+                        type="date"
+                        value={summaryDateAddedFrom}
+                        onChange={e => setSummaryDateAddedFrom(e.target.value)}
+                        className="mt-1 h-9 text-sm"
+                      />
+                    </div>
+                    <div>
+                      <Label className="text-xs font-medium">Date Added To</Label>
+                      <Input
+                        type="date"
+                        value={summaryDateAddedTo}
+                        onChange={e => setSummaryDateAddedTo(e.target.value)}
+                        className="mt-1 h-9 text-sm"
+                      />
+                    </div>
+                  </div>
+
+                  {/* Date Bought */}
+                  <div className="grid grid-cols-2 gap-4">
+                    <div>
+                      <Label className="text-xs font-medium">Date Bought From</Label>
+                      <Input
+                        type="date"
+                        value={summaryDateBoughtFrom}
+                        onChange={e => setSummaryDateBoughtFrom(e.target.value)}
+                        className="mt-1 h-9 text-sm"
+                      />
+                    </div>
+                    <div>
+                      <Label className="text-xs font-medium">Date Bought To</Label>
+                      <Input
+                        type="date"
+                        value={summaryDateBoughtTo}
+                        onChange={e => setSummaryDateBoughtTo(e.target.value)}
+                        className="mt-1 h-9 text-sm"
+                      />
+                    </div>
+                  </div>
+
+                  {/* Warranty Months */}
+                  <div className="grid grid-cols-2 gap-4">
+                    <div>
+                      <Label className="text-xs font-medium">Warranty Months (min)</Label>
+                      <Input
+                        type="number"
+                        min="0"
+                        placeholder="e.g. 12"
+                        value={summaryWarrantyMonthsMin}
+                        onChange={e => setSummaryWarrantyMonthsMin(e.target.value)}
+                        className="mt-1 h-9 text-sm"
+                      />
+                    </div>
+                    <div>
+                      <Label className="text-xs font-medium">Warranty Months (max)</Label>
+                      <Input
+                        type="number"
+                        min="0"
+                        placeholder="e.g. 60"
+                        value={summaryWarrantyMonthsMax}
+                        onChange={e => setSummaryWarrantyMonthsMax(e.target.value)}
+                        className="mt-1 h-9 text-sm"
+                      />
+                    </div>
+                  </div>
+
+                  {/* Maintenance date */}
+                  <div className="grid grid-cols-2 gap-4">
+                    <div>
+                      <Label className="text-xs font-medium">Maintenance Date From</Label>
+                      <Input
+                        type="date"
+                        value={summaryMaintenanceFrom}
+                        onChange={e => setSummaryMaintenanceFrom(e.target.value)}
+                        className="mt-1 h-9 text-sm"
+                      />
+                    </div>
+                    <div>
+                      <Label className="text-xs font-medium">Maintenance Date To</Label>
+                      <Input
+                        type="date"
+                        value={summaryMaintenanceTo}
+                        onChange={e => setSummaryMaintenanceTo(e.target.value)}
+                        className="mt-1 h-9 text-sm"
+                      />
+                    </div>
+                  </div>
+
+                  {/* Dropdown filters */}
+                  <div className="grid grid-cols-2 gap-4">
+                    <div>
+                      <Label className="text-xs font-medium">Employee Name</Label>
+                      <Select
+                        value={summaryEmployeeName}
+                        onValueChange={v => setSummaryEmployeeName(v === 'all' ? '' : v)}
+                      >
+                        <SelectTrigger className="mt-1 h-9 text-sm">
+                          <SelectValue placeholder="All employees" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="all">All employees</SelectItem>
+                          {exportEmployeeOptions.map(name => (
+                            <SelectItem key={name} value={name}>{name}</SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    </div>
+                    <div>
+                      <Label className="text-xs font-medium">Accountability Form #</Label>
+                      <Select
+                        value={summaryAccountabilityForm}
+                        onValueChange={v => setSummaryAccountabilityForm(v === 'all' ? '' : v)}
+                      >
+                        <SelectTrigger className="mt-1 h-9 text-sm">
+                          <SelectValue placeholder="All forms" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="all">All forms</SelectItem>
+                          {exportFormOptions.map(form => (
+                            <SelectItem key={form} value={form}>{form}</SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    </div>
+                    <div>
+                      <Label className="text-xs font-medium">Location</Label>
+                      <Select
+                        value={summaryLocation}
+                        onValueChange={v => setSummaryLocation(v === 'all' ? '' : v)}
+                      >
+                        <SelectTrigger className="mt-1 h-9 text-sm">
+                          <SelectValue placeholder="All locations" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="all">All locations</SelectItem>
+                          {exportLocationOptions.map(loc => (
+                            <SelectItem key={loc} value={loc}>{loc}</SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    </div>
+                    <div>
+                      <Label className="text-xs font-medium">Department</Label>
+                      <Select
+                        value={summaryDepartment}
+                        onValueChange={v => setSummaryDepartment(v === 'all' ? '' : v)}
+                      >
+                        <SelectTrigger className="mt-1 h-9 text-sm">
+                          <SelectValue placeholder="All departments" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="all">All departments</SelectItem>
+                          {exportDepartmentOptions.map(dept => (
+                            <SelectItem key={dept} value={dept}>{dept}</SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            )}
           </AppDialogBody>
 
-          <AppDialogChromeFooter>
-            <Button
-              variant="outline"
-              onClick={() => setIsExportDialogOpen(false)}
-            >
-              Cancel
-            </Button>
-            <Button
-              onClick={() => handleExportConfirm(displayAssets, activeCompany, user, assetBuilders, activeCompany?.id, showScopeTabs ? scope : null, searchTerm)}
-              disabled={selectedColumns.size === 0}
-              className="bg-red-600 hover:bg-red-700 text-white"
-            >
-              Export {exportType?.toUpperCase()}
-            </Button>
+          <AppDialogChromeFooter className="flex justify-between">
+            <div className="flex gap-2">
+              {exportStep === 2 && (
+                <Button variant="outline" onClick={handleExportPrevStep}>
+                  Back
+                </Button>
+              )}
+              <Button
+                variant="outline"
+                onClick={() => setIsExportDialogOpen(false)}
+              >
+                Cancel
+              </Button>
+            </div>
+            {exportStep === 1 ? (
+              <Button
+                onClick={() => handleExportNextStep(displayAssets)}
+                disabled={selectedColumns.size === 0}
+                className="bg-red-600 hover:bg-red-700 text-white"
+              >
+                Next
+              </Button>
+            ) : (
+              <Button
+                onClick={() => handleExportConfirm(displayAssets, activeCompany, user, assetBuilders, activeCompany?.id, showScopeTabs ? scope : null, searchTerm)}
+                disabled={selectedColumns.size === 0}
+                className="bg-red-600 hover:bg-red-700 text-white"
+              >
+                Export {exportType?.toUpperCase()}
+              </Button>
+            )}
           </AppDialogChromeFooter>
         </AppDialogFrame>
       </Dialog>
@@ -1758,6 +2042,175 @@ export function AssetsPage() {
                   )}
                 </div>
 
+                {/* Filters */}
+                <div className="border rounded-lg p-4 space-y-4">
+                  <Label className="text-base font-semibold">Filters</Label>
+
+                  {/* Date Added */}
+                  <div className="grid grid-cols-2 gap-4">
+                    <div>
+                      <Label className="text-xs font-medium">Date Added From</Label>
+                      <Input
+                        type="date"
+                        value={summaryDateAddedFrom}
+                        onChange={e => setSummaryDateAddedFrom(e.target.value)}
+                        className="mt-1 h-9 text-sm"
+                      />
+                    </div>
+                    <div>
+                      <Label className="text-xs font-medium">Date Added To</Label>
+                      <Input
+                        type="date"
+                        value={summaryDateAddedTo}
+                        onChange={e => setSummaryDateAddedTo(e.target.value)}
+                        className="mt-1 h-9 text-sm"
+                      />
+                    </div>
+                  </div>
+
+                  {/* Date Bought */}
+                  <div className="grid grid-cols-2 gap-4">
+                    <div>
+                      <Label className="text-xs font-medium">Date Bought From</Label>
+                      <Input
+                        type="date"
+                        value={summaryDateBoughtFrom}
+                        onChange={e => setSummaryDateBoughtFrom(e.target.value)}
+                        className="mt-1 h-9 text-sm"
+                      />
+                    </div>
+                    <div>
+                      <Label className="text-xs font-medium">Date Bought To</Label>
+                      <Input
+                        type="date"
+                        value={summaryDateBoughtTo}
+                        onChange={e => setSummaryDateBoughtTo(e.target.value)}
+                        className="mt-1 h-9 text-sm"
+                      />
+                    </div>
+                  </div>
+
+                  {/* Warranty Months */}
+                  <div className="grid grid-cols-2 gap-4">
+                    <div>
+                      <Label className="text-xs font-medium">Warranty Months (min)</Label>
+                      <Input
+                        type="number"
+                        min="0"
+                        placeholder="e.g. 12"
+                        value={summaryWarrantyMonthsMin}
+                        onChange={e => setSummaryWarrantyMonthsMin(e.target.value)}
+                        className="mt-1 h-9 text-sm"
+                      />
+                    </div>
+                    <div>
+                      <Label className="text-xs font-medium">Warranty Months (max)</Label>
+                      <Input
+                        type="number"
+                        min="0"
+                        placeholder="e.g. 60"
+                        value={summaryWarrantyMonthsMax}
+                        onChange={e => setSummaryWarrantyMonthsMax(e.target.value)}
+                        className="mt-1 h-9 text-sm"
+                      />
+                    </div>
+                  </div>
+
+                  {/* Maintenance date */}
+                  <div className="grid grid-cols-2 gap-4">
+                    <div>
+                      <Label className="text-xs font-medium">Maintenance Date From</Label>
+                      <Input
+                        type="date"
+                        value={summaryMaintenanceFrom}
+                        onChange={e => setSummaryMaintenanceFrom(e.target.value)}
+                        className="mt-1 h-9 text-sm"
+                      />
+                    </div>
+                    <div>
+                      <Label className="text-xs font-medium">Maintenance Date To</Label>
+                      <Input
+                        type="date"
+                        value={summaryMaintenanceTo}
+                        onChange={e => setSummaryMaintenanceTo(e.target.value)}
+                        className="mt-1 h-9 text-sm"
+                      />
+                    </div>
+                  </div>
+
+                  {/* Dropdown filters */}
+                  <div className="grid grid-cols-2 gap-4">
+                    <div>
+                      <Label className="text-xs font-medium">Employee Name</Label>
+                      <Select
+                        value={summaryEmployeeName}
+                        onValueChange={v => setSummaryEmployeeName(v === 'all' ? '' : v)}
+                      >
+                        <SelectTrigger className="mt-1 h-9 text-sm">
+                          <SelectValue placeholder="All employees" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="all">All employees</SelectItem>
+                          {summaryEmployeeOptions.map(name => (
+                            <SelectItem key={name} value={name}>{name}</SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    </div>
+                    <div>
+                      <Label className="text-xs font-medium">Accountability Form #</Label>
+                      <Select
+                        value={summaryAccountabilityForm}
+                        onValueChange={v => setSummaryAccountabilityForm(v === 'all' ? '' : v)}
+                      >
+                        <SelectTrigger className="mt-1 h-9 text-sm">
+                          <SelectValue placeholder="All forms" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="all">All forms</SelectItem>
+                          {summaryFormOptions.map(form => (
+                            <SelectItem key={form} value={form}>{form}</SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    </div>
+                    <div>
+                      <Label className="text-xs font-medium">Location</Label>
+                      <Select
+                        value={summaryLocation}
+                        onValueChange={v => setSummaryLocation(v === 'all' ? '' : v)}
+                      >
+                        <SelectTrigger className="mt-1 h-9 text-sm">
+                          <SelectValue placeholder="All locations" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="all">All locations</SelectItem>
+                          {summaryLocationOptions.map(loc => (
+                            <SelectItem key={loc} value={loc}>{loc}</SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    </div>
+                    <div>
+                      <Label className="text-xs font-medium">Department</Label>
+                      <Select
+                        value={summaryDepartment}
+                        onValueChange={v => setSummaryDepartment(v === 'all' ? '' : v)}
+                      >
+                        <SelectTrigger className="mt-1 h-9 text-sm">
+                          <SelectValue placeholder="All departments" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="all">All departments</SelectItem>
+                          {summaryDepartmentOptions.map(dept => (
+                            <SelectItem key={dept} value={dept}>{dept}</SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    </div>
+                  </div>
+                </div>
+
                 {/* Condition toggle */}
                 <div>
                   <label className="flex items-center gap-2 cursor-pointer">
@@ -1774,6 +2227,38 @@ export function AssetsPage() {
                   <p className="text-xs text-muted-foreground mt-1 ml-6">
                     When unchecked, the Device Type table shows only type, unit count, working, and defective counts.
                   </p>
+                  {summaryIncludeCondition && (
+                    <div className="ml-6 mt-3 p-3 border rounded-lg bg-gray-50">
+                      <Label className="text-sm font-medium mb-2 block">
+                        Select conditions to include in the breakdown:
+                      </Label>
+                      <div className="grid grid-cols-3 gap-2">
+                        {EXPORT_SUMMARY_CONDITIONS.map(condition => (
+                          <label
+                            key={condition}
+                            className={`flex items-center gap-2 rounded px-2 py-1.5 text-sm cursor-pointer transition ${
+                              summarySelectedConditions.includes(condition)
+                                ? 'bg-blue-50 border border-blue-200'
+                                : 'hover:bg-gray-100 border border-transparent'
+                            }`}
+                          >
+                            <input
+                              type="checkbox"
+                              checked={summarySelectedConditions.includes(condition)}
+                              onChange={() => handleSummaryConditionToggle(condition)}
+                              className="h-4 w-4 rounded border-gray-300 text-blue-600"
+                            />
+                            {condition}
+                          </label>
+                        ))}
+                      </div>
+                      {summarySelectedConditions.length === 0 && (
+                        <p className="text-xs text-amber-600 mt-1">
+                          At least one condition must be selected when breakdown is enabled.
+                        </p>
+                      )}
+                    </div>
+                  )}
                 </div>
               </div>
             )}

@@ -93,7 +93,7 @@ export function PermissionsProvider({ children }: { children: ReactNode }) {
 
       if (
         normalizedRoleName === 'admin' ||
-        normalizedRoleName === 'super admin'
+        normalizedRoleName === 'global admin'
       ) {
         return true;
       }

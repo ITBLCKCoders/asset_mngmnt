@@ -54,7 +54,7 @@ export function AuditRetentionTab({ isActive }: { isActive?: boolean }) {
     minimum_months: 12,
   });
 
-  const isSuperAdmin = currentUser?.role?.name === 'Super Admin';
+  const isSuperAdmin = currentUser?.role?.name === 'Global Admin';
 
   useEffect(() => {
     if (isActive) {

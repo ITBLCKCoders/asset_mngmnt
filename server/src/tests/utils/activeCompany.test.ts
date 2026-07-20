@@ -33,7 +33,7 @@ describe('activeCompany', () => {
     it('should return global active for admin user', async () => {
       mockPool.query.mockImplementation((sql: string) => {
         if (sql.includes('FROM users u')) {
-          return [[{ role_name: 'Super Admin' }], []];
+          return [[{ role_name: 'Global Admin' }], []];
         }
         if (sql.includes('CALL sp_GetActiveCompany')) {
           return [[[{ companyID: 'c1', name: 'Global' }]], []];

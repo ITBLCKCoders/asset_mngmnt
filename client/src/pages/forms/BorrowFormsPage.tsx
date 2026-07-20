@@ -63,7 +63,7 @@ export default function BorrowFormsPage() {
   // Auto-set company filter to user's company if they have one
   const userCompanyScope = currentUser?.company_id || '';
   const userRoleName = currentUser?.role?.name?.toLowerCase() || '';
-  const isSuperAdminOrAdmin = userRoleName === 'super admin' || userRoleName === 'admin';
+  const isSuperAdminOrAdmin = userRoleName === 'global admin' || userRoleName === 'admin';
   const hasHrAccountabilityReceiver = currentUser?.role?.hr_accountability_receiver === true;
   const showCompanyFilter = !userCompanyScope || isSuperAdminOrAdmin || hasHrAccountabilityReceiver;
   

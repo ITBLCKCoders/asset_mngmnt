@@ -257,7 +257,7 @@ export default function AssetsTransfer() {
   const [smsOtpDialogOpen, setSmsOtpDialogOpen] = useState(false);
   const pendingTransferActionRef = useRef<(() => Promise<void>) | null>(null);
 
-  const isSuperAdmin = currentUser?.role?.name?.toLowerCase() === 'super admin';
+  const isSuperAdmin = currentUser?.role?.name?.toLowerCase() === 'global admin';
   const isAdmin = currentUser?.role?.name?.toLowerCase() === 'admin';
   const isOverallManager = roleCustodian?.managerRole === 'overallManager';
   const showScopeTabs = isSuperAdmin || isAdmin || isOverallManager;
@@ -333,8 +333,8 @@ export default function AssetsTransfer() {
       // Determine companyId based on user role
       let companyId: string | undefined;
       const userRole = currentUser?.role?.name?.toLowerCase();
-      if (userRole === 'super admin' || userRole === 'admin') {
-        // Super Admin and Admin use active company from CompanyContext
+      if (userRole === 'global admin' || userRole === 'admin') {
+        // Global Admin and Admin use active company from CompanyContext
         companyId = activeCompany?.id || undefined;
       } else {
         // IT asset and Admin asset users use their assigned company

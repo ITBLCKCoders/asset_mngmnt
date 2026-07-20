@@ -208,8 +208,8 @@ const [searchColumn, setSearchColumn] = useState('all');
       // Determine companyId based on user role
       let companyId: string | undefined;
       const userRole = currentUser?.role?.name?.toLowerCase();
-      if (userRole === 'super admin' || userRole === 'admin') {
-        // Super Admin and Admin use active company from CompanyContext
+      if (userRole === 'global admin' || userRole === 'admin') {
+        // Global Admin and Admin use active company from CompanyContext
         companyId = activeCompany?.id || undefined;
       } else {
         // IT asset and Admin asset users use their assigned company

@@ -46,8 +46,8 @@ describe('audit.controller', () => {
         ]);
     }
 
-    it('allows super admin', async () => {
-      mockUserAndPermissions('Super Admin', false);
+    it('allows global admin', async () => {
+      mockUserAndPermissions('Global Admin', false);
       await auditController.getAuditLogsHandler(req, res);
       expect(AuditService.getAll).toHaveBeenCalled();
     });
@@ -80,7 +80,7 @@ describe('audit.controller', () => {
   describe('getAuditLogsHandler', () => {
     it('returns audit logs with meta', async () => {
       mockPool.pool.query
-        .mockResolvedValueOnce([[{ company_id: 'c-1', role_name: 'Super Admin' }]])
+        .mockResolvedValueOnce([[{ company_id: 'c-1', role_name: 'Global Admin' }]])
         .mockResolvedValueOnce([[]]);
       AuditService.getAll.mockResolvedValue({
         logs: [{ auditID: '1', action: 'login', user_name: 'Alice', user_id: 'u-1', user_email: 'alice@test.com', resource_name: null, resource_type: 'user', resource_id: 'u-1', details: null, old_values: null, new_values: null, ip_address: null, user_agent: null, company_id: 'c-1', status: 'success', severity: 'info', request_id: null, session_id: null, http_method: null, http_endpoint: null, prev_hash: null, row_hash: null, created_at: '2024-01-01' }],
@@ -93,7 +93,7 @@ describe('audit.controller', () => {
 
     it('returns empty array on error', async () => {
       mockPool.pool.query
-        .mockResolvedValueOnce([[{ company_id: 'c-1', role_name: 'Super Admin' }]])
+        .mockResolvedValueOnce([[{ company_id: 'c-1', role_name: 'Global Admin' }]])
         .mockResolvedValueOnce([[]]);
       AuditService.getAll.mockRejectedValue(new Error('Service error'));
       await auditController.getAuditLogsHandler(req, res);
@@ -136,7 +136,7 @@ describe('audit.controller', () => {
   describe('verifyAuditChainHandler', () => {
     it('verifies audit chain successfully', async () => {
       mockPool.pool.query
-        .mockResolvedValueOnce([[{ company_id: 'c-1', role_name: 'Super Admin' }]])
+        .mockResolvedValueOnce([[{ company_id: 'c-1', role_name: 'Global Admin' }]])
         .mockResolvedValueOnce([[]]);
       AuditService.verifyChain.mockResolvedValue({ valid: true, checked: 10 });
       await auditController.verifyAuditChainHandler(req, res);

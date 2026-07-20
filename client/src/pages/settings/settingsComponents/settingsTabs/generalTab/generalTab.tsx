@@ -41,10 +41,10 @@ export function GeneralTab({ isActive }: { isActive?: boolean }) {
   const [companyToDelete, setCompanyToDelete] = useState<Company | null>(null);
   const [settingMainId, setSettingMainId] = useState<string | null>(null);
 
-  // Check if user is admin or super admin
+  // Check if user is admin or global admin
   const isAdminOrSuperAdmin = () => {
     const normalizedRoleName = (user?.role?.name ?? '').trim().toLowerCase();
-    return normalizedRoleName === 'admin' || normalizedRoleName === 'super admin';
+    return normalizedRoleName === 'admin' || normalizedRoleName === 'global admin';
   };
 
   useEffect(() => {
@@ -69,7 +69,7 @@ export function GeneralTab({ isActive }: { isActive?: boolean }) {
       }));
 
       // For non-admin/super-admin users, show their assigned company
-      // For admin/super-admin users, show the active company
+      // For admin/global-admin users, show the active company
       let companyToShow: Company | null = null;
       if (isAdminOrSuperAdmin()) {
         companyToShow = allCompanies.find(c => c.is_active) ?? null;
@@ -205,7 +205,7 @@ export function GeneralTab({ isActive }: { isActive?: boolean }) {
         {/* Active Company Card  */}
         {activeCompany && <ActiveCompanyCard activeCompany={activeCompany} />}
 
-        {/* All Companies List - only visible for admin/super admin */}
+        {/* All Companies List - only visible for admin/global admin */}
         {isAdminOrSuperAdmin() && (
           <AllCompaniesList
             companies={companies}

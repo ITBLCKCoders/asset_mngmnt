@@ -37,7 +37,7 @@ export default function AssetBuilderPage() {
   const { hasPermission, roleCustodian } = useUserPermissions();
   const { user: currentUser } = useCurrentUser();
 
-  const isSuperAdmin = currentUser?.role?.name?.toLowerCase() === 'super admin';
+  const isSuperAdmin = currentUser?.role?.name?.toLowerCase() === 'global admin';
   const isAdmin = currentUser?.role?.name?.toLowerCase() === 'admin';
   const isOverallManager = roleCustodian?.managerRole === 'overallManager';
   const showScopeTabs = isSuperAdmin || isAdmin || isOverallManager;

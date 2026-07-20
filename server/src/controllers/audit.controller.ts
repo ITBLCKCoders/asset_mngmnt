@@ -54,7 +54,7 @@ async function resolveAuditAccessContext(req: AuthRequest): Promise<{
   const normalizedRole = String(userRow?.role_name ?? '')
     .trim()
     .toLowerCase();
-  const isSuperAdmin = normalizedRole === 'super admin';
+  const isSuperAdmin = normalizedRole === 'global admin';
 
   // Check for Audit Trail module permission
   const [permRows] = (await pool.query(

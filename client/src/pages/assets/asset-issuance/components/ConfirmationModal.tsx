@@ -20,8 +20,8 @@ import {
 } from 'lucide-react';
 import { Checkbox } from '@/components/ui/checkbox';
 import { Switch } from '@/components/ui/switch';
-import { api } from '@/lib/api';
-import { toast } from 'sonner';
+// import { api } from '@/lib/api';
+// import { toast } from 'sonner';
 import SmsOtpDialog from '@/components/auth/SmsOtpDialog';
 import { useCurrentUser } from '@/hooks/useCurrentUser';
 
@@ -88,7 +88,7 @@ export function ConfirmationModal({
   const [tempAccountability, setTempAccountability] = useState(false);
   const selectedUserData = users?.find(u => u.userID === selectedUser);
   const assigneeRoleName = (selectedUserData as any)?.role?.name;
-  const allowedRoles = ['IT Asset Manager', 'Admin Asset Manager', 'Admin', 'Super Admin'];
+  const allowedRoles = ['IT Asset Manager', 'Admin Asset Manager', 'Admin', 'Global Admin'];
   const showTempAccountability = assigneeRoleName ? allowedRoles.includes(assigneeRoleName) : false;
   const canConfirmAssignment = signAsIssuer && signITCopy && !assigning;
 
@@ -107,15 +107,15 @@ export function ConfirmationModal({
     setTempAccountability(false);
   }, [isOpen]);
 
-  const checkUnsignedAccountabilityForms = async (userId: string) => {
-    try {
-      const response = await api.get(`/accountability-forms/check-unsigned/${userId}`);
-      return response;
-    } catch (err: any) {
-      console.error('Failed to check unsigned accountability forms:', err);
-      return { hasUnsignedForms: false, unsignedForms: [] };
-    }
-  };
+  // const checkUnsignedAccountabilityForms = async (userId: string) => {
+  //   try {
+  //     const response = await api.get(`/accountability-forms/check-unsigned/${userId}`);
+  //     return response;
+  //   } catch (err: any) {
+  //     console.error('Failed to check unsigned accountability forms:', err);
+  //     return { hasUnsignedForms: false, unsignedForms: [] };
+  //   }
+  // };
 
   return (
     <>
@@ -307,39 +307,31 @@ export function ConfirmationModal({
             </Button>
             <Button
               onClick={async () => {
-                // Check if the receiving user has unsigned accountability forms
-                if (selectedUser) {
-                  const checkResult = await checkUnsignedAccountabilityForms(selectedUser);
-
-                  if (checkResult.hasUnsignedForms && checkResult.unsignedForms.length > 0) {
-                    // Send notification to the receiving user
-                    try {
-                      await api.post('/notifications/accountability-unsigned', {
-                        userId: selectedUser,
-                        unsignedForms: checkResult.unsignedForms,
-                      });
-                    } catch (err: any) {
-                      console.error('Failed to send notification:', err);
-                    }
-
-                    // Show message to current user and close modal
-                    const receivingUser = users?.find(u => u.userID === selectedUser);
-                    const userName = receivingUser
-                      ? `${receivingUser.first_name} ${receivingUser.last_name}`
-                      : 'the user';
-
-                    toast.error(
-                      `Assignment blocked`,
-                      {
-                        description: `${userName} has an accountability form that has not been signed yet. A notification has been sent to them to sign it before they can receive new assets.`,
-                        duration: 6000,
-                      }
-                    );
-
-                    onOpenChange(false);
-                    return;
-                  }
-                }
+                // ── BLOCK: unsigned accountability forms check ──
+                // if (selectedUser) {
+                //   const checkResult = await checkUnsignedAccountabilityForms(selectedUser);
+                //   if (checkResult.hasUnsignedForms && checkResult.unsignedForms.length > 0) {
+                //     try {
+                //       await api.post('/notifications/accountability-unsigned', {
+                //         userId: selectedUser,
+                //         unsignedForms: checkResult.unsignedForms,
+                //       });
+                //     } catch (err: any) {
+                //       console.error('Failed to send notification:', err);
+                //     }
+                //     const receivingUser = users?.find(u => u.userID === selectedUser);
+                //     const userName = receivingUser
+                //       ? `${receivingUser.first_name} ${receivingUser.last_name}`
+                //       : 'the user';
+                //     toast.error('Assignment blocked', {
+                //       description: `${userName} has an accountability form that has not been signed yet. A notification has been sent to them to sign it before they can receive new assets.`,
+                //       duration: 6000,
+                //     });
+                //     onOpenChange(false);
+                //     return;
+                //   }
+                // }
+                // ─────────────────────────────────────────────────
 
                 // Store the confirm action for SmsOtpDialog
                 pendingActionRef.current = async () => {

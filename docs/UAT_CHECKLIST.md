@@ -582,7 +582,7 @@
 | **Day** | 4 |
 | **Module** | User Management |
 | **Priority** | High |
-| **Pre-condition** | Logged in as Super Admin or Admin |
+| **Pre-condition** | Logged in as Global Admin or Admin |
 | **Steps** | 1. Go to Users page<br>2. Click "Add User"<br>3. Fill required fields: name, email, role, company<br>4. Set initial password<br>5. Click Save |
 | **Expected Result** | User created. Invitation/credentials sent. User appears in user list. |
 | **Status** | ☐ ✅ Pass &nbsp;&nbsp; ☐ ❌ Fail &nbsp;&nbsp; ☐ ⚪ N/A |

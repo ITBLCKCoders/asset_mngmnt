@@ -99,7 +99,7 @@ Extended with compliance metadata fields and `AuditLogListFiltersDto`.
 - Company-level retention settings (retention period, enable/disable archival)
 - Archive status display (last archived date, total archived count)
 - Manual archive trigger button
-- System-wide defaults (super admin only)
+- System-wide defaults (global admin only)
 - Important notes and warnings
 
 **File:** `client/src/pages/settings/settingsComponents/settingsTab.tsx`
@@ -124,8 +124,8 @@ Added "Audit Retention" tab to settings navigation.
 - `GET /api/audit-retention/settings` - Get company retention settings
 - `PUT /api/audit-retention/settings` - Update company retention settings
 - `POST /api/audit-retention/archive` - Trigger manual archive
-- `GET /api/audit-retention/defaults` - Get system defaults (super admin)
-- `PUT /api/audit-retention/defaults` - Update system defaults (super admin)
+- `GET /api/audit-retention/defaults` - Get system defaults (global admin)
+- `PUT /api/audit-retention/defaults` - Update system defaults (global admin)
 
 **Routes (`server/src/routes/auditRetention.routes.ts`):**
 - Mounted at `/api/audit-retention`
@@ -197,7 +197,7 @@ No new dependencies required. Ensure `date-fns`, `lucide-react`, and UI componen
 - Navigate to Settings → Audit Retention
 - Set retention period (6-120 months)
 - Enable automatic archival
-- Optionally configure system defaults (super admin)
+- Optionally configure system defaults (global admin)
 
 ### 6. Set Up Archive Job (Optional)
 Add to crontab or use a job scheduler:
@@ -218,15 +218,15 @@ Add to crontab or use a job scheduler:
 - `PUT /api/audit-retention/settings` - Update company retention settings
   - Body: { retention_months: number, is_active: boolean }
 - `POST /api/audit-retention/archive` - Trigger manual archive
-- `GET /api/audit-retention/defaults` - Get system defaults (super admin)
-- `PUT /api/audit-retention/defaults` - Update system defaults (super admin)
+- `GET /api/audit-retention/defaults` - Get system defaults (global admin)
+- `PUT /api/audit-retention/defaults` - Update system defaults (global admin)
   - Body: { default_months: number, minimum_months: number }
 
 ## Security Considerations
 
 ### Access Control
 - Audit log access restricted to admins and auditors only
-- System defaults restricted to super admin only
+- System defaults restricted to global admin only
 - Verification endpoint requires admin/auditor role
 
 ### Hash Chain Integrity

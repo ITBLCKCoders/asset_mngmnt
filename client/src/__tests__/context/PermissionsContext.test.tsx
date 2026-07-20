@@ -62,9 +62,9 @@ describe('PermissionsContext', () => {
     expect(result.current.hasPermission('any', 'any')).toBe(true);
   });
 
-  it('should have Super Admin bypass in hasPermission', async () => {
+  it('should have Global Admin bypass in hasPermission', async () => {
     (useCurrentUserModule.useCurrentUser as any).mockReturnValue({
-      user: { id: 'sa-1', role: { name: 'Super Admin' } },
+      user: { id: 'sa-1', role: { name: 'Global Admin' } },
       loading: false,
     });
     (api.get as any).mockResolvedValue({ permissions: {} });

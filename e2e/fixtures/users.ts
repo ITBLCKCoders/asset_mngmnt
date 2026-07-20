@@ -3,7 +3,7 @@ export const E2E_USERS = {
     email: 'e2e-admin@test.com',
     password: 'E2eAdmin123!',
     name: 'E2E Admin',
-    role: 'Super Admin',
+    role: 'Global Admin',
   },
   manager: {
     email: 'e2e-manager@test.com',

@@ -16,7 +16,7 @@ const router = express.Router();
 
 /**
  * All migration endpoints (status, run, rollback, create) are restricted to
- * Super Admin. Running or rolling back DB migrations as a regular user
+ * Global Admin. Running or rolling back DB migrations as a regular user
  * would be a critical privilege-escalation / DoS vector — the gate must
  * stay even though every route also carries `authenticate + ipBasedLimiter`.
  */

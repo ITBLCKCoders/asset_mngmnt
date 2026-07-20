@@ -18,7 +18,7 @@ router.use(authenticate);
  *       - in: query
  *         name: scope
  *         schema: { type: string, enum: [it, admin] }
- *         description: Optional. Only applied for Super Admin to view IT or Admin scope.
+ *         description: Optional. Only applied for Global Admin to view IT or Admin scope.
  *     responses:
  *       200: { description: Dashboard payload including stats, assetByType, movement, statusDistribution, assetsByDepartment, assetsByLocation, categoryMix, brandMix, agingBuckets, warrantyRunway, requestPipeline }
  *       401: { description: Unauthorized }
@@ -39,7 +39,7 @@ router.get('/stats', getDashboardStatsHandler);
  *       - in: query
  *         name: companyId
  *         schema: { type: string }
- *         description: Super Admin — company to resolve departments for
+ *         description: Global Admin — company to resolve departments for
  */
 router.get('/scope-category-ids', getScopeCategoryIdsHandler);
 

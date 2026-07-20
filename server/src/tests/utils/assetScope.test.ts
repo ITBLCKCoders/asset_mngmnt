@@ -44,7 +44,7 @@ describe('assetScope', () => {
       });
     });
 
-    it('should return scope for non-super-admin user with company', async () => {
+    it('should return scope for non-global-admin user with company', async () => {
       const pool = createMockPool();
       (pool.execute as jest.Mock)
         .mockResolvedValueOnce([
@@ -67,13 +67,13 @@ describe('assetScope', () => {
       expect(pool.execute).toHaveBeenCalled();
     });
 
-    it('should return isSuperAdmin true when role is Super Admin', async () => {
+    it('should return isSuperAdmin true when role is Global Admin', async () => {
       const pool = createMockPool();
       (pool.execute as jest.Mock).mockResolvedValueOnce([
         [
           {
             company_id: 'co-1',
-            role_name: 'Super Admin',
+            role_name: 'Global Admin',
             asset_type: null,
             manager_role: null,
           },
@@ -94,13 +94,13 @@ describe('assetScope', () => {
   });
 
   describe('getBorrowRequestListScope', () => {
-    it('returns borrowScope null for Super Admin and uses active company id', async () => {
+    it('returns borrowScope null for Global Admin and uses active company id', async () => {
       const pool = createMockPool();
       (pool.execute as jest.Mock).mockResolvedValueOnce([
         [
           {
             company_id: 'co-1',
-            role_name: 'Super Admin',
+            role_name: 'Global Admin',
             asset_type: null,
             manager_role: null,
           },

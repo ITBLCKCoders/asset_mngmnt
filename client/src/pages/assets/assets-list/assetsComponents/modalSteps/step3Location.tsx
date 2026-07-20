@@ -53,16 +53,16 @@ export function Step3Location({
   const [isBuildingDropdownOpen, setIsBuildingDropdownOpen] = useState(false);
   const [isLocationDropdownOpen, setIsLocationDropdownOpen] = useState(false);
 
-  // Check if user is Super Admin or Admin (can select any company)
+  // Check if user is Global Admin or Admin (can select any company)
   const isSuperAdminOrAdmin = Boolean(
-    user?.role?.name?.toLowerCase() === 'super admin' ||
+    user?.role?.name?.toLowerCase() === 'global admin' ||
       user?.role?.name?.toLowerCase() === 'admin'
   );
 
   // Check if user has special role that requires company scoping
   // IT asset, Admin asset, IT Asset Manager, and Admin Asset Manager roles are restricted to their company
   // overallManager can change companies (show all companies)
-  // Super Admin and Admin can also change companies (show all companies)
+  // Global Admin and Admin can also change companies (show all companies)
   const hasSpecialRole = Boolean(
     !isSuperAdminOrAdmin &&
       (roleCustodian?.assetType === 'it' ||
@@ -130,7 +130,7 @@ export function Step3Location({
           setCompanies([]);
         }
       } else if (isSuperAdminOrAdmin && activeCompany) {
-        // For Super Admin and Admin, show only the active company from global context
+        // For Global Admin and Admin, show only the active company from global context
         setCompanies([activeCompany]);
         // Update form to use active company if not already set
         if (!formData.company) {

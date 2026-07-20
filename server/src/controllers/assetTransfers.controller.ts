@@ -91,7 +91,7 @@ async function userCanAccessCompanyTransfer(userId: string): Promise<boolean> {
   const assetType = String(row?.asset_type ?? '').trim().toLowerCase();
   const managerRole = String(row?.manager_role ?? '').trim();
   return (
-    roleName === 'super admin' ||
+    roleName === 'global admin' ||
     roleName === 'admin' ||
     managerRole === 'overallManager' ||
     assetType === 'it' ||

@@ -17,7 +17,7 @@ router.get('/settings', getRetentionSettingsHandler);
 router.put('/settings', upsertRetentionSettingsHandler);
 router.post('/archive', triggerArchiveHandler);
 
-// System-level defaults (super admin only)
+// System-level defaults (global admin only)
 router.get('/defaults', getSystemDefaultsHandler);
 router.put('/defaults', updateSystemDefaultsHandler);
 

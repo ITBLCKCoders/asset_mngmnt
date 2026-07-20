@@ -328,7 +328,7 @@ export default function ReportsPage() {
   const [scopeCategoryIds, setScopeCategoryIds] = useState<string[]>([]);
   const [scopeCategoryIdsLoading, setScopeCategoryIdsLoading] = useState(false);
 
-  const isSuperAdmin = user?.role?.name === 'Super Admin';
+  const isSuperAdmin = user?.role?.name === 'Global Admin';
 
   const effectiveScope = useMemo<'it' | 'admin' | null>(() => {
     if (isSuperAdmin) return scope;
@@ -1158,7 +1158,7 @@ export default function ReportsPage() {
         }
 
         const maintenanceCompanyId =
-          user.role?.name === 'Super Admin'
+          user.role?.name === 'Global Admin'
             ? selectedCompanyIdRef.current || activeId
             : '';
         const maintenancePath =
@@ -1172,7 +1172,7 @@ export default function ReportsPage() {
           .catch(reason => ({ status: 'rejected' as const, reason }));
 
         const financeCompanyId =
-          user.role?.name === 'Super Admin'
+          user.role?.name === 'Global Admin'
             ? selectedCompanyIdRef.current || activeId
             : '';
         const financeScope = isSuperAdmin ? scope : null;

@@ -52,7 +52,7 @@ export const getAllSuppliers = async (req: AuthRequest, res: Response) => {
       [req.user?.userID]
     );
     const roleName = String(userRows[0]?.[0]?.role_name ?? '').trim().toLowerCase();
-    if (roleName === 'super admin' || roleName === 'admin') {
+    if (roleName === 'global admin' || roleName === 'admin') {
       const [rows] = await pool.query<any[][]>(
         `SELECT s.supplierID, s.name, s.category_id, s.contact, s.email, s.company_id,
                 s.created_at, s.created_by, s.updated_at, s.updated_by,

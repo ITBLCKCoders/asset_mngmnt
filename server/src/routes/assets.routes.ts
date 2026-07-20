@@ -9,6 +9,7 @@ import {
   getMyAssetsHandler,
   getAllFormsByAssetIdHandler,
 } from '../controllers/assets.controller.js';
+import { importAssetsHandler } from '../controllers/assetImport.controller.js';
 import { authenticate } from '../middleware/authenticate.js';
 
 const router = Router();
@@ -106,6 +107,28 @@ router.get('/:assetCode', getAssetByCodeHandler);
  *       401: { description: Unauthorized }
  */
 router.post('/', createAssetHandler);
+
+/**
+ * @swagger
+ * /api/assets/import:
+ *   post:
+ *     tags: [Assets]
+ *     summary: Bulk import assets from Excel data
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             properties:
+ *               assets: { type: array }
+ *               builders: { type: array }
+ *     responses:
+ *       201: { description: Import completed }
+ *       400: { description: Validation error }
+ *       401: { description: Unauthorized }
+ */
+router.post('/import', importAssetsHandler);
 
 /**
  * @swagger
