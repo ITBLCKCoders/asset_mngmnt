@@ -461,8 +461,8 @@ export const generateAssetReturnPDF = async (
     },
     didParseCell: data => {
       if (data.row.index === 0) {
-        data.cell.styles.fillColor = [199, 164, 100];
-        data.cell.styles.textColor = [0, 0, 0];
+        data.cell.styles.fillColor = headerFillColor;
+        data.cell.styles.textColor = headerTextColor;
         data.cell.styles.fontStyle = 'bold';
         data.cell.styles.halign = 'center';
       }

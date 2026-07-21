@@ -1,5 +1,8 @@
 const SCANNER_PREFIX = /^\]?(?:C1|Q1|A0|E0)/i;
-const CONTROL_CHARS = /[\x00-\x1F\x7F]/g;
+const CONTROL_CHARS = new RegExp(
+  `[${Array.from({ length: 32 }, (_, i) => String.fromCharCode(i)).join('')}${String.fromCharCode(127)}]`,
+  'g'
+);
 /** Matches /assets/details/CODE, assets/details/CODE, or truncated details/CODE */
 const ASSET_DETAILS_PATH = /(?:^|[/?#])(?:assets\/)?details\/([^/?#\s]+)/i;
 

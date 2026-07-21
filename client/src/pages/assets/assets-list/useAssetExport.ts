@@ -748,33 +748,35 @@ filterLabel?: string
     const reportTitleRow = assetsSheet.addRow(['Asset List Report']);
     reportTitleRow.font = { bold: true, size: 14, color: { argb: 'FF333333' } };
     assetsSheet.mergeCells(1, 1, 1, lastCol);
-    reportTitleRow.alignment = { horizontal: 'center', vertical: 'middle' };
+    reportTitleRow.alignment = { horizontal: 'center', vertical: 'middle', wrapText: true };
 
     // Row 2: "Total Assets: X" centered in the full table
     const totalAssetsRow = assetsSheet.addRow([`Total Assets: ${assets.length}`]);
     totalAssetsRow.font = { size: 11, color: { argb: 'FF666666' } };
     assetsSheet.mergeCells(2, 1, 2, lastCol);
-    totalAssetsRow.alignment = { horizontal: 'center', vertical: 'middle' };
+    totalAssetsRow.alignment = { horizontal: 'center', vertical: 'middle', wrapText: true };
 
     // Row 3: Scope/Filter label if present
     if (filterLabel) {
       const filterRow = assetsSheet.addRow([filterLabel]);
       filterRow.font = { italic: true, size: 10, color: { argb: 'FF666666' } };
       assetsSheet.mergeCells(3, 1, 3, lastCol);
-      filterRow.alignment = { horizontal: 'center', vertical: 'middle' };
+      filterRow.alignment = { horizontal: 'center', vertical: 'middle', wrapText: true };
     }
 
     // Row 4: empty spacer
     assetsSheet.addRow([]);
 
-    // Row 5: "Generated on: date time by user" at far right - last 3 columns only
+    // Row: "Generated on: date time by user" at far right - last 3 columns only
     const now = new Date();
     const generatedBy = currentUser?.name || 'Unknown';
     const genColStart = Math.max(1, lastCol - 2); // Last 3 columns
-    const generatedRow = assetsSheet.addRow([`Generated on: ${now.toLocaleDateString()} ${now.toLocaleTimeString()} by ${generatedBy}`]);
-    generatedRow.font = { size: 9, color: { argb: 'FF999999' }, italic: true };
-    assetsSheet.mergeCells(5, genColStart, 5, lastCol);
-    generatedRow.alignment = { horizontal: 'right', vertical: 'middle' };
+    const generatedRow = assetsSheet.addRow([]);
+    const genCell = generatedRow.getCell(genColStart);
+    genCell.value = `Generated on: ${now.toLocaleDateString()} ${now.toLocaleTimeString()} by ${generatedBy}`;
+    genCell.font = { size: 9, color: { argb: 'FF999999' }, italic: true };
+    assetsSheet.mergeCells(generatedRow.number, genColStart, generatedRow.number, lastCol);
+    generatedRow.alignment = { horizontal: 'right', vertical: 'middle', wrapText: true };
 
     // Row 6: empty spacer before header
     assetsSheet.addRow([]);
@@ -921,7 +923,7 @@ filterLabel?: string
         pattern: 'solid',
         fgColor: { argb: headerArgb },
       };
-      separatorCell.alignment = { horizontal: 'center', vertical: 'middle' };
+      separatorCell.alignment = { horizontal: 'center', vertical: 'middle', wrapText: true };
       
       currentRowIndex++;
 
@@ -1504,9 +1506,10 @@ const exportSummaryToPDF = async (
     setIsSummaryExportDialogOpen(false);
   };
 
-const exportSummaryToExcel = async (
+  const exportSummaryToExcel = async (
     assets: Asset[],
     activeCompany: Company | null,
+    currentUser?: { name: string } | null,
     listCols?: { key: string; label: string }[],
     filterLabel?: string,
     assetBuilders?: any[] | null
@@ -1519,75 +1522,110 @@ const exportSummaryToExcel = async (
     const accentColor = getCompanyAccentColor(activeCompany?.name);
     const headerArgb = `FF${accentColor.r.toString(16).padStart(2, '0')}${accentColor.g.toString(16).padStart(2, '0')}${accentColor.b.toString(16).padStart(2, '0')}`;
 
-    // ============================================================
-    // SHEET 1: Summary - Device Type, Employee, Department
-    // ============================================================
-    const wsSummary = workbook.addWorksheet('Summary');
-
-    // Add filter label row at top if present
-    if (filterLabel) {
-      const filterRow = wsSummary.addRow([filterLabel]);
-      filterRow.font = { italic: true, size: 10, color: { argb: 'FF666666' } };
-      wsSummary.mergeCells(1, 1, 1, 9);
-    }
-
-    // ── Table 1: Device Type Summary (cols A-I) ──
     const conditionLabels = SUMMARY_CONDITIONS.filter(c => summarySelectedConditions.includes(c));
     const typeHeaders = ['Device Type', '# Units', 'Working', 'Defective'];
     if (summaryIncludeCondition) {
       typeHeaders.push(...conditionLabels);
     }
+    const typeColCount = typeHeaders.length;
 
-    const typeHeaderRow = wsSummary.addRow(typeHeaders);
-    typeHeaderRow.font = { bold: true, color: { argb: 'FFFFFFFF' } };
-    typeHeaderRow.fill = {
-      type: 'pattern',
-      pattern: 'solid',
-      fgColor: { argb: 'FF333333' },
-    };
+    const empColOffset = 12;
+    const lastCol = empColOffset + 2;
 
-    // Track row numbers for styling
-    let currentRowNum = typeHeaderRow.number + 1;
+    // ============================================================
+    // SHEET 1: Summary - Device Type, Employee, Department
+    // ============================================================
+    const wsSummary = workbook.addWorksheet('Summary');
 
-    // Build rows grouped by category with subtotals
+    // ── Header Section (logo, title, totals, generated-by) ──
+    if (activeCompany?.logo_url) {
+      try {
+        const proxiedUrl = activeCompany.logo_url;
+        const resolvedLogoUrl = proxiedUrl.startsWith('/') && typeof window !== 'undefined'
+          ? `${window.location.origin}${proxiedUrl}`
+          : proxiedUrl;
+        const response = await fetch(resolvedLogoUrl);
+        if (response.ok) {
+          const blob = await response.blob();
+          const dataUrl = await new Promise<string>((resolve, reject) => {
+            const reader = new FileReader();
+            reader.onload = () => resolve(reader.result as string);
+            reader.onerror = reject;
+            reader.readAsDataURL(blob);
+          });
+          wsSummary.getColumn(1).width = 15;
+          wsSummary.getColumn(2).width = 15;
+          wsSummary.getColumn(3).width = 15;
+          const imageId = workbook.addImage({
+            base64: dataUrl.split(',')[1],
+            extension: dataUrl.includes('jpeg') || dataUrl.includes('jpg') ? 'jpeg' : 'png',
+          });
+          wsSummary.addImage(imageId, {
+            tl: { col: 0, row: 0 },
+            ext: { width: 360, height: 60 },
+            editAs: 'oneCell',
+          });
+        }
+      } catch (_error) {
+        console.debug('Company logo not found for summary Excel export, continuing without it');
+      }
+    }
+
+    const titleRow = wsSummary.addRow(['Summary Report']);
+    titleRow.font = { bold: true, size: 14, color: { argb: 'FF333333' } };
+    wsSummary.mergeCells(titleRow.number, 1, titleRow.number, lastCol);
+    titleRow.alignment = { horizontal: 'center', vertical: 'middle', wrapText: true };
+
+    const totalAssetsRow = wsSummary.addRow([`Total Assets: ${assets.length}`]);
+    totalAssetsRow.font = { size: 11, color: { argb: 'FF666666' } };
+    wsSummary.mergeCells(totalAssetsRow.number, 1, totalAssetsRow.number, lastCol);
+    totalAssetsRow.alignment = { horizontal: 'center', vertical: 'middle', wrapText: true };
+
+    if (filterLabel) {
+      const filterRow = wsSummary.addRow([filterLabel]);
+      filterRow.font = { italic: true, size: 10, color: { argb: 'FF666666' } };
+      wsSummary.mergeCells(filterRow.number, 1, filterRow.number, lastCol);
+      filterRow.alignment = { horizontal: 'center', vertical: 'middle', wrapText: true };
+    }
+
+    const now = new Date();
+    const generatedBy = currentUser?.name || 'Unknown';
+    const genColStart = Math.max(1, lastCol - 2);
+    const generatedRow = wsSummary.addRow([]);
+    const genCell = generatedRow.getCell(genColStart);
+    genCell.value = `Generated on: ${now.toLocaleDateString()} ${now.toLocaleTimeString()} by ${generatedBy}`;
+    genCell.font = { size: 9, color: { argb: 'FF999999' }, italic: true };
+    wsSummary.mergeCells(generatedRow.number, genColStart, generatedRow.number, lastCol);
+    generatedRow.alignment = { horizontal: 'right', vertical: 'middle', wrapText: true };
+
+    wsSummary.addRow([]); // spacer
+
+    // ── Build device type display rows ──
+    const typeDisplayRows: Array<{
+      cells: (string | number)[];
+      isCategory?: boolean;
+      isSubtotal?: boolean;
+      isGrandTotal?: boolean;
+    }> = [];
+
+    typeDisplayRows.push({ cells: typeHeaders });
+
     const categorySubtotals: Array<{ category: string; subtotal: TypeSummaryDynamic }> = [];
 
     categoryRows.forEach(cat => {
-      // Category header row
-      const catHeaderRow = wsSummary.addRow([cat.category, '', '', '', ...conditionLabels.map(() => '')]);
-      catHeaderRow.font = { bold: true, color: { argb: 'FFFFFFFF' } };
-      catHeaderRow.fill = {
-        type: 'pattern',
-        pattern: 'solid',
-        fgColor: { argb: 'FF333333' },
-      };
-      currentRowNum++;
-
-      // Type rows
+      typeDisplayRows.push({ cells: [cat.category, ...typeHeaders.slice(1).map(() => '')], isCategory: true });
       cat.types.forEach(t => {
         const row: (string | number)[] = [t.type, t.units, t.working, t.defective];
         conditionLabels.forEach(c => row.push((t as any)[c]));
-        wsSummary.addRow(row);
-        currentRowNum++;
+        typeDisplayRows.push({ cells: row });
       });
-
-      // Category subtotal row
       const sub: TypeSummaryDynamic = cat.subtotal;
       const subRow: (string | number)[] = [`${cat.category} Total`, sub.units, sub.working, sub.defective];
       conditionLabels.forEach(c => subRow.push(sub[c]));
-      const subRowExcel = wsSummary.addRow(subRow);
-      subRowExcel.font = { bold: true };
-      subRowExcel.fill = {
-        type: 'pattern',
-        pattern: 'solid',
-        fgColor: { argb: 'FFF0F0F0' },
-      };
-      currentRowNum++;
-
-categorySubtotals.push({ category: cat.category, subtotal: sub } as { category: string; subtotal: TypeSummaryDynamic });
+      typeDisplayRows.push({ cells: subRow, isSubtotal: true });
+      categorySubtotals.push({ category: cat.category, subtotal: sub });
     });
 
-// Grand total row
     const grandTotals = categorySubtotals.reduce((acc: TypeSummaryDynamic, cat) => {
       acc.units += cat.subtotal.units;
       acc.working += cat.subtotal.working;
@@ -1598,14 +1636,110 @@ categorySubtotals.push({ category: cat.category, subtotal: sub } as { category: 
 
     const eTotalRow: (string | number)[] = ['Grand Total', grandTotals.units, grandTotals.working, grandTotals.defective];
     conditionLabels.forEach(c => eTotalRow.push(grandTotals[c] ?? 0));
-    const totalRowExcel = wsSummary.addRow(eTotalRow);
-    totalRowExcel.font = { bold: true, color: { argb: 'FFFFFFFF' } };
-    totalRowExcel.fill = {
-      type: 'pattern',
-      pattern: 'solid',
-      fgColor: { argb: headerArgb },
-    };
+    typeDisplayRows.push({ cells: eTotalRow, isGrandTotal: true });
 
+    // ── Build employee display rows ──
+    const empHeaders = ['Employee Name', 'Department', '# Assets'];
+    const empDisplayRows: Array<{
+      cells: (string | number)[];
+      isSeparator?: boolean;
+      isTotal?: boolean;
+    }> = [];
+
+    empDisplayRows.push({ cells: empHeaders });
+
+    let empTotal = 0;
+    empByCompany.forEach(([company, employees]) => {
+      empDisplayRows.push({ cells: [company, '', ''], isSeparator: true });
+      employees.forEach(emp => {
+        empDisplayRows.push({ cells: [emp.name, emp.department, emp.count] });
+        empTotal += emp.count;
+      });
+    });
+    empDisplayRows.push({ cells: ['Total', '', empTotal], isTotal: true });
+
+    // ── Render side-by-side tables (device type left, employee right) ──
+    const maxRows = Math.max(typeDisplayRows.length, empDisplayRows.length);
+
+    for (let i = 0; i < maxRows; i++) {
+      const row = wsSummary.addRow([]);
+      const rowNum = row.number;
+
+      // Device type side (cols 1..typeColCount)
+      const tRow = typeDisplayRows[i];
+      if (tRow) {
+        tRow.cells.forEach((cell, idx) => {
+          const c = row.getCell(idx + 1);
+          c.value = cell;
+          c.alignment = { wrapText: true, vertical: 'middle' };
+        });
+        if (i === 0) {
+          // Type header
+          row.eachCell((cell, colIdx) => {
+            if (colIdx <= typeColCount) {
+              cell.font = { bold: true, color: { argb: 'FFFFFFFF' } };
+              cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF333333' } };
+            }
+          });
+        } else if (tRow.isCategory) {
+          wsSummary.mergeCells(rowNum, 1, rowNum, typeColCount);
+          const cell = row.getCell(1);
+          cell.font = { bold: true, color: { argb: 'FFFFFFFF' } };
+          cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF333333' } };
+          cell.alignment = { wrapText: true, vertical: 'middle' };
+        } else if (tRow.isSubtotal) {
+          row.eachCell((cell, colIdx) => {
+            if (colIdx <= typeColCount) {
+              cell.font = { bold: true };
+              cell.alignment = { wrapText: true, vertical: 'middle' };
+            }
+          });
+          for (let ci = 1; ci <= typeColCount; ci++) {
+            row.getCell(ci).fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFF0F0F0' } };
+          }
+        } else if (tRow.isGrandTotal) {
+          row.eachCell((cell, colIdx) => {
+            if (colIdx <= typeColCount) {
+              cell.font = { bold: true, color: { argb: 'FFFFFFFF' } };
+              cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: headerArgb } };
+              cell.alignment = { wrapText: true, vertical: 'middle' };
+            }
+          });
+        }
+      }
+
+      // Employee side (cols empColOffset..empColOffset+2)
+      const eRow = empDisplayRows[i];
+      if (eRow) {
+        eRow.cells.forEach((cell, idx) => {
+          const c = row.getCell(empColOffset + idx);
+          c.value = cell;
+          c.alignment = { wrapText: true, vertical: 'middle' };
+        });
+        if (i === 0) {
+          // Emp header
+          for (let ci = 0; ci < 3; ci++) {
+            const cell = row.getCell(empColOffset + ci);
+            cell.font = { bold: true, color: { argb: 'FFFFFFFF' } };
+            cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF333333' } };
+          }
+        } else if (eRow.isSeparator) {
+          for (let ci = 0; ci < 3; ci++) {
+            const cell = row.getCell(empColOffset + ci);
+            cell.font = { bold: true, color: { argb: 'FFFFFFFF' } };
+            cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF666666' } };
+          }
+        } else if (eRow.isTotal) {
+          for (let ci = 0; ci < 3; ci++) {
+            const cell = row.getCell(empColOffset + ci);
+            cell.font = { bold: true, color: { argb: 'FFFFFFFF' } };
+            cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: headerArgb } };
+          }
+        }
+      }
+    }
+
+    // Set column widths for type side
     wsSummary.getColumn(1).width = 22;
     wsSummary.getColumn(2).width = 10;
     wsSummary.getColumn(3).width = 10;
@@ -1613,114 +1747,141 @@ categorySubtotals.push({ category: cat.category, subtotal: sub } as { category: 
     conditionLabels.forEach((_, idx) => {
       wsSummary.getColumn(5 + idx).width = 12;
     });
-
-    // ── Table 2: Employee by Company (starting at column L) ──
-    const empColOffset = 12;
-    const empHeaders = ['Employee Name', 'Department', '# Assets'];
-    const gapRow = wsSummary.addRow([]);
-
-    empHeaders.forEach((h, i) => {
-      const cell = wsSummary.getCell(gapRow.number, empColOffset + i);
-      cell.value = h;
-      cell.font = { bold: true, color: { argb: 'FFFFFFFF' } };
-      cell.fill = {
-        type: 'pattern',
-        pattern: 'solid',
-        fgColor: { argb: 'FF333333' },
-      };
-    });
-
-    let dataRowNum = gapRow.number + 1;
-    let empTotal = 0;
-
-    empByCompany.forEach(([company, employees]) => {
-      // Company separator row
-      const sepRow = wsSummary.getRow(dataRowNum);
-      const sepCell = sepRow.getCell(empColOffset);
-      sepCell.value = company;
-      sepCell.font = { bold: true, color: { argb: 'FFFFFFFF' } };
-      sepCell.fill = {
-        type: 'pattern',
-        pattern: 'solid',
-        fgColor: { argb: 'FF666666' },
-      };
-      const sepCell2 = sepRow.getCell(empColOffset + 1);
-      sepCell2.fill = {
-        type: 'pattern',
-        pattern: 'solid',
-        fgColor: { argb: 'FF666666' },
-      };
-      const sepCell3 = sepRow.getCell(empColOffset + 2);
-      sepCell3.fill = {
-        type: 'pattern',
-        pattern: 'solid',
-        fgColor: { argb: 'FF666666' },
-      };
-      dataRowNum++;
-
-      employees.forEach(emp => {
-        const row = wsSummary.getRow(dataRowNum);
-        row.getCell(empColOffset).value = emp.name;
-        row.getCell(empColOffset + 1).value = emp.department;
-        row.getCell(empColOffset + 2).value = emp.count;
-        empTotal += emp.count;
-        dataRowNum++;
-      });
-    });
-    // Total row
-    const empTotalRow = wsSummary.getRow(dataRowNum);
-    empTotalRow.getCell(empColOffset).value = 'Total';
-    empTotalRow.getCell(empColOffset).font = { bold: true, color: { argb: 'FFFFFFFF' } };
-    empTotalRow.getCell(empColOffset).fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: headerArgb } };
-    empTotalRow.getCell(empColOffset + 2).value = empTotal;
-    empTotalRow.getCell(empColOffset + 2).font = { bold: true, color: { argb: 'FFFFFFFF' } };
-    empTotalRow.getCell(empColOffset + 2).fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: headerArgb } };
-    empTotalRow.getCell(empColOffset + 1).fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: headerArgb } };
-    dataRowNum++;
-
+    // Gap columns
+    for (let ci = typeColCount + 1; ci < empColOffset; ci++) {
+      wsSummary.getColumn(ci).width = 3;
+    }
+    // Employee columns
     wsSummary.getColumn(empColOffset).width = 30;
     wsSummary.getColumn(empColOffset + 1).width = 22;
     wsSummary.getColumn(empColOffset + 2).width = 12;
 
-    // ── Table 3: Department Summary (below side-by-side tables, in line with cols A-I) ──
-    wsSummary.addRow([]);
-    wsSummary.addRow([]);
+    // ── Table 3: Department Summary (below employee table, same column offset) ──
+    const combinedStartRow = wsSummary.rowCount - maxRows + 1;
+    const employeeEndRow = combinedStartRow + empDisplayRows.length - 1;
+    const deptStartRow = employeeEndRow + 3; // 3 rows spacing after employee table
 
-    const deptHeaderRow = wsSummary.addRow(['Department', 'Company', '# Assets']);
-    deptHeaderRow.font = { bold: true, color: { argb: 'FFFFFFFF' } };
-    deptHeaderRow.fill = {
-      type: 'pattern',
-      pattern: 'solid',
-      fgColor: { argb: 'FF333333' },
-    };
+    // Ensure enough rows exist for the department table starting point
+    while (wsSummary.rowCount < deptStartRow) {
+      wsSummary.addRow([]);
+    }
+
+    const deptHeaderRow = wsSummary.getRow(deptStartRow);
+    const deptH1 = deptHeaderRow.getCell(empColOffset);
+    deptH1.value = 'Department';
+    deptH1.font = { bold: true, color: { argb: 'FFFFFFFF' } };
+    deptH1.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF333333' } };
+    deptH1.alignment = { horizontal: 'center', vertical: 'middle', wrapText: true };
+    const deptH2 = deptHeaderRow.getCell(empColOffset + 1);
+    deptH2.value = 'Company';
+    deptH2.font = { bold: true, color: { argb: 'FFFFFFFF' } };
+    deptH2.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF333333' } };
+    deptH2.alignment = { horizontal: 'center', vertical: 'middle', wrapText: true };
+    const deptH3 = deptHeaderRow.getCell(empColOffset + 2);
+    deptH3.value = '# Assets';
+    deptH3.font = { bold: true, color: { argb: 'FFFFFFFF' } };
+    deptH3.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF333333' } };
+    deptH3.alignment = { horizontal: 'center', vertical: 'middle', wrapText: true };
 
     const deptETotal = deptRows.reduce((sum, r) => sum + r.count, 0);
+    let deptRowNum = deptStartRow + 1;
     deptRows.forEach(r => {
-      wsSummary.addRow([r.department, r.company, r.count]);
+      const deptRow = wsSummary.getRow(deptRowNum);
+      deptRow.getCell(empColOffset).value = r.department;
+      deptRow.getCell(empColOffset).alignment = { wrapText: true, vertical: 'middle' };
+      deptRow.getCell(empColOffset + 1).value = r.company;
+      deptRow.getCell(empColOffset + 1).alignment = { wrapText: true, vertical: 'middle' };
+      deptRow.getCell(empColOffset + 2).value = r.count;
+      deptRow.getCell(empColOffset + 2).alignment = { wrapText: true, vertical: 'middle' };
+      deptRowNum++;
+      if (deptRowNum > wsSummary.rowCount) wsSummary.addRow([]);
     });
-    const deptTotalExcelRow = wsSummary.addRow(['Total', '', deptETotal]);
-    deptTotalExcelRow.font = { bold: true, color: { argb: 'FFFFFFFF' } };
-    deptTotalExcelRow.fill = {
-      type: 'pattern',
-      pattern: 'solid',
-      fgColor: { argb: headerArgb },
-    };
+
+    const deptTotalRow = wsSummary.getRow(deptRowNum);
+    if (deptRowNum > wsSummary.rowCount) wsSummary.addRow([]);
+    const deptT1 = deptTotalRow.getCell(empColOffset);
+    deptT1.value = 'Total';
+    deptT1.font = { bold: true, color: { argb: 'FFFFFFFF' } };
+    deptT1.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: headerArgb } };
+    deptT1.alignment = { horizontal: 'center', vertical: 'middle', wrapText: true };
+    const deptT2 = deptTotalRow.getCell(empColOffset + 1);
+    deptT2.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: headerArgb } };
+    const deptT3 = deptTotalRow.getCell(empColOffset + 2);
+    deptT3.value = deptETotal;
+    deptT3.font = { bold: true, color: { argb: 'FFFFFFFF' } };
+    deptT3.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: headerArgb } };
+    deptT3.alignment = { horizontal: 'center', vertical: 'middle', wrapText: true };
 
     // ============================================================
     // SHEET 2: Asset List - Full Asset Details
     // ============================================================
     const wsAssets = workbook.addWorksheet('Asset List');
 
-    // Add filter label row at top if present
-    if (filterLabel) {
-      const filterRow = wsAssets.addRow([filterLabel]);
-      filterRow.font = { italic: true, size: 10, color: { argb: 'FF666666' } };
-      wsAssets.mergeCells(1, 1, 1, listCols?.length || availableColumns.length);
-    }
-
     const summaryAssetColumns = listCols ?? availableColumns.filter(col =>
       summarySelectedColumns.has(col.key)
     );
+    const totalAssetCols = summaryAssetColumns.length || 1;
+
+    // ── Header section for Asset List sheet ──
+    if (activeCompany?.logo_url) {
+      try {
+        const proxiedUrl = activeCompany.logo_url;
+        const resolvedLogoUrl = proxiedUrl.startsWith('/') && typeof window !== 'undefined'
+          ? `${window.location.origin}${proxiedUrl}`
+          : proxiedUrl;
+        const response = await fetch(resolvedLogoUrl);
+        if (response.ok) {
+          const blob = await response.blob();
+          const dataUrl = await new Promise<string>((resolve, reject) => {
+            const reader = new FileReader();
+            reader.onload = () => resolve(reader.result as string);
+            reader.onerror = reject;
+            reader.readAsDataURL(blob);
+          });
+          wsAssets.getColumn(1).width = 15;
+          wsAssets.getColumn(2).width = 15;
+          wsAssets.getColumn(3).width = 15;
+          const imageId = workbook.addImage({
+            base64: dataUrl.split(',')[1],
+            extension: dataUrl.includes('jpeg') || dataUrl.includes('jpg') ? 'jpeg' : 'png',
+          });
+          wsAssets.addImage(imageId, {
+            tl: { col: 0, row: 0 },
+            ext: { width: 360, height: 60 },
+            editAs: 'oneCell',
+          });
+        }
+      } catch (_error) {
+        console.debug('Company logo not found for Asset List sheet, continuing without it');
+      }
+    }
+
+    const assetsTitleRow = wsAssets.addRow(['Asset List Report']);
+    assetsTitleRow.font = { bold: true, size: 14, color: { argb: 'FF333333' } };
+    wsAssets.mergeCells(assetsTitleRow.number, 1, assetsTitleRow.number, totalAssetCols);
+    assetsTitleRow.alignment = { horizontal: 'center', vertical: 'middle', wrapText: true };
+
+    const assetsTotalRow = wsAssets.addRow([`Total Assets: ${assets.length}`]);
+    assetsTotalRow.font = { size: 11, color: { argb: 'FF666666' } };
+    wsAssets.mergeCells(assetsTotalRow.number, 1, assetsTotalRow.number, totalAssetCols);
+    assetsTotalRow.alignment = { horizontal: 'center', vertical: 'middle', wrapText: true };
+
+    if (filterLabel) {
+      const filterRow = wsAssets.addRow([filterLabel]);
+      filterRow.font = { italic: true, size: 10, color: { argb: 'FF666666' } };
+      wsAssets.mergeCells(filterRow.number, 1, filterRow.number, totalAssetCols);
+      filterRow.alignment = { horizontal: 'center', vertical: 'middle', wrapText: true };
+    }
+
+    const assetsGenColStart = Math.max(1, totalAssetCols - 2);
+    const assetsGenRow = wsAssets.addRow([]);
+    const assetsGenCell = assetsGenRow.getCell(assetsGenColStart);
+    assetsGenCell.value = `Generated on: ${now.toLocaleDateString()} ${now.toLocaleTimeString()} by ${generatedBy}`;
+    assetsGenCell.font = { size: 9, color: { argb: 'FF999999' }, italic: true };
+    wsAssets.mergeCells(assetsGenRow.number, assetsGenColStart, assetsGenRow.number, totalAssetCols);
+    assetsGenRow.alignment = { horizontal: 'right', vertical: 'middle', wrapText: true };
+
+    wsAssets.addRow([]); // spacer
 
     const listHeaderRow = wsAssets.addRow(['Asset List']);
     listHeaderRow.font = { bold: true, size: 14 };
@@ -1732,6 +1893,7 @@ categorySubtotals.push({ category: cat.category, subtotal: sub } as { category: 
       pattern: 'solid',
       fgColor: { argb: 'FF333333' },
     };
+    listHeaderRow2.alignment = { wrapText: true, vertical: 'top' };
 
     const listRows = buildGroupedAssetListRows(
       assets,
@@ -1742,7 +1904,7 @@ categorySubtotals.push({ category: cat.category, subtotal: sub } as { category: 
     listRows.forEach(row => {
       const dataRow = wsAssets.addRow(row.cells);
       if (row.isSeparator) {
-        wsAssets.mergeCells(dataRow.number, 1, dataRow.number, summaryAssetColumns.length);
+        wsAssets.mergeCells(dataRow.number, 1, dataRow.number, totalAssetCols);
         dataRow.height = 25;
         const separatorCell = dataRow.getCell(1);
         separatorCell.font = { bold: true, size: 14, color: { argb: 'FFFFFFFF' } };
@@ -1751,7 +1913,7 @@ categorySubtotals.push({ category: cat.category, subtotal: sub } as { category: 
           pattern: 'solid',
           fgColor: { argb: headerArgb },
         };
-        separatorCell.alignment = { horizontal: 'center', vertical: 'middle' };
+        separatorCell.alignment = { horizontal: 'center', vertical: 'middle', wrapText: true };
       } else {
         dataRow.eachCell((cell, colIdx) => {
           cell.alignment = {
@@ -2020,8 +2182,8 @@ categorySubtotals.push({ category: cat.category, subtotal: sub } as { category: 
       const filterLabel = parts.length > 0 ? parts.join(' | ') : undefined;
       if (summaryExportType === 'pdf') {
         await exportSummaryToPDF(filteredAssets, activeCompany, currentUser, selectedCols, filterLabel, assetBuilders);
-      } else if (summaryExportType === 'excel') {
-        await exportSummaryToExcel(filteredAssets, activeCompany, selectedCols, filterLabel, assetBuilders);
+      } else       if (summaryExportType === 'excel') {
+        await exportSummaryToExcel(filteredAssets, activeCompany, currentUser, selectedCols, filterLabel, assetBuilders);
       }
     } catch (err) {
       toast.error('Failed to fetch assets for summary export');

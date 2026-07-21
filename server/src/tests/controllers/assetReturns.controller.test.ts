@@ -85,7 +85,7 @@ describe('assetReturns.controller', () => {
     it('submits return request successfully', async () => {
       req.body = { assignmentIds: ['a1', 'a2'], returnType: 'Returned', digitalSignature: 'sig-data' };
       transferRepo.getActiveAssignmentsByIds.mockResolvedValue([mockAssignment, { ...mockAssignment, assignmentID: 'a2' }]);
-      transferRepo.getCategoryDepartmentsByAssetIds.mockResolvedValue([{ departmentID: 'd1' }]);
+      transferRepo.getCategoryDepartmentsByAssetIds.mockResolvedValue([{ departmentID: 'd1', assetID: '10' }]);
       transferRepo.getUserDepartmentId.mockResolvedValue('d1');
       transferRepo.getDepartmentById.mockResolvedValue({ company_id: '10' });
       generateReturnFormNumber.mockResolvedValue('RET-001');
@@ -95,6 +95,36 @@ describe('assetReturns.controller', () => {
       await assetReturnsController.submitAssetReturnRequestHandler(req, res);
       expect(res._status).toBe(201);
       expect(res._json.formID).toBe('f1');
+      expect(res._json.forms).toHaveLength(1);
+    });
+
+    it('creates separate return forms for different departments', async () => {
+      req.body = { assignmentIds: ['a1', 'a2'], returnType: 'Returned', digitalSignature: 'sig-data' };
+      transferRepo.getActiveAssignmentsByIds.mockResolvedValue([
+        { ...mockAssignment, assignmentID: 'a1', asset_id: 'asset-it' },
+        { ...mockAssignment, assignmentID: 'a2', asset_id: 'asset-admin' },
+      ]);
+      transferRepo.getCategoryDepartmentsByAssetIds.mockResolvedValue([
+        { departmentID: 'dept-it', assetID: 'asset-it' },
+        { departmentID: 'dept-admin', assetID: 'asset-admin' },
+      ]);
+      transferRepo.getUserDepartmentId.mockResolvedValue('dept-user');
+      transferRepo.getDepartmentById.mockResolvedValue({ company_id: '10' });
+      generateReturnFormNumber
+        .mockResolvedValueOnce('RET-IT-001')
+        .mockResolvedValueOnce('RET-ADMIN-001');
+      returnFormModel.createWithReturnerSignature
+        .mockResolvedValueOnce({ formID: 'f-it', form_number: 'RET-IT-001' })
+        .mockResolvedValueOnce({ formID: 'f-admin', form_number: 'RET-ADMIN-001' });
+      returnModel.create.mockResolvedValue({ return_id: 'r1' });
+      getManagerApprover1UserIdsInDepartment.mockResolvedValue([]);
+      await assetReturnsController.submitAssetReturnRequestHandler(req, res);
+      expect(res._status).toBe(201);
+      expect(res._json.forms).toHaveLength(2);
+      expect(res._json.forms[0].formID).toBe('f-it');
+      expect(res._json.forms[1].formID).toBe('f-admin');
+      expect(returnFormModel.createWithReturnerSignature).toHaveBeenCalledTimes(2);
+      expect(returnModel.create).toHaveBeenCalledTimes(2);
     });
 
     it('returns 400 when returnType invalid', async () => {

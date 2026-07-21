@@ -339,32 +339,33 @@ export async function submitAssetReturnRequestHandler(
       }
     }
 
-    const firstAssignment = assignmentRows[0] as any;
-
+    // Build asset_id → department_id map from asset category
     const assetIdsForCategoryDept = assignmentRows.map((r: any) => r.asset_id);
-
     const categoryDeptRows = await getCategoryDepartmentsByAssetIds(assetIdsForCategoryDept);
-    const categoryDeptId = (categoryDeptRows[0] as any)?.departmentID ?? null;
+    const assetDeptMap = new Map<string, string>();
+    for (const row of categoryDeptRows as any[]) {
+      if (row.assetID && row.departmentID) {
+        assetDeptMap.set(row.assetID, row.departmentID);
+      }
+    }
 
-    const returnerUserDeptId = firstAssignment.user_id
-      ? await getUserDepartmentId(firstAssignment.user_id)
+    // Get user's own department as fallback (same for all assignments since same user)
+    const returnerUserDeptId = assignmentRows[0]?.user_id
+      ? await getUserDepartmentId(assignmentRows[0].user_id)
       : null;
-    const effectiveDepartmentId = returnerUserDeptId ?? categoryDeptId ?? firstAssignment.department_id;
 
-    let companyId: string | null = null;
-    const deptIdForCompany = effectiveDepartmentId;
-    if (deptIdForCompany) {
-      const dept = await getDepartmentById(deptIdForCompany);
-      companyId = dept?.company_id ?? null;
+    // Group assignments by effective department
+    const assignmentsByDept = new Map<string, any[]>();
+    for (const row of assignmentRows as any[]) {
+      const deptId = assetDeptMap.get(row.asset_id)
+        ?? returnerUserDeptId
+        ?? row.department_id
+        ?? '__unknown__';
+      if (!assignmentsByDept.has(deptId)) {
+        assignmentsByDept.set(deptId, []);
+      }
+      assignmentsByDept.get(deptId)!.push(row);
     }
-    if (!companyId && firstAssignment.user_id) {
-      const user = await getUserById(firstAssignment.user_id);
-      companyId = user?.company_id ?? null;
-    }
-    const form_number =
-      companyId != null
-        ? await generateReturnFormNumber(companyId, categoryDeptId)
-        : await generateReturnFormNumberFallback();
 
     const validConditions = ['Excellent', 'Good', 'Fair', 'Poor', 'Damaged'];
     const getCondition = (assignmentId: string): string => {
@@ -400,114 +401,144 @@ export async function submitAssetReturnRequestHandler(
       return returnNotes ?? '';
     };
 
-    const returnForm = await AssetReturnFormModel.createWithReturnerSignature({
-      form_number,
-      user_id: firstAssignment.user_id,
-      department_id: effectiveDepartmentId,
-      location_id: firstAssignment.location_id ?? null,
-      location_room_id: firstAssignment.location_room_id ?? null,
-      created_by: currentUserId,
-      signed_by: currentUserId,
-      signed_digital_signature: body.digitalSignature || null,
-      return_type: normalizedReturnType,
-    });
-    const form_id = returnForm!.formID;
+    const createdForms: Array<{ formID: string; form_number: string | null }> = [];
+    let firstForm: { formID: string; form_number: string | null } | null = null;
 
-    for (const row of assignmentRows as any[]) {
-      const assignmentId = row.assignmentID;
-      await AssetReturnModel.create({
-        assignment_id: assignmentId,
-        user_id: row.user_id,
-        return_condition: getCondition(assignmentId),
-        return_notes: getNotes(assignmentId),
-        return_location_id: row.location_id ?? undefined,
-        return_location_room_id: row.location_room_id ?? undefined,
-        return_department_id: row.department_id ?? undefined,
-        form_id,
+    for (const [deptId, deptAssignments] of assignmentsByDept) {
+      const effectiveDepartmentId = deptId === '__unknown__' ? null : deptId;
+
+      // Resolve company and form number for this department
+      let companyId: string | null = null;
+      if (effectiveDepartmentId) {
+        const dept = await getDepartmentById(effectiveDepartmentId);
+        companyId = dept?.company_id ?? null;
+      }
+      if (!companyId && assignmentRows[0]?.user_id) {
+        const user = await getUserById(assignmentRows[0].user_id);
+        companyId = user?.company_id ?? null;
+      }
+      const formNumber =
+        companyId != null
+          ? await generateReturnFormNumber(companyId, effectiveDepartmentId)
+          : await generateReturnFormNumberFallback();
+
+      const firstDeptAssignment = deptAssignments[0];
+      const returnForm = await AssetReturnFormModel.createWithReturnerSignature({
+        form_number: formNumber,
+        user_id: firstDeptAssignment.user_id,
+        department_id: effectiveDepartmentId,
+        location_id: firstDeptAssignment.location_id ?? null,
+        location_room_id: firstDeptAssignment.location_room_id ?? null,
+        created_by: currentUserId,
+        signed_by: currentUserId,
+        signed_digital_signature: body.digitalSignature || null,
+        return_type: normalizedReturnType,
       });
-    }
+      const form_id = returnForm!.formID;
+      createdForms.push({ formID: form_id, form_number: returnForm!.form_number });
+      if (!firstForm) firstForm = createdForms[createdForms.length - 1];
 
-    // Process intangible asset returns (unassign from user)
-    if (intangibleAssetIds && intangibleAssetIds.length > 0 && companyId) {
-      for (const assetId of intangibleAssetIds) {
+      // Create asset return records for this department group
+      for (const row of deptAssignments) {
+        const assignmentId = row.assignmentID;
+        await AssetReturnModel.create({
+          assignment_id: assignmentId,
+          user_id: row.user_id,
+          return_condition: getCondition(assignmentId),
+          return_notes: getNotes(assignmentId),
+          return_location_id: row.location_id ?? undefined,
+          return_location_room_id: row.location_room_id ?? undefined,
+          return_department_id: row.department_id ?? undefined,
+          form_id,
+        });
+      }
+
+      // Send notification to department heads in this department
+      logger.info(`Notification debug - department_id: ${effectiveDepartmentId}, asset count: ${deptAssignments.length}`);
+      if (effectiveDepartmentId) {
         try {
-          await intangibleAssetsService.unassignIntangibleAsset(assetId, currentUserId, companyId);
-          await createAuditLog({
-            userId: currentUserId,
-            action: 'Requested Return of Intangible Asset',
-            resourceType: 'intangible_asset',
-            resourceId: assetId,
-            resourceName: assetId,
-            details: `Intangible asset return requested as part of return form ${returnForm!.form_number}`,
-            ipAddress: req.ip,
-            userAgent: req.get('User-Agent'),
-            companyId,
-          });
-        } catch (err) {
-          logger.error('Failed to unassign intangible asset on return request', { id: assetId, err });
+          const managerApprover1UserIds = await getManagerApprover1UserIdsInDepartment(effectiveDepartmentId);
+          logger.info(`Found ${managerApprover1UserIds.length} Manager Approver 1 users in department ${effectiveDepartmentId}: ${JSON.stringify(managerApprover1UserIds)}`);
+          const requesterName = [firstDeptAssignment.user?.first_name, firstDeptAssignment.user?.last_name].filter(Boolean).join(' ') || 'A user';
+          const assetCount = deptAssignments.length;
+
+          for (const approverUserId of managerApprover1UserIds) {
+            if (approverUserId !== currentUserId) {
+              logger.info(`Sending notification to user ${approverUserId}`);
+              await createNotificationForApi({
+                user_id: approverUserId,
+                title: 'Asset Return Request Approval Needed',
+                message: `${requesterName} has submitted an asset return request for ${assetCount} asset${assetCount !== 1 ? 's' : ''} and requires your approval.`,
+                type: 'system',
+                data: {
+                  form_id: form_id,
+                  form_number: returnForm!.form_number,
+                  requester_id: currentUserId,
+                  requester_name: requesterName,
+                  asset_count: assetCount,
+                  route: '/approvals',
+                  actionTarget: 'return_request_approval',
+                },
+              });
+              logger.info(`Notification sent successfully to user ${approverUserId}`);
+            }
+          }
+          logger.info(`Sent return request notifications to ${managerApprover1UserIds.length} Manager Approver 1 users in department ${effectiveDepartmentId}`);
+        } catch (notifError) {
+          logger.error('Failed to send return request notifications:', notifError);
         }
       }
+
     }
 
-    // Send notification to department heads (Manager Approver 1) in the same department
-    const departmentId = effectiveDepartmentId;
-    logger.info(`Notification debug - returnerUserDeptId: ${returnerUserDeptId}, categoryDeptId: ${categoryDeptId}, firstAssignment.department_id: ${firstAssignment.department_id}, final departmentId: ${departmentId}`);
-    if (departmentId) {
-      try {
-        const managerApprover1UserIds = await getManagerApprover1UserIdsInDepartment(departmentId);
-        logger.info(`Found ${managerApprover1UserIds.length} Manager Approver 1 users in department ${departmentId}: ${JSON.stringify(managerApprover1UserIds)}`);
-        const requesterName = [firstAssignment.user?.first_name, firstAssignment.user?.last_name].filter(Boolean).join(' ') || 'A user';
-        const assetCount = assignmentIds.length;
-        
-        for (const approverUserId of managerApprover1UserIds) {
-          // Don't notify the requester themselves if they happen to be a Manager Approver 1
-          if (approverUserId !== currentUserId) {
-            logger.info(`Sending notification to user ${approverUserId}`);
-            await createNotificationForApi({
-              user_id: approverUserId,
-              title: 'Asset Return Request Approval Needed',
-              message: `${requesterName} has submitted an asset return request for ${assetCount} asset${assetCount !== 1 ? 's' : ''} and requires your approval.`,
-              type: 'system',
-              data: {
-                form_id: form_id,
-                form_number: returnForm!.form_number,
-                requester_id: currentUserId,
-                requester_name: requesterName,
-                asset_count: assetCount,
-                route: '/approvals',
-                actionTarget: 'return_request_approval',
-              },
+    // Process intangible assets tied to the first created form
+    if (intangibleAssetIds && intangibleAssetIds.length > 0 && firstForm) {
+      const companyId = await (async () => {
+        const user = assignmentRows[0]?.user_id ? await getUserById(assignmentRows[0].user_id) : null;
+        return user?.company_id ?? null;
+      })();
+      if (companyId) {
+        for (const assetId of intangibleAssetIds) {
+          try {
+            await intangibleAssetsService.unassignIntangibleAsset(assetId, currentUserId, companyId);
+            await createAuditLog({
+              userId: currentUserId,
+              action: 'Requested Return of Intangible Asset',
+              resourceType: 'intangible_asset',
+              resourceId: assetId,
+              resourceName: assetId,
+              details: `Intangible asset return requested as part of return form ${firstForm.form_number}`,
+              ipAddress: req.ip,
+              userAgent: req.get('User-Agent'),
+              companyId,
             });
-            logger.info(`Notification sent successfully to user ${approverUserId}`);
-          } else {
-            logger.info(`Skipping notification to requester themselves ${approverUserId}`);
+          } catch (err) {
+            logger.error('Failed to unassign intangible asset on return request', { id: assetId, err });
           }
         }
-        logger.info(`Sent return request notifications to ${managerApprover1UserIds.length} Manager Approver 1 users in department ${departmentId}`);
-      } catch (notifError) {
-        logger.error('Failed to send return request notifications:', notifError);
-        // Don't fail the request if notification fails
       }
-    } else {
-      logger.warn('No departmentId found, skipping notification');
     }
 
-    createAuditLog({
-      userId: currentUserId,
-      action: 'Submitted Return Request',
-      resourceType: 'asset_return_form',
-      resourceId: form_id,
-      resourceName: returnForm!.form_number,
-      details: `Return request submitted for ${assignmentIds.length} asset(s) with type: ${normalizedReturnType}`,
-      ipAddress: req.ip,
-      userAgent: req.get('User-Agent'),
-      companyId: companyId || undefined,
-    }).catch((err) => logger.warn('Failed to create return request audit log:', err));
+    // Audit log for each created form
+    for (const f of createdForms) {
+      createAuditLog({
+        userId: currentUserId,
+        action: 'Submitted Return Request',
+        resourceType: 'asset_return_form',
+        resourceId: f.formID,
+        resourceName: f.form_number,
+        details: `Return request submitted for ${assignmentIds.length} asset(s) with type: ${normalizedReturnType}`,
+        ipAddress: req.ip,
+        userAgent: req.get('User-Agent'),
+        companyId: null,
+      }).catch((err) => logger.warn('Failed to create return request audit log:', err));
+    }
 
     return res.status(201).json({
-      message: 'Return request submitted successfully',
-      formID: form_id,
-      form_number: returnForm!.form_number,
+      message: `Return request(s) submitted successfully (${createdForms.length} form${createdForms.length !== 1 ? 's' : ''})`,
+      forms: createdForms,
+      formID: firstForm?.formID,
+      form_number: firstForm?.form_number,
     });
   } catch (error: any) {
     logger.error('Submit asset return request failed:', error);

@@ -1374,143 +1374,205 @@ export async function submitTransferRequestHandler(
       });
     }
 
-    const firstAssignment = assignmentRows[0] as any;
-
-    // Resolve categoryDeptId and companyId for return form number (same pattern as asset return request)
+    // Build asset_id → department_id map from asset category
     const assetIdsForCategoryDept = assignmentRows.map((r: any) => r.asset_id);
-
     const categoryDeptRows = await getCategoryDepartmentsByAssetIds(assetIdsForCategoryDept);
-    const categoryDeptId = (categoryDeptRows[0] as any)?.departmentID ?? null;
-
-    let returnFormCompanyId: string | null = null;
-    const deptIdForReturnForm = categoryDeptId || firstAssignment.department_id;
-    if (deptIdForReturnForm) {
-      const dept = await getDepartmentById(deptIdForReturnForm);
-      returnFormCompanyId = dept?.company_id ?? null;
+    const assetDeptMap = new Map<string, string>();
+    for (const row of categoryDeptRows as any[]) {
+      if (row.assetID && row.departmentID) {
+        assetDeptMap.set(row.assetID, row.departmentID);
+      }
     }
-    if (!returnFormCompanyId && firstAssignment.user_id) {
-      const user = await getUserById(firstAssignment.user_id);
-      returnFormCompanyId = user?.company_id ?? null;
-    }
-    const returnFormNumber =
-      returnFormCompanyId != null
-        ? await generateReturnFormNumber(returnFormCompanyId, categoryDeptId)
-        : await generateReturnFormNumberFallback();
 
-    const returnForm = await AssetReturnFormModel.createWithReturnerSignature({
-      form_number: returnFormNumber,
-      user_id: firstAssignment.user_id,
-      department_id: categoryDeptId ?? firstAssignment.department_id ?? null,
-      location_id: firstAssignment.location_id ?? null,
-      location_room_id: firstAssignment.location_room_id ?? null,
-      created_by: currentUserId,
-      signed_by: currentUserId,
-      signed_digital_signature: transfererDigitalSignature || null,
-    });
-    const returnFormId = returnForm!.formID;
+    // Get transferer's own department as fallback
+    const transfererUserDeptId = assignmentRows[0]?.user_id
+      ? await getUserDepartmentId(assignmentRows[0].user_id)
+      : null;
+
+    // Group assignments by effective department
+    const assignmentsByDept = new Map<string, any[]>();
+    for (const row of assignmentRows as any[]) {
+      const deptId = assetDeptMap.get(row.asset_id)
+        ?? transfererUserDeptId
+        ?? row.department_id
+        ?? '__unknown__';
+      if (!assignmentsByDept.has(deptId)) {
+        assignmentsByDept.set(deptId, []);
+      }
+      assignmentsByDept.get(deptId)!.push(row);
+    }
+
+    // Validate target user belongs to each department group
+    for (const [deptId] of assignmentsByDept) {
+      const effectiveDeptId = deptId === '__unknown__' ? null : deptId;
+      if (effectiveDeptId && targetDeptId !== effectiveDeptId) {
+        const dept = effectiveDeptId ? await getDepartmentById(effectiveDeptId) : null;
+        const deptName = dept?.name ?? effectiveDeptId;
+        return res.status(400).json({
+          error: `Cannot transfer assets from "${deptName}" department to the selected user. The target user must be in the same department as the assets. Assets from ${deptName} must be transferred to a user in ${deptName}.`,
+        });
+      }
+    }
 
     const sharedNotes = (body.notes != null ? String(body.notes) : '') || '';
-    for (const row of assignmentRows as any[]) {
-      await AssetReturnModel.create({
-        assignment_id: row.assignmentID,
-        user_id: row.user_id,
-        return_condition: 'Good',
-        return_notes: sharedNotes,
-        return_location_id: row.location_id ?? undefined,
-        return_location_room_id: row.location_room_id ?? undefined,
-        return_department_id: row.department_id ?? undefined,
-        form_id: returnFormId,
-      });
-    }
-
-    let companyId: string | null = null;
-    if (departmentId) {
-      const dept = await getDepartmentById(departmentId);
-      companyId = dept?.company_id ?? null;
-    }
-    if (!companyId && firstAssignment.user_id) {
-      const user = await getUserById(firstAssignment.user_id);
-      companyId = user?.company_id ?? null;
-    }
-
-    const form_number =
-      companyId != null
-        ? await generateTransferFormNumber(companyId, departmentId)
-        : await generateTransferFormNumberFallback();
-
     const transferTypeValue =
       (req.body as { transferType?: string }).transferType ?? null;
-    const transferForm =
-      await AssetTransferFormModel.createWithTransfererSignature({
-        form_number,
-        user_id: currentUserId,
-        department_id: departmentId,
-        location_id: null,
-        location_room_id: null,
-        new_assigned_user_id: transferToUserId,
+
+    const createdForms: Array<{ formID: string; form_number: string | null; returnFormID: string; returnFormNumber: string | null }> = [];
+    let firstForm: { formID: string; form_number: string | null; returnFormID: string; returnFormNumber: string | null } | null = null;
+
+    for (const [deptId, deptAssignments] of assignmentsByDept) {
+      const effectiveDepartmentId = deptId === '__unknown__' ? null : deptId;
+
+      // Resolve company for return form number
+      let returnFormCompanyId: string | null = null;
+      const deptIdForReturnForm = effectiveDepartmentId || deptAssignments[0]?.department_id;
+      if (deptIdForReturnForm) {
+        const dept = await getDepartmentById(deptIdForReturnForm);
+        returnFormCompanyId = dept?.company_id ?? null;
+      }
+      if (!returnFormCompanyId && deptAssignments[0]?.user_id) {
+        const user = await getUserById(deptAssignments[0].user_id);
+        returnFormCompanyId = user?.company_id ?? null;
+      }
+      const returnFormNumber =
+        returnFormCompanyId != null
+          ? await generateReturnFormNumber(returnFormCompanyId, effectiveDepartmentId)
+          : await generateReturnFormNumberFallback();
+
+      const firstDeptAssignment = deptAssignments[0];
+      const returnForm = await AssetReturnFormModel.createWithReturnerSignature({
+        form_number: returnFormNumber,
+        user_id: firstDeptAssignment.user_id,
+        department_id: effectiveDepartmentId,
+        location_id: firstDeptAssignment.location_id ?? null,
+        location_room_id: firstDeptAssignment.location_room_id ?? null,
         created_by: currentUserId,
         signed_by: currentUserId,
         signed_digital_signature: transfererDigitalSignature || null,
-        transfer_type: transferTypeValue || null,
-        return_form_id: returnFormId,
-      } as any);
+      });
+      const returnFormId = returnForm!.formID;
 
-    const formId =
-      (transferForm as any)?.formID ?? (transferForm as any)?.form_id ?? null;
-    if (!formId) {
-      logger.error('Transfer form creation did not return formID');
-      return res.status(500).json({ error: 'Failed to create transfer form' });
-    }
-
-    try {
-      await AssetTransferFormModel.addFormAssignments(formId, assignmentIds);
-    } catch (assignErr: any) {
-      const msg = assignErr?.message ?? '';
-      if (
-        msg.includes("doesn't exist") &&
-        msg.includes('transfer_form_assignments')
-      ) {
-        logger.error(
-          'transfer_form_assignments table missing. Run migration_transfer_form_assignments_and_executed_at.sql'
-        );
-        return res.status(500).json({
-          error:
-            'Transfer request could not be saved. Please contact support (missing database table).',
-          details: msg,
+      // Create asset return records for this department group
+      for (const row of deptAssignments) {
+        await AssetReturnModel.create({
+          assignment_id: row.assignmentID,
+          user_id: row.user_id,
+          return_condition: 'Good',
+          return_notes: sharedNotes,
+          return_location_id: row.location_id ?? undefined,
+          return_location_room_id: row.location_room_id ?? undefined,
+          return_department_id: row.department_id ?? undefined,
+          form_id: returnFormId,
         });
       }
-      throw assignErr;
+
+      // Resolve company for transfer form number
+      let companyId: string | null = null;
+      const deptIdForTransfer = effectiveDepartmentId || departmentId;
+      if (deptIdForTransfer) {
+        const dept = await getDepartmentById(deptIdForTransfer);
+        companyId = dept?.company_id ?? null;
+      }
+      if (!companyId && deptAssignments[0]?.user_id) {
+        const user = await getUserById(deptAssignments[0].user_id);
+        companyId = user?.company_id ?? null;
+      }
+
+      const form_number =
+        companyId != null
+          ? await generateTransferFormNumber(companyId, effectiveDepartmentId || departmentId)
+          : await generateTransferFormNumberFallback();
+
+      const transferForm =
+        await AssetTransferFormModel.createWithTransfererSignature({
+          form_number,
+          user_id: currentUserId,
+          department_id: effectiveDepartmentId || departmentId,
+          location_id: null,
+          location_room_id: null,
+          new_assigned_user_id: transferToUserId,
+          created_by: currentUserId,
+          signed_by: currentUserId,
+          signed_digital_signature: transfererDigitalSignature || null,
+          transfer_type: transferTypeValue || null,
+          return_form_id: returnFormId,
+        } as any);
+
+      const formId =
+        (transferForm as any)?.formID ?? (transferForm as any)?.form_id ?? null;
+      if (!formId) {
+        logger.error('Transfer form creation did not return formID');
+        return res.status(500).json({ error: 'Failed to create transfer form' });
+      }
+
+      const deptAssignmentIds = deptAssignments.map((r: any) => r.assignmentID);
+      try {
+        await AssetTransferFormModel.addFormAssignments(formId, deptAssignmentIds);
+      } catch (assignErr: any) {
+        const msg = assignErr?.message ?? '';
+        if (
+          msg.includes("doesn't exist") &&
+          msg.includes('transfer_form_assignments')
+        ) {
+          logger.error(
+            'transfer_form_assignments table missing. Run migration_transfer_form_assignments_and_executed_at.sql'
+          );
+          return res.status(500).json({
+            error:
+              'Transfer request could not be saved. Please contact support (missing database table).',
+            details: msg,
+          });
+        }
+        throw assignErr;
+      }
+
+      const entry = {
+        formID: formId,
+        form_number: transferForm!.form_number,
+        returnFormID: returnFormId,
+        returnFormNumber: returnForm?.form_number ?? returnFormNumber,
+      };
+      createdForms.push(entry);
+      if (!firstForm) firstForm = entry;
     }
 
-    // Process intangible assets: unassign from current user on transfer request
+    // Process intangible assets tied to the first created form
     const intangibleAssetIds = body.intangibleAssetIds;
-    if (intangibleAssetIds && intangibleAssetIds.length > 0 && companyId) {
-      for (const assetId of intangibleAssetIds) {
-        try {
-          await intangibleAssetsService.unassignIntangibleAsset(assetId, currentUserId, companyId);
-          await createAuditLog({
-            userId: currentUserId,
-            action: 'Requested Transfer of Intangible Asset',
-            resourceType: 'intangible_asset',
-            resourceId: assetId,
-            resourceName: assetId,
-            details: `Intangible asset unassigned as part of transfer request ${form_number}`,
-            ipAddress: req.ip,
-            userAgent: req.get('User-Agent'),
-            companyId,
-          });
-        } catch (err) {
-          logger.error('Failed to unassign intangible asset on transfer request', { id: assetId, err });
+    if (intangibleAssetIds && intangibleAssetIds.length > 0 && firstForm) {
+      const companyId = await (async () => {
+        const user = assignmentRows[0]?.user_id ? await getUserById(assignmentRows[0].user_id) : null;
+        return user?.company_id ?? null;
+      })();
+      if (companyId) {
+        for (const assetId of intangibleAssetIds) {
+          try {
+            await intangibleAssetsService.unassignIntangibleAsset(assetId, currentUserId, companyId);
+            await createAuditLog({
+              userId: currentUserId,
+              action: 'Requested Transfer of Intangible Asset',
+              resourceType: 'intangible_asset',
+              resourceId: assetId,
+              resourceName: assetId,
+              details: `Intangible asset unassigned as part of transfer request ${firstForm.form_number}`,
+              ipAddress: req.ip,
+              userAgent: req.get('User-Agent'),
+              companyId,
+            });
+          } catch (err) {
+            logger.error('Failed to unassign intangible asset on transfer request', { id: assetId, err });
+          }
         }
       }
     }
 
     return res.status(201).json({
-      message: 'Transfer request submitted successfully',
-      formID: formId,
-      form_number: transferForm!.form_number,
-      returnFormID: returnFormId,
-      return_form_number: returnForm?.form_number ?? returnFormNumber,
+      message: `Transfer request(s) submitted successfully (${createdForms.length} form${createdForms.length !== 1 ? 's' : ''})`,
+      forms: createdForms,
+      formID: firstForm?.formID,
+      form_number: firstForm?.form_number,
+      returnFormID: firstForm?.returnFormID,
+      return_form_number: firstForm?.returnFormNumber,
     });
   } catch (error: any) {
     logger.error('Submit transfer request failed:', error);

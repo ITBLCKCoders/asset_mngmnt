@@ -44,6 +44,7 @@ export interface UserRow extends RowDataPacket {
 
 export interface CategoryDepartmentRow extends RowDataPacket {
   departmentID: string;
+  assetID?: string;
 }
 
 export interface BuilderItemRow extends RowDataPacket {
@@ -163,7 +164,7 @@ export async function getCategoryDepartmentsByAssetIds(
   if (assetIds.length === 0) return [];
   const placeholders = assetIds.map(() => '?').join(',');
   const [rows] = await pool.execute<CategoryDepartmentRow[]>(
-    `SELECT d.departmentID
+    `SELECT d.departmentID, a.assetID
      FROM assets a
      JOIN asset_categories c ON a.category_id = c.categoryID
      JOIN asset_mngmnt_departments d ON c.department_id = d.departmentID
