@@ -451,7 +451,7 @@ export async function getAssetsHandler(req: AuthRequest, res: Response) {
       });
 
       const filteredNonTransferredOut = nonTransferredOutAssets
-        .filter((asset: any) => categoryIds.includes(asset.category_id))
+        .filter((asset: any) => !asset.category_id || categoryIds.includes(asset.category_id))
         .map(toScopedAsset);
 
       // Apply same scope/category filtering to transferred-out assets.

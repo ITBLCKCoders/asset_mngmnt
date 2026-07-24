@@ -763,6 +763,7 @@ export async function getAccountabilityFormsForAssetIds(
     `SELECT asset_id, formID, form_number, status, created_at, signed_at, assets_data
      FROM accountability_forms
      WHERE deleted_at IS NULL
+       AND status != 'Disabled'
        AND (asset_id IN (${placeholders})
             OR (assets_data IS NOT NULL
                 AND JSON_OVERLAPS(JSON_EXTRACT(assets_data, '$.assets[*].id'), ?)))

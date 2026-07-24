@@ -333,7 +333,8 @@ export async function createCompanyTransferHandler(
     const [rows] = (await pool.execute(
       `SELECT
           a.assetID, a.asset_code, a.name, a.status, a.company_id,
-          aa.assignmentID, aa.assignment_notes, aa.status as assignment_status
+          aa.assignmentID, aa.assignment_notes, aa.status as assignment_status,
+          aa.user_id
        FROM assets a
        LEFT JOIN asset_categories ac ON a.category_id = ac.categoryID
        LEFT JOIN asset_assignments aa
@@ -355,6 +356,11 @@ export async function createCompanyTransferHandler(
 
     const transferredAssets: any[] = [];
     const transferredAssetIdSet = new Set(assetIds.map(String));
+
+    // ── Phase 1: Return assignments and set originating_company_id ──
+    // IMPORTANT: Do NOT clear category_id yet — handleAccountabilityFormOnAssetReturn
+    // needs it to look up the returned asset's department for proper form re-creation.
+    const returnedByUser = new Map<string, string[]>();
     for (const row of uniqueRowsByAsset.values()) {
       const assetId = String(row.assetID);
       const assetCode = row.asset_code ?? assetId;
@@ -365,55 +371,52 @@ export async function createCompanyTransferHandler(
           `Returned for company transfer to ${targetCompanyName}`,
           'Good',
         ]);
+        if (row.user_id) {
+          const uid = String(row.user_id);
+          if (!returnedByUser.has(uid)) returnedByUser.set(uid, []);
+          returnedByUser.get(uid)!.push(assetId);
+        }
       }
 
-      // Find IT department in target company for scope compatibility
-      const [itDeptRows] = (await pool.execute(
-        `SELECT departmentID FROM asset_mngmnt_departments
-         WHERE company_id = ? AND (name LIKE '%IT%' OR name LIKE '%Information Technology%')
-         AND deleted_at IS NULL LIMIT 1`,
-        [targetCompanyId]
-      )) as any[];
-      const targetItDepartmentId = itDeptRows.length > 0 ? itDeptRows[0].departmentID : null;
-
-      let targetCategoryId = null;
-      if (targetItDepartmentId) {
-        // Find a category belonging to the IT department
-        const [catRows] = (await pool.execute(
-          `SELECT categoryID FROM asset_categories
-           WHERE department_id = ? AND deleted_at IS NULL LIMIT 1`,
-          [targetItDepartmentId]
-        )) as any[];
-        targetCategoryId = catRows.length > 0 ? catRows[0].categoryID : null;
-      }
-
-      logger.info(`Updating asset ${assetCode} (ID: ${assetId}) company_id from ${companyId} to ${targetCompanyId}, IT department: ${targetItDepartmentId || 'not found'}, IT category: ${targetCategoryId || 'not found'}`);
-
-      // Preserve home company: set origin from source if missing (never overwrite existing origin)
+      // Preserve home company: set origin from source if missing
       await pool.execute(
         `UPDATE assets SET originating_company_id = ?
          WHERE assetID = ? AND originating_company_id IS NULL`,
         [companyId, assetId]
       );
+    }
 
-      const updateFields = ['company_id = ?', 'status = ?', 'updated_by = ?', 'updated_at = NOW()'];
-      const updateValues = [targetCompanyId, 'Available', currentUserId];
-      
-      if (targetItDepartmentId) {
-        updateFields.push('department_id = ?');
-        updateValues.push(targetItDepartmentId);
-      }
-      
-      if (targetCategoryId) {
-        updateFields.push('category_id = ?');
-        updateValues.push(targetCategoryId);
-      }
-      
-      await pool.execute(
-        `UPDATE assets SET ${updateFields.join(', ')} WHERE assetID = ?`,
-        [...updateValues, assetId]
+    // ── Phase 2: Handle accountability forms (category_id still intact) ──
+    for (const [affectedUserId, returnedAssetIds] of returnedByUser.entries()) {
+      await handleAccountabilityFormOnAssetReturn(
+        affectedUserId,
+        returnedAssetIds,
+        null,
+        null,
+        null,
+        currentUserId,
+        req
       );
-      logger.info(`Updated asset ${assetCode} company_id to ${targetCompanyId}${targetItDepartmentId ? ' and department_id to IT department' : ''}${targetCategoryId ? ' and category_id to IT category' : ''}`);
+    }
+
+    // ── Phase 3: Update company_id and clear department/category for scope neutrality ──
+    for (const row of uniqueRowsByAsset.values()) {
+      const assetId = String(row.assetID);
+      const assetCode = row.asset_code ?? assetId;
+
+      logger.info(`Moving asset ${assetCode} (ID: ${assetId}) to company ${targetCompanyId}`);
+
+      await pool.execute(
+        `UPDATE assets
+            SET company_id = ?,
+                status = 'Available',
+                department_id = NULL,
+                category_id = NULL,
+                updated_by = ?,
+                updated_at = NOW()
+          WHERE assetID = ?`,
+        [targetCompanyId, currentUserId, assetId]
+      );
 
       await createAuditLog({
         userId: currentUserId,
@@ -421,9 +424,9 @@ export async function createCompanyTransferHandler(
         resourceType: 'asset',
         resourceId: assetId,
         resourceName: `Asset ${assetCode}`,
-        details: `Asset ${assetCode} transferred to ${targetCompanyName}${targetItDepartmentId ? ' and assigned to IT department' : ''}${targetCategoryId ? ' with IT category' : ''}. If transferred back to a past company, it is re-enabled as Available.`,
+        details: `Asset ${assetCode} transferred to ${targetCompanyName}. Department and category cleared for scope-neutral visibility in the target company.`,
         oldValues: { company_id: companyId, status: row.status, department_id: row.department_id, category_id: row.category_id },
-        newValues: { company_id: targetCompanyId, status: 'Available', ...(targetItDepartmentId && { department_id: targetItDepartmentId }), ...(targetCategoryId && { category_id: targetCategoryId }) },
+        newValues: { company_id: targetCompanyId, status: 'Available', department_id: null, category_id: null },
         ipAddress: req.ip,
         userAgent: req.get ? req.get('User-Agent') : 'Unknown',
       });
