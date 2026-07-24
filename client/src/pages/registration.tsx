@@ -9,6 +9,7 @@ import 'react-phone-number-input/style.css';
 
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
+import FloatingHelpButton from '@/components/common/FloatingHelpButton';
 import { Label } from '@/components/ui/label';
 import {
   Select,
@@ -972,6 +973,7 @@ export default function RegisterPage() {
           </div>
         </motion.div>
       </form>
+      <FloatingHelpButton section="register" />
     </div>
   );
 }

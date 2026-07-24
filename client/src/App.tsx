@@ -25,6 +25,7 @@ import ProtectedLayout from './components/routes/protectedLayout';
 import PermissionRoute from './components/routes/permissionRoute';
 import VerifyOtpRoute from './components/routes/verifyOTPRoute';
 import LandingRedirect from './components/routes/LandingRedirect';
+import PublicUserManual from './components/routes/PublicUserManual';
 
 // Lazy private pages
 const SetupMFA = lazy(() => import('./pages/mfa/SetupMFA'));
@@ -122,6 +123,7 @@ export default function App() {
               <Route path="/verify-reset-otp" element={<PublicRoute><VerifyResetOTP /></PublicRoute>} />
               <Route path="/reset-password" element={<PublicRoute><ResetPassword /></PublicRoute>} />
               <Route path="/assets/details/:assetId" element={<PublicRoute><AssetDetails /></PublicRoute>} />
+              <Route path="/public/manual" element={<PublicUserManual />} />
 
               <Route path="/verify-otp" element={<VerifyOtpRoute />} />
               <Route path="/verify-mfa" element={<Navigate to="/login" replace />} />

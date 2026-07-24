@@ -3,6 +3,7 @@
 import { useState } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
 import { Button } from '@/components/ui/button';
+import FloatingHelpButton from '@/components/common/FloatingHelpButton';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Loader2, Eye, EyeOff } from 'lucide-react';
@@ -374,6 +375,7 @@ export default function LoginPage() {
         onChanged={handleForceChangeDone}
         onCancel={handleForceChangeCancel}
       />
+      <FloatingHelpButton section="login" />
     </div>
   );
 }

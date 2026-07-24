@@ -131,7 +131,7 @@ interface CompanyTransferAsset {
   status: string;
   categoryName?: string | null;
   typeName?: string | null;
-  source: 'available' | 'temporary_custody';
+  source: 'available' | 'temporary_custody' | 'assigned';
   assignedUser?: { id: string; name: string } | null;
 }
 
@@ -1018,7 +1018,7 @@ export default function AssetsTransfer() {
     const q = companyTransferSearchTerm.trim().toLowerCase();
     const nonBuilderAssets = companyTransferAssets.filter(
       asset => !builderAssetCodes.has(String(asset.assetCode || '').trim())
-    );
+    ).filter(asset => asset.source !== 'available');
     const base = !q
       ? nonBuilderAssets
       : nonBuilderAssets.filter(
@@ -1450,7 +1450,7 @@ export default function AssetsTransfer() {
                       </Badge>
                     </CardTitle>
                     <p className="text-sm text-gray-500 mt-1">
-                      Transfer available assets or temporary custody assets to another company immediately.
+                      Transfer assets to another company. Assigned assets will be unassigned first.
                     </p>
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-3 mt-4">
                       <div className="relative w-full">
@@ -1523,7 +1523,7 @@ export default function AssetsTransfer() {
                                 No company-transfer eligible assets found
                               </p>
                               <p className="text-gray-400 text-sm mt-1">
-                                Available and temporary custody assets will appear here
+                                All assets in your company scope will appear here
                               </p>
                             </div>
                           ) : (
@@ -1574,12 +1574,16 @@ export default function AssetsTransfer() {
                                         className={
                                           asset.source === 'temporary_custody'
                                             ? 'text-xs border-amber-300 bg-amber-50 text-amber-800'
-                                            : 'text-xs border-green-300 bg-green-50 text-green-800'
+                                            : asset.source === 'assigned'
+                                              ? 'text-xs border-blue-300 bg-blue-50 text-blue-800'
+                                              : 'text-xs border-green-300 bg-green-50 text-green-800'
                                         }
                                       >
                                         {asset.source === 'temporary_custody'
                                           ? 'Temporary Custody'
-                                          : 'Available'}
+                                          : asset.source === 'assigned'
+                                            ? 'Active'
+                                            : 'Available'}
                                       </Badge>
                                       {asset.assignedUser?.name && (
                                         <Badge variant="outline" className="text-xs border-gray-300">
@@ -1613,7 +1617,7 @@ export default function AssetsTransfer() {
                                 No built assets eligible for company transfer
                               </p>
                               <p className="text-gray-400 text-sm mt-1">
-                                Built assets with available or temporary custody items will appear here
+                                Built assets with items in this company will appear here
                               </p>
                             </div>
                           ) : (
@@ -1658,12 +1662,16 @@ export default function AssetsTransfer() {
                                                 className={
                                                   asset.source === 'temporary_custody'
                                                     ? 'text-[10px] border-amber-300 bg-amber-50 text-amber-800'
-                                                    : 'text-[10px] border-green-300 bg-green-50 text-green-800'
+                                                    : asset.source === 'assigned'
+                                                      ? 'text-[10px] border-blue-300 bg-blue-50 text-blue-800'
+                                                      : 'text-[10px] border-green-300 bg-green-50 text-green-800'
                                                 }
                                               >
                                                 {asset.source === 'temporary_custody'
                                                   ? 'Temp'
-                                                  : 'Available'}
+                                                  : asset.source === 'assigned'
+                                                    ? 'Active'
+                                                    : 'Available'}
                                               </Badge>
                                             </li>
                                           ))}
@@ -2029,7 +2037,7 @@ export default function AssetsTransfer() {
                 {activeTab === 'company' ? (
                   <>
                     <div className="text-sm text-gray-600">
-                      Select eligible assets and a target company. Assets moved back to any past company are re-enabled as Available.
+                      Select assets and a target company. Assigned assets will be unassigned automatically.
                     </div>
                     <Button
                       onClick={handleCompanyTransferSubmit}

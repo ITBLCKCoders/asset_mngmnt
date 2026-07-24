@@ -9,7 +9,11 @@ import { handleAccountabilityFormOnAssetReturn, type ProcessSignature } from '..
 import {
   isUserManagerApprover1,
   isUserManagerApprover2,
+  getManagerApprover1UserIdsInDepartmentAndCompany,
 } from '../utils/approverNotifications.js';
+import { createNotificationForApi } from '../utils/notificationsApi.js';
+import { getIoInstance } from '../utils/socketManager.js';
+import { emitNotification } from '../sockets/socketHandlers.js';
 import {
   createErrorResponse,
   createSuccessResponse,
@@ -243,10 +247,6 @@ export async function getCompanyTransferEligibleAssetsHandler(
        WHERE a.deleted_at IS NULL
          AND a.company_id = ?
          ${departmentFilter}
-         AND (
-           (a.status = 'Available' AND aa.assignmentID IS NULL)
-           OR LOWER(COALESCE(aa.assignment_notes, '')) LIKE '%assigned via asset return (assign to processor)%'
-         )
        ORDER BY a.asset_code ASC`,
       params as never[]
     )) as any[];
@@ -263,12 +263,13 @@ export async function getCompanyTransferEligibleAssetsHandler(
         assignmentId: row.assignmentId ?? null,
         assignmentNotes: row.assignmentNotes ?? null,
         source:
-          row.assignmentId &&
-          String(row.assignmentNotes ?? '')
-            .toLowerCase()
-            .includes('assigned via asset return (assign to processor)')
-            ? 'temporary_custody'
-            : 'available',
+          !row.assignmentId
+            ? 'available'
+            : String(row.assignmentNotes ?? '')
+                .toLowerCase()
+                .includes('assigned via asset return (assign to processor)')
+              ? 'temporary_custody'
+              : 'assigned',
         assignedUser:
           row.assignedUserId != null
             ? {
@@ -352,32 +353,13 @@ export async function createCompanyTransferHandler(
       return res.status(404).json({ error: 'One or more assets are not available in your company scope' });
     }
 
-    for (const row of uniqueRowsByAsset.values()) {
-      const isAvailable = row.status === 'Available' && !row.assignmentID;
-      const isTemp =
-        row.assignmentID &&
-        String(row.assignment_notes ?? '')
-          .toLowerCase()
-          .includes('assigned via asset return (assign to processor)');
-      if (!isAvailable && !isTemp) {
-        return res.status(400).json({
-          error: `Asset ${row.asset_code ?? row.assetID} is not eligible for company transfer`,
-        });
-      }
-    }
-
     const transferredAssets: any[] = [];
     const transferredAssetIdSet = new Set(assetIds.map(String));
     for (const row of uniqueRowsByAsset.values()) {
       const assetId = String(row.assetID);
       const assetCode = row.asset_code ?? assetId;
-      const isTemp =
-        row.assignmentID &&
-        String(row.assignment_notes ?? '')
-          .toLowerCase()
-          .includes('assigned via asset return (assign to processor)');
 
-      if (isTemp) {
+      if (row.assignmentID) {
         await pool.execute('CALL sp_mark_assignment_returned(?, ?, ?)', [
           row.assignmentID,
           `Returned for company transfer to ${targetCompanyName}`,
@@ -1535,6 +1517,56 @@ export async function submitTransferRequestHandler(
       };
       createdForms.push(entry);
       if (!firstForm) firstForm = entry;
+
+      // Send notification to Manager Approver 1 users in the same department AND company
+      if (effectiveDepartmentId && companyId) {
+        try {
+          const managerApprover1UserIds = await getManagerApprover1UserIdsInDepartmentAndCompany(effectiveDepartmentId, companyId);
+          const requesterName = [firstDeptAssignment.user?.first_name, firstDeptAssignment.user?.last_name].filter(Boolean).join(' ') || 'A user';
+          const assetCount = deptAssignments.length;
+
+          const io = getIoInstance();
+          for (const approverUserId of managerApprover1UserIds) {
+            if (approverUserId !== currentUserId) {
+              await createNotificationForApi({
+                user_id: approverUserId,
+                title: 'Asset Transfer Request Approval Needed',
+                message: `${requesterName} has submitted an asset transfer request for ${assetCount} asset${assetCount !== 1 ? 's' : ''} and requires your approval.`,
+                type: 'system',
+                data: {
+                  form_id: formId,
+                  form_number: transferForm!.form_number,
+                  requester_id: currentUserId,
+                  requester_name: requesterName,
+                  asset_count: assetCount,
+                  route: '/approvals',
+                  actionTarget: 'transfer_request_approval',
+                },
+              });
+              if (io) {
+                emitNotification(io, approverUserId, 'notification', {
+                  id: formId,
+                  title: 'Asset Transfer Request Approval Needed',
+                  message: `${requesterName} has submitted an asset transfer request for ${assetCount} asset${assetCount !== 1 ? 's' : ''} and requires your approval.`,
+                  type: 'system',
+                  data: {
+                    form_id: formId,
+                    form_number: transferForm!.form_number,
+                    requester_id: currentUserId,
+                    requester_name: requesterName,
+                    asset_count: assetCount,
+                    route: '/approvals',
+                    actionTarget: 'transfer_request_approval',
+                  },
+                  time: new Date().toISOString(),
+                });
+              }
+            }
+          }
+        } catch (notifError) {
+          logger.error('Failed to send transfer request notifications:', notifError);
+        }
+      }
     }
 
     // Process intangible assets tied to the first created form

@@ -1,4 +1,5 @@
-import { useState, useMemo } from 'react';
+import { useState, useEffect, useMemo } from 'react';
+import { useSearchParams } from 'react-router-dom';
 import { Button } from '@/components/ui/button';
 import {
   BookOpen,
@@ -275,90 +276,149 @@ const OVERVIEW_CONTENT = (
 
 const REGISTRATION_CONTENT = (
   <article className={manualArticle}>
-    <ol className={manualListGap}>
-      <li className={manualListItem}>
-        <span className={manualListNumber}>1</span>
-        <span>First open any browser (suggested: Edge or Chrome).</span>
-      </li>
-      <li className={manualListItem}>
-        <span className={manualListNumber}>2</span>
-        <span>
-          Access the site at <strong>http://200.2.4.32:9669</strong>.
+    <div className="mb-8 flex flex-col items-center gap-3">
+      <div className="flex items-center gap-3">
+        <span className="h-px w-8 bg-red-400/60" />
+        <span className="text-xs font-bold text-red-600 tracking-[0.15em] uppercase">
+          Video Guide
         </span>
-      </li>
-      <li className={manualListItem}>
-        <span className={manualListNumber}>3</span>
-        <span>
-          Click the <strong>Create account</strong> button under the Log in
-          button.
-        </span>
-      </li>
-    </ol>
-    <figure className="mb-6 flex justify-center">
-      <img
-        src={reg1Img}
-        alt="Registration page - Create account button"
-        className="w-full max-w-2xl rounded-lg border border-border object-contain"
-      />
-    </figure>
-    <ol start={4} className={manualListGap}>
-      <li className={manualListItem}>
-        <span className={manualListNumber}>4</span>
-        <span>
-          Now fill up all the required fields in the registration form.
-        </span>
-      </li>
-      <li className={manualListItem}>
-        <span className={manualListNumber}>5</span>
-        <span>
-          After filling up all the fields in the registration form, click{' '}
-          <strong>Create account</strong>.
-        </span>
-      </li>
-    </ol>
-    <figure className="mb-6 flex justify-center">
-      <img
-        src={reg2Img}
-        alt="Registration form - Create account"
-        className="w-full max-w-2xl rounded-lg border border-border object-contain"
-      />
-    </figure>
-    <ol start={6} className={manualListGap}>
-      <li className={manualListItem}>
-        <span className={manualListNumber}>6</span>
-        <span>
-          Check your email address and look for an email from{' '}
-          <strong>it.github@theblackcoders.com</strong> that contains your
-          verification code.
-        </span>
-      </li>
-      <li className={manualListItem}>
-        <span className={manualListNumber}>7</span>
-        <span>
-          Enter your verification code in the <strong>Verify Email</strong>{' '}
-          fields.
-        </span>
-      </li>
-      <li className={manualListItem}>
-        <span className={manualListNumber}>8</span>
-        <span>
-          Click <strong>Verify Email</strong>. Your account is now created. Wait
-          for the system administrator to assign role and module access.
-        </span>
-      </li>
-    </ol>
-    <figure className="mb-0 flex justify-center">
-      <img
-        src={reg4Img}
-        alt="Verify Email - verification code"
-        className="w-full max-w-2xl rounded-lg border border-border object-contain"
-      />
-    </figure>
+        <span className="h-px w-8 bg-red-400/60" />
+      </div>
+      <p className="text-sm font-medium text-muted-foreground -mt-1">
+        Watch the tutorial then follow the steps below
+      </p>
+      <video
+        src="/videos/registration.mp4"
+        controls
+        muted
+        playsInline
+        className="w-full max-w-2xl rounded-xl border border-border/60 shadow-lg"
+      >
+        Your browser does not support the video tag.
+      </video>
+    </div>
+
+    <div className="space-y-6 rounded-lg border border-border/40 bg-background/50 p-5 sm:p-6">
+      <h3 className={manualSectionTitle}>
+        <span className={manualSectionAccent} />
+        Step-by-Step Instructions
+      </h3>
+
+      <ol className={manualListGap}>
+        <li className={manualListItem}>
+          <span className={manualListNumber}>1</span>
+          <span className="text-foreground/85">
+            First open any browser (suggested: Edge or Chrome).
+          </span>
+        </li>
+        <li className={manualListItem}>
+          <span className={manualListNumber}>2</span>
+          <span className="text-foreground/85">
+            Access the site at{' '}
+            <code className="rounded bg-muted px-1.5 py-0.5 text-sm font-mono text-red-600">
+              http://200.2.4.32:9669
+            </code>
+            .
+          </span>
+        </li>
+        <li className={manualListItem}>
+          <span className={manualListNumber}>3</span>
+          <span className="text-foreground/85">
+            Click the <strong>Create account</strong> button under the Log in
+            button.
+          </span>
+        </li>
+      </ol>
+      <figure className="flex justify-center">
+        <img
+          src={reg1Img}
+          alt="Registration page - Create account button"
+          className="w-full max-w-2xl rounded-lg border border-border object-contain shadow-sm"
+        />
+      </figure>
+    </div>
+
+    <div className="mt-6 space-y-6 rounded-lg border border-border/40 bg-background/50 p-5 sm:p-6">
+      <ol start={4} className={manualListGap}>
+        <li className={manualListItem}>
+          <span className={manualListNumber}>4</span>
+          <span className="text-foreground/85">
+            Now fill up all the required fields in the registration form.
+          </span>
+        </li>
+        <li className={manualListItem}>
+          <span className={manualListNumber}>5</span>
+          <span className="text-foreground/85">
+            After filling up all the fields in the registration form, click{' '}
+            <strong>Create account</strong>.
+          </span>
+        </li>
+      </ol>
+      <figure className="flex justify-center">
+        <img
+          src={reg2Img}
+          alt="Registration form - Create account"
+          className="w-full max-w-2xl rounded-lg border border-border object-contain shadow-sm"
+        />
+      </figure>
+    </div>
+
+    <div className="mt-6 space-y-6 rounded-lg border border-border/40 bg-background/50 p-5 sm:p-6">
+      <ol start={6} className={manualListGap}>
+        <li className={manualListItem}>
+          <span className={manualListNumber}>6</span>
+          <span className="text-foreground/85">
+            Check your email address and look for an email from{' '}
+            <strong>it.github@theblackcoders.com</strong> that contains your
+            verification code.
+          </span>
+        </li>
+        <li className={manualListItem}>
+          <span className={manualListNumber}>7</span>
+          <span className="text-foreground/85">
+            Enter your verification code in the <strong>Verify Email</strong>{' '}
+            fields.
+          </span>
+        </li>
+        <li className={manualListItem}>
+          <span className={manualListNumber}>8</span>
+          <span className="text-foreground/85">
+            Click <strong>Verify Email</strong>. Your account is now created.
+            Wait for the system administrator to assign role and module access.
+          </span>
+        </li>
+      </ol>
+      <figure className="flex justify-center">
+        <img
+          src={reg4Img}
+          alt="Verify Email - verification code"
+          className="w-full max-w-2xl rounded-lg border border-border object-contain shadow-sm"
+        />
+      </figure>
+    </div>
   </article>
 );
 
 const LOGIN_CONTENT = (
   <article className={manualArticle}>
+    <div className="mb-6 flex flex-col items-center gap-2">
+      <div className="flex items-center gap-3">
+        <span className="h-px w-8 bg-red-400/60" />
+        <span className="text-xs font-bold text-red-600 tracking-[0.15em] uppercase">
+          Video Guide
+        </span>
+        <span className="h-px w-8 bg-red-400/60" />
+      </div>
+      <video
+        src="/videos/login.mp4"
+        controls
+        muted
+        playsInline
+        className="w-full max-w-2xl rounded-xl border border-border/60 shadow-lg"
+      >
+        Your browser does not support the video tag.
+      </video>
+    </div>
     <ol className={manualListGap}>
       <li className={manualListItem}>
         <span className={manualListNumber}>1</span>
@@ -383,6 +443,24 @@ const LOGIN_CONTENT = (
 
 const FORGOT_PASSWORD_CONTENT = (
   <article className={manualArticle}>
+    <div className="mb-6 flex flex-col items-center gap-2">
+      <div className="flex items-center gap-3">
+        <span className="h-px w-8 bg-red-400/60" />
+        <span className="text-xs font-bold text-red-600 tracking-[0.15em] uppercase">
+          Video Guide
+        </span>
+        <span className="h-px w-8 bg-red-400/60" />
+      </div>
+      <video
+        src="/videos/forgotpw.mp4"
+        controls
+        muted
+        playsInline
+        className="w-full max-w-2xl rounded-xl border border-border/60 shadow-lg"
+      >
+        Your browser does not support the video tag.
+      </video>
+    </div>
     <ol className={manualListGap}>
       <li className={manualListItem}>
         <span className={manualListNumber}>1</span>
@@ -470,6 +548,24 @@ const PROFILE_CONTENT = (
 
 const EDIT_PROFILE_CONTENT = (
   <article className={manualArticle}>
+    <div className="mb-6 flex flex-col items-center gap-2">
+      <div className="flex items-center gap-3">
+        <span className="h-px w-8 bg-red-400/60" />
+        <span className="text-xs font-bold text-red-600 tracking-[0.15em] uppercase">
+          Video Guide
+        </span>
+        <span className="h-px w-8 bg-red-400/60" />
+      </div>
+      <video
+        src="/videos/editprofile.mp4"
+        controls
+        muted
+        playsInline
+        className="w-full max-w-2xl rounded-xl border border-border/60 shadow-lg"
+      >
+        Your browser does not support the video tag.
+      </video>
+    </div>
     <ol className={manualListGap}>
       <li className={manualListItem}>
         <span className={manualListNumber}>1</span>
@@ -895,6 +991,24 @@ const ASSET_ACCOUNTABILITY_FORMS_CONTENT = (
 
 const ADDING_ASSETS_CONTENT = (
   <article className={manualArticle}>
+    <div className="mb-6 flex flex-col items-center gap-2">
+      <div className="flex items-center gap-3">
+        <span className="h-px w-8 bg-red-400/60" />
+        <span className="text-xs font-bold text-red-600 tracking-[0.15em] uppercase">
+          Video Guide
+        </span>
+        <span className="h-px w-8 bg-red-400/60" />
+      </div>
+      <video
+        src="/videos/adding-of-asset.mp4"
+        controls
+        muted
+        playsInline
+        className="w-full max-w-2xl rounded-xl border border-border/60 shadow-lg"
+      >
+        Your browser does not support the video tag.
+      </video>
+    </div>
     <ol className={manualListGap}>
       <li className={manualListItem}>
         <span className={manualListNumber}>1</span>
@@ -1484,6 +1598,7 @@ const TRANSFER_REQUEST_CONTENT = (
 
 
 export default function UserManual() {
+  const [searchParams] = useSearchParams();
   const [currentStep, setCurrentStep] = useState(COVER_STEP);
   const [expandedParents, setExpandedParents] = useState<Set<number>>(() => {
     const set = new Set<number>();
@@ -1492,6 +1607,15 @@ export default function UserManual() {
     });
     return set;
   });
+
+  useEffect(() => {
+    const section = searchParams.get('section');
+    if (section === 'login') {
+      setCurrentStep(COVER_STEP + 5);
+    } else if (section === 'register') {
+      setCurrentStep(COVER_STEP + 4);
+    }
+  }, [searchParams]);
 
   const toggleExpand = (parentIndex: number) => {
     setExpandedParents(prev => {
@@ -1514,13 +1638,21 @@ export default function UserManual() {
 
         <div className="flex flex-col gap-6 xl:flex-row">
           {/* Aside card: vertical stepper - fixed height, scrollable list */}
-          <Card className="flex w-full shrink-0 flex-col xl:h-[42rem] xl:w-56">
-            <CardHeader className="h-20 flex-shrink-0 flex items-center justify-center border-b bg-red-600 text-white rounded-t-xl p-6">
-              <CardTitle className="text-base font-semibold text-white text-center leading-tight">
-                Asset Management Manual
-              </CardTitle>
+          <Card className="flex w-full shrink-0 flex-col xl:h-[42rem] xl:w-60 shadow-md border-border/50">
+            <CardHeader className="h-20 flex-shrink-0 flex flex-row items-center gap-3 border-b bg-gradient-to-br from-red-600 to-red-700 text-white rounded-t-xl px-5 py-4">
+              <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-white/20 backdrop-blur-sm border border-white/20 shrink-0">
+                <BookOpen className="h-5 w-5 text-white" />
+              </div>
+              <div className="flex items-baseline gap-1.5 min-w-0">
+                <CardTitle className="text-sm font-bold text-white leading-tight shrink-0">
+                  Chapters
+                </CardTitle>
+                <span className="text-[11px] text-red-200/80 truncate">
+                  ({STEPS})
+                </span>
+              </div>
             </CardHeader>
-            <CardContent className="min-h-0 max-h-[24rem] flex-1 overflow-y-auto pt-4 xl:max-h-none">
+            <CardContent className="min-h-0 max-h-[24rem] flex-1 overflow-y-auto pt-3 px-3 pb-2 xl:max-h-none scrollbar-thin">
               <div className="relative flex flex-col pb-2">
                 {Array.from({ length: STEPS }, (_, i) => {
                   const parentIdx = STEP_PARENT_INDEX[i];
@@ -1548,20 +1680,27 @@ export default function UserManual() {
                         <button
                           type="button"
                           onClick={() => setCurrentStep(stepTarget)}
-                          className={`flex gap-2 items-center text-left flex-1 min-w-0 rounded-md py-1.5 -ml-1 pl-1 pr-0.5 hover:bg-muted/50 transition-colors cursor-pointer group ${isSub ? 'min-h-9' : ''}`}
+                          className={`flex gap-2 items-center text-left flex-1 min-w-0 rounded-lg py-1.5 pl-2 pr-1 transition-all duration-200 cursor-pointer group relative ${
+                            isActive
+                              ? 'bg-red-50 dark:bg-red-950/30 shadow-sm'
+                              : 'hover:bg-muted/60'
+                          } ${isSub ? 'min-h-9' : ''}`}
                         >
+                          {isActive && (
+                            <span className="absolute left-0 top-1/2 -translate-y-1/2 h-5 w-0.5 rounded-full bg-red-600" />
+                          )}
                           <div className="relative z-10 flex flex-col items-center justify-center shrink-0">
                             <div
-                              className={`rounded-full flex items-center justify-center border-2 transition-all shrink-0 ${
+                              className={`rounded-full flex items-center justify-center border-2 transition-all duration-200 shrink-0 ${
                                 isSub
                                   ? 'w-6 h-6 md:w-7 md:h-7'
                                   : 'w-10 h-10 md:w-11 md:h-11 border-2 md:border-4'
                               } ${
                                 completed
-                                  ? 'bg-green-500 text-white border-green-300'
+                                  ? 'bg-green-500 text-white border-green-300 shadow-sm shadow-green-200'
                                   : isActive
-                                    ? 'bg-red-600 text-white border-red-300 ring-2 ring-red-100'
-                                    : 'bg-gray-100 text-gray-400 border-gray-300 group-hover:border-red-300'
+                                    ? 'bg-red-600 text-white border-red-300 ring-2 ring-red-200 shadow-sm'
+                                    : 'bg-gray-100 text-gray-400 border-gray-300 group-hover:border-red-300 group-hover:bg-gray-50'
                               }`}
                             >
                               {completed ? (
@@ -1584,12 +1723,14 @@ export default function UserManual() {
                             </div>
                           </div>
                           <p
-                            className={`font-medium leading-tight flex-1 py-0.5 ${
+                            className={`font-medium leading-snug flex-1 py-0.5 ${
                               isSub ? 'text-[11px]' : 'text-xs'
                             } ${
-                              isActive || completed
-                                ? 'text-red-700'
-                                : 'text-gray-500 group-hover:text-red-600/80'
+                              isActive
+                                ? 'text-red-700 font-semibold'
+                                : completed
+                                  ? 'text-green-700'
+                                  : 'text-gray-500 group-hover:text-red-600/80'
                             }`}
                           >
                             {title}
@@ -1643,24 +1784,42 @@ export default function UserManual() {
           </Card>
 
           {/* Content card - cover (logo) or step content - fixed height, scrollable body */}
-          <Card className="flex min-h-[32rem] min-w-0 flex-1 flex-col xl:h-[42rem] xl:max-h-[42rem]">
-            <CardHeader className="h-20 flex-shrink-0 flex items-center justify-center bg-red-600 text-white rounded-t-xl p-6">
-              <CardTitle className="text-base font-semibold text-white text-center leading-tight">
-                {currentStep === COVER_STEP + 1
-                  ? 'Asset Management'
-                  : currentStep === COVER_STEP + 2
-                    ? 'Getting Started'
-                    : currentStep === COVER_STEP + 3
-                      ? 'System Overview'
-                      : currentStep === COVER_STEP + 4
-                        ? 'Registration'
-                        : currentStep === COVER_STEP + 5
-                          ? 'Log In'
-                          : currentStep === COVER_STEP + 6
-                            ? 'Forgot password'
-                            : (STEP_TITLES[currentStep - COVER_STEP - 1] ??
-                              'Asset Management Complete User Manual')}
-              </CardTitle>
+          <Card className="flex min-h-[32rem] min-w-0 flex-1 flex-col xl:h-[42rem] xl:max-h-[42rem] shadow-md border-border/50">
+            <CardHeader className="h-20 flex-shrink-0 flex flex-row items-center justify-between bg-gradient-to-br from-red-600 to-red-700 text-white rounded-t-xl px-5 py-4">
+              <div className="flex items-center gap-3 min-w-0 flex-1">
+                <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-white/20 backdrop-blur-sm border border-white/20">
+                  {(() => {
+                    const stepI = currentStep - COVER_STEP - 1;
+                    const Icon = STEP_ICONS[stepI];
+                    return Icon ? (
+                      <Icon className="h-4 w-4 text-white" />
+                    ) : null;
+                  })()}
+                </div>
+                <CardTitle className="text-sm sm:text-base font-bold text-white leading-tight truncate">
+                  {currentStep === COVER_STEP + 1
+                    ? 'Asset Management'
+                    : currentStep === COVER_STEP + 2
+                      ? 'Getting Started'
+                      : currentStep === COVER_STEP + 3
+                        ? 'System Overview'
+                        : currentStep === COVER_STEP + 4
+                          ? 'Registration'
+                          : currentStep === COVER_STEP + 5
+                            ? 'Log In'
+                            : currentStep === COVER_STEP + 6
+                              ? 'Forgot password'
+                              : (STEP_TITLES[currentStep - COVER_STEP - 1] ??
+                                'Asset Management Complete User Manual')}
+                </CardTitle>
+              </div>
+              {currentStep > COVER_STEP && (
+                <span className="shrink-0 flex items-center gap-1.5 rounded-full bg-white/15 px-3 py-1 text-[11px] font-medium text-white/90 border border-white/10">
+                  <span className="font-bold">{currentStep - COVER_STEP}</span>
+                  <span className="text-white/50">/</span>
+                  <span>{STEPS}</span>
+                </span>
+              )}
             </CardHeader>
             <CardContent className="flex min-h-0 flex-1 flex-col overflow-y-auto p-4 pt-4 sm:p-6 sm:pt-6">
               {currentStep === COVER_STEP + 1 ? (
@@ -1776,23 +1935,51 @@ export default function UserManual() {
                 })()
               )}
             </CardContent>
-            <CardFooter className="flex flex-shrink-0 flex-col-reverse gap-3 border-t pt-6 sm:flex-row sm:justify-between">
+            <CardFooter className="flex flex-shrink-0 items-center justify-between border-t border-border/50 bg-muted/10 px-5 py-3">
               <Button
                 variant="outline"
+                size="sm"
                 onClick={() => setCurrentStep(s => Math.max(COVER_STEP, s - 1))}
                 disabled={currentStep <= COVER_STEP}
-                className="gap-2 hover:bg-red-600 hover:text-white hover:border-red-600 transition-colors"
+                className="gap-1.5 border-border/60 text-sm font-medium hover:bg-red-600 hover:text-white hover:border-red-600 transition-all duration-200 disabled:opacity-40"
               >
-                <ChevronLeft className="h-4 w-4" />
+                <ChevronLeft className="h-3.5 w-3.5" />
                 Back
               </Button>
+
+              {currentStep > COVER_STEP && currentStep <= MAX_STEP && (
+                <div className="hidden sm:flex items-center gap-1.5">
+                  {Array.from(
+                    { length: STEPS },
+                    (_, i) => i + 1,
+                  ).map(step => (
+                    <button
+                      key={step}
+                      type="button"
+                      onClick={() =>
+                        setCurrentStep(COVER_STEP + step)
+                      }
+                      className={`h-2 w-2 rounded-full transition-all duration-300 ${
+                        step === currentStep - COVER_STEP
+                          ? 'w-5 bg-red-600'
+                          : step < currentStep - COVER_STEP
+                            ? 'bg-green-400 hover:bg-green-500'
+                            : 'bg-gray-300 hover:bg-gray-400'
+                      }`}
+                      aria-label={`Go to step ${step}`}
+                    />
+                  ))}
+                </div>
+              )}
+
               <Button
+                size="sm"
                 onClick={() => setCurrentStep(s => Math.min(MAX_STEP, s + 1))}
                 disabled={currentStep >= MAX_STEP}
-                className="gap-2 bg-red-600 hover:bg-red-700 text-white transition-colors"
+                className="gap-1.5 bg-red-600 hover:bg-red-700 text-white text-sm font-medium transition-all duration-200 shadow-sm hover:shadow-md disabled:opacity-40"
               >
                 Next
-                <ChevronRight className="h-4 w-4" />
+                <ChevronRight className="h-3.5 w-3.5" />
               </Button>
             </CardFooter>
           </Card>

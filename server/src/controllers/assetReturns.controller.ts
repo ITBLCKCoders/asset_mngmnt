@@ -14,10 +14,12 @@ import { createAccountabilityFormHandler } from './accountabilityForms.controlle
 import {
   isUserManagerApprover1,
   isUserManagerApprover2,
-  getManagerApprover1UserIdsInDepartment,
+  getManagerApprover1UserIdsInDepartmentAndCompany,
   getManagerApprover2UserIdsInDepartment,
 } from '../utils/approverNotifications.js';
 import { createNotificationForApi } from '../utils/notificationsApi.js';
+import { getIoInstance } from '../utils/socketManager.js';
+import { emitNotification } from '../sockets/socketHandlers.js';
 import { createErrorResponse } from '../utils/responseWrapper.js';
 import * as intangibleAssetsService from '../services/intangibleAssets.service.js';
 import {
@@ -453,15 +455,16 @@ export async function submitAssetReturnRequestHandler(
         });
       }
 
-      // Send notification to department heads in this department
-      logger.info(`Notification debug - department_id: ${effectiveDepartmentId}, asset count: ${deptAssignments.length}`);
-      if (effectiveDepartmentId) {
+      // Send notification to Manager Approver 1 users in the same department AND company
+      logger.info(`Notification debug - department_id: ${effectiveDepartmentId}, company_id: ${companyId}, asset count: ${deptAssignments.length}`);
+      if (effectiveDepartmentId && companyId) {
         try {
-          const managerApprover1UserIds = await getManagerApprover1UserIdsInDepartment(effectiveDepartmentId);
-          logger.info(`Found ${managerApprover1UserIds.length} Manager Approver 1 users in department ${effectiveDepartmentId}: ${JSON.stringify(managerApprover1UserIds)}`);
+          const managerApprover1UserIds = await getManagerApprover1UserIdsInDepartmentAndCompany(effectiveDepartmentId, companyId);
+          logger.info(`Found ${managerApprover1UserIds.length} Manager Approver 1 users in department ${effectiveDepartmentId} and company ${companyId}: ${JSON.stringify(managerApprover1UserIds)}`);
           const requesterName = [firstDeptAssignment.user?.first_name, firstDeptAssignment.user?.last_name].filter(Boolean).join(' ') || 'A user';
           const assetCount = deptAssignments.length;
 
+          const io = getIoInstance();
           for (const approverUserId of managerApprover1UserIds) {
             if (approverUserId !== currentUserId) {
               logger.info(`Sending notification to user ${approverUserId}`);
@@ -480,10 +483,29 @@ export async function submitAssetReturnRequestHandler(
                   actionTarget: 'return_request_approval',
                 },
               });
-              logger.info(`Notification sent successfully to user ${approverUserId}`);
+              // Real-time socket push so the notification pops immediately
+              if (io) {
+                emitNotification(io, approverUserId, 'notification', {
+                  id: form_id,
+                  title: 'Asset Return Request Approval Needed',
+                  message: `${requesterName} has submitted an asset return request for ${assetCount} asset${assetCount !== 1 ? 's' : ''} and requires your approval.`,
+                  type: 'system',
+                  data: {
+                    form_id,
+                    form_number: returnForm!.form_number,
+                    requester_id: currentUserId,
+                    requester_name: requesterName,
+                    asset_count: assetCount,
+                    route: '/approvals',
+                    actionTarget: 'return_request_approval',
+                  },
+                  time: new Date().toISOString(),
+                });
+              }
+              logger.info(`Notification + socket push sent successfully to user ${approverUserId}`);
             }
           }
-          logger.info(`Sent return request notifications to ${managerApprover1UserIds.length} Manager Approver 1 users in department ${effectiveDepartmentId}`);
+          logger.info(`Sent return request notifications to ${managerApprover1UserIds.length} Manager Approver 1 users in department ${effectiveDepartmentId} company ${companyId}`);
         } catch (notifError) {
           logger.error('Failed to send return request notifications:', notifError);
         }
