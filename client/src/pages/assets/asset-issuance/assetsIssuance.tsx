@@ -363,7 +363,7 @@ export default function AssetsAssignment() {
       setLoading(false);
     };
     fetchData();
-  }, [activeCompany?.id, scope]);
+  }, [activeCompany?.id, scope, currentUser]);
 
   useEffect(() => {
     if (!showScopeTabs) return;

@@ -519,7 +519,7 @@ export default function AssetsReturn() {
       setLoading(false);
     };
     fetchData();
-  }, [activeCompany?.id, scope]);
+  }, [activeCompany?.id, scope, currentUser]);
 
   useEffect(() => {
     if (!showScopeTabs) return;

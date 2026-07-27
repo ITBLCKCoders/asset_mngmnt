@@ -3746,8 +3746,45 @@ export async function getTransferPendingApprovalsHandler(
 ) {
   try {
     const userId = req.user!.userID;
-    const { companyId } = await getAssetScope(pool, userId);
+    const { companyId, departmentIds, isSuperAdmin } = await getAssetScope(pool, userId);
     if (!companyId) return res.json({ assetTransferForms: [] });
+
+    if (isSuperAdmin || departmentIds === null) {
+      let formRows: any[];
+      try {
+        const [rows] = (await pool.execute(
+          `SELECT atf.formID, atf.form_number, atf.user_id, atf.department_id, atf.location_id, atf.location_room_id,
+                  atf.new_assigned_user_id, atf.created_by, atf.created_at, atf.signed_at, atf.signed_by, atf.signed_digital_signature,
+                  DATE_FORMAT(atf.process_signed_at, '%Y-%m-%d %H:%i:%s') AS process_signed_at,
+                  atf.process_digital_signature,
+                  DATE_FORMAT(atf.processor_pending_signed_at, '%Y-%m-%d %H:%i:%s') AS processor_pending_signed_at,
+                  atf.processor_pending_signature,
+                  atf.transfer_type, atf.received_by,
+                  d.company_id AS form_company_id
+           FROM asset_transfer_forms atf
+           LEFT JOIN asset_mngmnt_departments d ON atf.department_id = d.departmentID
+           LEFT JOIN asset_return_forms arf ON atf.return_form_id = arf.formID AND arf.deleted_at IS NULL
+           WHERE atf.deleted_at IS NULL
+             AND (atf.declined_at IS NULL)
+             AND atf.signed_at IS NOT NULL
+             AND atf.dept_head_signed_at IS NULL
+             AND (atf.return_form_id IS NULL OR (arf.formID IS NOT NULL AND arf.signed_at IS NOT NULL AND arf.declined_at IS NULL))
+             AND d.company_id = ?`,
+          [companyId]
+        )) as any[];
+        formRows = rows || [];
+      } catch (colErr: any) {
+        if (
+          colErr?.message?.includes('declined_at') ||
+          colErr?.message?.includes('return_form_id')
+        ) {
+          return res.json({ assetTransferForms: [] });
+        }
+        throw colErr;
+      }
+      const batches = await buildTransferFormBatches(formRows);
+      return res.json({ assetTransferForms: batches });
+    }
 
     const isManager1 = await isUserManagerApprover1(userId);
     if (!isManager1) return res.json({ assetTransferForms: [] });
@@ -3793,8 +3830,7 @@ export async function getTransferPendingApprovalsHandler(
       }
       throw colErr;
     }
-    const pendingForms = formRows;
-    const batches = await buildTransferFormBatches(pendingForms);
+    const batches = await buildTransferFormBatches(formRows);
     return res.json({ assetTransferForms: batches });
   } catch (err: any) {
     const msg = err?.message ?? '';
@@ -3812,7 +3848,7 @@ export async function getTransferReceivePendingApprovalsHandler(
   res: Response
 ) {
   try {
-    const { companyId } = await getAssetScope(pool, req.user!.userID);
+    const { companyId, departmentIds } = await getAssetScope(pool, req.user!.userID);
     if (!companyId) return res.json({ assetTransferForms: [] });
 
     let formRows: any[];
@@ -3848,6 +3884,14 @@ export async function getTransferReceivePendingApprovalsHandler(
       }
       throw colErr;
     }
+
+    if (departmentIds && departmentIds.length > 0) {
+      const allowed = new Set(departmentIds.map(String));
+      formRows = formRows.filter(
+        (row: any) => row.department_id && allowed.has(String(row.department_id))
+      );
+    }
+
     const batches = await buildTransferFormBatches(formRows);
     return res.json({ assetTransferForms: batches });
   } catch (err: any) {

@@ -265,7 +265,15 @@ export default function AssetsTransfer() {
 
   const fetchDepartments = async () => {
     try {
-      const response = await api.get('/departments');
+      let companyId: string | undefined;
+      const userRole = currentUser?.role?.name?.toLowerCase();
+      if (userRole === 'global admin' || userRole === 'admin') {
+        companyId = activeCompany?.id || undefined;
+      } else {
+        companyId = currentUser?.company_id || undefined;
+      }
+      const url = companyId ? `/departments?companyId=${companyId}` : '/departments';
+      const response = await api.get(url);
       setDepartments(response.departments || []);
     } catch (error) {
       console.error('Failed to fetch departments:', error);
@@ -275,7 +283,15 @@ export default function AssetsTransfer() {
 
   const fetchLocations = async () => {
     try {
-      const response = await api.get('/locations');
+      let companyId: string | undefined;
+      const userRole = currentUser?.role?.name?.toLowerCase();
+      if (userRole === 'global admin' || userRole === 'admin') {
+        companyId = activeCompany?.id || undefined;
+      } else {
+        companyId = currentUser?.company_id || undefined;
+      }
+      const url = companyId ? `/locations?companyId=${companyId}` : '/locations';
+      const response = await api.get(url);
       const locs = response.locations || [];
       setLocations(locs);
       setBuildings([
@@ -290,7 +306,15 @@ export default function AssetsTransfer() {
 
   const fetchUsers = async () => {
     try {
-      const response = await api.get('/users');
+      let companyId: string | undefined;
+      const userRole = currentUser?.role?.name?.toLowerCase();
+      if (userRole === 'global admin' || userRole === 'admin') {
+        companyId = activeCompany?.id || undefined;
+      } else {
+        companyId = currentUser?.company_id || undefined;
+      }
+      const url = companyId ? `/users?companyId=${companyId}` : '/users';
+      const response = await api.get(url);
       setUsers(response.users || []);
     } catch (error) {
       console.error('Failed to fetch users:', error);
@@ -420,7 +444,7 @@ export default function AssetsTransfer() {
       setLoading(false);
     };
     fetchData();
-  }, [activeCompany?.id, scope]);
+  }, [activeCompany?.id, scope, currentUser]);
 
   useEffect(() => {
     if (!showScopeTabs) return;
