@@ -1187,18 +1187,22 @@ export default function AssetsAssignment() {
               </TabsList>
 
               <TabsContent value="select-assets" className="mt-4">
-                <AssetSelectionPanel
-                  assets={availableAssets}
-                  selectedAssets={selectedAssets}
-                  searchTerm={searchTerm}
-                  searchColumn={searchColumn}
-                  loading={loading || buildersLoading || tabLoading}
-                  hasPermission={hasPermission}
-                  onSearchChange={setSearchTerm}
-                  onSearchColumnChange={setSearchColumn}
-                  onAssetSelection={handleAssetSelection}
-                  onClearAll={() => setSelectedAssets([])}
-                />
+<AssetSelectionPanel
+  assets={availableAssets}
+  selectedAssets={selectedAssets}
+  searchTerm={searchTerm}
+  searchColumn={searchColumn}
+  loading={loading || buildersLoading || tabLoading}
+  hasPermission={hasPermission}
+  onSearchChange={setSearchTerm}
+  onSearchColumnChange={setSearchColumn}
+  onAssetSelection={handleAssetSelection}
+  onClearAll={() => setSelectedAssets([])}
+  onSelectAll={() => {
+    const availableIds = availableAssets.map(a => a.id);
+    setSelectedAssets(prev => [...new Set([...prev, ...availableIds])]);
+  }}
+/>
               </TabsContent>
 
               <TabsContent value="asset-built" className="mt-4">
@@ -1217,16 +1221,63 @@ export default function AssetsAssignment() {
                       Existing asset builders in your organization. Select a
                       builder to assign all its assets.
                     </p>
-                    <div className="relative mt-4 w-full">
-                      <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-gray-400" />
-                      <Input
-                        type="text"
-                        placeholder="Search by builder name or asset code..."
-                        value={builderSearchTerm}
-                        onChange={e => setBuilderSearchTerm(e.target.value)}
-                        className="pl-10 w-full h-10 border-gray-200 focus:border-red-500 focus:ring-red-500"
-                      />
+<div className="relative mt-4 w-full">
+                    <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-gray-400" />
+                    <Input
+                      type="text"
+                      placeholder="Search by builder name or asset code..."
+                      value={builderSearchTerm}
+                      onChange={e => setBuilderSearchTerm(e.target.value)}
+                      className="pl-10 w-full h-10 border-gray-200 focus:border-red-500 focus:ring-red-500"
+                    />
+                  </div>
+                  {paginatedBuilders.length > 0 && (
+                    <div className="mt-3 flex justify-end">
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={() => {
+                          const allBuilderAssetIds = paginatedBuilders
+                            .flatMap((builder: any) =>
+                              (builder.items || [])
+                                .map((item: any) => item.asset_code)
+                                .filter((id: string) =>
+                                  allSelectableAssets.some(asset => asset.id === id)
+                                )
+                            );
+                          const allSelected = allBuilderAssetIds.length > 0 &&
+                            allBuilderAssetIds.every((id: string) => selectedAssets.includes(id));
+                          if (allSelected) {
+                            setSelectedAssets(prev =>
+                              prev.filter(id => !allBuilderAssetIds.includes(id))
+                            );
+                          } else {
+                            setSelectedAssets(prev => [...new Set([...prev, ...allBuilderAssetIds])]);
+                          }
+                        }}
+                        className="text-red-600 border-red-300 hover:bg-red-50 whitespace-nowrap"
+                      >
+                        {paginatedBuilders
+                          .flatMap((builder: any) =>
+                            (builder.items || [])
+                              .map((item: any) => item.asset_code)
+                              .filter((id: string) =>
+                                allSelectableAssets.some(asset => asset.id === id)
+                              )
+                          ).length > 0 &&
+                        (paginatedBuilders
+                          .flatMap((builder: any) =>
+                            (builder.items || [])
+                              .map((item: any) => item.asset_code)
+                              .filter((id: string) =>
+                                allSelectableAssets.some(asset => asset.id === id)
+                              )
+                          )).every((id: string) => selectedAssets.includes(id))
+                          ? 'Deselect All'
+                          : 'Select All'}
+                      </Button>
                     </div>
+                  )}
                   </CardHeader>
                   <CardContent className="pt-0 flex-1 flex flex-col overflow-hidden">
                     {buildersLoading || tabLoading ? (
@@ -1404,6 +1455,27 @@ export default function AssetsAssignment() {
                       <Badge variant="secondary" className="w-fit">
                         {scopedIntangibleAssets.length} assets
                       </Badge>
+                      {scopedIntangibleAssets.length > 0 && (
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          onClick={() => {
+                            const allIntangibleIds = scopedIntangibleAssets.map((a: any) => a.id);
+                            const allSelected = allIntangibleIds.every(id => selectedAssets.includes(id));
+                            if (allSelected) {
+                              setSelectedAssets(prev => prev.filter(id => !allIntangibleIds.includes(id)));
+                            } else {
+                              setSelectedAssets(prev => [...new Set([...prev, ...allIntangibleIds])]);
+                            }
+                          }}
+                          className="text-red-600 border-red-300 hover:bg-red-50 whitespace-nowrap"
+                        >
+                          {scopedIntangibleAssets.length > 0 &&
+                          scopedIntangibleAssets.every((a: any) => selectedAssets.includes(a.id))
+                            ? 'Deselect All'
+                            : 'Select All'}
+                        </Button>
+                      )}
                     </CardTitle>
                   </CardHeader>
                   <CardContent className="pt-0 flex-1 flex flex-col overflow-hidden">

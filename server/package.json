@@ -12,6 +12,8 @@
     "db:reset-asset-state": "tsx src/scripts/reset-asset-state.ts",
     "cert": "tsx src/scripts/generateDevCert.ts",
     "start": "node dist/index.js",
+    "start:uat": "cross-env DOTENV_CONFIG_PATH=.env.uat node dist/index.js",
+    "dev:uat": "cross-env DOTENV_CONFIG_PATH=.env.uat tsx watch src/index.ts",
     "test": "node --test dist/tests/*.test.js",
     "test:unit": "npx jest --config jest.config.cjs",
     "lint": "eslint src --ext ts,tsx",

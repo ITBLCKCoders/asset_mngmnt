@@ -1214,6 +1214,29 @@ export default function AssetsTransfer() {
                       onSearchColumnChange={setSearchColumn}
                       className="mt-4 w-full"
                     />
+                    {filteredAssignments.length > 0 && (
+                      <div className="mt-3 flex justify-end">
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          onClick={() => {
+                            const allVisibleIds = filteredAssignments.map(a => a.assignmentID);
+                            const allSelected = allVisibleIds.every(id => selectedAssignments.includes(id));
+                            if (allSelected) {
+                              setSelectedAssignments(prev => prev.filter(id => !allVisibleIds.includes(id)));
+                            } else {
+                              setSelectedAssignments(prev => [...new Set([...prev, ...allVisibleIds])]);
+                            }
+                          }}
+                          className="text-red-600 border-red-300 hover:bg-red-50 whitespace-nowrap"
+                        >
+                          {filteredAssignments.length > 0 &&
+                          filteredAssignments.every(a => selectedAssignments.includes(a.assignmentID))
+                            ? 'Deselect All'
+                            : 'Select All'}
+                        </Button>
+                      </div>
+                    )}
                   </CardHeader>
 
                   <CardContent className="pt-0">
@@ -1506,6 +1529,29 @@ export default function AssetsTransfer() {
                       </TabsList>
 
                       <TabsContent value="asset" className="mt-0">
+                        {filteredCompanyTransferAssets.length > 0 && (
+                          <div className="mb-3 flex justify-end">
+                            <Button
+                              variant="outline"
+                              size="sm"
+                              onClick={() => {
+                                const allVisibleIds = filteredCompanyTransferAssets.map(a => a.assetId);
+                                const allSelected = allVisibleIds.every(id => selectedCompanyAssetIds.includes(id));
+                                if (allSelected) {
+                                  setSelectedCompanyAssetIds(prev => prev.filter(id => !allVisibleIds.includes(id)));
+                                } else {
+                                  setSelectedCompanyAssetIds(prev => [...new Set([...prev, ...allVisibleIds])]);
+                                }
+                              }}
+                              className="text-red-600 border-red-300 hover:bg-red-50 whitespace-nowrap"
+                            >
+                              {filteredCompanyTransferAssets.length > 0 &&
+                              filteredCompanyTransferAssets.every(a => selectedCompanyAssetIds.includes(a.assetId))
+                                ? 'Deselect All'
+                                : 'Select All'}
+                            </Button>
+                          </div>
+                        )}
                         <div className="space-y-3 max-h-96 overflow-y-auto scrollbar-thin scrollbar-thumb-gray-300 scrollbar-track-gray-100 -mr-6 pr-6">
                           {companyAssetsLoading || tabLoading ? (
                             <div className="space-y-3">

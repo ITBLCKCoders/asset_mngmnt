@@ -114,10 +114,10 @@ export async function getAuditLogsHandler(req: AuthRequest, res: Response) {
     const resourceTypeList = parseCsvOrArray(resourceType);
     const userIdList = parseCsvOrArray(userId);
 
-    const requestedCompanyId =
-      access.isSuperAdmin && typeof companyId === 'string' && companyId.trim()
-        ? companyId.trim()
-        : access.companyId;
+    // Super admins: if no explicit company query param, see all companies
+    const requestedCompanyId = access.isSuperAdmin
+      ? (typeof companyId === 'string' && companyId.trim() ? companyId.trim() : null)
+      : access.companyId;
 
     // Use companyFilter if provided (for filtering by specific company)
     const effectiveCompanyId =

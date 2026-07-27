@@ -37,6 +37,7 @@ interface AssetSelectionPanelProps {
   onSearchColumnChange: (value: string) => void;
   onAssetSelection: (assetId: string, checked: boolean | string) => void;
   onClearAll: () => void;
+  onSelectAll: () => void;
 }
 
 export function AssetSelectionPanel({
@@ -50,7 +51,9 @@ export function AssetSelectionPanel({
   onSearchColumnChange,
   onAssetSelection,
   onClearAll,
+  onSelectAll,
 }: AssetSelectionPanelProps) {
+  const allSelected = assets.length > 0 && assets.every(asset => selectedAssets.includes(asset.id));
   return (
     <Card className="shadow-xl border-0 bg-white/80 backdrop-blur-sm h-[592px] flex flex-col">
       <CardHeader className="pb-4 flex-shrink-0">
@@ -62,6 +65,16 @@ export function AssetSelectionPanel({
           <Badge variant="secondary" className="w-fit sm:ml-auto">
             {assets.length} available
           </Badge>
+          {assets.length > 0 && (
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={allSelected ? onClearAll : onSelectAll}
+              className="text-red-600 border-red-300 hover:bg-red-50 whitespace-nowrap"
+            >
+              {allSelected ? 'Deselect All' : 'Select All'}
+            </Button>
+          )}
         </CardTitle>
 
         {/* Search Bar */}
