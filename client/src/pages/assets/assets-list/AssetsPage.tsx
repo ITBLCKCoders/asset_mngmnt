@@ -135,6 +135,24 @@ export function AssetsPage() {
   const isAdmin = user?.role?.name?.toLowerCase() === 'admin';
   const isOverallManager = roleCustodian?.managerRole === 'overallManager';
   const showScopeTabs = isSuperAdmin || isAdmin || isOverallManager;
+  // Resolve correct company for export display.
+  // Global Admin uses activeCompany (company switcher); all other roles are scoped to their own company by the server.
+  const exportCompany = useMemo(() => {
+    if (isSuperAdmin) return activeCompany;
+    if (user?.company_id) {
+      if (activeCompany?.id === user.company_id) return activeCompany;
+      return {
+        id: user.company_id,
+        name: user.company ?? 'Company',
+        email: '',
+        code: '',
+        prefix: '',
+        created_at: '',
+        updated_at: '',
+      };
+    }
+    return activeCompany;
+  }, [isSuperAdmin, activeCompany, user]);
   const [scope, setScope] = useState<'it' | 'admin'>('it');
   const [pageIndex, setPageIndex] = useState(0);
   const [pageSize, setPageSize] = useState(10);
@@ -1869,7 +1887,7 @@ export function AssetsPage() {
               </Button>
             ) : (
               <Button
-                onClick={() => handleExportConfirm(displayAssets, activeCompany, user, assetBuilders, activeCompany?.id, showScopeTabs ? scope : null, searchTerm)}
+                onClick={() => handleExportConfirm(displayAssets, exportCompany, user, assetBuilders, exportCompany?.id, showScopeTabs ? scope : null, searchTerm)}
                 disabled={selectedColumns.size === 0}
                 className="bg-red-600 hover:bg-red-700 text-white"
               >
@@ -1948,7 +1966,7 @@ export function AssetsPage() {
                   <div className="flex gap-3">
                     <button
                       type="button"
-                      onClick={() => handleSummaryScopeChange('it', activeCompany?.id)}
+                      onClick={() => handleSummaryScopeChange('it', exportCompany?.id)}
                       className={`flex-1 rounded-lg border-2 p-3 text-center transition cursor-pointer ${
                         summaryScope === 'it'
                           ? 'border-blue-500 bg-blue-50'
@@ -1959,7 +1977,7 @@ export function AssetsPage() {
                     </button>
                     <button
                       type="button"
-                      onClick={() => handleSummaryScopeChange('admin', activeCompany?.id)}
+                      onClick={() => handleSummaryScopeChange('admin', exportCompany?.id)}
                       className={`flex-1 rounded-lg border-2 p-3 text-center transition cursor-pointer ${
                         summaryScope === 'admin'
                           ? 'border-purple-500 bg-purple-50'
@@ -1970,7 +1988,7 @@ export function AssetsPage() {
                     </button>
                     <button
                       type="button"
-                      onClick={() => handleSummaryScopeChange('all', activeCompany?.id)}
+                      onClick={() => handleSummaryScopeChange('all', exportCompany?.id)}
                       className={`flex-1 rounded-lg border-2 p-3 text-center transition cursor-pointer ${
                         summaryScope === 'all'
                           ? 'border-gray-700 bg-gray-100'
@@ -2280,7 +2298,7 @@ export function AssetsPage() {
             </div>
             {summaryStep === 1 ? (
               <Button
-                onClick={() => handleSummaryNextStep(summaryScope, activeCompany?.id)}
+                onClick={() => handleSummaryNextStep(summaryScope, exportCompany?.id)}
                 disabled={summarySelectedColumns.size === 0}
                 className="bg-red-600 hover:bg-red-700 text-white"
               >
@@ -2288,7 +2306,7 @@ export function AssetsPage() {
               </Button>
             ) : (
               <Button
-                onClick={() => handleSummaryExportConfirm(activeCompany, user, assetBuilders, activeCompany?.id, showScopeTabs ? scope : null, searchTerm)}
+                onClick={() => handleSummaryExportConfirm(exportCompany, user, assetBuilders, exportCompany?.id, showScopeTabs ? scope : null, searchTerm)}
                 disabled={summarySelectedColumns.size === 0}
                 className="bg-red-600 hover:bg-red-700 text-white"
               >
