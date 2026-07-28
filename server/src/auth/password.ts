@@ -4,6 +4,7 @@ import type { Request } from 'express';
 import { BCRYPT_COST } from './passwordPolicy.js';
 import { pool } from '../db.js';
 import { sendEmail } from '../email.js';
+import { buildEmailHtml } from '../email-templates.js';
 import logger from '../logger.js';
 import { generateTokens } from './tokens.js';
 import { config } from '../config/validation.js';
@@ -144,16 +145,18 @@ export async function forgotPassword(
     const link = `${config.FRONTEND_URL}/verify-reset-otp`;
     await sendEmail(
       email,
-      'Password Reset OTP – Asset Management',
-      `
-      <div style="font-family: Arial, sans-serif; max-width: 600px; margin: auto; padding: 20px; border: 1px solid #eee; border-radius: 10px; text-align: center;">
-        <h2 style="color: #c00;">Reset Your Password</h2>
-        <p>Your 6-digit reset code is:</p>
-        <div style="font-size: 36px; font-weight: bold; letter-spacing: 8px; color: #c00; margin: 20px 0;">${otp}</div>
-        <p><a href="${link}" style="color: #c00; text-decoration: underline;">Enter it here</a></p>
-        <p style="font-size: 12px; color: #666;">Expires in <strong>10 minutes</strong>.</p>
-      </div>
-    `,
+      'Reset your password – Asset Management',
+      buildEmailHtml({
+        title: 'Reset your password',
+        body: `
+          <p style="margin: 0 0 16px 0;">We received a request to reset the password for your account. Use the code below to proceed.</p>
+          <div style="background: #f4f6f9; border-radius: 8px; padding: 16px; text-align: center; margin-bottom: 20px; letter-spacing: 10px; font-size: 32px; font-weight: 700; color: #1a2933;">${otp}</div>
+          <p style="margin: 0; font-size: 13px; color: #8899a8;">This code expires in <strong>10 minutes</strong>.</p>
+        `,
+        footerNote: 'If you didn\'t request a password reset, you can safely ignore this email.',
+        link,
+        linkText: 'Reset password',
+      }),
       link
     );
 

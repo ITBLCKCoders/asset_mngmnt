@@ -1064,7 +1064,7 @@ export function AssetsPage() {
               if (!hasAssetManagementAccess()) {
                 setIsAccessDeniedDialogOpen(true);
               } else {
-                navigate('/assets/builder');
+                navigate('/assets/builder', { state: { scope } });
               }
             }}
             disabled={!hasPermission('Asset List', 'create')}

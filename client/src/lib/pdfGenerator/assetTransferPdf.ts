@@ -10,7 +10,7 @@ import {
   getCompanyAccentColor,
   getBlackCodersFooterGradient,
   isBlackCoders,
-  resolveCompanyBranding,
+  fetchActiveCompanyForAssetReturnForm,
   sortAssetsByLast5Digits,
   PDF_SIGNATURE_MAX_HEIGHT_MM,
   PDF_SIGNATURE_MAX_WIDTH_MM,
@@ -90,12 +90,14 @@ export const generateAssetTransferPDF = async (
     creator: 'Asset Management System',
   });
 
-  const companyBranding = await resolveCompanyBranding({
-    name: transferData.user.companyName,
-    logo_url: transferData.user.companyLogoUrl,
-  });
-  const accentColor = getCompanyAccentColor(companyBranding?.name);
-  const isBlackCodersCompany = isBlackCoders(companyBranding?.name);
+  const companyName = transferData.user.companyName;
+  let companyLogo = transferData.user.companyLogoUrl;
+  if (!companyLogo) {
+    const myCompany = await fetchActiveCompanyForAssetReturnForm();
+    companyLogo = myCompany?.logo_url ?? null;
+  }
+  const accentColor = getCompanyAccentColor(companyName);
+  const isBlackCodersCompany = isBlackCoders(companyName);
   const headerFillColor: [number, number, number] = isBlackCodersCompany ? [0, 0, 0] : [accentColor.r, accentColor.g, accentColor.b];
   const headerTextColor: [number, number, number] = [255, 255, 255];
   const formNumber = transferData.form_number || 'Transfer Form';
@@ -112,7 +114,7 @@ export const generateAssetTransferPDF = async (
 
   await addCompanyLogoToPDF(
     doc,
-    companyBranding?.logo_url,
+    companyLogo,
     pageMargin,
     headerBoxY + 2
   );

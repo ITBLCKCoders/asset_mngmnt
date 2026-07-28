@@ -1,5 +1,6 @@
 // src/pages/assets/assetsComponents/modalSteps/step4AssetsReview.tsx
 
+import { useState, useEffect } from 'react';
 import {
   CheckCircle2,
   MapPin,
@@ -67,6 +68,12 @@ export function Step4Review({
   const formatDate = (iso?: string) =>
     iso ? format(new Date(iso), 'PPP') : '—';
   const hasImage = !!formData.imageUrl;
+  const [imageError, setImageError] = useState(false);
+
+  useEffect(() => {
+    setImageError(false);
+  }, [formData.imageUrl]);
+
   const hasDocuments = assetDocuments && assetDocuments.length > 0;
 
   return (
@@ -83,17 +90,14 @@ export function Step4Review({
         </div>
       )}
 
-      {hasImage && (
+      {hasImage && !imageError && (
         <div className="flex justify-center -mt-2 sm:-mt-6">
           <div className="relative max-w-lg w-full min-w-0 group">
             <img
               src={proxyCloudinaryUrl(formData.imageUrl)}
               alt="Asset preview"
               className="rounded-2xl sm:rounded-3xl object-cover w-full h-48 sm:h-72 md:h-96 max-h-[50vh] sm:max-h-none shadow-xl sm:shadow-2xl border-4 sm:border-8 border-white transition-transform group-hover:scale-[1.02]"
-              onError={e => {
-                const target = e.target as HTMLImageElement;
-                target.style.display = 'none';
-              }}
+              onError={() => setImageError(true)}
             />
             <div className="absolute top-3 left-3 sm:top-5 sm:left-5 bg-black/75 backdrop-blur-sm text-white px-3 py-1.5 sm:px-5 sm:py-2.5 rounded-full text-xs sm:text-sm font-semibold flex items-center gap-2 shadow-lg">
               <ImageIcon className="h-5 w-5" />

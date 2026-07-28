@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useMemo, useEffect } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useLocation } from 'react-router-dom';
 import { Package, X, Check, ArrowLeft, Trash2, Crown } from 'lucide-react';
 import {
   Card,
@@ -33,6 +33,7 @@ const logger = createLogger('AssetBuilder');
 
 export default function AssetBuilderPage() {
   const navigate = useNavigate();
+  const location = useLocation();
   const { activeCompany } = useCompanyContext();
   const { hasPermission, roleCustodian } = useUserPermissions();
   const { user: currentUser } = useCurrentUser();
@@ -41,7 +42,8 @@ export default function AssetBuilderPage() {
   const isAdmin = currentUser?.role?.name?.toLowerCase() === 'admin';
   const isOverallManager = roleCustodian?.managerRole === 'overallManager';
   const showScopeTabs = isSuperAdmin || isAdmin || isOverallManager;
-  const [scope, setScope] = useState<'it' | 'admin'>('it');
+  const initialScope = (location.state as { scope?: 'it' | 'admin' })?.scope || 'it';
+  const [scope, setScope] = useState<'it' | 'admin'>(initialScope);
   const [builderName, setBuilderName] = useState('');
   const [builderDescription, setBuilderDescription] = useState('');
   const [selectedAssetIds, setSelectedAssetIds] = useState<Set<string>>(
@@ -64,7 +66,7 @@ export default function AssetBuilderPage() {
     []
   );
 
-  const { assets, loading } = useAssetsData(activeCompany?.id, showScopeTabs ? scope : null);
+  const { assets, loading } = useAssetsData(activeCompany?.id, showScopeTabs ? scope : null, 1, -1);
 
   useEffect(() => {
     const fetchGroupedAssets = async () => {

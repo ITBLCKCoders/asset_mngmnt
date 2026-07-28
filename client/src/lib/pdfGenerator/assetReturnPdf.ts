@@ -11,7 +11,6 @@ import {
   getBlackCodersFooterGradient,
   isBlackCoders,
   pdfLogger as logger,
-  resolveCompanyBranding,
   fetchActiveCompanyForAssetReturnForm,
   sortAssetsByLast5Digits,
   PDF_SIGNATURE_MAX_HEIGHT_MM,
@@ -119,19 +118,14 @@ export const generateAssetReturnPDF = async (
     creator: 'Asset Management System',
   });
 
-  let companyBranding = await resolveCompanyBranding({
-    name: returnData.user.companyName,
-    logo_url: returnData.user.companyLogoUrl,
-  });
-  if (!companyBranding?.logo_url) {
+  const companyName = returnData.user.companyName;
+  let companyLogo = returnData.user.companyLogoUrl;
+  if (!companyLogo) {
     const myCompany = await fetchActiveCompanyForAssetReturnForm();
-    companyBranding = await resolveCompanyBranding({
-      name: myCompany?.name ?? returnData.user.companyName ?? null,
-      logo_url: myCompany?.logo_url ?? null,
-    });
+    companyLogo = myCompany?.logo_url ?? null;
   }
-  const accentColor = getCompanyAccentColor(companyBranding?.name);
-  const isBlackCodersCompany = isBlackCoders(companyBranding?.name);
+  const accentColor = getCompanyAccentColor(companyName);
+  const isBlackCodersCompany = isBlackCoders(companyName);
   const headerFillColor: [number, number, number] = isBlackCodersCompany ? [0, 0, 0] : [accentColor.r, accentColor.g, accentColor.b];
   const headerTextColor: [number, number, number] = [255, 255, 255];
 
@@ -151,7 +145,7 @@ export const generateAssetReturnPDF = async (
 
   await addCompanyLogoToPDF(
     doc,
-    companyBranding?.logo_url,
+    companyLogo,
     pageMargin,
     headerBoxY + 2
   );

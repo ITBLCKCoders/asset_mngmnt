@@ -405,14 +405,15 @@ async function getAssetByType(
   params: (string | number)[]
 ): Promise<AssetByTypeItem[]> {
   const [rows] = (await pool.execute(
-    `SELECT at.typeID as typeId, COALESCE(at.name, 'Uncategorized') as typeName,
+    `SELECT MIN(at.typeID) as typeId,
+            COALESCE(at.name, 'Uncategorized') as typeName,
             COALESCE(at.prefix, '') as typeCode,
             COUNT(a.assetID) as total,
             SUM(CASE WHEN a.status IN ('In Use', 'Assigned') THEN 1 ELSE 0 END) as inUse
      FROM assets a
      LEFT JOIN asset_types at ON a.type_id = at.typeID AND at.deleted_at IS NULL
      WHERE ${whereClause}
-     GROUP BY at.typeID, at.name, at.prefix
+     GROUP BY COALESCE(at.name, 'Uncategorized'), COALESCE(at.prefix, '')
      ORDER BY total DESC`,
     params
   )) as any[];

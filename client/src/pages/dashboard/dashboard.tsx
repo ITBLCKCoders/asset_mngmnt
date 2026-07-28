@@ -1113,9 +1113,14 @@ export default function Dashboard() {
         </div>
 
         {!isEmployee && (
-          <Card className="w-full">
+          <Card className="w-full overflow-hidden border-border/70 shadow-sm">
             <CardHeader>
-              <CardTitle>Recent Activity</CardTitle>
+              <CardTitle className="flex items-center gap-2 text-lg">
+                Recent Activity
+                <span className="ml-2 text-sm font-normal text-muted-foreground">
+                  ({auditLogs.length} total)
+                </span>
+              </CardTitle>
               <CardDescription>Latest audit events</CardDescription>
             </CardHeader>
             <CardContent>
