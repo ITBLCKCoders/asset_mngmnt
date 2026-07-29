@@ -40,6 +40,7 @@ import { Badge } from '@/components/ui/badge';
 import { useAvatarPreview } from '@/hooks/avatarPreview';
 import { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { cn } from '@/lib/utils';
+import { getRoleDisplayName } from '@/lib/roleUtils';
 import { api, setToken } from '@/lib/api';
 import { ASSET_SIDEBAR_ENTRIES } from '@/components/sidebar/sidebarConfig';
 import { SidebarHoverItem } from '@/components/sidebar/SidebarHoverItem';
@@ -277,7 +278,7 @@ const Sidebar = memo(function Sidebar({ onLogout, currentPath = '', currentSearc
                   }}
                   variant="secondary"
                 >
-                  {user.role?.name || 'No role'}
+                  {getRoleDisplayName(user.role?.name) || 'No role'}
                 </Badge>
               </>
             ) : (

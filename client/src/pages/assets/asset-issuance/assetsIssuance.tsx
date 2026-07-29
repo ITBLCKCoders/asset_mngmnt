@@ -166,7 +166,7 @@ export default function AssetsAssignment() {
   const effectiveCompanyId = isSuperAdmin || isAdmin
     ? activeCompany?.id || undefined
     : currentUser?.company_id || undefined;
-  const [scope, setScope] = useState<'it' | 'admin'>('it');
+  const [scope, setScope] = useState<'it' | 'admin' | 'hr'>('it');
 
   const fetchAssets = async () => {
     try {
@@ -536,16 +536,16 @@ export default function AssetsAssignment() {
 
         const scopeGroups: Record<string, any[]> = {};
         for (const ia of selectedIntangibleAssetObjects) {
-          const scope = ia.type === 'Admin scope' ? 'Admin scope' : 'IT scope';
-          if (!scopeGroups[scope]) {
-            scopeGroups[scope] = [];
+          const group = ia.type === 'Admin scope' ? 'Admin scope' : ia.type === 'HR scope' ? 'HR scope' : 'IT scope';
+          if (!scopeGroups[group]) {
+            scopeGroups[group] = [];
           }
-          scopeGroups[scope].push(ia);
+          scopeGroups[group].push(ia);
         }
 
         for (const [scope, scopeAssets] of Object.entries(scopeGroups)) {
           try {
-            const deptKeyword = scope === 'Admin scope' ? 'admin' : 'it';
+            const deptKeyword = scope === 'Admin scope' ? 'admin' : scope === 'HR scope' ? 'hr' : 'it';
             const matchDept = departments.find(d =>
               d.name?.toLowerCase().includes(deptKeyword)
             );
@@ -582,17 +582,17 @@ export default function AssetsAssignment() {
         // Group by scope type
         const scopeGroups: Record<string, any[]> = {};
         for (const ia of selectedIntangibleAssetObjects) {
-          const scope = ia.type === 'Admin scope' ? 'Admin scope' : 'IT scope';
-          if (!scopeGroups[scope]) {
-            scopeGroups[scope] = [];
+          const group = ia.type === 'Admin scope' ? 'Admin scope' : ia.type === 'HR scope' ? 'HR scope' : 'IT scope';
+          if (!scopeGroups[group]) {
+            scopeGroups[group] = [];
           }
-          scopeGroups[scope].push(ia);
+          scopeGroups[group].push(ia);
         }
 
         // Send one batch request per scope (server creates accountability form with existing tangible assets)
         for (const [scope, scopeAssets] of Object.entries(scopeGroups)) {
           try {
-            const deptKeyword = scope === 'Admin scope' ? 'admin' : 'it';
+            const deptKeyword = scope === 'Admin scope' ? 'admin' : scope === 'HR scope' ? 'hr' : 'it';
             const matchDept = departments.find(d =>
               d.name?.toLowerCase().includes(deptKeyword)
             );
@@ -872,7 +872,7 @@ export default function AssetsAssignment() {
 
   const scopedIntangibleAssets = useMemo(() => {
     if (!showScopeTabs) return intangibleAssets;
-    const targetType = scope === 'it' ? 'IT scope' : 'Admin scope';
+    const targetType = scope === 'it' ? 'IT scope' : scope === 'hr' ? 'HR scope' : 'Admin scope';
     return intangibleAssets.filter((asset: { type?: string }) => asset.type === targetType);
   }, [intangibleAssets, showScopeTabs, scope]);
 
@@ -1134,15 +1134,18 @@ export default function AssetsAssignment() {
           {showScopeTabs && (
             <Tabs
               value={scope}
-              onValueChange={v => setScope(v as 'it' | 'admin')}
+              onValueChange={v => setScope(v as 'it' | 'admin' | 'hr')}
               className="w-full sm:w-auto"
             >
-              <TabsList className={segmentTabsListClassName + ' grid grid-cols-2 max-w-full sm:max-w-[280px]'}>
+              <TabsList className={segmentTabsListClassName + ' grid grid-cols-3 max-w-full sm:max-w-[420px]'}>
                 <TabsTrigger value="it" className={segmentTabsTriggerClassName}>
                   IT Asset
                 </TabsTrigger>
                 <TabsTrigger value="admin" className={segmentTabsTriggerClassName}>
                   Admin Asset
+                </TabsTrigger>
+                <TabsTrigger value="hr" className={segmentTabsTriggerClassName}>
+                  HR Asset
                 </TabsTrigger>
               </TabsList>
             </Tabs>

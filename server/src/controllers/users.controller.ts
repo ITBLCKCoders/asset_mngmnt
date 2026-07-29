@@ -9,7 +9,10 @@ import { createAuditLog, buildAuditContext } from '../utils/audit.js';
 
 export async function getUsersHandler(req: AuthRequest, res: Response) {
   try {
-    const [rows] = (await pool.execute('CALL sp_get_users()')) as any[];
+    const includeInactive = (req as any).query?.includeInactive === 'true';
+    const [rows] = (await pool.execute('CALL sp_get_users(?)', [
+      includeInactive ? 1 : 0,
+    ])) as any[];
     const rawUsers: any[] = Array.isArray(rows?.[0]) ? rows[0] : [];
 
     // Ensure digital signatures are available even when sp_get_users doesn't include that column.

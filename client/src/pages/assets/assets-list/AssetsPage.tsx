@@ -390,7 +390,7 @@ export function AssetsPage() {
         },
       },
       {
-        accessorKey: 'assigned_to',
+        id: 'assigned_to',
         header: 'Assigned To',
         size: 220,
         cell: ({ row }) => {

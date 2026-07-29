@@ -6,6 +6,7 @@ import { PageHeader } from '@/components/common/PageHeader';
 import { Badge } from '@/components/ui/badge';
 import { proxyCloudinaryUrl } from '@/utils/cloudinaryProxy';
 import { Button } from '@/components/ui/button';
+import { getRoleDisplayName } from '@/lib/roleUtils';
 import {
   Users,
   Shield,
@@ -487,7 +488,7 @@ function UserPermissions() {
                                   }
                                   className="mt-2 text-xs"
                                 >
-                                  {user.role?.name || 'User'}
+                                  {getRoleDisplayName(user.role?.name) || 'User'}
                                 </Badge>
                               </div>
                             </div>
@@ -715,7 +716,7 @@ function UserPermissions() {
                                                     : 'bg-blue-500'
                                                 )}
                                               />
-                                              {role.name}
+                                              {getRoleDisplayName(role.name)}
                                             </div>
                                           </SelectItem>
                                         ))}

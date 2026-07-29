@@ -142,6 +142,9 @@ export const updateIntangibleAsset = async (req: AuthRequest, res: Response) => 
       status: status ?? existingAsset.status,
       companyId: activeCompany.id,
       updatedBy: userId,
+      assignedTo: existingAsset.assigned_to || null,
+      assignedDate: existingAsset.assigned_date || null,
+      assignmentId: existingAsset.assignment_id || null,
     });
 
     await createAuditLog({

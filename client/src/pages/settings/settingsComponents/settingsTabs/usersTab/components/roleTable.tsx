@@ -6,6 +6,7 @@ import { Shimmer } from '@/components/ui/shimmer';
 import { useMemo } from 'react';
 import { useUserPermissions } from '@/hooks/useUserPermissions';
 import { DataTable } from '@/components/ui/dataTable';
+import { getRoleDisplayName } from '@/lib/roleUtils';
 import type { ColumnDef } from '@tanstack/react-table';
 
 function formatAssetType(v: string | null | undefined): string {
@@ -50,7 +51,7 @@ export function RoleTable({
         size: 160,
         cell: ({ row }) => (
           <span className="font-semibold text-foreground/90 text-base">
-            {row.original.name}
+            {getRoleDisplayName(row.original.name)}
           </span>
         ),
       },

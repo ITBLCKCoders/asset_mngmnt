@@ -27,17 +27,35 @@ function parseAssignees(raw: unknown): IntangibleAssetAssignee[] {
   return [];
 }
 
+function buildAssigneesFromFlatColumns(asset: any): IntangibleAssetAssignee[] | null {
+  if (asset.assigned_first_name || asset.assigned_last_name || asset.assigned_email) {
+    return [
+      {
+        userId: asset.assigned_to || '',
+        firstName: asset.assigned_first_name || '',
+        lastName: asset.assigned_last_name || '',
+        email: asset.assigned_email || '',
+        assignedDate: asset.assigned_date || undefined,
+      },
+    ];
+  }
+  return null;
+}
+
 export async function getAllIntangibleAssets(companyId: string): Promise<any[]> {
   const [rows] = (await pool.query('CALL sp_GetAllIntangibleAssets(?)', [
     companyId,
   ])) as any[];
   const assets = rows[0] ?? [];
-  return assets.map((asset: any) => ({
-    ...asset,
-    assignees: parseAssignees(asset.assignees),
-    created_by_name: (asset.created_by_name || '').trim() || null,
-    updated_by_name: (asset.updated_by_name || '').trim() || null,
-  }));
+  return assets.map((asset: any) => {
+    const parsed = parseAssignees(asset.assignees);
+    return {
+      ...asset,
+      assignees: parsed.length > 0 ? parsed : (buildAssigneesFromFlatColumns(asset) ?? parsed),
+      created_by_name: (asset.created_by_name || '').trim() || null,
+      updated_by_name: (asset.updated_by_name || '').trim() || null,
+    };
+  });
 }
 
 export async function createIntangibleAsset(data: {
