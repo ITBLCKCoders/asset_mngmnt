@@ -233,6 +233,17 @@ export function RoleFormDialog({
                               manager_approver_3: v,
                             })),
                         },
+                        {
+                          key: 'fa',
+                          label: 'Finance Approver',
+                          desc: 'Can view and edit financial & lifecycle information of all assets.',
+                          checked: form.finance_approver,
+                          set: (v: boolean) =>
+                            setForm(prev => ({
+                              ...prev,
+                              finance_approver: v,
+                            })),
+                        },
                       ] satisfies ReadonlyArray<{
                         key: string;
                         label: string;

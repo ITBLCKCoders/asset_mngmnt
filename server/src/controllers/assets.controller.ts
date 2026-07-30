@@ -26,6 +26,7 @@ import {
   getTransferredOutAssetsForCompany,
   setAssetOriginatingCompany,
 } from '../utils/companyTransferVisibility.js';
+import { attachBuilderGroupingToAssets } from '../utils/assetBuilderGrouping.js';
 
 /** Matches `sp_create_asset` / `sp_update_asset` `p_status` ENUM (excludes UI-only `Assigned`). */
 const STORED_PROC_ASSET_STATUSES = new Set([
@@ -288,28 +289,6 @@ export async function getMyAssetsHandler(req: AuthRequest, res: Response) {
         assignmentNotes: row.assignment_notes,
       }));
 
-      // Check if this asset is a builder and fetch children
-      try {
-        const builder = await assetRepo.getBuilderByBuilderId(asset.assetID);
-        if (builder) {
-          const childRows = await assetRepo.getBuilderChildrenByBuilderId(
-            asset.assetID
-          );
-          asset.children = childRows.map(row => ({
-            id: row.asset_code,
-            name: row.name,
-          }));
-          asset.isAssetBuilder = true;
-          asset.builderStatus = builder.status;
-        }
-      } catch (childError) {
-        logger.warn(
-          `Failed to fetch children for asset ${asset.assetID}:`,
-          childError
-        );
-        asset.children = [];
-      }
-
       // Fetch accountability forms for this asset
       try {
         const formRows = await assetRepo.getAccountabilityFormsForAsset(
@@ -328,6 +307,17 @@ export async function getMyAssetsHandler(req: AuthRequest, res: Response) {
           formError
         );
         asset.accountabilityForms = [];
+      }
+    }
+
+    try {
+      await attachBuilderGroupingToAssets(myAssets);
+    } catch (childError) {
+      logger.warn('Failed to attach builder grouping for my assets:', childError);
+      for (const asset of myAssets) {
+        asset.children = [];
+        asset.isAssetBuilder = false;
+        asset.builderStatus = null;
       }
     }
 
@@ -522,16 +512,6 @@ export async function getAssetsHandler(req: AuthRequest, res: Response) {
       // Batch fetch builder history (asset_builder_items for these assets)
       const builderHistoryRows = await assetRepo.getBuilderHistoryForAssetIds(assetIds);
 
-      // Which of our assets are builders?
-      const builderMetaRows = await assetRepo.getBuilderMetaForAssetIds(assetIds);
-      const builderIds = builderMetaRows.map(r => r.builderID);
-      const builderStatusById = new Map(
-        builderMetaRows.map(r => [r.builderID, r.status])
-      );
-
-      // Batch fetch builder children (for assets that are builders)
-      const childRows = await assetRepo.getBuilderChildrenForBuilderIds(builderIds);
-
       // Batch fetch accountability forms by asset_id (list view; JSON_CONTAINS forms can be loaded on detail)
       const formRows = await assetRepo.getAccountabilityFormsForAssetIds(assetIds);
 
@@ -616,17 +596,6 @@ export async function getAssetsHandler(req: AuthRequest, res: Response) {
             addedBy: row.added_by_name,
           }));
 
-        const builderStatus = builderStatusById.get(asset.assetID);
-        if (builderStatus !== undefined) {
-          asset.isAssetBuilder = true;
-          asset.builderStatus = builderStatus;
-          asset.children = childRows
-            .filter((c: any) => c.builder_id === asset.assetID)
-            .map((row: any) => ({ id: row.asset_code, name: row.name }));
-        } else {
-          asset.children = [];
-        }
-
         asset.accountabilityForms = (formRows as any[])
           .filter((f: any) => {
             if (f.asset_id === asset.assetID) return true;
@@ -647,6 +616,11 @@ export async function getAssetsHandler(req: AuthRequest, res: Response) {
             assets_data: row.assets_data,
           }));
       }
+
+      await attachBuilderGroupingToAssets(assets);
+
+      // Hide builder component assets from the top-level list; they appear under their parent.
+      assets = assets.filter((a: any) => !a.isBuilderChild);
     } else {
       for (const asset of assets) {
         asset.specifications = [];
@@ -1257,26 +1231,17 @@ export async function getAssetByCodeHandler(req: any, res: Response) {
       asset.builderHistory = [];
     }
 
-    // Check if this asset is a builder and fetch children
+    // Attach builder parent/child grouping for parent assets only
     try {
-      const builder = await assetRepo.getBuilderByAssetId(asset.assetID);
-      if (builder) {
-        // It's a builder, fetch children
-        const childRows = await assetRepo.getBuilderChildrenByBuilderId(builder.builderID);
-        asset.children = childRows.map((row: any) => ({
-          id: row.asset_code,
-          name: row.name,
-        }));
-        asset.isAssetBuilder = true;
-        // Set the builder status
-        asset.builderStatus = builder.status;
-      }
+      await attachBuilderGroupingToAssets([asset]);
     } catch (childError) {
       logger.warn(
         `Failed to fetch children for asset ${asset.assetID}:`,
         childError
       );
       asset.children = [];
+      asset.isAssetBuilder = false;
+      asset.builderStatus = null;
     }
 
     // Fetch accountability forms for this asset

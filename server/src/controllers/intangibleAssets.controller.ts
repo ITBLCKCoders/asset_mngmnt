@@ -161,6 +161,52 @@ export const updateIntangibleAsset = async (req: AuthRequest, res: Response) => 
       companyId: activeCompany.id,
     });
 
+    // Sync updated fields into all active accountability forms referencing this asset
+    try {
+      const forms = await formRepo.findActiveFormsByIntangibleAssetId(id);
+      for (const form of forms) {
+        try {
+          const assetsDataRaw = form.assets_data;
+          if (!assetsDataRaw) continue;
+
+          const assetsData =
+            typeof assetsDataRaw === 'string'
+              ? JSON.parse(assetsDataRaw)
+              : typeof assetsDataRaw === 'object'
+                ? (assetsDataRaw as Record<string, unknown>)
+                : null;
+
+          if (!assetsData || !Array.isArray(assetsData.assets)) continue;
+
+          const updatedAssets = (assetsData.assets as any[]).map((a: any) => {
+            if (String(a.id) === String(id)) {
+              return {
+                ...a,
+                name: name ?? a.name,
+                code: name ?? a.code,
+                description: description !== undefined ? description : a.description,
+                type: type ?? a.type,
+              };
+            }
+            return a;
+          });
+
+          assetsData.assets = updatedAssets;
+          await formRepo.updateFormAssetsDataById(form.formID, JSON.stringify(assetsData));
+        } catch (formErr) {
+          logger.error('Failed to sync accountability form for intangible asset update', {
+            formID: form.formID,
+            err: formErr,
+          });
+        }
+      }
+    } catch (syncErr) {
+      logger.error('Failed to query accountability forms for intangible asset sync', {
+        assetId: id,
+        err: syncErr,
+      });
+    }
+
     res.json({ success: true });
   } catch (err: any) {
     logger.error('Update intangible asset error', { err });
@@ -512,7 +558,9 @@ export const batchAssignIntangibleAssets = async (req: AuthRequest, res: Respons
                       timestamp: new Date().toISOString(),
                     }),
                   },
-                  userId
+                  userId,
+                  req.ip,
+                  req.get('User-Agent')
                 );
 
                 const io = getIoInstance();

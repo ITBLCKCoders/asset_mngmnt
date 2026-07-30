@@ -13,6 +13,7 @@ export type RoleFormState = {
   manager_approver_1: boolean;
   manager_approver_2: boolean;
   manager_approver_3: boolean;
+  finance_approver: boolean;
 };
 
 const emptyRoleForm: RoleFormState = {
@@ -24,6 +25,7 @@ const emptyRoleForm: RoleFormState = {
   manager_approver_1: false,
   manager_approver_2: false,
   manager_approver_3: false,
+  finance_approver: false,
 };
 
 export function useRoleManagement(
@@ -93,6 +95,7 @@ export function useRoleManagement(
       rolesForm.manager_approver_1 !== rolesInitialForm.manager_approver_1 ||
       rolesForm.manager_approver_2 !== rolesInitialForm.manager_approver_2 ||
       rolesForm.manager_approver_3 !== rolesInitialForm.manager_approver_3 ||
+      rolesForm.finance_approver !== rolesInitialForm.finance_approver ||
       !modulePermissionsUnchanged()
     );
   };
@@ -115,6 +118,7 @@ export function useRoleManagement(
         manager_approver_1: rolesForm.manager_approver_1,
         manager_approver_2: rolesForm.manager_approver_2,
         manager_approver_3: rolesForm.manager_approver_3,
+        finance_approver: rolesForm.finance_approver,
       };
       let savedRoleId: string;
       if (rolesEditing) {
@@ -200,6 +204,7 @@ export function useRoleManagement(
       manager_approver_1: Boolean(role.manager_approver_1),
       manager_approver_2: Boolean(role.manager_approver_2),
       manager_approver_3: Boolean(role.manager_approver_3),
+      finance_approver: Boolean(role.finance_approver),
     };
     setRolesForm(formData);
     setRolesInitialForm(formData);

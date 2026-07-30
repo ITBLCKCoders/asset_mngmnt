@@ -156,6 +156,7 @@ export async function forgotPassword(
         footerNote: 'If you didn\'t request a password reset, you can safely ignore this email.',
         link,
         linkText: 'Reset password',
+        siteUrl: config.FRONTEND_URL,
       }),
       link
     );

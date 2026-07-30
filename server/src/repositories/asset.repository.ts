@@ -154,6 +154,20 @@ export interface BuilderChildBatchRow extends RowDataPacket {
   name: string | null;
 }
 
+export interface BuilderLinkBatchRow extends RowDataPacket {
+  asset_id: string;
+  builder_id: string;
+}
+
+export interface BuilderItemBatchRow extends RowDataPacket {
+  builder_id: string;
+  asset_id: string;
+  asset_code: string;
+  name: string | null;
+  is_parent: number;
+  builder_status: string;
+}
+
 export interface AccountabilityFormBatchRow extends RowDataPacket {
   asset_id: string;
   formID: string;
@@ -749,6 +763,42 @@ export async function getBuilderChildrenForBuilderIds(
      JOIN assets a ON abi.asset_id = a.assetID
      WHERE abi.builder_id IN (${placeholders}) AND a.deleted_at IS NULL
      ORDER BY abi.builder_id, abi.created_at`,
+    builderIds
+  );
+  return rows;
+}
+
+export async function getBuilderLinksForAssetIds(
+  assetIds: string[]
+): Promise<BuilderLinkBatchRow[]> {
+  if (assetIds.length === 0) return [];
+  const placeholders = assetIds.map(() => '?').join(',');
+  const [rows] = await pool.execute<BuilderLinkBatchRow[]>(
+    `SELECT abi.asset_id, abi.builder_id
+     FROM asset_builder_items abi
+     JOIN asset_builders ab ON abi.builder_id = ab.builderID
+     WHERE abi.asset_id IN (${placeholders}) AND ab.deleted_at IS NULL`,
+    assetIds
+  );
+  return rows;
+}
+
+export async function getBuilderItemsForBuilderIds(
+  builderIds: string[]
+): Promise<BuilderItemBatchRow[]> {
+  if (builderIds.length === 0) return [];
+  const placeholders = builderIds.map(() => '?').join(',');
+  const [rows] = await pool.execute<BuilderItemBatchRow[]>(
+    `SELECT abi.builder_id, abi.asset_id, abi.is_parent,
+            ab.status AS builder_status,
+            a.asset_code, a.name
+     FROM asset_builder_items abi
+     JOIN asset_builders ab ON abi.builder_id = ab.builderID
+     JOIN assets a ON abi.asset_id = a.assetID
+     WHERE abi.builder_id IN (${placeholders})
+       AND ab.deleted_at IS NULL
+       AND a.deleted_at IS NULL
+     ORDER BY abi.builder_id, abi.is_parent DESC, abi.created_at`,
     builderIds
   );
   return rows;

@@ -118,6 +118,7 @@ export default function AssetsAssignment() {
   const [builderSearchTerm, setBuilderSearchTerm] = useState('');
   const [departmentSearchTerm, setDepartmentSearchTerm] = useState('');
   const [userSearchTerm, setUserSearchTerm] = useState('');
+  const [intangibleSearchTerm, setIntangibleSearchTerm] = useState('');
   const [confirmModalOpen, setConfirmModalOpen] = useState(false);
   const [checklistDialogOpen, setChecklistDialogOpen] = useState(false);
   const [checklistStepIndex, setChecklistStepIndex] = useState(0);
@@ -876,6 +877,18 @@ export default function AssetsAssignment() {
     return intangibleAssets.filter((asset: { type?: string }) => asset.type === targetType);
   }, [intangibleAssets, showScopeTabs, scope]);
 
+  const filteredIntangibleAssets = useMemo(() => {
+    if (!intangibleSearchTerm.trim()) return scopedIntangibleAssets;
+    const q = intangibleSearchTerm.toLowerCase();
+    return scopedIntangibleAssets.filter((asset: any) =>
+      (asset.name?.toLowerCase().includes(q)) ||
+      (asset.description?.toLowerCase().includes(q)) ||
+      (asset.remarks?.toLowerCase().includes(q)) ||
+      (asset.type?.toLowerCase().includes(q)) ||
+      (asset.code?.toLowerCase().includes(q))
+    );
+  }, [scopedIntangibleAssets, intangibleSearchTerm]);
+
   const availableBuilders = useMemo(() => {
     return assetBuilders.filter((builder: any) => {
       return (
@@ -1219,6 +1232,51 @@ export default function AssetsAssignment() {
                       <Badge variant="secondary" className="w-fit">
                         {availableBuilders.length} available
                       </Badge>
+                      {paginatedBuilders.length > 0 && (
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          onClick={() => {
+                            const allBuilderAssetIds = paginatedBuilders
+                              .flatMap((builder: any) =>
+                                (builder.items || [])
+                                  .map((item: any) => item.asset_code)
+                                  .filter((id: string) =>
+                                    allSelectableAssets.some(asset => asset.id === id)
+                                  )
+                              );
+                            const allSelected = allBuilderAssetIds.length > 0 &&
+                              allBuilderAssetIds.every((id: string) => selectedAssets.includes(id));
+                            if (allSelected) {
+                              setSelectedAssets(prev =>
+                                prev.filter(id => !allBuilderAssetIds.includes(id))
+                              );
+                            } else {
+                              setSelectedAssets(prev => [...new Set([...prev, ...allBuilderAssetIds])]);
+                            }
+                          }}
+                          className="text-red-600 border-red-300 hover:bg-red-50 whitespace-nowrap"
+                        >
+                          {paginatedBuilders
+                            .flatMap((builder: any) =>
+                              (builder.items || [])
+                                .map((item: any) => item.asset_code)
+                                .filter((id: string) =>
+                                  allSelectableAssets.some(asset => asset.id === id)
+                                )
+                            ).length > 0 &&
+                          (paginatedBuilders
+                            .flatMap((builder: any) =>
+                              (builder.items || [])
+                                .map((item: any) => item.asset_code)
+                                .filter((id: string) =>
+                                  allSelectableAssets.some(asset => asset.id === id)
+                                )
+                            )).every((id: string) => selectedAssets.includes(id))
+                            ? 'Deselect All'
+                            : 'Select All'}
+                        </Button>
+                      )}
                     </CardTitle>
                     <p className="text-sm text-gray-500 mt-1">
                       Existing asset builders in your organization. Select a
@@ -1234,53 +1292,6 @@ export default function AssetsAssignment() {
                       className="pl-10 w-full h-10 border-gray-200 focus:border-red-500 focus:ring-red-500"
                     />
                   </div>
-                  {paginatedBuilders.length > 0 && (
-                    <div className="mt-3 flex justify-end">
-                      <Button
-                        variant="outline"
-                        size="sm"
-                        onClick={() => {
-                          const allBuilderAssetIds = paginatedBuilders
-                            .flatMap((builder: any) =>
-                              (builder.items || [])
-                                .map((item: any) => item.asset_code)
-                                .filter((id: string) =>
-                                  allSelectableAssets.some(asset => asset.id === id)
-                                )
-                            );
-                          const allSelected = allBuilderAssetIds.length > 0 &&
-                            allBuilderAssetIds.every((id: string) => selectedAssets.includes(id));
-                          if (allSelected) {
-                            setSelectedAssets(prev =>
-                              prev.filter(id => !allBuilderAssetIds.includes(id))
-                            );
-                          } else {
-                            setSelectedAssets(prev => [...new Set([...prev, ...allBuilderAssetIds])]);
-                          }
-                        }}
-                        className="text-red-600 border-red-300 hover:bg-red-50 whitespace-nowrap"
-                      >
-                        {paginatedBuilders
-                          .flatMap((builder: any) =>
-                            (builder.items || [])
-                              .map((item: any) => item.asset_code)
-                              .filter((id: string) =>
-                                allSelectableAssets.some(asset => asset.id === id)
-                              )
-                          ).length > 0 &&
-                        (paginatedBuilders
-                          .flatMap((builder: any) =>
-                            (builder.items || [])
-                              .map((item: any) => item.asset_code)
-                              .filter((id: string) =>
-                                allSelectableAssets.some(asset => asset.id === id)
-                              )
-                          )).every((id: string) => selectedAssets.includes(id))
-                          ? 'Deselect All'
-                          : 'Select All'}
-                      </Button>
-                    </div>
-                  )}
                   </CardHeader>
                   <CardContent className="pt-0 flex-1 flex flex-col overflow-hidden">
                     {buildersLoading || tabLoading ? (
@@ -1449,14 +1460,14 @@ export default function AssetsAssignment() {
 
               <TabsContent value="intangible-assets" className="mt-4">
                 <Card className="shadow-xl border-0 bg-white/80 backdrop-blur-sm h-[592px] flex flex-col">
-                  <CardHeader className="pb-4 flex-shrink-0">
+                  <CardHeader className="pb-4 flex-shrink-0 space-y-3">
                     <CardTitle className="flex flex-wrap items-center gap-3 text-xl">
                       <div className="p-2 bg-red-100 rounded-lg flex-shrink-0">
                         <Layers className="h-5 w-5 text-red-600" />
                       </div>
                       <span>Intangible Assets</span>
                       <Badge variant="secondary" className="w-fit">
-                        {scopedIntangibleAssets.length} assets
+                        {filteredIntangibleAssets.length} assets
                       </Badge>
                       {scopedIntangibleAssets.length > 0 && (
                         <Button
@@ -1480,6 +1491,15 @@ export default function AssetsAssignment() {
                         </Button>
                       )}
                     </CardTitle>
+                    <div className="relative">
+                      <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-gray-400" />
+                      <Input
+                        placeholder="Search intangible assets..."
+                        value={intangibleSearchTerm}
+                        onChange={(e) => setIntangibleSearchTerm(e.target.value)}
+                        className="pl-9 h-9 text-sm"
+                      />
+                    </div>
                   </CardHeader>
                   <CardContent className="pt-0 flex-1 flex flex-col overflow-hidden">
                     {intangibleAssetsLoading || tabLoading ? (
@@ -1491,9 +1511,9 @@ export default function AssetsAssignment() {
                           Loading intangible assets...
                         </h3>
                       </div>
-                    ) : scopedIntangibleAssets.length > 0 ? (
+                    ) : filteredIntangibleAssets.length > 0 ? (
                       <div className="space-y-3 overflow-y-auto flex-1 pr-1 sm:-mr-6 sm:pr-6 scrollbar-thin scrollbar-thumb-gray-300 scrollbar-track-gray-100">
-                        {scopedIntangibleAssets.map((asset: any) => {
+                        {filteredIntangibleAssets.map((asset: any) => {
                           const isSelected = selectedAssets.includes(asset.id);
                           const assigneeCount = asset.assignees?.length ?? (asset.assigned_to ? 1 : 0);
                           const typeColor = asset.type === 'IT scope' 
@@ -1573,10 +1593,12 @@ export default function AssetsAssignment() {
                       <div className="text-center py-12">
                         <Layers className="mx-auto h-12 w-12 text-gray-400 mb-4" />
                         <h3 className="text-lg font-medium text-gray-900 mb-2">
-                          No Intangible Assets
+                          {intangibleSearchTerm ? 'No Results Found' : 'No Intangible Assets'}
                         </h3>
                         <p className="text-sm text-gray-500">
-                          No intangible assets found for this scope.
+                          {intangibleSearchTerm
+                            ? 'No intangible assets match your search. Try adjusting your search terms.'
+                            : 'No intangible assets found for this scope.'}
                         </p>
                       </div>
                     )}

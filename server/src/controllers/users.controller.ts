@@ -88,6 +88,7 @@ export async function getUsersHandler(req: AuthRequest, res: Response) {
         manager_approver_1: Boolean(user.manager_approver_1),
         manager_approver_2: Boolean(user.manager_approver_2),
         manager_approver_3: Boolean(user.manager_approver_3),
+        finance_approver: Boolean(user.finance_approver),
         lockout_until: lockoutData.lockout_until,
         failed_login_attempts: lockoutData.failed_login_attempts,
       };
@@ -196,6 +197,7 @@ export async function updateUserHandler(req: AuthRequest, res: Response) {
     manager_approver_1,
     manager_approver_2,
     manager_approver_3,
+    finance_approver,
   } = req.body;
   const userId = req.user!.userID;
 
@@ -234,10 +236,11 @@ export async function updateUserHandler(req: AuthRequest, res: Response) {
       hr_accountability_receiver !== undefined ||
       manager_approver_1 !== undefined ||
       manager_approver_2 !== undefined ||
-      manager_approver_3 !== undefined;
+      manager_approver_3 !== undefined ||
+      finance_approver !== undefined;
     if (hasCustodianPayload) {
       await pool.execute(
-        'CALL sp_upsert_user_custodian_settings(?, ?, ?, ?, ?, ?, ?, ?)',
+        'CALL sp_upsert_user_custodian_settings(?, ?, ?, ?, ?, ?, ?, ?, ?)',
         [
           id,
           0,
@@ -247,6 +250,7 @@ export async function updateUserHandler(req: AuthRequest, res: Response) {
           manager_approver_1 ? 1 : 0,
           manager_approver_2 ? 1 : 0,
           manager_approver_3 ? 1 : 0,
+          finance_approver ? 1 : 0,
         ]
       );
     }

@@ -807,7 +807,9 @@ export async function updateAssetBuilderHandler(
                   timestamp: new Date().toISOString(),
                 }),
               },
-              userId
+              userId,
+              req.ip,
+              req.get('User-Agent')
             );
 
             const io = getIoInstance();

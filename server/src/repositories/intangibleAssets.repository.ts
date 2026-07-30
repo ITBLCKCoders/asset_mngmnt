@@ -46,7 +46,7 @@ export async function getAllIntangibleAssets(companyId: string): Promise<any[]> 
   const [rows] = (await pool.query('CALL sp_GetAllIntangibleAssets(?)', [
     companyId,
   ])) as any[];
-  const assets = rows[0] ?? [];
+  const assets = (rows[0] ?? []) as any[];
   return assets.map((asset: any) => {
     const parsed = parseAssignees(asset.assignees);
     return {

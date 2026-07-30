@@ -32,6 +32,7 @@ export async function sendVerificationOTP(userId: string, email: string) {
       footerNote: 'Didn\'t request this? Please ignore this email.',
       link,
       linkText: 'Enter verification code',
+      siteUrl: config.FRONTEND_URL,
     }),
     link
   );

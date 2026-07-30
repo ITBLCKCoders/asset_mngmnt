@@ -55,6 +55,7 @@ interface EditAssetModalProps {
   onClose: () => void;
   asset: Asset | null;
   onSubmit: (assetId: string, data: AssetFormData) => Promise<void>;
+  isFinanceApprover?: boolean;
 }
 
 const steps = [
@@ -113,6 +114,7 @@ export function EditAssetModal({
   onClose,
   asset,
   onSubmit,
+  isFinanceApprover = false,
 }: EditAssetModalProps) {
   const { user } = useCurrentUser();
   const { activeCompany: contextActiveCompany } = useCompanyContext();
@@ -591,9 +593,9 @@ export function EditAssetModal({
   useEffect(() => {
     if (isOpen && asset) {
       fetchUsers();
-      setCurrentStep(0);
+      setCurrentStep(isFinanceApprover ? 1 : 0);
     }
-  }, [isOpen, asset]);
+  }, [isOpen, asset, isFinanceApprover]);
 
   // Convert asset data when all required data is available
   useEffect(() => {
@@ -767,7 +769,7 @@ export function EditAssetModal({
 
   // Modified handleNext to check for changes before submitting
   const handleNextWithChangeCheck = async () => {
-    if (currentStep === steps.length - 1) {
+    if (currentStep === steps.length - 1 || isFinanceApprover) {
       setIsSubmitting(true);
       try {
         if (asset) {
@@ -1052,82 +1054,90 @@ export function EditAssetModal({
             </div>
           </CardHeader>
 
-          <div className="relative -mt-4 sm:-mt-6 md:-mt-8 px-2 md:px-4 flex-shrink-0">
-            <div className="flex justify-center overflow-x-auto scrollbar-hide">
-              <div className="flex items-center bg-white rounded-full shadow-xl px-2 py-2 sm:px-3 md:px-5 sm:py-3 md:py-4 border-2 md:border-4 border-red-100">
-                {steps.map((step, index) => {
-                  const Icon = step.icon;
-                  const isActive = index === currentStep;
-                  const isCompleted = index < currentStep;
+          {!isFinanceApprover && (
+            <div className="relative -mt-4 sm:-mt-6 md:-mt-8 px-2 md:px-4 flex-shrink-0">
+              <div className="flex justify-center overflow-x-auto scrollbar-hide">
+                <div className="flex items-center bg-white rounded-full shadow-xl px-2 py-2 sm:px-3 md:px-5 sm:py-3 md:py-4 border-2 md:border-4 border-red-100">
+                  {steps.map((step, index) => {
+                    const Icon = step.icon;
+                    const isActive = index === currentStep;
+                    const isCompleted = index < currentStep;
 
-                  return (
-                    <div key={index} className="flex items-center">
-                      <div className="flex flex-col items-center">
-                        <div
-                          className={`w-6 h-6 sm:w-8 sm:h-8 md:w-11 md:h-11 rounded-full flex items-center justify-center border-2 md:border-4 transition-all ${
-                            isCompleted
-                              ? 'bg-green-500 text-white border-green-300'
-                              : isActive
-                                ? 'bg-red-600 text-white border-red-300 ring-2 md:ring-4 ring-red-100'
-                                : 'bg-gray-100 text-gray-400 border-gray-300'
-                          }`}
-                        >
-                          {isCompleted ? (
-                            <CheckCircle2 className="h-3 w-3 sm:h-4 sm:w-4 md:h-6 md:w-6" />
-                          ) : (
-                            <Icon className="h-3 w-3 sm:h-4 sm:w-4 md:h-5 md:w-5" />
-                          )}
+                    return (
+                      <div key={index} className="flex items-center">
+                        <div className="flex flex-col items-center">
+                          <div
+                            className={`w-6 h-6 sm:w-8 sm:h-8 md:w-11 md:h-11 rounded-full flex items-center justify-center border-2 md:border-4 transition-all ${
+                              isCompleted
+                                ? 'bg-green-500 text-white border-green-300'
+                                : isActive
+                                  ? 'bg-red-600 text-white border-red-300 ring-2 md:ring-4 ring-red-100'
+                                  : 'bg-gray-100 text-gray-400 border-gray-300'
+                            }`}
+                          >
+                            {isCompleted ? (
+                              <CheckCircle2 className="h-3 w-3 sm:h-4 sm:w-4 md:h-6 md:w-6" />
+                            ) : (
+                              <Icon className="h-3 w-3 sm:h-4 sm:w-4 md:h-5 md:w-5" />
+                            )}
+                          </div>
+                          <p
+                            className={`mt-1 md:mt-2 text-[10px] sm:text-xs font-medium whitespace-nowrap ${isActive || isCompleted ? 'text-red-700' : 'text-gray-500'}`}
+                          >
+                            {step.title}
+                          </p>
                         </div>
-                        <p
-                          className={`mt-1 md:mt-2 text-[10px] sm:text-xs font-medium whitespace-nowrap ${isActive || isCompleted ? 'text-red-700' : 'text-gray-500'}`}
-                        >
-                          {step.title}
-                        </p>
+                        {index < steps.length - 1 && (
+                          <div
+                            className={`w-3 sm:w-6 md:w-12 lg:w-16 h-1 mx-1 md:mx-3 ${index < currentStep ? 'bg-green-500' : 'bg-gray-300'}`}
+                          />
+                        )}
                       </div>
-                      {index < steps.length - 1 && (
-                        <div
-                          className={`w-3 sm:w-6 md:w-12 lg:w-16 h-1 mx-1 md:mx-3 ${index < currentStep ? 'bg-green-500' : 'bg-gray-300'}`}
-                        />
-                      )}
-                    </div>
-                  );
-                })}
+                    );
+                  })}
+                </div>
               </div>
             </div>
-          </div>
+          )}
 
           <CardContent className="flex-1 overflow-y-auto px-4 sm:px-6 pt-5 sm:pt-6 pb-4 min-h-0">
             <h3 className="text-xl sm:text-2xl font-bold text-red-700 mb-6 sm:mb-8 text-center sm:text-left">
               {stepTitles[currentStep]}
             </h3>
 
-            {currentStep === 0 && (
-              <Step1AssetInfo
-                formData={formData}
-                updateForm={updateForm}
-                categories={categoriesForStep1}
-                types={typesForStep1}
-                suppliers={suppliersForStep1}
-                brands={brands}
-                onOpenAddCategory={() => setIsAddCategoryOpen(true)}
-                onOpenAddSupplier={openAddSupplierDialog}
-                onOpenAddType={openAddTypeDialog}
-                onOpenAddBrand={openAddBrandDialog}
-              />
-            )}
-            {currentStep === 1 && (
+            {isFinanceApprover ? (
               <Step2Lifecycle formData={formData} updateForm={updateForm} />
-            )}
-            {currentStep === 2 && (
-              <Step3Location
-                formData={formData}
-                updateForm={updateForm}
-                onOpenAddLocation={openAddLocationDialog}
-                canAddLocation={canAddLocation}
-              />
-            )}
-            {currentStep === 3 && (
-              <Step4Review formData={formData} users={users} />
+            ) : (
+              <>
+                {currentStep === 0 && (
+                  <Step1AssetInfo
+                    formData={formData}
+                    updateForm={updateForm}
+                    categories={categoriesForStep1}
+                    types={typesForStep1}
+                    suppliers={suppliersForStep1}
+                    brands={brands}
+                    onOpenAddCategory={() => setIsAddCategoryOpen(true)}
+                    onOpenAddSupplier={openAddSupplierDialog}
+                    onOpenAddType={openAddTypeDialog}
+                    onOpenAddBrand={openAddBrandDialog}
+                  />
+                )}
+                {currentStep === 1 && (
+                  <Step2Lifecycle formData={formData} updateForm={updateForm} />
+                )}
+                {currentStep === 2 && (
+                  <Step3Location
+                    formData={formData}
+                    updateForm={updateForm}
+                    onOpenAddLocation={openAddLocationDialog}
+                    canAddLocation={canAddLocation}
+                  />
+                )}
+                {currentStep === 3 && (
+                  <Step4Review formData={formData} users={users} />
+                )}
+              </>
             )}
           </CardContent>
 
@@ -1136,7 +1146,7 @@ export function EditAssetModal({
               variant="outline"
               size="lg"
               onClick={handleBack}
-              disabled={currentStep === 0}
+              disabled={currentStep === 0 || isFinanceApprover}
               className="w-full sm:w-auto order-2 sm:order-1"
             >
               <ChevronLeft className="mr-2 h-5 w-5" /> Back
@@ -1164,11 +1174,11 @@ export function EditAssetModal({
                 {isSubmitting ? (
                   <>
                     <Loader2 className="mr-2 h-5 w-5 animate-spin" />
-                    Updating Asset...
+                    {isFinanceApprover ? 'Updating Financial Info...' : 'Updating Asset...'}
                   </>
-                ) : currentStep === steps.length - 1 ? (
+                ) : isFinanceApprover || currentStep === steps.length - 1 ? (
                   <>
-                    Complete & Update Asset{' '}
+                    {isFinanceApprover ? 'Update Financial Info' : 'Complete & Update Asset'}{' '}
                     <CheckCircle2 className="ml-2 h-5 w-5" />
                   </>
                 ) : (

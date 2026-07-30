@@ -297,6 +297,7 @@ export async function sendMFARecoveryOTP(
 
   const { sendEmail } = await import('../email.js');
   const { buildEmailHtml } = await import('../email-templates.js');
+  const { config } = await import('../config/validation.js');
   await sendEmail(
     email,
     'MFA recovery code – Asset Management',
@@ -308,6 +309,7 @@ export async function sendMFARecoveryOTP(
         <p style="margin: 0; font-size: 13px; color: #8899a8;">This code expires in <strong>10 minutes</strong>.</p>
       `,
       footerNote: 'If you didn\'t request this code, please secure your account immediately.',
+      siteUrl: config.FRONTEND_URL,
     }),
   );
 

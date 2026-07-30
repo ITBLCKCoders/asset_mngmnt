@@ -62,7 +62,7 @@ export function AssetSelectionPanel({
             <Package className="h-5 w-5 text-red-600" />
           </div>
           Select Assets
-          <Badge variant="secondary" className="w-fit sm:ml-auto">
+          <Badge variant="secondary" className="w-fit">
             {assets.length} available
           </Badge>
           {assets.length > 0 && (

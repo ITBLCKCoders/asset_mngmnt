@@ -631,7 +631,9 @@ export async function createAccountabilityFormHandler(
               timestamp: new Date().toISOString(),
             }),
           },
-          createdBy
+          createdBy,
+          req.ip,
+          req.get('User-Agent')
         );
 
         const io = getIoInstance();
@@ -802,25 +804,27 @@ export async function createAccountabilityFormHandler(
         : createdBy;
 
       // Create database notification entry
-      await NotificationService.createNotification(
-        {
-          user_id: userId,
-          title: 'New accountability form has been issued',
-          message: `by ${assignerName}. Review it and check your assets and sign the form`,
-          type: 'accountability_form',
-          status: 'unread',
-          data: JSON.stringify({
-            description: `by ${assignerName}. Review it and check your assets and sign the form`,
-            route: '/profile?tab=documents',
-            actionTarget: 'profile_documents',
-            formId: resolvedFormIdSingle,
-            formNumber: formNumber,
-            assignedBy: assignerName,
-            timestamp: new Date().toISOString(),
-          }),
-        },
-        createdBy
-      );
+        await NotificationService.createNotification(
+          {
+            user_id: userId,
+            title: 'New accountability form has been issued',
+            message: `by ${assignerName}. Review it and check your assets and sign the form`,
+            type: 'accountability_form',
+            status: 'unread',
+            data: JSON.stringify({
+              description: `by ${assignerName}. Review it and check your assets and sign the form`,
+              route: '/profile?tab=documents',
+              actionTarget: 'profile_documents',
+              formId: resolvedFormIdSingle,
+              formNumber: formNumber,
+              assignedBy: assignerName,
+              timestamp: new Date().toISOString(),
+            }),
+          },
+          createdBy,
+          req.ip,
+          req.get('User-Agent')
+        );
 
       const io = getIoInstance();
       if (!io) {

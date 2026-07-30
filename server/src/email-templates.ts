@@ -4,10 +4,11 @@ export interface EmailTemplateProps {
   footerNote?: string;
   link?: string;
   linkText?: string;
+  siteUrl?: string;
 }
 
 export function buildEmailHtml(props: EmailTemplateProps): string {
-  const { title, body, footerNote, link, linkText } = props;
+  const { title, body, footerNote, link, linkText, siteUrl } = props;
 
   return `
 <!DOCTYPE html>
@@ -23,7 +24,7 @@ export function buildEmailHtml(props: EmailTemplateProps): string {
         <table role="presentation" width="100%" style="max-width: 480px; background-color: #ffffff; border-radius: 12px; box-shadow: 0 2px 12px rgba(0,0,0,0.08);">
           <tr>
             <td style="padding: 40px 40px 0 40px; text-align: center;">
-              <div style="width: 48px; height: 48px; background: #1a73e8; border-radius: 12px; display: inline-flex; align-items: center; justify-content: center; margin-bottom: 8px;">
+              <div style="width: 48px; height: 48px; background: #dc2626; border-radius: 12px; display: inline-flex; align-items: center; justify-content: center; margin-bottom: 8px;">
                 <span style="color: #fff; font-size: 22px; font-weight: 700;">AM</span>
               </div>
               <h1 style="margin: 0 0 4px 0; font-size: 20px; font-weight: 700; color: #1a2933; letter-spacing: -0.3px;">Asset Management</h1>
@@ -42,7 +43,7 @@ export function buildEmailHtml(props: EmailTemplateProps): string {
           ${link ? `
           <tr>
             <td style="padding: 0 40px 8px 40px; text-align: center;">
-              <a href="${link}" style="display: inline-block; padding: 12px 32px; background: #1a73e8; color: #ffffff; text-decoration: none; border-radius: 8px; font-size: 14px; font-weight: 600;">${linkText || 'Continue'}</a>
+              <a href="${link}" style="display: inline-block; padding: 12px 32px; background: #dc2626; color: #ffffff; text-decoration: none; border-radius: 8px; font-size: 14px; font-weight: 600;">${linkText || 'Continue'}</a>
             </td>
           </tr>
           ` : ''}
@@ -50,8 +51,8 @@ export function buildEmailHtml(props: EmailTemplateProps): string {
             <td style="padding: ${link ? '24px' : '8px'} 40px 32px 40px;">
               <div style="height: 1px; background: #eef1f4; margin-bottom: 20px;"></div>
               <p style="margin: 0; font-size: 12px; color: #8899a8; line-height: 1.5; text-align: center;">
-                ${footerNote || ''}
-                <br/>
+                ${footerNote ? `${footerNote}<br/>` : ''}
+                ${siteUrl ? `<a href="${siteUrl}" style="color: #8899a8; text-decoration: underline;">${siteUrl}</a><br/>` : ''}
                 This is an automated message from Asset Management. Please do not reply to this email.
               </p>
             </td>

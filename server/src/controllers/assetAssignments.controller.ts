@@ -543,7 +543,9 @@ export async function createAssetAssignmentHandler(
             timestamp: new Date().toISOString(),
           }),
         },
-        assignedBy
+        assignedBy,
+        req.ip,
+        req.get('User-Agent')
       );
 
       const notificationData = {

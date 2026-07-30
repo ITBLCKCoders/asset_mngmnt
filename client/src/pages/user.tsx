@@ -116,6 +116,7 @@ function UserPermissions() {
     manager_approver_1: false,
     manager_approver_2: false,
     manager_approver_3: false,
+    finance_approver: false,
   });
   const displayLoading = loading;
 
@@ -129,7 +130,9 @@ function UserPermissions() {
       Boolean(userCustodianForm.manager_approver_2) !==
         Boolean(selectedUser.manager_approver_2) ||
       Boolean(userCustodianForm.manager_approver_3) !==
-        Boolean(selectedUser.manager_approver_3)
+        Boolean(selectedUser.manager_approver_3) ||
+      Boolean(userCustodianForm.finance_approver) !==
+        Boolean(selectedUser.finance_approver)
     );
   }, [selectedUser, userCustodianForm]);
 
@@ -241,6 +244,7 @@ function UserPermissions() {
       manager_approver_1: Boolean(selectedUser.manager_approver_1),
       manager_approver_2: Boolean(selectedUser.manager_approver_2),
       manager_approver_3: Boolean(selectedUser.manager_approver_3),
+      finance_approver: Boolean(selectedUser.finance_approver),
     });
   }, [selectedUser?.userID]);
 
@@ -293,6 +297,7 @@ function UserPermissions() {
         manager_approver_1: userCustodianForm.manager_approver_1,
         manager_approver_2: userCustodianForm.manager_approver_2,
         manager_approver_3: userCustodianForm.manager_approver_3,
+        finance_approver: userCustodianForm.finance_approver,
       });
       try {
         await api.post(`/users/${selectedUser.userID}/apply-role-permissions`);
@@ -793,6 +798,18 @@ function UserPermissions() {
                                           setUserCustodianForm(prev => ({
                                             ...prev,
                                             manager_approver_3: v,
+                                          })),
+                                      },
+                                      {
+                                        key: 'fa',
+                                        label: 'Finance Approver',
+                                        desc: 'Can view and edit financial & lifecycle information of all assets.',
+                                        checked:
+                                          userCustodianForm.finance_approver,
+                                        set: (v: boolean) =>
+                                          setUserCustodianForm(prev => ({
+                                            ...prev,
+                                            finance_approver: v,
                                           })),
                                       },
                                     ].map(

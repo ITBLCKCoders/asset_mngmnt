@@ -3,7 +3,6 @@
 import { useState, useEffect } from 'react';
 import { Button } from '@/components/ui/button';
 import { Label } from '@/components/ui/label';
-import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
 import { Dialog } from '@/components/ui/dialog';
 import {
@@ -19,7 +18,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select';
-import { Plus, Trash2 } from 'lucide-react';
+
 import { api } from '@/lib/api';
 import { toast } from 'sonner';
 
@@ -180,93 +179,65 @@ export default function IntangibleAssetDialog({
         />
         <AppDialogBody className="grid max-h-[60vh] gap-6 overflow-y-auto px-8 py-6 pr-2">
           <div className="space-y-4">
-            <div className="flex items-center justify-between">
-              <h3 className="text-lg font-semibold text-gray-900">Asset Details</h3>
-              {mode === 'create' && (
-                <Button
-                  type="button"
-                  variant="outline"
-                  size="sm"
-                  onClick={addRow}
-                  className="rounded-xl border-blue-200 hover:bg-blue-50 hover:border-blue-300"
-                >
-                  <Plus className="h-4 w-4 mr-2" />
-                  Add Asset
-                </Button>
-              )}
-            </div>
-
             <div className="space-y-4">
               {rows.map((row, index) => (
                 <div key={index} className="border border-gray-200 rounded-xl p-4 shadow-sm bg-white">
-                  <div className="flex items-center justify-between mb-4">
-                    <span className="text-sm font-medium text-gray-700">Asset {index + 1}</span>
-                    {mode === 'create' && rows.length > 1 && (
-                      <Button
-                        type="button"
-                        variant="ghost"
-                        size="sm"
-                        onClick={() => removeRow(index)}
-                        className="text-red-500 hover:text-red-700 hover:bg-red-50 rounded-lg transition-colors"
-                      >
-                        <Trash2 className="h-4 w-4" />
-                      </Button>
-                    )}
-                  </div>
-                  <div className="flex items-center gap-4">
-                    <div className="flex-1">
-                      <Label htmlFor={`name-${index}`} className="text-sm font-medium text-gray-700">
-                        Name <span className="text-red-500">*</span>
-                      </Label>
-                      <Input
-                        id={`name-${index}`}
-                        value={row.name}
-                        onChange={e => updateRow(index, 'name', e.target.value)}
-                        placeholder="Asset name"
-                        className="mt-1 text-sm border-gray-300 focus:border-blue-500 focus:ring-2 focus:ring-blue-500/20 rounded-lg transition-all"
-                      />
+                  <div className="space-y-4">
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                      <div className="space-y-2">
+                        <Label htmlFor={`name-${index}`} className="text-base font-medium text-gray-700">
+                          Name <span className="text-red-500">*</span>
+                        </Label>
+                        <Textarea
+                          id={`name-${index}`}
+                          value={row.name}
+                          onChange={e => updateRow(index, 'name', e.target.value)}
+                          placeholder="Enter asset name"
+                          className="min-h-[60px] resize-none text-base"
+                        />
+                      </div>
+                      <div className="space-y-2">
+                        <Label htmlFor={`type-${index}`} className="text-base font-medium text-gray-700">
+                          Type <span className="text-red-500">*</span>
+                        </Label>
+                        <Select
+                          value={row.type}
+                          onValueChange={value => updateRow(index, 'type', value)}
+                        >
+                          <SelectTrigger id={`type-${index}`} className="text-base">
+                            <SelectValue placeholder="Select type" />
+                          </SelectTrigger>
+                          <SelectContent>
+                            <SelectItem value="IT scope">IT scope</SelectItem>
+                            <SelectItem value="Admin scope">Admin scope</SelectItem>
+                            <SelectItem value="HR scope">HR scope</SelectItem>
+                          </SelectContent>
+                        </Select>
+                      </div>
                     </div>
-                    <div className="flex-1">
-                      <Label htmlFor={`description-${index}`} className="text-sm font-medium text-gray-700">
+                    <div className="space-y-2">
+                      <Label htmlFor={`description-${index}`} className="text-base font-medium text-gray-700">
                         Description <span className="text-red-500">*</span>
                       </Label>
                       <Textarea
                         id={`description-${index}`}
                         value={row.description}
                         onChange={e => updateRow(index, 'description', e.target.value)}
-                        placeholder="Description"
-                        className="mt-1 text-sm min-h-[60px] resize-none border-gray-300 focus:border-blue-500 focus:ring-2 focus:ring-blue-500/20 rounded-lg transition-all"
+                        placeholder="Enter description"
+                        className="min-h-[80px] resize-none text-base"
                       />
                     </div>
-                    <div className="flex-1">
-                      <Label htmlFor={`remarks-${index}`} className="text-sm font-medium text-gray-700">
+                    <div className="space-y-2">
+                      <Label htmlFor={`remarks-${index}`} className="text-base font-medium text-gray-700">
                         Remarks
                       </Label>
                       <Textarea
                         id={`remarks-${index}`}
                         value={row.remarks}
                         onChange={e => updateRow(index, 'remarks', e.target.value)}
-                        placeholder="Remarks"
-                        className="mt-1 text-sm min-h-[60px] resize-none border-gray-300 focus:border-blue-500 focus:ring-2 focus:ring-blue-500/20 rounded-lg transition-all"
+                        placeholder="Enter remarks (optional)"
+                        className="min-h-[80px] resize-none text-base"
                       />
-                    </div>
-                    <div className="w-32">
-                      <Label htmlFor={`type-${index}`} className="text-sm font-medium text-gray-700">
-                        Type <span className="text-red-500">*</span>
-                      </Label>
-                      <Select
-                        value={row.type}
-                        onValueChange={value => updateRow(index, 'type', value)}
-                      >
-                        <SelectTrigger id={`type-${index}`} className="mt-1 text-sm border-gray-300 focus:border-blue-500 focus:ring-2 focus:ring-blue-500/20 rounded-lg transition-all">
-                          <SelectValue placeholder="Select type" />
-                        </SelectTrigger>
-                        <SelectContent>
-                          <SelectItem value="IT scope">IT scope</SelectItem>
-                          <SelectItem value="Admin scope">Admin scope</SelectItem>
-                          <SelectItem value="HR scope">HR scope</SelectItem>
-                        </SelectContent>
-                      </Select>
                     </div>
                   </div>
                 </div>

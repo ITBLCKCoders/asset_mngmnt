@@ -53,7 +53,9 @@ export class NotificationService {
 
   static async createNotification(
     notificationData: Partial<Notification>,
-    userId: string
+    userId: string,
+    ipAddress?: string,
+    userAgent?: string
   ): Promise<Notification | null> {
     try {
       logger.info('Creating new notification:', {
@@ -96,8 +98,8 @@ export class NotificationService {
           type: newNotification?.type,
           status: newNotification?.status,
         },
-        ipAddress: '', // This would come from the request
-        userAgent: '', // This would come from the request
+        ipAddress: ipAddress ?? null,
+        userAgent: userAgent ?? null,
       });
 
       logger.info(
@@ -118,7 +120,9 @@ export class NotificationService {
   static async updateNotification(
     notificationID: string,
     notificationData: Partial<Notification>,
-    userId: string
+    userId: string,
+    ipAddress?: string,
+    userAgent?: string
   ): Promise<Notification | null> {
     try {
       logger.info(`Updating notification: ${notificationID}`);
@@ -160,8 +164,8 @@ export class NotificationService {
           type: updatedNotification?.type,
           status: updatedNotification?.status,
         },
-        ipAddress: '', // This would come from the request
-        userAgent: '', // This would come from the request
+        ipAddress: ipAddress ?? null,
+        userAgent: userAgent ?? null,
       });
 
       logger.info(`Notification updated successfully: ${notificationID}`);
@@ -179,7 +183,9 @@ export class NotificationService {
 
   static async deleteNotification(
     notificationID: string,
-    userId: string
+    userId: string,
+    ipAddress?: string,
+    userAgent?: string
   ): Promise<void> {
     try {
       logger.info(`Deleting notification: ${notificationID}`);
@@ -210,8 +216,8 @@ export class NotificationService {
           status: existingNotification.status,
         },
         newValues: null,
-        ipAddress: '', // This would come from the request
-        userAgent: '', // This would come from the request
+        ipAddress: ipAddress ?? null,
+        userAgent: userAgent ?? null,
       });
 
       logger.info(`Notification deleted successfully: ${notificationID}`);

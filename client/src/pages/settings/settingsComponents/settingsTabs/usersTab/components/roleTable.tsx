@@ -97,6 +97,7 @@ export function RoleTable({
             row.manager_approver_1 && 'Approver 1',
             row.manager_approver_2 && 'Approver 2',
             row.manager_approver_3 && 'Approver 3',
+            row.finance_approver && 'Finance',
           ]
             .filter(Boolean)
             .join(', '),
@@ -123,10 +124,16 @@ export function RoleTable({
                 Approver 3
               </Badge>
             )}
+            {row.original.finance_approver && (
+              <Badge variant="secondary" className="text-xs font-normal bg-emerald-100 text-emerald-800 hover:bg-emerald-100">
+                Finance
+              </Badge>
+            )}
             {!row.original.hr_accountability_receiver &&
               !row.original.manager_approver_1 &&
               !row.original.manager_approver_2 &&
-              !row.original.manager_approver_3 && (
+              !row.original.manager_approver_3 &&
+              !row.original.finance_approver && (
                 <span className="text-muted-foreground text-sm">—</span>
               )}
           </div>

@@ -15,10 +15,62 @@ import { formatCurrency } from '@/lib/currency';
 
 export const assetColumns = [
   // 1. Asset Code
-  { id: 'id', header: 'Asset Code', accessorKey: 'id', size: 220 },
+  {
+    id: 'id',
+    header: 'Asset Code',
+    accessorKey: 'id',
+    size: 220,
+    cell: ({ row }: any) => {
+      const canExpand = row.getCanExpand();
+      const isChildRow = row.depth > 0;
+      return (
+        <div
+          className="flex items-center gap-1"
+          style={{ paddingLeft: isChildRow ? `${row.depth * 20}px` : undefined }}
+        >
+          {canExpand ? (
+            <button
+              type="button"
+              aria-label={row.getIsExpanded() ? 'Collapse builder assets' : 'Expand builder assets'}
+              onClick={e => {
+                e.stopPropagation();
+                row.toggleExpanded();
+              }}
+              className="rounded p-0.5 hover:bg-gray-100"
+            >
+              {row.getIsExpanded() ? (
+                <ChevronDown className="h-4 w-4 text-gray-500" />
+              ) : (
+                <ChevronRight className="h-4 w-4 text-gray-500" />
+              )}
+            </button>
+          ) : isChildRow ? (
+            <span className="flex w-5 shrink-0 items-center justify-center text-gray-300">
+              └
+            </span>
+          ) : (
+            <span className="w-5 shrink-0" />
+          )}
+          <span className={isChildRow ? 'truncate text-gray-600' : 'truncate'}>
+            {row.original.id}
+          </span>
+        </div>
+      );
+    },
+  },
 
   // 2. Asset Name
-  { id: 'name', header: 'Asset Name', accessorKey: 'name', size: 220 },
+  {
+    id: 'name',
+    header: 'Asset Name',
+    accessorKey: 'name',
+    size: 220,
+    cell: ({ row }: any) => (
+      <span className={row.depth > 0 ? 'text-gray-600' : undefined}>
+        {row.original.name}
+      </span>
+    ),
+  },
 
   // 4. Description
   {

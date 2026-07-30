@@ -376,6 +376,39 @@ export async function insertDeclineNotification(
 }
 
 // ---------------------------------------------------------------------------
+// Intangible asset helpers (update snapshot in form assets_data)
+// ---------------------------------------------------------------------------
+
+export interface FormAssetsDataRow extends RowDataPacket {
+  formID: string;
+  assets_data: unknown;
+  status: string;
+}
+
+export async function findActiveFormsByIntangibleAssetId(
+  intangibleAssetId: string
+): Promise<FormAssetsDataRow[]> {
+  const [rows] = await pool.execute<FormAssetsDataRow[]>(
+    `SELECT formID, assets_data, status FROM accountability_forms
+     WHERE deleted_at IS NULL
+       AND status IN ('Pending', 'Signed')
+       AND JSON_SEARCH(assets_data, 'one', ?) IS NOT NULL`,
+    [intangibleAssetId]
+  );
+  return rows;
+}
+
+export async function updateFormAssetsDataById(
+  formId: string,
+  assetsDataJson: string
+): Promise<void> {
+  await pool.execute(
+    `UPDATE accountability_forms SET assets_data = ?, updated_at = NOW() WHERE formID = ?`,
+    [assetsDataJson, formId]
+  );
+}
+
+// ---------------------------------------------------------------------------
 // Form lookups (single)
 // ---------------------------------------------------------------------------
 
