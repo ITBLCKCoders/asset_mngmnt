@@ -14,7 +14,6 @@ import {
   User,
   Building,
   Crown,
-  Layers,
   Edit,
   Loader2,
   Upload,
@@ -1154,7 +1153,7 @@ export function AssetsPage() {
       const scopeHeaderRow = sheet.addRow(['Scope', 'Total Assets', 'Assigned', 'Available']);
       scopeHeaderRow.font = { bold: true, color: { argb: 'FFFFFFFF' } };
       scopeHeaderRow.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: headerArgb } };
-      scopeHeaderRow.alignment = { vertical: 'middle', horizontal: 'center' };
+      scopeHeaderRow.alignment = { vertical: 'middle', horizontal: 'center', wrapText: true };
 
       const scopeCounts: Record<string, { total: number; assigned: number; available: number }> = {};
       for (const asset of assets) {
@@ -1165,13 +1164,15 @@ export function AssetsPage() {
         else scopeCounts[scope].available++;
       }
       for (const [scope, counts] of Object.entries(scopeCounts)) {
-        sheet.addRow([scope, counts.total, counts.assigned, counts.available]);
+        const row = sheet.addRow([scope, counts.total, counts.assigned, counts.available]);
+        row.alignment = { vertical: 'middle', wrapText: true };
       }
       const scopeTotalRow = sheet.addRow(['Total', assets.length,
         assets.filter((a: any) => a.status === 'assigned').length,
         assets.filter((a: any) => a.status !== 'assigned').length]);
       scopeTotalRow.font = { bold: true };
       scopeTotalRow.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFF0F0F0' } };
+      scopeTotalRow.alignment = { vertical: 'middle', wrapText: true };
 
       sheet.addRow([]); // spacer
 
@@ -1184,7 +1185,7 @@ export function AssetsPage() {
       const deptHeaderRow = sheet.addRow(['Department', 'Total Assigned Assets']);
       deptHeaderRow.font = { bold: true, color: { argb: 'FFFFFFFF' } };
       deptHeaderRow.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: headerArgb } };
-      deptHeaderRow.alignment = { vertical: 'middle', horizontal: 'center' };
+      deptHeaderRow.alignment = { vertical: 'middle', horizontal: 'center', wrapText: true };
 
       const deptCounts: Record<string, number> = {};
       for (const asset of assets) {
@@ -1196,11 +1197,13 @@ export function AssetsPage() {
         }
       }
       for (const [dept, count] of Object.entries(deptCounts).sort((a, b) => b[1] - a[1])) {
-        sheet.addRow([dept, count]);
+        const row = sheet.addRow([dept, count]);
+        row.alignment = { vertical: 'middle', wrapText: true };
       }
       const deptTotalRow = sheet.addRow(['Total Assigned', Object.values(deptCounts).reduce((a, b) => a + b, 0)]);
       deptTotalRow.font = { bold: true };
       deptTotalRow.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFF0F0F0' } };
+      deptTotalRow.alignment = { vertical: 'middle', wrapText: true };
 
       sheet.addRow([]); // spacer
 
@@ -1210,12 +1213,12 @@ export function AssetsPage() {
       sheet.mergeCells(empSummaryTitle.number, 1, empSummaryTitle.number, lastCol);
       empSummaryTitle.alignment = { horizontal: 'left', vertical: 'middle' };
 
-      const empHeaderRow = sheet.addRow(['Employee Name', 'Department', 'Total Assigned Assets']);
+      const empHeaderRow = sheet.addRow(['Employee Name', 'Department', 'Accountability Form #', 'Total Assigned Assets']);
       empHeaderRow.font = { bold: true, color: { argb: 'FFFFFFFF' } };
       empHeaderRow.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: headerArgb } };
-      empHeaderRow.alignment = { vertical: 'middle', horizontal: 'center' };
+      empHeaderRow.alignment = { vertical: 'middle', horizontal: 'center', wrapText: true };
 
-      const empCounts: Record<string, { name: string; department: string; count: number }> = {};
+      const empCounts: Record<string, { name: string; department: string; formNumber: string; count: number }> = {};
       for (const asset of assets) {
         if (asset.assignees?.length) {
           for (const assignee of asset.assignees) {
@@ -1224,6 +1227,7 @@ export function AssetsPage() {
               empCounts[empKey] = {
                 name: `${assignee.firstName || ''} ${assignee.lastName || ''}`.trim() || 'Unknown',
                 department: assignee.departmentName || 'Unassigned',
+                formNumber: asset.accountability_form_number || '',
                 count: 0,
               };
             }
@@ -1232,11 +1236,13 @@ export function AssetsPage() {
         }
       }
       for (const emp of Object.values(empCounts).sort((a, b) => b.count - a.count)) {
-        sheet.addRow([emp.name, emp.department, emp.count]);
+        const row = sheet.addRow([emp.name, emp.department, emp.formNumber, emp.count]);
+        row.alignment = { vertical: 'middle', wrapText: true };
       }
-      const empTotalRow = sheet.addRow(['Total', '', Object.values(empCounts).reduce((a, e) => a + e.count, 0)]);
+      const empTotalRow = sheet.addRow(['Total', '', '', Object.values(empCounts).reduce((a, e) => a + e.count, 0)]);
       empTotalRow.font = { bold: true };
       empTotalRow.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFF0F0F0' } };
+      empTotalRow.alignment = { vertical: 'middle', wrapText: true };
 
       sheet.addRow([]); // spacer
 
@@ -1247,30 +1253,34 @@ export function AssetsPage() {
       detailTitle.alignment = { horizontal: 'left', vertical: 'middle' };
 
       const dataStartRow = sheet.rowCount + 1;
-      const headerRow = sheet.addRow(['Name', 'Description', 'Remarks', 'Type', 'Status', 'Assigned To', 'Accountability Form #', 'Created By', 'Date Created']);
+      const headerRow = sheet.addRow(['Name', 'Company', 'Description', 'Remarks', 'Type', 'Risk Level', 'Status', 'Assigned To', 'Accountability Form #']);
       headerRow.font = { bold: true, color: { argb: 'FFFFFFFF' } };
       headerRow.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: headerArgb } };
-      headerRow.alignment = { vertical: 'middle', horizontal: 'center' };
+      headerRow.alignment = { vertical: 'middle', horizontal: 'center', wrapText: true };
 
       for (const asset of assets) {
         const assigneeNames = asset.assignees?.length
-          ? asset.assignees.map((a: any) => `${a.firstName} ${a.lastName}`.trim()).join(', ')
+          ? asset.assignees.map((a: any) => `${a.firstName} ${a.lastName}`.trim()).join('\n')
           : '';
-        sheet.addRow([
+        const formNumbers = Array.isArray(asset.accountability_forms) && asset.accountability_forms.length > 0
+          ? asset.accountability_forms.map((f: any) => f.formNumber || '').filter(Boolean).join('\n')
+          : (asset.accountability_form_number || '');
+        const row = sheet.addRow([
           asset.name || '',
+          companyName || '',
           asset.description || '',
           asset.remarks || '',
           asset.type || '',
+          asset.risk_level?.name || '—',
           asset.status || '',
           assigneeNames,
-          asset.accountability_form_number || '',
-          asset.created_by_name || '',
-          asset.created_at ? new Date(asset.created_at).toLocaleDateString() : '',
+          formNumbers,
         ]);
+        row.alignment = { vertical: 'middle', wrapText: true };
       }
 
-      // Set column widths
-      const colWidthsMap = { 1: 25, 2: 35, 3: 20, 4: 12, 5: 12, 6: 22, 7: 20, 8: 18, 9: 14 };
+      // Set column widths (wider to fit headers and allow text wrapping)
+      const colWidthsMap = { 1: 28, 2: 20, 3: 35, 4: 22, 5: 14, 6: 14, 7: 14, 8: 25, 9: 24 };
       for (const [col, width] of Object.entries(colWidthsMap)) {
         sheet.getColumn(Number(col)).width = width;
       }
@@ -1396,7 +1406,7 @@ export function AssetsPage() {
               empCounts[empKey] = {
                 name: `${assignee.firstName || ''} ${assignee.lastName || ''}`.trim() || 'Unknown',
                 department: assignee.departmentName || 'Unassigned',
-                formNumber: assignee.accountabilityFormNumber || '',
+                formNumber: asset.accountability_form_number || '',
                 count: 0,
               };
             }
@@ -1420,9 +1430,11 @@ export function AssetsPage() {
       // ── Detailed Asset List ──
       const rows = assets.map((a: any) => {
         const assigneeNames = a.assignees?.length
-          ? a.assignees.map((as: any) => `${as.firstName} ${as.lastName}`.trim()).join(', ')
+          ? a.assignees.map((as: any) => `${as.firstName} ${as.lastName}`.trim()).join('\n')
           : '—';
-        const formNumbers = a.accountability_form_number || '';
+        const formNumbers = Array.isArray(a.accountability_forms) && a.accountability_forms.length > 0
+          ? a.accountability_forms.map((f: any) => f.formNumber || '').filter(Boolean).join('\n')
+          : (a.accountability_form_number || '');
         return [
           a.name || '',
           companyName || '',
@@ -2067,16 +2079,6 @@ export function AssetsPage() {
           </TabsContent>
 
           <TabsContent value="intangible-assets" className="mt-6">
-            {intangibleLoading ? (
-              <div className="text-center py-12">
-                <div className="inline-flex items-center justify-center w-20 h-20 rounded-full bg-gradient-to-br from-blue-100 to-blue-200 mb-4">
-                  <Layers className="h-10 w-10 text-blue-600" />
-                </div>
-                <h3 className="text-lg font-semibold text-gray-900 mb-2">
-                  Loading intangible assets...
-                </h3>
-              </div>
-            ) : (
             <DataTable
               columns={intangibleAssetColumns}
               data={intangibleAssets}
@@ -2117,7 +2119,6 @@ export function AssetsPage() {
                 </Button>
               </div>
             </DataTable>
-            )}
           </TabsContent>
         </Tabs>
       </main>

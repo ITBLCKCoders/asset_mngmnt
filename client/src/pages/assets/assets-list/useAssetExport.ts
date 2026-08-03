@@ -41,6 +41,33 @@ function getConditionExcelArgb(condition: string): string | null {
   }
 }
 
+/**
+ * Compute column widths based on the longest content in each column.
+ * Uses the base width as a floor and caps at 50 to avoid overly wide columns.
+ */
+function calculateColumnWidths(
+  selectedCols: { key: string; label: string }[],
+  rows: { cells: string[] }[],
+  baseWidths: Record<string, number>,
+): Record<string, number> {
+  const widths: Record<string, number> = {};
+  selectedCols.forEach((col, idx) => {
+    const headerLen = col.label.length;
+    let maxLen = headerLen;
+    rows.forEach(row => {
+      const cell = row.cells[idx];
+      if (cell) {
+        const len = String(cell).length;
+        if (len > maxLen) maxLen = len;
+      }
+    });
+    const base = baseWidths[col.key] || 20;
+    const computed = Math.min(Math.max(maxLen + 2, base), 50);
+    widths[col.key] = computed;
+  });
+  return widths;
+}
+
 export const EXPORT_SUMMARY_CONDITIONS = SUMMARY_CONDITIONS;
 
 /**
@@ -441,6 +468,12 @@ builderGroups.forEach(group => {
 
     let currentY = filterLabel ? 37 : 32;
 
+    // Add "Asset List" section header (matches Excel export naming)
+    doc.setFontSize(12);
+    doc.setFont('helvetica', 'bold');
+    doc.text('Asset List', 165, currentY, { align: 'center' });
+    currentY += 5;
+
     // Prepare table data with selected columns
     // Process assets with builder grouping (items go right after parent, no separator rows)
     const flattenedAssets: (Asset & { isChild?: boolean; builderName?: string })[] = [];
@@ -620,6 +653,7 @@ builderGroups.forEach(group => {
       columnStyles,
       margin: { left: 5, right: 5 },
       didParseCell: data => {
+        if (data.section !== 'body') return;
         const row = bodyRows[data.row.index];
         const colKey = selectedCols[data.column.index]?.key;
         if (row.isSeparator) {
@@ -703,8 +737,51 @@ filterLabel?: string
     // Assets sheet — header row + data rows derived from selected columns.
     const assetsSheet = workbook.addWorksheet('Assets');
 
-    const lastCol = (selectedCols.length || 5) + 1; // 1-based column index for last data column
+    const lastCol = selectedCols.length || 5; // 1-based column index for last data column
     const logoEndCol = 3; // Logo spans columns A-C (1-3)
+
+    // Define base column widths (used as floor for auto-sizing)
+    const baseColumnWidths: Record<string, number> = {
+      id: 15,
+      name: 25,
+      description: 40,
+      category: 20,
+      type: 20,
+      serialNo: 18,
+      brand: 18,
+      modelNo: 18,
+      status: 15,
+      assignedTo: 30,
+      accountabilityForm: 25,
+      department: 25,
+      location: 25,
+      purchasePrice: 18,
+      purchaseDate: 18,
+      supplier: 25,
+      warranty: 18,
+      documents: 18,
+      maintenanceSchedule: 25,
+      lastMaintenanceDate: 20,
+      nextMaintenanceDate: 20,
+      condition: 18,
+      usefulLifeYears: 20,
+      salvageValue: 18,
+      depreciationMethod: 25,
+      annualDepreciation: 20,
+      depreciationStartDate: 22,
+      company: 25,
+      building: 20,
+      createdBy: 25,
+      createdAt: 18,
+      updatedBy: 25,
+      updatedAt: 18,
+    };
+
+    // Set column definitions BEFORE adding any rows so merges align correctly
+    assetsSheet.columns = selectedCols.map(col => ({
+      key: col.key,
+      width: baseColumnWidths[col.key] || 20,
+    }));
 
     // Add company logo if available - place in columns A-C, rows 1-3
     if (activeCompany?.logo_url) {
@@ -780,48 +857,6 @@ filterLabel?: string
 
     // Row 6: empty spacer before header
     assetsSheet.addRow([]);
-
-    // Define column widths based on content type
-    const columnWidths: Record<string, number> = {
-      id: 15,
-      name: 25,
-      description: 40,
-      category: 20,
-      type: 20,
-      serialNo: 18,
-      brand: 18,
-      modelNo: 18,
-      status: 15,
-      assignedTo: 30,
-      accountabilityForm: 25,
-      department: 25,
-      location: 25,
-      purchasePrice: 18,
-      purchaseDate: 18,
-      supplier: 25,
-      warranty: 18,
-      documents: 18,
-      maintenanceSchedule: 25,
-      lastMaintenanceDate: 20,
-      nextMaintenanceDate: 20,
-      condition: 18,
-      usefulLifeYears: 20,
-      salvageValue: 18,
-      depreciationMethod: 25,
-      annualDepreciation: 20,
-      depreciationStartDate: 22,
-      company: 25,
-      building: 20,
-      createdBy: 25,
-      createdAt: 18,
-      updatedBy: 25,
-      updatedAt: 18,
-    };
-
-    assetsSheet.columns = selectedCols.map(col => ({
-      key: col.key,
-      width: columnWidths[col.key] || 20,
-    }));
 
     // Process assets with builder grouping logic
     const flattenedAssets: (Asset & { isChild?: boolean; builderName?: string })[] = [];
@@ -989,6 +1024,13 @@ filterLabel?: string
         }
       }
     }
+
+    // Auto-size column widths based on content
+    const allRows = buildGroupedAssetListRows(assets, selectedCols, assetBuilders);
+    const autoWidths = calculateColumnWidths(selectedCols, allRows, baseColumnWidths);
+    selectedCols.forEach((col, i) => {
+      assetsSheet.getColumn(i + 1).width = autoWidths[col.key] || baseColumnWidths[col.key] || 20;
+    });
 
     // Generate filename with company name
     const fileName = activeCompany 
@@ -1451,6 +1493,7 @@ const exportSummaryToPDF = async (
       headStyles: { fillColor: headerFill, textColor: [255, 255, 255], fontSize: listFontSize, fontStyle: 'bold' },
       columnStyles: colStyles,
       didParseCell: data => {
+        if (data.section !== 'body') return;
         const row = listRows[data.row.index];
         const colKey = summaryAssetColumns[data.column.index]?.key;
         if (row?.isSeparator) {
@@ -1943,8 +1986,10 @@ const exportSummaryToPDF = async (
       annualDepreciation: 20, depreciationStartDate: 22, company: 25,
       building: 20, createdBy: 25, createdAt: 18, updatedBy: 25, updatedAt: 18,
     };
+    // Auto-size column widths based on content
+    const summaryAutoWidths = calculateColumnWidths(summaryAssetColumns, listRows, excelColumnWidths);
     summaryAssetColumns.forEach((col, i) => {
-      wsAssets.getColumn(i + 1).width = excelColumnWidths[col.key] || 20;
+      wsAssets.getColumn(i + 1).width = summaryAutoWidths[col.key] || excelColumnWidths[col.key] || 20;
     });
 
     const fileName = activeCompany
