@@ -365,6 +365,114 @@ export async function getAssetBuildersHandler(req: AuthRequest, res: Response) {
   }
 }
 
+// Match builders whose component assets include any of the given asset codes.
+// Unlike getAssetBuildersHandler, this is NOT scoped to the viewer's company —
+// used by accountability form PDF generation when the form's assets belong to a
+// company different from the viewer's active company scope.
+export async function matchAssetBuildersHandler(
+  req: AuthRequest,
+  res: Response
+) {
+  try {
+    const userId = req.user!.userID;
+    const { assetCodes } = req.body ?? {};
+
+    if (!Array.isArray(assetCodes) || assetCodes.length === 0) {
+      return res.status(400).json({ error: 'assetCodes array is required' });
+    }
+
+    const codes = assetCodes
+      .map((c: unknown) => (typeof c === 'string' ? c.trim() : ''))
+      .filter((c: string) => c.length > 0);
+
+    if (codes.length === 0) {
+      return res.status(400).json({
+        error: 'assetCodes must contain at least one non-empty code',
+      });
+    }
+    if (codes.length > 200) {
+      return res.status(400).json({ error: 'assetCodes exceeds 200 entries' });
+    }
+
+    const placeholders = codes.map(() => '?').join(',');
+    const [matchRows] = (await pool.execute(
+      `SELECT DISTINCT ab.builderID, ab.name, ab.status, ab.description
+       FROM asset_builder_items abi
+       JOIN assets a ON abi.asset_id = a.assetID AND a.deleted_at IS NULL
+       JOIN asset_builders ab ON ab.builderID = abi.builder_id AND ab.deleted_at IS NULL
+       WHERE a.asset_code IN (${placeholders})`,
+      codes
+    )) as any[];
+
+    if (!Array.isArray(matchRows) || matchRows.length === 0) {
+      logger.info(
+        `No asset builders matched any of the ${codes.length} asset codes for user ${userId}`
+      );
+      return res.json({ builders: [] });
+    }
+
+    const builders = [];
+    for (const row of matchRows) {
+      const [itemResult] = (await pool.execute(
+        'CALL sp_get_asset_builder_items(?)',
+        [row.builderID]
+      )) as any[][];
+
+      const itemRows =
+        (Array.isArray(itemResult?.[0]) ? itemResult[0] : itemResult) ?? [];
+
+      const builder: any = {
+        builderID: row.builderID,
+        name: row.name,
+        description: row.description,
+        status: row.status,
+        items: itemRows.map((item: any) => ({
+          itemID: item.itemID,
+          asset_id: item.asset_id,
+          asset_code: item.asset_code,
+          asset_name: item.asset_name,
+          category_name: item.category_name,
+          type_name: item.type_name,
+          is_parent: item.is_parent === 1,
+        })),
+      };
+
+      // When builder is Assigned, resolve assigned user (owner of assets in this builder)
+      if (String(row.status) === 'Assigned' && itemRows.length > 0) {
+        const firstAssetId = itemRows[0]?.asset_id;
+        if (firstAssetId) {
+          const [assignRows] = (await pool.execute(
+            `SELECT u.userID, u.first_name, u.last_name
+             FROM asset_assignments aa
+             JOIN users u ON aa.user_id = u.userID
+             WHERE aa.asset_id = ? AND aa.status = 'Active' AND aa.deleted_at IS NULL
+             LIMIT 1`,
+            [firstAssetId]
+          )) as any[];
+          if (assignRows?.length > 0) {
+            const u = assignRows[0];
+            builder.assigned_to = {
+              id: u.userID,
+              first_name: u.first_name ?? '',
+              last_name: u.last_name ?? '',
+            };
+          }
+        }
+      }
+
+      builders.push(builder);
+    }
+
+    logger.info(
+      `Matched ${builders.length} asset builders by asset codes for user ${userId}`
+    );
+    return res.json({ builders });
+  } catch (error: any) {
+    logger.error('Match asset builders failed:', error);
+    return res.status(500).json({ error: 'Failed to match asset builders' });
+  }
+}
+
 export async function updateAssetBuilderHandler(
   req: AuthRequest,
   res: Response

@@ -412,6 +412,33 @@ export function AssetsPage() {
         },
       },
       {
+        accessorKey: 'risk_level',
+        header: 'Risk Level',
+        size: 140,
+        cell: ({ row }) => {
+          const riskLevel = row.original.risk_level;
+          if (!riskLevel?.id) {
+            return <span className="text-sm text-gray-400">—</span>;
+          }
+          return (
+            <div className="flex items-center gap-2">
+              {riskLevel.color && (
+                <span
+                  className="inline-block h-3 w-3 rounded-full shrink-0"
+                  style={{ backgroundColor: riskLevel.color }}
+                />
+              )}
+              <Badge
+                variant="outline"
+                className="text-sm px-3 py-1 border-gray-300 text-gray-700"
+              >
+                {riskLevel.name}
+              </Badge>
+            </div>
+          );
+        },
+      },
+      {
         id: 'assigned_to',
         header: 'Assigned To',
         size: 220,
@@ -952,7 +979,6 @@ export function AssetsPage() {
 
       const rows: any[] = [];
       const errors: { row: number; field: string; message: string }[] = [];
-      const validTypes = ['IT scope', 'Admin scope', 'HR scope'];
 
       sheet.eachRow((row, rowNumber) => {
         if (rowNumber === 1) return;
@@ -963,9 +989,6 @@ export function AssetsPage() {
 
         if (!name) errors.push({ row: rowNumber, field: 'Name', message: 'Name is required' });
         if (!type) errors.push({ row: rowNumber, field: 'Type', message: 'Type is required' });
-        else if (!validTypes.includes(type)) {
-          errors.push({ row: rowNumber, field: 'Type', message: 'Type must be IT scope, Admin scope, or HR scope' });
-        }
 
         rows.push({ name, description, remarks, type });
       });
@@ -1047,20 +1070,21 @@ export function AssetsPage() {
       const assets = await getIntangibleAssetsForExport();
       if (assets.length === 0) { toast.error('No intangible assets to export'); return; }
 
-      console.log('[Intangible Export Excel] activeCompany:', activeCompany);
-      console.log('[Intangible Export Excel] assets[0]:', assets[0]);
-      const companyName = activeCompany?.name || '';
+      // Prefer the asset's owning company from the DB (companies join in sp_GetAllIntangibleAssets),
+      // fall back to activeCompany when the SP does not return company data
+      const companyName = assets[0]?.company_name || activeCompany?.name || '';
+      const companyLogoUrl = assets[0]?.company_logo || activeCompany?.logo_url || '';
       console.log('[Intangible Export Excel] companyName:', companyName);
 
       const ExcelJS = await import('exceljs');
       const workbook = new ExcelJS.Workbook();
       const sheet = workbook.addWorksheet('Intangible Assets');
 
-      const lastCol = 8;
-      // Company logo
-      if (activeCompany?.logo_url) {
+      const lastCol = 9;
+      // Company logo — use the asset's company logo (if available from SP)
+      if (companyLogoUrl) {
         try {
-          const proxiedUrl = activeCompany.logo_url;
+          const proxiedUrl = companyLogoUrl;
           const resolvedUrl = proxiedUrl.startsWith('/') && typeof window !== 'undefined'
             ? `${window.location.origin}${proxiedUrl}`
             : proxiedUrl;
@@ -1118,11 +1142,112 @@ export function AssetsPage() {
       sheet.addRow([]);
 
       const { getCompanyAccentColor } = await import('@/lib/pdfGenerator/shared');
-      const accentColor = getCompanyAccentColor(companyName || activeCompany?.name);
+      const accentColor = getCompanyAccentColor(companyName);
       const headerArgb = `FF${accentColor.r.toString(16).padStart(2, '0')}${accentColor.g.toString(16).padStart(2, '0')}${accentColor.b.toString(16).padStart(2, '0')}`;
 
+      // ── Summary Section: Total by Scope ──
+      const scopeSummaryTitle = sheet.addRow(['Summary by Scope']);
+      scopeSummaryTitle.font = { bold: true, size: 11, color: { argb: 'FF333333' } };
+      sheet.mergeCells(scopeSummaryTitle.number, 1, scopeSummaryTitle.number, lastCol);
+      scopeSummaryTitle.alignment = { horizontal: 'left', vertical: 'middle' };
+
+      const scopeHeaderRow = sheet.addRow(['Scope', 'Total Assets', 'Assigned', 'Available']);
+      scopeHeaderRow.font = { bold: true, color: { argb: 'FFFFFFFF' } };
+      scopeHeaderRow.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: headerArgb } };
+      scopeHeaderRow.alignment = { vertical: 'middle', horizontal: 'center' };
+
+      const scopeCounts: Record<string, { total: number; assigned: number; available: number }> = {};
+      for (const asset of assets) {
+        const scope = asset.type || 'Unknown';
+        if (!scopeCounts[scope]) scopeCounts[scope] = { total: 0, assigned: 0, available: 0 };
+        scopeCounts[scope].total++;
+        if (asset.status === 'assigned') scopeCounts[scope].assigned++;
+        else scopeCounts[scope].available++;
+      }
+      for (const [scope, counts] of Object.entries(scopeCounts)) {
+        sheet.addRow([scope, counts.total, counts.assigned, counts.available]);
+      }
+      const scopeTotalRow = sheet.addRow(['Total', assets.length,
+        assets.filter((a: any) => a.status === 'assigned').length,
+        assets.filter((a: any) => a.status !== 'assigned').length]);
+      scopeTotalRow.font = { bold: true };
+      scopeTotalRow.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFF0F0F0' } };
+
+      sheet.addRow([]); // spacer
+
+      // ── Summary Section: Total by Department ──
+      const deptSummaryTitle = sheet.addRow(['Summary by Department (based on assigned user)']);
+      deptSummaryTitle.font = { bold: true, size: 11, color: { argb: 'FF333333' } };
+      sheet.mergeCells(deptSummaryTitle.number, 1, deptSummaryTitle.number, lastCol);
+      deptSummaryTitle.alignment = { horizontal: 'left', vertical: 'middle' };
+
+      const deptHeaderRow = sheet.addRow(['Department', 'Total Assigned Assets']);
+      deptHeaderRow.font = { bold: true, color: { argb: 'FFFFFFFF' } };
+      deptHeaderRow.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: headerArgb } };
+      deptHeaderRow.alignment = { vertical: 'middle', horizontal: 'center' };
+
+      const deptCounts: Record<string, number> = {};
+      for (const asset of assets) {
+        if (asset.assignees?.length) {
+          for (const assignee of asset.assignees) {
+            const dept = assignee.departmentName || 'Unassigned';
+            deptCounts[dept] = (deptCounts[dept] || 0) + 1;
+          }
+        }
+      }
+      for (const [dept, count] of Object.entries(deptCounts).sort((a, b) => b[1] - a[1])) {
+        sheet.addRow([dept, count]);
+      }
+      const deptTotalRow = sheet.addRow(['Total Assigned', Object.values(deptCounts).reduce((a, b) => a + b, 0)]);
+      deptTotalRow.font = { bold: true };
+      deptTotalRow.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFF0F0F0' } };
+
+      sheet.addRow([]); // spacer
+
+      // ── Summary Section: Total by Employee ──
+      const empSummaryTitle = sheet.addRow(['Summary by Employee']);
+      empSummaryTitle.font = { bold: true, size: 11, color: { argb: 'FF333333' } };
+      sheet.mergeCells(empSummaryTitle.number, 1, empSummaryTitle.number, lastCol);
+      empSummaryTitle.alignment = { horizontal: 'left', vertical: 'middle' };
+
+      const empHeaderRow = sheet.addRow(['Employee Name', 'Department', 'Total Assigned Assets']);
+      empHeaderRow.font = { bold: true, color: { argb: 'FFFFFFFF' } };
+      empHeaderRow.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: headerArgb } };
+      empHeaderRow.alignment = { vertical: 'middle', horizontal: 'center' };
+
+      const empCounts: Record<string, { name: string; department: string; count: number }> = {};
+      for (const asset of assets) {
+        if (asset.assignees?.length) {
+          for (const assignee of asset.assignees) {
+            const empKey = assignee.userId || `${assignee.firstName}_${assignee.lastName}`;
+            if (!empCounts[empKey]) {
+              empCounts[empKey] = {
+                name: `${assignee.firstName || ''} ${assignee.lastName || ''}`.trim() || 'Unknown',
+                department: assignee.departmentName || 'Unassigned',
+                count: 0,
+              };
+            }
+            empCounts[empKey].count++;
+          }
+        }
+      }
+      for (const emp of Object.values(empCounts).sort((a, b) => b.count - a.count)) {
+        sheet.addRow([emp.name, emp.department, emp.count]);
+      }
+      const empTotalRow = sheet.addRow(['Total', '', Object.values(empCounts).reduce((a, e) => a + e.count, 0)]);
+      empTotalRow.font = { bold: true };
+      empTotalRow.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFF0F0F0' } };
+
+      sheet.addRow([]); // spacer
+
+      // ── Detailed Asset List ──
+      const detailTitle = sheet.addRow(['Detailed Asset List']);
+      detailTitle.font = { bold: true, size: 11, color: { argb: 'FF333333' } };
+      sheet.mergeCells(detailTitle.number, 1, detailTitle.number, lastCol);
+      detailTitle.alignment = { horizontal: 'left', vertical: 'middle' };
+
       const dataStartRow = sheet.rowCount + 1;
-      const headerRow = sheet.addRow(['Name', 'Description', 'Remarks', 'Type', 'Status', 'Assigned To', 'Created By', 'Date Created']);
+      const headerRow = sheet.addRow(['Name', 'Description', 'Remarks', 'Type', 'Status', 'Assigned To', 'Accountability Form #', 'Created By', 'Date Created']);
       headerRow.font = { bold: true, color: { argb: 'FFFFFFFF' } };
       headerRow.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: headerArgb } };
       headerRow.alignment = { vertical: 'middle', horizontal: 'center' };
@@ -1138,13 +1263,14 @@ export function AssetsPage() {
           asset.type || '',
           asset.status || '',
           assigneeNames,
+          asset.accountability_form_number || '',
           asset.created_by_name || '',
           asset.created_at ? new Date(asset.created_at).toLocaleDateString() : '',
         ]);
       }
 
       // Set column widths
-      const colWidthsMap = { 1: 25, 2: 35, 3: 20, 4: 12, 5: 12, 6: 22, 7: 18, 8: 14 };
+      const colWidthsMap = { 1: 25, 2: 35, 3: 20, 4: 12, 5: 12, 6: 22, 7: 20, 8: 18, 9: 14 };
       for (const [col, width] of Object.entries(colWidthsMap)) {
         sheet.getColumn(Number(col)).width = width;
       }
@@ -1172,14 +1298,16 @@ export function AssetsPage() {
 
       const { addCompanyLogoToPDF, getCompanyAccentColor, isBlackCoders } = await import('@/lib/pdfGenerator/shared');
 
+      // Prefer the asset's owning company from the DB (companies join in sp_GetAllIntangibleAssets),
+      // fall back to activeCompany when the SP does not return company data
+      const companyName = assets[0]?.company_name || activeCompany?.name || '';
+      const companyLogoUrl = assets[0]?.company_logo || activeCompany?.logo_url || '';
+
       const doc = new jsPDF('landscape', 'mm', 'a4');
       const pageWidth = doc.internal.pageSize.getWidth();
 
-      await addCompanyLogoToPDF(doc, activeCompany?.logo_url, 14, 12);
+      await addCompanyLogoToPDF(doc, companyLogoUrl, 14, 12);
 
-      console.log('[Intangible Export PDF] activeCompany:', activeCompany);
-      console.log('[Intangible Export PDF] assets[0]:', assets[0]);
-      const companyName = activeCompany?.name || '';
       console.log('[Intangible Export PDF] companyName:', companyName);
       if (companyName) {
         doc.setFontSize(14);
@@ -1201,23 +1329,8 @@ export function AssetsPage() {
       doc.setFont('helvetica', 'italic');
       doc.text(`Generated on: ${now.toLocaleDateString()} ${now.toLocaleTimeString()} by ${generatedBy}`, pageWidth / 2, 41, { align: 'center' });
 
-      const rows = assets.map((a: any) => {
-        const assigneeNames = a.assignees?.length
-          ? a.assignees.map((as: any) => `${as.firstName} ${as.lastName}`.trim()).join(', ')
-          : '—';
-        return [
-          a.name || '',
-          companyName || '',
-          a.description || '',
-          a.remarks || '',
-          a.type || '',
-          a.status || '',
-          assigneeNames,
-        ];
-      });
-
-      const accentColor = getCompanyAccentColor(companyName || activeCompany?.name);
-      const isBlackCodersCompany = isBlackCoders(companyName || activeCompany?.name);
+      const accentColor = getCompanyAccentColor(companyName);
+      const isBlackCodersCompany = isBlackCoders(companyName);
       const headerFill: [number, number, number] = isBlackCodersCompany
         ? [0, 0, 0]
         : [accentColor.r, accentColor.g, accentColor.b];
@@ -1225,14 +1338,112 @@ export function AssetsPage() {
       const pageWidthLandscape = doc.internal.pageSize.getWidth();
       const marginLeftRight = 10;
       const usableWidth = pageWidthLandscape - marginLeftRight * 2;
-      // 7 columns: Name, Company, Description, Remarks, Type, Status, Assigned To
-      const colWidths = [usableWidth * 0.18, usableWidth * 0.12, usableWidth * 0.2, usableWidth * 0.14, usableWidth * 0.1, usableWidth * 0.1, usableWidth * 0.16];
+
+      // ── Summary by Scope ──
+      const scopeCounts: Record<string, { total: number; assigned: number; available: number }> = {};
+      for (const asset of assets) {
+        const scope = asset.type || 'Unknown';
+        if (!scopeCounts[scope]) scopeCounts[scope] = { total: 0, assigned: 0, available: 0 };
+        scopeCounts[scope].total++;
+        if (asset.status === 'assigned') scopeCounts[scope].assigned++;
+        else scopeCounts[scope].available++;
+      }
+      const scopeRows = Object.entries(scopeCounts).map(([scope, counts]) => [scope, counts.total, counts.assigned, counts.available]);
+      scopeRows.push(['Total', assets.length,
+        assets.filter((a: any) => a.status === 'assigned').length,
+        assets.filter((a: any) => a.status !== 'assigned').length]);
+
+      autoTable(doc, {
+        startY: 46,
+        head: [['Scope', 'Total Assets', 'Assigned', 'Available']],
+        body: scopeRows,
+        styles: { fontSize: 8, cellPadding: 1.5 },
+        headStyles: { fillColor: headerFill, textColor: [255, 255, 255], fontSize: 8, fontStyle: 'bold' },
+        columnStyles: { 0: { cellWidth: usableWidth * 0.3 }, 1: { cellWidth: usableWidth * 0.23 }, 2: { cellWidth: usableWidth * 0.23 }, 3: { cellWidth: usableWidth * 0.24 } },
+        margin: { left: marginLeftRight, right: marginLeftRight },
+      });
+
+      // ── Summary by Department ──
+      const deptCounts: Record<string, number> = {};
+      for (const asset of assets) {
+        if (asset.assignees?.length) {
+          for (const assignee of asset.assignees) {
+            const dept = assignee.departmentName || 'Unassigned';
+            deptCounts[dept] = (deptCounts[dept] || 0) + 1;
+          }
+        }
+      }
+      const deptRows = Object.entries(deptCounts).sort((a, b) => b[1] - a[1]).map(([dept, count]) => [dept, count]);
+      deptRows.push(['Total Assigned', Object.values(deptCounts).reduce((a, b) => a + b, 0)]);
+
+      autoTable(doc, {
+        startY: (doc as any).lastAutoTable.finalY + 6,
+        head: [['Department', 'Total Assigned Assets']],
+        body: deptRows,
+        styles: { fontSize: 8, cellPadding: 1.5 },
+        headStyles: { fillColor: headerFill, textColor: [255, 255, 255], fontSize: 8, fontStyle: 'bold' },
+        columnStyles: { 0: { cellWidth: usableWidth * 0.6 }, 1: { cellWidth: usableWidth * 0.4 } },
+        margin: { left: marginLeftRight, right: marginLeftRight },
+      });
+
+      // ── Summary by Employee ──
+      const empCounts: Record<string, { name: string; department: string; formNumber: string; count: number }> = {};
+      for (const asset of assets) {
+        if (asset.assignees?.length) {
+          for (const assignee of asset.assignees) {
+            const empKey = assignee.userId || `${assignee.firstName}_${assignee.lastName}`;
+            if (!empCounts[empKey]) {
+              empCounts[empKey] = {
+                name: `${assignee.firstName || ''} ${assignee.lastName || ''}`.trim() || 'Unknown',
+                department: assignee.departmentName || 'Unassigned',
+                formNumber: assignee.accountabilityFormNumber || '',
+                count: 0,
+              };
+            }
+            empCounts[empKey].count++;
+          }
+        }
+      }
+      const empRows = Object.values(empCounts).sort((a, b) => b.count - a.count).map(e => [e.name, e.department, e.formNumber, e.count]);
+      empRows.push(['Total', '', '', Object.values(empCounts).reduce((a, e) => a + e.count, 0)]);
+
+      autoTable(doc, {
+        startY: (doc as any).lastAutoTable.finalY + 6,
+        head: [['Employee Name', 'Department', 'Accountability Form #', 'Total Assigned Assets']],
+        body: empRows,
+        styles: { fontSize: 8, cellPadding: 1.5 },
+        headStyles: { fillColor: headerFill, textColor: [255, 255, 255], fontSize: 8, fontStyle: 'bold' },
+        columnStyles: { 0: { cellWidth: usableWidth * 0.25 }, 1: { cellWidth: usableWidth * 0.25 }, 2: { cellWidth: usableWidth * 0.25 }, 3: { cellWidth: usableWidth * 0.25 } },
+        margin: { left: marginLeftRight, right: marginLeftRight },
+      });
+
+      // ── Detailed Asset List ──
+      const rows = assets.map((a: any) => {
+        const assigneeNames = a.assignees?.length
+          ? a.assignees.map((as: any) => `${as.firstName} ${as.lastName}`.trim()).join(', ')
+          : '—';
+        const formNumbers = a.accountability_form_number || '';
+        return [
+          a.name || '',
+          companyName || '',
+          a.description || '',
+          a.remarks || '',
+          a.type || '',
+          a.risk_level?.name || '—',
+          a.status || '',
+          assigneeNames,
+          formNumbers,
+        ];
+      });
+
+      // 9 columns: Name, Company, Description, Remarks, Type, Risk Level, Status, Assigned To, Accountability Form #
+      const colWidths = [usableWidth * 0.14, usableWidth * 0.09, usableWidth * 0.16, usableWidth * 0.11, usableWidth * 0.07, usableWidth * 0.08, usableWidth * 0.07, usableWidth * 0.14, usableWidth * 0.14];
       const colStyles: any = {};
       colWidths.forEach((w, i) => { colStyles[i] = { cellWidth: w }; });
 
       autoTable(doc, {
-        startY: 46,
-        head: [['Name', 'Company', 'Description', 'Remarks', 'Type', 'Status', 'Assigned To']],
+        startY: (doc as any).lastAutoTable.finalY + 8,
+        head: [['Name', 'Company', 'Description', 'Remarks', 'Type', 'Risk Level', 'Status', 'Assigned To', 'Accountability Form #']],
         body: rows,
         styles: { fontSize: 7, cellPadding: 1.5 },
         headStyles: { fillColor: headerFill, textColor: [255, 255, 255], fontSize: 7, fontStyle: 'bold' },

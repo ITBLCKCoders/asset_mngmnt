@@ -39,13 +39,14 @@ export const createIntangibleAsset = async (req: AuthRequest, res: Response) => 
       return res.status(400).json({ error: 'No active company found' });
     }
 
-    const { name, description, remarks, type, status } = req.body;
+    const { name, description, remarks, type, riskLevelId, status } = req.body;
 
     const id = await intangibleAssetsService.createIntangibleAsset({
       name,
       description: description || null,
       remarks: remarks || null,
       type,
+      riskLevelId: riskLevelId || null,
       status: status || 'available',
       companyId: activeCompany.id,
       createdBy: userId,
@@ -58,7 +59,7 @@ export const createIntangibleAsset = async (req: AuthRequest, res: Response) => 
       resourceId: id,
       resourceName: name,
       details: `Created intangible asset "${name}"`,
-      newValues: { name, description, remarks, type, status },
+      newValues: { name, description, remarks, type, riskLevelId, status },
       ipAddress: req.ip || 'unknown',
       userAgent: req.get('User-Agent') || 'unknown',
       companyId: activeCompany.id,
@@ -125,7 +126,7 @@ export const updateIntangibleAsset = async (req: AuthRequest, res: Response) => 
       return res.status(400).json({ error: 'No active company found' });
     }
 
-    const { name, description, remarks, type, status } = req.body;
+    const { name, description, remarks, type, riskLevelId, status } = req.body;
 
     // Get existing asset for audit log
     const existingAsset =
@@ -139,6 +140,7 @@ export const updateIntangibleAsset = async (req: AuthRequest, res: Response) => 
       description: description || null,
       remarks: remarks || null,
       type,
+      riskLevelId: riskLevelId !== undefined ? riskLevelId : null,
       status: status ?? existingAsset.status,
       companyId: activeCompany.id,
       updatedBy: userId,
@@ -155,7 +157,7 @@ export const updateIntangibleAsset = async (req: AuthRequest, res: Response) => 
       resourceName: name || existingAsset.name,
       details: `Updated intangible asset "${id}"`,
       oldValues: existingAsset,
-      newValues: { name, description, remarks, type, status },
+      newValues: { name, description, remarks, type, riskLevelId, status },
       ipAddress: req.ip || 'unknown',
       userAgent: req.get('User-Agent') || 'unknown',
       companyId: activeCompany.id,
@@ -186,6 +188,10 @@ export const updateIntangibleAsset = async (req: AuthRequest, res: Response) => 
                 code: name ?? a.code,
                 description: description !== undefined ? description : a.description,
                 type: type ?? a.type,
+                risk_level:
+                  riskLevelId !== undefined && riskLevelId !== null
+                    ? { id: riskLevelId }
+                    : a.risk_level ?? null,
               };
             }
             return a;

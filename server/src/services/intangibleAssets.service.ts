@@ -22,6 +22,7 @@ export async function createIntangibleAsset(data: {
   description: string | null;
   remarks: string | null;
   type: string;
+  riskLevelId?: string | null;
   status: string;
   companyId: string;
   createdBy: string;
@@ -32,6 +33,7 @@ export async function createIntangibleAsset(data: {
     description: data.description,
     remarks: data.remarks,
     type: data.type,
+    riskLevelId: data.riskLevelId ?? null,
     status: data.status,
     companyId: data.companyId,
     createdBy: data.createdBy,
@@ -45,6 +47,7 @@ export async function createIntangibleAssetsBulk(
     description: string | null;
     remarks: string | null;
     type: string;
+    riskLevelId?: string | null;
     status: string;
   }>,
   companyId: string,
@@ -64,6 +67,7 @@ export async function updateIntangibleAsset(
     description?: string | null;
     remarks?: string | null;
     type?: string;
+    riskLevelId?: string | null;
     status?: string;
     companyId: string;
     updatedBy: string;

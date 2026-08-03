@@ -2,6 +2,7 @@ import { Router } from 'express';
 import {
   createAssetBuilderHandler,
   getAssetBuildersHandler,
+  matchAssetBuildersHandler,
   updateAssetBuilderHandler,
   deleteAssetBuilderHandler,
   getAssetBuilderFormsHandler,
@@ -44,6 +45,28 @@ router.get('/', getAssetBuildersHandler);
  *       401: { description: Unauthorized }
  */
 router.post('/', createAssetBuilderHandler);
+
+/**
+ * @swagger
+ * /api/asset-builders/match:
+ *   post:
+ *     tags: [Asset Builders]
+ *     summary: Match builders whose component assets include the given asset codes
+ *     requestBody:
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             properties:
+ *               assetCodes:
+ *                 type: array
+ *                 items: { type: string }
+ *     responses:
+ *       200: { description: List of matching asset builders }
+ *       400: { description: Invalid assetCodes }
+ *       401: { description: Unauthorized }
+ */
+router.post('/match', matchAssetBuildersHandler);
 
 /**
  * @swagger

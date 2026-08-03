@@ -78,6 +78,11 @@ import {
   sortAssetsByLast5Digits,
 } from '@/lib/pdfGenerator/shared';
 import type { AccountabilityForm } from './accountabilityFormTypes';
+import type { AssetBuilderRecord } from '@/utils/builderScan';
+import {
+  buildBuilderGroupedAssetRows,
+  type AccountabilityAssetRow,
+} from './builderAssetGrouping';
 
 export type { AccountabilityForm } from './accountabilityFormTypes';
 
@@ -370,7 +375,12 @@ const enrichIntangibleAssetsWithDescriptions = async (
   form: AccountabilityForm
 ): Promise<any[]> => {
   if (assets.length === 0) return assets;
-  if (assets.every(asset => getIntangibleAssetDescription(asset))) {
+  if (
+    assets.every(
+      asset =>
+        getIntangibleAssetDescription(asset) && asset.risk_level?.id
+    )
+  ) {
     return assets;
   }
 
@@ -390,6 +400,7 @@ const enrichIntangibleAssetsWithDescriptions = async (
         description: fromApi.description ?? asset.description ?? '',
         name: asset.name || fromApi.name,
         type: asset.type || fromApi.type,
+        risk_level: fromApi.risk_level ?? asset.risk_level ?? null,
       };
     });
   } catch {
@@ -401,7 +412,8 @@ const enrichIntangibleAssetsWithDescriptions = async (
 export const generateAccountabilityFormPDF = async (
   form: AccountabilityForm,
   currentUser?: any,
-  intangibleAssets?: any[]
+  intangibleAssets?: any[],
+  assetBuilders?: AssetBuilderRecord[]
 ): Promise<Blob> => {
   const assignedIntangibleAssets = await enrichIntangibleAssetsWithDescriptions(
     intangibleAssets && intangibleAssets.length > 0
@@ -409,6 +421,38 @@ export const generateAccountabilityFormPDF = async (
       : fetchAssignedIntangibleAssetsForForm(form),
     form
   );
+
+  // Resolve asset builders (used to group builder parent/child assets in the
+  // asset table). Builders are matched by the form's asset codes — NOT the
+  // viewer's company scope — because a form can hold assets from a company
+  // different from the viewer's active company.
+  let builders = assetBuilders;
+  if (!builders || builders.length === 0) {
+    try {
+      const assetCodes = (form.assets ?? [])
+        .map(a => a.code)
+        .filter((code): code is string => Boolean(code));
+      const response = await api.post('/asset-builders/match', { assetCodes });
+      builders = Array.isArray(response.builders) ? response.builders : [];
+      logger.info(
+        `[AccountabilityForm] builders resolved: ${
+          response.builders ? response.builders.length : 0
+        } found`
+      );
+    } catch (error) {
+      logger.warn('Failed to fetch asset builders for accountability form');
+      builders = [];
+    }
+  }
+  const firstBuilderItems = builders?.[0]?.items;
+  if (firstBuilderItems && firstBuilderItems.length > 0) {
+    logger.info(
+      `[AccountabilityForm] form ${form.formNumber} builders: ${firstBuilderItems.length}, sample codes: ${firstBuilderItems
+        .slice(0, 3)
+        .map((i: any) => i.asset_code)
+        .join(', ')}`
+    );
+  }
 
   const [{ jsPDF: JsPDFConstructor }, autoTableModule] = await Promise.all([
     import('jspdf'),
@@ -681,31 +725,113 @@ I agree that if any of the items are damaged or lost due to my negligence, I sha
     5: { cellWidth: 27.9 }, // Condition
   };
 
-  // IT Asset Details - font size 12 bold
-  if (itAssets.length > 0) {
-    doc.setFontSize(12);
-    doc.setFont('helvetica', 'bold');
-    doc.text('IT Asset Details', 20, y);
-
-    // Process IT assets in chunks of 15 rows per page
+  // Render a scope's asset table with builder grouping. Builder groups start
+  // with a full-width separator row showing the builder name (like the asset
+  // list export), with the parent asset first and children below. Rows are
+  // chunked to keep up to 15 asset rows per page without splitting a group.
+  const renderScopeAssetTable = (
+    scopeAssets: AccountabilityForm['assets'][number][],
+    startY: number
+  ): number => {
+    const rows = buildBuilderGroupedAssetRows(scopeAssets, builders);
+    const separators = rows.filter(r => r.kind === 'separator').length;
+    logger.info(
+      `[AccountabilityForm] grouping: scopeAssets=${scopeAssets.length}, builders=${
+        builders?.length ?? 0
+      }, totalRows=${rows.length}, separatorRows=${separators}`
+    );
+    logger.info(
+      `[AccountabilityForm] form asset codes: ${scopeAssets
+        .map(a => a.code)
+        .join(', ')}`
+    );
+    const matchedCounts = (builders ?? [])
+      .map(b => {
+        const matched = b.items?.filter(item =>
+          scopeAssets.some(a => a.code === item.asset_code)
+        ).length;
+        return matched ? `${b.name}: ${matched}` : null;
+      })
+      .filter(Boolean)
+      .join(' | ');
+    if (matchedCounts) {
+      logger.info(`[AccountabilityForm] builder matches: ${matchedCounts}`);
+    } else {
+      logger.info(
+        `[AccountabilityForm] NO builder matched any form asset (total builder items across all builders: ${
+          (builders ?? []).reduce(
+            (n, b) => n + (b.items?.length ?? 0),
+            0
+          )
+        })`
+      );
+    }
     const assetsPerPage = 15;
-    let currentY = y + 5;
-    let remainingAssets = [...itAssets];
+    const pageHeight = 330.2; // 8.5 x 13 inches in mm
+    const bottomMargin = 30; // Leave some margin at bottom
 
-    while (remainingAssets.length > 0) {
-      const isFirstBatch = remainingAssets.length === itAssets.length;
-      const currentBatch = remainingAssets.slice(0, assetsPerPage);
-      remainingAssets = remainingAssets.slice(assetsPerPage);
+    const batches: AccountabilityAssetRow[][] = [];
+    let currentBatch: AccountabilityAssetRow[] = [];
+    let assetCountInBatch = 0;
 
-      // Create rows for current batch
-      const itAssetRows = currentBatch.map(asset => [
-        asset.name,
-        asset.brand || '',
-        asset.modelNo || '',
-        asset.serialNo,
-        asset.code,
-        'Good',
-      ]);
+    for (const row of rows) {
+      if (row.kind === 'separator' && assetCountInBatch > 0) {
+        batches.push(currentBatch);
+        currentBatch = [];
+        assetCountInBatch = 0;
+      } else if (row.kind === 'asset' && assetCountInBatch >= assetsPerPage) {
+        batches.push(currentBatch);
+        currentBatch = [];
+        assetCountInBatch = 0;
+      }
+
+      currentBatch.push(row);
+      if (row.kind === 'asset') {
+        assetCountInBatch += 1;
+      }
+    }
+    if (currentBatch.length > 0) {
+      batches.push(currentBatch);
+    }
+
+    let currentY = startY;
+    batches.forEach((batch, index) => {
+      const isFirstBatch = index === 0;
+
+      // If there are more batches and we're approaching the bottom of the page, add a new page
+      if (!isFirstBatch && currentY + 50 > pageHeight - bottomMargin) {
+        doc.addPage();
+        const newPageNum = doc.getNumberOfPages();
+        if (!continuationHeaderDrawnPages.has(newPageNum)) {
+          drawContinuationHeader();
+          continuationHeaderDrawnPages.add(newPageNum);
+        }
+        currentY = 45;
+      }
+
+      const bodyRows = batch.map(row =>
+        row.kind === 'separator'
+          ? [
+              {
+                content: row.name,
+                colSpan: assetTableHead.length,
+                styles: {
+                  fillColor: headerFillColor,
+                  textColor: headerTextColor,
+                  fontStyle: 'bold',
+                  halign: 'center',
+                },
+              },
+            ]
+          : [
+              row.asset.name,
+              row.asset.brand || '',
+              row.asset.modelNo || '',
+              row.asset.serialNo,
+              row.asset.code,
+              'Good',
+            ]
+      );
 
       // Show table header on first batch or when batch starts at top of page (one header per page)
       const showTableHead = isFirstBatch || currentY <= 80;
@@ -715,7 +841,7 @@ I agree that if any of the items are damaged or lost due to my negligence, I sha
         tableWidth,
         margin: { ...tableMargin, top: 45 },
         head: showTableHead ? [assetTableHead] : [],
-        body: itAssetRows,
+        body: bodyRows as any[],
         theme: 'grid',
         styles: {
           fontSize: 12,
@@ -738,25 +864,18 @@ I agree that if any of the items are damaged or lost due to my negligence, I sha
       });
 
       currentY = (doc as any).lastAutoTable.finalY + 1;
+    });
 
-      // If there are more assets and we're approaching the bottom of the page, add a new page
-      if (remainingAssets.length > 0) {
-        const pageHeight = 330.2; // 8.5 x 13 inches in mm
-        const bottomMargin = 30; // Leave some margin at bottom
+    return currentY;
+  };
 
-        if (currentY + 50 > pageHeight - bottomMargin) {
-          doc.addPage();
-          const newPageNum = doc.getNumberOfPages();
-          if (!continuationHeaderDrawnPages.has(newPageNum)) {
-            drawContinuationHeader();
-            continuationHeaderDrawnPages.add(newPageNum);
-          }
-          currentY = 45;
-        }
-      }
-    }
+  // IT Asset Details - font size 12 bold
+  if (itAssets.length > 0) {
+    doc.setFontSize(12);
+    doc.setFont('helvetica', 'bold');
+    doc.text('IT Asset Details', 20, y);
 
-    y = currentY;
+    y = renderScopeAssetTable(itAssets, y + 5);
   }
 
   // Intangible Assets - font size 12 bold
@@ -767,17 +886,19 @@ I agree that if any of the items are damaged or lost due to my negligence, I sha
     doc.text('Intangible Assets', 20, y);
 
     // Intangible asset table columns
-    const intangibleTableHead = ['Asset Name', 'Description', 'Type'];
+    const intangibleTableHead = ['Asset Name', 'Description', 'Type', 'Risk Level'];
     const intangibleTableColumnStyles = {
-      0: { cellWidth: 80 },
-      1: { cellWidth: 85.9 },
+      0: { cellWidth: 70 },
+      1: { cellWidth: 70.9 },
       2: { cellWidth: 30 },
+      3: { cellWidth: 25 },
     };
 
     const intangibleRows = itIntangibleAssets.map((asset: any) => [
       asset.name,
       getIntangibleAssetDescription(asset),
       asset.type,
+      asset.risk_level?.name || '—',
     ]);
 
     autoTable(doc, {
@@ -816,76 +937,7 @@ I agree that if any of the items are damaged or lost due to my negligence, I sha
     doc.setFont('helvetica', 'bold');
     doc.text('Admin Asset Details', 20, y);
 
-    // Process Admin assets in chunks of 15 rows per page
-    const assetsPerPage = 15;
-    let currentY = y + 5;
-    let remainingAssets = [...adminAssets];
-
-    while (remainingAssets.length > 0) {
-      const isFirstBatch = remainingAssets.length === adminAssets.length;
-      const currentBatch = remainingAssets.slice(0, assetsPerPage);
-      remainingAssets = remainingAssets.slice(assetsPerPage);
-
-      // Create rows for current batch
-      const adminAssetRows = currentBatch.map(asset => [
-        asset.name,
-        asset.brand || '',
-        asset.modelNo || '',
-        asset.serialNo,
-        asset.code,
-        'Good',
-      ]);
-
-      // Show table header on first batch or when batch starts at top of page (one header per page)
-      const showTableHead = isFirstBatch || currentY <= 80;
-
-      autoTable(doc, {
-        startY: currentY,
-        tableWidth,
-        margin: { ...tableMargin, top: 45 },
-        head: showTableHead ? [assetTableHead] : [],
-        body: adminAssetRows,
-        theme: 'grid',
-        styles: {
-          fontSize: 12,
-          cellPadding: 1,
-          lineWidth: 0.1,
-          lineColor: [0, 0, 0],
-        },
-        headStyles: { fillColor: headerFillColor, textColor: headerTextColor },
-        columnStyles: assetTableColumnStyles,
-        didDrawPage: data => {
-          if (
-            data.pageNumber >= 2 &&
-            !continuationHeaderDrawnPages.has(data.pageNumber)
-          ) {
-            doc.setPage(data.pageNumber);
-            drawContinuationHeader();
-            continuationHeaderDrawnPages.add(data.pageNumber);
-          }
-        },
-      });
-
-      currentY = (doc as any).lastAutoTable.finalY + 1;
-
-      // If there are more assets and we're approaching the bottom of the page, add a new page
-      if (remainingAssets.length > 0) {
-        const pageHeight = 330.2; // 8.5 x 13 inches in mm
-        const bottomMargin = 30; // Leave some margin at bottom
-
-        if (currentY + 50 > pageHeight - bottomMargin) {
-          doc.addPage();
-          const newPageNum = doc.getNumberOfPages();
-          if (!continuationHeaderDrawnPages.has(newPageNum)) {
-            drawContinuationHeader();
-            continuationHeaderDrawnPages.add(newPageNum);
-          }
-          currentY = 45;
-        }
-      }
-    }
-
-    y = currentY;
+    y = renderScopeAssetTable(adminAssets, y + 5);
   }
 
   // Intangible Assets - font size 12 bold
@@ -895,17 +947,19 @@ I agree that if any of the items are damaged or lost due to my negligence, I sha
     doc.setFont('helvetica', 'bold');
     doc.text('Intangible Assets', 20, y);
 
-    const intangibleTableHead = ['Asset Name', 'Description', 'Type'];
+    const intangibleTableHead = ['Asset Name', 'Description', 'Type', 'Risk Level'];
     const intangibleTableColumnStyles = {
-      0: { cellWidth: 80 },
-      1: { cellWidth: 85.9 },
+      0: { cellWidth: 70 },
+      1: { cellWidth: 70.9 },
       2: { cellWidth: 30 },
+      3: { cellWidth: 25 },
     };
 
     const intangibleRows = adminIntangibleAssets.map((asset: any) => [
       asset.name,
       getIntangibleAssetDescription(asset),
       asset.type,
+      asset.risk_level?.name || '—',
     ]);
 
     autoTable(doc, {

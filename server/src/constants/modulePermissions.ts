@@ -42,6 +42,8 @@ export const ALL_MODULE_NAMES = [
   'Asset Types',
   'Asset Brands',
   'Suppliers',
+  'Intangible Asset Types',
+  'Risk Levels',
   'Departments',
   'Locations',
   'Roles',

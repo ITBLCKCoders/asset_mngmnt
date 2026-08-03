@@ -71,11 +71,14 @@ describe('intangibleAssets.controller', () => {
   describe('createIntangibleAsset', () => {
     it('creates intangible asset successfully', async () => {
       getScopedActiveCompany.mockResolvedValue({ id: 'company-1' });
-      req.body = { name: 'Patent', type: 'IP', status: 'available' };
+      req.body = { name: 'Patent', type: 'IP', riskLevelId: 'rl-1', status: 'available' };
       intangibleAssetsService.createIntangibleAsset.mockResolvedValue('ia-1');
       await intangibleAssetsController.createIntangibleAsset(req, res);
       expect(res._status).toBe(201);
       expect(res._json).toEqual({ success: true, id: 'ia-1' });
+      expect(intangibleAssetsService.createIntangibleAsset).toHaveBeenCalledWith(
+        expect.objectContaining({ riskLevelId: 'rl-1', type: 'IP' })
+      );
     });
 
     it('returns 400 when no active company', async () => {
@@ -89,10 +92,14 @@ describe('intangibleAssets.controller', () => {
     it('updates intangible asset successfully', async () => {
       getScopedActiveCompany.mockResolvedValue({ id: 'company-1' });
       req.params = { id: 'ia-1' };
-      req.body = { name: 'Updated Patent', type: 'IP', status: 'available' };
+      req.body = { name: 'Updated Patent', type: 'IP', riskLevelId: 'rl-2', status: 'available' };
       intangibleAssetsService.getIntangibleAssetById.mockResolvedValue({ id: 'ia-1', name: 'Patent', status: 'available' });
       await intangibleAssetsController.updateIntangibleAsset(req, res);
       expect(res._json).toEqual({ success: true });
+      expect(intangibleAssetsService.updateIntangibleAsset).toHaveBeenCalledWith(
+        'ia-1',
+        expect.objectContaining({ riskLevelId: 'rl-2', type: 'IP' })
+      );
     });
 
     it('returns 404 when asset not found', async () => {

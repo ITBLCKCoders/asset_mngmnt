@@ -49,7 +49,8 @@ router.get('/', getAllIntangibleAssets);
  *               name: { type: string }
  *               description: { type: string, nullable: true }
  *               remarks: { type: string, nullable: true }
- *               type: { type: string, enum: ['IT scope', 'Admin scope'] }
+ *               type: { type: string }
+ *               riskLevelId: { type: string, nullable: true }
  *               status: { type: string, enum: ['available', 'assigned'] }
  *     responses:
  *       201: { description: Intangible asset created }
@@ -81,7 +82,8 @@ router.post('/', validateDto(CreateIntangibleAssetDtoSchema), createIntangibleAs
  *                     name: { type: string }
  *                     description: { type: string, nullable: true }
  *                     remarks: { type: string, nullable: true }
- *                     type: { type: string, enum: ['IT scope', 'Admin scope'] }
+ *                     type: { type: string }
+ *                     riskLevelId: { type: string, nullable: true }
  *                     status: { type: string, enum: ['available', 'assigned'] }
  *     responses:
  *       201: { description: Intangible assets created }
@@ -114,7 +116,8 @@ router.post(
  *               name: { type: string }
  *               description: { type: string, nullable: true }
  *               remarks: { type: string, nullable: true }
- *               type: { type: string, enum: ['IT scope', 'Admin scope'] }
+ *               type: { type: string }
+ *               riskLevelId: { type: string, nullable: true }
  *               status: { type: string, enum: ['available', 'assigned'] }
  *     responses:
  *       200: { description: Intangible asset updated }

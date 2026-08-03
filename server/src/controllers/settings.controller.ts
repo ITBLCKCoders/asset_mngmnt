@@ -324,6 +324,38 @@ export async function copyMainCompanyAssetSettings(
         ]
       );
 
+      // Copy intangible asset types
+      await connection.execute(
+        `
+        INSERT INTO intangible_asset_types (name, prefix, company_id, created_by, updated_by)
+        SELECT name, prefix, ?, ?, ?
+        FROM intangible_asset_types
+        WHERE company_id = ? AND deleted_at IS NULL
+        ON DUPLICATE KEY UPDATE
+          name = VALUES(name),
+          prefix = VALUES(prefix),
+          updated_by = VALUES(updated_by),
+          updated_at = NOW()
+      `,
+        [currentCompany.id, userId, userId, mainCompany.id]
+      );
+
+      // Copy risk levels
+      await connection.execute(
+        `
+        INSERT INTO risk_levels (name, color, company_id, created_by, updated_by)
+        SELECT name, color, ?, ?, ?
+        FROM risk_levels
+        WHERE company_id = ? AND deleted_at IS NULL
+        ON DUPLICATE KEY UPDATE
+          name = VALUES(name),
+          color = VALUES(color),
+          updated_by = VALUES(updated_by),
+          updated_at = NOW()
+      `,
+        [currentCompany.id, userId, userId, mainCompany.id]
+      );
+
       // Copy asset ID format settings
       await connection.execute(
         `

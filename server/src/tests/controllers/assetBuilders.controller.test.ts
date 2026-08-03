@@ -107,6 +107,70 @@ describe('assetBuilders.controller', () => {
     });
   });
 
+  describe('matchAssetBuildersHandler', () => {
+    it('returns matched builders regardless of viewer company', async () => {
+      req.body = { assetCodes: ['CMTH-LAP-0126-00057', 'CMTH-LAP-0126-00058'] };
+      pool.execute.mockImplementation(async (sql: string) => {
+        if (sql.includes('FROM asset_builder_items abi')) {
+          return [[{ builderID: '9', name: 'CMTH Laptop Builder', status: 'In Progress', description: 'd' }], []];
+        }
+        if (sql.includes('CALL sp_get_asset_builder_items')) {
+          return [[[{
+            itemID: 1, asset_id: 1, asset_code: 'CMTH-LAP-0126-00057', asset_name: 'Laptop',
+            category_name: 'Electronics', type_name: 'Laptop', is_parent: 1,
+          }]], []];
+        }
+        return [[], []];
+      });
+      await assetBuildersController.matchAssetBuildersHandler(req, res);
+      expect(res._json.builders).toHaveLength(1);
+      expect(res._json.builders[0].name).toBe('CMTH Laptop Builder');
+      expect(res._json.builders[0].items[0].asset_code).toBe('CMTH-LAP-0126-00057');
+    });
+
+    it('resolves assigned_to for Assigned builders', async () => {
+      req.body = { assetCodes: ['AST-001'] };
+      pool.execute.mockImplementation(async (sql: string) => {
+        if (sql.includes('FROM asset_builder_items abi')) {
+          return [[{ builderID: '9', name: 'Builder', status: 'Assigned', description: 'd' }], []];
+        }
+        if (sql.includes('CALL sp_get_asset_builder_items')) {
+          return [[[{
+            itemID: 1, asset_id: 1, asset_code: 'AST-001', asset_name: 'Asset',
+            category_name: 'Cat', type_name: 'Type', is_parent: 0,
+          }]], []];
+        }
+        if (sql.includes('FROM asset_assignments aa')) {
+          return [[{ userID: '3', first_name: 'Jane', last_name: 'Doe' }], []];
+        }
+        return [[], []];
+      });
+      await assetBuildersController.matchAssetBuildersHandler(req, res);
+      expect(res._json.builders[0].assigned_to).toEqual({ id: '3', first_name: 'Jane', last_name: 'Doe' });
+    });
+
+    it('returns empty builders when no match', async () => {
+      req.body = { assetCodes: ['UNKNOWN-001'] };
+      pool.execute.mockResolvedValue([[], []]);
+      await assetBuildersController.matchAssetBuildersHandler(req, res);
+      expect(res._json).toEqual({ builders: [] });
+    });
+
+    it('returns 400 when assetCodes missing or empty', async () => {
+      req.body = {};
+      await assetBuildersController.matchAssetBuildersHandler(req, res);
+      expect(res._status).toBe(400);
+
+      req.body = { assetCodes: [] };
+      await assetBuildersController.matchAssetBuildersHandler(req, res);
+      expect(res._status).toBe(400);
+
+      req.body = { assetCodes: ['   '] };
+      await assetBuildersController.matchAssetBuildersHandler(req, res);
+      expect(res._status).toBe(400);
+    });
+  });
+
   describe('updateAssetBuilderHandler', () => {
     it('updates builder successfully', async () => {
       req.params = { builderId: '1' };

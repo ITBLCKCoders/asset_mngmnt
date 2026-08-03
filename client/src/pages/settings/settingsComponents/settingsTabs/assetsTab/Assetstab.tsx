@@ -17,11 +17,15 @@ import { useDepartments } from './hooks/useDepartments';
 import { useSuppliers } from './hooks/useSuppliers';
 import { useAssetTypes } from './hooks/useAssetTypes';
 import { useAssetBrands } from './hooks/useAssetBrands';
+import { useIntangibleAssetTypes } from './hooks/useIntangibleAssetTypes';
+import { useRiskLevels } from './hooks/useRiskLevels';
 import { useSmartIdFormat } from './hooks/useSmartIdFormat';
 import { AssetCategories } from './components/AssetCategories';
 import { Suppliers } from './components/Suppliers';
 import { AssetTypes } from './components/AssetTypes';
 import { AssetBrands } from './components/AssetBrands';
+import { IntangibleAssetTypes } from './components/IntangibleAssetTypes';
+import { RiskLevels } from './components/RiskLevels';
 import { SmartAssetIdFormat } from './components/SmartAssetIdFormat';
 import { Shimmer } from '@/components/ui/shimmer';
 import { useCurrentUser } from '@/hooks/useCurrentUser';
@@ -43,6 +47,11 @@ export function AssetsTab({ isActive }: { isActive?: boolean }) {
   const { suppliers, fetchSuppliers } = useSuppliers();
   const { types, fetchTypes } = useAssetTypes();
   const { brands, fetchBrands } = useAssetBrands();
+  const {
+    types: intangibleAssetTypes,
+    fetchTypes: fetchIntangibleAssetTypes,
+  } = useIntangibleAssetTypes();
+  const { riskLevels, fetchRiskLevels } = useRiskLevels();
   const smartIdFormatState = useSmartIdFormat(activeCompany);
   const { fetchAssetIdFormatSettings } = smartIdFormatState;
 
@@ -100,6 +109,14 @@ export function AssetsTab({ isActive }: { isActive?: boolean }) {
 
   useEffect(() => {
     if (isActive) fetchBrands();
+  }, [isActive, activeCompany]);
+
+  useEffect(() => {
+    if (isActive) fetchIntangibleAssetTypes();
+  }, [isActive, activeCompany]);
+
+  useEffect(() => {
+    if (isActive) fetchRiskLevels();
   }, [isActive, activeCompany]);
 
   useEffect(() => {
@@ -361,7 +378,9 @@ export function AssetsTab({ isActive }: { isActive?: boolean }) {
         filteredCategories.length === 0 &&
         suppliers.length === 0 &&
         filteredTypes.length === 0 &&
-        filteredBrands.length === 0 && (
+        filteredBrands.length === 0 &&
+        intangibleAssetTypes.length === 0 &&
+        riskLevels.length === 0 && (
           <div className="mb-6">
             <Button
               onClick={copyMainCompanySettings}
@@ -385,7 +404,7 @@ export function AssetsTab({ isActive }: { isActive?: boolean }) {
         )}
 
       {/* All Tables Grid — equal row heights on large screens */}
-      <div className="grid grid-cols-1 gap-8 mb-10 lg:grid-cols-2 lg:min-h-[36rem] lg:[grid-template-rows:repeat(2,minmax(0,1fr))]">
+      <div className="grid grid-cols-1 gap-8 mb-10 lg:grid-cols-2 lg:min-h-[54rem] lg:[grid-template-rows:repeat(3,minmax(0,1fr))]">
         <AssetCategories
           onAfterSave={fetchCategories}
           categories={filteredCategories}
@@ -396,6 +415,8 @@ export function AssetsTab({ isActive }: { isActive?: boolean }) {
         />
         <AssetTypes categories={filteredCategories} onAfterSave={fetchTypes} />
         <AssetBrands types={filteredTypes} />
+        <IntangibleAssetTypes onAfterSave={fetchIntangibleAssetTypes} />
+        <RiskLevels onAfterSave={fetchRiskLevels} />
       </div>
 
       <div className="mb-12">

@@ -36,6 +36,24 @@ export interface AssetBrand {
   prefix: string;
 }
 
+export interface IntangibleAssetType {
+  id: number;
+  name: string;
+  prefix?: string;
+  department_id?: string;
+  department?: {
+    id: string;
+    name: string;
+    code: string;
+  } | null;
+}
+
+export interface RiskLevel {
+  id: number;
+  name: string;
+  color?: string;
+}
+
 export interface SmartIdFormat {
   company: 'code' | 'prefix' | 'none';
   category: 'prefix' | 'code' | 'none';
@@ -60,4 +78,5 @@ export interface FormData {
   contact?: string;
   email?: string;
   departmentId?: string;
+  color?: string;
 }

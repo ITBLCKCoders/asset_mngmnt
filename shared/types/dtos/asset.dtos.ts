@@ -629,6 +629,11 @@ export interface IntangibleAssetListItemDto {
   remarks: string | null;
   type: string;
   status: string;
+  risk_level?: {
+    id: string;
+    name: string;
+    color?: string;
+  } | null;
   created_at: string;
   created_by: string | null;
   created_by_name: string | null;

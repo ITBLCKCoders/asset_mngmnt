@@ -27,6 +27,7 @@ interface IntangibleAssetRow {
   description: string;
   remarks: string;
   type: string;
+  riskLevelId: string;
 }
 
 interface IntangibleAsset {
@@ -35,6 +36,8 @@ interface IntangibleAsset {
   description: string | null;
   remarks: string | null;
   type: string;
+  risk_level?: { id: string; name: string; color?: string } | null;
+  risk_level_id?: string | null;
   status: string;
   created_at: string;
   created_by: string | null;
@@ -50,6 +53,25 @@ interface IntangibleAssetDialogProps {
   onSuccess?: () => void;
 }
 
+interface IntangibleTypeOption {
+  id: string;
+  name: string;
+}
+
+interface RiskLevelOption {
+  id: string;
+  name: string;
+  color?: string;
+}
+
+const emptyRow = (): IntangibleAssetRow => ({
+  name: '',
+  description: '',
+  remarks: '',
+  type: '',
+  riskLevelId: '',
+});
+
 export default function IntangibleAssetDialog({
   isOpen,
   setIsOpen,
@@ -57,15 +79,10 @@ export default function IntangibleAssetDialog({
   editingAsset,
   onSuccess,
 }: IntangibleAssetDialogProps) {
-  const [rows, setRows] = useState<IntangibleAssetRow[]>([
-    {
-      name: '',
-      description: '',
-      remarks: '',
-      type: '',
-    },
-  ]);
+  const [rows, setRows] = useState<IntangibleAssetRow[]>([emptyRow()]);
   const [saving, setSaving] = useState(false);
+  const [intangibleTypes, setIntangibleTypes] = useState<IntangibleTypeOption[]>([]);
+  const [riskLevels, setRiskLevels] = useState<RiskLevelOption[]>([]);
 
   useEffect(() => {
     if (mode === 'edit' && editingAsset) {
@@ -75,30 +92,43 @@ export default function IntangibleAssetDialog({
           description: editingAsset.description || '',
           remarks: editingAsset.remarks || '',
           type: editingAsset.type,
+          riskLevelId:
+            editingAsset.risk_level?.id ?? editingAsset.risk_level_id ?? '',
         },
       ]);
     } else {
-      setRows([
-        {
-          name: '',
-          description: '',
-          remarks: '',
-          type: '',
-        },
-      ]);
+      setRows([emptyRow()]);
     }
   }, [mode, editingAsset, isOpen]);
 
+  useEffect(() => {
+    if (!isOpen) return;
+    let cancelled = false;
+
+    const loadOptions = async () => {
+      try {
+        const [typeData, riskData] = await Promise.all([
+          api.get<any[]>('/intangible-asset-types'),
+          api.get<any[]>('/risk-levels'),
+        ]);
+        if (cancelled) return;
+        setIntangibleTypes((typeData ?? []).map((t: any) => ({ id: t.id, name: t.name })));
+        setRiskLevels((riskData ?? []).map((r: any) => ({ id: r.id, name: r.name, color: r.color })));
+      } catch (error: any) {
+        if (cancelled) return;
+        console.error('Failed to load type/risk level options:', error);
+        toast.error('Failed to load type and risk level options');
+      }
+    };
+
+    loadOptions();
+    return () => {
+      cancelled = true;
+    };
+  }, [isOpen]);
+
   const addRow = () => {
-    setRows([
-      ...rows,
-      {
-        name: '',
-        description: '',
-        remarks: '',
-        type: '',
-      },
-    ]);
+    setRows([...rows, emptyRow()]);
   };
 
   const removeRow = (index: number) => {
@@ -126,22 +156,25 @@ export default function IntangibleAssetDialog({
 
       if (mode === 'edit' && editingAsset) {
         // Update single asset
-        await api.patch(`/intangible-assets/${editingAsset.id}`, { ...rows[0], status: editingAsset.status });
+        const { riskLevelId, ...rest } = rows[0];
+        await api.patch(`/intangible-assets/${editingAsset.id}`, {
+          ...rest,
+          riskLevelId: riskLevelId || null,
+          status: editingAsset.status,
+        });
         toast.success('Intangible asset updated successfully');
       } else {
         // Create bulk assets
-        await api.post('/intangible-assets/bulk', { assets: rows });
+        await api.post('/intangible-assets/bulk', {
+          assets: rows.map(row => ({
+            ...row,
+            riskLevelId: row.riskLevelId || null,
+          })),
+        });
         toast.success(`${rows.length} intangible asset(s) created successfully`);
       }
 
-      setRows([
-        {
-          name: '',
-          description: '',
-          remarks: '',
-          type: '',
-        },
-      ]);
+      setRows([emptyRow()]);
       setIsOpen(false);
       onSuccess?.();
     } catch (error: any) {
@@ -153,14 +186,7 @@ export default function IntangibleAssetDialog({
   };
 
   const handleClose = () => {
-    setRows([
-      {
-        name: '',
-        description: '',
-        remarks: '',
-        type: '',
-      },
-    ]);
+    setRows([emptyRow()]);
     setIsOpen(false);
   };
 
@@ -208,9 +234,51 @@ export default function IntangibleAssetDialog({
                             <SelectValue placeholder="Select type" />
                           </SelectTrigger>
                           <SelectContent>
-                            <SelectItem value="IT scope">IT scope</SelectItem>
-                            <SelectItem value="Admin scope">Admin scope</SelectItem>
-                            <SelectItem value="HR scope">HR scope</SelectItem>
+                            {intangibleTypes.length === 0 && (
+                              <div className="px-3 py-2 text-sm text-gray-500">
+                                No types available
+                              </div>
+                            )}
+                            {intangibleTypes.map(t => (
+                              <SelectItem key={t.id} value={t.name}>
+                                {t.name}
+                              </SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
+                      </div>
+                    </div>
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                      <div className="space-y-2">
+                        <Label htmlFor={`risk-level-${index}`} className="text-base font-medium text-gray-700">
+                          Risk Level
+                        </Label>
+                        <Select
+                          value={row.riskLevelId}
+                          onValueChange={value => updateRow(index, 'riskLevelId', value)}
+                        >
+                          <SelectTrigger id={`risk-level-${index}`} className="text-base">
+                            <SelectValue placeholder="Select risk level (optional)" />
+                          </SelectTrigger>
+                          <SelectContent>
+                            {riskLevels.length === 0 && (
+                              <div className="px-3 py-2 text-sm text-gray-500">
+                                No risk levels available
+                              </div>
+                            )}
+                            {riskLevels.map(rl => (
+                              <SelectItem key={rl.id} value={rl.id}>
+                                <span className="flex items-center gap-2">
+                                  {rl.color && (
+                                    <span
+                                      className="inline-block h-3 w-3 rounded-full"
+                                      style={{ backgroundColor: rl.color }}
+                                    />
+                                  )}
+                                  {rl.name}
+                                </span>
+                              </SelectItem>
+                            ))}
                           </SelectContent>
                         </Select>
                       </div>
