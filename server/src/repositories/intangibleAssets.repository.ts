@@ -55,6 +55,7 @@ export async function getAllIntangibleAssets(companyId: string): Promise<any[]> 
       created_by_name: (asset.created_by_name || '').trim() || null,
       updated_by_name: (asset.updated_by_name || '').trim() || null,
       risk_level: parseRiskLevel(asset.risk_level),
+      type_department: parseTypeDepartment(asset.type_department),
     };
   });
 }
@@ -62,6 +63,20 @@ export async function getAllIntangibleAssets(companyId: string): Promise<any[]> 
 function parseRiskLevel(raw: unknown): { id: string; name: string; color?: string } | null {
   if (!raw) return null;
   if (typeof raw === 'object') return raw as { id: string; name: string; color?: string };
+  if (typeof raw === 'string') {
+    try {
+      const parsed = JSON.parse(raw);
+      return parsed && typeof parsed === 'object' ? parsed : null;
+    } catch {
+      return null;
+    }
+  }
+  return null;
+}
+
+function parseTypeDepartment(raw: unknown): { id: string; name: string; code?: string } | null {
+  if (!raw) return null;
+  if (typeof raw === 'object') return raw as { id: string; name: string; code?: string };
   if (typeof raw === 'string') {
     try {
       const parsed = JSON.parse(raw);
@@ -139,6 +154,9 @@ export async function updateIntangibleAsset(
     status?: string;
     companyId: string;
     updatedBy: string;
+    assignedTo?: string | null;
+    assignedDate?: string | null;
+    assignmentId?: string | null;
   }
 ): Promise<any> {
   const [result] = (await pool.query(

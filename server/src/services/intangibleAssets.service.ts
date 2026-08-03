@@ -71,6 +71,9 @@ export async function updateIntangibleAsset(
     status?: string;
     companyId: string;
     updatedBy: string;
+    assignedTo?: string | null;
+    assignedDate?: string | null;
+    assignmentId?: string | null;
   }
 ) {
   return intangibleAssetsRepository.updateIntangibleAsset(id, data);

@@ -436,8 +436,18 @@ export const batchAssignIntangibleAssets = async (req: AuthRequest, res: Respons
           : [];
 
         const [intangibleRows] = await pool.execute(
-          `SELECT id, name, description, type FROM intangible_assets
-           WHERE id IN (${assetIds.map(() => '?').join(',')}) AND company_id = ?`,
+          `SELECT ia.id, ia.name, ia.description, ia.type,
+                  td.departmentID AS type_department_id,
+                  td.name AS type_department_name
+           FROM intangible_assets ia
+           LEFT JOIN intangible_asset_types iat
+             ON ia.type = iat.name
+             AND iat.company_id = ia.company_id
+             AND iat.deleted_at IS NULL
+           LEFT JOIN asset_mngmnt_departments td
+             ON iat.department_id = td.departmentID
+             AND td.deleted_at IS NULL
+           WHERE ia.id IN (${assetIds.map(() => '?').join(',')}) AND ia.company_id = ?`,
           [...assetIds, activeCompany.id]
         );
 
@@ -460,7 +470,7 @@ export const batchAssignIntangibleAssets = async (req: AuthRequest, res: Respons
             description: ia.description || '',
             category: 'Intangible',
             type: ia.type || 'Intangible',
-            department: deptName,
+            department: ia.type_department_name || deptName,
             serialNo: '',
             modelNo: '',
             brand: '',
@@ -482,8 +492,22 @@ export const batchAssignIntangibleAssets = async (req: AuthRequest, res: Respons
             const companyInfo = await formRepo.getCompanyCodePrefix(activeCompany.id);
             const deptInfo = await formRepo.getDepartmentCodePrefix(departmentId);
 
-            const isIT = deptName.toLowerCase().includes('it');
-            const assetCode = isIT ? settings.it_asset_code : settings.admin_asset_code;
+            // Determine IT vs Admin from the intangible asset type's department
+            // (mirrors how tangible assets route by their category's department).
+            const typeDeptNames = (intangibleRows as any[])
+              .map((ia: any) => ia.type_department_name)
+              .filter(Boolean)
+              .map((n: string) => n.toLowerCase());
+            const isIT = typeDeptNames.some(
+              (n: string) => n.includes('it') || n.includes('information technology')
+            );
+            const isAdmin = typeDeptNames.some(
+              (n: string) => n.includes('admin') || n.includes('administration')
+            );
+            const isITAsset = isIT || (!isAdmin);
+            const assetCode = isITAsset
+              ? settings.it_asset_code
+              : settings.admin_asset_code;
 
             const parts: string[] = [];
             const companyPart = settings.company_format === 'code' ? companyInfo?.code : companyInfo?.prefix;

@@ -48,6 +48,9 @@ import {
   hasComputerTypeAssets,
 } from '@/utils/assetTypeDetection';
 import type { AssetChecklistItemData, OffboardingChecklistItemData } from '../../../../../shared/types/dtos/asset.dtos';
+import {
+  classifyDepartmentScopeByName,
+} from '@/lib/assetScope';
 
 const logger = createLogger('AssetsIssuance');
 
@@ -537,7 +540,9 @@ export default function AssetsAssignment() {
 
         const scopeGroups: Record<string, any[]> = {};
         for (const ia of selectedIntangibleAssetObjects) {
-          const group = ia.type === 'Admin scope' ? 'Admin scope' : ia.type === 'HR scope' ? 'HR scope' : 'IT scope';
+          const deptCandidate = ia.type_department?.name || ia.type || '';
+          const scopeType = classifyDepartmentScopeByName(deptCandidate);
+          const group = scopeType === 'Admin' ? 'Admin scope' : 'IT scope';
           if (!scopeGroups[group]) {
             scopeGroups[group] = [];
           }
@@ -546,7 +551,7 @@ export default function AssetsAssignment() {
 
         for (const [scope, scopeAssets] of Object.entries(scopeGroups)) {
           try {
-            const deptKeyword = scope === 'Admin scope' ? 'admin' : scope === 'HR scope' ? 'hr' : 'it';
+            const deptKeyword = scope === 'Admin scope' ? 'admin' : 'it';
             const matchDept = departments.find(d =>
               d.name?.toLowerCase().includes(deptKeyword)
             );
@@ -583,7 +588,9 @@ export default function AssetsAssignment() {
         // Group by scope type
         const scopeGroups: Record<string, any[]> = {};
         for (const ia of selectedIntangibleAssetObjects) {
-          const group = ia.type === 'Admin scope' ? 'Admin scope' : ia.type === 'HR scope' ? 'HR scope' : 'IT scope';
+          const deptCandidate = ia.type_department?.name || ia.type || '';
+          const scopeType = classifyDepartmentScopeByName(deptCandidate);
+          const group = scopeType === 'Admin' ? 'Admin scope' : 'IT scope';
           if (!scopeGroups[group]) {
             scopeGroups[group] = [];
           }
@@ -593,7 +600,7 @@ export default function AssetsAssignment() {
         // Send one batch request per scope (server creates accountability form with existing tangible assets)
         for (const [scope, scopeAssets] of Object.entries(scopeGroups)) {
           try {
-            const deptKeyword = scope === 'Admin scope' ? 'admin' : scope === 'HR scope' ? 'hr' : 'it';
+            const deptKeyword = scope === 'Admin scope' ? 'admin' : 'it';
             const matchDept = departments.find(d =>
               d.name?.toLowerCase().includes(deptKeyword)
             );
@@ -873,8 +880,21 @@ export default function AssetsAssignment() {
 
   const scopedIntangibleAssets = useMemo(() => {
     if (!showScopeTabs) return intangibleAssets;
-    const targetType = scope === 'it' ? 'IT scope' : scope === 'hr' ? 'HR scope' : 'Admin scope';
-    return intangibleAssets.filter((asset: { type?: string }) => asset.type === targetType);
+    // Classify by the department linked to the asset's type (mirrors tangible
+    // asset routing by category department). 'Other' falls back to 'it' as the
+    // most permissive scope so unclassified assets remain visible to IT.
+    const targetScope = scope === 'hr' ? 'IT' : scope === 'admin' ? 'Admin' : 'IT';
+    return intangibleAssets.filter((asset: any) => {
+      const deptCandidate =
+        asset.type_department?.name ||
+        asset.type ||
+        '';
+      const scopeType = classifyDepartmentScopeByName(deptCandidate);
+      if (scopeType === 'IT') return targetScope === 'IT';
+      if (scopeType === 'Admin') return targetScope === 'Admin';
+      // 'Other' — fall back to IT scope tab
+      return targetScope === 'IT';
+    });
   }, [intangibleAssets, showScopeTabs, scope]);
 
   const filteredIntangibleAssets = useMemo(() => {

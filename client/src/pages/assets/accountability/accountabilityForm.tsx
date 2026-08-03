@@ -583,10 +583,16 @@ export const generateAccountabilityFormPDF = async (
   );
 
   const itIntangibleAssets = assignedIntangibleAssets.filter(
-    (asset: any) => asset.type === 'IT scope' || asset.type === 'HR scope'
+    (asset: any) =>
+      classifyDepartmentScopeByName(
+        asset.type_department?.name || asset.department || asset.type || ''
+      ) === 'IT'
   );
   const adminIntangibleAssets = assignedIntangibleAssets.filter(
-    (asset: any) => asset.type === 'Admin scope'
+    (asset: any) =>
+      classifyDepartmentScopeByName(
+        asset.type_department?.name || asset.department || asset.type || ''
+      ) === 'Admin'
   );
 
   // Determine which department to show in the acknowledgment text
