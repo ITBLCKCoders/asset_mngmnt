@@ -2440,6 +2440,7 @@ export interface AssetTransferFormBatch {
   declined_at?: string | null;
   executed_at?: string | null;
   processed_by?: string | null;
+  form_department?: { id: string; name: string } | null;
   new_assigned_user_id?: string | null;
   new_assigned_user?: {
     first_name: string;

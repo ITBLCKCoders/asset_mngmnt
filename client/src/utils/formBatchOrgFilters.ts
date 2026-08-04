@@ -1,5 +1,7 @@
 /** Shared company/department filter helpers for return & transfer form batches. */
 
+import { classifyDepartmentScopeByName } from '@/lib/assetScope';
+
 type OrgRef = { id: string; name: string };
 
 type AssignmentLike = {
@@ -16,9 +18,11 @@ export type ReturnFormBatchLike = {
 };
 
 export type TransferFormBatchLike = {
+  form_department?: OrgRef | null;
   new_assigned_user?: {
     company?: OrgRef;
     user_department?: OrgRef;
+    department?: string | null;
   } | null;
   returns: Array<{ assignment?: AssignmentLike }>;
 };
@@ -170,4 +174,37 @@ export function collectDepartmentOptionsFromTransferBatches(
   return [...map.entries()]
     .map(([id, name]) => ({ id, name }))
     .sort((a, b) => a.name.localeCompare(b.name));
+}
+
+/**
+ * Best-effort asset scope for a return row based on the asset's assignment
+ * department (its category/IT vs Admin scope). Avoids the employee's department
+ * to prevent Admin-scope forms leaking into the IT filter and vice versa.
+ */
+function assetScopeOfRow(row: { assignment?: AssignmentLike }): string {
+  return classifyDepartmentScopeByName(row.assignment?.department?.name || '');
+}
+
+/** Classify a transfer batch by its assets' scope (IT/Admin). The form's category department is authoritative. */
+export function transferBatchMatchesAssetType(
+  batch: TransferFormBatchLike,
+  scope: 'IT' | 'Admin'
+): boolean {
+  const rows = batch.returns || [];
+  if (rows.some(r => assetScopeOfRow(r) === scope)) return true;
+  return (
+    classifyDepartmentScopeByName(batch.form_department?.name || '') === scope
+  );
+}
+
+/** Classify a return batch by its assets' scope (IT/Admin). The form's category department is authoritative. */
+export function returnBatchMatchesAssetType(
+  batch: ReturnFormBatchLike,
+  scope: 'IT' | 'Admin'
+): boolean {
+  const rows = batch.returns || [];
+  if (rows.some(r => assetScopeOfRow(r) === scope)) return true;
+  return (
+    classifyDepartmentScopeByName(batch.form_department?.name || '') === scope
+  );
 }

@@ -240,7 +240,7 @@ export async function updateUserHandler(req: AuthRequest, res: Response) {
       finance_approver !== undefined;
     if (hasCustodianPayload) {
       await pool.execute(
-        'CALL sp_upsert_user_custodian_settings(?, ?, ?, ?, ?, ?, ?, ?)',
+        'CALL sp_upsert_user_custodian_settings(?, ?, ?, ?, ?, ?, ?, ?, ?)',
         [
           id,
           0,
@@ -250,6 +250,7 @@ export async function updateUserHandler(req: AuthRequest, res: Response) {
           manager_approver_1 ? 1 : 0,
           manager_approver_2 ? 1 : 0,
           manager_approver_3 ? 1 : 0,
+          finance_approver ? 1 : 0,
         ]
       );
     }

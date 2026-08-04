@@ -36,8 +36,8 @@ import {
   collectCompanyOptionsFromTransferBatches,
   collectDepartmentOptionsFromTransferBatches,
   transferBatchMatchesOrgFilters,
+  transferBatchMatchesAssetType,
 } from '@/utils/formBatchOrgFilters';
-import { classifyDepartmentScopeByName } from '@/lib/assetScope';
 
 type AssetTypeFilter = 'all' | 'it' | 'admin';
 
@@ -113,11 +113,9 @@ export default function AssetTransferFormsPage() {
       // Apply asset type filter
       if (assetTypeFilter !== 'all') {
         const targetScope = assetTypeFilter === 'it' ? 'IT' : 'Admin';
-        result = result.filter(batch => {
-          const deptCandidate = batch.new_assigned_user?.department || '';
-          const assetScope = classifyDepartmentScopeByName(deptCandidate);
-          return assetScope === targetScope;
-        });
+        result = result.filter(batch =>
+          transferBatchMatchesAssetType(batch, targetScope)
+        );
       }
 
       return result;

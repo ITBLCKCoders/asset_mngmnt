@@ -36,8 +36,8 @@ import {
   collectCompanyOptionsFromReturnBatches,
   collectDepartmentOptionsFromReturnBatches,
   returnBatchMatchesOrgFilters,
+  returnBatchMatchesAssetType,
 } from '@/utils/formBatchOrgFilters';
-import { classifyDepartmentScopeByName } from '@/lib/assetScope';
 
 type AssetTypeFilter = 'all' | 'it' | 'admin';
 
@@ -155,11 +155,9 @@ export default function AssetReturnFormsPage() {
       // Apply asset type filter
       if (assetTypeFilter !== 'all') {
         const targetScope = assetTypeFilter === 'it' ? 'IT' : 'Admin';
-        result = result.filter(batch => {
-          const deptCandidate = batch.form_department?.name || '';
-          const assetScope = classifyDepartmentScopeByName(deptCandidate);
-          return assetScope === targetScope;
-        });
+        result = result.filter(batch =>
+          returnBatchMatchesAssetType(batch, targetScope)
+        );
       }
 
       return result;

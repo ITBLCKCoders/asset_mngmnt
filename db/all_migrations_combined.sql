@@ -2377,15 +2377,16 @@ CREATE DEFINER=`root`@`localhost` PROCEDURE `sp_upsert_user_custodian_settings`(
     IN p_hr_accountability_receiver TINYINT,
     IN p_manager_approver_1 TINYINT,
     IN p_manager_approver_2 TINYINT,
-    IN p_manager_approver_3 TINYINT
+    IN p_manager_approver_3 TINYINT,
+    IN p_finance_approver TINYINT
 )
 BEGIN
     INSERT INTO user_custodian_settings (
         user_id, access_add_edit, access_assignment, access_return,
-        hr_accountability_receiver, manager_approver_1, manager_approver_2, manager_approver_3
+        hr_accountability_receiver, manager_approver_1, manager_approver_2, manager_approver_3, finance_approver
     ) VALUES (
         p_user_id, p_access_add_edit, p_access_assignment, p_access_return,
-        p_hr_accountability_receiver, p_manager_approver_1, p_manager_approver_2, p_manager_approver_3
+        p_hr_accountability_receiver, p_manager_approver_1, p_manager_approver_2, p_manager_approver_3, p_finance_approver
     )
     ON DUPLICATE KEY UPDATE
         access_add_edit = p_access_add_edit,
@@ -2395,6 +2396,7 @@ BEGIN
         manager_approver_1 = p_manager_approver_1,
         manager_approver_2 = p_manager_approver_2,
         manager_approver_3 = p_manager_approver_3,
+        finance_approver = p_finance_approver,
         updated_at = CURRENT_TIMESTAMP;
 END ;;
 DELIMITER ;
@@ -2406,7 +2408,7 @@ CREATE DEFINER=`root`@`localhost` PROCEDURE `sp_get_user_custodian_settings`(IN 
 BEGIN
     SELECT
         access_add_edit, access_assignment, access_return,
-        hr_accountability_receiver, manager_approver_1, manager_approver_2, manager_approver_3
+        hr_accountability_receiver, manager_approver_1, manager_approver_2, manager_approver_3, finance_approver
     FROM user_custodian_settings
     WHERE user_id = p_user_id
     LIMIT 1;

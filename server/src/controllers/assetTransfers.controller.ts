@@ -3194,6 +3194,26 @@ export async function getAssetTransferFormsByUserHandler(
       }
     }
 
+    const formDeptIds = [
+      ...new Set(forms.map((f: any) => f.department_id).filter(Boolean)),
+    ] as string[];
+    const formDepartments = new Map<string, { id: string; name: string }>();
+    if (formDeptIds.length > 0) {
+      const deptPlaceholders = formDeptIds.map(() => '?').join(',');
+      const [deptRows] = (await pool.execute(
+        `SELECT departmentID, name FROM asset_mngmnt_departments WHERE departmentID IN (${deptPlaceholders}) AND deleted_at IS NULL`,
+        formDeptIds
+      )) as any[];
+      for (const d of deptRows || []) {
+        if (d.departmentID && d.name) {
+          formDepartments.set(d.departmentID, {
+            id: d.departmentID,
+            name: d.name,
+          });
+        }
+      }
+    }
+
     const batches: any[] = [];
     for (const form of forms) {
       const formId =
@@ -3319,9 +3339,16 @@ export async function getAssetTransferFormsByUserHandler(
         return_batch_id: formId,
         created_at: form.created_at,
         user_id: formUserId,
-        processed_by,
-        new_assigned_user_id: form.new_assigned_user_id,
-        new_assigned_user,
+      processed_by,
+      new_assigned_user_id: form.new_assigned_user_id,
+      new_assigned_user,
+      form_department:
+        form.department_id && formDepartments.has(form.department_id)
+          ? (formDepartments.get(form.department_id) as {
+              id: string;
+              name: string;
+            })
+          : null,
         signed_at: form.signed_at,
         signed_by: form.signed_by,
         signed_digital_signature: form.signed_digital_signature,
@@ -3454,6 +3481,26 @@ async function buildTransferFormBatches(forms: any[]): Promise<any[]> {
         u.userID,
         `${u.first_name || ''} ${u.last_name || ''}`.trim() || 'Unknown'
       );
+    }
+  }
+
+  const formDeptIds = [
+    ...new Set(forms.map((f: any) => f.department_id).filter(Boolean)),
+  ] as string[];
+  const formDepartments = new Map<string, { id: string; name: string }>();
+  if (formDeptIds.length > 0) {
+    const deptPlaceholders = formDeptIds.map(() => '?').join(',');
+    const [deptRows] = (await pool.execute(
+      `SELECT departmentID, name FROM asset_mngmnt_departments WHERE departmentID IN (${deptPlaceholders}) AND deleted_at IS NULL`,
+      formDeptIds
+    )) as any[];
+    for (const d of deptRows || []) {
+      if (d.departmentID && d.name) {
+        formDepartments.set(d.departmentID, {
+          id: d.departmentID,
+          name: d.name,
+        });
+      }
     }
   }
 
@@ -3610,6 +3657,13 @@ async function buildTransferFormBatches(forms: any[]): Promise<any[]> {
       processed_by,
       new_assigned_user_id: form.new_assigned_user_id,
       new_assigned_user,
+      form_department:
+        form.department_id && formDepartments.has(form.department_id)
+          ? (formDepartments.get(form.department_id) as {
+              id: string;
+              name: string;
+            })
+          : null,
       signed_at: form.signed_at,
       signed_by: form.signed_by,
       signed_digital_signature: form.signed_digital_signature,
