@@ -7,8 +7,6 @@ export const ALL_MODULE_NAMES = [
   'My Assets',
   'Asset List',
   'Asset Assignment',
-  'Asset Request',
-  'Request Management',
   'Asset Tagging',
   'Asset Transfer',
   'Asset Maintenance',

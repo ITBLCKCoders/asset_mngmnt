@@ -19,9 +19,6 @@ export const getLandingPage = (
   // Assets
   if (hasPermission('Asset List', 'view')) return '/assets';
   if (hasPermission('Asset Assignment', 'view')) return '/assets/assignment';
-  if (hasPermission('Asset Request', 'view')) return '/assets/request';
-  if (hasPermission('Request Management', 'view'))
-    return '/assets/request-admin';
   if (hasPermission('Asset Borrowing', 'view')) return '/assets/borrow';
   if (hasPermission('Borrow Request Management', 'view'))
     return '/assets/borrow-requests';

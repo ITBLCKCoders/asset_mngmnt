@@ -22,14 +22,12 @@ const TYPE_LABELS: Record<string, string> = {
   borrow: 'Borrow',
   return: 'Return',
   transfer: 'Transfer',
-  request: 'Asset Request',
 };
 
 const TYPE_ROUTES: Record<string, string> = {
   borrow: '/assets/borrow-requests',
   return: '/assets/return-requests',
   transfer: '/assets/transfer-requests',
-  request: '/assets/request-admin',
 };
 
 export default function PendingRequestsWidget({

@@ -190,7 +190,10 @@ function mapDtoToAsset(dto: AssetResponseDto): Asset {
       : new Date(dto.created_at),
     updatedBy: dto.updated_by_name || dto.updated_by || '',
     accountabilityForm: (() => {
-      const form = dto.accountabilityForms?.[0];
+      const activeStatuses = ['Pending', 'Signed', 'Completed'];
+      const form = dto.accountabilityForms?.find(
+        (f: any) => activeStatuses.includes(f.status)
+      );
       if (!form) return undefined;
       const assetsArray = form.assets_data?.assets || [{
         id: dto.assetID || dto.asset_code,

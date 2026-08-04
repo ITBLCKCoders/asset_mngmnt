@@ -506,8 +506,6 @@ const Sidebar = memo(function Sidebar({ onLogout, currentPath = '', currentSearc
               {(hasPermission('Assets', 'view') ||
                 hasPermission('Asset List', 'view') ||
                 hasPermission('Asset Assignment', 'view') ||
-                hasPermission('Asset Request', 'view') ||
-                hasPermission('Request Management', 'view') ||
                 hasPermission('Asset Tagging', 'view') ||
                 hasPermission('Asset Transfer', 'view') ||
                 hasPermission('Asset Maintenance', 'view') ||

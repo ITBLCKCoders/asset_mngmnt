@@ -419,21 +419,34 @@ export function AssetsPage() {
           if (!riskLevel?.id) {
             return <span className="text-sm text-gray-400">—</span>;
           }
+          const color = riskLevel.color || '#6b7280';
+          const hexToRgba = (hex: string, alpha: number) => {
+            const clean = hex.replace('#', '');
+            const full =
+              clean.length === 3
+                ? clean
+                    .split('')
+                    .map(c => c + c)
+                    .join('')
+                : clean;
+            const num = parseInt(full, 16);
+            const r = (num >> 16) & 255;
+            const g = (num >> 8) & 255;
+            const b = num & 255;
+            return `rgba(${r}, ${g}, ${b}, ${alpha})`;
+          };
           return (
-            <div className="flex items-center gap-2">
-              {riskLevel.color && (
-                <span
-                  className="inline-block h-3 w-3 rounded-full shrink-0"
-                  style={{ backgroundColor: riskLevel.color }}
-                />
-              )}
-              <Badge
-                variant="outline"
-                className="text-sm px-3 py-1 border-gray-300 text-gray-700"
-              >
-                {riskLevel.name}
-              </Badge>
-            </div>
+            <Badge
+              variant="outline"
+              className="text-sm px-3 py-1 font-medium border transition-all duration-200"
+              style={{
+                backgroundColor: hexToRgba(color, 0.12),
+                color,
+                borderColor: hexToRgba(color, 0.35),
+              }}
+            >
+              {riskLevel.name}
+            </Badge>
           );
         },
       },
@@ -1684,6 +1697,8 @@ export function AssetsPage() {
           loading={isInitialLoading}
           totalCount={meta.unfilteredTotal}
           summary={meta.summary}
+          activeTab={activeTab}
+          intangibleAssets={intangibleAssets}
         />
 
         <Tabs value={activeTab} onValueChange={(value) => { setActiveTab(value); setTabLoading(true); setTimeout(() => setTabLoading(false), 300); }} className="w-full">

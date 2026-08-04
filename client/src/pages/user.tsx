@@ -770,6 +770,7 @@ function UserPermissions() {
                                       {
                                         key: 'm1',
                                         label: 'Manager Approver 1',
+                                        desc: 'Acts as department head. Signs accountability, transfer, and asset checklist forms.',
                                         checked:
                                           userCustodianForm.manager_approver_1,
                                         set: (v: boolean) =>
@@ -781,6 +782,7 @@ function UserPermissions() {
                                       {
                                         key: 'm2',
                                         label: 'Manager Approver 2',
+                                        desc: 'Acts as receiver (e.g. IT receive step) in issuance and checklist flows.',
                                         checked:
                                           userCustodianForm.manager_approver_2,
                                         set: (v: boolean) =>
@@ -792,6 +794,7 @@ function UserPermissions() {
                                       {
                                         key: 'm3',
                                         label: 'Manager Approver 3',
+                                        desc: 'Additional manager-level approver for multi-level accountability.',
                                         checked:
                                           userCustodianForm.manager_approver_3,
                                         set: (v: boolean) =>

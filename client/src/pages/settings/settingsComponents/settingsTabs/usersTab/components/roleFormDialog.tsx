@@ -206,6 +206,7 @@ export function RoleFormDialog({
                         {
                           key: 'm1',
                           label: 'Manager Approver 1',
+                          desc: 'Acts as department head. Signs accountability, transfer, and asset checklist forms.',
                           checked: form.manager_approver_1,
                           set: (v: boolean) =>
                             setForm(prev => ({
@@ -216,6 +217,7 @@ export function RoleFormDialog({
                         {
                           key: 'm2',
                           label: 'Manager Approver 2',
+                          desc: 'Acts as receiver (e.g. IT receive step) in issuance and checklist flows.',
                           checked: form.manager_approver_2,
                           set: (v: boolean) =>
                             setForm(prev => ({
@@ -226,6 +228,7 @@ export function RoleFormDialog({
                         {
                           key: 'm3',
                           label: 'Manager Approver 3',
+                          desc: 'Additional manager-level approver for multi-level accountability.',
                           checked: form.manager_approver_3,
                           set: (v: boolean) =>
                             setForm(prev => ({

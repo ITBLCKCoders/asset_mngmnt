@@ -34,7 +34,6 @@ import {
   FileDown,
   FileText,
   HandHelping,
-  ClipboardList,
   XCircle,
 } from 'lucide-react';
 import { api } from '@/lib/api';
@@ -778,15 +777,6 @@ export default function Dashboard() {
       path: '/my-assets',
     },
     {
-      title: 'My Asset Requests',
-      value:
-        dashboardData?.categoryMix?.find(item => item.name === 'Asset Requests')
-          ?.value ?? 0,
-      icon: ClipboardList,
-      color: 'text-indigo-600',
-      path: '/assets/request',
-    },
-    {
       title: 'My Borrowing Requests',
       value:
         dashboardData?.categoryMix?.find(
@@ -803,7 +793,7 @@ export default function Dashboard() {
           ?.value ?? 0,
       icon: Clock,
       color: 'text-amber-600',
-      path: '/assets/request?status=pending',
+      path: '/assets/borrow',
     },
     {
       title: 'My Completed Requests',
@@ -812,7 +802,7 @@ export default function Dashboard() {
           ?.value ?? 0,
       icon: CheckCircle,
       color: 'text-green-600',
-      path: '/assets/request?status=completed',
+      path: '/assets/borrow',
     },
     {
       title: 'My Declined Requests',
@@ -821,7 +811,7 @@ export default function Dashboard() {
           ?.value ?? 0,
       icon: XCircle,
       color: 'text-red-600',
-      path: '/assets/request?status=declined',
+      path: '/assets/borrow',
     },
   ];
 
