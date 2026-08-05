@@ -45,6 +45,7 @@ export interface UpdateAssetDto extends Partial<CreateAssetDto> {
 export interface AssetResponseDto {
   assetID: string;
   asset_code: string;
+  tag_code: string | null;
   name: string;
   description: string | null;
   category_id: string;

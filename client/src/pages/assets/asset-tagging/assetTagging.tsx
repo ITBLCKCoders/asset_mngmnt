@@ -29,6 +29,7 @@ import { ASSET_SEARCH_COLUMNS } from '@/utils/assetSearchColumns';
 function mapDtoToTaggingAsset(asset: AssetResponseDto): Asset {
   return {
     id: asset.asset_code,
+    tagCode: asset.tag_code || asset.asset_code,
     assetID: asset.assetID,
     name: asset.name,
     image: asset.image_url || '',
@@ -115,7 +116,7 @@ export default function AssetsTagging() {
   const [buildersLoading, setBuildersLoading] = useState(true);
   const [selectedBuilders, setSelectedBuilders] = useState<Set<string>>(new Set());
   const [builderSearchTerm, setBuilderSearchTerm] = useState('');
-  interface TagAssetData { id: string; name: string; company_logo?: string; company_name?: string }
+  interface TagAssetData { id: string; name: string; company_logo?: string; company_name?: string; tagCode?: string }
   const [modalTagAssets, setModalTagAssets] = useState<TagAssetData[]>([]);
   const [pageIndex, setPageIndex] = useState(0);
   const [pageSize, setPageSize] = useState(10);
@@ -300,6 +301,7 @@ export default function AssetsTagging() {
         name: parent.asset_name || builder?.name || parent.asset_code,
         company_logo: fromAssets?.company_logo,
         company_name: fromAssets?.company_name,
+        tagCode: fromAssets?.tagCode || parent.asset_code,
       });
     }
     return result;
@@ -353,7 +355,7 @@ export default function AssetsTagging() {
         .filter(asset => finalSelected.has(asset.id))
         .filter(asset => !groupedAssetIds.has(asset.id.trim()))
         .map(asset => {
-          const entry: TagAssetData = { id: asset.id, name: asset.name, company_logo: asset.company_logo, company_name: asset.company };
+          const entry: TagAssetData = { id: asset.id, name: asset.name, company_logo: asset.company_logo, company_name: asset.company, tagCode: asset.tagCode || asset.id };
           assetsByCode.set(asset.id, entry);
           return entry;
         });

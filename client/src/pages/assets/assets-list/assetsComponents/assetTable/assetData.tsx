@@ -68,6 +68,7 @@ export interface AssetBuilderHistory {
 export interface Asset {
   id: string;
   assetID?: string; // Database ID for matching with builders
+  tagCode?: string; // Stable tag identifier (original asset code), used in barcodes/QRs
   name: string;
   company_id?: string;
   company_logo?: string;

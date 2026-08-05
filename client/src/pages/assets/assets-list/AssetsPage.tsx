@@ -95,6 +95,7 @@ export function AssetsPage() {
   const [isEditModalOpen, setIsEditModalOpen] = useState(false);
   const [selectedAsset, setSelectedAsset] = useState<Asset | null>(null);
   const [selectedAssetForEdit, setSelectedAssetForEdit] = useState<Asset | null>(null);
+  const [editModalInstance, setEditModalInstance] = useState(0);
   const [isAccessDeniedDialogOpen, setIsAccessDeniedDialogOpen] = useState(false);
   const [pdfModalOpen, setPdfModalOpen] = useState(false);
   const [currentPdfUrl, setCurrentPdfUrl] = useState<string | null>(null);
@@ -935,8 +936,12 @@ export function AssetsPage() {
       return;
     }
 
-    if (canEditAsset(asset)) {
-      setSelectedAssetForEdit(asset);
+    // Always resolve from the current table data so we pick up post-save server state.
+    const freshAsset =
+      displayAssets.find(item => item.id === asset.id) || asset;
+    if (canEditAsset(freshAsset)) {
+      setSelectedAssetForEdit(freshAsset);
+      setEditModalInstance(prev => prev + 1);
       setIsEditModalOpen(true);
     }
   };
@@ -2156,6 +2161,7 @@ export function AssetsPage() {
         asset={selectedIntangibleAsset}
       />
       <EditAssetModal
+        key={editModalInstance}
         isOpen={isEditModalOpen}
         onClose={() => {
           setIsEditModalOpen(false);

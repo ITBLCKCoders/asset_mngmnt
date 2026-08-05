@@ -303,9 +303,10 @@ export function EditAssetModal({
 
     // Map depreciation method
     const mapDepreciationMethod = (
-      method: string
+      method: string | undefined
     ): AssetFormData['depreciationMethod'] => {
-      switch (method.toLowerCase()) {
+      const normalized = (method || '').toLowerCase();
+      switch (normalized) {
         case 'straight line':
           return 'straight-line';
         case 'declining balance':
@@ -342,12 +343,13 @@ export function EditAssetModal({
     };
 
     // Parse location to separate site and room
-    const parseLocation = (location: string) => {
-      const parts = location.split(' - ');
+    const parseLocation = (location: string | undefined) => {
+      const value = location ?? '';
+      const parts = value.split(' - ');
       if (parts.length > 1) {
         return { site: parts[0], room: parts.slice(1).join(' - ') };
       } else {
-        return { site: '', room: location };
+        return { site: '', room: value };
       }
     };
 
@@ -380,7 +382,8 @@ export function EditAssetModal({
               )
             : null) ||
           categories.find(
-            cat => cat.name.toLowerCase() === asset.category.toLowerCase()
+            cat =>
+              (cat.name || '').toLowerCase() === (asset.category || '').toLowerCase()
           )
         : null;
     const matchedType =
@@ -389,32 +392,33 @@ export function EditAssetModal({
             ? types.find(type => String(type.id) === String(asset.typeId))
             : null) ||
           types.find(
-            type => type.name.toLowerCase() === asset.type.toLowerCase()
+            type =>
+              (type.name || '').toLowerCase() === (asset.type || '').toLowerCase()
           )
         : null;
 
     // Try to match brand by name with more robust matching
     let matchedBrand = null;
     if (brands.length > 0 && asset.brand) {
-      const assetBrandName = asset.brand.trim();
+      const assetBrandName = (asset.brand || '').trim();
 
       // First try exact match (case insensitive)
       matchedBrand = brands.find(
         brand =>
-          brand.name.trim().toLowerCase() === assetBrandName.toLowerCase()
+          (brand.name || '').trim().toLowerCase() === assetBrandName.toLowerCase()
       );
 
       // If no exact match, try partial match
       if (!matchedBrand) {
         matchedBrand = brands.find(
           brand =>
-            brand.name
+            (brand.name || '')
               .trim()
               .toLowerCase()
               .includes(assetBrandName.toLowerCase()) ||
             assetBrandName
               .toLowerCase()
-              .includes(brand.name.trim().toLowerCase())
+              .includes((brand.name || '').trim().toLowerCase())
         );
       }
 
@@ -424,7 +428,7 @@ export function EditAssetModal({
           brand =>
             (brand.typeId === matchedType?.id ||
               brand.type_id === matchedType?.id) &&
-            brand.name
+            (brand.name || '')
               .trim()
               .toLowerCase()
               .includes(assetBrandName.toLowerCase())
@@ -461,7 +465,9 @@ export function EditAssetModal({
         : undefined,
       assetValue: asset.purchasePrice,
       salvageValue: asset.salvageValue,
-      depreciationMethod: mapDepreciationMethod(asset.depreciationMethod),
+      depreciationMethod: asset.depreciationMethod
+        ? mapDepreciationMethod(asset.depreciationMethod)
+        : 'straight-line',
       usefulLifeYears: asset.usefulLifeYears,
       annualDepreciation: asset.annualDepreciation,
       depreciationStartDate: asset.depreciationStartDate
@@ -483,16 +489,18 @@ export function EditAssetModal({
         asset.maintenanceSchedule
       ),
       status: mapStatus(asset.status),
-      isOldUnit: Boolean(
-        asset.isOldUnit ||
-        asset.is_old_unit ||
-        (asset.purchaseDate &&
-          asset.purchaseDate.getFullYear() === 2000 &&
-          asset.purchaseDate.getMonth() === 0 &&
-          asset.purchaseDate.getDate() === 1) ||
-        // Fallback: detect old unit from asset code pattern (contains "OU")
-        (asset.id && (asset.id.includes('-OU-') || asset.id.includes('OU-')))
-      ),
+      isOldUnit:
+        asset.is_old_unit !== undefined
+          ? Boolean(asset.is_old_unit)
+          : Boolean(
+              asset.isOldUnit ||
+              (asset.purchaseDate &&
+                asset.purchaseDate.getFullYear() === 2000 &&
+                asset.purchaseDate.getMonth() === 0 &&
+                asset.purchaseDate.getDate() === 1) ||
+              // Fallback: detect old unit from asset code pattern (contains "OU")
+              (asset.id && (asset.id.includes('-OU-') || asset.id.includes('OU-')))
+            ),
 
       imageUrl: asset.image,
       documents: [], // Asset documents are not File objects, so we'll leave empty for now
@@ -597,15 +605,10 @@ export function EditAssetModal({
     }
   }, [isOpen, asset, isFinanceApprover]);
 
-  // Convert asset data when all required data is available
+  // Convert asset data whenever the selected asset object changes
   useEffect(() => {
-    if (
-      isOpen &&
-      asset &&
-      categories.length > 0 &&
-      types.length > 0 &&
-      brands.length > 0
-    ) {
+    if (!isOpen || !asset) return;
+    try {
       const convertedData = convertAssetToFormData(
         asset,
         categories,
@@ -614,8 +617,10 @@ export function EditAssetModal({
         locations
       );
       setFormData(convertedData);
+    } catch (error) {
+      console.error('Failed to convert asset to form data:', error, asset);
     }
-  }, [isOpen, asset, categories, types, brands, locations]);
+  }, [asset, isOpen, categories, types, brands, locations]);
 
   // Debug: Log brands and form data to understand the issue
   useEffect(() => {

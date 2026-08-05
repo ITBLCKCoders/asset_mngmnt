@@ -42,6 +42,7 @@ export function transformApiAssetToAsset(asset: AssetResponseDto): Asset {
 
   return {
     id: asset.asset_code,
+    tagCode: asset.tag_code || asset.asset_code,
     assetID: asset.assetID,
     name: asset.name,
     image: asset.image_url || '',
@@ -70,6 +71,8 @@ export function transformApiAssetToAsset(asset: AssetResponseDto): Asset {
     purchaseDate: asset.purchase_date ? new Date(asset.purchase_date) : null,
     purchasePrice: asset.asset_value || 0,
     supplier: asset.supplier || '',
+    isOldUnit: Boolean(asset.is_old_unit),
+    is_old_unit: Boolean(asset.is_old_unit),
     warranty: asset.warranty_months ? `${asset.warranty_months} months` : null,
     warranty_months: asset.warranty_months || null,
     documents: asset.documents || [],

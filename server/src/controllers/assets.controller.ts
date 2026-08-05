@@ -994,6 +994,7 @@ export async function createAssetHandler(req: AuthRequest, res: Response) {
       asset: {
         assetID: asset.assetID,
         asset_code: asset.asset_code,
+        tag_code: asset.tag_code ?? asset.asset_code,
         name: asset.name,
         description: asset.description,
         category_id: asset.category_id,
@@ -1063,9 +1064,13 @@ export async function getAssetPublicHandler(req: Request, res: Response) {
     const assetCode = decodeURIComponent(rawAssetCode);
 
     const assets = await assetRepo.callGetAllAssets();
+    const normalized = assetCode.toUpperCase();
+    // Resolve by the stable tag_code OR the (mutable) asset_code so previously
+    // printed tags keep working after the asset code changes.
     const asset = assets.find(
       (a: any) =>
-        String(a.asset_code).toUpperCase() === assetCode.toUpperCase()
+        String(a.tag_code || a.asset_code).toUpperCase() === normalized ||
+        String(a.asset_code).toUpperCase() === normalized
     );
 
     if (!asset) {
@@ -1081,6 +1086,7 @@ export async function getAssetPublicHandler(req: Request, res: Response) {
       assets: [
         {
           asset_code: asset.asset_code,
+          tag_code: asset.tag_code ?? asset.asset_code,
           name: asset.name,
           image_url: asset.image_url ?? null,
           description: asset.description ?? null,
@@ -1123,9 +1129,13 @@ export async function getAssetByCodeHandler(req: any, res: Response) {
 
     // Only filter out assets in builders if this is not a specific asset request
     // For individual asset lookup, we want to show all assets including those in builders
+    const normalized = assetCode.toUpperCase();
+    // Resolve by the stable tag_code OR the (mutable) asset_code so previously
+    // printed tags keep working after the asset code changes.
     const asset = assets.find(
       (a: any) =>
-        String(a.asset_code).toUpperCase() === assetCode.toUpperCase()
+        String(a.tag_code || a.asset_code).toUpperCase() === normalized ||
+        String(a.asset_code).toUpperCase() === normalized
     );
 
     if (!asset) {
@@ -1435,27 +1445,20 @@ export async function updateAssetHandler(req: AuthRequest, res: Response) {
     const categoryChanged = oldAsset.category_id !== categoryId;
     const typeChanged = oldAsset.type_id !== typeId;
 
-    // Check if isOldUnit status has changed
-    const isOldUnitChanged = oldAsset.is_old_unit !== (isOldUnit || 0);
+    // Check if isOldUnit status has changed (normalize to numeric booleans so a
+    // string form field doesn't spuriously compare unequal to the DB number).
+    const rawIsOldUnit = isOldUnit as unknown;
+    const newIsOldUnit = rawIsOldUnit === '1' || rawIsOldUnit === 1 || rawIsOldUnit === true ? 1 : 0;
+    const isOldUnitChanged = Number(oldAsset.is_old_unit ?? 0) !== newIsOldUnit;
 
     let updatedAsset;
 
     if (categoryChanged || typeChanged || isOldUnitChanged) {
-      // Category, type, or isOldUnit status changed, update asset code using the new stored procedure
-      const [codeUpdateRows] = (await pool.execute(
-        'CALL sp_update_asset_code(?, ?, ?, ?, ?)',
-        [
-          asset.assetID,
-          categoryId,
-          typeId || null,
-          validDepartmentId || oldAsset.department_id,
-          userId,
-        ]
-      )) as any[];
-
-      updatedAsset = codeUpdateRows[0][0];
-
-      // Now update the other asset fields
+      // Persist all field changes (including the new is_old_unit flag and the
+      // purchase date) FIRST, then regenerate the asset code.
+      // sp_update_asset_code reads is_old_unit / purchase_date from the DB row,
+      // so it must run after sp_update_asset to produce the correct code (e.g.
+      // dropping "-OU-" when the old-unit switch is turned off).
       const [updateRows] = (await pool.execute(
         'CALL sp_update_asset(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
         [
@@ -1512,6 +1515,22 @@ export async function updateAssetHandler(req: AuthRequest, res: Response) {
       )) as any[];
 
       updatedAsset = updateRows[0][0];
+
+      // Regenerate the asset code now that the row reflects the new category,
+      // type, is_old_unit flag, and purchase date. Returns the asset with the
+      // newly generated code.
+      const [codeUpdateRows] = (await pool.execute(
+        'CALL sp_update_asset_code(?, ?, ?, ?, ?)',
+        [
+          asset.assetID,
+          categoryId,
+          typeId || null,
+          validDepartmentId || oldAsset.department_id,
+          userId,
+        ]
+      )) as any[];
+
+      updatedAsset = codeUpdateRows[0][0];
     } else {
       // No category or type change, use regular update
       const [rows] = (await pool.execute(
@@ -1680,6 +1699,7 @@ export async function updateAssetHandler(req: AuthRequest, res: Response) {
       asset: {
         assetID: updatedAsset.assetID,
         asset_code: updatedAsset.asset_code,
+        tag_code: updatedAsset.tag_code ?? updatedAsset.asset_code,
         name: updatedAsset.name,
         description: updatedAsset.description,
         category_id: updatedAsset.category_id,

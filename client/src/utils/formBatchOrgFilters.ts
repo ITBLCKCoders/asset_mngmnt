@@ -185,16 +185,39 @@ function assetScopeOfRow(row: { assignment?: AssignmentLike }): string {
   return classifyDepartmentScopeByName(row.assignment?.department?.name || '');
 }
 
+/**
+ * Classify a batch by its form's category department. This is authoritative:
+ * a form belongs to exactly one scope so IT forms never leak into the Admin
+ * tab (or vice versa) just because a row's assignment scope differs.
+ */
+function formScopeOfBatch(formDepartmentName?: string): 'IT' | 'Admin' | 'Other' {
+  return classifyDepartmentScopeByName(formDepartmentName || '');
+}
+
+/**
+ * Fallback when a batch has no authoritative form department: only classify
+ * into a scope when every classified row agrees, so mixed batches never leak
+ * into both tabs.
+ */
+function scopeFromRows(rows: Array<{ assignment?: AssignmentLike }>): 'IT' | 'Admin' | 'Other' {
+  const scopes = new Set<'IT' | 'Admin'>(
+    rows
+      .map(r => assetScopeOfRow(r))
+      .filter((s): s is 'IT' | 'Admin' => s === 'IT' || s === 'Admin')
+  );
+  return scopes.size === 1
+    ? (scopes.values().next().value as 'IT' | 'Admin')
+    : 'Other';
+}
+
 /** Classify a transfer batch by its assets' scope (IT/Admin). The form's category department is authoritative. */
 export function transferBatchMatchesAssetType(
   batch: TransferFormBatchLike,
   scope: 'IT' | 'Admin'
 ): boolean {
-  const rows = batch.returns || [];
-  if (rows.some(r => assetScopeOfRow(r) === scope)) return true;
-  return (
-    classifyDepartmentScopeByName(batch.form_department?.name || '') === scope
-  );
+  const formScope = formScopeOfBatch(batch.form_department?.name);
+  if (formScope !== 'Other') return formScope === scope;
+  return scopeFromRows(batch.returns || []) === scope;
 }
 
 /** Classify a return batch by its assets' scope (IT/Admin). The form's category department is authoritative. */
@@ -202,9 +225,7 @@ export function returnBatchMatchesAssetType(
   batch: ReturnFormBatchLike,
   scope: 'IT' | 'Admin'
 ): boolean {
-  const rows = batch.returns || [];
-  if (rows.some(r => assetScopeOfRow(r) === scope)) return true;
-  return (
-    classifyDepartmentScopeByName(batch.form_department?.name || '') === scope
-  );
+  const formScope = formScopeOfBatch(batch.form_department?.name);
+  if (formScope !== 'Other') return formScope === scope;
+  return scopeFromRows(batch.returns || []) === scope;
 }
