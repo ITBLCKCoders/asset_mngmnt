@@ -2,7 +2,7 @@ import { describe, it, expect, jest, beforeEach } from '@jest/globals';
 import * as assetsController from '../../controllers/assets.controller.js';
 import { createMockRes } from '../helpers/mockRes.js';
 
-jest.mock('../../db.js', () => ({ pool: { execute: jest.fn() } }));
+jest.mock('../../db.js', () => ({ pool: { execute: jest.fn(), getConnection: jest.fn() } }));
 jest.mock('../../logger.js', () => ({ __esModule: true, default: { error: jest.fn(), info: jest.fn(), warn: jest.fn(), debug: jest.fn() } }));
 jest.mock('../../utils/audit.js', () => ({ createAuditLog: jest.fn() }));
 jest.mock('../../utils/cloudinary.js', () => ({ uploadToCloudinary: jest.fn(), uploadDocumentToCloudinary: jest.fn() }));
@@ -25,6 +25,7 @@ jest.mock('../../repositories/asset.repository.js', () => ({
   getBuilderByAssetId: jest.fn(),
   getAccountabilityFormsForAssetWithLike: jest.fn(),
   getAssetByCodeForAssign: jest.fn(),
+  getAssetForUpdateByCode: jest.fn(),
   getDepartmentById: jest.fn(),
   getLocationById: jest.fn(),
   getUserBasicByIdSimple: jest.fn(),

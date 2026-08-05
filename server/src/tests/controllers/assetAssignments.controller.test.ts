@@ -36,6 +36,7 @@ jest.mock('../../repositories/assetAssignment.repository.js', () => ({
   disableAccountabilityForm: jest.fn(),
   listAssignmentsRaw: jest.fn(),
   callGetAssignments: jest.fn(),
+  getIntangibleAssignments: jest.fn(),
   getAssignmentById: jest.fn(),
   callReturnAssignment: jest.fn(),
   countAssignedAssetsInBuilder: jest.fn(),
@@ -94,6 +95,7 @@ describe('assetAssignments.controller', () => {
     it('returns assignments with form map', async () => {
       req.query = { status: 'Active' };
       repo.callGetAssignments.mockResolvedValue([{ assignmentID: '1', asset_id: '10', asset_code: 'A001', asset_name: 'Asset 1', status: 'Active' }]);
+      repo.getIntangibleAssignments.mockResolvedValue([]);
       buildAccountabilityFormMap.mockResolvedValue(new Map());
       await assetAssignmentsController.getAssetAssignmentsHandler(req, res);
       expect(res._json.assignments).toHaveLength(1);

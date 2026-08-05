@@ -457,14 +457,20 @@ async function getAssetsByLocation(
 ): Promise<NamedCountItem[]> {
   const [rows] = (await pool.execute(
     `SELECT COALESCE(
-        NULLIF(TRIM(CONCAT_WS(' — ', NULLIF(TRIM(l.building), ''), NULLIF(TRIM(l.name), ''))), ''),
+        NULLIF(TRIM(
+          CONCAT_WS(' - ',
+            NULLIF(TRIM(l.name), ''),
+            NULLIF(TRIM(lr.room_name), '')
+          )
+        ), ''),
         'Unassigned'
       ) as name,
       COUNT(*) as total
      FROM assets a
      LEFT JOIN asset_mngmnt_locations l ON a.location_id = l.locationID AND l.deleted_at IS NULL
+     LEFT JOIN asset_mngmnt_location_rooms lr ON a.location_room_id = lr.roomID AND lr.deleted_at IS NULL
      WHERE ${whereClause}
-     GROUP BY a.location_id, l.building, l.name
+     GROUP BY a.location_id, a.location_room_id, l.name, lr.room_name
      ORDER BY total DESC
      LIMIT 12`,
     params

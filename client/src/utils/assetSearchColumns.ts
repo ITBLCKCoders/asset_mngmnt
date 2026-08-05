@@ -43,6 +43,18 @@ export const ASSET_SEARCH_COLUMNS: SearchColumnOption[] = [
   { label: 'Building', value: 'building' },
 ];
 
+export const INTANGIBLE_ASSET_SEARCH_COLUMNS: SearchColumnOption[] = [
+  { label: 'All Columns', value: 'all' },
+  { label: 'Name', value: 'name' },
+  { label: 'Description', value: 'description' },
+  { label: 'Remarks', value: 'remarks' },
+  { label: 'Type', value: 'type' },
+  { label: 'Risk Level', value: 'risk_level' },
+  { label: 'Assigned To', value: 'assigned_to' },
+  { label: 'Created By', value: 'created_by_name' },
+  { label: 'Updated By', value: 'updated_by_name' },
+];
+
 export function matchAssetField(asset: any, field: string, query: string): boolean {
   const val = asset[field];
   return val != null && String(val).toLowerCase().includes(query);

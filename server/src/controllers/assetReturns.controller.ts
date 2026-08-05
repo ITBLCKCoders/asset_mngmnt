@@ -2524,6 +2524,12 @@ export async function getAssetReturnsHandler(req: AuthRequest, res: Response) {
         new Date(a.created_at || 0).getTime()
     );
 
+    // Attach return form number to each flattened history row
+    for (const r of flatReturnHistory as any[]) {
+      const form = r.form_id ? formById.get(r.form_id) : null;
+      r.form_number = form ? form.form_number : null;
+    }
+
     return res.json({
       assetReturns: flatReturnHistory,
       assetReturnForms,

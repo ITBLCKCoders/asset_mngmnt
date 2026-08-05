@@ -666,6 +666,16 @@ export async function getAssetForUpdateById(
   return rows[0] ?? null;
 }
 
+export async function getAssetForUpdateByCode(
+  assetCode: string
+): Promise<AssetForUpdateRow | null> {
+  const [rows] = await pool.execute<AssetForUpdateRow[]>(
+    'SELECT * FROM assets WHERE asset_code = ? AND deleted_at IS NULL',
+    [assetCode]
+  );
+  return rows[0] ?? null;
+}
+
 export async function updateAssetCode(
   assetId: string,
   newCode: string

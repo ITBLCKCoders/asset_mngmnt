@@ -723,6 +723,7 @@ export async function getAssetAssignmentsHandler(
         (userId as string) ?? null,
         (status as string) ?? null
       );
+      intangibleRows = await repo.getIntangibleAssignments(null);
     }
 
     const formMap = await buildAccountabilityFormMap(physicalRows);

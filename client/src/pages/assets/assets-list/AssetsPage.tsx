@@ -78,7 +78,7 @@ import {
 import { useBarcodeAssetOrBuilderScan } from '@/hooks/useBarcodeAssetOrBuilderScan';
 import type { AssetBuilderRecord } from '@/utils/builderScan';
 import { PDFViewer } from '@/components/PDFViewer';
-import { ASSET_SEARCH_COLUMNS } from '@/utils/assetSearchColumns';
+import { ASSET_SEARCH_COLUMNS, INTANGIBLE_ASSET_SEARCH_COLUMNS } from '@/utils/assetSearchColumns';
 import jsPDF from 'jspdf';
 import autoTable from 'jspdf-autotable';
 
@@ -205,6 +205,12 @@ export function AssetsPage() {
   const [intangibleImporting, setIntangibleImporting] = useState(false);
   const [intangibleImportStep, setIntangibleImportStep] = useState<'guide' | 'preview'>('guide');
   const [intangibleExportOpen, setIntangibleExportOpen] = useState(false);
+  const [intangibleExportDateFrom, setIntangibleExportDateFrom] = useState('');
+  const [intangibleExportDateTo, setIntangibleExportDateTo] = useState('');
+  const [intangibleExportType, setIntangibleExportType] = useState('');
+  const [intangibleExportRiskLevel, setIntangibleExportRiskLevel] = useState('');
+  const [intangibleExportAssignedTo, setIntangibleExportAssignedTo] = useState('');
+  const [intangibleExportStatus, setIntangibleExportStatus] = useState('');
   const [selectedIntangibleAsset, setSelectedIntangibleAsset] = useState<any>(null);
   const [isIntangibleViewModalOpen, setIsIntangibleViewModalOpen] = useState(false);
 
@@ -415,6 +421,7 @@ export function AssetsPage() {
         accessorKey: 'risk_level',
         header: 'Risk Level',
         size: 140,
+        accessorFn: (row: any) => row.risk_level?.name ?? '',
         cell: ({ row }) => {
           const riskLevel = row.original.risk_level;
           if (!riskLevel?.id) {
@@ -455,6 +462,11 @@ export function AssetsPage() {
         id: 'assigned_to',
         header: 'Assigned To',
         size: 220,
+        accessorFn: (row: any) =>
+          (row.assignees || [])
+            .map((as: any) => [as.firstName, as.lastName].filter(Boolean).join(' '))
+            .filter(Boolean)
+            .join(', '),
         cell: ({ row }) => {
           const assignees: Array<{
             firstName?: string;
@@ -1082,10 +1094,75 @@ export function AssetsPage() {
     return Array.isArray(data) ? data : data?.data ?? [];
   };
 
+  // Filter option arrays derived from loaded intangible assets
+  const intangibleExportTypeOptions = useMemo(
+    () => Array.from(new Set(intangibleAssets.map((a: any) => a.type).filter(Boolean))),
+    [intangibleAssets]
+  );
+  const [intangibleExportRiskLevelOptions, setIntangibleExportRiskLevelOptions] = useState<string[]>([]);
+  const intangibleExportEmployeeOptions = useMemo(
+    () => Array.from(new Set(
+      intangibleAssets.flatMap((a: any) => (a.assignees || []).map((as: any) => [as.firstName, as.lastName].filter(Boolean).join(' ')) || [])
+        .filter(Boolean)
+    )).sort((a, b) => a.localeCompare(b)),
+    [intangibleAssets]
+  );
+
+  const resetIntangibleExportFilters = () => {
+    setIntangibleExportDateFrom('');
+    setIntangibleExportDateTo('');
+    setIntangibleExportType('');
+    setIntangibleExportRiskLevel('');
+    setIntangibleExportAssignedTo('');
+    setIntangibleExportStatus('');
+  };
+
+  const openIntangibleExport = async () => {
+    try {
+      const riskData = await api.get<any>('/risk-levels');
+      const levels = (Array.isArray(riskData) ? riskData : riskData?.data ?? [])
+        .map((r: any) => r.name)
+        .filter(Boolean);
+      setIntangibleExportRiskLevelOptions(Array.from(new Set(levels)));
+    } catch {
+      setIntangibleExportRiskLevelOptions([]);
+    }
+    setIntangibleExportOpen(true);
+  };
+
+  const applyIntangibleExportFilters = (assets: any[]) => {
+    return assets.filter((asset: any) => {
+      if (intangibleExportType && asset.type !== intangibleExportType) return false;
+      if (intangibleExportRiskLevel && asset.risk_level?.name !== intangibleExportRiskLevel) return false;
+      if (intangibleExportStatus && (intangibleExportStatus === 'assigned') !== (asset.status === 'assigned')) return false;
+      if (intangibleExportAssignedTo) {
+        const assigneeNames = (asset.assignees || []).map((as: any) => [as.firstName, as.lastName].filter(Boolean).join(' '));
+        if (!assigneeNames.includes(intangibleExportAssignedTo)) return false;
+      }
+      if (intangibleExportDateFrom || intangibleExportDateTo) {
+        const created = new Date(asset.created_at);
+        if (!isNaN(created.getTime())) {
+          if (intangibleExportDateFrom && created < new Date(intangibleExportDateFrom)) return false;
+          if (intangibleExportDateTo) {
+            const toDate = new Date(intangibleExportDateTo);
+            toDate.setHours(23, 59, 59, 999);
+            if (created > toDate) return false;
+          }
+        }
+      }
+      return true;
+    });
+  };
+
+  const getFilteredIntangibleAssetsForExport = async () => {
+    const assets = await getIntangibleAssetsForExport();
+    return applyIntangibleExportFilters(assets);
+  };
+
   const handleIntangibleExportExcel = async () => {
     try {
-      const assets = await getIntangibleAssetsForExport();
-      if (assets.length === 0) { toast.error('No intangible assets to export'); return; }
+      const assets = await getFilteredIntangibleAssetsForExport();
+      if (assets.length === 0) { toast.error('No intangible assets match the selected filters'); return; }
 
       // Prefer the asset's owning company from the DB (companies join in sp_GetAllIntangibleAssets),
       // fall back to activeCompany when the SP does not return company data
@@ -1321,8 +1398,8 @@ export function AssetsPage() {
 
   const handleIntangibleExportPdf = async () => {
     try {
-      const assets = await getIntangibleAssetsForExport();
-      if (assets.length === 0) { toast.error('No intangible assets to export'); return; }
+      const assets = await getFilteredIntangibleAssetsForExport();
+      if (assets.length === 0) { toast.error('No intangible assets match the selected filters'); return; }
 
       const { addCompanyLogoToPDF, getCompanyAccentColor, isBlackCoders } = await import('@/lib/pdfGenerator/shared');
 
@@ -2107,6 +2184,7 @@ export function AssetsPage() {
               titleBadge={`${intangibleAssets.length} assets`}
               isLoading={intangibleLoading}
               onRowClick={handleIntangibleRowClick}
+              searchColumnOptions={INTANGIBLE_ASSET_SEARCH_COLUMNS}
             >
               <div className="flex items-center gap-2">
                 <Button
@@ -2124,7 +2202,7 @@ export function AssetsPage() {
                 <Button
                   variant="outline"
                   size="sm"
-                  onClick={() => setIntangibleExportOpen(true)}
+                  onClick={openIntangibleExport}
                   className="flex items-center gap-2"
                 >
                   <Download className="h-4 w-4" />
@@ -2931,32 +3009,131 @@ export function AssetsPage() {
         </AppDialogFrame>
       </Dialog>
 
-      <Dialog open={intangibleExportOpen} onOpenChange={setIntangibleExportOpen}>
-        <AppDialogFrame className="max-w-lg">
+      <Dialog open={intangibleExportOpen} onOpenChange={o => { setIntangibleExportOpen(o); if (!o) resetIntangibleExportFilters(); }}>
+        <AppDialogFrame className="max-w-2xl max-h-[80vh] overflow-hidden !flex !flex-col">
           <AppDialogGradientHeader
             title="Export Intangible Assets"
-            description="Choose the export format."
+            description="Apply optional filters and choose the export format."
           />
-          <AppDialogBody className="py-6">
-            <div className="grid grid-cols-2 gap-4">
-              <button
-                type="button"
-                onClick={() => { setIntangibleExportOpen(false); handleIntangibleExportPdf(); }}
-                className="flex h-full flex-col items-center gap-3 rounded-xl border border-gray-200 bg-white p-5 transition hover:border-red-300 hover:shadow-md cursor-pointer"
-              >
-                <Eye className="h-8 w-8 text-red-600" />
-                <span className="text-sm font-semibold text-gray-800">Export PDF</span>
-                <span className="text-xs text-gray-500 text-center">Intangible asset list in PDF format</span>
-              </button>
-              <button
-                type="button"
-                onClick={() => { setIntangibleExportOpen(false); handleIntangibleExportExcel(); }}
-                className="flex h-full flex-col items-center gap-3 rounded-xl border border-gray-200 bg-white p-5 transition hover:border-green-300 hover:shadow-md cursor-pointer"
-              >
-                <FileSpreadsheet className="h-8 w-8 text-green-600" />
-                <span className="text-sm font-semibold text-gray-800">Export Excel</span>
-                <span className="text-xs text-gray-500 text-center">Intangible asset list in Excel format</span>
-              </button>
+          <AppDialogBody className="max-h-[50vh] overflow-y-auto py-4">
+            <div className="space-y-5">
+              {/* Filters */}
+              <div className="border rounded-lg p-4 space-y-4">
+                <div className="flex items-center justify-between">
+                  <Label className="text-base font-semibold">Filters</Label>
+                  <Button type="button" variant="ghost" size="sm" onClick={resetIntangibleExportFilters} className="gap-1 text-xs">
+                    <RefreshCw className="h-3.5 w-3.5" />
+                    Reset
+                  </Button>
+                </div>
+
+                {/* Date Created */}
+                <div className="grid grid-cols-2 gap-4">
+                  <div>
+                    <Label className="text-xs font-medium">Date Created From</Label>
+                    <Input
+                      type="date"
+                      value={intangibleExportDateFrom}
+                      onChange={e => setIntangibleExportDateFrom(e.target.value)}
+                      className="mt-1 h-9 text-sm"
+                    />
+                  </div>
+                  <div>
+                    <Label className="text-xs font-medium">Date Created To</Label>
+                    <Input
+                      type="date"
+                      value={intangibleExportDateTo}
+                      onChange={e => setIntangibleExportDateTo(e.target.value)}
+                      className="mt-1 h-9 text-sm"
+                    />
+                  </div>
+                </div>
+
+                {/* Type / Scope */}
+                <div>
+                  <Label className="text-xs font-medium">Type</Label>
+                  <Select value={intangibleExportType} onValueChange={v => setIntangibleExportType(v === 'all' ? '' : v)}>
+                    <SelectTrigger className="mt-1 h-9 text-sm">
+                      <SelectValue placeholder="All types" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="all">All types</SelectItem>
+                      {intangibleExportTypeOptions.map(opt => (
+                        <SelectItem key={opt} value={opt}>{opt}</SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+
+                {/* Risk Level */}
+                <div>
+                  <Label className="text-xs font-medium">Risk Level</Label>
+                  <Select value={intangibleExportRiskLevel} onValueChange={v => setIntangibleExportRiskLevel(v === 'all' ? '' : v)}>
+                    <SelectTrigger className="mt-1 h-9 text-sm">
+                      <SelectValue placeholder="All risk levels" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="all">All risk levels</SelectItem>
+                      {intangibleExportRiskLevelOptions.map(opt => (
+                        <SelectItem key={opt} value={opt}>{opt}</SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+
+                {/* Assigned To */}
+                <div>
+                  <Label className="text-xs font-medium">Assigned To</Label>
+                  <Select value={intangibleExportAssignedTo} onValueChange={v => setIntangibleExportAssignedTo(v === 'all' ? '' : v)}>
+                    <SelectTrigger className="mt-1 h-9 text-sm">
+                      <SelectValue placeholder="All employees" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="all">All employees</SelectItem>
+                      {intangibleExportEmployeeOptions.map(opt => (
+                        <SelectItem key={opt} value={opt}>{opt}</SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+
+                {/* Status */}
+                <div>
+                  <Label className="text-xs font-medium">Status</Label>
+                  <Select value={intangibleExportStatus} onValueChange={v => setIntangibleExportStatus(v === 'all' ? '' : v)}>
+                    <SelectTrigger className="mt-1 h-9 text-sm">
+                      <SelectValue placeholder="All statuses" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="all">All statuses</SelectItem>
+                      <SelectItem value="assigned">Assigned</SelectItem>
+                      <SelectItem value="available">Available</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+              </div>
+
+              {/* Format */}
+              <div className="grid grid-cols-2 gap-4">
+                <button
+                  type="button"
+                  onClick={() => { setIntangibleExportOpen(false); handleIntangibleExportPdf(); }}
+                  className="flex h-full flex-col items-center gap-3 rounded-xl border border-gray-200 bg-white p-5 transition hover:border-red-300 hover:shadow-md cursor-pointer"
+                >
+                  <Eye className="h-8 w-8 text-red-600" />
+                  <span className="text-sm font-semibold text-gray-800">Export PDF</span>
+                  <span className="text-xs text-gray-500 text-center">Intangible asset list in PDF format</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => { setIntangibleExportOpen(false); handleIntangibleExportExcel(); }}
+                  className="flex h-full flex-col items-center gap-3 rounded-xl border border-gray-200 bg-white p-5 transition hover:border-green-300 hover:shadow-md cursor-pointer"
+                >
+                  <FileSpreadsheet className="h-8 w-8 text-green-600" />
+                  <span className="text-sm font-semibold text-gray-800">Export Excel</span>
+                  <span className="text-xs text-gray-500 text-center">Intangible asset list in Excel format</span>
+                </button>
+              </div>
             </div>
           </AppDialogBody>
           <AppDialogChromeFooter>

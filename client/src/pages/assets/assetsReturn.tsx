@@ -124,7 +124,10 @@ interface ReturnHistoryRow {
   id: string;
   assetName: string;
   assetCode: string;
+  formNumber: string;
   returnedBy: string;
+  fromDepartment: string;
+  toDepartment: string;
   processedBy: string;
   condition: string;
   returnLocation: string;
@@ -262,6 +265,14 @@ export default function AssetsReturn() {
           : returnRecord.viaAssetTransfer
             ? 'Via asset transfer.'
             : notes;
+      const fromDepartment = assignment?.department?.name ?? 'Unknown';
+      let toDepartmentName = fromDepartment;
+      if (returnRecord.return_department_id) {
+        const toDept = departments.find(
+          (d: any) => d.departmentID === returnRecord.return_department_id
+        );
+        toDepartmentName = toDept ? toDept.name : returnRecord.return_department_id;
+      }
 
       return {
         id:
@@ -269,10 +280,13 @@ export default function AssetsReturn() {
           `synthetic-${returnRecord.form_id}-${returnRecord.assignment_id}`,
         assetName: asset?.name || 'Unknown Asset',
         assetCode: asset?.code || 'No Code',
+        formNumber: returnRecord.form_number ?? 'N/A',
         returnedBy:
           user?.first_name && user?.last_name
             ? `${user.first_name} ${user.last_name}`
             : 'Unknown User',
+        fromDepartment,
+        toDepartment: toDepartmentName,
         processedBy: returnRecord.processed_by || 'Unknown',
         condition: returnRecord.return_condition || 'Not Specified',
         returnLocation,

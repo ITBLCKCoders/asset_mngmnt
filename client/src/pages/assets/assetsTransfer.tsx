@@ -180,8 +180,9 @@ interface TransferHistoryRecord {
   formId: string;
   formNumber: string;
   asset: { id: string; code: string; name: string };
-  from: { name: string };
-  to: { name: string };
+  from: { name: string; department?: string | null };
+  to: { name: string; department?: string | null };
+  processor: string;
   status: string;
   action: string;
   condition: string | null;
@@ -808,24 +809,56 @@ export default function AssetsTransfer() {
         ),
       },
       {
-        id: 'from',
-        header: 'From',
-        accessorFn: row => row.from?.name ?? '',
-        size: 160,
+        id: 'transferForm',
+        header: 'Transfer Form #',
+        accessorFn: row => row.formNumber ?? '',
+        size: 150,
         cell: ({ row }) => (
-          <span className="text-sm text-gray-900">
-            {row.original.from?.name ?? '—'}
+          <span className="text-sm font-medium text-gray-900">
+            {row.original.formNumber ?? '—'}
           </span>
         ),
       },
       {
+        id: 'from',
+        header: 'From Department',
+        accessorFn: row => row.from?.name ?? '',
+        size: 180,
+        cell: ({ row }) => (
+          <div>
+            <div className="text-sm text-gray-900">
+              {row.original.from?.name ?? '—'}
+            </div>
+            <div className="text-xs text-gray-500">
+              {row.original.from?.department ?? '—'}
+            </div>
+          </div>
+        ),
+      },
+      {
         id: 'to',
-        header: 'To',
+        header: 'To Department',
         accessorFn: row => row.to?.name ?? '',
-        size: 160,
+        size: 180,
+        cell: ({ row }) => (
+          <div>
+            <div className="text-sm text-gray-900">
+              {row.original.to?.name ?? '—'}
+            </div>
+            <div className="text-xs text-gray-500">
+              {row.original.to?.department ?? '—'}
+            </div>
+          </div>
+        ),
+      },
+      {
+        id: 'processedBy',
+        header: 'Processed By',
+        accessorFn: row => row.processor ?? '',
+        size: 140,
         cell: ({ row }) => (
           <span className="text-sm text-gray-900">
-            {row.original.to?.name ?? '—'}
+            {row.original.processor ?? '—'}
           </span>
         ),
       },

@@ -2946,9 +2946,11 @@ export async function getTransferHistoryHandler(
         past_owner.first_name as from_first_name,
         past_owner.last_name as from_last_name,
         past_owner.company_id as from_company_id,
+        dfrom.name as from_department_name,
         recipient.first_name as to_first_name,
         recipient.last_name as to_last_name,
         recipient.company_id as to_company_id,
+        dto.name as to_department_name,
         processor.first_name as processor_first_name,
         processor.last_name as processor_last_name,
         processor.company_id as processor_company_id
@@ -2959,6 +2961,8 @@ export async function getTransferHistoryHandler(
       LEFT JOIN users past_owner ON atf.user_id = past_owner.userID
       LEFT JOIN users recipient ON atf.new_assigned_user_id = recipient.userID
       LEFT JOIN users processor ON atf.created_by = processor.userID
+      LEFT JOIN asset_mngmnt_departments dfrom ON past_owner.department_id = dfrom.departmentID AND dfrom.deleted_at IS NULL
+      LEFT JOIN asset_mngmnt_departments dto ON recipient.department_id = dto.departmentID AND dto.deleted_at IS NULL
       WHERE atr.deleted_at IS NULL AND (
         a.company_id = ? OR
         past_owner.company_id = ? OR
@@ -3004,12 +3008,13 @@ export async function getTransferHistoryHandler(
           name: r.asset_name,
           category_id: r.category_id ?? null,
         },
-        from: { name: pastOwnerName },
+        from: { name: pastOwnerName, department: r.from_department_name ?? null },
         to: {
           name:
             r.to_first_name && r.to_last_name
               ? `${r.to_first_name} ${r.to_last_name}`
               : 'Unknown',
+          department: r.to_department_name ?? null,
         },
         processor: processorName,
         status: 'Transferred',
@@ -3042,9 +3047,11 @@ export async function getTransferHistoryHandler(
         past_owner.first_name as from_first_name,
         past_owner.last_name as from_last_name,
         past_owner.company_id as from_company_id,
+        dfrom.name as from_department_name,
         recipient.first_name as to_first_name,
         recipient.last_name as to_last_name,
         recipient.company_id as to_company_id,
+        dto.name as to_department_name,
         processor.first_name as processor_first_name,
         processor.last_name as processor_last_name,
         processor.company_id as processor_company_id
@@ -3056,6 +3063,8 @@ export async function getTransferHistoryHandler(
       LEFT JOIN users past_owner ON atf.user_id = past_owner.userID
       LEFT JOIN users recipient ON atf.new_assigned_user_id = recipient.userID
       LEFT JOIN users processor ON atf.created_by = processor.userID
+      LEFT JOIN asset_mngmnt_departments dfrom ON past_owner.department_id = dfrom.departmentID AND dfrom.deleted_at IS NULL
+      LEFT JOIN asset_mngmnt_departments dto ON recipient.department_id = dto.departmentID AND dto.deleted_at IS NULL
       WHERE atr.record_id IS NULL AND (
         a.company_id = ? OR
         past_owner.company_id = ? OR
@@ -3114,12 +3123,13 @@ export async function getTransferHistoryHandler(
           name: r.asset_name,
           category_id: r.category_id ?? null,
         },
-        from: { name: pastOwnerName },
+        from: { name: pastOwnerName, department: r.from_department_name ?? null },
         to: {
           name:
             r.to_first_name && r.to_last_name
               ? `${r.to_first_name} ${r.to_last_name}`
               : 'Unknown',
+          department: r.to_department_name ?? null,
         },
         processor: processorName,
         status,

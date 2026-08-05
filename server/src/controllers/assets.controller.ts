@@ -1349,14 +1349,17 @@ export async function updateAssetHandler(req: AuthRequest, res: Response) {
     return res.status(400).json({ error: 'Name and category are required' });
   }
 
-  // Validate that asset exists
-  const asset = await assetRepo.getAssetByCodeForAssign(assetId!);
+  // Validate that asset exists (single full-row fetch by code, used for
+  // existence check, FK preservation, and audit diff)
+  const asset = await assetRepo.getAssetForUpdateByCode(assetId!);
 
   if (!asset) {
     return res.status(404).json({ error: 'Asset not found' });
   }
 
-  // Validate foreign keys
+  const oldAsset = asset;
+
+  // Validate foreign keys (run independently so they execute in parallel)
   logger.info('Validating foreign keys for update:', {
     companyId,
     locationId,
@@ -1364,37 +1367,12 @@ export async function updateAssetHandler(req: AuthRequest, res: Response) {
     departmentId,
   });
 
-  let validCompanyId = null;
-  if (companyId) {
-    validCompanyId = await assetRepo.getCompanyIdByIdOrName(companyId);
-    logger.info(
-      `Company validation for ${companyId}: ${validCompanyId ? 'found' : 'not found'}`
-    );
-  }
-
-  let validLocationId = null;
-  if (locationId) {
-    validLocationId = await assetRepo.getLocationIdById(locationId);
-    logger.info(
-      `Location validation for ${locationId}: ${validLocationId ? 'found' : 'not found'}`
-    );
-  }
-
-  let validLocationRoomId = null;
-  if (locationRoomId) {
-    validLocationRoomId = await assetRepo.getRoomIdByIdOrName(locationRoomId);
-    logger.info(
-      `Location room validation for ${locationRoomId}: ${validLocationRoomId ? 'found' : 'not found'}`
-    );
-  }
-
-  let validDepartmentId = null;
-  if (departmentId) {
-    validDepartmentId = await assetRepo.getDepartmentIdByIdOrName(departmentId);
-    logger.info(
-      `Department validation for ${departmentId}: ${validDepartmentId ? 'found' : 'not found'}`
-    );
-  }
+  let [validCompanyId, validLocationId, validLocationRoomId, validDepartmentId] = await Promise.all([
+    companyId ? assetRepo.getCompanyIdByIdOrName(companyId) : Promise.resolve(null),
+    locationId ? assetRepo.getLocationIdById(locationId) : Promise.resolve(null),
+    locationRoomId ? assetRepo.getRoomIdByIdOrName(locationRoomId) : Promise.resolve(null),
+    departmentId ? assetRepo.getDepartmentIdByIdOrName(departmentId) : Promise.resolve(null),
+  ]);
 
   logger.info('Validation results for update:', {
     validCompanyId,
@@ -1402,12 +1380,6 @@ export async function updateAssetHandler(req: AuthRequest, res: Response) {
     validLocationRoomId,
     validDepartmentId,
   });
-
-  // Get old values before update for audit logging
-  const oldAsset = await assetRepo.getAssetForUpdateById(asset.assetID);
-  if (!oldAsset) {
-    return res.status(404).json({ error: 'Asset not found' });
-  }
 
   // Preserve FKs when client omits or fails to resolve them (sp_update_asset overwrites with NULL)
   if (!validCompanyId) {
@@ -1440,7 +1412,10 @@ export async function updateAssetHandler(req: AuthRequest, res: Response) {
     }
   }
 
+  const conn = await pool.getConnection();
   try {
+    await conn.beginTransaction();
+
     // Check if category or type has changed to determine if we need to update the asset code
     const categoryChanged = oldAsset.category_id !== categoryId;
     const typeChanged = oldAsset.type_id !== typeId;
@@ -1459,7 +1434,7 @@ export async function updateAssetHandler(req: AuthRequest, res: Response) {
       // sp_update_asset_code reads is_old_unit / purchase_date from the DB row,
       // so it must run after sp_update_asset to produce the correct code (e.g.
       // dropping "-OU-" when the old-unit switch is turned off).
-      const [updateRows] = (await pool.execute(
+      const [updateRows] = (await conn.execute(
         'CALL sp_update_asset(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
         [
           asset.assetID,
@@ -1519,7 +1494,7 @@ export async function updateAssetHandler(req: AuthRequest, res: Response) {
       // Regenerate the asset code now that the row reflects the new category,
       // type, is_old_unit flag, and purchase date. Returns the asset with the
       // newly generated code.
-      const [codeUpdateRows] = (await pool.execute(
+      const [codeUpdateRows] = (await conn.execute(
         'CALL sp_update_asset_code(?, ?, ?, ?, ?)',
         [
           asset.assetID,
@@ -1533,7 +1508,7 @@ export async function updateAssetHandler(req: AuthRequest, res: Response) {
       updatedAsset = codeUpdateRows[0][0];
     } else {
       // No category or type change, use regular update
-      const [rows] = (await pool.execute(
+      const [rows] = (await conn.execute(
         'CALL sp_update_asset(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
         [
           asset.assetID,
@@ -1590,6 +1565,9 @@ export async function updateAssetHandler(req: AuthRequest, res: Response) {
 
       updatedAsset = rows[0][0];
     }
+
+    // Commit the core asset + code-regeneration update as a single transaction.
+    await conn.commit();
 
     const auditDiff = buildAssetUpdateAuditDiff(
       oldAsset as Record<string, unknown>,
@@ -1694,6 +1672,7 @@ export async function updateAssetHandler(req: AuthRequest, res: Response) {
       }
     }
 
+    if (res.headersSent) return;
     return res.json({
       message: 'Asset updated successfully',
       asset: {
@@ -1734,8 +1713,16 @@ export async function updateAssetHandler(req: AuthRequest, res: Response) {
       },
     });
   } catch (error: any) {
+    try {
+      await conn.rollback();
+    } catch (rollbackError) {
+      logger.warn('Rollback failed during asset update:', rollbackError);
+    }
+    if (res.headersSent) return;
     logger.error('Update asset failed:', error);
     return res.status(500).json({ error: 'Failed to update asset' });
+  } finally {
+    conn.release();
   }
 }
 

@@ -592,9 +592,12 @@ export async function disableAccountabilityForm(formId: string): Promise<void> {
 // ---------------------------------------------------------------------------
 
 export async function getIntangibleAssignments(
-  companyId: string
+  companyId: string | null
 ): Promise<any[]> {
-  const [rows] = await pool.execute(`
+  const companyFilter = companyId ? ' AND ia.company_id = ?' : '';
+  const params: unknown[] = companyId ? [companyId] : [];
+  const [rows] = await pool.execute(
+    `
     SELECT
       iaa.assignmentID,
       iaa.intangible_asset_id,
@@ -630,10 +633,11 @@ export async function getIntangibleAssignments(
     LEFT JOIN asset_mngmnt_locations l ON iaa.location_id = l.locationID AND l.deleted_at IS NULL
     LEFT JOIN asset_mngmnt_location_rooms lr ON iaa.location_room_id = lr.roomID AND lr.deleted_at IS NULL
     LEFT JOIN users ab ON iaa.assigned_by = ab.userID
-    WHERE iaa.deleted_at IS NULL
-      AND ia.company_id = ?
+    WHERE iaa.deleted_at IS NULL${companyFilter}
     ORDER BY iaa.assigned_date DESC
-  `, [companyId]);
+  `,
+    params
+  );
   return rows as any[];
 }
 
