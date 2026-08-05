@@ -321,10 +321,28 @@ export default function AssetsReturn() {
         ),
       },
       {
+        id: 'formNumber',
+        header: 'Return Form #',
+        accessorKey: 'formNumber',
+        size: 140,
+      },
+      {
         id: 'returnedBy',
         header: 'Returned By',
         accessorKey: 'returnedBy',
         size: 160,
+      },
+      {
+        id: 'fromDepartment',
+        header: 'From Department',
+        accessorKey: 'fromDepartment',
+        size: 150,
+      },
+      {
+        id: 'toDepartment',
+        header: 'To Department',
+        accessorKey: 'toDepartment',
+        size: 150,
       },
       {
         id: 'processedBy',
@@ -388,7 +406,7 @@ export default function AssetsReturn() {
         cell: ({ row }) => {
           const imgs = row.original.conditionImages ?? [];
           if (imgs.length === 0)
-            return <span className="text-slate-400">â€”</span>;
+            return <span className="text-slate-400">—</span>;
           return (
             <Button
               variant="outline"
@@ -796,7 +814,7 @@ export default function AssetsReturn() {
     );
     const locDisplayName =
       returnLoc && room?.room_name
-        ? `${returnLoc.name} â€” ${room.room_name}`
+        ? `${returnLoc.name} — ${room.room_name}`
         : returnLoc?.name ?? '';
     const returnTypeParts: string[] = [];
     if (returnTypeReturned) returnTypeParts.push('Returned');
@@ -2362,7 +2380,7 @@ export default function AssetsReturn() {
                 <p className="text-sm text-slate-700">
                   {currentUser?.position?.trim()
                     ? currentUser.position
-                    : 'â€” (add a position on your profile if missing)'}
+                    : '— (add a position on your profile if missing)'}
                 </p>
                 <p className="text-xs text-slate-500">
                   Shown on the return form PDF after processing.

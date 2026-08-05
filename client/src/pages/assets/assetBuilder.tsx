@@ -232,6 +232,17 @@ export default function AssetBuilderPage() {
     }
   };
 
+  const handleSetParent = (assetCode: string) => {
+    if (!selectedBuilder) return;
+
+    // Set the clicked asset as parent, clear all others
+    const updatedItems = selectedBuilder.items.map((item: any) => ({
+      ...item,
+      is_parent: item.asset_code === assetCode,
+    }));
+    setSelectedBuilder({ ...selectedBuilder, items: updatedItems });
+  };
+
   const handleAddAssetToggle = (assetId: string) => {
     const asset = editingSelectableAssets.find(a => a.id === assetId);
     if (!asset || !selectedBuilder) return;
@@ -395,13 +406,26 @@ export default function AssetBuilderPage() {
       id: 'actions',
       header: '',
       cell: ({ row }: any) => (
-        <Button
-          variant="outline"
-          size="sm"
-          onClick={() => handleRemoveAsset(row.original.asset_code)}
-        >
-          Remove
-        </Button>
+        <div className="flex items-center gap-2">
+          {!row.original.is_parent && (
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => handleSetParent(row.original.asset_code)}
+              className="text-amber-600 hover:text-amber-700"
+            >
+              <Crown className="h-3.5 w-3.5 mr-1" />
+              Set as Parent
+            </Button>
+          )}
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() => handleRemoveAsset(row.original.asset_code)}
+          >
+            Remove
+          </Button>
+        </div>
       ),
     },
   ];

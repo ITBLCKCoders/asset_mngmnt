@@ -16,6 +16,36 @@ import { emitNotification } from '../sockets/socketHandlers.js';
 import { getIoInstance } from '../utils/socketManager.js';
 import { NotificationService } from '../services/notification.service.js';
 
+/**
+ * Resolves the effective company ID for a user performing builder mutations.
+ *
+ * Global Admin uses the active company (company switcher in the header), matching
+ * the logic used by getAssetBuildersHandler/getAssetScope. All other users use
+ * their fixed company_id from the users table.
+ */
+async function resolveUserCompanyId(
+  pool: any,
+  userId: string
+): Promise<string | null> {
+  const [userRows] = (await pool.execute(
+    `SELECT u.company_id, r.name as role_name
+     FROM users u
+     LEFT JOIN asset_mngmnt_roles r ON u.role_id = r.roleID AND r.deleted_at IS NULL
+     WHERE u.userID = ?`,
+    [userId]
+  )) as any[];
+
+  const isSuperAdmin =
+    String(userRows?.[0]?.role_name ?? '').trim().toLowerCase() === 'global admin';
+
+  if (isSuperAdmin) {
+    const activeCompany = await getActiveCompany(pool);
+    return activeCompany?.id ?? null;
+  }
+
+  return userRows?.[0]?.company_id ?? null;
+}
+
 export async function createAssetBuilderHandler(
   req: AuthRequest,
   res: Response
@@ -509,13 +539,10 @@ export async function updateAssetBuilderHandler(
 
     const builder = builderRows[0];
 
-    // Check if user belongs to the same company
-    const [userRows] = (await pool.execute(
-      'SELECT company_id FROM users WHERE userID = ?',
-      [userId]
-    )) as any[];
+    // Check if user belongs to the same company (Global Admin uses active company)
+    const userCompanyId = await resolveUserCompanyId(pool, userId);
 
-    if (userRows[0]?.company_id !== builder.company_id) {
+    if (userCompanyId !== builder.company_id) {
       return res.status(403).json({ error: 'Access denied' });
     }
 
@@ -1020,13 +1047,10 @@ export async function getAssetBuilderFormsHandler(
 
     const builder = builderRows[0];
 
-    // Check if user belongs to the same company
-    const [userRows] = (await pool.execute(
-      'SELECT company_id FROM users WHERE userID = ?',
-      [userId]
-    )) as any[];
+    // Check if user belongs to the same company (Global Admin uses active company)
+    const userCompanyId = await resolveUserCompanyId(pool, userId);
 
-    if (userRows[0]?.company_id !== builder.company_id) {
+    if (userCompanyId !== builder.company_id) {
       return res.status(403).json({ error: 'Access denied' });
     }
 
@@ -1163,13 +1187,10 @@ export async function deleteAssetBuilderHandler(
 
     const builder = builderRows[0];
 
-    // Check if user belongs to the same company
-    const [userRows] = (await pool.execute(
-      'SELECT company_id FROM users WHERE userID = ?',
-      [userId]
-    )) as any[];
+    // Check if user belongs to the same company (Global Admin uses active company)
+    const userCompanyId = await resolveUserCompanyId(pool, userId);
 
-    if (userRows[0]?.company_id !== builder.company_id) {
+    if (userCompanyId !== builder.company_id) {
       return res.status(403).json({ error: 'Access denied' });
     }
 
