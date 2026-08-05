@@ -154,6 +154,14 @@ export default function AssetBuilderPage() {
     setSelectedAssetIds(newSelected);
   };
 
+  const handleSetParentOnCreate = (
+    e: React.MouseEvent,
+    assetId: string
+  ) => {
+    e.stopPropagation();
+    setSelectedParentAssetId(assetId);
+  };
+
   const handleSave = async () => {
     if (!builderName.trim()) {
       toast.error('Please enter a name for the asset builder');
@@ -349,6 +357,24 @@ export default function AssetBuilderPage() {
           </div>
         ) : null
       ),
+    },
+    {
+      id: 'actions',
+      header: '',
+      size: 140,
+      cell: ({ row }: any) =>
+        selectedAssetIds.has(row.original.id) &&
+        selectedParentAssetId !== row.original.id ? (
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={(e) => handleSetParentOnCreate(e, row.original.id)}
+            className="text-amber-600 hover:text-amber-700"
+          >
+            <Crown className="h-3.5 w-3.5 mr-1" />
+            Set as Parent
+          </Button>
+        ) : null,
     },
     ...assetColumns,
   ];
@@ -708,7 +734,10 @@ export default function AssetBuilderPage() {
                     <Button
                       variant="outline"
                       size="sm"
-                      onClick={() => setSelectedAssetIds(new Set())}
+                      onClick={() => {
+                        setSelectedAssetIds(new Set());
+                        setSelectedParentAssetId(null);
+                      }}
                     >
                       Clear Selection
                     </Button>
