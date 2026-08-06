@@ -11,6 +11,7 @@ import {
   getBlackCodersFooterGradient,
   isBlackCoders,
   fetchActiveCompanyForAssetReturnForm,
+  fetchCompanyBrandingByName,
   sortAssetsByLast5Digits,
   PDF_SIGNATURE_MAX_HEIGHT_MM,
   PDF_SIGNATURE_MAX_WIDTH_MM,
@@ -92,6 +93,12 @@ export const generateAssetTransferPDF = async (
 
   const companyName = transferData.user.companyName;
   let companyLogo = transferData.user.companyLogoUrl;
+  if (companyName) {
+    const matchedBranding = await fetchCompanyBrandingByName(companyName);
+    if (matchedBranding?.logo_url) {
+      companyLogo = matchedBranding.logo_url;
+    }
+  }
   if (!companyLogo) {
     const myCompany = await fetchActiveCompanyForAssetReturnForm();
     companyLogo = myCompany?.logo_url ?? null;

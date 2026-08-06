@@ -424,7 +424,24 @@ export async function refreshTokenHandler(req: AuthRequest, res: Response) {
   if (!refreshToken)
     return res.status(400).json({ error: 'Refresh token required' });
 
-  const payload = await verifyRefreshToken(refreshToken, req);
+  let payload;
+  try {
+    payload = await verifyRefreshToken(refreshToken, req);
+  } catch (err) {
+    // verifyRefreshToken has no try/catch and this route is not wrapped in
+    // asyncHandler, so a DB error would otherwise surface as an opaque
+    // unhandled rejection. Log the mysql2 detail (code/sqlMessage/sql) here.
+    logger.error('[AUTH] Refresh token verification failed', {
+      message: err instanceof Error ? err.message : String(err),
+      code: (err as { code?: string })?.code,
+      errno: (err as { errno?: number })?.errno,
+      sqlState: (err as { sqlState?: string })?.sqlState,
+      sqlMessage: (err as { sqlMessage?: string })?.sqlMessage,
+      sql: (err as { sql?: string })?.sql,
+      stack: err instanceof Error ? err.stack : undefined,
+    });
+    return res.status(503).json({ error: 'Session service unavailable' });
+  }
   if (!payload || !payload.sessionId)
     return res.status(401).json({ error: 'Session expired or invalid' });
 

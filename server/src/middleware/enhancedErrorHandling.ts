@@ -128,6 +128,11 @@ export function enhancedErrorHandler(
   // Log error with context
   const errorContext = {
     message: error.message,
+    code: (error as { code?: string }).code,
+    errno: (error as { errno?: number }).errno,
+    sqlState: (error as { sqlState?: string }).sqlState,
+    sqlMessage: (error as { sqlMessage?: string }).sqlMessage,
+    sql: (error as { sql?: string }).sql,
     stack: error.stack,
     url: req.originalUrl,
     method: req.method,

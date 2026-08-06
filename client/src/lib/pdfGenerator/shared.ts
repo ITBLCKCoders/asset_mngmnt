@@ -123,11 +123,13 @@ export const fetchCompanyBrandingByName = async (
   if (!normalizedName) return null;
 
   try {
-    const data = await api.get<{ data?: PdfCompanyBranding[] }>(
-      '/companies/public'
-    );
+    const data = await api.get<{
+      companies?: PdfCompanyBranding[];
+      data?: PdfCompanyBranding[];
+    }>('/companies/public');
+    const companies = data?.companies ?? data?.data;
     return (
-      data?.data?.find(
+      companies?.find(
         company => normalizeCompanyName(company.name) === normalizedName
       ) ?? null
     );

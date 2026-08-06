@@ -12,6 +12,7 @@ import {
   isBlackCoders,
   pdfLogger as logger,
   fetchActiveCompanyForAssetReturnForm,
+  fetchCompanyBrandingByName,
   sortAssetsByLast5Digits,
   PDF_SIGNATURE_MAX_HEIGHT_MM,
   PDF_SIGNATURE_MAX_WIDTH_MM,
@@ -120,6 +121,12 @@ export const generateAssetReturnPDF = async (
 
   const companyName = returnData.user.companyName;
   let companyLogo = returnData.user.companyLogoUrl;
+  if (companyName) {
+    const matchedBranding = await fetchCompanyBrandingByName(companyName);
+    if (matchedBranding?.logo_url) {
+      companyLogo = matchedBranding.logo_url;
+    }
+  }
   if (!companyLogo) {
     const myCompany = await fetchActiveCompanyForAssetReturnForm();
     companyLogo = myCompany?.logo_url ?? null;

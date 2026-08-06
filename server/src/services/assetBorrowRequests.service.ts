@@ -631,7 +631,15 @@ export class AssetBorrowRequestsService {
         this.borrowDueRemindersSchemaOk = false;
         return;
       }
-      logger.error('[borrow reminders] processDueReminders failed', err);
+      logger.error('[borrow reminders] processDueReminders failed', {
+        message: err instanceof Error ? err.message : String(err),
+        code: (err as { code?: string })?.code,
+        errno: (err as { errno?: number })?.errno,
+        sqlState: (err as { sqlState?: string })?.sqlState,
+        sqlMessage: (err as { sqlMessage?: string })?.sqlMessage,
+        sql: (err as { sql?: string })?.sql,
+        stack: err instanceof Error ? err.stack : undefined,
+      });
     }
   }
 }
