@@ -83,6 +83,48 @@ function getStatusBadgeClass(status: string) {
   }
 }
 
+function FormRow({
+  form,
+  generatingPdfId,
+  onViewPdf,
+}: {
+  form: AccountabilityForm;
+  generatingPdfId: string | null;
+  onViewPdf: () => void;
+}) {
+  return (
+    <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 p-3 rounded-lg border border-gray-100 bg-white">
+      <div className="flex-1 min-w-0">
+        <p className="text-sm font-semibold text-gray-900">{form.formNumber}</p>
+        <p className="text-xs text-gray-600 mt-0.5">
+          Assigned to: {[form.user?.first_name, form.user?.last_name].filter(Boolean).join(' ') || 'Unknown'}
+          {form.user?.email && ` (${form.user.email})`}
+        </p>
+        <div className="flex flex-wrap items-center gap-x-3 gap-y-1 mt-1 text-xs text-gray-500">
+          {form.department?.name && <span>Dept: {form.department.name}</span>}
+          {form.location?.name && <span>Loc: {form.location.name}</span>}
+          <span>Created: {formatDate(form.created_at)}</span>
+        </div>
+      </div>
+      <div className="flex items-center gap-2 shrink-0">
+        <Badge className={getStatusBadgeClass(form.status)}>
+          {form.status}
+        </Badge>
+        <Button
+          variant="outline"
+          size="sm"
+          onClick={onViewPdf}
+          disabled={generatingPdfId === form.id}
+          className="flex items-center gap-1.5"
+        >
+          <Eye className="h-3.5 w-3.5" />
+          {generatingPdfId === form.id ? 'Generating...' : 'View PDF'}
+        </Button>
+      </div>
+    </div>
+  );
+}
+
 export default function IntangibleAssetViewModal({
   isOpen,
   onClose,
@@ -151,6 +193,13 @@ export default function IntangibleAssetViewModal({
   if (!isOpen || !asset) return null;
 
   const assignees = Array.isArray(asset.assignees) ? asset.assignees : [];
+
+  const activeForms = forms.filter(
+    form => form.status !== 'Disabled' && form.status !== 'Declined'
+  );
+  const disabledForms = forms.filter(
+    form => form.status === 'Disabled' || form.status === 'Declined'
+  );
 
   return (
     <Dialog open={isOpen} onOpenChange={open => !open && onClose()}>
@@ -282,41 +331,51 @@ export default function IntangibleAssetViewModal({
                   No accountability forms found for this asset
                 </div>
               ) : (
-                <div className="space-y-3">
-                  {forms.map((form) => (
-                    <div
-                      key={form.id}
-                      className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 p-3 rounded-lg border border-gray-100 bg-white"
-                    >
-                      <div className="flex-1 min-w-0">
-                        <p className="text-sm font-semibold text-gray-900">{form.formNumber}</p>
-                        <p className="text-xs text-gray-600 mt-0.5">
-                          Assigned to: {[form.user?.first_name, form.user?.last_name].filter(Boolean).join(' ') || 'Unknown'}
-                          {form.user?.email && ` (${form.user.email})`}
+                <div className="space-y-6">
+                  {activeForms.length > 0 && (
+                    <div>
+                      <div className="flex items-center gap-2 mb-2">
+                        <p className="text-xs font-medium text-gray-500 uppercase tracking-wider">
+                          Active
                         </p>
-                        <div className="flex flex-wrap items-center gap-x-3 gap-y-1 mt-1 text-xs text-gray-500">
-                          {form.department?.name && <span>Dept: {form.department.name}</span>}
-                          {form.location?.name && <span>Loc: {form.location.name}</span>}
-                          <span>Created: {formatDate(form.created_at)}</span>
-                        </div>
-                      </div>
-                      <div className="flex items-center gap-2 shrink-0">
-                        <Badge className={getStatusBadgeClass(form.status)}>
-                          {form.status}
+                        <Badge variant="secondary" className="bg-emerald-50 text-emerald-700 border border-emerald-200">
+                          {activeForms.length}
                         </Badge>
-                        <Button
-                          variant="outline"
-                          size="sm"
-                          onClick={() => handleViewPdf(form.id, form.formNumber)}
-                          disabled={generatingPdfId === form.id}
-                          className="flex items-center gap-1.5"
-                        >
-                          <Eye className="h-3.5 w-3.5" />
-                          {generatingPdfId === form.id ? 'Generating...' : 'View PDF'}
-                        </Button>
+                      </div>
+                      <div className="space-y-3">
+                        {activeForms.map(form => (
+                          <FormRow
+                            key={form.id}
+                            form={form}
+                            generatingPdfId={generatingPdfId}
+                            onViewPdf={() => handleViewPdf(form.id, form.formNumber)}
+                          />
+                        ))}
                       </div>
                     </div>
-                  ))}
+                  )}
+                  {disabledForms.length > 0 && (
+                    <div>
+                      <div className="flex items-center gap-2 mb-2">
+                        <p className="text-xs font-medium text-gray-500 uppercase tracking-wider">
+                          Disabled
+                        </p>
+                        <Badge variant="secondary" className="bg-gray-100 text-gray-600 border border-gray-200">
+                          {disabledForms.length}
+                        </Badge>
+                      </div>
+                      <div className="space-y-3">
+                        {disabledForms.map(form => (
+                          <FormRow
+                            key={form.id}
+                            form={form}
+                            generatingPdfId={generatingPdfId}
+                            onViewPdf={() => handleViewPdf(form.id, form.formNumber)}
+                          />
+                        ))}
+                      </div>
+                    </div>
+                  )}
                 </div>
               )}
             </CardContent>

@@ -20,7 +20,7 @@ export async function getUsersHandler(req: AuthRequest, res: Response) {
       .map((u: any) => String(u?.id ?? '').trim())
       .filter((id: string) => id.length > 0);
     const signaturesById = new Map<string, string | null>();
-    const lockoutDataById = new Map<string, { lockout_until: string | null; failed_login_attempts: number }>();
+    const lockoutDataById = new Map<string, { lockout_until: string | null; failed_login_attempts: number; lockout_ip: string | null }>();
     
     if (userIds.length > 0) {
       const placeholders = userIds.map(() => '?').join(', ');
@@ -42,7 +42,7 @@ export async function getUsersHandler(req: AuthRequest, res: Response) {
       
       // Fetch lockout data
       const [lockoutRows] = (await pool.query(
-        `SELECT userID, lockout_until, failed_login_attempts FROM users WHERE userID IN (${placeholders})`,
+        `SELECT userID, lockout_until, failed_login_attempts, lockout_ip FROM users WHERE userID IN (${placeholders})`,
         userIds
       )) as any[];
       for (const row of lockoutRows as any[]) {
@@ -50,14 +50,15 @@ export async function getUsersHandler(req: AuthRequest, res: Response) {
         if (!id) continue;
         lockoutDataById.set(id, {
           lockout_until: row.lockout_until || null,
-          failed_login_attempts: row.failed_login_attempts || 0
+          failed_login_attempts: row.failed_login_attempts || 0,
+          lockout_ip: row.lockout_ip || null
         });
       }
     }
 
     // Transform to match the expected User interface (includes approver flags from user_custodian_settings via sp_get_users LEFT JOIN)
     const users = rawUsers.map((user: any) => {
-      const lockoutData = lockoutDataById.get(String(user.id)) || { lockout_until: null, failed_login_attempts: 0 };
+      const lockoutData = lockoutDataById.get(String(user.id)) || { lockout_until: null, failed_login_attempts: 0, lockout_ip: null };
       return {
         userID: user.id, // This is actually userID from the stored procedure
         email: user.email,
@@ -91,6 +92,7 @@ export async function getUsersHandler(req: AuthRequest, res: Response) {
         finance_approver: Boolean(user.finance_approver),
         lockout_until: lockoutData.lockout_until,
         failed_login_attempts: lockoutData.failed_login_attempts,
+        lockout_ip: lockoutData.lockout_ip,
       };
     });
 
@@ -329,7 +331,7 @@ export async function removeUserLockoutHandler(
 
   try {
     const [rows] = (await pool.execute(
-      'UPDATE users SET failed_login_attempts = 0, lockout_until = NULL, lockout_count = 0 WHERE userID = ?',
+      'UPDATE users SET failed_login_attempts = 0, lockout_until = NULL, lockout_count = 0, lockout_ip = NULL, last_failed_attempt_at = NULL WHERE userID = ?',
       [id]
     )) as any[];
 

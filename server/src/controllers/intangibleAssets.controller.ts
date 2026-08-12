@@ -435,21 +435,11 @@ export const batchAssignIntangibleAssets = async (req: AuthRequest, res: Respons
           ? await repo.getActiveAssignmentsByUserAndCategories(assignedTo, categoryIds)
           : [];
 
-        const [intangibleRows] = await pool.execute(
-          `SELECT ia.id, ia.name, ia.description, ia.type,
-                  td.departmentID AS type_department_id,
-                  td.name AS type_department_name
-           FROM intangible_assets ia
-           LEFT JOIN intangible_asset_types iat
-             ON ia.type = iat.name
-             AND iat.company_id = ia.company_id
-             AND iat.deleted_at IS NULL
-           LEFT JOIN asset_mngmnt_departments td
-             ON iat.department_id = td.departmentID
-             AND td.deleted_at IS NULL
-           WHERE ia.id IN (${assetIds.map(() => '?').join(',')}) AND ia.company_id = ?`,
-          [...assetIds, activeCompany.id]
-        );
+        // All of the user's currently-active intangible assets in this department
+        // (includes the assets being assigned in this batch plus previously assigned ones).
+        const intangibleRows = departmentId
+          ? await formRepo.getActiveIntangibleAssetsByUserAndDepartment(assignedTo, departmentId)
+          : [];
 
         const combinedAssets = [
           ...departmentAssetsRows.map(row => ({

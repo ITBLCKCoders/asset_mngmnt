@@ -408,6 +408,52 @@ export async function updateFormAssetsDataById(
   );
 }
 
+export interface ActiveIntangibleAssetForFormRow extends RowDataPacket {
+  id: string;
+  name: string;
+  description: string | null;
+  type: string | null;
+  department_id: string | null;
+  department_name: string | null;
+  type_department_id: string | null;
+  type_department_name: string | null;
+}
+
+export async function getActiveIntangibleAssetsByUserAndDepartment(
+  userId: string,
+  departmentId: string
+): Promise<ActiveIntangibleAssetForFormRow[]> {
+  const [rows] = await pool.execute<ActiveIntangibleAssetForFormRow[]>(
+    `SELECT
+       ia.id,
+       ia.name,
+       ia.description,
+       ia.type,
+       iaa.department_id,
+       d.name AS department_name,
+       td.departmentID AS type_department_id,
+       td.name AS type_department_name
+     FROM intangible_asset_assignments iaa
+     INNER JOIN intangible_assets ia ON iaa.intangible_asset_id = ia.id AND ia.deleted_at IS NULL
+     LEFT JOIN intangible_asset_types iat
+       ON ia.type = iat.name
+       AND iat.company_id = ia.company_id
+       AND iat.deleted_at IS NULL
+     LEFT JOIN asset_mngmnt_departments td
+       ON iat.department_id = td.departmentID
+       AND td.deleted_at IS NULL
+     LEFT JOIN asset_mngmnt_departments d
+       ON iaa.department_id = d.departmentID
+       AND d.deleted_at IS NULL
+     WHERE iaa.user_id = ?
+       AND iaa.department_id = ?
+       AND iaa.status = 'Active'
+       AND iaa.deleted_at IS NULL`,
+    [userId, departmentId]
+  );
+  return rows;
+}
+
 // ---------------------------------------------------------------------------
 // Form lookups (single)
 // ---------------------------------------------------------------------------
@@ -496,9 +542,25 @@ export async function findFormsByAssetId(
 ): Promise<RowDataPacket[]> {
   const [rows] = await pool.execute<RowDataPacket[]>(
     `${FORM_FULL_SELECT_AND_JOINS}
-     WHERE af.deleted_at IS NULL AND (af.asset_id = ? OR af.assets_data LIKE ?)
+     WHERE af.deleted_at IS NULL
+       AND (
+         af.asset_id = ?
+         OR af.assets_data LIKE ?
+         OR af.formID IN (
+           SELECT af2.formID
+           FROM accountability_forms af2
+           JOIN intangible_asset_assignments iaa
+             ON af2.user_id = iaa.user_id
+            AND af2.department_id = iaa.department_id
+           WHERE iaa.intangible_asset_id = ?
+             AND iaa.status = 'Active'
+             AND iaa.deleted_at IS NULL
+             AND af2.deleted_at IS NULL
+             AND af2.status IN ('Pending', 'Signed')
+         )
+       )
      ORDER BY af.created_at DESC`,
-    [assetId, `%${assetId}%`]
+    [assetId, `%${assetId}%`, assetId]
   );
   return rows;
 }

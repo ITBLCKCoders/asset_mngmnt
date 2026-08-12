@@ -19,6 +19,7 @@ jest.mock('../../repositories/accountabilityForm.repository.js', () => ({
   getFormFullDetailById: jest.fn(),
   findUnsignedFormsByUserId: jest.fn(),
   getFormAssetsDataById: jest.fn(),
+  getActiveIntangibleAssetsByUserAndDepartment: jest.fn(),
   getCompanyCodePrefix: jest.fn(),
   getDepartmentCodePrefix: jest.fn(),
   getAccountabilityFormSettings: jest.fn(),

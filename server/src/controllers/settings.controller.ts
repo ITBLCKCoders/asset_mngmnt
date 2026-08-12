@@ -1426,6 +1426,7 @@ export async function getSecuritySettingsHandler(
       passwordExpirationDays: await SettingModel.getValue('password_expiration_days') ?? 90,
       maxLoginAttempts: await SettingModel.getValue('max_login_attempts') ?? 5,
       lockoutDurationMinutes: await SettingModel.getValue('lockout_duration_minutes') ?? 30,
+      failedAttemptResetMinutes: await SettingModel.getValue('failed_attempt_reset_minutes') ?? 15,
       sessionTimeoutMinutes: await SettingModel.getValue('session_timeout_minutes') ?? 60,
       auditLoggingEnabled: await SettingModel.getValue('audit_logging_enabled') ?? true,
       otpExpirySeconds: await SettingModel.getValue('otp_expiry_seconds') ?? 300,
@@ -1451,6 +1452,7 @@ export async function updateSecuritySettingsHandler(
     passwordExpirationDays,
     maxLoginAttempts,
     lockoutDurationMinutes,
+    failedAttemptResetMinutes,
     sessionTimeoutMinutes,
     auditLoggingEnabled,
     otpExpirySeconds,
@@ -1469,6 +1471,9 @@ export async function updateSecuritySettingsHandler(
   }
   if (lockoutDurationMinutes && (typeof lockoutDurationMinutes !== 'number' || lockoutDurationMinutes < 1)) {
     return res.status(400).json({ error: 'lockoutDurationMinutes must be at least 1' });
+  }
+  if (failedAttemptResetMinutes !== undefined && (typeof failedAttemptResetMinutes !== 'number' || failedAttemptResetMinutes < 0)) {
+    return res.status(400).json({ error: 'failedAttemptResetMinutes must be 0 or greater' });
   }
   if (sessionTimeoutMinutes && (typeof sessionTimeoutMinutes !== 'number' || sessionTimeoutMinutes < 1)) {
     return res.status(400).json({ error: 'sessionTimeoutMinutes must be at least 1' });
@@ -1502,6 +1507,9 @@ export async function updateSecuritySettingsHandler(
     }
     if (lockoutDurationMinutes !== undefined) {
       await SettingModel.setValue('lockout_duration_minutes', lockoutDurationMinutes.toString(), 'number', userId);
+    }
+    if (failedAttemptResetMinutes !== undefined) {
+      await SettingModel.setValue('failed_attempt_reset_minutes', failedAttemptResetMinutes.toString(), 'number', userId);
     }
     if (sessionTimeoutMinutes !== undefined) {
       await SettingModel.setValue('session_timeout_minutes', sessionTimeoutMinutes.toString(), 'number', userId);

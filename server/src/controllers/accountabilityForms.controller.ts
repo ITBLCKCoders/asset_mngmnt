@@ -472,6 +472,47 @@ export async function createAccountabilityFormHandler(
         return res.status(400).json({ error: 'User ID is required' });
       }
 
+      // Merge the user's currently-active intangible asset assignments so every
+      // generated accountability form lists all of the user's held assets.
+      if (departmentId) {
+        try {
+          const activeIntangibles =
+            await repo.getActiveIntangibleAssetsByUserAndDepartment(
+              userId,
+              departmentId
+            );
+          if (activeIntangibles.length > 0) {
+            const seenIds = new Set(
+              assets
+                .map((a: any) => String(a?.id ?? a?.assetID ?? '').trim())
+                .filter(Boolean)
+            );
+            for (const row of activeIntangibles) {
+              const id = String(row.id ?? '').trim();
+              if (!id || seenIds.has(id)) continue;
+              seenIds.add(id);
+              assets.push({
+                id,
+                code: row.name || id,
+                name: row.name || '',
+                description: row.description || '',
+                category: 'Intangible',
+                type: row.type || 'Intangible',
+                department: row.department_name,
+                serialNo: '',
+                modelNo: '',
+                brand: '',
+              });
+            }
+          }
+        } catch (mergeErr) {
+          logger.error(
+            'Failed to merge intangible assets into accountability form:',
+            mergeErr
+          );
+        }
+      }
+
       // Get company ID and user details from department or user
       let companyId: string | null = null;
       if (departmentId) {

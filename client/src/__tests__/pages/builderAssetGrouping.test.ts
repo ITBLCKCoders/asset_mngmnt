@@ -128,9 +128,17 @@ describe('buildBuilderGroupedAssetRows', () => {
       .filter(x => x.r.kind === 'separator')
       .map(x => x.i);
     expect(separators[0]).toBe(0); // Workstation Set A
-    expect(rows[separators[1]].name).toBe('Workstation Set B');
+    const secondSeparator = rows[separators[1]];
+    expect(secondSeparator.kind).toBe('separator');
+    if (secondSeparator.kind === 'separator') {
+      expect(secondSeparator.name).toBe('Workstation Set B');
+    }
     expect(rows[separators[2]]).toEqual({ kind: 'separator', name: '' });
-    expect(rows[rows.length - 1].asset.code).toBe('AST-099');
+    const lastRow = rows[rows.length - 1];
+    expect(lastRow.kind).toBe('asset');
+    if (lastRow.kind === 'asset') {
+      expect(lastRow.asset.code).toBe('AST-099');
+    }
   });
 
   it('does not add a trailing separator when all assets belong to a builder group', () => {
