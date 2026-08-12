@@ -2363,13 +2363,7 @@ export function AccountabilityFormCard({
 
                 <div className="min-h-0 flex-1 overflow-auto">
                   <div className="mx-4 my-4 h-[600px] overflow-hidden rounded-lg border border-slate-200 bg-slate-50 sm:mx-6">
-                    {pdfUrl ? (
-                      <PDFViewer pdfUrl={pdfUrl} className="h-full w-full" />
-                    ) : (
-                      <div className="flex h-full w-full items-center justify-center text-gray-500">
-                        Loading form preview...
-                      </div>
-                    )}
+                    <PDFViewer pdfUrl={pdfUrl} className="h-full w-full" />
                   </div>
 
                   <div className="space-y-4 px-6 py-4">
@@ -2545,13 +2539,7 @@ export function AccountabilityFormCard({
           </div>
           <AppDialogBody className="min-h-0 flex-1 overflow-auto !p-0">
             <div className="mx-4 h-[575px] overflow-hidden rounded-lg border border-slate-200 bg-slate-50 sm:mx-6">
-              {pdfUrl ? (
-                <PDFViewer pdfUrl={pdfUrl} className="h-full w-full" />
-              ) : (
-                <div className="flex h-full w-full items-center justify-center text-gray-500">
-                  Loading form preview...
-                </div>
-              )}
+              <PDFViewer pdfUrl={pdfUrl} className="h-full w-full" />
             </div>
             <div className="space-y-2 px-4 py-4 sm:px-6">
               <Label htmlFor="accountability-decline-reason">
@@ -2679,12 +2667,8 @@ export function AccountabilityFormCard({
                   </p>
                 </div>
               </div>
-            ) : pdfUrl ? (
-              <PDFViewer pdfUrl={pdfUrl} className="w-full" />
             ) : (
-              <div className="flex h-full w-full items-center justify-center text-gray-500">
-                Loading form preview...
-              </div>
+              <PDFViewer pdfUrl={pdfUrl} className="w-full" />
             )}
           </AppDialogBody>
 
@@ -2770,13 +2754,7 @@ export function AccountabilityFormCard({
               </div>
             )}
             <div className="mx-4 my-4 h-[600px] overflow-hidden rounded-lg border border-slate-200 bg-slate-50 sm:mx-6">
-              {checklistPdfUrl ? (
-                <PDFViewer pdfUrl={checklistPdfUrl} className="h-full w-full" />
-              ) : (
-                <div className="flex h-full w-full items-center justify-center text-gray-500">
-                  Generating checklist PDF preview...
-                </div>
-              )}
+              <PDFViewer pdfUrl={checklistPdfUrl} className="h-full w-full" />
             </div>
             <div className="space-y-4 px-6 py-4">
               <div className="flex items-start space-x-3">
@@ -2847,13 +2825,7 @@ export function AccountabilityFormCard({
             description="Asset Checklist Form Preview"
           />
           <AppDialogBody className="min-h-0 flex-1 overflow-auto !p-0">
-            {checklistPdfUrl ? (
-              <PDFViewer pdfUrl={checklistPdfUrl} className="h-full w-full" />
-            ) : (
-              <div className="flex h-full w-full items-center justify-center text-gray-500">
-                Generating checklist PDF preview...
-              </div>
-            )}
+            <PDFViewer pdfUrl={checklistPdfUrl} className="h-full w-full" />
           </AppDialogBody>
           <AppDialogChromeFooter className="justify-end gap-3">
             {canSignChecklist && (
@@ -3129,13 +3101,7 @@ export function AccountabilityFormDetail({
 
               <div className="min-h-0 flex-1 overflow-auto">
                 <div className="mx-4 my-4 h-[500px] overflow-hidden rounded-lg border border-slate-200 bg-slate-50 sm:mx-6">
-                  {pdfUrl ? (
-                    <PDFViewer pdfUrl={pdfUrl} className="h-full w-full" />
-                  ) : (
-                    <div className="flex h-full w-full items-center justify-center text-gray-500">
-                      Loading form preview...
-                    </div>
-                  )}
+                  <PDFViewer pdfUrl={pdfUrl} className="h-full w-full" />
                 </div>
 
                 <div className="space-y-4 px-6 py-4">
@@ -3234,13 +3200,7 @@ export function AccountabilityFormDetail({
             </div>
             <AppDialogBody className="min-h-0 flex-1 overflow-auto !p-0">
               <div className="mx-4 h-[420px] overflow-hidden rounded-lg border border-slate-200 bg-slate-50 sm:mx-6">
-                {pdfUrl ? (
-                  <PDFViewer pdfUrl={pdfUrl} className="h-full w-full" />
-                ) : (
-                  <div className="flex h-full w-full items-center justify-center text-gray-500">
-                    Loading form preview...
-                  </div>
-                )}
+                <PDFViewer pdfUrl={pdfUrl} className="h-full w-full" />
               </div>
               <div className="space-y-2 px-4 py-4 sm:px-6">
                 <Label htmlFor="accountability-decline-reason">
@@ -3516,24 +3476,12 @@ export function AccountabilityFormDetail({
             </div>
           )}
           <div className="flex h-[70vh] flex-1 flex-col overflow-hidden">
-            {pdfUrl ? (
-              <PDFViewer pdfUrl={pdfUrl} className="h-full w-full" />
-            ) : (
-              <div className="flex h-full w-full items-center justify-center text-gray-500">
-                Generating PDF preview...
-              </div>
-            )}
+            <PDFViewer pdfUrl={pdfUrl} className="h-full w-full" />
           </div>
         </div>
       ) : (
         <div className={previewClassName}>
-          {pdfUrl ? (
-            <PDFViewer pdfUrl={pdfUrl} className="h-full w-full" />
-          ) : (
-            <div className="flex h-full w-full items-center justify-center text-gray-500">
-              Generating PDF preview...
-            </div>
-          )}
+          <PDFViewer pdfUrl={pdfUrl} className="h-full w-full" />
         </div>
       )}
     </>

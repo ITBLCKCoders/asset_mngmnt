@@ -419,6 +419,7 @@ export default function BorrowRequestsPage() {
   const [declineOpen, setDeclineOpen] = useState(false);
   const [pdfPreviewOpen, setPdfPreviewOpen] = useState(false);
   const [pdfPreviewUrl, setPdfPreviewUrl] = useState<string | null>(null);
+  const [pdfIframeLoaded, setPdfIframeLoaded] = useState(false);
   const [assetsLoading, setAssetsLoading] = useState(false);
   const [availableAssets, setAvailableAssets] = useState<BorrowStaffPoolAsset[]>([]);
   const [selectedAssetCode, setSelectedAssetCode] = useState('');
@@ -730,6 +731,13 @@ export default function BorrowRequestsPage() {
     a.click();
     document.body.removeChild(a);
   };
+
+  useEffect(() => {
+    if (!pdfPreviewUrl) return;
+    setPdfIframeLoaded(false);
+    const timer = window.setTimeout(() => setPdfIframeLoaded(true), 15000);
+    return () => window.clearTimeout(timer);
+  }, [pdfPreviewUrl]);
 
   const borrowHistoryColumns: ColumnDef<BorrowRequestRow>[] = useMemo(
     () => [
@@ -1979,17 +1987,22 @@ export default function BorrowRequestsPage() {
               description="Preview of the borrow form PDF"
             />
             <AppDialogBody className="flex-1 overflow-hidden p-0">
-              {pdfPreviewUrl ? (
+              <div className="relative w-full h-full">
+                {!pdfIframeLoaded && (
+                  <div className="absolute inset-0 z-10 flex items-center justify-center bg-white/80">
+                    <div className="flex flex-col items-center gap-3 text-slate-500">
+                      <div className="h-10 w-10 animate-spin rounded-full border-4 border-gray-200 border-t-blue-600" />
+                      <p className="text-sm">Loading PDF...</p>
+                    </div>
+                  </div>
+                )}
                 <iframe
-                  src={pdfPreviewUrl}
+                  src={pdfPreviewUrl ?? undefined}
+                  onLoad={() => setPdfIframeLoaded(true)}
                   className="w-full h-full border-0"
                   title="PDF Preview"
                 />
-              ) : (
-                <div className="flex items-center justify-center h-full">
-                  <p className="text-slate-500">Loading PDF...</p>
-                </div>
-              )}
+              </div>
             </AppDialogBody>
             <AppDialogChromeFooter className="justify-end gap-2">
               <Button className="bg-white hover:bg-red-600 hover:text-white text-slate-900" onClick={() => setPdfPreviewOpen(false)}>Close</Button>

@@ -381,6 +381,7 @@ export const ReturnFormDetail: React.FC<{
   const [pdfUrl, setPdfUrl] = useState<string>('');
   const [pdfLoading, setPdfLoading] = useState(true);
   const [pdfError, setPdfError] = useState<string | null>(null);
+  const [iframeLoaded, setIframeLoaded] = useState(false);
   const pdfUrlRef = useRef<string>('');
   const cacheKey = formNumber
     ? formNumber +
@@ -465,28 +466,42 @@ export const ReturnFormDetail: React.FC<{
     currentUser?.id,
   ]);
 
+  useEffect(() => {
+    if (!pdfUrl) return;
+    setIframeLoaded(false);
+    const timer = window.setTimeout(() => setIframeLoaded(true), 15000);
+    return () => window.clearTimeout(timer);
+  }, [pdfUrl]);
+
   const pdfBody = (
     <div className="flex-1 min-h-0 flex flex-col py-2 overflow-hidden">
       <div className="w-full flex-1 min-h-0 border rounded-lg overflow-hidden bg-gray-50">
-        {pdfUrl ? (
-          <iframe
-            src={pdfUrl}
-            className="w-full h-full min-h-0"
-            title="PDF Preview"
-            style={{
-              width: '100%',
-              height: '100%',
-              border: 'none',
-              display: 'block',
-            }}
-          />
-        ) : pdfLoading ? (
-          <div className="w-full h-full min-h-[200px] flex items-center justify-center text-gray-500">
-            Generating PDF preview...
-          </div>
-        ) : (
+        {pdfError && !pdfLoading && !pdfUrl ? (
           <div className="w-full h-full min-h-[200px] flex items-center justify-center text-red-500">
             {pdfError}
+          </div>
+        ) : (
+          <div className="relative w-full h-full min-h-[200px]">
+            {(pdfLoading || !iframeLoaded) && (
+              <div className="absolute inset-0 z-10 flex items-center justify-center bg-white/80">
+                <div className="flex flex-col items-center gap-3 text-gray-500">
+                  <div className="h-10 w-10 animate-spin rounded-full border-4 border-gray-200 border-t-blue-600" />
+                  <p className="text-sm">Loading PDF preview...</p>
+                </div>
+              </div>
+            )}
+            <iframe
+              src={pdfUrl}
+              onLoad={() => setIframeLoaded(true)}
+              className="w-full h-full min-h-0"
+              title="PDF Preview"
+              style={{
+                width: '100%',
+                height: '100%',
+                border: 'none',
+                display: 'block',
+              }}
+            />
           </div>
         )}
       </div>
@@ -549,6 +564,7 @@ export const TransferFormDetail: React.FC<{
   const [pdfUrl, setPdfUrl] = useState<string>('');
   const [pdfLoading, setPdfLoading] = useState(true);
   const [pdfError, setPdfError] = useState<string | null>(null);
+  const [iframeLoaded, setIframeLoaded] = useState(false);
   const pdfUrlRef = useRef<string>('');
 
   useEffect(() => {
@@ -595,28 +611,42 @@ export const TransferFormDetail: React.FC<{
     };
   }, [transferFormBatch]);
 
+  useEffect(() => {
+    if (!pdfUrl) return;
+    setIframeLoaded(false);
+    const timer = window.setTimeout(() => setIframeLoaded(true), 15000);
+    return () => window.clearTimeout(timer);
+  }, [pdfUrl]);
+
   const pdfBody = (
     <div className="flex-1 min-h-0 flex flex-col py-2 overflow-hidden">
       <div className="w-full flex-1 min-h-0 border rounded-lg overflow-hidden bg-gray-50">
-        {pdfUrl ? (
-          <iframe
-            src={pdfUrl}
-            className="w-full h-full min-h-0"
-            title="Transfer Form PDF Preview"
-            style={{
-              width: '100%',
-              height: '100%',
-              border: 'none',
-              display: 'block',
-            }}
-          />
-        ) : pdfLoading ? (
-          <div className="w-full h-full min-h-[200px] flex items-center justify-center text-gray-500">
-            Generating PDF preview...
-          </div>
-        ) : (
+        {pdfError && !pdfLoading && !pdfUrl ? (
           <div className="w-full h-full min-h-[200px] flex items-center justify-center text-red-500">
             {pdfError}
+          </div>
+        ) : (
+          <div className="relative w-full h-full min-h-[200px]">
+            {(pdfLoading || !iframeLoaded) && (
+              <div className="absolute inset-0 z-10 flex items-center justify-center bg-white/80">
+                <div className="flex flex-col items-center gap-3 text-gray-500">
+                  <div className="h-10 w-10 animate-spin rounded-full border-4 border-gray-200 border-t-blue-600" />
+                  <p className="text-sm">Loading PDF preview...</p>
+                </div>
+              </div>
+            )}
+            <iframe
+              src={pdfUrl}
+              onLoad={() => setIframeLoaded(true)}
+              className="w-full h-full min-h-0"
+              title="Transfer Form PDF Preview"
+              style={{
+                width: '100%',
+                height: '100%',
+                border: 'none',
+                display: 'block',
+              }}
+            />
           </div>
         )}
       </div>
@@ -819,8 +849,16 @@ export const ReturnFormCard: React.FC<{
   const [showOtpDialog, setShowOtpDialog] = useState(false);
   const [agreeReturn, setAgreeReturn] = useState(false);
   const [signDialogPdfUrl, setSignDialogPdfUrl] = useState<string>('');
+  const [signDialogIframeLoaded, setSignDialogIframeLoaded] = useState(false);
   const signDialogPdfUrlRef = useRef<string>('');
   const pendingSignActionRef = useRef<(() => Promise<void>) | null>(null);
+
+  useEffect(() => {
+    if (!signDialogPdfUrl) return;
+    setSignDialogIframeLoaded(false);
+    const timer = window.setTimeout(() => setSignDialogIframeLoaded(true), 15000);
+    return () => window.clearTimeout(timer);
+  }, [signDialogPdfUrl]);
 
   useEffect(() => {
     if (!showConfirmDialog || !canSign) return;
@@ -1168,9 +1206,18 @@ export const ReturnFormCard: React.FC<{
                 </AppAlertDialogMessage>
                 <div className="min-h-0 flex-1 overflow-auto px-6">
                   <div className="my-4 h-[50vh] w-full overflow-hidden rounded-lg border sm:h-[600px]">
-                    {signDialogPdfUrl ? (
+                    <div className="relative w-full h-full">
+                      {!signDialogIframeLoaded && (
+                        <div className="absolute inset-0 z-10 flex items-center justify-center bg-white/80">
+                          <div className="flex flex-col items-center gap-3 text-gray-500">
+                            <div className="h-10 w-10 animate-spin rounded-full border-4 border-gray-200 border-t-blue-600" />
+                            <p className="text-sm">Loading PDF preview...</p>
+                          </div>
+                        </div>
+                      )}
                       <iframe
                         src={signDialogPdfUrl}
+                        onLoad={() => setSignDialogIframeLoaded(true)}
                         className="h-full w-full"
                         title="Return form preview"
                         style={{
@@ -1180,11 +1227,7 @@ export const ReturnFormCard: React.FC<{
                           maxWidth: 'none',
                         }}
                       />
-                    ) : (
-                      <div className="flex h-full w-full items-center justify-center text-gray-500">
-                        Loading form preview...
-                      </div>
-                    )}
+                    </div>
                   </div>
                   <div className="space-y-4 py-4">
                     <div className="flex items-start space-x-3">
@@ -1300,13 +1343,7 @@ export const ReturnFormCard: React.FC<{
         />
         <AppDialogBody className="min-h-0 flex-1 overflow-auto !p-0">
           <div className="mx-4 my-4 h-[620px] overflow-hidden rounded-lg border border-slate-200 bg-slate-50 sm:mx-6">
-            {checklistPreviewUrl ? (
-              <PDFViewer pdfUrl={checklistPreviewUrl} className="h-full w-full" />
-            ) : (
-              <div className="flex h-full w-full items-center justify-center text-gray-500">
-                Generating checklist PDF preview...
-              </div>
-            )}
+            <PDFViewer pdfUrl={checklistPreviewUrl} className="h-full w-full" />
           </div>
         </AppDialogBody>
         <AppDialogChromeFooter className="justify-end gap-3">
@@ -1470,8 +1507,16 @@ export const TransferFormCard: React.FC<{
   const [showOtpDialog, setShowOtpDialog] = useState(false);
   const [agreeTransfer, setAgreeTransfer] = useState(false);
   const [signDialogPdfUrl, setSignDialogPdfUrl] = useState<string>('');
+  const [signDialogIframeLoaded, setSignDialogIframeLoaded] = useState(false);
   const signDialogPdfUrlRef = useRef<string>('');
   const pendingSignActionRef = useRef<(() => Promise<void>) | null>(null);
+
+  useEffect(() => {
+    if (!signDialogPdfUrl) return;
+    setSignDialogIframeLoaded(false);
+    const timer = window.setTimeout(() => setSignDialogIframeLoaded(true), 15000);
+    return () => window.clearTimeout(timer);
+  }, [signDialogPdfUrl]);
 
   useEffect(() => {
     if (!showConfirmDialog || !canSign) return;
@@ -1708,9 +1753,18 @@ export const TransferFormCard: React.FC<{
                 </AppAlertDialogMessage>
                 <div className="min-h-0 flex-1 overflow-auto px-6">
                   <div className="my-4 h-[50vh] w-full overflow-hidden rounded-lg border sm:h-[600px]">
-                    {signDialogPdfUrl ? (
+                    <div className="relative w-full h-full">
+                      {!signDialogIframeLoaded && (
+                        <div className="absolute inset-0 z-10 flex items-center justify-center bg-white/80">
+                          <div className="flex flex-col items-center gap-3 text-gray-500">
+                            <div className="h-10 w-10 animate-spin rounded-full border-4 border-gray-200 border-t-blue-600" />
+                            <p className="text-sm">Loading PDF preview...</p>
+                          </div>
+                        </div>
+                      )}
                       <iframe
                         src={signDialogPdfUrl}
+                        onLoad={() => setSignDialogIframeLoaded(true)}
                         className="h-full w-full"
                         title="Transfer form preview"
                         style={{
@@ -1720,11 +1774,7 @@ export const TransferFormCard: React.FC<{
                           maxWidth: 'none',
                         }}
                       />
-                    ) : (
-                      <div className="flex h-full w-full items-center justify-center text-gray-500">
-                        Loading form preview...
-                      </div>
-                    )}
+                    </div>
                   </div>
                   <div className="space-y-4 py-4">
                     <label className="flex cursor-pointer items-center gap-3">
@@ -2314,6 +2364,7 @@ export const BorrowFormDetail: React.FC<{
   const [pdfUrl, setPdfUrl] = useState<string>('');
   const [pdfLoading, setPdfLoading] = useState(true);
   const [pdfError, setPdfError] = useState<string | null>(null);
+  const [iframeLoaded, setIframeLoaded] = useState(false);
   const pdfUrlRef = useRef<string>('');
 
   useEffect(() => {
@@ -2366,26 +2417,40 @@ export const BorrowFormDetail: React.FC<{
     borrowFormBatch.received_by_signature,
   ]);
 
+  useEffect(() => {
+    if (!pdfUrl) return;
+    setIframeLoaded(false);
+    const timer = window.setTimeout(() => setIframeLoaded(true), 15000);
+    return () => window.clearTimeout(timer);
+  }, [pdfUrl]);
+
   const pdfBody = (
     <div className="flex-1 min-h-0 flex flex-col py-2 overflow-hidden">
       <div className="w-full flex-1 min-h-0 border rounded-lg overflow-hidden bg-gray-50 relative">
-        {pdfUrl ? (
-          <iframe
-            src={pdfUrl}
-            className="absolute inset-0 w-full h-full"
-            title="Equipment Borrowing Form PDF Preview"
-            style={{
-              border: 'none',
-              display: 'block',
-            }}
-          />
-        ) : pdfLoading ? (
-          <div className="w-full h-full min-h-[200px] flex items-center justify-center text-gray-500">
-            Generating PDF preview...
-          </div>
-        ) : (
+        {pdfError && !pdfLoading && !pdfUrl ? (
           <div className="w-full h-full min-h-[200px] flex items-center justify-center text-red-500">
             {pdfError}
+          </div>
+        ) : (
+          <div className="absolute inset-0 w-full h-full">
+            {(pdfLoading || !iframeLoaded) && (
+              <div className="absolute inset-0 z-10 flex items-center justify-center bg-white/80">
+                <div className="flex flex-col items-center gap-3 text-gray-500">
+                  <div className="h-10 w-10 animate-spin rounded-full border-4 border-gray-200 border-t-blue-600" />
+                  <p className="text-sm">Loading PDF preview...</p>
+                </div>
+              </div>
+            )}
+            <iframe
+              src={pdfUrl}
+              onLoad={() => setIframeLoaded(true)}
+              className="absolute inset-0 w-full h-full"
+              title="Equipment Borrowing Form PDF Preview"
+              style={{
+                border: 'none',
+                display: 'block',
+              }}
+            />
           </div>
         )}
       </div>
@@ -3929,13 +3994,7 @@ export default function DocumentsTab({
                 description="Asset Accountability Form Preview"
               />
               <AppDialogBody className="min-h-0 flex-1 overflow-auto !p-0">
-                {formPdfUrl ? (
-                  <PDFViewer pdfUrl={formPdfUrl} className="h-full w-full" />
-                ) : (
-                  <div className="flex h-full w-full items-center justify-center text-gray-500">
-                    Loading form preview...
-                  </div>
-                )}
+                <PDFViewer pdfUrl={formPdfUrl} className="h-full w-full" />
               </AppDialogBody>
               <AppDialogChromeFooter className="justify-end gap-3">
                 <Button
@@ -4182,13 +4241,7 @@ export default function DocumentsTab({
                 description="Asset Checklist Form Preview"
               />
               <AppDialogBody className="min-h-0 flex-1 overflow-auto !p-0">
-                {checklistPdfUrl ? (
-                  <PDFViewer pdfUrl={checklistPdfUrl} className="h-full w-full" />
-                ) : (
-                  <div className="flex h-full w-full items-center justify-center text-gray-500">
-                    Generating checklist PDF preview...
-                  </div>
-                )}
+                <PDFViewer pdfUrl={checklistPdfUrl} className="h-full w-full" />
               </AppDialogBody>
               <AppDialogChromeFooter className="justify-end gap-3">
                 {selectedChecklist && (

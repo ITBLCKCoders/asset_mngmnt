@@ -1115,13 +1115,7 @@ export default function ApprovalsPage() {
                     </div>
                   )}
                   <div className="min-h-0 flex-1 overflow-hidden rounded-lg border bg-slate-50">
-                    {checklistPreviewUrl ? (
-                      <PDFViewer pdfUrl={checklistPreviewUrl} className="h-full w-full" />
-                    ) : (
-                      <div className="flex h-full items-center justify-center text-slate-500">
-                        Generating preview...
-                      </div>
-                    )}
+                    <PDFViewer pdfUrl={checklistPreviewUrl} className="h-full w-full" />
                   </div>
                 </div>
               ) : selectedBatch.formType === 'transfer' ? (

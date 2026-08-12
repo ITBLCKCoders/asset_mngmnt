@@ -13,7 +13,13 @@ import {
 import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
 import { PageHeader } from '@/components/common/PageHeader';
-import { Search, FileCheck, ClipboardList } from 'lucide-react';
+import {
+  Search,
+  FileCheck,
+  ClipboardList,
+  ChevronLeft,
+  ChevronRight,
+} from 'lucide-react';
 import { api } from '@/lib/api';
 import { toast } from 'sonner';
 import { useUserPermissions } from '@/hooks/useUserPermissions';
@@ -45,6 +51,8 @@ import { classifyDepartmentScopeByName } from '@/lib/assetScope';
 type StatusFilter = 'all' | 'active' | 'disabled';
 type AssetTypeFilter = 'all' | 'it' | 'admin';
 
+const PAGE_SIZE = 6;
+
 export default function AccountabilityFormsPage() {
   const { hasPermission } = useUserPermissions();
   const { user: currentUser } = useCurrentUser();
@@ -64,6 +72,7 @@ export default function AccountabilityFormsPage() {
   const [companyFilterId, setCompanyFilterId] = useState('');
   const [departmentFilterId, setDepartmentFilterId] = useState('');
   const [assetTypeFilter, setAssetTypeFilter] = useState<AssetTypeFilter>('all');
+  const [currentPage, setCurrentPage] = useState(1);
   
   // Auto-set company filter to user's company if they have one
   const userCompanyScope = currentUser?.company_id || '';
@@ -121,6 +130,17 @@ export default function AccountabilityFormsPage() {
   useEffect(() => {
     setDepartmentFilterId('');
   }, [companyFilterId]);
+
+  useEffect(() => {
+    setCurrentPage(1);
+  }, [
+    searchQuery,
+    statusFilter,
+    companyFilterId,
+    departmentFilterId,
+    assetTypeFilter,
+    activeTab,
+  ]);
 
 
   const hrCopyForms = useMemo(
@@ -256,6 +276,15 @@ export default function AccountabilityFormsPage() {
     [hrCopyForms, searchQuery, statusFilter, companyFilterId, departmentFilterId, assetTypeFilter]
   );
 
+  const pageCount = useMemo(() => {
+    const list = activeTab === 'hrCopy' ? filteredHrCopy : filteredAll;
+    return Math.max(1, Math.ceil(list.length / PAGE_SIZE));
+  }, [activeTab, filteredAll, filteredHrCopy]);
+
+  useEffect(() => {
+    setCurrentPage(p => Math.min(p, pageCount));
+  }, [pageCount]);
+
   const hasActiveOrgFilters = Boolean(companyFilterId || departmentFilterId);
 
   const handleSignForm = async (formId: string) => {
@@ -359,21 +388,56 @@ export default function AccountabilityFormsPage() {
       );
     }
     return (
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-        {formList.map((form: AccountabilityForm) => (
-          <AccountabilityFormCard
-            key={form.id}
-            form={form}
-            onView={handleViewForm}
-            showSignButton={false}
-            lazyLoadDetails
-            statusPillVariant={isHrList ? 'toReceive' : 'activeDisabled'}
-            showReceiveButton={isHrList && hasHrCopyAccess}
-            onReceive={handleReceiveCopy}
-            showDownloadButton={!isHrList}
-            showPendingReceiverSignatureBadge
-          />
-        ))}
+      <div>
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+          {formList
+            .slice((currentPage - 1) * PAGE_SIZE, currentPage * PAGE_SIZE)
+            .map((form: AccountabilityForm) => (
+              <AccountabilityFormCard
+                key={form.id}
+                form={form}
+                onView={handleViewForm}
+                showSignButton={false}
+                lazyLoadDetails
+                statusPillVariant={isHrList ? 'toReceive' : 'activeDisabled'}
+                showReceiveButton={isHrList && hasHrCopyAccess}
+                onReceive={handleReceiveCopy}
+                showDownloadButton={!isHrList}
+                showPendingReceiverSignatureBadge
+              />
+            ))}
+        </div>
+        {formList.length > PAGE_SIZE && (
+          <div className="flex items-center justify-center gap-4 pt-6">
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() =>
+                setCurrentPage(p => Math.max(1, p - 1))
+              }
+              disabled={currentPage <= 1}
+              className="gap-1.5"
+            >
+              <ChevronLeft className="h-4 w-4" />
+              Previous
+            </Button>
+            <span className="text-sm text-muted-foreground">
+              Page {Math.min(currentPage, pageCount)} of {pageCount}
+            </span>
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() =>
+                setCurrentPage(p => Math.min(pageCount, p + 1))
+              }
+              disabled={currentPage >= pageCount}
+              className="gap-1.5"
+            >
+              Next
+              <ChevronRight className="h-4 w-4" />
+            </Button>
+          </div>
+        )}
       </div>
     );
   };

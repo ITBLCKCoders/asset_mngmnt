@@ -887,10 +887,14 @@ export function AssetsPage() {
 
   const getRowClassName = useCallback((row: any) => {
     if (row.depth > 0) {
-      return 'bg-slate-50/70 hover:bg-slate-100/70';
+      return 'bg-gray-200/70 hover:bg-gray-200/70';
     }
-    if (row.original?.isAssetBuilder && row.original?.children?.length) {
-      return 'bg-white';
+    if (
+      row.original?.isAssetBuilder &&
+      row.original?.children?.length &&
+      row.getIsExpanded()
+    ) {
+      return 'bg-gray-200/70 hover:bg-gray-200/70';
     }
     return undefined;
   }, []);
@@ -2262,13 +2266,7 @@ export function AssetsPage() {
             description="Asset Accountability Form Preview"
           />
           <AppDialogBody className="min-h-0 flex-1 overflow-auto !p-0">
-            {currentPdfUrl ? (
-              <PDFViewer pdfUrl={currentPdfUrl} className="h-full w-full" />
-            ) : (
-              <div className="flex h-full w-full items-center justify-center text-gray-500">
-                Loading form preview...
-              </div>
-            )}
+            <PDFViewer pdfUrl={currentPdfUrl} className="h-full w-full" />
           </AppDialogBody>
           <AppDialogChromeFooter className="justify-end gap-3">
             <Button

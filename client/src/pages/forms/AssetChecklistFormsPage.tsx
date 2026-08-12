@@ -514,13 +514,7 @@ export default function AssetChecklistFormsPage() {
           />
           <AppDialogBody className="min-h-0 flex-1 overflow-auto !p-0">
             <div className="mx-4 my-4 h-[620px] overflow-hidden rounded-lg border border-slate-200 bg-slate-50 sm:mx-6">
-              {previewUrl ? (
-                <PDFViewer pdfUrl={previewUrl} className="h-full w-full" />
-              ) : (
-                <div className="flex h-full w-full items-center justify-center text-gray-500">
-                  Generating checklist PDF preview...
-                </div>
-              )}
+              <PDFViewer pdfUrl={previewUrl} className="h-full w-full" />
             </div>
           </AppDialogBody>
           <AppDialogChromeFooter className="justify-end gap-3">
