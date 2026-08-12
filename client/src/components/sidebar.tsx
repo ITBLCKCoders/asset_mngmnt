@@ -47,7 +47,7 @@ import { SidebarHoverItem } from '@/components/sidebar/SidebarHoverItem';
 import {
   prefetchRoute,
   prefetchRoutes,
-  SIDEBAR_ROUTE_PATHS,
+  EAGER_PREFETCH_PATHS,
 } from '@/components/sidebar/routePrefetch';
 
 interface SidebarProps {
@@ -187,9 +187,10 @@ const Sidebar = memo(function Sidebar({ onLogout, currentPath = '', currentSearc
   );
   const reportSection = new URLSearchParams(currentSearch).get('section');
 
-  // Eagerly warm-load all lazy route chunks so navigation feels instant
+  // Eagerly warm-load the most common route chunks so navigation feels instant.
+  // The full set is warmed on hover/focus as the user moves through the menu.
   useEffect(() => {
-    prefetchRoutes(SIDEBAR_ROUTE_PATHS);
+    prefetchRoutes(EAGER_PREFETCH_PATHS);
   }, []);
 
   const handleLogout = useCallback(async () => {

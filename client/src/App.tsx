@@ -113,7 +113,7 @@ export default function App() {
       <AuthProvider>
         <NotificationProvider>
           <PermissionsProvider>
-            <BrowserRouter>
+            <BrowserRouter unstable_useTransitions={false}>
             <Routes>
               {/* Public Routes */}
               <Route path="/login" element={<PublicRoute><Login /></PublicRoute>} />
