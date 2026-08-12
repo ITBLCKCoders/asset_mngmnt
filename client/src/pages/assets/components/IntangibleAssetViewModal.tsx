@@ -33,6 +33,10 @@ interface AccountabilityForm {
     first_name: string;
     last_name: string;
     email: string;
+    department?: {
+      id: string;
+      name: string;
+    } | null;
   };
   department?: {
     id: string;
@@ -101,7 +105,9 @@ function FormRow({
           {form.user?.email && ` (${form.user.email})`}
         </p>
         <div className="flex flex-wrap items-center gap-x-3 gap-y-1 mt-1 text-xs text-gray-500">
-          {form.department?.name && <span>Dept: {form.department.name}</span>}
+          {(form.user?.department?.name || form.department?.name) && (
+            <span>Dept: {form.user?.department?.name || form.department?.name}</span>
+          )}
           {form.location?.name && <span>Loc: {form.location.name}</span>}
           <span>Created: {formatDate(form.created_at)}</span>
         </div>

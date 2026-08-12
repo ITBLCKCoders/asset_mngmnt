@@ -39,7 +39,7 @@ export const assetColumns = [
               className="rounded p-0.5 hover:bg-gray-100"
             >
               {row.getIsExpanded() ? (
-                <ChevronDown className="h-4 w-4 text-gray-500" />
+                <ChevronDown className="h-4 w-4 text-[#EE1D25]" />
               ) : (
                 <ChevronRight className="h-4 w-4 text-gray-500" />
               )}

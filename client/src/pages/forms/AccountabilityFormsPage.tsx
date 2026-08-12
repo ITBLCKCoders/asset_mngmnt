@@ -99,11 +99,19 @@ export default function AccountabilityFormsPage() {
   );
   const displayLoading = loading;
 
+  const trailingSeq = (form: AccountabilityForm): number => {
+    const match = form.formNumber.match(/(\d+)\s*$/);
+    return match ? parseInt(match[1], 10) : 0;
+  };
+
+  const sortFormsBySeqDesc = (list: AccountabilityForm[]): AccountabilityForm[] =>
+    [...list].sort((a, b) => trailingSeq(b) - trailingSeq(a));
+
   const fetchForms = async (): Promise<AccountabilityForm[]> => {
     try {
       setLoading(true);
       const data = await api.get('/accountability-forms');
-      const list = data.forms || [];
+      const list = sortFormsBySeqDesc(data.forms || []);
       setForms(list);
       return list;
     } catch (error) {

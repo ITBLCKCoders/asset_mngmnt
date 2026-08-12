@@ -887,14 +887,14 @@ export function AssetsPage() {
 
   const getRowClassName = useCallback((row: any) => {
     if (row.depth > 0) {
-      return 'bg-gray-200/70 hover:bg-gray-200/70';
+      return 'bg-red-50 hover:bg-red-50';
     }
     if (
       row.original?.isAssetBuilder &&
       row.original?.children?.length &&
       row.getIsExpanded()
     ) {
-      return 'bg-gray-200/70 hover:bg-gray-200/70';
+      return 'bg-red-50 hover:bg-red-50';
     }
     return undefined;
   }, []);

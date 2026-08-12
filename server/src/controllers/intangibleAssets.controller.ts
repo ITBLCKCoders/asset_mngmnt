@@ -511,7 +511,15 @@ export const batchAssignIntangibleAssets = async (req: AuthRequest, res: Respons
               : `${String(now.getMonth() + 1).padStart(2, '0')}${now.getFullYear()}`;
             if (settings.include_date) parts.push(dateStr);
 
-            const likeParam = parts.join('-');
+            // For MMYYYY: reset per year, so match any month in the same year
+            const basePattern = settings.include_date
+              ? parts.slice(0, -1).join('-')
+              : parts.join('-');
+            const year = settings.include_date ? now.getFullYear() : null;
+            const likeParam =
+              settings.include_date && settings.date_format === 'MMYYYY'
+                ? `${basePattern}-%${year}`
+                : parts.join('-');
             const nextSeq = await formRepo.getNextFormSequence(likeParam);
             parts.push(String(nextSeq).padStart(4, '0'));
             const formNumber = parts.join('-');
