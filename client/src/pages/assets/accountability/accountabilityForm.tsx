@@ -83,6 +83,14 @@ import {
   buildBuilderGroupedAssetRows,
   type AccountabilityAssetRow,
 } from './builderAssetGrouping';
+import {
+  fetchAssignedIntangibleAssetsForForm,
+  getFormAssignedIntangibleAssets,
+  getFormDisplayAssets,
+  isIntangibleAssetLike,
+  mergeAssetsById,
+  splitDisplayAssets,
+} from './accountabilityFormAssets';
 
 export type { AccountabilityForm } from './accountabilityFormTypes';
 
@@ -359,76 +367,6 @@ const getAccountabilityFormAssignmentIds = (
   return [...assignmentIds];
 };
 
-const fetchAssignedIntangibleAssetsForForm = (
-  form: AccountabilityForm
-): any[] => {
-  return (form.assets || []).filter(
-    (asset: any) => String(asset.category ?? '').toLowerCase() === 'intangible'
-  );
-};
-
-// Resolve the intangible assets currently assigned to the form's user from the
-// company's intangible asset list. sp_GetAllIntangibleAssets exposes assignees
-// as a JSON array (from intangible_asset_assignments or the legacy assigned_to
-// column), so we match on the assignee user id rather than a top-level
-// assignment_id field the stored procedure does not return.
-const getFormAssignedIntangibleAssets = (
-  assets: any[],
-  form: AccountabilityForm
-): any[] =>
-  (assets || []).filter(
-    (asset: any) =>
-      Array.isArray(asset.assignees) &&
-      asset.assignees.some(
-        (a: any) =>
-          String(a.userId ?? a.userID ?? '').trim() === String(form.user.id)
-      )
-  );
-
-// Merge the form's embedded assets with the intangibles currently assigned to
-// the form's user so the card's asset list matches the PDF tables (which
-// compose tangible form assets + resolved assigned intangibles).
-const getFormDisplayAssets = (
-  form: AccountabilityForm,
-  intangibleAssets: any[]
-): any[] => {
-  const embedded = form.assets || [];
-  const merged = [...embedded];
-  const seen = new Set<string>(embedded.map(a => String(a.id)));
-  for (const ia of intangibleAssets || []) {
-    const key = String(ia.id);
-    if (!seen.has(key)) {
-      seen.add(key);
-      merged.push(ia);
-    }
-  }
-  return merged;
-};
-
-// Returns true when the asset is an intangible (either an embedded intangible
-// form asset or a resolved intangible from /intangible-assets).
-const isIntangibleAssetLike = (asset: any): boolean =>
-  String(asset?.category ?? '').toLowerCase() === 'intangible' ||
-  asset?.type_department != null ||
-  asset?.risk_level != null;
-
-// Split display assets into tangible and intangible groups so the card can
-// render them separately (Tangible Assets N / Intangible Assets N).
-const splitDisplayAssets = (
-  assets: any[]
-): { tangible: any[]; intangible: any[] } => {
-  const tangible: any[] = [];
-  const intangible: any[] = [];
-  for (const asset of assets || []) {
-    if (isIntangibleAssetLike(asset)) {
-      intangible.push(asset);
-    } else {
-      tangible.push(asset);
-    }
-  }
-  return { tangible, intangible };
-};
-
 // Classify a display asset (embedded form asset or resolved intangible) into the
 // IT/Admin bucket used by the card badges. Mirrors the PDF split at
 // generateAccountabilityFormPDF: intangibles classified as 'Admin' stay Admin,
@@ -495,14 +433,25 @@ export const generateAccountabilityFormPDF = async (
   intangibleAssets?: any[],
   assetBuilders?: AssetBuilderRecord[]
 ): Promise<Blob> => {
-  let resolvedIntangibleAssets =
-    intangibleAssets && intangibleAssets.length > 0
-      ? intangibleAssets
-      : fetchAssignedIntangibleAssetsForForm(form);
-  if (resolvedIntangibleAssets.length === 0) {
+  // Resolve the complete intangible set: the intangibles embedded in the form
+  // snapshot unioned with the intangibles currently assigned to the form's user
+  // (from the caller-provided list or fetched from /intangible-assets). This
+  // keeps every "View PDF" entry point consistent with the Accountability Forms
+  // page, which always renders the full assigned set.
+  const embeddedIntangibles = fetchAssignedIntangibleAssetsForForm(form);
+  let resolvedIntangibleAssets: any[] = embeddedIntangibles;
+  if (intangibleAssets && intangibleAssets.length > 0) {
+    resolvedIntangibleAssets = mergeAssetsById(
+      embeddedIntangibles,
+      intangibleAssets
+    );
+  } else {
     try {
       const response = await api.get<any[]>('/intangible-assets');
-      resolvedIntangibleAssets = getFormAssignedIntangibleAssets(response, form);
+      resolvedIntangibleAssets = mergeAssetsById(
+        embeddedIntangibles,
+        getFormAssignedIntangibleAssets(response, form)
+      );
     } catch (error) {
       logger.warn('Failed to fetch assigned intangible assets for form');
     }

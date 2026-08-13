@@ -301,6 +301,7 @@ export function AssetCategories({
                             onChange={e =>
                               setDepartmentSearchQuery(e.target.value)
                             }
+                            onKeyDown={e => e.stopPropagation()}
                             className="pl-8 border-gray-300 focus:border-primary"
                           />
                         </div>
