@@ -217,7 +217,7 @@ export async function approveChecklistsDeptHeadHandler(
           message: `${deptHeadName} approved ${approvedCount} asset checklist${approvedCount !== 1 ? 's' : ''} — IT receive approval required.`,
           type: 'system',
           data: {
-            route: '/approvals',
+            route: '/approvals?tab=receive',
             actionTarget: 'checklist_receive',
             checklist_count: approvedCount,
           },

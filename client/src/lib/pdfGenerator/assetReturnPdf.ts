@@ -18,6 +18,26 @@ import {
   PDF_SIGNATURE_MAX_WIDTH_MM,
 } from './shared';
 
+/** Format signed timestamp date (e.g. 02/15/2026). Returns '' when null/invalid. */
+export const formatSignedDate = (iso?: string | null): string =>
+  iso && !Number.isNaN(new Date(iso).getTime())
+    ? new Date(iso).toLocaleDateString('en-US', {
+        year: 'numeric',
+        month: '2-digit',
+        day: '2-digit',
+      })
+    : '';
+
+/** Format signed timestamp time (12-hour, e.g. 03:45 PM). Returns '' when null/invalid. */
+export const formatSignedTime = (iso?: string | null): string =>
+  iso && !Number.isNaN(new Date(iso).getTime())
+    ? new Date(iso).toLocaleTimeString('en-US', {
+        hour: '2-digit',
+        minute: '2-digit',
+        hour12: true,
+      })
+    : '';
+
 export interface AssetReturnData {
   assignmentID: string;
   assets: Array<{
@@ -518,6 +538,19 @@ export const generateAssetReturnPDF = async (
           const nameLines = doc.splitTextToSize(itManagerName, nameMaxWidth);
           doc.text(nameLines, xMin, nameY);
         }
+
+        const itManagerSignedDate = formatSignedDate(
+          returnData.it_manager_signed_at
+        );
+        const itManagerSignedTime = formatSignedTime(
+          returnData.it_manager_signed_at
+        );
+        if (itManagerSignedDate && itManagerSignedTime) {
+          doc.setFontSize(7);
+          doc.setFont('helvetica', 'normal');
+          doc.text(itManagerSignedDate, xMax - 20, yTop + 4);
+          doc.text(itManagerSignedTime, xMax - 20, yTop + 9);
+        }
       }
 
       // Row 1, column 1: IT Staff / IT Inventory Manager (matches checklist creator cell)
@@ -555,6 +588,19 @@ export const generateAssetReturnPDF = async (
           nameMaxWidth
         );
         doc.text(nameLines, xMin, nameY);
+
+        const processSignedDate = formatSignedDate(
+          returnData.process_signed_at
+        );
+        const processSignedTime = formatSignedTime(
+          returnData.process_signed_at
+        );
+        if (processSignedDate && processSignedTime) {
+          doc.setFontSize(7);
+          doc.setFont('helvetica', 'normal');
+          doc.text(processSignedDate, xMax - 20, yTop + 4);
+          doc.text(processSignedTime, xMax - 20, yTop + 9);
+        }
       }
 
       // Row 3, column 0: Returner's Department Head (matches checklist dept-head cell)
@@ -588,6 +634,19 @@ export const generateAssetReturnPDF = async (
           const nameMaxWidth = Math.max(15, contentWidth - 6);
           const nameLines = doc.splitTextToSize(deptHeadName, nameMaxWidth);
           doc.text(nameLines, xMin, nameY);
+        }
+
+        const deptHeadSignedDate = formatSignedDate(
+          returnData.dept_head_signed_at
+        );
+        const deptHeadSignedTime = formatSignedTime(
+          returnData.dept_head_signed_at
+        );
+        if (deptHeadSignedDate && deptHeadSignedTime) {
+          doc.setFontSize(7);
+          doc.setFont('helvetica', 'normal');
+          doc.text(deptHeadSignedDate, xMax - 20, yTop + 4);
+          doc.text(deptHeadSignedTime, xMax - 20, yTop + 9);
         }
       }
 
@@ -624,6 +683,15 @@ export const generateAssetReturnPDF = async (
           const nameMaxWidth = Math.max(15, contentWidth - 6);
           const nameLines = doc.splitTextToSize(fullName, nameMaxWidth);
           doc.text(nameLines, xMin, nameY);
+        }
+
+        const returnerSignedDate = formatSignedDate(returnData.signed_at);
+        const returnerSignedTime = formatSignedTime(returnData.signed_at);
+        if (returnerSignedDate && returnerSignedTime) {
+          doc.setFontSize(7);
+          doc.setFont('helvetica', 'normal');
+          doc.text(returnerSignedDate, xMax - 20, yTop + 4);
+          doc.text(returnerSignedTime, xMax - 20, yTop + 9);
         }
       }
     },

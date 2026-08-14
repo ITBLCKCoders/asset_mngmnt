@@ -2847,8 +2847,10 @@ function ReturnChecklistCard({
 
 export default function DocumentsTab({
   setActiveTab,
+  initialSubTab,
 }: {
   setActiveTab: (tab: string) => void;
+  initialSubTab?: string;
 }) {
   const { user: currentUser, loading: userLoading } = useCurrentUser();
   
@@ -2906,11 +2908,18 @@ export default function DocumentsTab({
     useState<AssetBorrowFormBatch | null>(null);
   const [showBorrowFormDetail, setShowBorrowFormDetail] = useState(false);
   const [activeSubTab, setActiveSubTab] = useState<string>(
-    'accountability'
+    initialSubTab || 'accountability'
   );
   const [statusFilter, setStatusFilter] = useState<
     'all' | 'active' | 'disabled'
   >('active');
+
+  useEffect(() => {
+    if (initialSubTab && initialSubTab !== activeSubTab) {
+      setActiveSubTab(initialSubTab);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [initialSubTab]);
 
   const [isTabLoading, setIsTabLoading] = useState(true);
   const isLoading = userLoading;

@@ -12,6 +12,7 @@ const mockRepo = {
   updateBorrowRequestStaffApprove: jest.fn(),
   updateBorrowRequestStaffDecline: jest.fn(),
   findApprovedBorrowRequestsForReceive: jest.fn(),
+  findBorrowRequestsReceivedByMe: jest.fn(),
   updateBorrowRequestReceived: jest.fn(),
   findBorrowRequestsForList: jest.fn(),
   getAssignmentForBorrowRequest: jest.fn(),
@@ -138,6 +139,16 @@ describe('AssetBorrowRequestsService', () => {
       mockPool.execute.mockResolvedValue([[], []]);
       await AssetBorrowRequestsService.processDueReminders(mockPool);
       expect(mockPool.execute).toHaveBeenCalled();
+    });
+  });
+
+  describe('listReceivedByMe', () => {
+    it('returns borrow requests received by the user', async () => {
+      const rows = [{ borrow_request_id: 'br-1', received_at: '2024-01-01 10:00:00' }];
+      mockRepo.findBorrowRequestsReceivedByMe.mockResolvedValue(rows);
+      const result = await AssetBorrowRequestsService.listReceivedByMe(mockPool, 'u1');
+      expect(mockRepo.findBorrowRequestsReceivedByMe).toHaveBeenCalledWith(mockPool, 'u1');
+      expect(result).toEqual({ borrowRequests: rows });
     });
   });
 });

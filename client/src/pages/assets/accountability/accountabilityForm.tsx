@@ -1206,7 +1206,7 @@ I agree that if any of the items are damaged or lost due to my negligence, I sha
 
   doc.text('Issued to/ Received by:', 130, signatureY);
 
-  if (form.status === 'Signed' && form.signed_at) {
+  if (form.signed_at) {
     const empDate = new Date(form.signed_at);
     doc.text(`${empDate.toLocaleDateString()}`, 170, signatureY + 10);
     doc.text(`${empDate.toLocaleTimeString()}`, 170, signatureY + 15);
@@ -2710,9 +2710,7 @@ export function AccountabilityFormCard({
         sendOtpEndpoint="/auth/initials/send-otp"
         verifyOtpEndpoint="/auth/initials/verify-otp"
         onVerified={() => {
-          if (pendingActionType === 'sign') {
-            toast.success('Form signed successfully');
-          } else if (pendingActionType === 'signChecklist') {
+          if (pendingActionType === 'signChecklist') {
             toast.success(
               unsignedChecklistCount > 1
                 ? `Signed ${unsignedChecklistCount} checklists successfully`
@@ -3350,9 +3348,6 @@ export function AccountabilityFormDetail({
         sendOtpEndpoint="/auth/initials/send-otp"
         verifyOtpEndpoint="/auth/initials/verify-otp"
         onVerified={() => {
-          if (pendingActionType === 'sign') {
-            toast.success('Form signed successfully');
-          }
           setPendingActionType(null);
           setShowConfirmDialog(false);
           setAgreeTerms(false);

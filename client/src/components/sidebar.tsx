@@ -111,25 +111,34 @@ const Sidebar = memo(function Sidebar({ onLogout, currentPath = '', currentSearc
       p === '/approvals'
     );
   }, [currentPath]);
-  const formsOpen = userFormsOpen || formsOpenMatch;
+  const formsOpen = userFormsOpen;
 
   const reportsOpenMatch = useMemo(() => {
     const p = currentPath;
     return p.startsWith('/reports') || p.startsWith('/history/');
   }, [currentPath]);
-  const reportsOpen = userReportsOpen || reportsOpenMatch;
+  const reportsOpen = userReportsOpen;
 
   const manualOpenMatch = useMemo(() => {
     const p = currentPath;
     return p === '/user-manual' || p === '/flow-diagrams';
   }, [currentPath]);
-  const manualOpen = userManualOpen || manualOpenMatch;
+  const manualOpen = userManualOpen;
 
   const assetsOpenMatch = useMemo(() => {
     const p = currentPath;
     return p.startsWith('/assets') && p !== '/assets/my-assets';
   }, [currentPath]);
-  const assetsOpen = userAssetsOpen || assetsOpenMatch;
+  const assetsOpen = userAssetsOpen;
+
+  // Auto-expand each collapsible section when navigating to one of its routes.
+  // The manual toggle still wins, so users can collapse a section while on it.
+  useEffect(() => {
+    if (formsOpenMatch) setUserFormsOpen(true);
+    if (reportsOpenMatch) setUserReportsOpen(true);
+    if (manualOpenMatch) setUserManualOpen(true);
+    if (assetsOpenMatch) setUserAssetsOpen(true);
+  }, [formsOpenMatch, reportsOpenMatch, manualOpenMatch, assetsOpenMatch]);
 
   const assetNestedOpen = useMemo(() => {
     const path = currentPath;

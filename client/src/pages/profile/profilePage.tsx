@@ -163,7 +163,10 @@ export default function ProfilePage() {
             <AccountTab />
           </TabsContent>
           <TabsContent value="documents" className="mt-4 sm:mt-8">
-            <DocumentsTab setActiveTab={setActiveTab} />
+            <DocumentsTab
+              setActiveTab={setActiveTab}
+              initialSubTab={searchParams.get('docTab') ?? undefined}
+            />
           </TabsContent>
         </Tabs>
 

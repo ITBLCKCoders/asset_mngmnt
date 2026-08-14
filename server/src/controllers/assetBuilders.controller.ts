@@ -825,6 +825,7 @@ export async function updateAssetBuilderHandler(
 
         // --- Rebuild accountability forms (only if new assets were added) ---
         if (newAssignedAssets.length > 0) {
+          const createdForms: { formId: string; formNumber: string }[] = [];
           const assignedAssetCodes = newAssignedAssets.map(a => a.code);
           const assignedAssetDetails = await assignmentRepo.getCategoryDeptForAssetCodes(assignedAssetCodes);
 
@@ -905,6 +906,7 @@ export async function updateAssetBuilderHandler(
                 assignmentIds: newAssignmentIds,
                 previousFormId: disabledFormId,
                 previousFormOriginalStatus,
+                skipNotification: true,
               },
             } as AuthRequest;
 
@@ -913,10 +915,73 @@ export async function updateAssetBuilderHandler(
             } as Response;
 
             try {
-              await createAccountabilityFormHandler(accountabilityFormReq, accountabilityFormRes);
+              const formCreateResult: unknown = await createAccountabilityFormHandler(accountabilityFormReq, accountabilityFormRes);
+              const createdBody = formCreateResult as {
+                form?: { formID?: number | string; form_number?: string };
+                error?: string;
+              };
+              const fid = createdBody?.form?.formID;
+              if (fid != null && String(fid).trim() !== '' && String(fid) !== '0') {
+                const formId = String(fid);
+                createdForms.push({
+                  formId,
+                  formNumber: createdBody?.form?.form_number ?? '',
+                });
+              }
             } catch (formError) {
               logger.error('Failed to create accountability form during builder edit:', formError);
             }
+          }
+        }
+
+        // --- Notify the assigned user about accountability form(s) to sign ---
+        if (createdForms.length > 0) {
+          try {
+            const assignerName = await assignmentRepo.getUserFullName(userId);
+            const io = getIoInstance();
+            for (const createdForm of createdForms) {
+              const signMessage = createdForm.formNumber
+                ? `by ${assignerName}. Your accountability form ${createdForm.formNumber} is ready. Please review and sign it.`
+                : `by ${assignerName}. Your accountability form is ready. Please review and sign it.`;
+
+              await NotificationService.createNotification(
+                {
+                  user_id: assignedUserId,
+                  title: 'New asset accountability is ready for you to sign',
+                  message: signMessage,
+                  type: 'accountability_form',
+                  status: 'unread',
+                  data: JSON.stringify({
+                    description: signMessage,
+                    route: '/profile?tab=documents&docTab=accountability',
+                    actionTarget: 'profile_documents_accountability',
+                    formId: createdForm.formId,
+                    formNumber: createdForm.formNumber,
+                    assignedBy: assignerName,
+                    timestamp: new Date().toISOString(),
+                  }),
+                },
+                userId,
+                req.ip,
+                req.get('User-Agent')
+              );
+
+              if (io) {
+                emitNotification(io, assignedUserId, 'notification', {
+                  title: 'New asset accountability is ready for you to sign',
+                  description: signMessage,
+                  type: 'accountability_form',
+                  route: '/profile?tab=documents&docTab=accountability',
+                  actionTarget: 'profile_documents_accountability',
+                  formId: createdForm.formId,
+                  formNumber: createdForm.formNumber,
+                  assignedBy: assignerName,
+                  timestamp: new Date().toISOString(),
+                });
+              }
+            }
+          } catch (socketError) {
+            logger.error('Failed to send accountability notification:', socketError);
           }
         }
 

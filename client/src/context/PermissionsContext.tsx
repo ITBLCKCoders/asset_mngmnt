@@ -18,6 +18,7 @@ export type RoleCustodian = {
   managerApprover2?: boolean;
   managerApprover3?: boolean;
   financeApprover: boolean;
+  subApprover2?: boolean;
 } | null;
 
 interface PermissionsContextValue {
@@ -59,6 +60,7 @@ export function PermissionsProvider({ children }: { children: ReactNode }) {
           managerApprover2?: boolean;
           managerApprover3?: boolean;
           financeApprover?: boolean;
+          subApprover2?: boolean;
         } | null;
       }>(`/users/${user.id}/permissions`);
       setPermissions(response.permissions ?? {});
@@ -72,6 +74,7 @@ export function PermissionsProvider({ children }: { children: ReactNode }) {
               managerApprover2: rc.managerApprover2 ?? false,
               managerApprover3: rc.managerApprover3 ?? false,
               financeApprover: rc.financeApprover ?? false,
+              subApprover2: rc.subApprover2 ?? false,
             }
           : null
       );

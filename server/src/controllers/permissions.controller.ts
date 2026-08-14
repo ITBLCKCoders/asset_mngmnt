@@ -79,6 +79,7 @@ export async function getUserPermissionsHandler(
       managerApprover2: boolean;
       managerApprover3: boolean;
       financeApprover: boolean;
+      subApprover2: boolean;
     } | null = null;
     const [userRows] = (await pool.execute(
       'SELECT role_id FROM users WHERE userID = ?',
@@ -105,9 +106,12 @@ export async function getUserPermissionsHandler(
     const custodianFinanceApprover = custodian
       ? Boolean(custodian.finance_approver)
       : false;
+    const custodianSubApprover2 = custodian
+      ? Boolean(custodian.sub_approver_2)
+      : false;
     if (roleId) {
       const [roleRows] = (await pool.execute(
-        'SELECT asset_type, manager_role, manager_approver_1, manager_approver_2, manager_approver_3, finance_approver FROM asset_mngmnt_roles WHERE roleID = ? AND deleted_at IS NULL',
+        'SELECT asset_type, manager_role, manager_approver_1, manager_approver_2, manager_approver_3, finance_approver, sub_approver_2 FROM asset_mngmnt_roles WHERE roleID = ? AND deleted_at IS NULL',
         [roleId]
       )) as any[];
       const role = roleRows[0];
@@ -120,6 +124,8 @@ export async function getUserPermissionsHandler(
           Boolean(role.manager_approver_3) || custodianManagerApprover3;
         const financeApprover =
           Boolean(role.finance_approver) || custodianFinanceApprover;
+        const subApprover2 =
+          Boolean(role.sub_approver_2) || custodianSubApprover2;
         roleCustodian = {
           assetType: role.asset_type ?? null,
           managerRole: role.manager_role ?? 'none',
@@ -127,9 +133,10 @@ export async function getUserPermissionsHandler(
           managerApprover2,
           managerApprover3,
           financeApprover,
+          subApprover2,
         };
       }
-    } else if (custodian && (custodianManagerApprover1 || custodianManagerApprover2 || custodianManagerApprover3 || custodianFinanceApprover)) {
+    } else if (custodian && (custodianManagerApprover1 || custodianManagerApprover2 || custodianManagerApprover3 || custodianFinanceApprover || custodianSubApprover2)) {
       // User has approver flags but no role; still return for UI
       roleCustodian = {
         assetType: null,
@@ -138,6 +145,7 @@ export async function getUserPermissionsHandler(
         managerApprover2: custodianManagerApprover2,
         managerApprover3: custodianManagerApprover3,
         financeApprover: custodianFinanceApprover,
+        subApprover2: custodianSubApprover2,
       };
     }
 

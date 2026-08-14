@@ -460,6 +460,7 @@ export async function createAccountabilityFormHandler(
       form_origin: formOriginSnake,
       previousFormId,
       previousFormOriginalStatus,
+      skipNotification,
     } = req.body;
     const formOriginRaw = formOriginBody ?? formOriginSnake;
     const formOriginStored: AccountabilityFormOrigin | undefined =
@@ -648,54 +649,56 @@ export async function createAccountabilityFormHandler(
       });
 
       // Emit WebSocket notification to the form user
-      try {
-        const createdByRow = await repo.getUserNameById(createdBy);
-        const assignerName = createdByRow
-          ? `${createdByRow.first_name ?? ''} ${createdByRow.last_name ?? ''}`.trim() || createdBy
-          : createdBy;
+      if (!skipNotification) {
+        try {
+          const createdByRow = await repo.getUserNameById(createdBy);
+          const assignerName = createdByRow
+            ? `${createdByRow.first_name ?? ''} ${createdByRow.last_name ?? ''}`.trim() || createdBy
+            : createdBy;
 
-        // Create database notification entry
-        await NotificationService.createNotification(
-          {
-            user_id: userId,
-            title: 'New accountability form has been issued',
-            message: `by ${assignerName}. Review it and check your assets and sign the form`,
-            type: 'accountability_form',
-            status: 'unread',
-            data: JSON.stringify({
+          // Create database notification entry
+          await NotificationService.createNotification(
+            {
+              user_id: userId,
+              title: 'New accountability form has been issued',
+              message: `by ${assignerName}. Review it and check your assets and sign the form`,
+              type: 'accountability_form',
+              status: 'unread',
+              data: JSON.stringify({
+                description: `by ${assignerName}. Review it and check your assets and sign the form`,
+                route: '/profile?tab=documents',
+                actionTarget: 'profile_documents',
+                formId: resolvedFormId,
+                formNumber: formNumber,
+                assignedBy: assignerName,
+                timestamp: new Date().toISOString(),
+              }),
+            },
+            createdBy,
+            req.ip,
+            req.get('User-Agent')
+          );
+
+          const io = getIoInstance();
+          if (!io) {
+            logger.error('[NOTIFICATION] Socket.IO instance not available');
+          } else {
+            emitNotification(io, userId, 'notification', {
+              title: 'New accountability form has been issued',
               description: `by ${assignerName}. Review it and check your assets and sign the form`,
+              type: 'accountability_form',
               route: '/profile?tab=documents',
               actionTarget: 'profile_documents',
               formId: resolvedFormId,
               formNumber: formNumber,
               assignedBy: assignerName,
               timestamp: new Date().toISOString(),
-            }),
-          },
-          createdBy,
-          req.ip,
-          req.get('User-Agent')
-        );
-
-        const io = getIoInstance();
-        if (!io) {
-          logger.error('[NOTIFICATION] Socket.IO instance not available');
-        } else {
-          emitNotification(io, userId, 'notification', {
-            title: 'New accountability form has been issued',
-            description: `by ${assignerName}. Review it and check your assets and sign the form`,
-            type: 'accountability_form',
-            route: '/profile?tab=documents',
-            actionTarget: 'profile_documents',
-            formId: resolvedFormId,
-            formNumber: formNumber,
-            assignedBy: assignerName,
-            timestamp: new Date().toISOString(),
-          });
+            });
+          }
+        } catch (socketError) {
+          logger.error('Failed to send WebSocket notification:', socketError);
+          // Don't fail the form creation if notification fails
         }
-      } catch (socketError) {
-        logger.error('Failed to send WebSocket notification:', socketError);
-        // Don't fail the form creation if notification fails
       }
 
       return res.status(201).json({
@@ -837,14 +840,15 @@ export async function createAccountabilityFormHandler(
       userAgent: req.get ? req.get('User-Agent') : 'Unknown',
     });
 
-    // Emit WebSocket notification to the form user
-    try {
-      const createdByRow = await repo.getUserNameById(createdBy);
-      const assignerName = createdByRow
-        ? `${createdByRow.first_name ?? ''} ${createdByRow.last_name ?? ''}`.trim() || createdBy
-        : createdBy;
+// Emit WebSocket notification to the form user
+    if (!skipNotification) {
+      try {
+        const createdByRow = await repo.getUserNameById(createdBy);
+        const assignerName = createdByRow
+          ? `${createdByRow.first_name ?? ''} ${createdByRow.last_name ?? ''}`.trim() || createdBy
+          : createdBy;
 
-      // Create database notification entry
+        // Create database notification entry
         await NotificationService.createNotification(
           {
             user_id: userId,
@@ -867,25 +871,26 @@ export async function createAccountabilityFormHandler(
           req.get('User-Agent')
         );
 
-      const io = getIoInstance();
-      if (!io) {
-        logger.error('[NOTIFICATION] Socket.IO instance not available');
-      } else {
-        emitNotification(io, userId, 'notification', {
-          title: 'New accountability form has been issued',
-          description: `by ${assignerName}. Review it and check your assets and sign the form`,
-          type: 'accountability_form',
-          route: '/profile?tab=documents',
-          actionTarget: 'profile_documents',
-          formId: resolvedFormIdSingle,
-          formNumber: formNumber,
-          assignedBy: assignerName,
-          timestamp: new Date().toISOString(),
-        });
+        const io = getIoInstance();
+        if (!io) {
+          logger.error('[NOTIFICATION] Socket.IO instance not available');
+        } else {
+          emitNotification(io, userId, 'notification', {
+            title: 'New accountability form has been issued',
+            description: `by ${assignerName}. Review it and check your assets and sign the form`,
+            type: 'accountability_form',
+            route: '/profile?tab=documents',
+            actionTarget: 'profile_documents',
+            formId: resolvedFormIdSingle,
+            formNumber: formNumber,
+            assignedBy: assignerName,
+            timestamp: new Date().toISOString(),
+          });
+        }
+      } catch (socketError) {
+        logger.error('Failed to send WebSocket notification:', socketError);
+        // Don't fail the form creation if notification fails
       }
-    } catch (socketError) {
-      logger.error('Failed to send WebSocket notification:', socketError);
-      // Don't fail the form creation if notification fails
     }
 
     return res.status(201).json({
@@ -1282,17 +1287,30 @@ export async function signAccountabilityFormHandler(
     // Notify HR accountability receivers
     try {
       const hrReceiverIds = await getHrAccountabilityReceiverUserIds();
+      const io = getIoInstance();
       for (const receiverId of hrReceiverIds) {
+        const message = `An Accountability form (${form.form_number}) is ready for you to receive for HR Copy of 201 file`;
+        const notificationPayload = {
+          title: 'Accountability Form Ready for HR Copy',
+          description: message,
+          type: 'accountability_form' as const,
+          route: '/forms/accountability?tab=hrCopy',
+          actionTarget: 'accountability_form_hr_copy',
+          formId: formId,
+          formNumber: form.form_number,
+          timestamp: new Date().toISOString(),
+        };
         await createNotificationForApi({
           user_id: receiverId,
-          title: 'Accountability Form Ready for HR Copy',
-          message: `An Accountability form (${form.form_number}) is ready for you to receive for HR Copy of 201 file`,
-          type: 'accountability_form',
-          data: {
-            formId: formId,
-            formNumber: form.form_number,
-          },
+          title: notificationPayload.title,
+          message,
+          type: notificationPayload.type,
+          data: notificationPayload,
         });
+
+        if (io) {
+          emitNotification(io, receiverId, 'notification', notificationPayload);
+        }
       }
       logger.info(`Sent HR copy notifications to ${hrReceiverIds.length} receivers`);
     } catch (notifError) {

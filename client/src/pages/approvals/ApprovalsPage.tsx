@@ -54,6 +54,9 @@ import { Input } from '@/components/ui/input';
 import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs';
 import SmsOtpDialog from '@/components/auth/SmsOtpDialog';
 import { useRef } from 'react';
+import { useSearchParams } from 'react-router-dom';
+
+const APPROVAL_TABS = ['for-approval', 'receive', 'approved'] as const;
 
 type BorrowRequestBatch = BorrowRequestRow & {
   formType: 'borrow';
@@ -82,7 +85,8 @@ function mapChecklistApiBatches(
 
 export default function ApprovalsPage() {
   const { user: currentUser } = useCurrentUser();
-  const { hasPermission, roleCustodian } = useUserPermissions();
+  const { hasPermission, roleCustodian, loading: permissionsLoading } =
+    useUserPermissions();
 
   const [batches, setBatches] = useState<ApprovalBatch[]>([]);
   const [approvedBatches, setApprovedBatches] = useState<ApprovalBatch[]>([]);
@@ -97,7 +101,13 @@ export default function ApprovalsPage() {
   const displayReceiveLoading = receiveLoading;
 
   // ---------- Tabs ----------
-  const [activeTab, setActiveTab] = useState('for-approval');
+  const [searchParams] = useSearchParams();
+  const [activeTab, setActiveTab] = useState(() => {
+    const tab = searchParams.get('tab');
+    return tab && (APPROVAL_TABS as readonly string[]).includes(tab)
+      ? tab
+      : 'for-approval';
+  });
 
   // ---------- Search (per-tab) ----------
   const [searchQuery, setSearchQuery] = useState('');
@@ -133,6 +143,24 @@ export default function ApprovalsPage() {
     roleCustodian?.managerApprover1 === true;
 
   const canReceive = roleCustodian?.managerApprover2 === true;
+
+  // ---------- Tab deep-linking (?tab= query param) ----------
+  // Sync activeTab with ?tab= query, honoring receive-tab permission.
+  const tabParam = searchParams.get('tab');
+  useEffect(() => {
+    if (!permissionsLoading && !canReceive && activeTab === 'receive') {
+      setActiveTab('for-approval');
+      return;
+    }
+    if (
+      tabParam &&
+      tabParam !== activeTab &&
+      (APPROVAL_TABS as readonly string[]).includes(tabParam) &&
+      (tabParam !== 'receive' || canReceive)
+    ) {
+      setActiveTab(tabParam);
+    }
+  }, [tabParam, activeTab, canReceive, permissionsLoading]);
 
   // ---------- Fetch ----------
   const fetchPendingApprovals = async () => {
@@ -179,7 +207,7 @@ export default function ApprovalsPage() {
   const fetchApprovedByMe = async () => {
     try {
       setApprovedLoading(true);
-      const [returnRes, transferRes, checklistRes] = await Promise.all([
+      const [returnRes, transferRes, checklistRes, borrowRes] = await Promise.all([
         api.get<{ assetReturnForms?: AssetReturnFormBatch[] }>(
           '/asset-returns/forms/approved-by-me'
         ),
@@ -188,6 +216,9 @@ export default function ApprovalsPage() {
         ),
         api.get<{ checklistBatches?: ChecklistApprovalBatch[] }>(
           '/asset-checklists/approved-by-dept-head-me'
+        ),
+        api.get<{ success: boolean; data: { borrowRequests?: any[] } }>(
+          '/asset-borrow-requests/received-by-me'
         ),
       ]);
       const returns = (returnRes.assetReturnForms ?? []).map(b => ({
@@ -202,8 +233,12 @@ export default function ApprovalsPage() {
         checklistRes.checklistBatches ?? [],
         true
       );
+      const borrowRequests = (borrowRes.data?.borrowRequests ?? []).map(b => ({
+        ...b,
+        formType: 'borrow' as const,
+      })) as ApprovalBatch[];
       setApprovedBatches(
-        ([...returns, ...transfers, ...checklists] as ApprovalBatch[]).sort(
+        ([...returns, ...transfers, ...checklists, ...borrowRequests] as ApprovalBatch[]).sort(
           (a, b) =>
             new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
         )

@@ -5,7 +5,7 @@ import logger from '../logger.js';
 import { createAuditLog } from '../utils/audit.js';
 
 const ROLE_COLUMNS =
-  'roleID, name, description, created_at, created_by, updated_at, updated_by, deleted_at, deleted_by, asset_type, manager_role, hr_accountability_receiver, manager_approver_1, manager_approver_2, manager_approver_3, finance_approver';
+  'roleID, name, description, created_at, created_by, updated_at, updated_by, deleted_at, deleted_by, asset_type, manager_role, hr_accountability_receiver, manager_approver_1, manager_approver_2, manager_approver_3, finance_approver, sub_approver_2';
 
 function mapRoleRow(row: any) {
   return {
@@ -25,6 +25,7 @@ function mapRoleRow(row: any) {
     manager_approver_2: Boolean(row.manager_approver_2),
     manager_approver_3: Boolean(row.manager_approver_3),
     finance_approver: Boolean(row.finance_approver),
+    sub_approver_2: Boolean(row.sub_approver_2),
   };
 }
 
@@ -49,6 +50,7 @@ export async function getRolesHandler(req: AuthRequest, res: Response) {
           manager_approver_1: 0,
           manager_approver_2: 0,
           manager_approver_3: 0,
+          sub_approver_2: 0,
         }));
       } else {
         throw colError;
@@ -73,6 +75,7 @@ export async function createRoleHandler(req: AuthRequest, res: Response) {
     manager_approver_2,
     manager_approver_3,
     finance_approver,
+    sub_approver_2,
   } = req.body;
   const userId = req.user!.userID;
 
@@ -82,7 +85,7 @@ export async function createRoleHandler(req: AuthRequest, res: Response) {
 
   try {
     const [createResult] = (await pool.execute(
-      'CALL sp_create_role(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
+      'CALL sp_create_role(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
       [
         name.trim(),
         description?.trim() || null,
@@ -97,6 +100,7 @@ export async function createRoleHandler(req: AuthRequest, res: Response) {
         manager_approver_2 ? 1 : 0,
         manager_approver_3 ? 1 : 0,
         finance_approver ? 1 : 0,
+        sub_approver_2 ? 1 : 0,
       ]
     )) as any[];
 
@@ -141,6 +145,7 @@ export async function createRoleHandler(req: AuthRequest, res: Response) {
         manager_approver_2: Boolean(manager_approver_2),
         manager_approver_3: Boolean(manager_approver_3),
         finance_approver: Boolean(finance_approver),
+        sub_approver_2: Boolean(sub_approver_2),
       },
     });
   } catch (error: any) {
@@ -161,6 +166,7 @@ export async function updateRoleHandler(req: AuthRequest, res: Response) {
     manager_approver_2,
     manager_approver_3,
     finance_approver,
+    sub_approver_2,
   } = req.body;
   const userId = req.user!.userID;
 
@@ -170,7 +176,7 @@ export async function updateRoleHandler(req: AuthRequest, res: Response) {
 
   try {
     const [updateResult] = (await pool.execute(
-      'CALL sp_update_role(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
+      'CALL sp_update_role(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
       [
         roleID,
         name.trim(),
@@ -186,6 +192,7 @@ export async function updateRoleHandler(req: AuthRequest, res: Response) {
         manager_approver_2 ? 1 : 0,
         manager_approver_3 ? 1 : 0,
         finance_approver ? 1 : 0,
+        sub_approver_2 ? 1 : 0,
       ]
     )) as any[];
 
@@ -228,6 +235,7 @@ export async function updateRoleHandler(req: AuthRequest, res: Response) {
         manager_approver_2: Boolean(manager_approver_2),
         manager_approver_3: Boolean(manager_approver_3),
         finance_approver: Boolean(finance_approver),
+        sub_approver_2: Boolean(sub_approver_2),
       },
     });
   } catch (error: any) {

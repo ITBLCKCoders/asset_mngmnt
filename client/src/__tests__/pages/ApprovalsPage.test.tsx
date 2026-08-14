@@ -18,10 +18,14 @@ vi.mock('@/hooks/useCurrentUser', () => ({
   useCurrentUser: () => ({ user: mockUser, loading: false }),
 }));
 
+const mockPermissions = vi.hoisted(() => ({
+  roleCustodian: null as { managerApprover2?: boolean } | null,
+}));
+
 vi.mock('@/hooks/useUserPermissions', () => ({
   useUserPermissions: () => ({
     permissions: {},
-    roleCustodian: null,
+    roleCustodian: mockPermissions.roleCustodian,
     loading: false,
     hasPermission: vi.fn(() => false),
     refetch: vi.fn(),
@@ -36,9 +40,9 @@ vi.mock('sonner', () => ({
   toast: { error: vi.fn(), success: vi.fn() },
 }));
 
-function renderPage() {
+function renderPage(initialEntry = '/approvals') {
   return render(
-    <MemoryRouter>
+    <MemoryRouter initialEntries={[initialEntry]}>
       <ApprovalsPage />
     </MemoryRouter>
   );
@@ -72,6 +76,30 @@ describe('ApprovalsPage', () => {
     renderPage();
     await waitFor(() => {
       expect(screen.getByText('Approvals')).toBeDefined();
+    });
+  });
+
+  it('should deep-link to the Receive Approve tab via ?tab=receive', async () => {
+    mockPermissions.roleCustodian = { managerApprover2: true };
+    (api.get as any).mockResolvedValue({});
+    renderPage('/approvals?tab=receive');
+    await waitFor(() => {
+      const receiveTrigger = screen.getByRole('tab', {
+        name: /receive approve/i,
+      });
+      expect(receiveTrigger.getAttribute('data-state')).toBe('active');
+    });
+  });
+
+  it('should fall back to For Approval when ?tab=receive is not permitted', async () => {
+    mockPermissions.roleCustodian = null;
+    (api.get as any).mockResolvedValue({});
+    renderPage('/approvals?tab=receive');
+    await waitFor(() => {
+      const forApprovalTrigger = screen.getByRole('tab', {
+        name: /for approval/i,
+      });
+      expect(forApprovalTrigger.getAttribute('data-state')).toBe('active');
     });
   });
 });

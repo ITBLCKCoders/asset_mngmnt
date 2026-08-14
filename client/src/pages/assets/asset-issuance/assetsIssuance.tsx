@@ -145,10 +145,6 @@ export default function AssetsAssignment() {
     setPendingChecklists(next);
   };
 
-  const computerAssetsForChecklist = useMemo(() => {
-    const selected = assets.filter(a => selectedAssets.includes(a.id));
-    return filterComputerTypeAssets(selected);
-  }, [assets, selectedAssets]);
   const [assetBuilders, setAssetBuilders] = useState<any[]>([]);
   const [buildersLoading, setBuildersLoading] = useState(false);
   const [intangibleAssets, setIntangibleAssets] = useState<any[]>([]);
@@ -163,6 +159,41 @@ export default function AssetsAssignment() {
   const [activeTab, setActiveTab] = useState('select-assets');
   const [tabLoading, setTabLoading] = useState(false);
   const displayLoading = loading;
+
+  // Merge builder items (including child assets, which /assets hides) into the
+  // displayable asset list so modals/checklists can resolve every selected code.
+  const allAssignableAssets = useMemo(() => {
+    const byId = new Map<string, any>();
+    for (const a of assets) byId.set(a.id, a);
+    for (const builder of assetBuilders) {
+      for (const item of (builder.items || []) as any[]) {
+        const code = item.asset_code;
+        if (code && !byId.has(code)) {
+          byId.set(code, {
+            id: code,
+            name: item.asset_name || code,
+            status: 'Available',
+            category: item.category_name || '',
+            type: item.type_name || '',
+            serialNo: '',
+            assignedTo: '',
+            department: '',
+            location: '',
+            description: '',
+            specifications: [],
+          });
+        }
+      }
+    }
+    return Array.from(byId.values());
+  }, [assets, assetBuilders]);
+
+  const computerAssetsForChecklist = useMemo(() => {
+    const selected = allAssignableAssets.filter(a =>
+      selectedAssets.includes(a.id)
+    );
+    return filterComputerTypeAssets(selected);
+  }, [allAssignableAssets, selectedAssets]);
 
   const isSuperAdmin = currentUser?.role?.name?.toLowerCase() === 'global admin';
   const isAdmin = currentUser?.role?.name?.toLowerCase() === 'admin';
@@ -440,7 +471,10 @@ export default function AssetsAssignment() {
     }
 
     // Check if any selected assets are computer-type
-    const hasComputerAssets = hasComputerTypeAssets(assets, selectedAssets);
+    const hasComputerAssets = hasComputerTypeAssets(
+      allAssignableAssets,
+      selectedAssets
+    );
 
     if (hasComputerAssets) {
       setChecklistStepIndex(0);
@@ -871,13 +905,6 @@ export default function AssetsAssignment() {
     );
   }, [filteredAssets, groupedAssetIds]);
 
-  // For builder selection, include assets that are in builders but available
-  const allSelectableAssets = useMemo(() => {
-    return filteredAssets.filter(
-      asset => asset.status === 'Available'
-    );
-  }, [filteredAssets]);
-
   const scopedIntangibleAssets = useMemo(() => {
     if (!showScopeTabs) return intangibleAssets;
     // Classify by the department linked to the asset's type (mirrors tangible
@@ -977,17 +1004,14 @@ export default function AssetsAssignment() {
     return availableBuilders.filter((builder: any) => {
       const builderAssets =
         builder.items?.map((item: any) => item.asset_code) || [];
-      const availableBuilderAssets = builderAssets.filter((assetId: string) =>
-        allSelectableAssets.some(asset => asset.id === assetId)
-      );
       return (
-        availableBuilderAssets.length > 0 &&
-        availableBuilderAssets.every((assetId: string) =>
+        builderAssets.length > 0 &&
+        builderAssets.every((assetId: string) =>
           selectedAssets.includes(assetId)
         )
       );
     });
-  }, [availableBuilders, selectedAssets, allSelectableAssets]);
+  }, [availableBuilders, selectedAssets]);
 
   const filteredLocations = (locations || []).filter(
     loc =>
@@ -1259,11 +1283,7 @@ export default function AssetsAssignment() {
                           onClick={() => {
                             const allBuilderAssetIds = paginatedBuilders
                               .flatMap((builder: any) =>
-                                (builder.items || [])
-                                  .map((item: any) => item.asset_code)
-                                  .filter((id: string) =>
-                                    allSelectableAssets.some(asset => asset.id === id)
-                                  )
+                                (builder.items || []).map((item: any) => item.asset_code)
                               );
                             const allSelected = allBuilderAssetIds.length > 0 &&
                               allBuilderAssetIds.every((id: string) => selectedAssets.includes(id));
@@ -1279,19 +1299,11 @@ export default function AssetsAssignment() {
                         >
                           {paginatedBuilders
                             .flatMap((builder: any) =>
-                              (builder.items || [])
-                                .map((item: any) => item.asset_code)
-                                .filter((id: string) =>
-                                  allSelectableAssets.some(asset => asset.id === id)
-                                )
+                              (builder.items || []).map((item: any) => item.asset_code)
                             ).length > 0 &&
                           (paginatedBuilders
                             .flatMap((builder: any) =>
-                              (builder.items || [])
-                                .map((item: any) => item.asset_code)
-                                .filter((id: string) =>
-                                  allSelectableAssets.some(asset => asset.id === id)
-                                )
+                              (builder.items || []).map((item: any) => item.asset_code)
                             )).every((id: string) => selectedAssets.includes(id))
                             ? 'Deselect All'
                             : 'Select All'}
@@ -1329,15 +1341,9 @@ export default function AssetsAssignment() {
                               builder.items?.map(
                                 (item: any) => item.asset_code
                               ) || [];
-                            const availableBuilderAssets = builderAssets.filter(
-                              (assetId: string) =>
-                                allSelectableAssets.some(
-                                  asset => asset.id === assetId
-                                )
-                            );
                             const isSelected =
-                              availableBuilderAssets.length > 0 &&
-                              availableBuilderAssets.every((assetId: string) =>
+                              builderAssets.length > 0 &&
+                              builderAssets.every((assetId: string) =>
                                 selectedAssets.includes(assetId)
                               );
 
@@ -1365,7 +1371,7 @@ export default function AssetsAssignment() {
                                     setSelectedAssets(prev => [
                                       ...new Set([
                                         ...prev,
-                                        ...availableBuilderAssets,
+                                        ...builderAssets,
                                       ]),
                                     ]);
                                   }
@@ -1668,7 +1674,7 @@ export default function AssetsAssignment() {
           isOpen={confirmModalOpen}
           onOpenChange={setConfirmModalOpen}
           selectedAssets={selectedAssets}
-          assets={assets}
+          assets={allAssignableAssets}
           departments={departments}
           locations={locations}
           users={users}
@@ -1701,7 +1707,7 @@ export default function AssetsAssignment() {
             syncPendingChecklists([]);
           }}
           selectedAssets={selectedAssets}
-          assets={assets}
+          assets={allAssignableAssets}
           computerAssets={computerAssetsForChecklist}
           currentIndex={checklistStepIndex}
           selectedUser={selectedUser}

@@ -11,6 +11,7 @@ import {
   listApprovedByDeptHeadMeBorrowRequests,
   listAssetBorrowRequests,
   listMyAssetBorrowRequests,
+  listReceivedByMeBorrowRequests,
   listPendingDeptHeadBorrowRequests,
   processBorrowReturn,
   receiveBorrowRequest,
@@ -67,6 +68,8 @@ router.get(
   authenticate,
   getApprovedBorrowRequestsForReceive
 );
+
+router.get('/received-by-me', authenticate, listReceivedByMeBorrowRequests);
 
 router.post(
   '/:borrowRequestId/staff-approve',

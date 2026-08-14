@@ -187,6 +187,38 @@ describe('assetTransfers.controller', () => {
     });
   });
 
+  describe('getTransferPendingApprovalsHandler', () => {
+    it('scopes pending approvals to the approver own department for non-admin Manager Approver 1 users', async () => {
+      getAssetScope.mockResolvedValue({ companyId: 10, departmentIds: null, isSuperAdmin: false });
+      isUserManagerApprover1.mockResolvedValue(true);
+      pool.execute.mockImplementation(async (sql: string) => {
+        if (sql.includes('SELECT department_id FROM users')) return [[{ department_id: 'd1' }], []];
+        return [[], []];
+      });
+      await assetTransfersController.getTransferPendingApprovalsHandler(req, res);
+      expect(isUserManagerApprover1).toHaveBeenCalledWith('u1');
+      const deptFilterCall = (pool.execute as jest.Mock).mock.calls.find((c: any[]) =>
+        String(c[0]).includes('transferer.department_id <=> ?')
+      );
+      expect(deptFilterCall).toBeDefined();
+      expect(deptFilterCall[1]).toEqual(['d1', 10]);
+    });
+
+    it('shows all company forms for Global Admin without department filter', async () => {
+      getAssetScope.mockResolvedValue({ companyId: 10, departmentIds: null, isSuperAdmin: true });
+      pool.execute.mockImplementation(async (sql: string) => {
+        if (sql.includes('SELECT department_id FROM users')) return [[{ department_id: 'd1' }], []];
+        return [[], []];
+      });
+      await assetTransfersController.getTransferPendingApprovalsHandler(req, res);
+      expect(isUserManagerApprover1).not.toHaveBeenCalled();
+      const deptFilterCall = (pool.execute as jest.Mock).mock.calls.find((c: any[]) =>
+        String(c[0]).includes('transferer.department_id <=> ?')
+      );
+      expect(deptFilterCall).toBeUndefined();
+    });
+  });
+
   describe('uploadTransferConditionPhotoHandler', () => {
     it('uploads photo successfully', async () => {
       req.file = { buffer: Buffer.from('test') };

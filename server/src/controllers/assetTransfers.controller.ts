@@ -1521,11 +1521,12 @@ export async function submitTransferRequestHandler(
       createdForms.push(entry);
       if (!firstForm) firstForm = entry;
 
-      // Send notification to Manager Approver 1 users in the same department AND company
-      if (effectiveDepartmentId && companyId) {
+      // Send notification to Manager Approver 1 users in the transferer's department AND company
+      if (transfererUserDeptId && companyId) {
         try {
-          const managerApprover1UserIds = await getManagerApprover1UserIdsInDepartmentAndCompany(effectiveDepartmentId, companyId);
-          const requesterName = [firstDeptAssignment.user?.first_name, firstDeptAssignment.user?.last_name].filter(Boolean).join(' ') || 'A user';
+          const managerApprover1UserIds = await getManagerApprover1UserIdsInDepartmentAndCompany(transfererUserDeptId, companyId);
+          const requesterRow = await getUserNamesById(firstDeptAssignment.user_id);
+          const requesterName = requesterRow ? `${requesterRow.first_name} ${requesterRow.last_name}`.trim() : 'A user';
           const assetCount = deptAssignments.length;
 
           const io = getIoInstance();
@@ -2082,10 +2083,11 @@ export async function runTransferFormExecution(
     }
     returnFormId = linkedReturnFormId;
     await executeRawWrite(
-      `UPDATE asset_return_forms SET process_signed_at = ?, process_digital_signature = ?, return_type = ?, received_by = ?, updated_at = NOW() WHERE formID = ?`,
+      `UPDATE asset_return_forms SET process_signed_at = ?, process_digital_signature = ?, process_signed_by = ?, return_type = ?, received_by = ?, updated_at = NOW() WHERE formID = ?`,
       [
         processSignedAtForDb,
         processSignature?.digital_signature ?? null,
+        processSignedAtForDb ? processorId : null,
         transferType ?? null,
         receivedBy ?? null,
         returnFormId,
@@ -2114,6 +2116,7 @@ export async function runTransferFormExecution(
       created_by: processorId,
       process_signed_at: processSignedAtForDb,
       process_digital_signature: processSignature?.digital_signature ?? null,
+      process_signed_by: processSignedAtForDb ? processorId : null,
       return_type: transferType ?? null,
       received_by: receivedBy ?? null,
     });
@@ -3810,10 +3813,10 @@ export async function getTransferPendingApprovalsHandler(
 ) {
   try {
     const userId = req.user!.userID;
-    const { companyId, departmentIds, isSuperAdmin } = await getAssetScope(pool, userId);
+    const { companyId, isSuperAdmin } = await getAssetScope(pool, userId);
     if (!companyId) return res.json({ assetTransferForms: [] });
 
-    if (isSuperAdmin || departmentIds === null) {
+    if (isSuperAdmin) {
       let formRows: any[];
       try {
         const [rows] = (await pool.execute(
@@ -3991,8 +3994,8 @@ export async function getTransferApprovedByMeHandler(
               DATE_FORMAT(atf.it_manager_signed_at, '%Y-%m-%d %H:%i:%s') AS it_manager_signed_at,
               atf.it_manager_digital_signature, atf.it_manager_signed_by
        FROM asset_transfer_forms atf
-       WHERE atf.deleted_at IS NULL AND atf.dept_head_signed_at IS NOT NULL AND atf.dept_head_signed_by = ?`,
-      [userId]
+       WHERE atf.deleted_at IS NULL AND atf.dept_head_signed_at IS NOT NULL AND (atf.dept_head_signed_by = ? OR atf.it_manager_signed_by = ?)`,
+      [userId, userId]
     )) as any[];
     const batches = await buildTransferFormBatches(formRows || []);
     return res.json({ assetTransferForms: batches });

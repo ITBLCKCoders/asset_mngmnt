@@ -117,6 +117,7 @@ function UserPermissions() {
     manager_approver_2: false,
     manager_approver_3: false,
     finance_approver: false,
+    sub_approver_2: false,
   });
   const displayLoading = loading;
 
@@ -132,7 +133,9 @@ function UserPermissions() {
       Boolean(userCustodianForm.manager_approver_3) !==
         Boolean(selectedUser.manager_approver_3) ||
       Boolean(userCustodianForm.finance_approver) !==
-        Boolean(selectedUser.finance_approver)
+        Boolean(selectedUser.finance_approver) ||
+      Boolean(userCustodianForm.sub_approver_2) !==
+        Boolean(selectedUser.sub_approver_2)
     );
   }, [selectedUser, userCustodianForm]);
 
@@ -245,6 +248,7 @@ function UserPermissions() {
       manager_approver_2: Boolean(selectedUser.manager_approver_2),
       manager_approver_3: Boolean(selectedUser.manager_approver_3),
       finance_approver: Boolean(selectedUser.finance_approver),
+      sub_approver_2: Boolean(selectedUser.sub_approver_2),
     });
   }, [selectedUser?.userID]);
 
@@ -298,6 +302,7 @@ function UserPermissions() {
         manager_approver_2: userCustodianForm.manager_approver_2,
         manager_approver_3: userCustodianForm.manager_approver_3,
         finance_approver: userCustodianForm.finance_approver,
+        sub_approver_2: userCustodianForm.sub_approver_2,
       });
       try {
         await api.post(`/users/${selectedUser.userID}/apply-role-permissions`);
@@ -758,7 +763,7 @@ function UserPermissions() {
                                         key: 'hr',
                                         label:
                                           'HR asset accountability Receiver',
-                                        desc: 'Sign accountability to receive the accountability of each user for copy for 201 file.',
+                                        desc: 'HR accountability receiver of employees.',
                                         checked:
                                           userCustodianForm.hr_accountability_receiver,
                                         set: (v: boolean) =>
@@ -770,7 +775,7 @@ function UserPermissions() {
                                       {
                                         key: 'm1',
                                         label: 'Manager Approver 1',
-                                        desc: 'Acts as department head. Signs accountability, transfer, and asset checklist forms.',
+                                        desc: 'Approver of request — dept head or manager of the requestor.',
                                         checked:
                                           userCustodianForm.manager_approver_1,
                                         set: (v: boolean) =>
@@ -782,7 +787,7 @@ function UserPermissions() {
                                       {
                                         key: 'm2',
                                         label: 'Manager Approver 2',
-                                        desc: 'Acts as receiver (e.g. IT receive step) in issuance and checklist flows.',
+                                        desc: 'Department head / manager of IT department / admin department for verifying all requests and transactions in the system.',
                                         checked:
                                           userCustodianForm.manager_approver_2,
                                         set: (v: boolean) =>
@@ -793,8 +798,8 @@ function UserPermissions() {
                                       },
                                       {
                                         key: 'm3',
-                                        label: 'Manager Approver 3',
-                                        desc: 'Additional manager-level approver for multi-level accountability.',
+                                        label: 'Sub Approver 1',
+                                        desc: 'Sub approver or 2nd line approver if the DH/manager of the requestor is absent.',
                                         checked:
                                           userCustodianForm.manager_approver_3,
                                         set: (v: boolean) =>
@@ -804,9 +809,21 @@ function UserPermissions() {
                                           })),
                                       },
                                       {
+                                        key: 's2',
+                                        label: 'Sub Approver 2',
+                                        desc: 'Sub approver for the dept head / manager of the IT department / admin department if they are not present for verifying all requests and transactions in the system.',
+                                        checked:
+                                          userCustodianForm.sub_approver_2,
+                                        set: (v: boolean) =>
+                                          setUserCustodianForm(prev => ({
+                                            ...prev,
+                                            sub_approver_2: v,
+                                          })),
+                                      },
+                                      {
                                         key: 'fa',
                                         label: 'Finance Approver',
-                                        desc: 'Can view and edit financial & lifecycle information of all assets.',
+                                        desc: 'For finance employee to edit asset finance and life cycle.',
                                         checked:
                                           userCustodianForm.finance_approver,
                                         set: (v: boolean) =>

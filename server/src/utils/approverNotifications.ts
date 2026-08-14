@@ -2,7 +2,8 @@
  * Helpers for notifying approver users (e.g. Manager Approver 1) when forms are signed.
  */
 import { pool } from '../db.js';
-import { getDepartmentIdsForScope } from './assetScope.js';
+import { getAssetScope, getDepartmentIdsForScope } from './assetScope.js';
+import { getActiveCompany } from './activeCompany.js';
 
 /**
  * Returns true if the given user is Manager Approver 1 (role or user_custodian_settings).
@@ -64,7 +65,11 @@ export async function getManagerApprover1UserIdsInDepartment(
 }
 
 /**
- * Manager Approver 1 users in the same department and company (e.g. checklist dept-head approval).
+ * Manager Approver 1 users who can see a pending dept-head approval for a form in the
+ * given department/company. Mirrors the Approvals "pending approvals" visibility
+ * (getPendingApprovalsHandler):
+ *  - Global Admins see all forms in the currently active company
+ *  - everyone else sees only forms in their own department + company
  */
 export async function getManagerApprover1UserIdsInDepartmentAndCompany(
   departmentId: string | null,
@@ -78,16 +83,20 @@ export async function getManagerApprover1UserIdsInDepartmentAndCompany(
   ) {
     return [];
   }
+  const activeCompany = await getActiveCompany(pool);
+  const activeCompanyId = activeCompany?.id ?? null;
   const [rows] = (await pool.execute(
     `SELECT DISTINCT u.userID
      FROM users u
      LEFT JOIN asset_mngmnt_roles r ON u.role_id = r.roleID AND r.deleted_at IS NULL
      LEFT JOIN user_custodian_settings uc ON u.userID = uc.user_id
-     WHERE u.department_id = ?
-       AND u.company_id = ?
-       AND u.is_active = 1
-       AND (r.manager_approver_1 = 1 OR COALESCE(uc.manager_approver_1, 0) = 1)`,
-    [departmentId, companyId]
+     WHERE u.is_active = 1
+       AND (r.manager_approver_1 = 1 OR COALESCE(uc.manager_approver_1, 0) = 1)
+       AND (
+         (u.company_id = ? AND u.department_id = ?)
+         OR (LOWER(r.name) = 'global admin' AND ? = ?)
+       )`,
+    [companyId, departmentId, companyId, activeCompanyId]
   )) as [{ userID: string }[], unknown];
   return (rows || []).map(row => row.userID);
 }
@@ -185,6 +194,48 @@ export async function getManagerApprover1UserIdsByCompany(
 }
 
 /**
+ * Manager Approver 2 users who can see a processed return form in the Approvals
+ * "Receive Approve" tab for the given company/department. Mirrors
+ * getReceivePendingApprovalsHandler visibility:
+ *  - broad-scope users (Global Admin / Admin / overallManager / unscoped) see all forms
+ *  - IT/Admin-scoped users only see forms whose department is within their scope
+ */
+export async function getManagerApprover2UserIdsForProcessedReturn(
+  companyId: string | null,
+  departmentId: string | null
+): Promise<string[]> {
+  if (companyId == null || companyId === '') {
+    return [];
+  }
+  const [rows] = (await pool.execute(
+    `SELECT DISTINCT u.userID
+     FROM users u
+     LEFT JOIN asset_mngmnt_roles r ON u.role_id = r.roleID AND r.deleted_at IS NULL
+     LEFT JOIN user_custodian_settings uc ON u.userID = uc.user_id
+     WHERE u.company_id = ?
+       AND u.is_active = 1
+       AND (r.manager_approver_2 = 1 OR COALESCE(uc.manager_approver_2, 0) = 1)`,
+    [companyId]
+  )) as [{ userID: string }[], unknown];
+
+  const recipients: string[] = [];
+  for (const row of rows || []) {
+    const userId = String(row.userID);
+    const scope = await getAssetScope(pool, userId);
+    if (!scope.companyId || scope.companyId !== companyId) continue;
+    if (
+      scope.departmentIds === null ||
+      (departmentId != null &&
+        departmentId !== '' &&
+        scope.departmentIds.includes(String(departmentId)))
+    ) {
+      recipients.push(userId);
+    }
+  }
+  return recipients;
+}
+
+/**
  * Returns user IDs of active users who should receive return-workflow notifications:
  * those with any granted permission on the Asset Return module in user_permissions.
  */
@@ -200,7 +251,6 @@ export async function getCustodianReturnAccessUserIds(): Promise<string[]> {
   )) as [{ userID: string }[], unknown];
   return (rows || []).map(row => row.userID);
 }
-
 /**
  * Active users flagged as HR accountability / 201-file receivers:
  * role `hr_accountability_receiver` or per-user `user_custodian_settings.hr_accountability_receiver`.

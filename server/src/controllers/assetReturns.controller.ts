@@ -15,7 +15,7 @@ import {
   isUserManagerApprover1,
   isUserManagerApprover2,
   getManagerApprover1UserIdsInDepartmentAndCompany,
-  getManagerApprover2UserIdsInDepartment,
+  getManagerApprover2UserIdsForProcessedReturn,
 } from '../utils/approverNotifications.js';
 import { createNotificationForApi } from '../utils/notificationsApi.js';
 import { getIoInstance } from '../utils/socketManager.js';
@@ -114,12 +114,13 @@ type LinkedTransferProcessorSource = {
 };
 
 /** IT Staff processor fields for return PDFs; uses linked transfer form when return has none. */
-async function resolveReturnProcessorFieldsForBatch(
-  form: {
-    formID?: string | null | undefined;
+export async function resolveReturnProcessorFieldsForBatch(
+form: {
+    formID?: string | null;
     created_by?: string | null | undefined;
     process_signed_at?: string | null | undefined;
     process_digital_signature?: string | null | undefined;
+    process_signed_by?: string | null | undefined;
   },
   options: {
     processorNames?: Map<string, string>;
@@ -181,10 +182,27 @@ async function resolveReturnProcessorFieldsForBatch(
     }
   }
 
-  const processorUserId = tf?.created_by ?? form.created_by ?? null;
+  const processorUserId =
+    form.process_signed_by ?? tf?.created_by ?? form.created_by ?? null;
   if (!processDigitalSignature && processSignedAt && processorUserId) {
     processDigitalSignature =
       await fetchUserDigitalSignature(processorUserId);
+  }
+
+  // Prefer the recorded processor user (who actually process-signed) over the
+  // form creator. Return forms created by the employee used to show the
+  // returner's name; process_signed_by captures the real IT/Admin processor.
+  if (processSignedAt && form.process_signed_by) {
+    const cached = options.processorNames?.get(form.process_signed_by);
+    if (cached) {
+      processedBy = cached;
+    } else {
+      const procNames = await getUserNamesById(form.process_signed_by);
+      processedBy =
+        procNames?.first_name && procNames?.last_name
+          ? `${procNames.first_name} ${procNames.last_name}`.trim() || 'Unknown'
+          : 'Unknown';
+    }
   }
 
   return {
@@ -455,13 +473,14 @@ export async function submitAssetReturnRequestHandler(
         });
       }
 
-      // Send notification to Manager Approver 1 users in the same department AND company
-      logger.info(`Notification debug - department_id: ${effectiveDepartmentId}, company_id: ${companyId}, asset count: ${deptAssignments.length}`);
-      if (effectiveDepartmentId && companyId) {
+      // Send notification to Manager Approver 1 users in the returner's department AND company
+      logger.info(`Notification debug - department_id: ${returnerUserDeptId}, company_id: ${companyId}, asset count: ${deptAssignments.length}`);
+      if (returnerUserDeptId && companyId) {
         try {
-          const managerApprover1UserIds = await getManagerApprover1UserIdsInDepartmentAndCompany(effectiveDepartmentId, companyId);
-          logger.info(`Found ${managerApprover1UserIds.length} Manager Approver 1 users in department ${effectiveDepartmentId} and company ${companyId}: ${JSON.stringify(managerApprover1UserIds)}`);
-          const requesterName = [firstDeptAssignment.user?.first_name, firstDeptAssignment.user?.last_name].filter(Boolean).join(' ') || 'A user';
+          const managerApprover1UserIds = await getManagerApprover1UserIdsInDepartmentAndCompany(returnerUserDeptId, companyId);
+          logger.info(`Found ${managerApprover1UserIds.length} Manager Approver 1 users in department ${returnerUserDeptId} and company ${companyId}: ${JSON.stringify(managerApprover1UserIds)}`);
+          const requesterRow = await getUserNamesById(firstDeptAssignment.user_id);
+          const requesterName = requesterRow ? `${requesterRow.first_name} ${requesterRow.last_name}`.trim() : 'A user';
           const assetCount = deptAssignments.length;
 
           const io = getIoInstance();
@@ -505,7 +524,7 @@ export async function submitAssetReturnRequestHandler(
               logger.info(`Notification + socket push sent successfully to user ${approverUserId}`);
             }
           }
-          logger.info(`Sent return request notifications to ${managerApprover1UserIds.length} Manager Approver 1 users in department ${effectiveDepartmentId} company ${companyId}`);
+          logger.info(`Sent return request notifications to ${managerApprover1UserIds.length} Manager Approver 1 users in department ${returnerUserDeptId} company ${companyId}`);
         } catch (notifError) {
           logger.error('Failed to send return request notifications:', notifError);
         }
@@ -671,6 +690,7 @@ export async function createAssetReturnHandler(
       created_by: req.user!.userID,
       process_signed_at: processSignedAtForDb,
       process_digital_signature: processDigitalSignature,
+      process_signed_by: processSignedAtForDb ? req.user!.userID : null,
       return_type: normalizeReturnTypeString(returnType) ?? null,
       // Required for manager-approval execution path (processor-initiated hold flow).
       received_by: assignToProcessor ? req.user!.userID : null,
@@ -1230,6 +1250,16 @@ export async function createAssetReturnHandler(
       }
     }
 
+    // Notify Manager Approver 2 users in the asset scope department that the return was processed, checked and verified
+    await notifyManagerApprover2OfProcessedReturn({
+      formId: form_id,
+      formNumber: returnForm?.form_number ?? null,
+      companyId: companyId,
+      departmentId: categoryDeptId ?? firstAssignment.department_id ?? null,
+      returnRequestorUserId: firstAssignment.user_id,
+      processorUserId: req.user!.userID,
+    });
+
     return res.status(201).json({
       message: `Successfully returned ${assetReturns.length} asset(s)${hasIntangibleItems ? ` and ${intangibleAssetReturnItems.length} intangible asset(s)` : ''}`,
       assetReturns: createdReturns,
@@ -1242,6 +1272,74 @@ export async function createAssetReturnHandler(
     return res
       .status(500)
       .json({ error: 'Failed to create asset return forms' });
+  }
+}
+
+/**
+ * Notify Manager Approver 2 users in the asset scope department that a return has been
+ * processed, checked and verified. Falls back to the processor's department when the
+ * form has no scope department.
+ */
+async function notifyManagerApprover2OfProcessedReturn(params: {
+  formId: string;
+  formNumber: string | null;
+  companyId: string | null;
+  departmentId: string | null;
+  returnRequestorUserId: string;
+  processorUserId: string;
+}): Promise<void> {
+  const {
+    formId,
+    formNumber,
+    companyId,
+    departmentId,
+    returnRequestorUserId,
+    processorUserId,
+  } = params;
+
+  const requestorRow = await getUserNamesById(returnRequestorUserId);
+  const returnRequestorName = requestorRow
+    ? `${requestorRow.first_name || ''} ${requestorRow.last_name || ''}`.trim() ||
+      returnRequestorUserId
+    : returnRequestorUserId;
+  const processorRow = await getUserNamesById(processorUserId);
+  const processorName = processorRow
+    ? `${processorRow.first_name || ''} ${processorRow.last_name || ''}`.trim() ||
+      processorUserId
+    : processorUserId;
+
+  const managerApprover2UserIds =
+    await getManagerApprover2UserIdsForProcessedReturn(companyId, departmentId);
+  const io = getIoInstance();
+  for (const approverUserId of managerApprover2UserIds) {
+    if (approverUserId === processorUserId) continue;
+    const payload = {
+      user_id: approverUserId,
+      title: 'An asset has been returned, checked and verified',
+      message: `${processorName} has processed return request of ${returnRequestorName}`,
+      type: 'system' as const,
+      data: {
+        form_id: formId,
+        form_number: formNumber,
+        processor_id: processorUserId,
+        processor_name: processorName,
+        return_requestor_id: returnRequestorUserId,
+        return_requestor_name: returnRequestorName,
+        route: '/approvals?tab=receive',
+        actionTarget: 'approvals',
+      },
+    };
+    await createNotificationForApi(payload);
+    if (io) {
+      emitNotification(io, approverUserId, 'notification', {
+        id: formId,
+        title: payload.title,
+        message: payload.message,
+        type: payload.type,
+        data: payload.data,
+        time: new Date().toISOString(),
+      });
+    }
   }
 }
 
@@ -2124,13 +2222,20 @@ export async function getAssetReturnsHandler(req: AuthRequest, res: Response) {
       }
     }
 
-    // Processed-by for forms: resolve created_by user name
-    const createdByIds = [
-      ...new Set(forms.map(f => f.created_by).filter(Boolean)),
-    ] as string[];
+    // Processed-by for forms: resolve created_by / process_signed_by user names
+    const processorNameUserIds = [
+      ...new Set([
+        ...forms.map(f => f.created_by),
+        ...forms.map(
+          f =>
+            (f as AssetReturnForm & { process_signed_by?: string | null })
+              .process_signed_by
+        ),
+      ]),
+    ].filter(Boolean) as string[];
     const processorNames = new Map<string, string>();
-    if (createdByIds.length > 0) {
-      const userRows = await getUserNamesByIds(createdByIds);
+    if (processorNameUserIds.length > 0) {
+      const userRows = await getUserNamesByIds(processorNameUserIds);
       for (const u of userRows) {
         processorNames.set(
           u.userID,
@@ -2373,6 +2478,8 @@ export async function getAssetReturnsHandler(req: AuthRequest, res: Response) {
           created_by: form.created_by,
           process_signed_at: formWithProcess.process_signed_at,
           process_digital_signature: formWithProcess.process_digital_signature,
+          process_signed_by: (form as { process_signed_by?: string | null })
+            .process_signed_by,
         },
         { processorNames }
       );
@@ -2746,7 +2853,7 @@ export async function getPendingApprovalsHandler(
   try {
     const userId = req.user!.userID;
 
-    const { companyId, departmentIds, isSuperAdmin } = await getAssetScope(pool, userId);
+    const { companyId, isSuperAdmin } = await getAssetScope(pool, userId);
     if (!companyId) {
       return res.json({ assetReturnForms: [] });
     }
@@ -2757,8 +2864,8 @@ export async function getPendingApprovalsHandler(
     }
 
     let pendingForms: any[];
-    if (isSuperAdmin || departmentIds === null) {
-      // Global Admin / full-scope: show all forms in the company (no department filter)
+    if (isSuperAdmin) {
+      // Global Admin: show all forms in the company (no department filter)
       pendingForms = await fetchPendingDeptHeadApprovalFormRowsByCompany(companyId);
     } else {
       const approverDepartmentId = await getUserDepartmentId(userId);
@@ -2789,12 +2896,15 @@ export async function getPendingApprovalsHandler(
       }
     }
 
-    const createdByIds = [
-      ...new Set(pendingForms.map((f: any) => f.created_by).filter(Boolean)),
-    ] as string[];
+    const processorNameUserIds = [
+      ...new Set([
+        ...pendingForms.map((f: any) => f.created_by),
+        ...pendingForms.map((f: any) => f.process_signed_by),
+      ]),
+    ].filter(Boolean) as string[];
     const processorNames = new Map<string, string>();
-    if (createdByIds.length > 0) {
-      const userRows2 = await getUserNamesByIds(createdByIds);
+    if (processorNameUserIds.length > 0) {
+      const userRows2 = await getUserNamesByIds(processorNameUserIds);
       for (const u of userRows2) {
         processorNames.set(
           u.userID,
@@ -2957,6 +3067,8 @@ export async function getPendingApprovalsHandler(
           created_by: form.created_by,
           process_signed_at: form.process_signed_at,
           process_digital_signature: form.process_digital_signature,
+          process_signed_by: (form as { process_signed_by?: string | null })
+            .process_signed_by,
         },
         { processorNames }
       );
@@ -3006,7 +3118,7 @@ export async function getApprovedByMeHandler(req: AuthRequest, res: Response) {
       `SELECT arf.formID, arf.form_number, arf.user_id, arf.department_id, arf.location_id, arf.location_room_id, arf.created_by, arf.created_at, arf.updated_at, arf.deleted_at,
         arf.signed_at, arf.signed_by, arf.signed_digital_signature,
         DATE_FORMAT(arf.process_signed_at, '%Y-%m-%d %H:%i:%s') AS process_signed_at,
-        arf.process_digital_signature, arf.return_type, arf.received_by,
+        arf.process_digital_signature, arf.process_signed_by, arf.return_type, arf.received_by,
         DATE_FORMAT(arf.dept_head_signed_at, '%Y-%m-%d %H:%i:%s') AS dept_head_signed_at,
         arf.dept_head_digital_signature, arf.dept_head_signed_by,
         DATE_FORMAT(arf.it_manager_signed_at, '%Y-%m-%d %H:%i:%s') AS it_manager_signed_at,
@@ -3014,8 +3126,8 @@ export async function getApprovedByMeHandler(req: AuthRequest, res: Response) {
         d.name AS form_department_name
        FROM asset_return_forms arf
        LEFT JOIN asset_mngmnt_departments d ON arf.department_id = d.departmentID
-       WHERE arf.deleted_at IS NULL AND arf.dept_head_signed_at IS NOT NULL AND arf.dept_head_signed_by = ?`,
-      [userId]
+       WHERE arf.deleted_at IS NULL AND arf.dept_head_signed_at IS NOT NULL AND (arf.dept_head_signed_by = ? OR arf.it_manager_signed_by = ?)`,
+      [userId, userId]
     )) as any[];
 
     if (formRows.length === 0) {
@@ -3036,12 +3148,15 @@ export async function getApprovedByMeHandler(req: AuthRequest, res: Response) {
       }
     }
 
-    const createdByIds = [
-      ...new Set(formRows.map((f: any) => f.created_by).filter(Boolean)),
-    ] as string[];
+    const processorNameUserIds = [
+      ...new Set([
+        ...formRows.map((f: any) => f.created_by),
+        ...formRows.map((f: any) => f.process_signed_by),
+      ]),
+    ].filter(Boolean) as string[];
     const processorNames = new Map<string, string>();
-    if (createdByIds.length > 0) {
-      const userRows2 = await getUserNamesByIds(createdByIds);
+    if (processorNameUserIds.length > 0) {
+      const userRows2 = await getUserNamesByIds(processorNameUserIds);
       for (const u of userRows2) {
         processorNames.set(
           u.userID,
@@ -3115,6 +3230,8 @@ export async function getApprovedByMeHandler(req: AuthRequest, res: Response) {
           created_by: form.created_by,
           process_signed_at: form.process_signed_at,
           process_digital_signature: form.process_digital_signature,
+          process_signed_by: (form as { process_signed_by?: string | null })
+            .process_signed_by,
         },
         { processorNames }
       );
@@ -3176,7 +3293,7 @@ export async function getPendingStaffHandler(req: AuthRequest, res: Response) {
       `SELECT arf.formID, arf.form_number, arf.user_id, arf.department_id, arf.location_id, arf.location_room_id, arf.created_by, arf.created_at, arf.updated_at, arf.deleted_at,
         arf.signed_at, arf.signed_by, arf.signed_digital_signature,
         DATE_FORMAT(arf.process_signed_at, '%Y-%m-%d %H:%i:%s') AS process_signed_at,
-        arf.process_digital_signature, arf.return_type, arf.received_by,
+        arf.process_digital_signature, arf.process_signed_by, arf.return_type, arf.received_by,
         DATE_FORMAT(arf.dept_head_signed_at, '%Y-%m-%d %H:%i:%s') AS dept_head_signed_at,
         arf.dept_head_digital_signature, arf.dept_head_signed_by,
         d.company_id AS form_company_id, d.name AS form_department_name
@@ -3221,12 +3338,15 @@ export async function getPendingStaffHandler(req: AuthRequest, res: Response) {
       }
     }
 
-    const createdByIds = [
-      ...new Set(pendingForms.map((f: any) => f.created_by).filter(Boolean)),
-    ] as string[];
+    const processorNameUserIds = [
+      ...new Set([
+        ...pendingForms.map((f: any) => f.created_by),
+        ...pendingForms.map((f: any) => f.process_signed_by),
+      ]),
+    ].filter(Boolean) as string[];
     const processorNames = new Map<string, string>();
-    if (createdByIds.length > 0) {
-      const userRows2 = await getUserNamesByIds(createdByIds);
+    if (processorNameUserIds.length > 0) {
+      const userRows2 = await getUserNamesByIds(processorNameUserIds);
       for (const u of userRows2) {
         processorNames.set(
           u.userID,
@@ -3325,7 +3445,7 @@ export async function getReceivePendingApprovalsHandler(
       `SELECT arf.formID, arf.form_number, arf.user_id, arf.department_id, arf.location_id, arf.location_room_id, arf.created_by, arf.created_at, arf.updated_at, arf.deleted_at,
         arf.signed_at, arf.signed_by, arf.signed_digital_signature,
         DATE_FORMAT(arf.process_signed_at, '%Y-%m-%d %H:%i:%s') AS process_signed_at,
-        arf.process_digital_signature, arf.return_type, arf.received_by,
+        arf.process_digital_signature, arf.process_signed_by, arf.return_type, arf.received_by,
         DATE_FORMAT(arf.dept_head_signed_at, '%Y-%m-%d %H:%i:%s') AS dept_head_signed_at,
         arf.dept_head_digital_signature, arf.dept_head_signed_by,
         DATE_FORMAT(arf.it_manager_signed_at, '%Y-%m-%d %H:%i:%s') AS it_manager_signed_at,
@@ -3381,12 +3501,15 @@ export async function getReceivePendingApprovalsHandler(
       }
     }
 
-    const createdByIds = [
-      ...new Set(pendingForms.map((f: any) => f.created_by).filter(Boolean)),
-    ] as string[];
+    const processorNameUserIds = [
+      ...new Set([
+        ...pendingForms.map((f: any) => f.created_by),
+        ...pendingForms.map((f: any) => f.process_signed_by),
+      ]),
+    ].filter(Boolean) as string[];
     const processorNames = new Map<string, string>();
-    if (createdByIds.length > 0) {
-      const userRows2 = await getUserNamesByIds(createdByIds);
+    if (processorNameUserIds.length > 0) {
+      const userRows2 = await getUserNamesByIds(processorNameUserIds);
       for (const u of userRows2) {
         processorNames.set(
           u.userID,
@@ -3459,6 +3582,8 @@ export async function getReceivePendingApprovalsHandler(
           created_by: form.created_by,
           process_signed_at: form.process_signed_at,
           process_digital_signature: form.process_digital_signature,
+          process_signed_by: (form as { process_signed_by?: string | null })
+            .process_signed_by,
         },
         { processorNames }
       );
@@ -3748,11 +3873,12 @@ export async function processReturnFormHandler(
 
     await executeRawWrite(
       `UPDATE asset_return_forms
-       SET process_signed_at = ?, process_digital_signature = ?, received_by = ?, return_type = ?, process_user_position = ?, updated_at = NOW()
+       SET process_signed_at = ?, process_digital_signature = ?, process_signed_by = ?, received_by = ?, return_type = ?, process_user_position = ?, updated_at = NOW()
        WHERE formID = ?`,
       [
         processSignedAtForDb,
         processDigitalSignature,
+        userId,
         receivedByForDb,
         returnTypeForDb,
         processorPosition,
@@ -4256,34 +4382,15 @@ export async function processReturnFormHandler(
     const returnerHasRemainingAssets =
       Number(remainingAssignmentsRows?.[0]?.cnt ?? 0) > 0;
 
-    // Get processor's department for Manager Approver 2 notification
-    const processorDepartmentId = await getUserDepartmentId(req.user!.userID);
-
-    // Send notification to Manager Approver 2 in processor's department
-    if (processorDepartmentId) {
-      const managerApprover2UserIds = await getManagerApprover2UserIdsInDepartment(processorDepartmentId);
-      const processorNameRow = await getUserNamesById(req.user!.userID);
-      const processorName = processorNameRow
-        ? `${processorNameRow.first_name} ${processorNameRow.last_name}`
-        : req.user!.userID;
-
-      for (const approverUserId of managerApprover2UserIds) {
-        await createNotificationForApi({
-          user_id: approverUserId,
-          title: 'Return request processed',
-          message: `A return request is processed by ${processorName}: please sign for documentation and approval`,
-          type: 'system',
-          data: {
-            form_id: formId,
-            form_number: form.form_number,
-            processor_id: req.user!.userID,
-            processor_name: processorName,
-            route: '/approvals',
-            actionTarget: 'approvals',
-          },
-        });
-      }
-    }
+    // Notify Manager Approver 2 users in the asset scope department that the return was processed, checked and verified
+    await notifyManagerApprover2OfProcessedReturn({
+      formId,
+      formNumber: form.form_number,
+      companyId: form.form_company_id ?? null,
+      departmentId: form.department_id ?? null,
+      returnRequestorUserId: form.user_id,
+      processorUserId: req.user!.userID,
+    });
 
     // Send notification to return requestor
     await createNotificationForApi({
@@ -4296,7 +4403,7 @@ export async function processReturnFormHandler(
       data: {
         form_id: formId,
         form_number: form.form_number,
-        route: '/my-return-requests',
+        route: '/profile?tab=documents&docTab=returns',
         actionTarget: 'my_return_requests',
       },
     });
@@ -4548,7 +4655,7 @@ export async function approveReturnFormHandler(
           form_number: form.form_number,
           approver_id: userId,
           approver_name: approverName,
-          route: '/my-return-requests',
+          route: '/profile?tab=documents&docTab=returns',
           actionTarget: 'return_request_approved',
         },
       });

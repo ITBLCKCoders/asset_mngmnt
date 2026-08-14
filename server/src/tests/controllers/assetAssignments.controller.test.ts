@@ -76,6 +76,98 @@ describe('assetAssignments.controller', () => {
     res = createMockRes();
   });
 
+  describe('createAssetAssignmentHandler', () => {
+    beforeEach(() => {
+      req.body = {
+        assetId: 'AST-001',
+        userId: 'u1',
+        departmentId: 'd1',
+        locationId: 'l1',
+      };
+      repo.getUserBasic.mockResolvedValue({ company_id: 'c1', first_name: 'John', last_name: 'Doe' });
+      repo.hasAccountabilityFormSettings.mockResolvedValue(true);
+      repo.departmentExists.mockResolvedValue(true);
+      repo.locationExists.mockResolvedValue(true);
+      repo.getAssetByCode.mockResolvedValue({ assetID: 'a1' });
+      repo.getActiveAssignmentsByAssetId.mockResolvedValue([]);
+      repo.callCreateAssignment.mockResolvedValue({});
+      repo.getBuildersForAsset.mockResolvedValue([]);
+      repo.getDepartmentName.mockResolvedValue('IT');
+      repo.getLocationName.mockResolvedValue('HQ');
+      repo.getRoomName.mockResolvedValue('Room 1');
+      repo.getUserFullName.mockResolvedValue('Assigner Name');
+      repo.getAssetDetailsForForm.mockResolvedValue({ name: 'Laptop', category_name: 'IT Cat', type_name: 'Laptop', serial: 'S1', model: 'M1', brand: 'B1' });
+      repo.getCategoryDeptForAssetCodes.mockResolvedValue([
+        { categoryID: 'cat1', category_name: 'IT Cat', department_name: 'IT' },
+      ]);
+      repo.getActiveAssignmentsByUserAndCategories.mockResolvedValue([
+        { assetID: 'a1', asset_code: 'AST-001', name: 'Laptop', serial: 'S1', model: 'M1', brand: 'B1', category_name: 'IT Cat', type_name: 'Laptop', department_name: 'IT', department_id: 'd1' },
+      ]);
+      repo.getExistingAccountabilityForms.mockResolvedValue([]);
+      getIoInstance.mockReturnValue({});
+    });
+
+    it('creates a "ready for you to sign" accountability notification per created form', async () => {
+      createAccountabilityFormHandler.mockResolvedValue({
+        form: { formID: 'f1', form_number: 'AF-001' },
+      });
+
+      await assetAssignmentsController.createAssetAssignmentHandler(req, res);
+
+      expect(createAccountabilityFormHandler).toHaveBeenCalledWith(
+        expect.objectContaining({
+          body: expect.objectContaining({ skipNotification: true }),
+        }),
+        expect.anything()
+      );
+
+      expect(NotificationService.createNotification).toHaveBeenCalledWith(
+        expect.objectContaining({
+          user_id: 'u1',
+          title: 'New asset accountability is ready for you to sign',
+          message: expect.stringContaining('AF-001'),
+          type: 'accountability_form',
+        }),
+        '5',
+        '127.0.0.1',
+        undefined
+      );
+
+      expect(emitNotification).toHaveBeenCalledWith(
+        {},
+        'u1',
+        'notification',
+        expect.objectContaining({
+          title: 'New asset accountability is ready for you to sign',
+          route: '/profile?tab=documents&docTab=accountability',
+          actionTarget: 'profile_documents_accountability',
+          formId: 'f1',
+          formNumber: 'AF-001',
+        })
+      );
+    });
+
+    it('skips the accountability notification when no form is created', async () => {
+      createAccountabilityFormHandler.mockResolvedValue({
+        form: { formID: '0', form_number: '' },
+      });
+      NotificationService.createNotification.mockClear();
+
+      await assetAssignmentsController.createAssetAssignmentHandler(req, res);
+
+      expect(
+        NotificationService.createNotification
+      ).not.toHaveBeenCalledWith(
+        expect.objectContaining({
+          title: 'New asset accountability is ready for you to sign',
+        }),
+        expect.anything(),
+        expect.anything(),
+        expect.anything()
+      );
+    });
+  });
+
   describe('getMyAssignmentsHandler', () => {
     it('returns assignments for current user', async () => {
       getAssetScope.mockResolvedValue(defaultScope);

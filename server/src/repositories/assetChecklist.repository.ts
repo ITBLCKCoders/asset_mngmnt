@@ -426,16 +426,25 @@ export async function findChecklistsApprovedByDeptHead(
     return [];
   }
   const flags = await checklistSelectFlags();
+  const hasItManagerCols = await hasItManagerSignColumns();
+  const whereClause = hasItManagerCols
+    ? `WHERE (ac.dept_head_signed_by = ? OR ac.it_manager_signed_by = ?)
+      AND ac.dept_head_signed_at IS NOT NULL
+      AND emp.company_id = ?`
+    : `WHERE ac.dept_head_signed_by = ?
+      AND ac.dept_head_signed_at IS NOT NULL
+      AND emp.company_id = ?`;
+  const args = hasItManagerCols
+    ? [approverUserId, approverUserId, companyId]
+    : [approverUserId, companyId];
   const query = `
     ${buildChecklistSelect(flags)}
     INNER JOIN users emp ON ac.employee_id = emp.userID
-    WHERE ac.dept_head_signed_by = ?
-      AND ac.dept_head_signed_at IS NOT NULL
-      AND emp.company_id = ?
+    ${whereClause}
     ORDER BY ac.dept_head_signed_at DESC
   `;
   try {
-    const [rows] = await pool.query(query, [approverUserId, companyId]);
+    const [rows] = await pool.query(query, args);
     return (rows as any[]).map(mapChecklistRow);
   } catch (error) {
     logger.error('Failed to find checklists approved by dept head:', error);

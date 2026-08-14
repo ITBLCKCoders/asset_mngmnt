@@ -13,6 +13,7 @@ import { generateBorrowFormNumber } from '../utils/borrowFormNumber.js';
 import {
   findApprovedBorrowRequestsForReceive,
   findBorrowRequestsApprovedByDeptHeadMe,
+  findBorrowRequestsReceivedByMe,
   findAvailableAssetsForBorrowStaffPool,
   findBorrowRequestsForList,
   findBorrowRequestsForUser,
@@ -480,6 +481,14 @@ export class AssetBorrowRequestsService {
     if (!companyId) return { error: 'Company context required', status: 400 };
 
     const borrowRequests = await findApprovedBorrowRequestsForReceive(pool, companyId, borrowScope);
+    return { borrowRequests };
+  }
+
+  static async listReceivedByMe(
+    pool: Pool,
+    userId: string
+  ): Promise<{ borrowRequests: AssetBorrowRequestRow[] } | { error: string; status: number }> {
+    const borrowRequests = await findBorrowRequestsReceivedByMe(pool, userId);
     return { borrowRequests };
   }
 
