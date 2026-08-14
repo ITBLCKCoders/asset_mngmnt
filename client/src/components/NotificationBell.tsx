@@ -163,6 +163,20 @@ export default function NotificationBell({ className }: NotificationBellProps) {
       return;
     }
 
+    // Handle processed-return "checked and verified" and checklist receive
+    // notifications - navigate to the Approvals Receive Approve tab.
+    // Matched on actionTarget so it also works for legacy notifications whose
+    // route predates the ?tab=receive deep-link.
+    if (
+      notif.actionTarget === 'approvals' ||
+      notif.actionTarget === 'checklist_receive'
+    ) {
+      navigate('/approvals?tab=receive');
+      markAsRead(notif.id);
+      setIsOpen(false);
+      return;
+    }
+
     const target =
       notif.actionTarget ||
       (notif.type === 'asset_assigned' ? 'my_assets' : null);

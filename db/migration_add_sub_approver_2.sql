@@ -155,7 +155,7 @@ BEGIN
         u.first_name,
         u.last_name,
         u.username,
-        u.contact_number,
+        u.contact_number,   
         u.position,
         u.department_id,
         u.company_id,
