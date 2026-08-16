@@ -2,7 +2,11 @@
  * Helpers for notifying approver users (e.g. Manager Approver 1) when forms are signed.
  */
 import { pool } from '../db.js';
-import { getAssetScope, getDepartmentIdsForScope } from './assetScope.js';
+import {
+  getAssetScope,
+  getDepartmentIdsForScope,
+  classifyDepartmentScopeByName,
+} from './assetScope.js';
 import { getActiveCompany } from './activeCompany.js';
 
 /**
@@ -268,4 +272,120 @@ export async function getHrAccountabilityReceiverUserIds(): Promise<string[]> {
        )`
   )) as [{ userID: string }[], unknown];
   return (rows || []).map(row => String(row.userID));
+}
+
+/**
+ * Returns same-company active users whose role matches the scope of the assets
+ * involved in a return/transfer form:
+ *  - Admin-scope assets target users with the 'Admin Asset' role
+ *  - IT/Other-scope assets target users with the 'IT Asset' role
+ * When no asset can be resolved, falls back to classifying the form department
+ * name (mirrors the previous form-department-based targeting).
+ */
+export async function getAssetRoleUsersForAssignmentsAndCompany(
+  companyId: string | null,
+  assignmentIds: string[],
+  fallbackDepartmentName?: string | null
+): Promise<
+  Array<{ userID: string; first_name?: string | null; last_name?: string | null }>
+> {
+  if (companyId == null || companyId === '') {
+    return [];
+  }
+  const cleanAssignmentIds = (assignmentIds || []).filter(
+    (id) => id && String(id).trim()
+  );
+  const neededRoles = new Set<'IT Asset' | 'Admin Asset'>();
+  let resolvedAny = false;
+
+  if (cleanAssignmentIds.length > 0) {
+    const assignmentPlaceholders = cleanAssignmentIds.map(() => '?').join(',');
+    const [assetRows] = (await pool.execute(
+      `SELECT DISTINCT aa.asset_id
+       FROM asset_assignments aa
+       WHERE aa.assignmentID IN (${assignmentPlaceholders}) AND aa.deleted_at IS NULL`,
+      cleanAssignmentIds
+    )) as [{ asset_id: string }[], unknown];
+    const assetIds = (assetRows || [])
+      .map((r) => r.asset_id)
+      .filter(Boolean);
+
+    if (assetIds.length > 0) {
+      const assetPlaceholders = assetIds.map(() => '?').join(',');
+      const [deptRows] = (await pool.execute(
+        `SELECT DISTINCT a.assetID, d.name AS department_name
+         FROM assets a
+         LEFT JOIN asset_categories c ON a.category_id = c.categoryID
+         LEFT JOIN asset_mngmnt_departments d ON c.department_id = d.departmentID AND d.deleted_at IS NULL
+         WHERE a.assetID IN (${assetPlaceholders}) AND a.deleted_at IS NULL`,
+        assetIds
+      )) as [{ assetID: string; department_name: string | null }[], unknown];
+
+      for (const row of deptRows || []) {
+        const scope = classifyDepartmentScopeByName(row.department_name);
+        neededRoles.add(scope === 'Admin' ? 'Admin Asset' : 'IT Asset');
+        resolvedAny = true;
+      }
+    }
+  }
+
+  if (!resolvedAny) {
+    const scope = classifyDepartmentScopeByName(fallbackDepartmentName);
+    neededRoles.add(scope === 'Admin' ? 'Admin Asset' : 'IT Asset');
+  }
+
+  const recipients: Array<{
+    userID: string;
+    first_name?: string | null;
+    last_name?: string | null;
+  }> = [];
+  const seen = new Set<string>();
+
+  for (const roleName of Array.from(neededRoles)) {
+    const [exactRows] = (await pool.execute(
+      `SELECT DISTINCT u.userID, u.first_name, u.last_name, r.name as role_name
+       FROM users u
+       JOIN asset_mngmnt_roles r ON u.role_id = r.roleID
+       WHERE r.name = ?
+         AND r.deleted_at IS NULL
+         AND u.company_id = ?
+         AND u.is_active = 1`,
+      [roleName, companyId]
+    )) as [
+      { userID: string; first_name?: string | null; last_name?: string | null; role_name?: string | null }[],
+      unknown
+    ];
+    let roleUsers = Array.isArray(exactRows) ? exactRows : [];
+
+    if (roleUsers.length === 0) {
+      const [caseInsensitiveRows] = (await pool.execute(
+        `SELECT DISTINCT u.userID, u.first_name, u.last_name, r.name as role_name
+         FROM users u
+         JOIN asset_mngmnt_roles r ON u.role_id = r.roleID
+         WHERE LOWER(r.name) = LOWER(?)
+           AND r.deleted_at IS NULL
+           AND u.company_id = ?
+           AND u.is_active = 1`,
+        [roleName, companyId]
+      )) as [
+        { userID: string; first_name?: string | null; last_name?: string | null; role_name?: string | null }[],
+        unknown
+      ];
+      roleUsers = Array.isArray(caseInsensitiveRows)
+        ? caseInsensitiveRows
+        : [];
+    }
+
+    for (const row of roleUsers) {
+      if (seen.has(row.userID)) continue;
+      seen.add(row.userID);
+      recipients.push({
+        userID: row.userID,
+        first_name: row.first_name ?? null,
+        last_name: row.last_name ?? null,
+      });
+    }
+  }
+
+  return recipients;
 }

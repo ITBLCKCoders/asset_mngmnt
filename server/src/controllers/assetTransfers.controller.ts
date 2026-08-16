@@ -10,6 +10,8 @@ import {
   isUserManagerApprover1,
   isUserManagerApprover2,
   getManagerApprover1UserIdsInDepartmentAndCompany,
+  getAssetRoleUsersForAssignmentsAndCompany,
+  getManagerApprover2UserIdsForProcessedReturn,
 } from '../utils/approverNotifications.js';
 import { createNotificationForApi } from '../utils/notificationsApi.js';
 import { getIoInstance } from '../utils/socketManager.js';
@@ -51,6 +53,7 @@ import {
   toBind,
   getTransferFormLinksForReturnForms,
   getTransferFormByReturnFormId,
+  getReturnFormIdByTransferFormId,
   getTransferFormIdsByReturnFormId,
   getTransferFormAssignments,
   getActiveAssignmentsByIds,
@@ -922,7 +925,9 @@ export async function createAssetTransferHandler(
       if (row.category_id) g.categoryIds.add(row.category_id);
     }
 
-    for (const [deptName, deptInfo] of Object.entries(departmentGroups)) {
+const createdAccountabilityForms: Array<{ formID: string; form_number: string | null }> = [];
+
+  for (const [deptName, deptInfo] of Object.entries(departmentGroups)) {
       const categoryIds = Array.from(deptInfo.categoryIds).filter(Boolean);
 
       let deptAssetsRows: any[];
@@ -1653,25 +1658,6 @@ export async function getApprovedForExecutionHandler(
     );
     if (!companyId) return res.json({ assetTransferForms: [] });
 
-    const sqlApprovedFormsWithWet = `SELECT atf.formID, atf.form_number, atf.user_id, atf.department_id, atf.location_id, atf.location_room_id,
-                atf.new_assigned_user_id, atf.created_by, atf.created_at, atf.signed_at, atf.signed_by, atf.signed_digital_signature,
-                DATE_FORMAT(atf.process_signed_at, '%Y-%m-%d %H:%i:%s') AS process_signed_at,
-                atf.process_digital_signature, atf.transfer_type, atf.received_by,
-                DATE_FORMAT(atf.dept_head_signed_at, '%Y-%m-%d %H:%i:%s') AS dept_head_signed_at,
-                atf.dept_head_digital_signature, atf.dept_head_signed_by,
-                d.company_id AS form_company_id
-         FROM asset_transfer_forms atf
-         LEFT JOIN asset_mngmnt_departments d ON atf.department_id = d.departmentID
-         WHERE atf.deleted_at IS NULL
-           AND (atf.declined_at IS NULL)
-           AND atf.signed_at IS NOT NULL
-           AND atf.dept_head_signed_at IS NOT NULL
-           AND atf.executed_at IS NULL
-           AND d.company_id = ?
-         ORDER BY atf.dept_head_signed_at DESC`;
-
-    const sqlApprovedFormsWithoutWet = sqlApprovedFormsWithWet;
-
     let formRows: any[];
     try {
       formRows = await getApprovedTransferFormsByCompanyId(companyId);
@@ -1818,8 +1804,12 @@ async function buildTransferFormBatchesFromAssignments(
     }
 
     const formUserId = form.user_id ?? form.userId ?? '';
+    const hasProcessorSignature =
+      (form as { process_signed_at?: unknown }).process_signed_at != null ||
+      (form as { processor_pending_signed_at?: unknown })
+        .processor_pending_signed_at != null;
     const processed_by =
-      form.created_by != null
+      hasProcessorSignature && form.created_by != null
         ? (processorNames.get(form.created_by) ?? 'Unknown')
         : null;
     batches.push({
@@ -2037,6 +2027,7 @@ export async function runTransferFormExecution(
   const newRoomId = locationRoomId;
 
   const transferredAssetIds = assignmentRows.map((r: any) => r.asset_id);
+  const executedAssetCodes: string[] = [];
 
   const categoryDeptRows = await getCategoryDepartmentsByAssetIds(transferredAssetIds);
   const categoryDeptId = (categoryDeptRows[0] as any)?.departmentID ?? null;
@@ -2080,8 +2071,7 @@ export async function runTransferFormExecution(
 
   let linkedReturnFormId: string | null = formAny.return_form_id ?? null;
   if (linkedReturnFormId == null) {
-    const linkRows = await getTransferFormByReturnFormId(formId);
-    linkedReturnFormId = linkRows?.return_form_id ?? null;
+    linkedReturnFormId = await getReturnFormIdByTransferFormId(formId);
   }
   let returnFormId: string;
 
@@ -2100,7 +2090,7 @@ export async function runTransferFormExecution(
       throw new ValidationError('Linked return form has been declined');
     if (!retAny.process_signed_at) {
       throw new ValidationError(
-        'Transfer cannot be processed until the linked return form is processed by the processor'
+        'Transfer cannot be processed until the linked return form is processed by the processor. Please process the return request first.'
       );
     }
     returnFormId = linkedReturnFormId;
@@ -2256,6 +2246,7 @@ export async function runTransferFormExecution(
 
     const assetCodeRow = await getAssetCodeByAssetId(assignment.asset_id);
     const assetCode = assetCodeRow?.asset_code || assignment.asset_id;
+    executedAssetCodes.push(assetCode);
 
     if (!assignmentAlreadyReturned) {
       await createAuditLog({
@@ -2817,16 +2808,29 @@ export async function runTransferFormExecution(
         departmentId: deptInfo.departmentId || newDeptId,
         locationId: newLocId,
         locationRoomId: newRoomId,
+        skipNotification: true,
       },
     } as AuthRequest;
+    let accountabilityFormResBody: any = null;
     const accountabilityFormRes = {
-      status: () => ({ json: () => ({}) }),
+      status: () => ({
+        json: (body: any) => {
+          accountabilityFormResBody = body;
+        },
+      }),
     } as unknown as Response;
     try {
       await createAccountabilityFormHandler(
         accountabilityFormReq,
         accountabilityFormRes
       );
+      const createdForm = accountabilityFormResBody?.form;
+      if (createdForm?.formID) {
+        createdAccountabilityForms.push({
+          formID: createdForm.formID,
+          form_number: createdForm.form_number ?? null,
+        });
+      }
     } catch (acErr) {
       logger.error(
         `Create accountability form for transfer new assignee failed (${deptName}):`,
@@ -2868,6 +2872,200 @@ export async function runTransferFormExecution(
     'UPDATE asset_transfer_forms SET executed_at = NOW(), updated_at = NOW() WHERE formID = ?',
     [formId]
   );
+
+  // Notify the transferrer (old asset owner) that the transfer was processed.
+  try {
+    await createNotificationForApi({
+      user_id: form.user_id,
+      title: 'Asset transfer processed',
+      message: processorName
+        ? `Your asset transfer request has been processed by ${processorName}.`
+        : 'Your asset transfer request has been processed.',
+      type: 'system',
+      data: {
+        form_id: formId,
+        form_number: form.form_number,
+        route: '/profile?tab=documents&docTab=transfers',
+        actionTarget: 'my_transfer_requests',
+      },
+    });
+  } catch (notifError: any) {
+    logger.error(
+      'Failed to send transfer processed notification to transferrer:',
+      notifError
+    );
+  }
+
+  // Notify new owner (asset assigned + accountability form issued) and Manager
+  // Approver 2 users in the processor's company/department.
+  try {
+    await notifyTransferProcessedNotifications({
+      formId,
+      formNumber: form.form_number ?? null,
+      transferRequestorUserId: form.user_id,
+      processorUserId: processorId,
+      newOwnerUserId: newUserId,
+      assetCodes: executedAssetCodes,
+      createdAccountabilityForms,
+    });
+  } catch (notifError: any) {
+    logger.error('Failed to send transfer processed notifications:', notifError);
+  }
+}
+
+/**
+ * Notify stakeholders after a transfer form is executed:
+ *  - the new owner gets an "asset assigned due to a transfer" notification
+ *  - the new owner gets one "new accountability form issued" notification per created form
+ *  - Manager Approver 2 users in the processor's company/department get
+ *    "an asset has been transferred, checked and verified" (mirrors the return flow).
+ */
+export async function notifyTransferProcessedNotifications(params: {
+  formId: string;
+  formNumber: string | null;
+  transferRequestorUserId: string;
+  processorUserId: string;
+  newOwnerUserId: string;
+  assetCodes: string[];
+  createdAccountabilityForms: Array<{
+    formID: string;
+    form_number: string | null;
+  }>;
+}): Promise<void> {
+  try {
+    const {
+      formId,
+      formNumber,
+      transferRequestorUserId,
+      processorUserId,
+      newOwnerUserId,
+      assetCodes,
+      createdAccountabilityForms,
+    } = params;
+
+    const processorRow = await getUserNamesById(processorUserId);
+    const processorName = processorRow
+      ? `${processorRow.first_name || ''} ${processorRow.last_name || ''}`.trim() ||
+        processorUserId
+      : processorUserId;
+    const requestorRow = await getUserNamesById(transferRequestorUserId);
+    const transferRequestorName = requestorRow
+      ? `${requestorRow.first_name || ''} ${requestorRow.last_name || ''}`.trim() ||
+        transferRequestorUserId
+      : transferRequestorUserId;
+
+    const io = getIoInstance();
+
+    // 1) New owner: asset assigned due to transfer
+    if (newOwnerUserId && newOwnerUserId !== processorUserId) {
+      const codesList = assetCodes.join(', ');
+      const truncatedCodes =
+        codesList.length > 50
+          ? codesList.substring(0, 47) + '...'
+          : codesList;
+      const assignedTitle = 'New asset has been assigned to you due to a transfer';
+      const assignedMessage = `by ${processorName}. Transferred assets: ${truncatedCodes}`;
+      await createNotificationForApi({
+        user_id: newOwnerUserId,
+        title: assignedTitle,
+        message: assignedMessage,
+        type: 'system',
+        data: {
+          form_id: formId,
+          form_number: formNumber,
+          route: '/my-assets',
+          actionTarget: 'my_assets',
+          assignedBy: processorName,
+        },
+      });
+      if (io) {
+        emitNotification(io, newOwnerUserId, 'notification', {
+          title: assignedTitle,
+          description: assignedMessage,
+          type: 'asset_assigned',
+          route: '/my-assets',
+          actionTarget: 'my_assets',
+          assignedBy: processorName,
+          timestamp: new Date().toISOString(),
+        });
+      }
+    }
+
+    // 2) New owner: accountability form(s) issued for signing
+    for (const accForm of createdAccountabilityForms) {
+      const accTitle = 'New accountability form has been issued';
+      const accMessage =
+        'A new accountability form has been issued due to the asset transfer. Review your assets and sign the form.';
+      await createNotificationForApi({
+        user_id: newOwnerUserId,
+        title: accTitle,
+        message: accMessage,
+        type: 'accountability_form',
+        data: {
+          form_id: accForm.formID,
+          form_number: accForm.form_number,
+          route: '/profile?tab=documents&docTab=accountability',
+          actionTarget: 'profile_documents',
+          assignedBy: processorName,
+        },
+      });
+      if (io) {
+        emitNotification(io, newOwnerUserId, 'notification', {
+          title: accTitle,
+          description: accMessage,
+          type: 'accountability_form',
+          route: '/profile?tab=documents&docTab=accountability',
+          actionTarget: 'profile_documents',
+          formId: accForm.formID,
+          formNumber: accForm.form_number,
+          assignedBy: processorName,
+          timestamp: new Date().toISOString(),
+        });
+      }
+    }
+
+    // 3) Manager Approver 2: transferred, checked and verified (mirror return flow)
+    const processorUser = await getUserById(processorUserId);
+    const processorCompanyId = processorUser?.company_id ?? null;
+    const processorDepartmentId = await getUserDepartmentId(processorUserId);
+    const managerApprover2UserIds =
+      await getManagerApprover2UserIdsForProcessedReturn(
+        processorCompanyId,
+        processorDepartmentId
+      );
+    for (const approverUserId of managerApprover2UserIds) {
+      if (approverUserId === processorUserId) continue;
+      const payload = {
+        user_id: approverUserId,
+        title: 'An asset has been transferred, checked and verified',
+        message: `${processorName} has processed transfer request of ${transferRequestorName}`,
+        type: 'system' as const,
+        data: {
+          form_id: formId,
+          form_number: formNumber,
+          processor_id: processorUserId,
+          processor_name: processorName,
+          transfer_requestor_id: transferRequestorUserId,
+          transfer_requestor_name: transferRequestorName,
+          route: '/approvals?tab=receive',
+          actionTarget: 'approvals',
+        },
+      };
+      await createNotificationForApi(payload);
+      if (io) {
+        emitNotification(io, approverUserId, 'notification', {
+          id: formId,
+          title: payload.title,
+          message: payload.message,
+          type: payload.type,
+          data: payload.data,
+          time: new Date().toISOString(),
+        });
+      }
+    }
+  } catch (err) {
+    logger.error('Failed to send transfer processed notifications:', err);
+  }
 }
 
 /** POST execute an approved transfer form: perform actual transfer (assignments, accountability). */
@@ -3318,14 +3516,21 @@ export async function getAssetTransferFormsByUserHandler(
         }
       }
 
-      const [processorRows] = (await pool.execute(
-        'SELECT first_name, last_name FROM users WHERE userID = ?',
-        [toBind((form as { created_by?: string }).created_by)]
-      )) as any[];
-      const processed_by =
-        processorRows[0]?.first_name && processorRows[0]?.last_name
-          ? `${processorRows[0].first_name} ${processorRows[0].last_name}`
-          : null;
+      const hasProcessorSignature =
+        (form as { process_signed_at?: unknown }).process_signed_at != null ||
+        (form as { processor_pending_signed_at?: unknown })
+          .processor_pending_signed_at != null;
+      let processed_by: string | null = null;
+      if (hasProcessorSignature) {
+        const [processorRows] = (await pool.execute(
+          'SELECT first_name, last_name FROM users WHERE userID = ?',
+          [toBind((form as { created_by?: string }).created_by)]
+        )) as any[];
+        processed_by =
+          processorRows[0]?.first_name && processorRows[0]?.last_name
+            ? `${processorRows[0].first_name} ${processorRows[0].last_name}`
+            : null;
+      }
 
       let new_assigned_user:
         | {
@@ -3615,14 +3820,21 @@ async function buildTransferFormBatches(forms: any[]): Promise<any[]> {
       }
     }
 
-    const [processorRows] = (await pool.execute(
-      'SELECT first_name, last_name FROM users WHERE userID = ?',
-      [toBind((form as { created_by?: string }).created_by)]
-    )) as any[];
-    const processed_by =
-      processorRows[0]?.first_name && processorRows[0]?.last_name
-        ? `${processorRows[0].first_name} ${processorRows[0].last_name}`
-        : null;
+    const hasProcessorSignature =
+      (form as { process_signed_at?: unknown }).process_signed_at != null ||
+      (form as { processor_pending_signed_at?: unknown })
+        .processor_pending_signed_at != null;
+    let processed_by: string | null = null;
+    if (hasProcessorSignature) {
+      const [processorRows] = (await pool.execute(
+        'SELECT first_name, last_name FROM users WHERE userID = ?',
+        [toBind((form as { created_by?: string }).created_by)]
+      )) as any[];
+      processed_by =
+        processorRows[0]?.first_name && processorRows[0]?.last_name
+          ? `${processorRows[0].first_name} ${processorRows[0].last_name}`
+          : null;
+    }
 
     let new_assigned_user:
       | {
@@ -4094,6 +4306,7 @@ export async function approveTransferFormHandler(
       [deptHeadDigitalSignature || null, userId, formId]
     );
     const returnFormId = formAny.return_form_id ?? null;
+    let returnFormNumber: string | null = null;
     await createAuditLog({
       userId,
       action: 'Approved Asset Transfer Form (Dept Head)',
@@ -4105,6 +4318,28 @@ export async function approveTransferFormHandler(
       userAgent: req.get ? req.get('User-Agent') : 'Unknown',
     });
 
+    // Notify the requester that their transfer request was approved.
+    try {
+      const approverRow = await getUserNamesById(userId);
+      const approverName = approverRow ? `${approverRow.first_name} ${approverRow.last_name}` : 'A user';
+      await createNotificationForApi({
+        user_id: form.user_id,
+        title: 'Asset Transfer Request Approved',
+        message: `Your asset transfer request has been approved by your department head ${approverName}`,
+        type: 'system',
+        data: {
+          form_id: formId,
+          form_number: form.form_number,
+          approver_id: userId,
+          approver_name: approverName,
+          route: '/profile?tab=documents&docTab=transfers',
+          actionTarget: 'transfer_request_approved',
+        },
+      });
+    } catch (notifError: any) {
+      logger.error('Failed to send transfer approval notification to requester:', notifError);
+    }
+
     // Auto-approve the linked return form so the transfer and return are approved together.
     if (returnFormId) {
       try {
@@ -4113,7 +4348,7 @@ export async function approveTransferFormHandler(
           [returnFormId]
         )) as any[];
         const returnFormRow = returnFormRows?.[0];
-        const returnFormNumber = returnFormRow?.form_number ?? null;
+        returnFormNumber = returnFormRow?.form_number ?? null;
         if (returnFormRow && !returnFormRow.dept_head_signed_at) {
           await pool.execute(
             `UPDATE asset_return_forms SET dept_head_signed_at = NOW(), dept_head_digital_signature = ?, dept_head_signed_by = ?, updated_at = NOW() WHERE formID = ? AND dept_head_signed_at IS NULL AND declined_at IS NULL`,
@@ -4139,6 +4374,58 @@ export async function approveTransferFormHandler(
       } catch (autoApproveErr: any) {
         logger.error('Failed to auto-approve linked return form on transfer approval:', autoApproveErr);
       }
+    }
+
+    // Notify IT/Admin asset role users of the company about the approved transfer
+    // and its linked return, so they can process the return first then the transfer.
+    try {
+      const requesterRow = await getUserById(form.user_id);
+      const assetRoleCompanyId = requesterRow?.company_id ?? null;
+      const transferDeptRow = await getDepartmentById(form.department_id);
+      const transferAssignments = await getTransferFormAssignments(formId);
+      const assetRoleUsers = await getAssetRoleUsersForAssignmentsAndCompany(
+        assetRoleCompanyId,
+        transferAssignments.map((a: any) => a.assignment_id),
+        transferDeptRow?.name || ''
+      );
+      for (const assetUser of assetRoleUsers) {
+        if (assetUser.userID !== userId && assetUser.userID !== form.user_id) {
+          await createNotificationForApi({
+            user_id: assetUser.userID,
+            title: 'New Asset Transfer Request Received',
+            message:
+              'A new Asset Transfer Request has been received. Please process the return first, then process the transfer.',
+            type: 'system',
+            data: {
+              form_id: formId,
+              form_number: form.form_number,
+              requester_id: form.user_id,
+              route: '/assets/transfer-requests',
+              actionTarget: 'asset_transfer_requests',
+            },
+          });
+          if (returnFormId) {
+            await createNotificationForApi({
+              user_id: assetUser.userID,
+              title: 'New Asset Return Request Received',
+              message: 'A new Asset return Request has been received',
+              type: 'system',
+              data: {
+                form_id: returnFormId,
+                form_number: returnFormNumber,
+                requester_id: form.user_id,
+                route: '/assets/return-requests',
+                actionTarget: 'asset_return_requests',
+              },
+            });
+          }
+        }
+      }
+    } catch (notifError: any) {
+      logger.error(
+        'Failed to send asset role user notifications on transfer approval:',
+        notifError
+      );
     }
 
     if (returnFormId) {

@@ -4,11 +4,13 @@ const mockPool = { execute: jest.fn() };
 const mockGetDepartmentIdsForScope = jest.fn();
 const mockGetActiveCompany = jest.fn();
 const mockGetAssetScope = jest.fn();
+const mockClassifyDepartmentScopeByName = jest.fn();
 
 jest.mock('../../db.js', () => ({ pool: mockPool }));
 jest.mock('../../utils/assetScope.js', () => ({
   getDepartmentIdsForScope: (...args: any[]) => mockGetDepartmentIdsForScope(...args),
   getAssetScope: (...args: any[]) => mockGetAssetScope(...args),
+  classifyDepartmentScopeByName: (...args: any[]) => mockClassifyDepartmentScopeByName(...args),
 }));
 jest.mock('../../utils/activeCompany.js', () => ({ getActiveCompany: (...args: any[]) => mockGetActiveCompany(...args) }));
 
@@ -23,6 +25,7 @@ const {
   getManagerApprover1UserIdsByCompany,
   getCustodianReturnAccessUserIds,
   getHrAccountabilityReceiverUserIds,
+  getAssetRoleUsersForAssignmentsAndCompany,
 } = require('../../utils/approverNotifications.js');
 
 describe('approverNotifications', () => {
@@ -187,6 +190,121 @@ describe('approverNotifications', () => {
       mockPool.execute.mockResolvedValue([[{ userID: 'u1' }], []]);
       const result = await getHrAccountabilityReceiverUserIds();
       expect(result).toEqual(['u1']);
+    });
+  });
+
+  describe('getAssetRoleUsersForAssignmentsAndCompany', () => {
+    it('returns IT Asset role users when the involved assets are IT-scope', async () => {
+      mockPool.execute.mockImplementation(async (sql: string) => {
+        const s = String(sql);
+        if (s.includes('WHERE aa.assignmentID IN'))
+          return [[{ asset_id: '10' }, { asset_id: '11' }], []];
+        if (s.includes('SELECT DISTINCT a.assetID, d.name'))
+          return [
+            [
+              { assetID: '10', department_name: 'IT' },
+              { assetID: '11', department_name: 'IT Support' },
+            ],
+            [],
+          ];
+        if (s.includes('WHERE r.name = ?'))
+          return [[{ userID: 'u-it1' }, { userID: 'u-it2' }], []];
+        return [[], []];
+      });
+      mockClassifyDepartmentScopeByName.mockImplementation(
+        (name: string | null | undefined) =>
+          (name || '').toLowerCase().includes('admin') ? 'Admin' : 'IT'
+      );
+      const result = await getAssetRoleUsersForAssignmentsAndCompany(
+        'c1',
+        ['a1', 'a2'],
+        'Finance'
+      );
+      expect(result.map((r) => r.userID)).toEqual(['u-it1', 'u-it2']);
+      expect(mockClassifyDepartmentScopeByName).toHaveBeenCalledWith('IT');
+      expect(mockClassifyDepartmentScopeByName).toHaveBeenCalledWith('IT Support');
+    });
+
+    it('returns Admin Asset role users when the involved assets are admin-scope', async () => {
+      mockPool.execute.mockImplementation(async (sql: string) => {
+        const s = String(sql);
+        if (s.includes('WHERE aa.assignmentID IN'))
+          return [[{ asset_id: '20' }], []];
+        if (s.includes('SELECT DISTINCT a.assetID, d.name'))
+          return [[{ assetID: '20', department_name: 'Administration' }], []];
+        if (s.includes('WHERE r.name = ?'))
+          return [[{ userID: 'u-admin1' }], []];
+        return [[], []];
+      });
+      mockClassifyDepartmentScopeByName.mockReturnValue('Admin');
+      const result = await getAssetRoleUsersForAssignmentsAndCompany(
+        'c1',
+        ['a1'],
+        'IT'
+      );
+      expect(result.map((r) => r.userID)).toEqual(['u-admin1']);
+    });
+
+    it('returns both IT and Admin Asset role users for mixed-scope assets', async () => {
+      mockPool.execute.mockImplementation(async (sql: string, params?: any[]) => {
+        const s = String(sql);
+        if (s.includes('WHERE aa.assignmentID IN'))
+          return [[{ asset_id: '10' }, { asset_id: '20' }], []];
+        if (s.includes('SELECT DISTINCT a.assetID, d.name'))
+          return [
+            [
+              { assetID: '10', department_name: 'IT' },
+              { assetID: '20', department_name: 'Administration' },
+            ],
+            [],
+          ];
+        if (s.includes('WHERE r.name = ?')) {
+          if (params?.[0] === 'Admin Asset')
+            return [[{ userID: 'u-admin1' }], []];
+          return [[{ userID: 'u-it1' }], []];
+        }
+        return [[], []];
+      });
+      mockClassifyDepartmentScopeByName.mockImplementation(
+        (name: string | null | undefined) =>
+          (name || '').toLowerCase().includes('admin') ? 'Admin' : 'IT'
+      );
+      const result = await getAssetRoleUsersForAssignmentsAndCompany(
+        'c1',
+        ['a1', 'a2'],
+        ''
+      );
+      expect(result.map((r) => r.userID)).toEqual(['u-it1', 'u-admin1']);
+    });
+
+    it('falls back to the form department scope when no assets resolve', async () => {
+      mockPool.execute.mockImplementation(async (sql: string) => {
+        const s = String(sql);
+        if (s.includes('WHERE aa.assignmentID IN')) return [[], []];
+        if (s.includes('WHERE r.name = ?'))
+          return [[{ userID: 'u-admin1' }], []];
+        return [[], []];
+      });
+      mockClassifyDepartmentScopeByName.mockReturnValue('Admin');
+      const result = await getAssetRoleUsersForAssignmentsAndCompany(
+        'c1',
+        [],
+        'Administration'
+      );
+      expect(result.map((r) => r.userID)).toEqual(['u-admin1']);
+      expect(mockClassifyDepartmentScopeByName).toHaveBeenCalledWith(
+        'Administration'
+      );
+    });
+
+    it('returns empty array when company is null', async () => {
+      const result = await getAssetRoleUsersForAssignmentsAndCompany(
+        null,
+        ['a1'],
+        'IT'
+      );
+      expect(result).toEqual([]);
+      expect(mockPool.execute).not.toHaveBeenCalled();
     });
   });
 });

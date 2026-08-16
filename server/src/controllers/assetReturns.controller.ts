@@ -6,16 +6,14 @@ import type { AuthRequest } from '../middleware/authenticate.js';
 import logger from '../logger.js';
 import { createAuditLog } from '../utils/audit.js';
 import { handleAccountabilityFormOnAssetReturn } from '../utils/accountabilityFormOnReturn.js';
-import {
-  getAssetScope,
-  classifyDepartmentScopeByName,
-} from '../utils/assetScope.js';
+import { getAssetScope } from '../utils/assetScope.js';
 import { createAccountabilityFormHandler } from './accountabilityForms.controller.js';
 import {
   isUserManagerApprover1,
   isUserManagerApprover2,
   getManagerApprover1UserIdsInDepartmentAndCompany,
   getManagerApprover2UserIdsForProcessedReturn,
+  getAssetRoleUsersForAssignmentsAndCompany,
 } from '../utils/approverNotifications.js';
 import { createNotificationForApi } from '../utils/notificationsApi.js';
 import { getIoInstance } from '../utils/socketManager.js';
@@ -133,8 +131,7 @@ form: {
   processor_pending_signed_at: string | null;
   processor_pending_signature: string | null;
 }> {
-  let processedBy =
-    options.processorNames?.get(form.created_by ?? '') ?? 'Unknown';
+  let processedBy = '';
   let processSignedAt = formatProcessSignedAtForApi(form.process_signed_at);
   let processDigitalSignature =
     (form.process_digital_signature != null &&
@@ -150,19 +147,6 @@ form: {
       : null);
 
   if (tf) {
-    if (tf.created_by) {
-      const cached = options.processorNames?.get(tf.created_by);
-      if (cached) {
-        processedBy = cached;
-      } else {
-        const procNames = await getUserNamesById(tf.created_by);
-        processedBy =
-          procNames?.first_name && procNames?.last_name
-            ? `${procNames.first_name} ${procNames.last_name}`.trim() ||
-              'Unknown'
-            : 'Unknown';
-      }
-    }
     if (tf.process_signed_at != null) {
       processSignedAt = formatProcessSignedAtForApi(tf.process_signed_at);
       processDigitalSignature =
@@ -189,9 +173,9 @@ form: {
       await fetchUserDigitalSignature(processorUserId);
   }
 
-  // Prefer the recorded processor user (who actually process-signed) over the
-  // form creator. Return forms created by the employee used to show the
-  // returner's name; process_signed_by captures the real IT/Admin processor.
+  // Only show a processor name when a real processor signature exists and the
+  // recorded processor user is known. Forms with no processor signature (e.g.
+  // transfer-linked return forms) keep "processed by" empty.
   if (processSignedAt && form.process_signed_by) {
     const cached = options.processorNames?.get(form.process_signed_by);
     if (cached) {
@@ -200,8 +184,8 @@ form: {
       const procNames = await getUserNamesById(form.process_signed_by);
       processedBy =
         procNames?.first_name && procNames?.last_name
-          ? `${procNames.first_name} ${procNames.last_name}`.trim() || 'Unknown'
-          : 'Unknown';
+          ? `${procNames.first_name} ${procNames.last_name}`.trim()
+          : '';
     }
   }
 
@@ -3525,23 +3509,6 @@ export async function getPendingStaffHandler(req: AuthRequest, res: Response) {
       }
     }
 
-    const processorNameUserIds = [
-      ...new Set([
-        ...pendingForms.map((f: any) => f.created_by),
-        ...pendingForms.map((f: any) => f.process_signed_by),
-      ]),
-    ].filter(Boolean) as string[];
-    const processorNames = new Map<string, string>();
-    if (processorNameUserIds.length > 0) {
-      const userRows2 = await getUserNamesByIds(processorNameUserIds);
-      for (const u of userRows2) {
-        processorNames.set(
-          u.userID,
-          `${u.first_name || ''} ${u.last_name || ''}`.trim() || 'Unknown'
-        );
-      }
-    }
-
     const sortOrder = (a: any, b: any) => {
       const oa = getDepartmentSortOrder(a.form_department_name);
       const ob = getDepartmentSortOrder(b.form_department_name);
@@ -3581,7 +3548,7 @@ export async function getPendingStaffHandler(req: AuthRequest, res: Response) {
         form_number: form.form_number,
         created_at: form.created_at,
         user_id: form.user_id,
-        processed_by: processorNames.get(form.created_by ?? '') ?? 'Unknown',
+        processed_by: '',
         signed_at: form.signed_at ?? null,
         signed_by: form.signed_by ?? null,
         signed_digital_signature: form.signed_digital_signature ?? null,
@@ -4730,7 +4697,7 @@ export async function approveReturnFormHandler(
 
     let hadLinkedTransfer = false;
     const [linkedTfRows] = (await pool.execute(
-      `SELECT formID, dept_head_signed_at, process_signed_at, process_digital_signature, processor_pending_signature, processor_pending_signed_at, executed_at,
+      `SELECT formID, form_number, dept_head_signed_at, process_signed_at, process_digital_signature, processor_pending_signature, processor_pending_signed_at, executed_at,
               new_assigned_user_id, department_id, location_id, location_room_id, transfer_type, received_by
        FROM asset_transfer_forms WHERE return_form_id = ? AND deleted_at IS NULL LIMIT 1`,
       [formId]
@@ -4915,6 +4882,38 @@ export async function approveReturnFormHandler(
       }
     }
 
+    // A transfer request creates both a transfer and a return form. When the
+    // return form is approved, the linked transfer form is auto-approved too,
+    // so notify the requester that the transfer was approved as well.
+    if (hadLinkedTransfer && linkedTf && !approveOwnerAbsent) {
+      try {
+        const approverRow2 = await getUserNamesById(userId);
+        const approverName2 =
+          approverRow2
+            ? `${approverRow2.first_name} ${approverRow2.last_name}`
+            : 'A user';
+        await createNotificationForApi({
+          user_id: form.user_id,
+          title: 'Asset Transfer Request Approved',
+          message: `Your asset transfer request has been approved by your department head ${approverName2}`,
+          type: 'system',
+          data: {
+            form_id: linkedTf.formID,
+            form_number: linkedTf.form_number,
+            approver_id: userId,
+            approver_name: approverName2,
+            route: '/profile?tab=documents&docTab=transfers',
+            actionTarget: 'transfer_request_approved',
+          },
+        });
+      } catch (notifError) {
+        logger.error(
+          'Failed to send transfer approval notification to requester:',
+          notifError
+        );
+      }
+    }
+
     // Processor-initiated hold flow: the returner is also notified that the return
     // is now processed, since there is no separate processing step later on.
     // Skipped for owner-absent flows (the owner is not in office).
@@ -4942,42 +4941,13 @@ export async function approveReturnFormHandler(
     // already has custody and is notified separately that the return is processed.
     if (!isHoldFlow) {
       try {
+        const assignmentIds = await getAssignmentIdsByReturnFormId(formId);
         const deptRow = await getDepartmentById(form.department_id);
-        const deptName = deptRow?.name || '';
-        const scopeType = classifyDepartmentScopeByName(deptName);
-        const isAdminScope = scopeType === 'Admin';
-
-        // Get users with specific roles based on scope
-        // For IT scope: target users with 'IT Asset' role
-        // For Admin scope: target users with 'Admin Asset' role
-        const roleName = isAdminScope ? 'Admin Asset' : 'IT Asset';
-
-        const [assetRoleUsers] = (await pool.execute(
-          `SELECT DISTINCT u.userID, u.first_name, u.last_name, r.name as role_name
-           FROM users u
-           JOIN asset_mngmnt_roles r ON u.role_id = r.roleID
-           WHERE r.name = ? 
-             AND r.deleted_at IS NULL
-             AND u.company_id = ?
-             AND u.is_active = 1`,
-          [roleName, companyId]
-        )) as any[];
-
-        // If no users found with exact role name, try case-insensitive search
-        if (assetRoleUsers.length === 0) {
-          const [caseInsensitiveUsers] = (await pool.execute(
-            `SELECT DISTINCT u.userID, u.first_name, u.last_name, r.name as role_name
-             FROM users u
-             JOIN asset_mngmnt_roles r ON u.role_id = r.roleID
-             WHERE LOWER(r.name) = LOWER(?) 
-               AND r.deleted_at IS NULL
-               AND u.company_id = ?
-               AND u.is_active = 1`,
-            [roleName, companyId]
-          )) as any[];
-
-          assetRoleUsers.push(...caseInsensitiveUsers);
-        }
+        const assetRoleUsers = await getAssetRoleUsersForAssignmentsAndCompany(
+          companyId,
+          assignmentIds,
+          deptRow?.name || ''
+        );
 
         let notificationsSent = 0;
         for (const assetUser of assetRoleUsers) {
@@ -4999,10 +4969,31 @@ export async function approveReturnFormHandler(
           }
         }
 
+        if (hadLinkedTransfer && linkedTf) {
+          for (const assetUser of assetRoleUsers) {
+            if (assetUser.userID !== userId && assetUser.userID !== form.user_id) {
+              await createNotificationForApi({
+                user_id: assetUser.userID,
+                title: 'New Asset Transfer Request Received',
+                message:
+                  'A new Asset Transfer Request has been received. Please process the return first, then process the transfer.',
+                type: 'system',
+                data: {
+                  form_id: linkedTf.formID,
+                  form_number: linkedTf.form_number,
+                  requester_id: form.user_id,
+                  route: '/assets/transfer-requests',
+                  actionTarget: 'asset_transfer_requests',
+                },
+              });
+              notificationsSent++;
+            }
+          }
+        }
+
         logger.info('Return approval - notification summary', {
           formId,
           formNumber: form.form_number,
-          roleName,
           totalUsersFound: assetRoleUsers.length,
           notificationsSent,
         });

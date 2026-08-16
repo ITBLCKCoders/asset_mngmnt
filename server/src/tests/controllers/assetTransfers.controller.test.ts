@@ -12,16 +12,17 @@ jest.mock('../../utils/responseWrapper.js', () => ({
 }));
 jest.mock('../../utils/cloudinary.js', () => ({ uploadReturnConditionImageToCloudinary: jest.fn(), signedRawUrlFromStoredSecureUrl: jest.fn() }));
 jest.mock('../../utils/assetScope.js', () => ({ getAssetScope: jest.fn(), getDepartmentIdsForScope: jest.fn() }));
-jest.mock('../../utils/approverNotifications.js', () => ({ isUserManagerApprover1: jest.fn(), isUserManagerApprover2: jest.fn(), getManagerApprover1UserIdsInDepartmentAndCompany: jest.fn() }));
+jest.mock('../../utils/approverNotifications.js', () => ({ isUserManagerApprover1: jest.fn(), isUserManagerApprover2: jest.fn(), getManagerApprover1UserIdsInDepartmentAndCompany: jest.fn(), getAssetRoleUsersForAssignmentsAndCompany: jest.fn(), getManagerApprover2UserIdsForProcessedReturn: jest.fn() }));
 jest.mock('../../utils/notificationsApi.js', () => ({ createNotificationForApi: jest.fn() }));
 jest.mock('../../utils/transferFormNumber.js', () => ({ generateTransferFormNumber: jest.fn(), generateTransferFormNumberFallback: jest.fn() }));
 jest.mock('../../utils/returnFormNumber.js', () => ({ generateReturnFormNumber: jest.fn(), generateReturnFormNumberFallback: jest.fn() }));
-jest.mock('../../models/assetTransferForm.model.js', () => ({ AssetTransferFormModel: { create: jest.fn(), findById: jest.fn(), findAll: jest.fn(), createWithTransfererSignature: jest.fn(), addFormAssignments: jest.fn() } }));
+jest.mock('../../models/assetTransferForm.model.js', () => ({ AssetTransferFormModel: { create: jest.fn(), findById: jest.fn(), findAll: jest.fn(), createWithTransfererSignature: jest.fn(), addFormAssignments: jest.fn(), getFormAssignmentIds: jest.fn() } }));
 jest.mock('../../models/assetReturnForm.model.js', () => ({ AssetReturnFormModel: { create: jest.fn(), createWithReturnerSignature: jest.fn(), findById: jest.fn() } }));
 jest.mock('../../models/assetReturn.model.js', () => ({ AssetReturnModel: { create: jest.fn() } }));
 jest.mock('../../repositories/assetReturn.repository.js', () => ({ fetchUserDigitalSignature: jest.fn() }));
 jest.mock('../../repositories/assetTransferForm.repository.js', () => ({
   toBind: jest.fn(), getTransferFormLinksForReturnForms: jest.fn(), getTransferFormByReturnFormId: jest.fn(),
+  getReturnFormIdByTransferFormId: jest.fn(),
   getTransferFormIdsByReturnFormId: jest.fn(), getTransferFormAssignments: jest.fn(),
   getActiveAssignmentsByIds: jest.fn(), getRoomByLocationIdAndName: jest.fn(),
   getDepartmentById: jest.fn(), getUserById: jest.fn(), getUserDepartmentId: jest.fn(),
@@ -35,7 +36,7 @@ const formModel = jest.requireMock('../../models/assetTransferForm.model.js').As
 const returnFormModel = jest.requireMock('../../models/assetReturnForm.model.js').AssetReturnFormModel;
 const assetReturnModel = jest.requireMock('../../models/assetReturn.model.js').AssetReturnModel;
 const { getAssetScope } = jest.requireMock('../../utils/assetScope.js');
-const { isUserManagerApprover1, isUserManagerApprover2, getManagerApprover1UserIdsInDepartmentAndCompany } = jest.requireMock('../../utils/approverNotifications.js');
+const { isUserManagerApprover1, isUserManagerApprover2, getManagerApprover1UserIdsInDepartmentAndCompany, getAssetRoleUsersForAssignmentsAndCompany, getManagerApprover2UserIdsForProcessedReturn } = jest.requireMock('../../utils/approverNotifications.js');
 const { createNotificationForApi } = jest.requireMock('../../utils/notificationsApi.js');
 const transferRepo = jest.requireMock('../../repositories/assetTransferForm.repository.js');
 const { fetchUserDigitalSignature } = jest.requireMock('../../repositories/assetReturn.repository.js');
@@ -53,6 +54,7 @@ describe('assetTransfers.controller', () => {
     jest.resetAllMocks();
     req = { body: {}, params: {}, query: {}, ip: '127.0.0.1', get: jest.fn(), user: { userID: 'u1' } };
     res = createMockRes();
+    getAssetRoleUsersForAssignmentsAndCompany.mockResolvedValue([]);
   });
 
   describe('submitTransferRequestHandler', () => {
@@ -237,7 +239,78 @@ describe('assetTransfers.controller', () => {
           data: expect.objectContaining({ form_id: 'rf1', form_number: 'RET-001' }),
         })
       );
+      expect(createNotificationForApi).toHaveBeenCalledWith(
+        expect.objectContaining({
+          user_id: 'u1',
+          title: 'Asset Transfer Request Approved',
+          data: expect.objectContaining({ form_id: 'f1', form_number: 'TRF-001', actionTarget: 'transfer_request_approved' }),
+        })
+      );
       expect(res._json.pendingLinkedReturnApproval).toBeUndefined();
+    });
+
+    it('notifies IT/Admin asset role users of the linked transfer and return', async () => {
+      req.params = { formId: 'f1' };
+      req.body = { digitalSignature: 'sig' };
+      formModel.findById.mockResolvedValue({ ...mockForm, form_number: 'TRF-001', user_id: 'u1', department_id: 'd1', signed_at: '2024-01-01', dept_head_signed_at: null, return_form_id: 'rf1' });
+      pool.execute.mockImplementation(async (sql: string) => {
+        const s = String(sql);
+        if (s.includes('SELECT module_name')) return [[{ module_name: 'Approvals', permission_type: 'create', granted: 1 }, { module_name: 'Approvals', permission_type: 'edit', granted: 1 }], []];
+        if (s.includes('SELECT form_number, dept_head_signed_at FROM asset_return_forms')) return [[{ form_number: 'RET-001', dept_head_signed_at: null }], []];
+        return [[], []];
+      });
+      isUserManagerApprover1.mockResolvedValue(false);
+      fetchUserDigitalSignature.mockResolvedValue('dig-sig');
+      transferRepo.getUserNamesById.mockResolvedValue({ first_name: 'John', last_name: 'Doe' });
+      transferRepo.getUserById.mockResolvedValue({ userID: 'u1', first_name: 'John', last_name: 'Doe', company_id: '10' });
+      transferRepo.getDepartmentById.mockResolvedValue({ name: 'IT' });
+      transferRepo.getTransferFormAssignments.mockResolvedValue([{ assignment_id: 'a1' }]);
+      getAssetRoleUsersForAssignmentsAndCompany.mockResolvedValue([{ userID: 'u-it', first_name: 'IT', last_name: 'User' }]);
+      await assetTransfersController.approveTransferFormHandler(req, res);
+      expect(res._json.message).toContain('approved');
+      expect(getAssetRoleUsersForAssignmentsAndCompany).toHaveBeenCalledWith('10', ['a1'], 'IT');
+      expect(createNotificationForApi).toHaveBeenCalledWith(
+        expect.objectContaining({
+          user_id: 'u-it',
+          title: 'New Asset Transfer Request Received',
+          message: expect.stringContaining('process the return first'),
+          data: expect.objectContaining({
+            form_id: 'f1',
+            form_number: 'TRF-001',
+            actionTarget: 'asset_transfer_requests',
+          }),
+        })
+      );
+      expect(createNotificationForApi).toHaveBeenCalledWith(
+        expect.objectContaining({
+          user_id: 'u-it',
+          title: 'New Asset Return Request Received',
+          data: expect.objectContaining({
+            form_id: 'rf1',
+            form_number: 'RET-001',
+            actionTarget: 'asset_return_requests',
+          }),
+        })
+      );
+    });
+
+    it('notifies the requester when approving a transfer with no linked return form', async () => {
+      req.params = { formId: 'f1' };
+      req.body = { digitalSignature: 'sig' };
+      formModel.findById.mockResolvedValue({ ...mockForm, form_number: 'TRF-001', user_id: 'u1', signed_at: '2024-01-01', dept_head_signed_at: null, return_form_id: null });
+      pool.execute.mockResolvedValue([[{ module_name: 'Approvals', permission_type: 'create', granted: 1 }, { module_name: 'Approvals', permission_type: 'edit', granted: 1 }], []]);
+      isUserManagerApprover1.mockResolvedValue(false);
+      fetchUserDigitalSignature.mockResolvedValue('dig-sig');
+      transferRepo.getUserNamesById.mockResolvedValue({ first_name: 'John', last_name: 'Doe' });
+      await assetTransfersController.approveTransferFormHandler(req, res);
+      expect(res._json.message).toContain('approved');
+      expect(createNotificationForApi).toHaveBeenCalledWith(
+        expect.objectContaining({
+          user_id: 'u1',
+          title: 'Asset Transfer Request Approved',
+          data: expect.objectContaining({ form_id: 'f1', form_number: 'TRF-001' }),
+        })
+      );
     });
   });
 
@@ -316,6 +389,219 @@ describe('assetTransfers.controller', () => {
     it('returns 400 when no file', async () => {
       await assetTransfersController.uploadTransferConditionPhotoHandler(req, res);
       expect(res._status).toBe(400);
+    });
+  });
+
+  describe('getTransferApprovedByMeHandler', () => {
+    it('returns processed_by null for approved transfer without processor signature', async () => {
+      const formRow = {
+        formID: 'f1',
+        form_number: 'TRF-001',
+        user_id: 'u1',
+        department_id: null,
+        new_assigned_user_id: null,
+        created_by: 'u1',
+        created_at: '2024-06-01 09:00:00',
+        signed_at: '2024-06-01 10:00:00',
+        signed_by: 'u1',
+        signed_digital_signature: 'sig',
+        process_signed_at: null,
+        process_digital_signature: null,
+        processor_pending_signed_at: null,
+        processor_pending_signature: null,
+        transfer_type: 'Transfer Request',
+        received_by: null,
+        dept_head_signed_at: '2024-06-01 11:00:00',
+        dept_head_digital_signature: 'sig',
+        dept_head_signed_by: 'approver-1',
+        it_manager_signed_at: null,
+        it_manager_digital_signature: null,
+        it_manager_signed_by: null,
+      };
+      pool.execute.mockImplementation(async (sql: string) => {
+        if (sql.includes('asset_transfer_forms')) return [[formRow], []];
+        return [[], []];
+      });
+      await assetTransfersController.getTransferApprovedByMeHandler(req, res);
+      expect(res._json.assetTransferForms[0].processed_by).toBeNull();
+    });
+
+    it('returns processor name when process_signed_at present', async () => {
+      const formRow = {
+        formID: 'f1',
+        form_number: 'TRF-001',
+        user_id: 'u1',
+        department_id: null,
+        new_assigned_user_id: null,
+        created_by: 'proc-1',
+        created_at: '2024-06-01 09:00:00',
+        signed_at: '2024-06-01 10:00:00',
+        signed_by: 'proc-1',
+        signed_digital_signature: 'sig',
+        process_signed_at: '2024-06-01 14:00:00',
+        process_digital_signature: 'sig',
+        processor_pending_signed_at: null,
+        processor_pending_signature: null,
+        transfer_type: 'IT Transfer',
+        received_by: null,
+        dept_head_signed_at: '2024-06-01 11:00:00',
+        dept_head_digital_signature: 'sig',
+        dept_head_signed_by: 'approver-1',
+        it_manager_signed_at: null,
+        it_manager_digital_signature: null,
+        it_manager_signed_by: null,
+      };
+      pool.execute.mockImplementation(async (sql: string) => {
+        if (sql.includes('asset_transfer_forms')) return [[formRow], []];
+        if (sql.includes('SELECT first_name, last_name FROM users')) {
+          return [[{ first_name: 'Jane', last_name: 'Doe' }], []];
+        }
+        return [[], []];
+      });
+      await assetTransfersController.getTransferApprovedByMeHandler(req, res);
+      expect(res._json.assetTransferForms[0].processed_by).toBe('Jane Doe');
+    });
+  });
+
+  describe('runTransferFormExecution guard', () => {
+    const executionOptions = {
+      assetTransfers: [{ assignmentId: 'a1' }],
+      newAssignment: { userId: 'u2', roomId: null, roomName: null, locationId: null },
+    };
+    const activeAssignmentRow = {
+      assignmentID: 'a1',
+      asset_id: '10',
+      user_id: 'u1',
+      department_id: 'd1',
+      location_id: 'l1',
+      location_room_id: null,
+      status: 'Active',
+    };
+
+    it('blocks execution when linked return form is not yet processed by the processor', async () => {
+      formModel.findById.mockResolvedValue({
+        ...mockForm,
+        signed_at: '2024-01-01',
+        dept_head_signed_at: '2024-01-02',
+        executed_at: null,
+        return_form_id: 'rf1',
+      });
+      formModel.getFormAssignmentIds.mockResolvedValue(['a1']);
+      pool.execute.mockResolvedValue([[activeAssignmentRow], []]);
+      transferRepo.getCategoryDepartmentsByAssetIds.mockResolvedValue([{ departmentID: 'd1' }]);
+      transferRepo.getBuilderItemsByAssetIds.mockResolvedValue([]);
+      returnFormModel.findById.mockResolvedValue({
+        formID: 'rf1',
+        signed_at: '2024-01-01',
+        process_signed_at: null,
+        declined_at: null,
+      });
+
+      await expect(
+        assetTransfersController.runTransferFormExecution(
+          'f1',
+          executionOptions as any,
+          { req, processorId: 'u1' }
+        )
+      ).rejects.toThrow('Please process the return request first');
+    });
+
+    it('resolves the linked return form via repository lookup when stored proc lacks return_form_id', async () => {
+      formModel.findById.mockResolvedValue({
+        ...mockForm,
+        signed_at: '2024-01-01',
+        dept_head_signed_at: '2024-01-02',
+        executed_at: null,
+        return_form_id: undefined,
+      });
+      transferRepo.getReturnFormIdByTransferFormId.mockResolvedValue('rf1');
+      formModel.getFormAssignmentIds.mockResolvedValue(['a1']);
+      pool.execute.mockResolvedValue([[activeAssignmentRow], []]);
+      transferRepo.getCategoryDepartmentsByAssetIds.mockResolvedValue([{ departmentID: 'd1' }]);
+      transferRepo.getBuilderItemsByAssetIds.mockResolvedValue([]);
+      returnFormModel.findById.mockResolvedValue({
+        formID: 'rf1',
+        signed_at: '2024-01-01',
+        process_signed_at: null,
+        declined_at: null,
+      });
+
+      await expect(
+        assetTransfersController.runTransferFormExecution(
+          'f1',
+          executionOptions as any,
+          { req, processorId: 'u1' }
+        )
+      ).rejects.toThrow('Please process the return request first');
+      expect(transferRepo.getReturnFormIdByTransferFormId).toHaveBeenCalledWith('f1');
+    });
+  });
+
+  describe('notifyTransferProcessedNotifications', () => {
+    const baseParams = {
+      formId: 'f1',
+      formNumber: 'TRF-001',
+      transferRequestorUserId: 'u1',
+      processorUserId: 'u-proc',
+      newOwnerUserId: 'u2',
+      assetCodes: ['AST-001', 'AST-002'],
+      createdAccountabilityForms: [
+        { formID: 'af1', form_number: 'AC-001' },
+      ],
+    };
+
+    it('notifies the new owner that the asset was assigned due to a transfer', async () => {
+      transferRepo.getUserNamesById.mockResolvedValue({ first_name: 'Jane', last_name: 'Doe' });
+      transferRepo.getUserById.mockResolvedValue({ userID: 'u-proc', company_id: '10' });
+      transferRepo.getUserDepartmentId.mockResolvedValue('d1');
+      getManagerApprover2UserIdsForProcessedReturn.mockResolvedValue([]);
+
+      await assetTransfersController.notifyTransferProcessedNotifications(baseParams as any);
+
+      const calls = createNotificationForApi.mock.calls.map((c: any) => c[0]);
+      expect(calls.some((c: any) =>
+        c.user_id === 'u2' &&
+        c.title === 'New asset has been assigned to you due to a transfer' &&
+        c.data.actionTarget === 'my_assets' &&
+        c.data.route === '/my-assets'
+      )).toBe(true);
+    });
+
+    it('notifies the new owner of the issued accountability form for signing', async () => {
+      transferRepo.getUserNamesById.mockResolvedValue({ first_name: 'Jane', last_name: 'Doe' });
+      transferRepo.getUserById.mockResolvedValue({ userID: 'u-proc', company_id: '10' });
+      transferRepo.getUserDepartmentId.mockResolvedValue('d1');
+      getManagerApprover2UserIdsForProcessedReturn.mockResolvedValue([]);
+
+      await assetTransfersController.notifyTransferProcessedNotifications(baseParams as any);
+
+      const calls = createNotificationForApi.mock.calls.map((c: any) => c[0]);
+      expect(calls.some((c: any) =>
+        c.user_id === 'u2' &&
+        c.title === 'New accountability form has been issued' &&
+        c.type === 'accountability_form' &&
+        c.data.form_id === 'af1' &&
+        c.data.form_number === 'AC-001'
+      )).toBe(true);
+    });
+
+    it('notifies Manager Approver 2 users in the processor company/department and excludes the processor', async () => {
+      transferRepo.getUserNamesById.mockResolvedValue({ first_name: 'Jane', last_name: 'Doe' });
+      transferRepo.getUserById.mockResolvedValue({ userID: 'u-proc', company_id: '10' });
+      transferRepo.getUserDepartmentId.mockResolvedValue('d1');
+      getManagerApprover2UserIdsForProcessedReturn.mockResolvedValue(['u-ma2', 'u-proc']);
+
+      await assetTransfersController.notifyTransferProcessedNotifications(baseParams as any);
+
+      expect(getManagerApprover2UserIdsForProcessedReturn).toHaveBeenCalledWith('10', 'd1');
+      const calls = createNotificationForApi.mock.calls.map((c: any) => c[0]);
+      expect(calls.some((c: any) =>
+        c.user_id === 'u-ma2' &&
+        c.title === 'An asset has been transferred, checked and verified' &&
+        c.data.actionTarget === 'approvals' &&
+        c.data.route === '/approvals?tab=receive'
+      )).toBe(true);
+      expect(calls.some((c: any) => c.user_id === 'u-proc' && c.title === 'An asset has been transferred, checked and verified')).toBe(false);
     });
   });
 });

@@ -574,6 +574,9 @@ export default function AssetTransferRequest() {
       toast.success(
         `Transfer request submitted for ${selectedAssignments.length} asset(s)${selectedIntangibleAssetIds.length > 0 ? ` and ${selectedIntangibleAssetIds.length} intangible asset(s)` : ''}. It will be sent to your department head for approval.`
       );
+      toast.success(
+        `Return request submitted for ${selectedAssignments.length} asset(s)${selectedIntangibleAssetIds.length > 0 ? ` and ${selectedIntangibleAssetIds.length} intangible asset(s)` : ''}. It will also be sent to your department head for approval.`
+      );
       setShowConfirmDialog(false);
       setConfirmTransferWhenApproved(false);
       setConfirmSigningTransfer(false);

@@ -577,7 +577,10 @@ export default function TransferRequestsPage() {
                         </CardTitle>
                         <p className="text-sm text-gray-500">
                           Created{' '}
-                          {new Date(batch.created_at).toLocaleDateString()}
+                          {batch.created_at &&
+                          !isNaN(new Date(batch.created_at).getTime())
+                            ? new Date(batch.created_at).toLocaleDateString()
+                            : '—'}
                         </p>
                       </div>
                     </div>

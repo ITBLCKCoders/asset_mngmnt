@@ -191,6 +191,10 @@ export default function NotificationBell({ className }: NotificationBellProps) {
       navigate('/profile?tab=documents#asset-return-forms');
     } else if (target === 'asset_return_requests') {
       navigate('/assets/return-requests');
+    } else if (target === 'asset_transfer_requests') {
+      navigate('/assets/transfer-requests');
+    } else if (target === 'my_transfer_requests') {
+      navigate('/profile?tab=documents&docTab=transfers');
     } else if (target === 'my_return_requests') {
       navigate('/profile?tab=documents&docTab=returns');
     } else if (target === 'asset_return_wet_upload') {

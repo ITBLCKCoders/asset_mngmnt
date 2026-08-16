@@ -3006,6 +3006,7 @@ BEGIN
     atf.signed_at, atf.signed_by, atf.signed_digital_signature,
     DATE_FORMAT(atf.process_signed_at, '%Y-%m-%d %H:%i:%s') AS process_signed_at,
     atf.process_digital_signature, atf.transfer_type, atf.received_by,
+    atf.return_form_id,
     DATE_FORMAT(atf.dept_head_signed_at, '%Y-%m-%d %H:%i:%s') AS dept_head_signed_at,
     atf.dept_head_digital_signature,
     atf.dept_head_signed_by,

@@ -343,9 +343,15 @@ export interface ApprovedTransferFormRow extends RowDataPacket {
   department_id: string | null;
   location_id: string | null;
   location_room_id: string | null;
+  created_at: string | null;
+  created_by: string | null;
   signed_at: string | null;
   signed_by: string | null;
   signed_digital_signature: string | null;
+  process_signed_at: string | null;
+  process_digital_signature: string | null;
+  transfer_type: string | null;
+  received_by: string | null;
   dept_head_signed_at: string | null;
   dept_head_signed_by: string | null;
   dept_head_digital_signature: string | null;
@@ -357,8 +363,12 @@ export async function getApprovedTransferFormsByCompanyId(
 ): Promise<ApprovedTransferFormRow[]> {
   const sql = `SELECT atf.formID, atf.form_number, atf.user_id, atf.new_assigned_user_id,
               atf.department_id, atf.location_id, atf.location_room_id,
+              atf.created_at, atf.created_by,
               atf.signed_at, atf.signed_by, atf.signed_digital_signature,
-              atf.dept_head_signed_at, atf.dept_head_signed_by,
+              DATE_FORMAT(atf.process_signed_at, '%Y-%m-%d %H:%i:%s') AS process_signed_at,
+              atf.process_digital_signature, atf.transfer_type, atf.received_by,
+              DATE_FORMAT(atf.dept_head_signed_at, '%Y-%m-%d %H:%i:%s') AS dept_head_signed_at,
+              atf.dept_head_signed_by,
               atf.dept_head_digital_signature, d.company_id AS form_company_id
        FROM asset_transfer_forms atf
        LEFT JOIN asset_mngmnt_departments d ON atf.department_id = d.departmentID
@@ -407,6 +417,24 @@ export async function getTransferFormByReturnFormId(
     [returnFormId]
   )) as any[];
   return (rows as any[])[0] ?? null;
+}
+
+/**
+ * Fetch the linked return form ID for a transfer form. Independent of the
+ * sp_get_asset_transfer_form_by_id stored procedure (which may not select
+ * return_form_id depending on the deployed migration).
+ */
+export async function getReturnFormIdByTransferFormId(
+  transferFormId: string
+): Promise<string | null> {
+  const [rows] = (await pool.execute(
+    `SELECT return_form_id
+     FROM asset_transfer_forms
+     WHERE formID = ? AND deleted_at IS NULL
+     LIMIT 1`,
+    [transferFormId]
+  )) as any[];
+  return (rows as any[])[0]?.return_form_id ?? null;
 }
 
 /** Fetch transfer-form IDs linked to a given return form. */

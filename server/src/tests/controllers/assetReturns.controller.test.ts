@@ -7,7 +7,7 @@ jest.mock('../../logger.js', () => ({ __esModule: true, default: { error: jest.f
 jest.mock('../../utils/audit.js', () => ({ createAuditLog: jest.fn(() => Promise.resolve()) }));
 jest.mock('../../utils/accountabilityFormOnReturn.js', () => ({ handleAccountabilityFormOnAssetReturn: jest.fn() }));
 jest.mock('../../utils/assetScope.js', () => ({ getAssetScope: jest.fn(), classifyDepartmentScopeByName: jest.fn() }));
-jest.mock('../../utils/approverNotifications.js', () => ({ isUserManagerApprover1: jest.fn(), isUserManagerApprover2: jest.fn(), getManagerApprover1UserIdsInDepartmentAndCompany: jest.fn(), getManagerApprover2UserIdsForProcessedReturn: jest.fn() }));
+jest.mock('../../utils/approverNotifications.js', () => ({ isUserManagerApprover1: jest.fn(), isUserManagerApprover2: jest.fn(), getManagerApprover1UserIdsInDepartmentAndCompany: jest.fn(), getManagerApprover2UserIdsForProcessedReturn: jest.fn(), getAssetRoleUsersForAssignmentsAndCompany: jest.fn() }));
 jest.mock('../../utils/notificationsApi.js', () => ({ createNotificationForApi: jest.fn() }));
 jest.mock('../../utils/responseWrapper.js', () => ({ createErrorResponse: jest.fn((res: any, error: any, errors: any, statusCode: any, message: any) => { res.status(statusCode).json({ error: message }); return res; }) }));
 jest.mock('../../utils/returnFormNumber.js', () => ({ generateReturnFormNumber: jest.fn(), generateReturnFormNumberFallback: jest.fn() }));
@@ -62,7 +62,7 @@ const returnFormModel = jest.requireMock('../../models/assetReturnForm.model.js'
 const { getAssetScope } = jest.requireMock('../../utils/assetScope.js') as { getAssetScope: jest.Mock };
 const transferRepo = jest.requireMock('../../repositories/assetTransferForm.repository.js') as Record<string, jest.Mock>;
 const returnRepo = jest.requireMock('../../repositories/assetReturn.repository.js') as Record<string, jest.Mock>;
-const { isUserManagerApprover1, getManagerApprover1UserIdsInDepartmentAndCompany, getManagerApprover2UserIdsForProcessedReturn } = jest.requireMock('../../utils/approverNotifications.js') as { isUserManagerApprover1: jest.Mock; getManagerApprover1UserIdsInDepartmentAndCompany: jest.Mock; getManagerApprover2UserIdsForProcessedReturn: jest.Mock };
+const { isUserManagerApprover1, getManagerApprover1UserIdsInDepartmentAndCompany, getManagerApprover2UserIdsForProcessedReturn, getAssetRoleUsersForAssignmentsAndCompany } = jest.requireMock('../../utils/approverNotifications.js') as { isUserManagerApprover1: jest.Mock; getManagerApprover1UserIdsInDepartmentAndCompany: jest.Mock; getManagerApprover2UserIdsForProcessedReturn: jest.Mock; getAssetRoleUsersForAssignmentsAndCompany: jest.Mock };
 const { createNotificationForApi } = jest.requireMock('../../utils/notificationsApi.js') as { createNotificationForApi: jest.Mock };
 const { generateReturnFormNumber, generateReturnFormNumberFallback } = jest.requireMock('../../utils/returnFormNumber.js') as { generateReturnFormNumber: jest.Mock; generateReturnFormNumberFallback: jest.Mock };
 const { createErrorResponse } = jest.requireMock('../../utils/responseWrapper.js') as { createErrorResponse: jest.Mock };
@@ -80,6 +80,7 @@ describe('assetReturns.controller', () => {
     res = createMockRes();
     const { createAuditLog } = jest.requireMock('../../utils/audit.js') as { createAuditLog: jest.Mock };
     createAuditLog.mockResolvedValue(undefined);
+    getAssetRoleUsersForAssignmentsAndCompany.mockResolvedValue([]);
   });
 
   describe('submitAssetReturnRequestHandler', () => {
@@ -304,7 +305,7 @@ describe('assetReturns.controller', () => {
       pool.execute.mockImplementation(async (sql: string) => {
         const s = String(sql);
         if (s.includes('SELECT module_name')) return [[{ module_name: 'Approvals', permission_type: 'create', granted: 1 }, { module_name: 'Approvals', permission_type: 'edit', granted: 1 }], []];
-        if (s.includes('SELECT formID')) return [[{ formID: 'tf1', dept_head_signed_at: null, process_signed_at: null, process_digital_signature: null, processor_pending_signature: null, processor_pending_signed_at: null, executed_at: null, new_assigned_user_id: 'u2', department_id: 'd1', location_id: null, location_room_id: null, transfer_type: null, received_by: null }], []];
+        if (s.includes('SELECT formID')) return [[{ formID: 'tf1', form_number: 'TRF-001', dept_head_signed_at: null, process_signed_at: null, process_digital_signature: null, processor_pending_signature: null, processor_pending_signed_at: null, executed_at: null, new_assigned_user_id: 'u2', department_id: 'd1', location_id: null, location_room_id: null, transfer_type: null, received_by: null }], []];
         if (s.includes('SELECT DISTINCT u.userID')) return [[], []];
         if (s.includes('SELECT arf.formID')) return [[], []];
         return [[], []];
@@ -320,6 +321,72 @@ describe('assetReturns.controller', () => {
       );
       expect(transferUpdateCall).toBeDefined();
       expect(transferUpdateCall[1]).toEqual(['sig', 'u1', 'tf1']);
+      // Requester is notified that BOTH the transfer and the return were approved
+      expect(createNotificationForApi).toHaveBeenCalledWith(
+        expect.objectContaining({
+          user_id: 'u1',
+          title: 'Asset Return Request Approved',
+          data: expect.objectContaining({
+            form_id: 'f1',
+            actionTarget: 'return_request_approved',
+          }),
+        })
+      );
+      expect(createNotificationForApi).toHaveBeenCalledWith(
+        expect.objectContaining({
+          user_id: 'u1',
+          title: 'Asset Transfer Request Approved',
+          data: expect.objectContaining({
+            form_id: 'tf1',
+            form_number: 'TRF-001',
+            actionTarget: 'transfer_request_approved',
+          }),
+        })
+      );
+    });
+
+    it('notifies IT/Admin asset role users about the return and its linked transfer', async () => {
+      req.params = { formId: 'f1' };
+      req.body = { digitalSignature: 'sig' };
+      transferRepo.getReturnFormById.mockResolvedValue({ formID: 'f1', form_number: 'RET-001', user_id: 'u1', signed_at: '2024-01-01', company_id: '10', dept_head_signed_at: null, process_signed_at: null, received_by: null, owner_absent: 0, department_id: 'd1' });
+      pool.execute.mockImplementation(async (sql: string) => {
+        const s = String(sql);
+        if (s.includes('SELECT module_name')) return [[{ module_name: 'Approvals', permission_type: 'create', granted: 1 }, { module_name: 'Approvals', permission_type: 'edit', granted: 1 }], []];
+        if (s.includes('SELECT formID')) return [[{ formID: 'tf1', form_number: 'TRF-001', dept_head_signed_at: null, process_signed_at: null, process_digital_signature: null, processor_pending_signature: null, processor_pending_signed_at: null, executed_at: null, new_assigned_user_id: 'u2', department_id: 'd1', location_id: null, location_room_id: null, transfer_type: null, received_by: null }], []];
+        if (s.includes('SELECT arf.formID')) return [[], []];
+        return [[], []];
+      });
+      isUserManagerApprover1.mockResolvedValue(false);
+      returnRepo.fetchUserDigitalSignature.mockResolvedValue('dig-sig');
+      transferRepo.getUserNamesById.mockResolvedValue({ first_name: 'John', last_name: 'Doe' });
+      transferRepo.getDepartmentById.mockResolvedValue({ name: 'IT' });
+      getAssetRoleUsersForAssignmentsAndCompany.mockResolvedValue([{ userID: 'u-it', first_name: 'IT', last_name: 'User' }]);
+      await assetReturnsController.approveReturnFormHandler(req, res);
+      expect(res._json.message).toContain('approved');
+      expect(getAssetRoleUsersForAssignmentsAndCompany).toHaveBeenCalledWith('10', [], 'IT');
+      expect(createNotificationForApi).toHaveBeenCalledWith(
+        expect.objectContaining({
+          user_id: 'u-it',
+          title: 'New Asset Return Request Received',
+          data: expect.objectContaining({
+            form_id: 'f1',
+            form_number: 'RET-001',
+            actionTarget: 'asset_return_requests',
+          }),
+        })
+      );
+      expect(createNotificationForApi).toHaveBeenCalledWith(
+        expect.objectContaining({
+          user_id: 'u-it',
+          title: 'New Asset Transfer Request Received',
+          message: expect.stringContaining('process the return first'),
+          data: expect.objectContaining({
+            form_id: 'tf1',
+            form_number: 'TRF-001',
+            actionTarget: 'asset_transfer_requests',
+          }),
+        })
+      );
     });
 
     it('notifies Manager Approver 2 when approving a processor-initiated hold form', async () => {
@@ -550,7 +617,7 @@ describe('assetReturns.controller', () => {
       expect(fields.processed_by).toBe('Jane Processor');
     });
 
-    it('falls back to created_by name when process_signed_by is missing', async () => {
+    it('leaves processed_by empty when process_signed_by is missing', async () => {
       const processorNames = new Map<string, string>([
         ['emp-1', 'Erin Employee'],
       ]);
@@ -565,7 +632,35 @@ describe('assetReturns.controller', () => {
           },
           { processorNames, linkedTransfer: null }
         );
-      expect(fields.processed_by).toBe('Erin Employee');
+      expect(fields.processed_by).toBe('');
+    });
+
+    it('leaves processed_by empty for a transfer-linked return with no processor signature', async () => {
+      const processorNames = new Map<string, string>([
+        ['emp-1', 'Erin Employee'],
+        ['tf-creator', 'Trent Transferrer'],
+      ]);
+      const fields =
+        await assetReturnsController.resolveReturnProcessorFieldsForBatch(
+          {
+            formID: 'f1',
+            created_by: 'emp-1',
+            process_signed_at: null,
+            process_digital_signature: null,
+            process_signed_by: null,
+          },
+          {
+            processorNames,
+            linkedTransfer: {
+              created_by: 'tf-creator',
+              process_signed_at: null,
+              process_digital_signature: null,
+              processor_pending_signed_at: null,
+              processor_pending_signature: null,
+            },
+          }
+        );
+      expect(fields.processed_by).toBe('');
     });
 
     it('resolves process_signed_by name from getUserNamesById when not cached', async () => {
