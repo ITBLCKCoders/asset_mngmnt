@@ -209,6 +209,27 @@ describe('assetAssignments.controller', () => {
       await assetAssignmentsController.getFilteredAssetAssignmentsHandler(req, res);
       expect(res._json).toEqual({ assignments: [] });
     });
+
+    it('returns in-flight return assignment IDs when includeInFlightReturns is set', async () => {
+      req.query = { status: 'Active', includeInFlightReturns: '1' };
+      loadUserModulePermissions.mockResolvedValue({ 'Asset Return': { create: true, edit: true } });
+      getAssetScope.mockResolvedValue(defaultScope);
+      repo.listAssignmentsRaw.mockResolvedValue([{ assignmentID: '1', asset_id: '10', asset_code: 'A001', asset_name: 'Asset 1', status: 'Active' }]);
+      pool.execute.mockResolvedValue([[{ assignment_id: '2' }, { assignment_id: '3' }]]);
+      await assetAssignmentsController.getFilteredAssetAssignmentsHandler(req, res);
+      expect(res._json.assignments).toHaveLength(1);
+      expect(res._json.inFlightReturnAssignmentIds).toEqual(['2', '3']);
+    });
+
+    it('omits in-flight return IDs when includeInFlightReturns is not set', async () => {
+      req.query = { status: 'Active' };
+      loadUserModulePermissions.mockResolvedValue({ 'Asset Return': { create: true, edit: true } });
+      getAssetScope.mockResolvedValue(defaultScope);
+      repo.listAssignmentsRaw.mockResolvedValue([{ assignmentID: '1', asset_id: '10', asset_code: 'A001', asset_name: 'Asset 1', status: 'Active' }]);
+      await assetAssignmentsController.getFilteredAssetAssignmentsHandler(req, res);
+      expect(res._json.assignments).toHaveLength(1);
+      expect(res._json.inFlightReturnAssignmentIds).toEqual([]);
+    });
   });
 
   describe('createAssetChecklistHandler', () => {

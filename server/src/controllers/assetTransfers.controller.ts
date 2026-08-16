@@ -1387,18 +1387,6 @@ export async function submitTransferRequestHandler(
       assignmentsByDept.get(deptId)!.push(row);
     }
 
-    // Validate target user belongs to each department group
-    for (const [deptId] of assignmentsByDept) {
-      const effectiveDeptId = deptId === '__unknown__' ? null : deptId;
-      if (effectiveDeptId && targetDeptId !== effectiveDeptId) {
-        const dept = effectiveDeptId ? await getDepartmentById(effectiveDeptId) : null;
-        const deptName = dept?.name ?? effectiveDeptId;
-        return res.status(400).json({
-          error: `Cannot transfer assets from "${deptName}" department to the selected user. The target user must be in the same department as the assets. Assets from ${deptName} must be transferred to a user in ${deptName}.`,
-        });
-      }
-    }
-
     const sharedNotes = (body.notes != null ? String(body.notes) : '') || '';
     const transferTypeValue =
       (req.body as { transferType?: string }).transferType ?? null;
@@ -1561,6 +1549,40 @@ export async function submitTransferRequestHandler(
                     asset_count: assetCount,
                     route: '/approvals',
                     actionTarget: 'transfer_request_approval',
+                  },
+                  time: new Date().toISOString(),
+                });
+              }
+              // Also notify for the linked return form (transfer requests create both forms)
+              await createNotificationForApi({
+                user_id: approverUserId,
+                title: 'Asset Return Request Approval Needed',
+                message: `${requesterName} has submitted an asset return request for ${assetCount} asset${assetCount !== 1 ? 's' : ''} and requires your approval.`,
+                type: 'system',
+                data: {
+                  form_id: returnFormId,
+                  form_number: returnForm?.form_number ?? returnFormNumber,
+                  requester_id: currentUserId,
+                  requester_name: requesterName,
+                  asset_count: assetCount,
+                  route: '/approvals',
+                  actionTarget: 'return_request_approval',
+                },
+              });
+              if (io) {
+                emitNotification(io, approverUserId, 'notification', {
+                  id: returnFormId,
+                  title: 'Asset Return Request Approval Needed',
+                  message: `${requesterName} has submitted an asset return request for ${assetCount} asset${assetCount !== 1 ? 's' : ''} and requires your approval.`,
+                  type: 'system',
+                  data: {
+                    form_id: returnFormId,
+                    form_number: returnForm?.form_number ?? returnFormNumber,
+                    requester_id: currentUserId,
+                    requester_name: requesterName,
+                    asset_count: assetCount,
+                    route: '/approvals',
+                    actionTarget: 'return_request_approval',
                   },
                   time: new Date().toISOString(),
                 });
@@ -4083,21 +4105,43 @@ export async function approveTransferFormHandler(
       userAgent: req.get ? req.get('User-Agent') : 'Unknown',
     });
 
+    // Auto-approve the linked return form so the transfer and return are approved together.
     if (returnFormId) {
-      const [returnDhRows] = (await pool.execute(
-        `SELECT dept_head_signed_at FROM asset_return_forms WHERE formID = ? AND deleted_at IS NULL`,
-        [returnFormId]
-      )) as any[];
-      if (!returnDhRows?.[0]?.dept_head_signed_at) {
-        return res.json({
-          message:
-            'Transfer form approved. Approve the linked return form separately before the transfer can be executed.',
-          formID: formId,
-          linkedReturnFormID: returnFormId,
-          pendingLinkedReturnApproval: true,
-        });
+      try {
+        const [returnFormRows] = (await pool.execute(
+          `SELECT form_number, dept_head_signed_at FROM asset_return_forms WHERE formID = ? AND deleted_at IS NULL`,
+          [returnFormId]
+        )) as any[];
+        const returnFormRow = returnFormRows?.[0];
+        const returnFormNumber = returnFormRow?.form_number ?? null;
+        if (returnFormRow && !returnFormRow.dept_head_signed_at) {
+          await pool.execute(
+            `UPDATE asset_return_forms SET dept_head_signed_at = NOW(), dept_head_digital_signature = ?, dept_head_signed_by = ?, updated_at = NOW() WHERE formID = ? AND dept_head_signed_at IS NULL AND declined_at IS NULL`,
+            [deptHeadDigitalSignature || null, userId, returnFormId]
+          );
+          const approverRow = await getUserNamesById(userId);
+          const approverName = approverRow ? `${approverRow.first_name} ${approverRow.last_name}` : 'A user';
+          await createNotificationForApi({
+            user_id: form.user_id,
+            title: 'Asset Return Request Approved',
+            message: `Your asset return request has been approved by your department head ${approverName}`,
+            type: 'system',
+            data: {
+              form_id: returnFormId,
+              form_number: returnFormNumber,
+              approver_id: userId,
+              approver_name: approverName,
+              route: '/profile?tab=documents&docTab=returns',
+              actionTarget: 'return_request_approved',
+            },
+          });
+        }
+      } catch (autoApproveErr: any) {
+        logger.error('Failed to auto-approve linked return form on transfer approval:', autoApproveErr);
       }
+    }
 
+    if (returnFormId) {
       const [formRows] = (await pool.execute(
         `SELECT process_signed_at, process_digital_signature, processor_pending_signature, processor_pending_signed_at, executed_at,
                 new_assigned_user_id, department_id, location_id, location_room_id, transfer_type, received_by

@@ -809,10 +809,122 @@ export async function createAssetReturnHandler(
         }
       }
 
+      // Notify asset owners (excluding the processor) to sign the return form,
+      // unless the owner is marked absent (owner-absent flow skips the owner signature).
+      if (!ownerAbsent) {
+        try {
+          const ownerUserIds = [
+            ...new Set(assignmentRows.map((r: any) => r.user_id)),
+          ].filter((id: string) => id !== req.user!.userID);
+          const io = getIoInstance();
+          for (const ownerId of ownerUserIds) {
+            await createNotificationForApi({
+              user_id: ownerId,
+              title: 'An asset return has been initialized',
+              message:
+                'Your assets are being returned. Sign your return form to process this return.',
+              type: 'system',
+              data: {
+                form_id,
+                form_number: returnForm?.form_number ?? null,
+                route: '/profile?tab=documents&docTab=returns',
+                actionTarget: 'my_return_requests',
+              },
+            });
+            if (io) {
+              emitNotification(io, ownerId, 'notification', {
+                id: form_id,
+                title: 'An asset return has been initialized',
+                message:
+                  'Your assets are being returned. Sign your return form to process this return.',
+                type: 'system',
+                data: {
+                  form_id,
+                  form_number: returnForm?.form_number ?? null,
+                  route: '/profile?tab=documents&docTab=returns',
+                  actionTarget: 'my_return_requests',
+                },
+              });
+            }
+          }
+        } catch (notifErr) {
+          logger.error(
+            'Failed to notify asset owners about initialized return:',
+            notifErr
+          );
+        }
+      }
+
+      // Owner-absent flow: route directly to the asset owner's Manager Approver 1.
+      // The owner will not sign, so the form is routed for department-head approval
+      // first; Manager Approver 2 is notified after approval (see approveReturnFormHandler).
+      if (ownerAbsent) {
+        try {
+          const ownerDeptId = firstAssignment.user_id
+            ? await getUserDepartmentId(firstAssignment.user_id)
+            : null;
+          const managerApprover1UserIds =
+            ownerDeptId && companyId
+              ? (await getManagerApprover1UserIdsInDepartmentAndCompany(
+                  ownerDeptId,
+                  companyId
+                )) ?? []
+              : [];
+          const ownerNames = await getUserNamesById(firstAssignment.user_id);
+          const ownerName = ownerNames
+            ? `${ownerNames.first_name || ''} ${ownerNames.last_name || ''}`.trim()
+            : 'The asset owner';
+          const assetCount = assetReturns.length;
+          const io = getIoInstance();
+          for (const approverUserId of managerApprover1UserIds) {
+            if (approverUserId === req.user!.userID) continue;
+            const approvalMessage = `${ownerName} is no longer in office. An asset return has been initialized for ${assetCount} asset${assetCount !== 1 ? 's' : ''} and requires your approval as the asset owner's department head.`;
+            await createNotificationForApi({
+              user_id: approverUserId,
+              title: 'Asset Return Request Approval Needed',
+              message: approvalMessage,
+              type: 'system',
+              data: {
+                form_id,
+                form_number: returnForm?.form_number ?? null,
+                requester_id: req.user!.userID,
+                requester_name: ownerName,
+                asset_count: assetCount,
+                route: '/approvals',
+                actionTarget: 'return_request_approval',
+              },
+            });
+            if (io) {
+              emitNotification(io, approverUserId, 'notification', {
+                id: form_id,
+                title: 'Asset Return Request Approval Needed',
+                message: approvalMessage,
+                type: 'system',
+                data: {
+                  form_id,
+                  form_number: returnForm?.form_number ?? null,
+                  requester_id: req.user!.userID,
+                  requester_name: ownerName,
+                  asset_count: assetCount,
+                  route: '/approvals',
+                  actionTarget: 'return_request_approval',
+                },
+                time: new Date().toISOString(),
+              });
+            }
+          }
+        } catch (notifErr) {
+          logger.error(
+            'Failed to notify Manager Approver 1 about owner-absent return:',
+            notifErr
+          );
+        }
+      }
+
       return res.status(201).json({
         message: ownerAbsent
-          ? 'Return request created. The asset owner was marked absent—download the return form, obtain the asset owner’s department head signature for processing, then the department head can approve in Approvals. Assets will be assigned to you after approval.'
-          : `Return request created. The returner must sign the form in Profile → Documents, then the department head must approve before assets are assigned to you.`,
+          ? 'Return request created. The asset owner was marked absent, the department head can approve in Approvals. Assets will be assigned to you after approval.'
+          : `Return has been initialized. The returner must sign the form in Profile → Documents, then the department head must approve before assets are assigned to you.`,
         assetReturns: holdReturns,
         returnForm: returnForm
           ? { formID: returnForm.formID, form_number: returnForm.form_number }
@@ -2195,7 +2307,12 @@ export async function getAssetReturnsHandler(req: AuthRequest, res: Response) {
         linked?.dept_head_signed_at ?? (form as any).dept_head_signed_at;
       const processSigned = (form as any).process_signed_at;
       const processorDeclined = (form as any).processor_declined_at;
-      if (processSigned) return 'Processed';
+      // Processor-initiated (hold) forms set process_signed_at at creation, so
+      // they are only truly "Processed" once the dept head approved (which
+      // executes the return). Non-hold flows set process_signed_at only when
+      // processing actually happens, so they are unaffected.
+      const holdStyle = Boolean((form as any).received_by);
+      if (processSigned && (!holdStyle || deptApproved)) return 'Processed';
       if (processorDeclined) return 'Declined by processor';
       if (declined) return 'Declined by dept head';
       if (deptApproved) return 'Approved by dept head';
@@ -2297,7 +2414,9 @@ export async function getAssetReturnsHandler(req: AuthRequest, res: Response) {
       processorDeclinedAt: string | null | undefined
     ): string {
       if (processorDeclinedAt) return 'Declined by processor';
-      if (processSignedAt) return 'Returned';
+      // A processor-initiated (hold) form sets process_signed_at at creation;
+      // it is only "Returned" once the dept head approved (which executed it).
+      if (processSignedAt && deptHeadSignedAt) return 'Returned';
       if (deptHeadSignedAt) return 'Approved by Department head';
       return 'Submitted';
     }
@@ -2819,6 +2938,74 @@ export async function signAssetReturnFormHandler(
       }
     } catch (checklistErr) {
       logger.error('Failed to auto-sign offboarding checklists:', checklistErr);
+    }
+
+    // Notify Manager Approver 1 users in the returner's department AND company
+    // that the form has been signed and needs approval (mirrors the return request flow).
+    try {
+      const returnerUserDeptId = await getUserDepartmentId(form.user_id);
+      let signCompanyId = form.company_id || null;
+      if (!signCompanyId) {
+        const deptRow = await getDepartmentById(form.department_id);
+        signCompanyId = deptRow?.company_id ?? null;
+      }
+      if (!signCompanyId) {
+        const signerUser = await getUserById(form.user_id);
+        signCompanyId = signerUser?.company_id ?? null;
+      }
+      if (returnerUserDeptId && signCompanyId) {
+        const managerApprover1UserIds =
+          await getManagerApprover1UserIdsInDepartmentAndCompany(
+            returnerUserDeptId,
+            signCompanyId
+          );
+        const signerRow = await getUserNamesById(userId);
+        const signerName = signerRow
+          ? `${signerRow.first_name} ${signerRow.last_name}`.trim()
+          : 'A user';
+        const returnsForForm = await AssetReturnModel.findByFormId(formId);
+        const assetCount = Array.isArray(returnsForForm)
+          ? returnsForForm.length
+          : 0;
+
+        const io = getIoInstance();
+        for (const approverUserId of managerApprover1UserIds) {
+          if (approverUserId !== userId) {
+            const message = `${signerName} has signed the asset return form for ${assetCount} asset${assetCount !== 1 ? 's' : ''} and requires your approval.`;
+            const payloadData = {
+              form_id: formId,
+              form_number: form.form_number,
+              requester_id: form.user_id,
+              requester_name: signerName,
+              asset_count: assetCount,
+              route: '/approvals',
+              actionTarget: 'return_request_approval',
+            };
+            await createNotificationForApi({
+              user_id: approverUserId,
+              title: 'Asset Return Request Approval Needed',
+              message,
+              type: 'system',
+              data: payloadData,
+            });
+            if (io) {
+              emitNotification(io, approverUserId, 'notification', {
+                id: formId,
+                title: 'Asset Return Request Approval Needed',
+                message,
+                type: 'system',
+                data: payloadData,
+                time: new Date().toISOString(),
+              });
+            }
+          }
+        }
+      }
+    } catch (notifError) {
+      logger.error(
+        'Failed to send Manager Approver 1 notification after return form sign:',
+        notifError
+      );
     }
 
     return res.json({
@@ -4468,6 +4655,11 @@ export async function approveReturnFormHandler(
     }
     const form = formRow;
 
+    // Processor-initiated (hold) flow: the processor pre-signed the form and has
+    // custody (received_by), so after dept-head approval the return is executed
+    // and considered processed. Notification behaviour differs from owner-initiated returns.
+    const isHoldFlow = Boolean(form.process_signed_at && form.received_by);
+
     // Get company_id from form or user if not available
     let companyId = form.company_id;
     if (!companyId) {
@@ -4546,6 +4738,21 @@ export async function approveReturnFormHandler(
     const linkedTf = linkedTfRows?.[0];
     if (linkedTf) {
       hadLinkedTransfer = true;
+      // Auto-approve the linked transfer form so the transfer and return are approved together.
+      if (!linkedTf.dept_head_signed_at) {
+        try {
+          await pool.execute(
+            `UPDATE asset_transfer_forms SET dept_head_signed_at = NOW(), dept_head_digital_signature = ?, dept_head_signed_by = ?, updated_at = NOW() WHERE formID = ? AND dept_head_signed_at IS NULL AND declined_at IS NULL`,
+            [deptHeadDigitalSignature || null, userId, linkedTf.formID]
+          );
+          linkedTf.dept_head_signed_at = new Date();
+        } catch (autoApproveErr: any) {
+          logger.error(
+            'Failed to auto-approve linked transfer form on return approval:',
+            autoApproveErr
+          );
+        }
+      }
       if (linkedTf.dept_head_signed_at && !linkedTf.executed_at) {
         const processDigitalSig =
           (linkedTf.process_digital_signature != null &&
@@ -4637,100 +4844,171 @@ export async function approveReturnFormHandler(
       }
     }
 
-    // Send notification to requester
-    try {
-      const requesterRow = await getUserNamesById(form.user_id);
-      const requesterName = requesterRow ? `${requesterRow.first_name} ${requesterRow.last_name}` : 'A user';
-
-      const approverRow = await getUserNamesById(userId);
-      const approverName = approverRow ? `${approverRow.first_name} ${approverRow.last_name}` : 'A user';
-      
-      await createNotificationForApi({
-        user_id: form.user_id,
-        title: 'Asset Return Request Approved',
-        message: `Your asset return request has been approved by your department head ${approverName}`,
-        type: 'system',
-        data: {
-          form_id: formId,
-          form_number: form.form_number,
-          approver_id: userId,
-          approver_name: approverName,
-          route: '/profile?tab=documents&docTab=returns',
-          actionTarget: 'return_request_approved',
-        },
-      });
-    } catch (notifError) {
-      logger.error('Failed to send approval notification to requester:', notifError);
+    // Notify Manager Approver 2 users in the asset scope department that the return
+    // was approved and is ready to be received (processor-initiated hold flow).
+    if (form.process_signed_at && form.received_by) {
+      try {
+        await notifyManagerApprover2OfProcessedReturn({
+          formId,
+          formNumber: form.form_number,
+          companyId: companyId || null,
+          departmentId: form.department_id ?? null,
+          returnRequestorUserId: form.user_id,
+          processorUserId: String(form.received_by).trim() || req.user!.userID,
+        });
+      } catch (notifError) {
+        logger.error(
+          'Failed to notify Manager Approver 2 after approving processed return:',
+          notifError
+        );
+      }
     }
 
-    // Send notification to IT/Admin asset role users based on asset scope
-    try {
-      const deptRow = await getDepartmentById(form.department_id);
-      const deptName = deptRow?.name || '';
-      const scopeType = classifyDepartmentScopeByName(deptName);
-      const isAdminScope = scopeType === 'Admin';
-      
-      // Get users with specific roles based on scope
-      // For IT scope: target users with 'IT Asset' role
-      // For Admin scope: target users with 'Admin Asset' role
-      const roleName = isAdminScope ? 'Admin Asset' : 'IT Asset';
-      
-      const [assetRoleUsers] = (await pool.execute(
-        `SELECT DISTINCT u.userID, u.first_name, u.last_name, r.name as role_name
-         FROM users u
-         JOIN asset_mngmnt_roles r ON u.role_id = r.roleID
-         WHERE r.name = ? 
-           AND r.deleted_at IS NULL
-           AND u.company_id = ?
-           AND u.is_active = 1`,
-        [roleName, companyId]
-      )) as any[];
-      
-      // If no users found with exact role name, try case-insensitive search
-      if (assetRoleUsers.length === 0) {
-        const [caseInsensitiveUsers] = (await pool.execute(
+    // Processor-initiated hold flow: notify the processor who initiated the return
+    // that it is now approved and processed (they do not receive the generic
+    // "new return request received" broadcast below).
+    if (isHoldFlow && form.received_by && String(form.received_by).trim() !== form.user_id) {
+      try {
+        await createNotificationForApi({
+          user_id: String(form.received_by).trim(),
+          title: 'Asset return processed',
+          message: 'The asset return you initiated has been approved and is now processed.',
+          type: 'system',
+          data: {
+            form_id: formId,
+            form_number: form.form_number,
+            route: '/assets/return',
+            actionTarget: 'asset_return_requests',
+          },
+        });
+      } catch (notifError) {
+        logger.error('Failed to notify processor of processed hold return:', notifError);
+      }
+    }
+
+    // Send notification to requester. Skipped for owner-absent flows: the asset
+    // owner is no longer in office and should not receive return notifications.
+    if (!approveOwnerAbsent) {
+      try {
+        const requesterRow = await getUserNamesById(form.user_id);
+        const requesterName = requesterRow ? `${requesterRow.first_name} ${requesterRow.last_name}` : 'A user';
+
+        const approverRow = await getUserNamesById(userId);
+        const approverName = approverRow ? `${approverRow.first_name} ${approverRow.last_name}` : 'A user';
+        
+        await createNotificationForApi({
+          user_id: form.user_id,
+          title: 'Asset Return Request Approved',
+          message: `Your asset return request has been approved by your department head ${approverName}`,
+          type: 'system',
+          data: {
+            form_id: formId,
+            form_number: form.form_number,
+            approver_id: userId,
+            approver_name: approverName,
+            route: '/profile?tab=documents&docTab=returns',
+            actionTarget: 'return_request_approved',
+          },
+        });
+      } catch (notifError) {
+        logger.error('Failed to send approval notification to requester:', notifError);
+      }
+    }
+
+    // Processor-initiated hold flow: the returner is also notified that the return
+    // is now processed, since there is no separate processing step later on.
+    // Skipped for owner-absent flows (the owner is not in office).
+    if (isHoldFlow && !approveOwnerAbsent) {
+      try {
+        await createNotificationForApi({
+          user_id: form.user_id,
+          title: 'Asset return processed',
+          message: 'Your asset return has been processed.',
+          type: 'system',
+          data: {
+            form_id: formId,
+            form_number: form.form_number,
+            route: '/profile?tab=documents&docTab=returns',
+            actionTarget: 'my_return_requests',
+          },
+        });
+      } catch (notifError) {
+        logger.error('Failed to notify returner of processed hold return:', notifError);
+      }
+    }
+
+    // Send notification to IT/Admin asset role users based on asset scope.
+    // Skipped for processor-initiated (hold) returns — the initiating processor
+    // already has custody and is notified separately that the return is processed.
+    if (!isHoldFlow) {
+      try {
+        const deptRow = await getDepartmentById(form.department_id);
+        const deptName = deptRow?.name || '';
+        const scopeType = classifyDepartmentScopeByName(deptName);
+        const isAdminScope = scopeType === 'Admin';
+
+        // Get users with specific roles based on scope
+        // For IT scope: target users with 'IT Asset' role
+        // For Admin scope: target users with 'Admin Asset' role
+        const roleName = isAdminScope ? 'Admin Asset' : 'IT Asset';
+
+        const [assetRoleUsers] = (await pool.execute(
           `SELECT DISTINCT u.userID, u.first_name, u.last_name, r.name as role_name
            FROM users u
            JOIN asset_mngmnt_roles r ON u.role_id = r.roleID
-           WHERE LOWER(r.name) = LOWER(?) 
+           WHERE r.name = ? 
              AND r.deleted_at IS NULL
              AND u.company_id = ?
              AND u.is_active = 1`,
           [roleName, companyId]
         )) as any[];
-        
-        assetRoleUsers.push(...caseInsensitiveUsers);
-      }
-      
-      let notificationsSent = 0;
-      for (const assetUser of assetRoleUsers) {
-        if (assetUser.userID !== userId && assetUser.userID !== form.user_id) {
-          await createNotificationForApi({
-            user_id: assetUser.userID,
-            title: 'New Asset Return Request Received',
-            message: 'A new Asset return Request has been received',
-            type: 'system',
-            data: {
-              form_id: formId,
-              form_number: form.form_number,
-              requester_id: form.user_id,
-              route: '/assets/return-requests',
-              actionTarget: 'asset_return_requests',
-            },
-          });
-          notificationsSent++;
+
+        // If no users found with exact role name, try case-insensitive search
+        if (assetRoleUsers.length === 0) {
+          const [caseInsensitiveUsers] = (await pool.execute(
+            `SELECT DISTINCT u.userID, u.first_name, u.last_name, r.name as role_name
+             FROM users u
+             JOIN asset_mngmnt_roles r ON u.role_id = r.roleID
+             WHERE LOWER(r.name) = LOWER(?) 
+               AND r.deleted_at IS NULL
+               AND u.company_id = ?
+               AND u.is_active = 1`,
+            [roleName, companyId]
+          )) as any[];
+
+          assetRoleUsers.push(...caseInsensitiveUsers);
         }
+
+        let notificationsSent = 0;
+        for (const assetUser of assetRoleUsers) {
+          if (assetUser.userID !== userId && assetUser.userID !== form.user_id) {
+            await createNotificationForApi({
+              user_id: assetUser.userID,
+              title: 'New Asset Return Request Received',
+              message: 'A new Asset return Request has been received',
+              type: 'system',
+              data: {
+                form_id: formId,
+                form_number: form.form_number,
+                requester_id: form.user_id,
+                route: '/assets/return-requests',
+                actionTarget: 'asset_return_requests',
+              },
+            });
+            notificationsSent++;
+          }
+        }
+
+        logger.info('Return approval - notification summary', {
+          formId,
+          formNumber: form.form_number,
+          roleName,
+          totalUsersFound: assetRoleUsers.length,
+          notificationsSent,
+        });
+      } catch (notifError) {
+        logger.error('Failed to send notification to asset role users:', notifError);
       }
-      
-      logger.info('Return approval - notification summary', {
-        formId,
-        formNumber: form.form_number,
-        roleName,
-        totalUsersFound: assetRoleUsers.length,
-        notificationsSent,
-      });
-    } catch (notifError) {
-      logger.error('Failed to send notification to asset role users:', notifError);
     }
 
     // Auto-approve linked offboarding checklists as dept head

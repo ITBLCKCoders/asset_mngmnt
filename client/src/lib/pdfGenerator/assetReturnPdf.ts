@@ -119,6 +119,8 @@ export interface AssetReturnData {
   it_manager_user_name?: string | null;
   /** When true, show the processor (IT Staff) block; when false, hide it until Dept Head has signed */
   showProcessorSignatureBlock?: boolean;
+  /** When true, the asset owner is not in office anymore; the Returner cell shows a note instead of a signature */
+  ownerAbsent?: boolean;
 }
 
 export const generateAssetReturnPDF = async (
@@ -693,6 +695,27 @@ export const generateAssetReturnPDF = async (
           doc.text(returnerSignedDate, xMax - 20, yTop + 4);
           doc.text(returnerSignedTime, xMax - 20, yTop + 9);
         }
+      }
+
+      // Row 3, column 1: owner-absent note (no returner signature available)
+      if (
+        !hasReturnerSignature &&
+        returnData.ownerAbsent &&
+        data.row.index === 3 &&
+        data.column.index === 1
+      ) {
+        const yTop = yMin;
+        doc.setFontSize(8);
+        doc.setFont('helvetica', 'italic');
+        doc.setTextColor(90, 90, 90);
+        const noteMaxWidth = Math.max(15, contentWidth - 6);
+        const noteLines = doc.splitTextToSize(
+          'Asset owner is not in office anymore',
+          noteMaxWidth
+        );
+        doc.text(noteLines, xMin, yTop + 12);
+        doc.setFont('helvetica', 'normal');
+        doc.setTextColor(0, 0, 0);
       }
     },
   });

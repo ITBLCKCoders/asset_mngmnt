@@ -12,7 +12,8 @@ jest.mock('../../utils/responseWrapper.js', () => ({
 }));
 jest.mock('../../utils/cloudinary.js', () => ({ uploadReturnConditionImageToCloudinary: jest.fn(), signedRawUrlFromStoredSecureUrl: jest.fn() }));
 jest.mock('../../utils/assetScope.js', () => ({ getAssetScope: jest.fn(), getDepartmentIdsForScope: jest.fn() }));
-jest.mock('../../utils/approverNotifications.js', () => ({ isUserManagerApprover1: jest.fn(), isUserManagerApprover2: jest.fn() }));
+jest.mock('../../utils/approverNotifications.js', () => ({ isUserManagerApprover1: jest.fn(), isUserManagerApprover2: jest.fn(), getManagerApprover1UserIdsInDepartmentAndCompany: jest.fn() }));
+jest.mock('../../utils/notificationsApi.js', () => ({ createNotificationForApi: jest.fn() }));
 jest.mock('../../utils/transferFormNumber.js', () => ({ generateTransferFormNumber: jest.fn(), generateTransferFormNumberFallback: jest.fn() }));
 jest.mock('../../utils/returnFormNumber.js', () => ({ generateReturnFormNumber: jest.fn(), generateReturnFormNumberFallback: jest.fn() }));
 jest.mock('../../models/assetTransferForm.model.js', () => ({ AssetTransferFormModel: { create: jest.fn(), findById: jest.fn(), findAll: jest.fn(), createWithTransfererSignature: jest.fn(), addFormAssignments: jest.fn() } }));
@@ -34,7 +35,8 @@ const formModel = jest.requireMock('../../models/assetTransferForm.model.js').As
 const returnFormModel = jest.requireMock('../../models/assetReturnForm.model.js').AssetReturnFormModel;
 const assetReturnModel = jest.requireMock('../../models/assetReturn.model.js').AssetReturnModel;
 const { getAssetScope } = jest.requireMock('../../utils/assetScope.js');
-const { isUserManagerApprover1, isUserManagerApprover2 } = jest.requireMock('../../utils/approverNotifications.js');
+const { isUserManagerApprover1, isUserManagerApprover2, getManagerApprover1UserIdsInDepartmentAndCompany } = jest.requireMock('../../utils/approverNotifications.js');
+const { createNotificationForApi } = jest.requireMock('../../utils/notificationsApi.js');
 const transferRepo = jest.requireMock('../../repositories/assetTransferForm.repository.js');
 const { fetchUserDigitalSignature } = jest.requireMock('../../repositories/assetReturn.repository.js');
 const { uploadReturnConditionImageToCloudinary } = jest.requireMock('../../utils/cloudinary.js');
@@ -67,6 +69,27 @@ describe('assetTransfers.controller', () => {
       generateTransferFormNumber.mockResolvedValue('TRF-001');
       formModel.createWithTransfererSignature.mockResolvedValue({ formID: 'f1', form_number: 'TRF-001' });
       formModel.addFormAssignments.mockResolvedValue(undefined);
+      getManagerApprover1UserIdsInDepartmentAndCompany.mockResolvedValue([]);
+      await assetTransfersController.submitTransferRequestHandler(req, res);
+      expect(res._status).toBe(201);
+      expect(res._json.formID).toBe('f1');
+      expect(res._json.message).toContain('submitted');
+    });
+
+    it('submits transfer request when target user is in a different department', async () => {
+      req.body = { assignmentIds: ['a1'], departmentId: 'd2', transferToUserId: 'u2', notes: 'Transfer', digitalSignature: 'sig' };
+      transferRepo.getActiveAssignmentsByIds.mockResolvedValue([{ assignmentID: 'a1', asset_id: '10', user_id: 'u1', department_id: 'd1', location_id: 'l1', location_room_id: null }]);
+      transferRepo.getUserById.mockResolvedValue({ userID: 'u2', company_id: '10' });
+      transferRepo.getUserDepartmentId.mockResolvedValue('d2');
+      transferRepo.getCategoryDepartmentsByAssetIds.mockResolvedValue([{ departmentID: 'd1' }]);
+      transferRepo.getDepartmentById.mockResolvedValue({ company_id: '10' });
+      generateReturnFormNumber.mockResolvedValue('RF-001');
+      returnFormModel.createWithReturnerSignature.mockResolvedValue({ formID: 'rf1', form_number: 'RF-001' });
+      assetReturnModel.create.mockResolvedValue({});
+      generateTransferFormNumber.mockResolvedValue('TRF-001');
+      formModel.createWithTransfererSignature.mockResolvedValue({ formID: 'f1', form_number: 'TRF-001' });
+      formModel.addFormAssignments.mockResolvedValue(undefined);
+      getManagerApprover1UserIdsInDepartmentAndCompany.mockResolvedValue([]);
       await assetTransfersController.submitTransferRequestHandler(req, res);
       expect(res._status).toBe(201);
       expect(res._json.formID).toBe('f1');
@@ -77,6 +100,39 @@ describe('assetTransfers.controller', () => {
       req.body = {};
       await assetTransfersController.submitTransferRequestHandler(req, res);
       expect(res._status).toBe(400);
+    });
+
+    it('sends both transfer and return approval-needed notifications to Manager Approver 1', async () => {
+      req.body = { assignmentIds: ['a1'], departmentId: 'd1', transferToUserId: 'u2', notes: 'Transfer', digitalSignature: 'sig' };
+      transferRepo.getActiveAssignmentsByIds.mockResolvedValue([{ assignmentID: 'a1', asset_id: '10', user_id: 'u1', department_id: 'd1', location_id: 'l1', location_room_id: null }]);
+      transferRepo.getUserById.mockResolvedValue({ userID: 'u2', company_id: '10' });
+      transferRepo.getUserDepartmentId.mockResolvedValue('d1');
+      transferRepo.getCategoryDepartmentsByAssetIds.mockResolvedValue([{ departmentID: 'd1' }]);
+      transferRepo.getDepartmentById.mockResolvedValue({ company_id: '10' });
+      transferRepo.getUserNamesById.mockResolvedValue({ first_name: 'John', last_name: 'Doe' });
+      generateReturnFormNumber.mockResolvedValue('RF-001');
+      returnFormModel.createWithReturnerSignature.mockResolvedValue({ formID: 'rf1', form_number: 'RF-001' });
+      assetReturnModel.create.mockResolvedValue({});
+      generateTransferFormNumber.mockResolvedValue('TRF-001');
+      formModel.createWithTransfererSignature.mockResolvedValue({ formID: 'f1', form_number: 'TRF-001' });
+      formModel.addFormAssignments.mockResolvedValue(undefined);
+      getManagerApprover1UserIdsInDepartmentAndCompany.mockResolvedValue(['u-approver']);
+      await assetTransfersController.submitTransferRequestHandler(req, res);
+      expect(res._status).toBe(201);
+      expect(createNotificationForApi).toHaveBeenCalledWith(
+        expect.objectContaining({
+          user_id: 'u-approver',
+          title: 'Asset Transfer Request Approval Needed',
+          data: expect.objectContaining({ form_id: 'f1', actionTarget: 'transfer_request_approval' }),
+        })
+      );
+      expect(createNotificationForApi).toHaveBeenCalledWith(
+        expect.objectContaining({
+          user_id: 'u-approver',
+          title: 'Asset Return Request Approval Needed',
+          data: expect.objectContaining({ form_id: 'rf1', actionTarget: 'return_request_approval' }),
+        })
+      );
     });
 
     it('returns 404 when assignments not found', async () => {
@@ -152,6 +208,36 @@ describe('assetTransfers.controller', () => {
       formModel.findById.mockResolvedValue(null);
       await assetTransfersController.approveTransferFormHandler(req, res);
       expect(res._status).toBe(404);
+    });
+
+    it('auto-approves the linked return form and notifies the requester', async () => {
+      req.params = { formId: 'f1' };
+      req.body = { digitalSignature: 'sig' };
+      formModel.findById.mockResolvedValue({ ...mockForm, form_number: 'TRF-001', user_id: 'u1', signed_at: '2024-01-01', dept_head_signed_at: null, return_form_id: 'rf1' });
+      pool.execute.mockImplementation(async (sql: string) => {
+        const s = String(sql);
+        if (s.includes('SELECT module_name')) return [[{ module_name: 'Approvals', permission_type: 'create', granted: 1 }, { module_name: 'Approvals', permission_type: 'edit', granted: 1 }], []];
+        if (s.includes('SELECT form_number, dept_head_signed_at FROM asset_return_forms')) return [[{ form_number: 'RET-001', dept_head_signed_at: null }], []];
+        return [[], []];
+      });
+      isUserManagerApprover1.mockResolvedValue(false);
+      fetchUserDigitalSignature.mockResolvedValue('dig-sig');
+      transferRepo.getUserNamesById.mockResolvedValue({ first_name: 'John', last_name: 'Doe' });
+      await assetTransfersController.approveTransferFormHandler(req, res);
+      expect(res._json.message).toContain('approved');
+      const returnUpdateCall = (pool.execute as jest.Mock).mock.calls.find((c: any[]) =>
+        String(c[0]).includes('UPDATE asset_return_forms')
+      );
+      expect(returnUpdateCall).toBeDefined();
+      expect(returnUpdateCall[1]).toEqual(['sig', 'u1', 'rf1']);
+      expect(createNotificationForApi).toHaveBeenCalledWith(
+        expect.objectContaining({
+          user_id: 'u1',
+          title: 'Asset Return Request Approved',
+          data: expect.objectContaining({ form_id: 'rf1', form_number: 'RET-001' }),
+        })
+      );
+      expect(res._json.pendingLinkedReturnApproval).toBeUndefined();
     });
   });
 

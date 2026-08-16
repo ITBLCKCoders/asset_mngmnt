@@ -187,6 +187,7 @@ export function buildReturnDataForPDFFromBatch(
     it_manager_digital_signature:
       batch.it_manager_digital_signature ?? undefined,
     it_manager_user_name: batch.it_manager_user_name ?? undefined,
+    ownerAbsent: batch.owner_absent === true,
   };
 }
 
@@ -2623,6 +2624,8 @@ export interface AssetReturnFormBatch {
   it_manager_user_name?: string | null;
   /** Form's owning department (IT/Admin) for PDF header and scope; from category department */
   form_department?: { id: string; name: string } | null;
+  /** True when the asset owner is marked absent (processor-initiated hold return) */
+  owner_absent?: boolean;
   returns: AssetReturnForm[];
 }
 

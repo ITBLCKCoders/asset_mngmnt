@@ -143,6 +143,9 @@ export default function AssetsReturn() {
   const { hasPermission, roleCustodian } = useUserPermissions();
   const { activeCompany } = useCompanyContext();
   const [assignments, setAssignments] = useState<AssetAssignment[]>([]);
+  const [inFlightReturnAssignmentIds, setInFlightReturnAssignmentIds] = useState<
+    string[]
+  >([]);
   const [departments, setDepartments] = useState<any[]>([]);
   const [users, setUsers] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
@@ -490,6 +493,7 @@ export default function AssetsReturn() {
 
       const queryParams = new URLSearchParams();
       queryParams.append('limit', '-1');
+      queryParams.append('includeInFlightReturns', '1');
       if (companyId) {
         queryParams.append('companyId', companyId);
       }
@@ -498,6 +502,7 @@ export default function AssetsReturn() {
       }
       const response = await api.get(`/asset-assignments/filtered?${queryParams.toString()}`);
       setAssignments(response.assignments || []);
+      setInFlightReturnAssignmentIds(response.inFlightReturnAssignmentIds || []);
     } catch (error) {
       console.error('Failed to fetch assignments:', error);
       setAssignments([]);
@@ -582,7 +587,9 @@ export default function AssetsReturn() {
       ({ builder }: { builder: any }) => builder.builderID === builderId
     );
     if (!entry) return;
-    const ids = entry.assignments.map((a: AssetAssignment) => a.assignmentID);
+    const ids = entry.assignments
+      .map((a: AssetAssignment) => a.assignmentID)
+      .filter(id => !isInFlightReturn(id));
     setSelectedAssignments(prev => [...new Set([...prev, ...ids])]);
   };
 
@@ -590,6 +597,7 @@ export default function AssetsReturn() {
     assignmentId: string,
     checked: boolean | string
   ) => {
+    if (isInFlightReturn(assignmentId)) return;
     const isChecked = Boolean(checked);
     if (isChecked) {
       setSelectedAssignments(prev => [...prev, assignmentId]);
@@ -614,15 +622,21 @@ export default function AssetsReturn() {
       ({ builder }: { builder: any }) => builder.builderID === builderId
     );
     if (!entry || entry.assignments.length === 0) return false;
-    return entry.assignments.every((a: AssetAssignment) =>
-      selectedAssignments.includes(a.assignmentID)
-    );
+    const selectableIds = entry.assignments
+      .map((a: AssetAssignment) => a.assignmentID)
+      .filter(id => !isInFlightReturn(id));
+    if (selectableIds.length === 0) return false;
+    return selectableIds.every(id => selectedAssignments.includes(id));
   };
+
+  const isInFlightReturn = (assignmentId: string) =>
+    inFlightReturnAssignmentIds.includes(assignmentId);
 
   const handleAssignmentSelection = (
     assignmentId: string,
     checked: boolean | string
   ) => {
+    if (isInFlightReturn(assignmentId)) return;
     const isChecked = Boolean(checked);
     if (isChecked) {
       setSelectedAssignments(prev => [...prev, assignmentId]);
@@ -901,6 +915,7 @@ export default function AssetsReturn() {
         : null,
       returnType: returnTypeStr || null,
       showProcessorSignatureBlock: !!verificationConfirmSign,
+      ownerAbsent: ownerAbsent && assignAllToMe,
     };
   };
 
@@ -963,7 +978,7 @@ export default function AssetsReturn() {
               'Return request created. Obtain the department head signature on the downloaded form.'
           : assignAllToMe
             ? serverMsg ??
-                'Return request created. The returner must sign the form in Profile â†’ Documents, then the department head must approve before assets are assigned to you.'
+                'Return has been initialized. The returner must sign the form in Profile â†’ Documents, then the department head must approve before assets are assigned to you.'
             : serverMsg ||
                 `Successfully returned ${totalAssets} asset(s)`
       );
@@ -1349,12 +1364,22 @@ export default function AssetsReturn() {
                           variant="outline"
                           size="sm"
                           onClick={() => {
-                            const allVisibleIds = filteredAssignments.map(a => a.assignmentID);
-                            const allSelected = allVisibleIds.every(id => selectedAssignments.includes(id));
+                            const allVisibleIds = filteredAssignments
+                              .map(a => a.assignmentID)
+                              .filter(id => !isInFlightReturn(id));
+                            const allSelected =
+                              allVisibleIds.length > 0 &&
+                              allVisibleIds.every(id =>
+                                selectedAssignments.includes(id)
+                              );
                             if (allSelected) {
-                              setSelectedAssignments(prev => prev.filter(id => !allVisibleIds.includes(id)));
+                              setSelectedAssignments(prev =>
+                                prev.filter(id => !allVisibleIds.includes(id))
+                              );
                             } else {
-                              setSelectedAssignments(prev => [...new Set([...prev, ...allVisibleIds])]);
+                              setSelectedAssignments(prev => [
+                                ...new Set([...prev, ...allVisibleIds]),
+                              ]);
                             }
                           }}
                           className="text-red-600 border-red-300 hover:bg-red-50 whitespace-nowrap"
@@ -1405,7 +1430,8 @@ export default function AssetsReturn() {
                             key={assignment.assignmentID}
                             className={`group relative p-4 border-2 rounded-xl transition-all duration-200 ${
                               hasPermission('Asset Return', 'create') &&
-                              hasPermission('Asset Return', 'edit')
+                              hasPermission('Asset Return', 'edit') &&
+                              !isInFlightReturn(assignment.assignmentID)
                                 ? 'cursor-pointer'
                                 : 'cursor-not-allowed opacity-50'
                             } ${
@@ -1418,6 +1444,7 @@ export default function AssetsReturn() {
                             onClick={() =>
                               hasPermission('Asset Return', 'create') &&
                               hasPermission('Asset Return', 'edit') &&
+                              !isInFlightReturn(assignment.assignmentID) &&
                               handleAssignmentSelection(
                                 assignment.assignmentID,
                                 !selectedAssignments.includes(
@@ -1444,7 +1471,8 @@ export default function AssetsReturn() {
                                   className="pointer-events-none"
                                   disabled={
                                     !hasPermission('Asset Return', 'create') ||
-                                    !hasPermission('Asset Return', 'edit')
+                                    !hasPermission('Asset Return', 'edit') ||
+                                    isInFlightReturn(assignment.assignmentID)
                                   }
                                 />
                               </div>
@@ -1504,6 +1532,14 @@ export default function AssetsReturn() {
                                   >
                                     {assignment.status}
                                   </Badge>
+                                  {isInFlightReturn(assignment.assignmentID) && (
+                                    <Badge
+                                      variant="outline"
+                                      className="text-xs border-blue-300 text-blue-700"
+                                    >
+                                      Return in progress
+                                    </Badge>
+                                  )}
                                   <Badge
                                     variant="outline"
                                     className="text-xs border-gray-300"
@@ -1778,9 +1814,13 @@ export default function AssetsReturn() {
                                                 key={a.assignmentID}
                                                 className={cn(
                                                   'flex items-center gap-3 p-3 rounded-lg border-2 transition-all cursor-pointer min-w-0 pl-4 relative before:content-["â€¢"] before:absolute before:left-2 before:font-bold before:text-gray-500',
-                                                  selectedAssignments.includes(
+                                                  isInFlightReturn(
                                                     a.assignmentID
                                                   )
+                                                    ? 'cursor-not-allowed opacity-50 border-gray-200'
+                                                    : selectedAssignments.includes(
+                                                        a.assignmentID
+                                                      )
                                                     ? 'border-red-500 bg-red-50'
                                                     : 'border-gray-200 hover:border-gray-300'
                                                 )}
@@ -1792,6 +1832,9 @@ export default function AssetsReturn() {
                                                   hasPermission(
                                                     'Asset Return',
                                                     'edit'
+                                                  ) &&
+                                                  !isInFlightReturn(
+                                                    a.assignmentID
                                                   ) &&
                                                   handleBuilderAssetToggle(
                                                     a.assignmentID,
@@ -1821,6 +1864,9 @@ export default function AssetsReturn() {
                                                     !hasPermission(
                                                       'Asset Return',
                                                       'edit'
+                                                    ) ||
+                                                    isInFlightReturn(
+                                                      a.assignmentID
                                                     )
                                                   }
                                                   className="flex-shrink-0"
@@ -1837,6 +1883,16 @@ export default function AssetsReturn() {
                                                   {a.user?.first_name}{' '}
                                                   {a.user?.last_name}
                                                 </span>
+                                                {isInFlightReturn(
+                                                  a.assignmentID
+                                                ) && (
+                                                  <Badge
+                                                    variant="outline"
+                                                    className="text-xs border-blue-300 text-blue-700 flex-shrink-0"
+                                                  >
+                                                    Return in progress
+                                                  </Badge>
+                                                )}
                                               </li>
                                             )
                                           )}

@@ -126,7 +126,10 @@ function isTransferBatchInProgress(batch: AssetTransferFormBatch): boolean {
 function isReturnBatchInProgress(batch: AssetReturnFormBatch): boolean {
   if (!batch.formID) return false;
   if (batch.processor_declined_at) return false;
-  if (batch.process_signed_at) return false;
+  // A processor-initiated (hold) form sets process_signed_at at creation, so it
+  // stays in progress until the dept head approves (which executes the return).
+  // Owner-submitted returns only set process_signed_at after dept approval.
+  if (batch.process_signed_at && batch.dept_head_signed_at) return false;
   if (
     batch.returns?.some(
       r => (r as { status?: string }).status === 'Declined by dept head'

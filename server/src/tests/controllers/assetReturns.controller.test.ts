@@ -226,6 +226,36 @@ describe('assetReturns.controller', () => {
       await assetReturnsController.signAssetReturnFormHandler(req, res);
       expect(res._status).toBe(403);
     });
+
+    it('notifies Manager Approver 1 users after the returner signs the form', async () => {
+      req.params = { formId: 'f1' };
+      req.body = { digitalSignature: 'sig-data' };
+      transferRepo.getReturnFormById.mockResolvedValue({ formID: 'f1', form_number: 'RET-001', user_id: 'u1', signed_at: null, owner_absent: 0, company_id: '10', department_id: 'd1' });
+      returnRepo.fetchUserDigitalSignature.mockResolvedValue('dig-sig');
+      transferRepo.getUserDepartmentId.mockResolvedValue('d1');
+      transferRepo.getDepartmentById.mockResolvedValue({ company_id: '10' });
+      transferRepo.getUserNamesById.mockResolvedValue({ first_name: 'John', last_name: 'Doe' });
+      returnModel.findByFormId.mockResolvedValue([{ return_id: 'r1' }, { return_id: 'r2' }]);
+      getManagerApprover1UserIdsInDepartmentAndCompany.mockResolvedValue(['u-ma1']);
+      await assetReturnsController.signAssetReturnFormHandler(req, res);
+      expect(res._json.message).toContain('signed');
+      expect(getManagerApprover1UserIdsInDepartmentAndCompany).toHaveBeenCalledWith('d1', '10');
+      expect(createNotificationForApi).toHaveBeenCalledWith(
+        expect.objectContaining({
+          user_id: 'u-ma1',
+          title: 'Asset Return Request Approval Needed',
+          message:
+            'John Doe has signed the asset return form for 2 assets and requires your approval.',
+          data: expect.objectContaining({
+            form_id: 'f1',
+            form_number: 'RET-001',
+            asset_count: 2,
+            route: '/approvals',
+            actionTarget: 'return_request_approval',
+          }),
+        })
+      );
+    });
   });
 
   describe('approveReturnFormHandler', () => {
@@ -265,6 +295,173 @@ describe('assetReturns.controller', () => {
       transferRepo.getReturnFormById.mockResolvedValue(null);
       await assetReturnsController.approveReturnFormHandler(req, res);
       expect(res._status).toBe(404);
+    });
+
+    it('auto-approves a linked, not-yet-approved transfer form when approving a return', async () => {
+      req.params = { formId: 'f1' };
+      req.body = { digitalSignature: 'sig' };
+      transferRepo.getReturnFormById.mockResolvedValue({ formID: 'f1', form_number: 'RET-001', user_id: 'u1', signed_at: '2024-01-01', company_id: '10', dept_head_signed_at: null, process_signed_at: null, received_by: null, owner_absent: 0, department_id: 'd1' });
+      pool.execute.mockImplementation(async (sql: string) => {
+        const s = String(sql);
+        if (s.includes('SELECT module_name')) return [[{ module_name: 'Approvals', permission_type: 'create', granted: 1 }, { module_name: 'Approvals', permission_type: 'edit', granted: 1 }], []];
+        if (s.includes('SELECT formID')) return [[{ formID: 'tf1', dept_head_signed_at: null, process_signed_at: null, process_digital_signature: null, processor_pending_signature: null, processor_pending_signed_at: null, executed_at: null, new_assigned_user_id: 'u2', department_id: 'd1', location_id: null, location_room_id: null, transfer_type: null, received_by: null }], []];
+        if (s.includes('SELECT DISTINCT u.userID')) return [[], []];
+        if (s.includes('SELECT arf.formID')) return [[], []];
+        return [[], []];
+      });
+      isUserManagerApprover1.mockResolvedValue(false);
+      returnRepo.fetchUserDigitalSignature.mockResolvedValue('dig-sig');
+      transferRepo.getUserNamesById.mockResolvedValue({ first_name: 'John', last_name: 'Doe' });
+      transferRepo.getDepartmentById.mockResolvedValue({ name: 'IT' });
+      await assetReturnsController.approveReturnFormHandler(req, res);
+      expect(res._json.message).toContain('approved');
+      const transferUpdateCall = (pool.execute as jest.Mock).mock.calls.find((c: any[]) =>
+        String(c[0]).includes('UPDATE asset_transfer_forms')
+      );
+      expect(transferUpdateCall).toBeDefined();
+      expect(transferUpdateCall[1]).toEqual(['sig', 'u1', 'tf1']);
+    });
+
+    it('notifies Manager Approver 2 when approving a processor-initiated hold form', async () => {
+      req.params = { formId: 'f1' };
+      req.body = { digitalSignature: 'sig' };
+      transferRepo.getReturnFormById.mockResolvedValue({
+        formID: 'f1',
+        form_number: 'RET-001',
+        user_id: 'u-returner',
+        signed_at: '2024-01-01',
+        company_id: '10',
+        dept_head_signed_at: null,
+        process_signed_at: '2024-01-02 10:00:00',
+        process_digital_signature: 'proc-sig',
+        received_by: 'u1',
+        owner_absent: 0,
+        department_id: 'd1',
+      });
+      pool.execute.mockImplementation(async (sql: string) => {
+        const s = String(sql);
+        if (s.includes('SELECT module_name')) return [[{ module_name: 'Approvals', permission_type: 'create', granted: 1 }, { module_name: 'Approvals', permission_type: 'edit', granted: 1 }], []];
+        if (s.includes('SELECT formID')) return [[], []];
+        if (s.includes('SELECT DISTINCT u.userID')) return [[], []];
+        if (s.includes('SELECT arf.formID')) return [[], []];
+        return [[], []];
+      });
+      isUserManagerApprover1.mockResolvedValue(false);
+      returnRepo.fetchUserDigitalSignature.mockResolvedValue('dig-sig');
+      returnModel.findByFormId.mockResolvedValue([]);
+      transferRepo.getUserNamesById.mockImplementation((id: string) =>
+        Promise.resolve(
+          id === 'u1'
+            ? { first_name: 'Jane', last_name: 'Processor' }
+            : { first_name: 'John', last_name: 'Returner' }
+        )
+      );
+      getManagerApprover2UserIdsForProcessedReturn.mockResolvedValue(['mgr2-1']);
+      transferRepo.getDepartmentById.mockResolvedValue({ name: 'IT' });
+
+      await assetReturnsController.approveReturnFormHandler(req, res);
+
+      expect(res._json.message).toContain('approved');
+      expect(getManagerApprover2UserIdsForProcessedReturn).toHaveBeenCalledWith(
+        '10',
+        'd1'
+      );
+      expect(createNotificationForApi).toHaveBeenCalledWith(
+        expect.objectContaining({
+          user_id: 'mgr2-1',
+          title: 'An asset has been returned, checked and verified',
+          message:
+            'Jane Processor has processed return request of John Returner',
+          data: expect.objectContaining({
+            form_id: 'f1',
+            route: '/approvals?tab=receive',
+            actionTarget: 'approvals',
+          }),
+        })
+      );
+    });
+
+    it('notifies the initiating processor and returner that a hold return is processed and skips the new-request broadcast', async () => {
+      req.params = { formId: 'f1' };
+      req.body = { digitalSignature: 'sig' };
+      transferRepo.getReturnFormById.mockResolvedValue({
+        formID: 'f1',
+        form_number: 'RET-001',
+        user_id: 'u-returner',
+        signed_at: '2024-01-01',
+        company_id: '10',
+        dept_head_signed_at: null,
+        process_signed_at: '2024-01-02 10:00:00',
+        process_digital_signature: 'proc-sig',
+        received_by: 'u1',
+        owner_absent: 0,
+        department_id: 'd1',
+      });
+      pool.execute.mockImplementation(async (sql: string) => {
+        const s = String(sql);
+        if (s.includes('SELECT module_name'))
+          return [
+            [
+              { module_name: 'Approvals', permission_type: 'create', granted: 1 },
+              { module_name: 'Approvals', permission_type: 'edit', granted: 1 },
+            ],
+            [],
+          ];
+        if (s.includes('SELECT formID')) return [[], []];
+        if (s.includes('SELECT DISTINCT u.userID'))
+          return [
+            [{ userID: 'u-other', first_name: 'Other', last_name: 'Admin' }],
+            [],
+          ];
+        if (s.includes('SELECT arf.formID')) return [[], []];
+        return [[], []];
+      });
+      isUserManagerApprover1.mockResolvedValue(false);
+      returnRepo.fetchUserDigitalSignature.mockResolvedValue('dig-sig');
+      returnModel.findByFormId.mockResolvedValue([]);
+      transferRepo.getUserNamesById.mockResolvedValue({
+        first_name: 'John',
+        last_name: 'Returner',
+      });
+      getManagerApprover2UserIdsForProcessedReturn.mockResolvedValue(['mgr2-1']);
+      transferRepo.getDepartmentById.mockResolvedValue({ name: 'IT' });
+
+      await assetReturnsController.approveReturnFormHandler(req, res);
+
+      expect(res._json.message).toContain('approved');
+      // The initiating processor is notified the return is processed
+      expect(createNotificationForApi).toHaveBeenCalledWith(
+        expect.objectContaining({
+          user_id: 'u1',
+          title: 'Asset return processed',
+          message:
+            'The asset return you initiated has been approved and is now processed.',
+          data: expect.objectContaining({
+            form_id: 'f1',
+            route: '/assets/return',
+            actionTarget: 'asset_return_requests',
+          }),
+        })
+      );
+      // The returner is also notified the return is now processed
+      expect(createNotificationForApi).toHaveBeenCalledWith(
+        expect.objectContaining({
+          user_id: 'u-returner',
+          title: 'Asset return processed',
+          message: 'Your asset return has been processed.',
+          data: expect.objectContaining({
+            form_id: 'f1',
+            route: '/profile?tab=documents&docTab=returns',
+            actionTarget: 'my_return_requests',
+          }),
+        })
+      );
+      // No "New Asset Return Request Received" broadcast is sent in the hold flow
+      expect(createNotificationForApi).not.toHaveBeenCalledWith(
+        expect.objectContaining({
+          title: 'New Asset Return Request Received',
+        })
+      );
     });
   });
 
@@ -454,9 +651,127 @@ describe('assetReturns.controller', () => {
             form_number: 'RET-001',
             processor_name: 'Jane Processor',
             return_requestor_name: 'John Returner',
-            route: '/approvals',
+            route: '/approvals?tab=receive',
             actionTarget: 'approvals',
           }),
+        })
+      );
+    });
+
+    it('notifies asset owners to sign when a return is initialized (hold flow, owner not absent)', async () => {
+      req.body = {
+        assetReturns: [{ assignmentId: 'a1', condition: 'Good' }],
+        returnType: 'Returned',
+        assignToProcessor: true,
+      };
+      transferRepo.getActiveAssignmentsByIds.mockResolvedValue([
+        { ...mockAssignment, user_id: 'u-owner', asset_id: '10' },
+      ]);
+      transferRepo.getCategoryDepartmentsByAssetIds.mockResolvedValue([
+        { departmentID: 'd1', assetID: '10' },
+      ]);
+      transferRepo.getDepartmentById.mockResolvedValue({ company_id: '10' });
+      generateReturnFormNumber.mockResolvedValue('RET-001');
+      returnFormModel.create.mockResolvedValue({
+        formID: 'f1',
+        form_number: 'RET-001',
+      });
+      returnModel.create.mockResolvedValue({
+        return_id: 'r1',
+        assignment_id: 'a1',
+        user_id: 'u-owner',
+        return_condition: 'Good',
+        return_notes: '',
+        created_at: '2024-01-01 00:00:00',
+      });
+      transferRepo.getAssetCodeByAssetId.mockResolvedValue({
+        asset_code: 'AST-001',
+      });
+      transferRepo.getBuilderItemsByAssetIds.mockResolvedValue([]);
+      returnRepo.fetchUserPosition.mockResolvedValue('IT Staff');
+      returnRepo.fetchUserDigitalSignature.mockResolvedValue('dig-sig');
+      pool.execute.mockResolvedValue([[]]);
+      transferRepo.getUserDepartmentId.mockResolvedValue('d1');
+
+      await assetReturnsController.createAssetReturnHandler(req, res);
+
+      expect(res._status).toBe(201);
+      expect(createNotificationForApi).toHaveBeenCalledWith(
+        expect.objectContaining({
+          user_id: 'u-owner',
+          title: 'An asset return has been initialized',
+          message:
+            'Your assets are being returned. Sign your return form to process this return.',
+          data: expect.objectContaining({
+            form_id: 'f1',
+            form_number: 'RET-001',
+            route: '/profile?tab=documents&docTab=returns',
+            actionTarget: 'my_return_requests',
+          }),
+        })
+      );
+    });
+
+    it('does not notify asset owners when the owner is marked absent (hold flow)', async () => {
+      req.body = {
+        assetReturns: [{ assignmentId: 'a1', condition: 'Good' }],
+        returnType: 'Returned',
+        assignToProcessor: true,
+        ownerAbsent: true,
+      };
+      transferRepo.getActiveAssignmentsByIds.mockResolvedValue([
+        { ...mockAssignment, user_id: 'u-owner', asset_id: '10' },
+      ]);
+      transferRepo.getCategoryDepartmentsByAssetIds.mockResolvedValue([
+        { departmentID: 'd1', assetID: '10' },
+      ]);
+      transferRepo.getDepartmentById.mockResolvedValue({ company_id: '10' });
+      generateReturnFormNumber.mockResolvedValue('RET-001');
+      returnFormModel.create.mockResolvedValue({
+        formID: 'f1',
+        form_number: 'RET-001',
+      });
+      returnModel.create.mockResolvedValue({
+        return_id: 'r1',
+        assignment_id: 'a1',
+        user_id: 'u-owner',
+        return_condition: 'Good',
+        return_notes: '',
+        created_at: '2024-01-01 00:00:00',
+      });
+      transferRepo.getAssetCodeByAssetId.mockResolvedValue({
+        asset_code: 'AST-001',
+      });
+      transferRepo.getBuilderItemsByAssetIds.mockResolvedValue([]);
+      returnRepo.fetchUserPosition.mockResolvedValue('IT Staff');
+      returnRepo.fetchUserDigitalSignature.mockResolvedValue('dig-sig');
+      pool.execute.mockResolvedValue([[]]);
+      transferRepo.getUserDepartmentId.mockResolvedValue('d1');
+      getManagerApprover1UserIdsInDepartmentAndCompany.mockResolvedValue([
+        'u-dept-head',
+      ]);
+      transferRepo.getUserNamesById.mockResolvedValue({
+        first_name: 'Owner',
+        last_name: 'Absent',
+      });
+
+      await assetReturnsController.createAssetReturnHandler(req, res);
+
+      expect(res._status).toBe(201);
+      // The absent owner should not receive the generic "initialized" notification.
+      expect(createNotificationForApi).not.toHaveBeenCalledWith(
+        expect.objectContaining({
+          title: 'An asset return has been initialized',
+        })
+      );
+      // The owner's Manager Approver 1 is routed for approval and notified.
+      expect(
+        getManagerApprover1UserIdsInDepartmentAndCompany
+      ).toHaveBeenCalledWith('d1', '10');
+      expect(createNotificationForApi).toHaveBeenCalledWith(
+        expect.objectContaining({
+          user_id: 'u-dept-head',
+          title: 'Asset Return Request Approval Needed',
         })
       );
     });
@@ -525,7 +840,7 @@ describe('assetReturns.controller', () => {
             form_number: 'RET-001',
             processor_name: 'Jane Processor',
             return_requestor_name: 'John Returner',
-            route: '/approvals',
+            route: '/approvals?tab=receive',
             actionTarget: 'approvals',
           }),
         })

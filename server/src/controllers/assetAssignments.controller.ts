@@ -907,8 +907,31 @@ export async function getFilteredAssetAssignmentsHandler(
       params
     );
 
+    // Optional: when includeInFlightReturns=1, also return assignment IDs that have an
+    // in-progress (not declined) return form so the Assets Return page can block them.
+    let inFlightReturnAssignmentIds: string[] = [];
+    if (req.query.includeInFlightReturns === '1') {
+      const [inFlightRows] = (await pool.execute(
+        `SELECT DISTINCT ar.assignment_id
+         FROM asset_returns ar
+         JOIN asset_return_forms arf ON ar.form_id = arf.formID
+         JOIN asset_assignments aa ON ar.assignment_id = aa.assignmentID
+         JOIN assets a ON aa.asset_id = a.assetID
+         WHERE ar.deleted_at IS NULL
+           AND arf.deleted_at IS NULL
+           AND arf.declined_at IS NULL
+           AND arf.processor_declined_at IS NULL
+           AND a.company_id = ?`,
+        [companyId]
+      )) as any[];
+      inFlightReturnAssignmentIds = (inFlightRows || []).map(
+        (r: any) => r.assignment_id
+      );
+    }
+
     return res.json({
       assignments: rows.map(r => mapAssignmentRow(r)),
+      inFlightReturnAssignmentIds,
     });
   } catch (error: any) {
     logger.error('Get filtered asset assignments failed:', error);
