@@ -116,6 +116,7 @@ type LinkedTransferProcessorSource = {
 export async function resolveReturnProcessorFieldsForBatch(
 form: {
     formID?: string | null;
+    user_id?: string | null | undefined;
     created_by?: string | null | undefined;
     process_signed_at?: string | null | undefined;
     process_digital_signature?: string | null | undefined;
@@ -167,8 +168,14 @@ form: {
     }
   }
 
+  // Never treat the returner (asset owner) as the processor. In transfer-request
+  // flows created_by can be the returner (or the requestor's dept head), so only
+  // fall back to created_by when it is a different user than the returner.
   const processorUserId =
-    form.process_signed_by ?? tf?.created_by ?? form.created_by ?? null;
+    form.process_signed_by ??
+    (form.created_by && form.created_by !== form.user_id
+      ? (form.created_by ?? null)
+      : null);
   if (!processDigitalSignature && processSignedAt && processorUserId) {
     processDigitalSignature =
       await fetchUserDigitalSignature(processorUserId);
@@ -2248,8 +2255,21 @@ export async function getAssetReturnsHandler(req: AuthRequest, res: Response) {
       assetReturns.map((r: AssetReturn) => enrichReturnWithDetails(r))
     );
 
-    // Fetch all return forms (including declined) for full history and status
-    const formsRows = await fetchAssetReturnFormsRowsForUserList();
+    // Scope list by the user's company and IT/Admin department scope.
+    const scope = await getAssetScope(pool, req.user!.userID);
+    const scopeCompanyId = scope.companyId ?? undefined;
+    const scopeDeptIds = scope.departmentIds?.length
+      ? scope.departmentIds
+      : undefined;
+
+    // Fetch all return forms (including declined) for full history and status.
+    // Department scope applies to the general listing only; a self-view
+    // (requestedUserId) stays company-scoped so the user's own returns are
+    // never hidden by their asset scope.
+    const formsRows = await fetchAssetReturnFormsRowsForUserList(
+      scopeCompanyId,
+      requestedUserId ? undefined : scopeDeptIds
+    );
     let forms = (formsRows ?? []) as (AssetReturnForm & {
       declined_at?: string | null;
       declined_by?: string | null;
@@ -2579,6 +2599,7 @@ export async function getAssetReturnsHandler(req: AuthRequest, res: Response) {
       const processorFields = await resolveReturnProcessorFieldsForBatch(
         {
           formID: form.formID,
+          user_id: form.user_id,
           created_by: form.created_by,
           process_signed_at: formWithProcess.process_signed_at,
           process_digital_signature: formWithProcess.process_digital_signature,
@@ -2985,9 +3006,18 @@ export async function signAssetReturnFormHandler(
           ? `${signerRow.first_name} ${signerRow.last_name}`.trim()
           : 'A user';
         const returnsForForm = await AssetReturnModel.findByFormId(formId);
-        const assetCount = Array.isArray(returnsForForm)
+        let assetCount = Array.isArray(returnsForForm)
           ? returnsForForm.length
           : 0;
+        // Held-transfer flow: asset_returns rows are only created at execution time,
+        // so derive the count from the linked transfer form's assignments instead.
+        if (assetCount === 0) {
+          const linkedTransferFormIds = await getTransferFormIdsByReturnFormId(formId);
+          for (const linkedTransferFormId of linkedTransferFormIds) {
+            const linkedAssignments = await getTransferFormAssignments(linkedTransferFormId);
+            assetCount += (linkedAssignments || []).length;
+          }
+        }
 
         const io = getIoInstance();
         for (const approverUserId of managerApprover1UserIds) {
@@ -3272,6 +3302,7 @@ export async function getPendingApprovalsHandler(
       const processorFields = await resolveReturnProcessorFieldsForBatch(
         {
           formID: form.formID,
+          user_id: form.user_id,
           created_by: form.created_by,
           process_signed_at: form.process_signed_at,
           process_digital_signature: form.process_digital_signature,
@@ -3373,11 +3404,21 @@ export async function getApprovedByMeHandler(req: AuthRequest, res: Response) {
       }
     }
 
-    const approverNameRow = await getUserNamesById(userId);
-    const approverName = approverNameRow
-      ? `${approverNameRow.first_name || ''} ${approverNameRow.last_name || ''}`.trim() ||
-        'Unknown'
-      : 'Unknown';
+    const deptHeadSignedByIds = [
+      ...new Set(
+        formRows.map((f: any) => f.dept_head_signed_by).filter(Boolean)
+      ),
+    ] as string[];
+    const deptHeadNames = new Map<string, string>();
+    if (deptHeadSignedByIds.length > 0) {
+      const deptHeadUserRows = await getUserNamesByIds(deptHeadSignedByIds);
+      for (const u of deptHeadUserRows) {
+        deptHeadNames.set(
+          u.userID,
+          `${u.first_name || ''} ${u.last_name || ''}`.trim() || 'Unknown'
+        );
+      }
+    }
 
     const itManagerSignedByIds = [
       ...new Set(
@@ -3435,6 +3476,7 @@ export async function getApprovedByMeHandler(req: AuthRequest, res: Response) {
       const processorFields = await resolveReturnProcessorFieldsForBatch(
         {
           formID: form.formID,
+          user_id: form.user_id,
           created_by: form.created_by,
           process_signed_at: form.process_signed_at,
           process_digital_signature: form.process_digital_signature,
@@ -3464,7 +3506,9 @@ export async function getApprovedByMeHandler(req: AuthRequest, res: Response) {
         ),
         dept_head_digital_signature: form.dept_head_digital_signature ?? null,
         dept_head_signed_by: form.dept_head_signed_by ?? null,
-        dept_head_user_name: approverName,
+        dept_head_user_name: form.dept_head_signed_by
+          ? (deptHeadNames.get(form.dept_head_signed_by) ?? null)
+          : null,
         it_manager_signed_at: formatItManagerSignedAtForApi(
           form.it_manager_signed_at
         ),
@@ -3611,6 +3655,113 @@ export async function getPendingStaffHandler(req: AuthRequest, res: Response) {
     return res
       .status(500)
       .json({ error: 'Failed to fetch pending staff forms' });
+  }
+}
+
+/** GET return forms processed by the current user. Mirrors getPendingStaffHandler but filters forms where process_signed_at is set and process_signed_by matches the current user. */
+export async function getReturnProcessedByMeHandler(
+  req: AuthRequest,
+  res: Response
+) {
+  try {
+    const userId = req.user!.userID;
+
+    const [formRows] = (await pool.execute(
+      `SELECT arf.formID, arf.form_number, arf.user_id, arf.department_id, arf.location_id, arf.location_room_id, arf.created_by, arf.created_at, arf.updated_at, arf.deleted_at,
+        arf.signed_at, arf.signed_by, arf.signed_digital_signature,
+        DATE_FORMAT(arf.process_signed_at, '%Y-%m-%d %H:%i:%s') AS process_signed_at,
+        arf.process_digital_signature, arf.process_signed_by, arf.return_type, arf.received_by,
+        DATE_FORMAT(arf.dept_head_signed_at, '%Y-%m-%d %H:%i:%s') AS dept_head_signed_at,
+        arf.dept_head_digital_signature, arf.dept_head_signed_by,
+        d.company_id AS form_company_id, d.name AS form_department_name
+       FROM asset_return_forms arf
+       LEFT JOIN asset_mngmnt_departments d ON arf.department_id = d.departmentID
+       WHERE arf.deleted_at IS NULL
+         AND arf.process_signed_at IS NOT NULL
+         AND arf.process_signed_by = ?
+       ORDER BY arf.process_signed_at DESC`,
+      [userId]
+    )) as any[];
+
+    const formIds = (formRows as any[]).map((r: any) => r.formID);
+    if (formIds.length === 0) {
+      return res.json({ assetReturnForms: [] });
+    }
+
+    const assetReturns = await AssetReturnModel.findAll();
+    const returnsWithDetails = await Promise.all(
+      assetReturns.map((r: AssetReturn) => enrichReturnWithDetails(r))
+    );
+    const returnsByFormId = new Map<string, (typeof returnsWithDetails)[0][]>();
+    for (const r of returnsWithDetails as (typeof returnsWithDetails)[0][]) {
+      const fid = (r as AssetReturn & { form_id?: string | null }).form_id;
+      if (fid && formIds.includes(fid)) {
+        if (!returnsByFormId.has(fid)) returnsByFormId.set(fid, []);
+        returnsByFormId.get(fid)!.push(r);
+      }
+    }
+
+    const processorNames = await getUserNamesById(userId);
+    const processedByName = processorNames
+      ? `${processorNames.first_name || ''} ${processorNames.last_name || ''}`
+          .trim() || 'Unknown'
+      : 'Unknown';
+
+    const assetReturnForms: {
+      formID: string;
+      form_number: string | null;
+      created_at: string;
+      user_id: string;
+      processed_by: string;
+      signed_at?: string | null;
+      signed_by?: string | null;
+      signed_digital_signature?: string | null;
+      process_signed_at?: string | null;
+      process_digital_signature?: string | null;
+      processor_pending_signed_at?: string | null;
+      processor_pending_signature?: string | null;
+      return_type?: string | null;
+      received_by?: string | null;
+      dept_head_signed_at?: string | null;
+      dept_head_digital_signature?: string | null;
+      dept_head_signed_by?: string | null;
+      returns: (typeof returnsWithDetails)[0][];
+    }[] = [];
+
+    for (const form of formRows as any[]) {
+      const returns = returnsByFormId.get(form.formID) ?? [];
+      if (returns.length === 0) continue;
+      assetReturnForms.push({
+        formID: form.formID,
+        form_number: form.form_number,
+        created_at: form.created_at,
+        user_id: form.user_id,
+        processed_by: processedByName,
+        signed_at: form.signed_at ?? null,
+        signed_by: form.signed_by ?? null,
+        signed_digital_signature: form.signed_digital_signature ?? null,
+        process_signed_at: formatProcessSignedAtForApi(form.process_signed_at),
+        process_digital_signature: form.process_digital_signature ?? null,
+        return_type:
+          form.return_type ??
+          (form as { RETURN_TYPE?: string | null }).RETURN_TYPE ??
+          null,
+        received_by: form.received_by ?? null,
+        dept_head_signed_at: formatDeptHeadSignedAtForApi(
+          form.dept_head_signed_at
+        ),
+        dept_head_digital_signature: form.dept_head_digital_signature ?? null,
+        dept_head_signed_by: form.dept_head_signed_by ?? null,
+        returns,
+      });
+    }
+
+    return res.json({ assetReturnForms });
+  } catch (error: any) {
+    logger.error('Get return processed by me failed:', error);
+    return res
+      .status(500)
+      .json({ error: 'Failed to fetch processed return forms' });
   }
 }
 
@@ -3770,6 +3921,7 @@ export async function getReceivePendingApprovalsHandler(
       const processorFields = await resolveReturnProcessorFieldsForBatch(
         {
           formID: form.formID,
+          user_id: form.user_id,
           created_by: form.created_by,
           process_signed_at: form.process_signed_at,
           process_digital_signature: form.process_digital_signature,

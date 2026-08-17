@@ -63,9 +63,40 @@ SELECT arf.formID, arf.form_number, arf.user_id, arf.department_id, arf.location
        LEFT JOIN asset_mngmnt_departments d ON arf.department_id = d.departmentID
        WHERE arf.deleted_at IS NULL ORDER BY arf.created_at DESC`;
 
-export async function fetchAssetReturnFormsRowsForUserList(): Promise<any[]> {
+export function buildReturnScopeClause(
+  companyId?: string,
+  departmentIds?: string[]
+): { sql: string; params: unknown[] } {
+  const parts: string[] = [];
+  const params: unknown[] = [];
+  if (companyId) {
+    parts.push('d.company_id = ?');
+    params.push(companyId);
+  }
+  if (departmentIds && departmentIds.length > 0) {
+    const ph = departmentIds.map(() => '?').join(',');
+    parts.push(`d.departmentID IN (${ph})`);
+    params.push(...departmentIds);
+  }
+  return {
+    sql: parts.length > 0 ? ` AND ${parts.join(' AND ')}` : '',
+    params,
+  };
+}
+
+export async function fetchAssetReturnFormsRowsForUserList(
+  companyId?: string,
+  departmentIds?: string[]
+): Promise<any[]> {
+  const scopeClause = buildReturnScopeClause(companyId, departmentIds);
   try {
-    const [rows] = await pool.execute(ASSET_RETURN_FORMS_LIST_SQL_FULL);
+    const [rows] = await pool.execute(
+      ASSET_RETURN_FORMS_LIST_SQL_FULL.replace(
+        'WHERE arf.deleted_at IS NULL',
+        `WHERE arf.deleted_at IS NULL${scopeClause.sql}`
+      ),
+      scopeClause.params
+    );
     return rows as any[];
   } catch (e: unknown) {
     if (!isMysqlUnknownColumnError(e)) throw e;
@@ -73,7 +104,13 @@ export async function fetchAssetReturnFormsRowsForUserList(): Promise<any[]> {
       'asset_return_forms: full column list unavailable; using fallback query',
       e
     );
-    const [rows] = await pool.execute(ASSET_RETURN_FORMS_LIST_SQL_FALLBACK);
+    const [rows] = await pool.execute(
+      ASSET_RETURN_FORMS_LIST_SQL_FALLBACK.replace(
+        'WHERE arf.deleted_at IS NULL',
+        `WHERE arf.deleted_at IS NULL${scopeClause.sql}`
+      ),
+      scopeClause.params
+    );
     return (rows as any[]).map(r => ({
       ...r,
       process_user_position: null,

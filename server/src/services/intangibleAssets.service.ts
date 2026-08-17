@@ -17,6 +17,10 @@ export async function getActiveAssignmentsByUser(userId: string, companyId: stri
   return intangibleAssetsRepository.getActiveAssignmentsByUser(userId, companyId);
 }
 
+export async function getActiveAssignmentsByAsset(intangibleAssetId: string) {
+  return intangibleAssetsRepository.getActiveAssignmentsByAsset(intangibleAssetId);
+}
+
 export async function createIntangibleAsset(data: {
   name: string;
   description: string | null;

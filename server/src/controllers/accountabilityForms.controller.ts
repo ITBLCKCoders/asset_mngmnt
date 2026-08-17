@@ -8,6 +8,7 @@ import * as checklistRepo from '../repositories/assetChecklist.repository.js';
 import { declineAccountabilityFormBodySchema } from '../dtos/accountabilityForms/DeclineAccountabilityFormDto.js';
 import { applyReturnAssignmentSideEffectsOnConnection } from '../utils/returnAssignmentSideEffects.js';
 import { signedRawUrlFromStoredSecureUrl } from '../utils/cloudinary.js';
+import { getAssetScope } from '../utils/assetScope.js';
 import { emitNotification } from '../sockets/socketHandlers.js';
 import { createNotificationForApi } from '../utils/notificationsApi.js';
 import { getHrAccountabilityReceiverUserIds } from '../utils/approverNotifications.js';
@@ -1055,9 +1056,29 @@ export async function getAccountabilityFormsHandler(
   try {
     const { userId, status } = req.query;
 
+    // Scope list by company and by the user's IT/Admin department scope.
+    // HR accountability receivers are exempt so they can keep handling
+    // 201-file copies across companies (client drives the company filter).
+    const scope = await getAssetScope(pool, req.user!.userID);
+    const isHrReceiver = await userHasHrAccountabilityReceiverAccess(
+      req.user!.userID
+    );
+    const companyId = isHrReceiver ? undefined : (scope.companyId ?? undefined);
+    // IT/Admin department scope applies to the general listing only; a
+    // specific userId query (documents tab, return flow) stays company-scoped
+    // so an employee's own forms are never hidden by their asset scope.
+    const departmentIds =
+      isHrReceiver || typeof userId === 'string'
+        ? undefined
+        : scope.departmentIds?.length
+          ? scope.departmentIds
+          : undefined;
+
     const rows = await repo.listAccountabilityForms({
       userId: typeof userId === 'string' ? userId : undefined,
       status: typeof status === 'string' ? status : undefined,
+      companyId,
+      departmentIds,
     });
 
     const forms = rows.map((row: any) => {

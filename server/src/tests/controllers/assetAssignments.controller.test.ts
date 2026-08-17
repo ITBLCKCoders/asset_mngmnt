@@ -279,9 +279,15 @@ describe('assetAssignments.controller', () => {
 
   describe('getAssetChecklistsHandler', () => {
     it('returns checklists list', async () => {
+      getAssetScope.mockResolvedValue(defaultScope);
       checklistListRepo.getAssetChecklists.mockResolvedValue([{ id: 'c1' }]);
       await assetAssignmentsController.getAssetChecklistsHandler(req, res);
       expect(res._json.checklists).toHaveLength(1);
+      expect(checklistListRepo.getAssetChecklists).toHaveBeenCalledWith(
+        undefined,
+        10,
+        undefined
+      );
     });
   });
 

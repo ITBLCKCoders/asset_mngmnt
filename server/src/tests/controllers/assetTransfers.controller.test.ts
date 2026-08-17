@@ -163,6 +163,51 @@ describe('assetTransfers.controller', () => {
       expect(res._json.message).toContain('signed');
     });
 
+    it('notifies Manager Approver 1 users after the transferrer signs the form', async () => {
+      req.params = { formId: 'f1' };
+      req.body = { digitalSignature: 'sig' };
+      formModel.findById.mockResolvedValue({ ...mockForm, form_number: 'TRF-001', user_id: 'u1', department_id: 'd1' });
+      fetchUserDigitalSignature.mockResolvedValue('dig-sig');
+      transferRepo.getUserDepartmentId.mockResolvedValue('d1');
+      transferRepo.getDepartmentById.mockResolvedValue({ company_id: '10' });
+      transferRepo.getUserNamesById.mockResolvedValue({ first_name: 'John', last_name: 'Doe' });
+      formModel.getFormAssignmentIds.mockResolvedValue(['a1', 'a2']);
+      getManagerApprover1UserIdsInDepartmentAndCompany.mockResolvedValue(['u-ma1']);
+      await assetTransfersController.signAssetTransferFormHandler(req, res);
+      expect(res._json.message).toContain('signed');
+      expect(getManagerApprover1UserIdsInDepartmentAndCompany).toHaveBeenCalledWith('d1', '10');
+      expect(createNotificationForApi).toHaveBeenCalledWith(
+        expect.objectContaining({
+          user_id: 'u-ma1',
+          title: 'Asset Transfer Request Approval Needed',
+          message:
+            'John Doe has signed the asset transfer form for 2 assets and requires your approval.',
+          data: expect.objectContaining({
+            form_id: 'f1',
+            form_number: 'TRF-001',
+            asset_count: 2,
+            route: '/approvals',
+            actionTarget: 'transfer_request_approval',
+          }),
+        })
+      );
+    });
+
+    it('skips notification when approver is the transferrer themselves', async () => {
+      req.params = { formId: 'f1' };
+      req.body = { digitalSignature: 'sig' };
+      formModel.findById.mockResolvedValue({ ...mockForm, user_id: 'u1', department_id: 'd1' });
+      fetchUserDigitalSignature.mockResolvedValue('dig-sig');
+      transferRepo.getUserDepartmentId.mockResolvedValue('d1');
+      transferRepo.getDepartmentById.mockResolvedValue({ company_id: '10' });
+      transferRepo.getUserNamesById.mockResolvedValue({ first_name: 'John', last_name: 'Doe' });
+      formModel.getFormAssignmentIds.mockResolvedValue(['a1']);
+      getManagerApprover1UserIdsInDepartmentAndCompany.mockResolvedValue(['u1']);
+      await assetTransfersController.signAssetTransferFormHandler(req, res);
+      expect(res._json.message).toContain('signed');
+      expect(createNotificationForApi).not.toHaveBeenCalled();
+    });
+
     it('returns 404 when form not found', async () => {
       req.params = { formId: 'f1' };
       formModel.findById.mockResolvedValue(null);
@@ -454,8 +499,8 @@ describe('assetTransfers.controller', () => {
       };
       pool.execute.mockImplementation(async (sql: string) => {
         if (sql.includes('asset_transfer_forms')) return [[formRow], []];
-        if (sql.includes('SELECT first_name, last_name FROM users')) {
-          return [[{ first_name: 'Jane', last_name: 'Doe' }], []];
+        if (sql.includes('SELECT userID, first_name, last_name FROM users')) {
+          return [[{ userID: 'proc-1', first_name: 'Jane', last_name: 'Doe' }], []];
         }
         return [[], []];
       });

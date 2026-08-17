@@ -1076,7 +1076,15 @@ export async function getAssetChecklistsHandler(
 ) {
   try {
     const employeeId = req.query.employee_id as string | undefined;
-    const checklists = await checklistListRepo.getAssetChecklists(employeeId);
+    const { companyId, departmentIds } = await getAssetScope(
+      pool,
+      req.user!.userID
+    );
+    const checklists = await checklistListRepo.getAssetChecklists(
+      employeeId,
+      companyId ?? undefined,
+      employeeId ? undefined : departmentIds?.length ? departmentIds : undefined
+    );
     return res.status(200).json({ checklists });
   } catch (error) {
     logger.error('Get asset checklists failed:', error);

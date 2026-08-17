@@ -5,6 +5,7 @@ import { createMockRes } from '../helpers/mockRes.js';
 jest.mock('../../db.js', () => ({ pool: { execute: jest.fn(), query: jest.fn(), getConnection: jest.fn() } }));
 jest.mock('../../logger.js', () => ({ __esModule: true, default: { error: jest.fn(), info: jest.fn(), warn: jest.fn(), debug: jest.fn() } }));
 jest.mock('../../utils/audit.js', () => ({ createAuditLog: jest.fn() }));
+jest.mock('../../utils/assetScope.js', () => ({ getAssetScope: jest.fn() }));
 jest.mock('../../utils/cloudinary.js', () => ({ signedRawUrlFromStoredSecureUrl: jest.fn() }));
 jest.mock('../../utils/returnAssignmentSideEffects.js', () => ({ applyReturnAssignmentSideEffectsOnConnection: jest.fn() }));
 jest.mock('../../utils/notificationsApi.js', () => ({ createNotificationForApi: jest.fn() }));
@@ -62,6 +63,7 @@ const { pool } = jest.requireMock('../../db.js');
 const repo = jest.requireMock('../../repositories/accountabilityForm.repository.js');
 const checklistRepo = jest.requireMock('../../repositories/assetChecklist.repository.js');
 const { createAuditLog } = jest.requireMock('../../utils/audit.js');
+const { getAssetScope } = jest.requireMock('../../utils/assetScope.js');
 const { createNotificationForApi } = jest.requireMock('../../utils/notificationsApi.js');
 const { getHrAccountabilityReceiverUserIds } = jest.requireMock('../../utils/approverNotifications.js');
 const { NotificationService } = jest.requireMock('../../services/notification.service.js');
@@ -119,25 +121,88 @@ describe('accountabilityForms.controller', () => {
   });
 
   describe('getAccountabilityFormsHandler', () => {
-    it('returns all forms without filters', async () => {
+    it('returns all forms scoped to the user company without dept filter', async () => {
+      getAssetScope.mockResolvedValue({
+        companyId: 'c1',
+        departmentIds: null,
+        isSuperAdmin: false,
+      });
       repo.listAccountabilityForms.mockResolvedValue([mockFormRow]);
       await accountabilityFormsController.getAccountabilityFormsHandler(req, res);
       expect(res._json.forms).toHaveLength(1);
-      expect(repo.listAccountabilityForms).toHaveBeenCalledWith({ userId: undefined, status: undefined });
+      expect(repo.listAccountabilityForms).toHaveBeenCalledWith({
+        userId: undefined,
+        status: undefined,
+        companyId: 'c1',
+        departmentIds: undefined,
+      });
+    });
+
+    it('passes the IT/Admin department scope ids when the role is scoped', async () => {
+      getAssetScope.mockResolvedValue({
+        companyId: 'c1',
+        departmentIds: ['d-it-1', 'd-it-2'],
+        isSuperAdmin: false,
+      });
+      repo.listAccountabilityForms.mockResolvedValue([mockFormRow]);
+      await accountabilityFormsController.getAccountabilityFormsHandler(req, res);
+      expect(repo.listAccountabilityForms).toHaveBeenCalledWith({
+        userId: undefined,
+        status: undefined,
+        companyId: 'c1',
+        departmentIds: ['d-it-1', 'd-it-2'],
+      });
+    });
+
+    it('exempts HR accountability receivers from company/dept scoping', async () => {
+      getAssetScope.mockResolvedValue({
+        companyId: 'c1',
+        departmentIds: ['d-it-1'],
+        isSuperAdmin: false,
+      });
+      pool.execute.mockResolvedValue([[{}], []]);
+      repo.listAccountabilityForms.mockResolvedValue([mockFormRow]);
+      await accountabilityFormsController.getAccountabilityFormsHandler(req, res);
+      expect(repo.listAccountabilityForms).toHaveBeenCalledWith({
+        userId: undefined,
+        status: undefined,
+        companyId: undefined,
+        departmentIds: undefined,
+      });
     });
 
     it('filters by userId query param', async () => {
+      getAssetScope.mockResolvedValue({
+        companyId: 'c1',
+        departmentIds: null,
+        isSuperAdmin: false,
+      });
       req.query = { userId: 'u1' };
       repo.listAccountabilityForms.mockResolvedValue([mockFormRow]);
       await accountabilityFormsController.getAccountabilityFormsHandler(req, res);
-      expect(repo.listAccountabilityForms).toHaveBeenCalledWith({ userId: 'u1', status: undefined });
+      expect(repo.listAccountabilityForms).toHaveBeenCalledWith({
+        userId: 'u1',
+        status: undefined,
+        companyId: 'c1',
+        departmentIds: undefined,
+      });
     });
 
     it('filters by status query param', async () => {
+      getAssetScope.mockResolvedValue({
+        companyId: 'c1',
+        departmentIds: null,
+        isSuperAdmin: false,
+      });
       req.query = { status: 'Pending' };
       repo.listAccountabilityForms.mockResolvedValue([mockFormRow]);
       await accountabilityFormsController.getAccountabilityFormsHandler(req, res);
-      expect(repo.listAccountabilityForms).toHaveBeenCalledWith({ userId: undefined, status: 'Pending' });
+      expect(repo.listAccountabilityForms).toHaveBeenCalledWith({
+        userId: undefined,
+        status: 'Pending',
+        companyId: 'c1',
+        departmentIds: undefined,
+      });
     });
   });
 

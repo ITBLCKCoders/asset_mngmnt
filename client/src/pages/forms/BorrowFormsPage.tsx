@@ -36,6 +36,7 @@ import {
   SelectValue,
 } from '@/components/ui/select';
 import { classifyDepartmentScopeByName } from '@/lib/assetScope';
+import { getRoleAssetTypeScope } from '@/utils/roleAssetTypeScope';
 
 type AssetTypeFilter = 'all' | 'it' | 'admin';
 
@@ -58,6 +59,11 @@ export default function BorrowFormsPage() {
   const [companyFilterId, setCompanyFilterId] = useState('');
   const [departmentFilterId, setDepartmentFilterId] = useState('');
   const [assetTypeFilter, setAssetTypeFilter] = useState<AssetTypeFilter>('all');
+  const { roleScope: userRoleScope, isRoleScoped: isAssetTypeRoleScoped } =
+    getRoleAssetTypeScope(currentUser?.role?.asset_type);
+  const effectiveAssetTypeFilter: AssetTypeFilter = isAssetTypeRoleScoped
+    ? userRoleScope
+    : assetTypeFilter;
   const [activeCompany, setActiveCompany] = useState<ActiveCompany | null>(null);
   
   // Auto-set company filter to user's company if they have one
@@ -165,13 +171,13 @@ export default function BorrowFormsPage() {
     });
 
     // Apply asset type filter
-    if (assetTypeFilter !== 'all') {
-      const targetScope = assetTypeFilter === 'it' ? 'it' : 'admin';
+    if (effectiveAssetTypeFilter !== 'all') {
+      const targetScope = effectiveAssetTypeFilter === 'it' ? 'it' : 'admin';
       result = result.filter(batch => batch.borrow_scope === targetScope);
     }
 
     return result;
-  }, [activeCompany, batches, companyFilterId, departmentFilterId, assetTypeFilter]);
+  }, [activeCompany, batches, companyFilterId, departmentFilterId, effectiveAssetTypeFilter]);
 
   const filteredBatches = useMemo(() => {
     if (!searchQuery.trim()) return orgFilteredBatches;
@@ -282,44 +288,46 @@ export default function BorrowFormsPage() {
                 </div>
               </div>
             </div>
-            <div className="flex gap-2 flex-wrap">
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={() => setAssetTypeFilter('all')}
-                className={
-                  assetTypeFilter === 'all'
-                    ? 'bg-red-600 text-white hover:bg-red-700 hover:text-white border-red-600'
-                    : ''
-                }
-              >
-                All Assets
-              </Button>
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={() => setAssetTypeFilter('it')}
-                className={
-                  assetTypeFilter === 'it'
-                    ? 'bg-red-600 text-white hover:bg-red-700 hover:text-white border-red-600'
-                    : ''
-                }
-              >
-                IT Assets
-              </Button>
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={() => setAssetTypeFilter('admin')}
-                className={
-                  assetTypeFilter === 'admin'
-                    ? 'bg-red-600 text-white hover:bg-red-700 hover:text-white border-red-600'
-                    : ''
-                }
-              >
-                Admin Assets
-              </Button>
-            </div>
+            {!isAssetTypeRoleScoped && (
+              <div className="flex gap-2 flex-wrap">
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => setAssetTypeFilter('all')}
+                  className={
+                    effectiveAssetTypeFilter === 'all'
+                      ? 'bg-red-600 text-white hover:bg-red-700 hover:text-white border-red-600'
+                      : ''
+                  }
+                >
+                  All Assets
+                </Button>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => setAssetTypeFilter('it')}
+                  className={
+                    effectiveAssetTypeFilter === 'it'
+                      ? 'bg-red-600 text-white hover:bg-red-700 hover:text-white border-red-600'
+                      : ''
+                  }
+                >
+                  IT Assets
+                </Button>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => setAssetTypeFilter('admin')}
+                  className={
+                    effectiveAssetTypeFilter === 'admin'
+                      ? 'bg-red-600 text-white hover:bg-red-700 hover:text-white border-red-600'
+                      : ''
+                  }
+                >
+                  Admin Assets
+                </Button>
+              </div>
+            )}
           </div>
 
           <div className="flex items-center gap-2 mb-4">

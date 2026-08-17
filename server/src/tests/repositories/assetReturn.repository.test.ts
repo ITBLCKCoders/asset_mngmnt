@@ -10,6 +10,8 @@ const {
   getReturnFormById,
   getCategoryDepartmentForAssetIds,
   fetchUserDigitalSignature,
+  buildReturnScopeClause,
+  fetchAssetReturnFormsRowsForUserList,
 } = require('../../repositories/assetReturn.repository.js');
 
 describe('assetReturn.repository', () => {
@@ -56,6 +58,48 @@ describe('assetReturn.repository', () => {
       mockPool.execute.mockResolvedValue([[[]], []]);
       const result = await fetchUserDigitalSignature('nonexistent');
       expect(result).toBeNull();
+    });
+  });
+
+  describe('buildReturnScopeClause', () => {
+    it('should return empty clause when no scope given', () => {
+      const clause = buildReturnScopeClause();
+      expect(clause.sql).toBe('');
+      expect(clause.params).toEqual([]);
+    });
+
+    it('should build company clause with leading space and params', () => {
+      const clause = buildReturnScopeClause('c1');
+      expect(clause.sql).toBe(' AND d.company_id = ?');
+      expect(clause.params).toEqual(['c1']);
+    });
+
+    it('should build company and department clause with leading spaces', () => {
+      const clause = buildReturnScopeClause('c1', ['d1', 'd2']);
+      expect(clause.sql).toBe(' AND d.company_id = ? AND d.departmentID IN (?,?)');
+      expect(clause.params).toEqual(['c1', 'd1', 'd2']);
+    });
+
+    it('should build department-only clause', () => {
+      const clause = buildReturnScopeClause(undefined, ['d1']);
+      expect(clause.sql).toBe(' AND d.departmentID IN (?)');
+      expect(clause.params).toEqual(['d1']);
+    });
+  });
+
+  describe('fetchAssetReturnFormsRowsForUserList', () => {
+    it('should concatenate scope clause after WHERE without missing space', async () => {
+      mockPool.execute.mockResolvedValue([[{ formID: 'f1' }], []]);
+      await fetchAssetReturnFormsRowsForUserList('c1');
+      const calledSql = mockPool.execute.mock.calls[0][0];
+      expect(calledSql).toContain('WHERE arf.deleted_at IS NULL AND d.company_id = ?');
+      expect(calledSql).not.toContain('NULLAND');
+    });
+
+    it('should pass scope params to execute', async () => {
+      mockPool.execute.mockResolvedValue([[{ formID: 'f1' }], []]);
+      await fetchAssetReturnFormsRowsForUserList('c1', ['d1']);
+      expect(mockPool.execute.mock.calls[0][1]).toEqual(['c1', 'd1']);
     });
   });
 });

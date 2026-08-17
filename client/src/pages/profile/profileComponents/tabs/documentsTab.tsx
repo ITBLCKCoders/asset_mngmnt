@@ -1091,6 +1091,18 @@ export const ReturnFormCard: React.FC<{
               </div>
             )}
 
+            {/* Received by (IT Manager / IT Department Head) */}
+            {batch.it_manager_signed_at && (
+              <div className="flex items-start gap-3">
+                <User className="h-4 w-4 text-gray-400 mt-0.5 flex-shrink-0" />
+                <div className="flex-1 min-w-0">
+                  <p className="font-medium text-sm">
+                    Received by: {batch.it_manager_user_name ?? '—'}
+                  </p>
+                </div>
+              </div>
+            )}
+
             {/* Return date */}
             <div className="flex items-start gap-3">
               <Calendar className="h-4 w-4 text-gray-400 mt-0.5 flex-shrink-0" />
@@ -1677,6 +1689,18 @@ export const TransferFormCard: React.FC<{
                         ? `Processed by: ${batch.processed_by ?? '—'}`
                         : `Processor: ${batch.processed_by ?? '—'} (pending sign)`
                       : 'Processor: Pending manager approval'}
+                  </p>
+                </div>
+              </div>
+            )}
+
+            {/* Received by (IT Manager) */}
+            {batch.it_manager_signed_at && (
+              <div className="flex items-start gap-3">
+                <User className="h-4 w-4 text-gray-400 mt-0.5 flex-shrink-0" />
+                <div className="flex-1 min-w-0">
+                  <p className="font-medium text-sm">
+                    Received by: {batch.it_manager_user_name ?? '—'}
                   </p>
                 </div>
               </div>
@@ -2534,6 +2558,14 @@ export interface AssetTransferFormBatch {
   it_manager_user_name?: string | null;
   /** True when the asset owner is marked absent (processor-initiated hold transfer) */
   owner_absent?: boolean;
+  /** Intangible assets linked to this transfer form (persisted at creation) */
+  intangibleAssets?: Array<{
+    id: string;
+    name: string;
+    type: string;
+    description: string | null;
+    notes: string | null;
+  }>;
   returns: AssetReturnForm[];
 }
 

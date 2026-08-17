@@ -40,6 +40,13 @@ export interface AssetTransferData {
     transferNotes?: string;
     imageUrls?: string[];
   }>;
+  intangibleAssets?: Array<{
+    id?: string;
+    name: string;
+    type: string;
+    description?: string | null;
+    notes?: string | null;
+  }>;
   department: { id: string; name: string } | null;
   location: {
     id: string;
@@ -334,6 +341,51 @@ export const generateAssetTransferPDF = async (
       doc.setLineWidth(tableLineWidth);
     },
   });
+
+  // Intangible Assets table (Section A) — shown only when intangible assets are selected
+  const intangibleItems = transferData.intangibleAssets ?? [];
+  if (intangibleItems.length > 0) {
+    const intangibleStartY = (doc as any).lastAutoTable.finalY;
+    const intangibleHalfWidth = (tableWidth - conditionWidth) / 2;
+    const intangibleTableBody: (
+      | string
+      | { content: string; colSpan: number }
+    )[][] = [
+      [{ content: 'Intangible Assets', colSpan: 3 }],
+      ['Item', 'Type', 'Description'],
+      ...intangibleItems.map(ia => [
+        ia.name || '—',
+        ia.type || '—',
+        ia.description || '—',
+      ]),
+    ];
+    autoTable(doc, {
+      startY: intangibleStartY,
+      margin: tableMargin,
+      body: intangibleTableBody,
+      theme: 'grid',
+      styles: { fontSize: 8, cellPadding: 2 },
+      columnStyles: {
+        0: { cellWidth: intangibleHalfWidth },
+        1: { cellWidth: intangibleHalfWidth },
+        2: { cellWidth: conditionWidth },
+      },
+      didParseCell: data => {
+        if (data.row.index === 0 || data.row.index === 1) {
+          data.cell.styles.fillColor = headerFillColor;
+          data.cell.styles.textColor = headerTextColor;
+          data.cell.styles.fontStyle = 'bold';
+        }
+        if (data.row.index === 0) {
+          data.cell.styles.halign = 'center';
+        }
+      },
+      willDrawCell: () => {
+        doc.setDrawColor(0, 0, 0);
+        doc.setLineWidth(tableLineWidth);
+      },
+    });
+  }
 
   const sectionBStartY = (doc as any).lastAutoTable.finalY;
   const sectionBHalfWidth = tableWidth / 2;

@@ -146,9 +146,13 @@ export default function ReturnRequestsPage() {
   const { user: currentUser } = useCurrentUser();
   const userCompanyId = currentUser?.company_id;
   const [forms, setForms] = useState<PendingForm[]>([]);
+  const [processedForms, setProcessedForms] = useState<PendingForm[]>([]);
   const [departments, setDepartments] = useState<Department[]>([]);
   const [locations, setLocations] = useState<Location[]>([]);
   const [loading, setLoading] = useState(true);
+  const [processedLoading, setProcessedLoading] = useState(false);
+  const [activeTab, setActiveTab] = useState('request');
+  const [readOnly, setReadOnly] = useState(false);
   const [processForm, setProcessForm] = useState<PendingForm | null>(null);
   const [processorConditions, setProcessorConditions] = useState<
     Record<string, string>
@@ -223,6 +227,22 @@ export default function ReturnRequestsPage() {
     }
   };
 
+  const fetchProcessed = async () => {
+    try {
+      setProcessedLoading(true);
+      const res = await api.get<{ assetReturnForms?: PendingForm[] }>(
+        '/asset-returns/forms/processed-by-me'
+      );
+      setProcessedForms(res.assetReturnForms ?? []);
+    } catch (e) {
+      console.error('Failed to fetch processed return requests', e);
+      toast.error('Failed to load processed return requests');
+      setProcessedForms([]);
+    } finally {
+      setProcessedLoading(false);
+    }
+  };
+
   const fetchDepartments = async () => {
     try {
       const url = userCompanyId ? `/departments?companyId=${userCompanyId}` : '/departments';
@@ -257,6 +277,7 @@ export default function ReturnRequestsPage() {
 
   useEffect(() => {
     fetchPending();
+    fetchProcessed();
     fetchDepartments();
     fetchLocations();
     fetchIntangibleAssets();
@@ -265,7 +286,8 @@ export default function ReturnRequestsPage() {
   // Note: wet-upload notification deep-link is handled on `/assets/return`
   // (processors may not have `Return Request` permission).
 
-  const openProcessModal = (form: PendingForm) => {
+  const openProcessModal = (form: PendingForm, isReadOnly = false) => {
+    setReadOnly(isReadOnly);
     setProcessForm(form);
     const initialConditions: Record<string, string> = {};
     const initialNotes: Record<string, string> = {};
@@ -287,9 +309,16 @@ export default function ReturnRequestsPage() {
     setProcessorConditions(initialConditions);
     setProcessorNotes(initialNotes);
     setProcessorConditionImages(initialConditionImages);
-    setSharedReturnDepartmentId('');
-    setSharedReturnLocationId('');
-    setSharedReturnAreaId('');
+    if (isReadOnly) {
+      const first = form.returns[0];
+      setSharedReturnDepartmentId(first?.return_department_id ?? '');
+      setSharedReturnLocationId(first?.return_location_id ?? '');
+      setSharedReturnAreaId(first?.return_location_room_id ?? '');
+    } else {
+      setSharedReturnDepartmentId('');
+      setSharedReturnLocationId('');
+      setSharedReturnAreaId('');
+    }
     setExpandedAssets(
       new Set(form.returns.map(r => r.assignment?.asset?.id ?? r.assignment_id))
     );
@@ -489,6 +518,7 @@ export default function ReturnRequestsPage() {
         toast.success('Return processed successfully');
         setProcessForm(null);
         await fetchPending();
+        await fetchProcessed();
       } catch (err: unknown) {
         const e = err as { data?: { error?: string } };
         toast.error(e?.data?.error ?? 'Failed to process return');
@@ -588,6 +618,7 @@ export default function ReturnRequestsPage() {
         toast.success('Return processed successfully');
         setProcessForm(null);
         await fetchPending();
+        await fetchProcessed();
       } catch (err: unknown) {
         const e = err as { data?: { error?: string } };
         toast.error(e?.data?.error ?? 'Failed to process return');
@@ -719,6 +750,7 @@ export default function ReturnRequestsPage() {
         setDeclineReason('');
         setProcessForm(null);
         await fetchPending();
+        await fetchProcessed();
       } catch (err: unknown) {
         const e = err as { data?: { error?: string } };
         toast.error(e?.data?.error ?? 'Failed to decline return');
@@ -728,6 +760,16 @@ export default function ReturnRequestsPage() {
     };
     setSmsOtpDialogDeclineOpen(true);
   };
+
+  const isProcessedTab = activeTab === 'processed';
+  const listLoading = isProcessedTab ? processedLoading : loading;
+  const listForms = isProcessedTab ? processedForms : forms;
+  const emptyTitle = isProcessedTab
+    ? 'No processed return requests'
+    : 'No pending return requests';
+  const emptyBody = isProcessedTab
+    ? "Returns you've processed will appear here."
+    : 'Requests appear here after a Department Head approves a return request.';
 
   return (
     <div className="min-h-screen">
@@ -746,7 +788,30 @@ export default function ReturnRequestsPage() {
           </Button>
         </PageHeader>
 
-        {loading ? (
+        <Tabs
+          value={activeTab}
+          onValueChange={v => setActiveTab(v)}
+          className="w-full"
+        >
+          <TabsList
+            className={segmentTabsListClassName + ' grid w-full grid-cols-2 mb-4'}
+          >
+            <TabsTrigger
+              value="request"
+              className={segmentTabsTriggerClassName}
+            >
+              Request
+            </TabsTrigger>
+            <TabsTrigger
+              value="processed"
+              className={segmentTabsTriggerClassName}
+            >
+              Processed
+            </TabsTrigger>
+          </TabsList>
+        </Tabs>
+
+        {listLoading ? (
           <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-3">
             {Array.from({ length: 6 }).map((_, index) => (
               <Card
@@ -793,23 +858,21 @@ export default function ReturnRequestsPage() {
               </Card>
             ))}
           </div>
-        ) : forms.length === 0 ? (
+        ) : listForms.length === 0 ? (
           <Card className="shadow-xl border-0 bg-white/80 backdrop-blur-sm">
             <CardContent className="py-12 text-center">
               <div className="inline-flex items-center justify-center w-20 h-20 rounded-full bg-gradient-to-br from-red-100 to-red-200 mb-4">
                 <RotateCcw className="h-10 w-10 text-red-600" />
               </div>
               <h3 className="text-lg font-semibold text-gray-900 mb-2">
-                No pending return requests
+                {emptyTitle}
               </h3>
-              <p className="text-gray-500 text-sm">
-                Requests appear here after a Department Head approves a return request.
-              </p>
+              <p className="text-gray-500 text-sm">{emptyBody}</p>
             </CardContent>
           </Card>
         ) : (
           <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-3">
-            {forms.map(form => {
+            {listForms.map(form => {
               const formNumber = form.form_number ?? form.formID;
               const notesFromReturns = form.returns.map(r => r.return_notes).filter(Boolean);
               const returnTypeNote = form.return_type && String(form.return_type).trim() ? form.return_type : null;
@@ -835,9 +898,13 @@ export default function ReturnRequestsPage() {
                       </div>
                       <Badge
                         variant="secondary"
-                        className="bg-amber-100 text-amber-800 shrink-0 ml-2"
+                        className={
+                          isProcessedTab
+                            ? 'bg-emerald-100 text-emerald-800 shrink-0 ml-2'
+                            : 'bg-amber-100 text-amber-800 shrink-0 ml-2'
+                        }
                       >
-                        Pending
+                        {isProcessedTab ? 'Processed' : 'Pending'}
                       </Badge>
                     </div>
                   </CardHeader>
@@ -903,10 +970,10 @@ export default function ReturnRequestsPage() {
                     <Button
                       className="flex-1 bg-gradient-to-r from-red-500 to-red-600 hover:from-red-600 hover:to-red-700 text-white font-semibold rounded-xl shadow-md"
                       size="sm"
-                      onClick={() => openProcessModal(form)}
+                      onClick={() => openProcessModal(form, isProcessedTab)}
                     >
                       <Eye className="h-4 w-4 mr-2" />
-                      View / Return Asset
+                      {isProcessedTab ? 'View' : 'View / Return Asset'}
                     </Button>
                   </div>
                 </Card>
@@ -932,10 +999,14 @@ export default function ReturnRequestsPage() {
               title={
                 <span className="flex items-center gap-3">
                   <RotateCcw className="h-6 w-6 shrink-0 text-white" />
-                  Asset Return Confirmation
+                  {readOnly ? 'Asset Return Details' : 'Asset Return Confirmation'}
                 </span>
               }
-              description="Please assess the condition of each asset and add any notes."
+              description={
+                readOnly
+                  ? 'Review the completed return details.'
+                  : 'Please assess the condition of each asset and add any notes.'
+              }
             />
 
             {processForm && (
@@ -970,7 +1041,7 @@ export default function ReturnRequestsPage() {
                             ? 'border-red-500 bg-red-50 shadow-sm'
                             : 'border-slate-200 bg-white hover:border-slate-300 hover:bg-slate-50'
                         )}
-                        onClick={() => setReturnType('returned')}
+                        onClick={readOnly ? undefined : () => setReturnType('returned')}
                       >
                         <div
                           className={cn(
@@ -995,7 +1066,7 @@ export default function ReturnRequestsPage() {
                             ? 'border-red-500 bg-red-50 shadow-sm'
                             : 'border-slate-200 bg-white hover:border-slate-300 hover:bg-slate-50'
                         )}
-                        onClick={() => setReturnType('offboarding')}
+                        onClick={readOnly ? undefined : () => setReturnType('offboarding')}
                       >
                         <div
                           className={cn(
@@ -1087,16 +1158,22 @@ export default function ReturnRequestsPage() {
                                         <div
                                           key={opt.value}
                                           className={cn(
-                                            'flex items-center gap-3 p-3 rounded-lg transition-all duration-200 cursor-pointer',
+                                            'flex items-center gap-3 p-3 rounded-lg transition-all duration-200',
+                                            readOnly
+                                              ? 'cursor-default'
+                                              : 'cursor-pointer',
                                             isSelected
                                               ? 'border-2 border-red-500 bg-red-50 shadow-sm'
                                               : 'border-2 border-slate-200 hover:border-slate-300 hover:bg-slate-50'
                                           )}
-                                          onClick={() =>
-                                            setConditionForAssignment(
-                                              aid,
-                                              opt.value
-                                            )
+                                          onClick={
+                                            readOnly
+                                              ? undefined
+                                              : () =>
+                                                  setConditionForAssignment(
+                                                    aid,
+                                                    opt.value
+                                                  )
                                           }
                                         >
                                           <div
@@ -1133,6 +1210,7 @@ export default function ReturnRequestsPage() {
                                   <Textarea
                                     placeholder="Add notes about this asset's return..."
                                     value={notes}
+                                    disabled={readOnly}
                                     onChange={e =>
                                       setNotesForAssignment(aid, e.target.value)
                                     }
@@ -1164,19 +1242,22 @@ export default function ReturnRequestsPage() {
                                               className="h-20 w-20 object-cover"
                                             />
                                         </button>
-                                        <button
-                                          type="button"
-                                          onClick={() =>
-                                            handleImageRemove(aid, idx)
-                                          }
-                                          className="absolute -top-1.5 -right-1.5 h-6 w-6 rounded-full bg-red-500 text-white flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity hover:bg-red-600"
-                                          aria-label="Remove photo"
-                                        >
-                                          <XCircle className="h-4 w-4" />
-                                        </button>
+                                        {!readOnly && (
+                                          <button
+                                            type="button"
+                                            onClick={() =>
+                                              handleImageRemove(aid, idx)
+                                            }
+                                            className="absolute -top-1.5 -right-1.5 h-6 w-6 rounded-full bg-red-500 text-white flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity hover:bg-red-600"
+                                            aria-label="Remove photo"
+                                          >
+                                            <XCircle className="h-4 w-4" />
+                                          </button>
+                                        )}
                                       </div>
                                     ))}
-                                    {conditionImages.length <
+                                    {!readOnly &&
+                                    conditionImages.length <
                                       MAX_CONDITION_IMAGES && (
                                       <label className="flex h-20 w-20 items-center justify-center rounded-lg border-2 border-dashed border-slate-300 hover:border-slate-400 cursor-pointer transition-colors">
                                         <input
@@ -1236,6 +1317,7 @@ export default function ReturnRequestsPage() {
                                     <Textarea
                                       placeholder="Notes..."
                                       value={intangibleNotes[id] ?? ''}
+                                      disabled={readOnly}
                                       onChange={e => setIntangibleNotes(prev => ({ ...prev, [id]: e.target.value }))}
                                       className="border-slate-200 focus:border-red-500 focus:ring-red-500/20 rounded-lg resize-none text-xs"
                                       rows={2}
@@ -1262,6 +1344,7 @@ export default function ReturnRequestsPage() {
                         </Label>
                         <Select
                           value={sharedReturnDepartmentId}
+                          disabled={readOnly}
                           onValueChange={value => {
                             setSharedReturnDepartmentId(value);
                             setSharedReturnLocationId('');
@@ -1297,7 +1380,7 @@ export default function ReturnRequestsPage() {
                             setSharedReturnLocationId(value);
                             setSharedReturnAreaId('');
                           }}
-                          disabled={!sharedReturnDepartmentId}
+                          disabled={readOnly || !sharedReturnDepartmentId}
                         >
                           <SelectTrigger
                             className={cn(
@@ -1335,7 +1418,9 @@ export default function ReturnRequestsPage() {
                           value={sharedReturnAreaId}
                           onValueChange={setSharedReturnAreaId}
                           disabled={
-                            !sharedReturnLocationId || !sharedLocationHasRooms
+                            readOnly ||
+                            !sharedReturnLocationId ||
+                            !sharedLocationHasRooms
                           }
                         >
                           <SelectTrigger
@@ -1387,63 +1472,82 @@ export default function ReturnRequestsPage() {
                     </p>
                   </div>
 
-                  {/* Verification – same as Asset Return page */}
-                  <div className="rounded-xl border border-slate-200 bg-white p-5 shadow-sm -mx-3 space-y-4">
-                    <Label className="text-sm font-semibold text-slate-800 tracking-tight uppercase block">
-                      Verification
-                    </Label>
-                    <div className="space-y-3">
-                      <label className="flex items-start gap-3 p-3 rounded-lg border border-slate-200 hover:bg-slate-50 cursor-pointer transition-colors">
-                        <Checkbox
-                          checked={verificationTag}
-                          onCheckedChange={v => setVerificationTag(!!v)}
-                          className="mt-0.5"
-                        />
-                        <span className="text-sm text-slate-700">
-                          I have verified the asset tag matches the physical
-                          equipment
-                        </span>
-                      </label>
-                      <label className="flex items-start gap-3 p-3 rounded-lg border border-slate-200 hover:bg-slate-50 cursor-pointer transition-colors">
-                        <Checkbox
-                          checked={verificationCondition}
-                          onCheckedChange={v => setVerificationCondition(!!v)}
-                          className="mt-0.5"
-                        />
-                        <span className="text-sm text-slate-700">
-                          I have assessed the asset condition thoroughly
-                        </span>
-                      </label>
-                      <label className="flex items-start gap-3 p-3 rounded-lg border border-slate-200 hover:bg-slate-50 cursor-pointer transition-colors">
-                        <Checkbox
-                          checked={verificationConfirmSign}
-                          onCheckedChange={v => setVerificationConfirmSign(!!v)}
-                          className="mt-0.5"
-                        />
-                        <span className="text-sm text-slate-700">
-                          I sign this form confirming and approving the asset
-                          returned by the user
-                        </span>
-                      </label>
-                      <label className="flex items-start gap-3 p-3 rounded-lg border border-slate-200 hover:bg-slate-50 cursor-pointer transition-colors">
-                        <Checkbox
-                          checked={assignToProcessor}
-                          onCheckedChange={v => setAssignToProcessor(!!v)}
-                          className="mt-0.5"
-                        />
-                        <span className="text-sm text-slate-700">
-                          All of these assets will be transferred and assigned
-                          to me for the time being
-                        </span>
-                      </label>
-                    </div>
-                    <p className="text-sm text-slate-600 pt-1">
-                      All assets will be returned
-                    </p>
-                  </div>
+                  {!readOnly && (
+                    <>
+                      {/* Verification – same as Asset Return page */}
+                      <div className="rounded-xl border border-slate-200 bg-white p-5 shadow-sm -mx-3 space-y-4">
+                        <Label className="text-sm font-semibold text-slate-800 tracking-tight uppercase block">
+                          Verification
+                        </Label>
+                        <div className="space-y-3">
+                          <label className="flex items-start gap-3 p-3 rounded-lg border border-slate-200 hover:bg-slate-50 cursor-pointer transition-colors">
+                            <Checkbox
+                              checked={verificationTag}
+                              disabled={readOnly}
+                              onCheckedChange={v => setVerificationTag(!!v)}
+                              className="mt-0.5"
+                            />
+                            <span className="text-sm text-slate-700">
+                              I have verified the asset tag matches the physical
+                              equipment
+                            </span>
+                          </label>
+                          <label className="flex items-start gap-3 p-3 rounded-lg border border-slate-200 hover:bg-slate-50 cursor-pointer transition-colors">
+                            <Checkbox
+                              checked={verificationCondition}
+                              disabled={readOnly}
+                              onCheckedChange={v => setVerificationCondition(!!v)}
+                              className="mt-0.5"
+                            />
+                            <span className="text-sm text-slate-700">
+                              I have assessed the asset condition thoroughly
+                            </span>
+                          </label>
+                          <label className="flex items-start gap-3 p-3 rounded-lg border border-slate-200 hover:bg-slate-50 cursor-pointer transition-colors">
+                            <Checkbox
+                              checked={verificationConfirmSign}
+                              disabled={readOnly}
+                              onCheckedChange={v => setVerificationConfirmSign(!!v)}
+                              className="mt-0.5"
+                            />
+                            <span className="text-sm text-slate-700">
+                              I sign this form confirming and approving the asset
+                              returned by the user
+                            </span>
+                          </label>
+                          <label className="flex items-start gap-3 p-3 rounded-lg border border-slate-200 hover:bg-slate-50 cursor-pointer transition-colors">
+                            <Checkbox
+                              checked={assignToProcessor}
+                              disabled={readOnly}
+                              onCheckedChange={v => setAssignToProcessor(!!v)}
+                              className="mt-0.5"
+                            />
+                            <span className="text-sm text-slate-700">
+                              All of these assets will be transferred and assigned
+                              to me for the time being
+                            </span>
+                          </label>
+                        </div>
+                        <p className="text-sm text-slate-600 pt-1">
+                          All assets will be returned
+                        </p>
+                      </div>
+                    </>
+                  )}
                 </AppDialogBody>
 
                 <AppDialogChromeFooter className="justify-end flex-wrap gap-2">
+                  {readOnly ? (
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() => setProcessForm(null)}
+                      className="rounded-lg border-slate-300 hover:bg-slate-100"
+                    >
+                      Close
+                    </Button>
+                  ) : (
+                    <>
                   <Button
                     variant="outline"
                     size="sm"
@@ -1482,6 +1586,8 @@ export default function ReturnRequestsPage() {
                       </div>
                     )}
                   </Button>
+                    </>
+                  )}
                 </AppDialogChromeFooter>
               </>
             )}

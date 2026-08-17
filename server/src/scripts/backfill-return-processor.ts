@@ -30,6 +30,15 @@ type FormRow = {
   process_signed_by: string | null;
 };
 
+type TransferLinkedFormRow = {
+  formID: string;
+  form_number: string | null;
+  user_id: string | null;
+  transfer_created_by: string | null;
+  transfer_process_signed_at: string | null;
+  transfer_dept_head_signed_by: string | null;
+};
+
 async function loadProcessorAuditRows(): Promise<AuditRow[]> {
   // Prefer the most recent processing audit entry per form.
   const [rows] = await pool.execute(
@@ -53,6 +62,90 @@ async function loadPendingForms(): Promise<FormRow[]> {
        AND process_signed_by IS NULL`
   );
   return rows as FormRow[];
+}
+
+/**
+ * Load transfer-linked return forms that were process-signed but never stamped
+ * with a processor. The actual processor is the linked transfer's `created_by`
+ * ONLY for processor-initiated flows — i.e. the transfer creator differs from
+ * the returner (`user_id`) AND the transfer never went through dept-head
+ * approval (which would mean the creator was the requestor's dept head, not the
+ * processor). Transfer-request flows where the returner or dept head submitted
+ * the form keep an empty processor.
+ */
+async function loadTransferLinkedForms(): Promise<TransferLinkedFormRow[]> {
+  const [rows] = await pool.execute(
+    `SELECT arf.formID, arf.form_number, arf.user_id,
+            atf.created_by AS transfer_created_by,
+            atf.process_signed_at AS transfer_process_signed_at,
+            atf.dept_head_signed_by AS transfer_dept_head_signed_by
+     FROM asset_return_forms arf
+     JOIN asset_transfer_forms atf ON atf.return_form_id = arf.formID AND atf.deleted_at IS NULL
+     WHERE arf.deleted_at IS NULL
+       AND arf.process_signed_by IS NULL
+       AND arf.process_signed_at IS NOT NULL`
+  );
+  return rows as TransferLinkedFormRow[];
+}
+
+async function backfillTransferProcessors(): Promise<void> {
+  logger.info(
+    `Transfer-linked return processor backfill (dry-run: ${dryRun})`
+  );
+
+  const connection = await pool.getConnection();
+  try {
+    const rows = await loadTransferLinkedForms();
+    logger.info(
+      `Transfer-linked forms without process_signed_by: ${rows.length}`
+    );
+
+    const matches = rows.filter(
+      (r) =>
+        r.transfer_created_by &&
+        r.user_id &&
+        r.transfer_created_by !== r.user_id &&
+        r.transfer_process_signed_at &&
+        !r.transfer_dept_head_signed_by
+    );
+    logger.info(`Forms to update: ${matches.length}`);
+    for (const m of matches.slice(0, 10)) {
+      logger.info(
+        `  ${m.form_number ?? m.formID} -> processor ${m.transfer_created_by}`
+      );
+    }
+    if (matches.length > 10) {
+      logger.info(`  ... and ${matches.length - 10} more`);
+    }
+
+    if (dryRun) {
+      logger.info(
+        'Dry run — would stamp process_signed_by on matching transfer-linked forms.'
+      );
+      return;
+    }
+
+    await connection.beginTransaction();
+    let updated = 0;
+    for (const m of matches) {
+      const [result] = await connection.execute(
+        `UPDATE asset_return_forms
+         SET process_signed_by = ?, updated_at = NOW()
+         WHERE formID = ? AND process_signed_by IS NULL`,
+        [m.transfer_created_by, m.formID]
+      );
+      updated += (result as { affectedRows?: number }).affectedRows ?? 0;
+    }
+    await connection.commit();
+
+    logger.info(`Updated ${updated} transfer-linked asset return form(s).`);
+  } catch (error) {
+    await connection.rollback();
+    logger.error('Transfer-linked return processor backfill failed:', error);
+    throw error;
+  } finally {
+    connection.release();
+  }
 }
 
 async function backfillReturnProcessors(): Promise<void> {
@@ -128,13 +221,18 @@ async function backfillReturnProcessors(): Promise<void> {
   }
 }
 
-backfillReturnProcessors()
+async function main(): Promise<void> {
+  await backfillReturnProcessors();
+  await backfillTransferProcessors();
+  console.log(
+    dryRun
+      ? 'Dry run completed. Re-run without --dry-run to apply updates.'
+      : 'Return processor backfill completed successfully.'
+  );
+}
+
+main()
   .then(() => {
-    console.log(
-      dryRun
-        ? 'Dry run completed. Re-run without --dry-run to apply updates.'
-        : 'Return processor backfill completed successfully.'
-    );
     process.exit(0);
   })
   .catch(err => {

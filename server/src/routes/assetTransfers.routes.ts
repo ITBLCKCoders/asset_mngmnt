@@ -11,6 +11,7 @@ import {
   getTransferPendingApprovalsHandler,
   getTransferReceivePendingApprovalsHandler,
   getTransferApprovedByMeHandler,
+  getTransferProcessedByMeHandler,
   approveTransferFormHandler,
   declineTransferFormHandler,
   receiveTransferFormHandler,
@@ -77,6 +78,11 @@ router.get(
   '/forms/approved-by-me',
   authenticate,
   getTransferApprovedByMeHandler
+);
+router.get(
+  '/forms/processed-by-me',
+  authenticate,
+  getTransferProcessedByMeHandler
 );
 router.post('/forms/:formId/approve', authenticate, approveTransferFormHandler);
 router.post('/forms/:formId/decline', authenticate, declineTransferFormHandler);

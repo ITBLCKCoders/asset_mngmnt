@@ -54,8 +54,24 @@ function renderPage() {
 describe('AccountabilityFormsPage', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    delete mockUser.role.asset_type;
     (api.get as any).mockResolvedValue({});
     (api.post as any).mockResolvedValue({});
+  });
+
+  const makeForm = (id: string, formNumber: string, categoryDepartment: string) => ({
+    id,
+    formNumber,
+    assets: [{ id: `${id}-asset`, categoryDepartment }],
+    assignmentIds: [],
+    status: 'Pending',
+    created_at: '2024-01-01',
+    user: {
+      id: 'u1', first_name: 'John', last_name: 'Doe', email: 'j@t.com',
+      company: { id: 'c1', name: 'Acme' }, department: { id: 'd1', name: 'IT' },
+    },
+    department: { id: 'd1', name: 'IT' },
+    assignment: { id: `${id}-assignment`, assigned_date: '2024-01-01', assigned_by: null },
   });
 
   it('should render the page header title', async () => {
@@ -137,5 +153,45 @@ describe('AccountabilityFormsPage', () => {
     await waitFor(() => {
       expect(screen.getAllByTestId('af-card')).toHaveLength(6);
     });
+  });
+
+  it('shows IT and Admin toggle buttons for unscoped roles', async () => {
+    (api.get as any).mockResolvedValue({ forms: [] });
+    renderPage();
+    await waitFor(() => {
+      expect(screen.getByRole('button', { name: 'All Assets' })).toBeDefined();
+      expect(screen.getByRole('button', { name: 'IT Assets' })).toBeDefined();
+      expect(screen.getByRole('button', { name: 'Admin Assets' })).toBeDefined();
+    });
+  });
+
+  it('hides toggle and shows only IT forms for an IT-scoped role', async () => {
+    mockUser.role.asset_type = 'it';
+    (api.get as any).mockResolvedValue({
+      forms: [makeForm('it-form', 'AF-1', 'IT'), makeForm('admin-form', 'AF-2', 'Admin')],
+    });
+    renderPage();
+    await waitFor(() => {
+      const cards = screen.getAllByTestId('af-card');
+      expect(cards).toHaveLength(1);
+      expect(cards[0].textContent).toBe('it-form');
+    });
+    expect(screen.queryByRole('button', { name: 'All Assets' })).toBeNull();
+    expect(screen.queryByRole('button', { name: 'IT Assets' })).toBeNull();
+    expect(screen.queryByRole('button', { name: 'Admin Assets' })).toBeNull();
+  });
+
+  it('hides toggle and shows only admin forms for an Admin-scoped role', async () => {
+    mockUser.role.asset_type = 'admin';
+    (api.get as any).mockResolvedValue({
+      forms: [makeForm('it-form', 'AF-1', 'IT'), makeForm('admin-form', 'AF-2', 'Admin')],
+    });
+    renderPage();
+    await waitFor(() => {
+      const cards = screen.getAllByTestId('af-card');
+      expect(cards).toHaveLength(1);
+      expect(cards[0].textContent).toBe('admin-form');
+    });
+    expect(screen.queryByRole('button', { name: 'All Assets' })).toBeNull();
   });
 });

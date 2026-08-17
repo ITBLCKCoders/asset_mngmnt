@@ -615,6 +615,7 @@ export async function createAssetTransferHandler(
       created_by: req.user!.userID,
       process_signed_at: processSignedAtForDb,
       process_digital_signature: processDigitalSignature,
+      process_signed_by: processSignedAtForDb ? req.user!.userID : null,
       return_type: transferType ?? null,
       received_by: receivedBy ?? null,
     });
@@ -1100,6 +1101,14 @@ export async function createHeldTransferHandler(
       }
     }
 
+    const intangibleItems: Array<{ id: string; notes: string | null }> =
+      hasIntangibleItems
+        ? (intangibleAssetItems as any[]).map((it: any) => ({
+            id: String(it?.id ?? it ?? ''),
+            notes: it?.notes != null ? String(it.notes) : null,
+          }))
+        : [];
+
     if (!newAssignment?.userId) {
       return res.status(400).json({
         error: 'New assignment user (userId) is required',
@@ -1120,7 +1129,22 @@ export async function createHeldTransferHandler(
       const ownerIds = [
         ...new Set(assignmentRows.map((r: any) => r.user_id).filter(Boolean)),
       ];
-      if (ownerIds.length > 1) {
+      for (const item of intangibleItems) {
+        try {
+          const activeAssignments =
+            await intangibleAssetsService.getActiveAssignmentsByAsset(item.id);
+          for (const a of activeAssignments as any[]) {
+            if (a.user_id) ownerIds.push(a.user_id);
+          }
+        } catch (err) {
+          logger.error(
+            'Failed to resolve intangible owner for owner-absent check',
+            { id: item.id, err }
+          );
+        }
+      }
+      const distinctOwnerIds = [...new Set(ownerIds)];
+      if (distinctOwnerIds.length > 1) {
         return res.status(400).json({
           error:
             'When the asset owner is absent, select assets that belong to the same owner only.',
@@ -1181,6 +1205,7 @@ export async function createHeldTransferHandler(
       created_by: req.user!.userID,
       process_signed_at: processSignedAtForDb,
       process_digital_signature: processDigitalSignature,
+      process_signed_by: processSignedAtForDb ? req.user!.userID : null,
       return_type: returnForTransferNote,
       received_by: receivedBy ?? null,
       owner_absent: ownerAbsent ? 1 : 0,
@@ -1229,6 +1254,13 @@ export async function createHeldTransferHandler(
         });
       }
       throw assignErr;
+    }
+
+    if (intangibleItems.length > 0) {
+      await AssetTransferFormModel.addFormIntangibleAssets(
+        form_id,
+        intangibleItems
+      );
     }
 
     const validConditions = [
@@ -1734,32 +1766,21 @@ export async function submitTransferRequestHandler(
       }
     }
 
-    // Process intangible assets tied to the first created form
+    // Persist intangible assets selected for the transfer on the first created form.
+    // They stay assigned to the transferrer until execution (mirrors the tangible flow),
+    // so a declined request does not leave the intangibles unassigned.
     const intangibleAssetIds = body.intangibleAssetIds;
     if (intangibleAssetIds && intangibleAssetIds.length > 0 && firstForm) {
-      const companyId = await (async () => {
-        const user = assignmentRows[0]?.user_id ? await getUserById(assignmentRows[0].user_id) : null;
-        return user?.company_id ?? null;
-      })();
-      if (companyId) {
-        for (const assetId of intangibleAssetIds) {
-          try {
-            await intangibleAssetsService.unassignIntangibleAsset(assetId, currentUserId, companyId);
-            await createAuditLog({
-              userId: currentUserId,
-              action: 'Requested Transfer of Intangible Asset',
-              resourceType: 'intangible_asset',
-              resourceId: assetId,
-              resourceName: assetId,
-              details: `Intangible asset unassigned as part of transfer request ${firstForm.form_number}`,
-              ipAddress: req.ip,
-              userAgent: req.get('User-Agent'),
-              companyId,
-            });
-          } catch (err) {
-            logger.error('Failed to unassign intangible asset on transfer request', { id: assetId, err });
-          }
-        }
+      try {
+        await AssetTransferFormModel.addFormIntangibleAssets(
+          firstForm.formID,
+          intangibleAssetIds.map(id => ({ id: String(id) }))
+        );
+      } catch (err) {
+        logger.error(
+          'Failed to persist intangible assets on transfer request',
+          { ids: intangibleAssetIds, err }
+        );
       }
     }
 
@@ -1828,6 +1849,52 @@ export async function getApprovedForExecutionHandler(
   }
 }
 
+/** GET transfer forms processed by the current user (executed). Processor resolved from linked return form's process_signed_by, else created_by for standalone transfers. */
+export async function getTransferProcessedByMeHandler(
+  req: AuthRequest,
+  res: Response
+) {
+  try {
+    const userId = req.user!.userID;
+    let formRows: any[];
+    try {
+      const [rows] = (await pool.execute(
+        `SELECT atf.*,
+                arf.process_signed_by AS linked_process_signed_by
+         FROM asset_transfer_forms atf
+         LEFT JOIN asset_return_forms arf
+           ON arf.formID = atf.return_form_id AND arf.deleted_at IS NULL
+         WHERE atf.deleted_at IS NULL
+           AND (atf.executed_at IS NOT NULL OR atf.process_signed_at IS NOT NULL)
+         ORDER BY COALESCE(atf.executed_at, atf.process_signed_at, atf.created_at) DESC`
+      )) as any[];
+      formRows = rows || [];
+    } catch (colErr: any) {
+      const msg = String(colErr?.message || '');
+      if (msg.includes('executed_at') || msg.includes('return_form_id')) {
+        return res.json({ assetTransferForms: [] });
+      }
+      throw colErr;
+    }
+
+    const processedRows = (formRows as any[]).filter((row: any) => {
+      const linkedProcessorId = row.linked_process_signed_by ?? null;
+      const processorId = row.return_form_id
+        ? linkedProcessorId
+        : (row.created_by ?? null);
+      return processorId === userId;
+    });
+
+    const batches = await buildTransferFormBatches(processedRows);
+    return res.json({ assetTransferForms: batches });
+  } catch (err: any) {
+    logger.error('Get transfer processed by me failed:', err);
+    return res
+      .status(500)
+      .json({ error: 'Failed to fetch processed transfer requests' });
+  }
+}
+
 /** Build batches for forms that have transfer_form_assignments (no asset_transfer yet). */
 async function buildTransferFormBatchesFromAssignments(
   forms: any[]
@@ -1846,15 +1913,76 @@ async function buildTransferFormBatchesFromAssignments(
     }
   }
 
-  const processorCreatedByIds = [
-    ...new Set(forms.map((f: any) => f.created_by).filter(Boolean)),
-  ] as string[];
-  const processorNames = new Map<string, string>();
-  if (processorCreatedByIds.length > 0) {
-    for (const userId of processorCreatedByIds) {
+  // The transfer form does not store who process-signed it, so resolve the
+  // actual processor from the linked return form (asset_return_forms.process_signed_by).
+  const transferIds = forms
+    .map((f: any) => f.formID ?? f.form_id ?? null)
+    .filter((id: string | null): id is string => !!id);
+  const transferToReturnFormId = new Map<string, string>();
+  const linkedReturnFormIds = new Set<string>();
+  if (transferIds.length > 0) {
+    const linkPlaceholders = transferIds.map(() => '?').join(',');
+    try {
+      const [linkRows] = (await pool.execute(
+        `SELECT formID, return_form_id FROM asset_transfer_forms
+         WHERE formID IN (${linkPlaceholders}) AND return_form_id IS NOT NULL`,
+        transferIds
+      )) as any[];
+      for (const r of linkRows || []) {
+        if (r.formID && r.return_form_id) {
+          transferToReturnFormId.set(r.formID, r.return_form_id);
+          linkedReturnFormIds.add(r.return_form_id);
+        }
+      }
+    } catch {
+      // asset_transfer_forms may predate the return_form_id column
+    }
+  }
+
+  const returnProcessorById = new Map<string, string>();
+  const returnFormIdsList = Array.from(linkedReturnFormIds);
+  if (returnFormIdsList.length > 0) {
+    const retPlaceholders = returnFormIdsList.map(() => '?').join(',');
+    const [retRows] = (await pool.execute(
+      `SELECT formID, process_signed_by FROM asset_return_forms
+       WHERE formID IN (${retPlaceholders}) AND process_signed_by IS NOT NULL`,
+      returnFormIdsList
+    )) as any[];
+    for (const r of retRows || []) {
+      if (r.formID && r.process_signed_by) {
+        returnProcessorById.set(r.formID, r.process_signed_by);
+      }
+    }
+  }
+
+  // Standalone transfers (direct/hold IT transfers) have no linked return
+  // form; there the transfer creator is the processor, so fall back to it.
+  const fallbackCreatorIds = new Set<string>();
+  for (const f of forms) {
+    const fid =
+      (f as { formID?: string; form_id?: string }).formID ??
+      (f as { formID?: string; form_id?: string }).form_id ??
+      null;
+    const linkedRfid =
+      (f as { return_form_id?: string }).return_form_id ??
+      (fid ? transferToReturnFormId.get(fid) : null);
+    if (!linkedRfid && (f as { created_by?: string }).created_by) {
+      fallbackCreatorIds.add((f as { created_by?: string }).created_by!);
+    }
+  }
+
+  const linkedProcessorNames = new Map<string, string>();
+  const linkedProcessorIds = Array.from(
+    new Set([...returnProcessorById.values(), ...fallbackCreatorIds])
+  );
+  if (linkedProcessorIds.length > 0) {
+    for (const userId of linkedProcessorIds) {
       const user = await getUserNamesById(userId);
       if (user) {
-        processorNames.set(userId, `${user.first_name} ${user.last_name}`);
+        linkedProcessorNames.set(
+          userId,
+          `${user.first_name} ${user.last_name}`
+        );
       }
     }
   }
@@ -1942,10 +2070,37 @@ async function buildTransferFormBatchesFromAssignments(
       (form as { process_signed_at?: unknown }).process_signed_at != null ||
       (form as { processor_pending_signed_at?: unknown })
         .processor_pending_signed_at != null;
-    const processed_by =
-      hasProcessorSignature && form.created_by != null
-        ? (processorNames.get(form.created_by) ?? 'Unknown')
+    const linkedReturnFormId =
+      (form as { return_form_id?: string }).return_form_id ??
+      transferToReturnFormId.get(formId) ??
+      null;
+    const linkedProcessorId = linkedReturnFormId
+      ? (returnProcessorById.get(linkedReturnFormId) ?? null)
+      : null;
+const processed_by =
+      hasProcessorSignature &&
+      (linkedProcessorId != null ||
+        (!linkedReturnFormId && form.created_by != null))
+        ? linkedProcessorId != null
+          ? (linkedProcessorNames.get(linkedProcessorId) ?? null)
+          : (linkedProcessorNames.get(form.created_by) ?? null)
         : null;
+    let intangibleAssetsForForm: Array<{
+      id: string;
+      name: string;
+      type: string;
+      description: string | null;
+      notes: string | null;
+    }> = [];
+    try {
+      intangibleAssetsForForm =
+        await AssetTransferFormModel.getFormIntangibleAssets(formId);
+    } catch (intangibleErr) {
+      logger.error('Failed to load transfer form intangible assets', {
+        formId,
+        err: intangibleErr,
+      });
+    }
     batches.push({
       formID: formId,
       form_number: form.form_number,
@@ -1972,6 +2127,7 @@ async function buildTransferFormBatchesFromAssignments(
       it_manager_digital_signature: null,
       it_manager_signed_by: null,
       it_manager_user_name: null,
+      intangibleAssets: intangibleAssetsForForm,
       returns: recordRows.map((r: any) => ({
         return_id: null,
         assignment_id: r.assignment_id,
@@ -2114,6 +2270,54 @@ export async function runTransferFormExecution(
     bodyAssignmentIds.every((id: string) => formAssignmentIds.includes(id));
   if (!match)
     throw new ValidationError('Request assignment IDs do not match the form');
+
+  // Resolve the intangible assets for this transfer. Persisted items on the form
+  // are the source of truth (they survive request → approval → execution, including
+  // the auto-execute-on-approval path). The request body items are accepted only to
+  // supply notes; any body id not on the form is rejected as tampering. For forms
+  // created before the persistence migration, the body items are used as a fallback.
+  let effectiveIntangibleItems: Array<{ id: string; notes: string | null }> = [];
+  try {
+    const persistedIntangibleAssets =
+      await AssetTransferFormModel.getFormIntangibleAssets(formId);
+    if (persistedIntangibleAssets.length > 0) {
+      const persistedById = new Map(
+        persistedIntangibleAssets.map(p => [p.id, p.notes ?? null])
+      );
+      const bodyItems = Array.isArray(intangibleAssetItems)
+        ? intangibleAssetItems.map((it: any) => ({
+            id: String(it?.id ?? it ?? ''),
+            notes: it?.notes != null ? String(it.notes) : null,
+          }))
+        : [];
+      for (const item of bodyItems) {
+        if (!persistedById.has(item.id)) {
+          throw new ValidationError(
+            'Request intangible asset IDs do not match the form'
+          );
+        }
+      }
+      const notesByBody = new Map(bodyItems.map(b => [b.id, b.notes]));
+      effectiveIntangibleItems = persistedIntangibleAssets.map(p => ({
+        id: p.id,
+        notes: notesByBody.has(p.id) ? (notesByBody.get(p.id) ?? null) : p.notes,
+      }));
+    } else if (
+      Array.isArray(intangibleAssetItems) &&
+      intangibleAssetItems.length > 0
+    ) {
+      effectiveIntangibleItems = intangibleAssetItems.map((it: any) => ({
+        id: String(it?.id ?? it ?? ''),
+        notes: it?.notes != null ? String(it.notes) : null,
+      }));
+    }
+  } catch (err) {
+    if (err instanceof AppError) throw err;
+    logger.error('Failed to resolve intangible assets for transfer execution', {
+      formId,
+      err,
+    });
+  }
   const placeholders = bodyAssignmentIds.map(() => '?').join(',');
   /** Active = normal path. Returned is allowed when the return was processed first but this transfer form is still pending execution (linked transfer / Transfer Requests). */
   const [assignmentRows] = (await pool.execute(
@@ -2228,12 +2432,16 @@ export async function runTransferFormExecution(
       );
     }
     returnFormId = linkedReturnFormId;
+    const finalProcessSignedAtForDb =
+      processSignedAtForDb ?? retAny.process_signed_at ?? null;
     await executeRawWrite(
       `UPDATE asset_return_forms SET process_signed_at = ?, process_digital_signature = ?, process_signed_by = ?, return_type = ?, received_by = ?, updated_at = NOW() WHERE formID = ?`,
       [
-        processSignedAtForDb,
-        processSignature?.digital_signature ?? null,
-        processSignedAtForDb ? processorId : null,
+        finalProcessSignedAtForDb,
+        processSignature?.digital_signature ??
+          (retAny.process_digital_signature ?? null),
+        retAny.process_signed_by ??
+          (finalProcessSignedAtForDb ? processorId : null),
         transferType ?? null,
         receivedBy ?? null,
         returnFormId,
@@ -2975,16 +3183,27 @@ export async function runTransferFormExecution(
     }
   }
 
-  // Process intangible asset transfers (assign to new user)
-  if (intangibleAssetItems && intangibleAssetItems.length > 0 && companyId) {
-    for (const item of intangibleAssetItems) {
+  // Process intangible asset transfers (unassign from old owner, assign to new user).
+  // Intangibles stay with the transferrer until execution, mirroring the tangible flow.
+  if (effectiveIntangibleItems.length > 0 && companyId) {
+    for (const item of effectiveIntangibleItems) {
       try {
+        if (pastOwnerUserId) {
+          await intangibleAssetsService.unassignIntangibleAsset(
+            item.id,
+            pastOwnerUserId,
+            companyId
+          );
+        }
         await intangibleAssetsService.assignIntangibleAsset({
           id: item.id,
           assignedTo: newUserId,
           assignmentId: formId,
           companyId,
           assignedBy: processorId,
+          departmentId: newDeptId,
+          locationId: newLocId,
+          locationRoomId: newRoomId,
         });
         await createAuditLog({
           userId: processorId,
@@ -2999,7 +3218,10 @@ export async function runTransferFormExecution(
           companyId,
         });
       } catch (err) {
-        logger.error('Failed to assign intangible asset on transfer', { id: item.id, err });
+        logger.error('Failed to transfer intangible asset', {
+          id: item.id,
+          err,
+        });
       }
     }
   }
@@ -3652,6 +3874,53 @@ export async function getAssetTransferFormsByUserHandler(
         }
       }
     }
+
+    // The transfer form does not store who process-signed it, so resolve the
+    // actual processor from the linked return form (asset_return_forms.process_signed_by).
+    const processorReturnFormIds = forms
+      .map((f: any) => f.return_form_id)
+      .filter(Boolean) as string[];
+    const returnProcessorById = new Map<string, string>();
+    if (processorReturnFormIds.length > 0) {
+      const placeholders = processorReturnFormIds.map(() => '?').join(',');
+      const [retRows] = (await pool.execute(
+        `SELECT formID, process_signed_by FROM asset_return_forms
+         WHERE formID IN (${placeholders}) AND process_signed_by IS NOT NULL`,
+        processorReturnFormIds
+      )) as any[];
+      for (const r of retRows ?? []) {
+        if (r.formID && r.process_signed_by) {
+          returnProcessorById.set(r.formID, r.process_signed_by);
+        }
+      }
+    }
+
+    // Standalone transfers (direct/hold IT transfers) have no linked return
+    // form; there the transfer creator is the processor, so fall back to it.
+    const fallbackCreatorIds = new Set<string>();
+    for (const f of forms) {
+      if (!f.return_form_id && f.created_by) {
+        fallbackCreatorIds.add(f.created_by);
+      }
+    }
+    const linkedProcessorNames = new Map<string, string>();
+    const linkedProcessorIds = Array.from(
+      new Set([...returnProcessorById.values(), ...fallbackCreatorIds])
+    );
+    if (linkedProcessorIds.length > 0) {
+      const placeholders = linkedProcessorIds.map(() => '?').join(',');
+      const [userRows] = (await pool.execute(
+        `SELECT userID, first_name, last_name FROM users WHERE userID IN (${placeholders})`,
+        linkedProcessorIds
+      )) as any[];
+      for (const u of userRows ?? []) {
+        linkedProcessorNames.set(
+          u.userID,
+          `${u.first_name || ''} ${u.last_name || ''}`.trim() || 'Unknown'
+        );
+      }
+    }
+
     for (const form of forms) {
       const formId =
         (form as { formID?: string; form_id?: string }).formID ??
@@ -3732,14 +4001,19 @@ export async function getAssetTransferFormsByUserHandler(
           .processor_pending_signed_at != null;
       let processed_by: string | null = null;
       if (hasProcessorSignature) {
-        const [processorRows] = (await pool.execute(
-          'SELECT first_name, last_name FROM users WHERE userID = ?',
-          [toBind((form as { created_by?: string }).created_by)]
-        )) as any[];
-        processed_by =
-          processorRows[0]?.first_name && processorRows[0]?.last_name
-            ? `${processorRows[0].first_name} ${processorRows[0].last_name}`
-            : null;
+        const linkedReturnFormId = (form as { return_form_id?: string })
+          .return_form_id ?? null;
+        const linkedProcessorId = linkedReturnFormId
+          ? (returnProcessorById.get(linkedReturnFormId) ?? null)
+          : null;
+        if (linkedProcessorId) {
+          processed_by = linkedProcessorNames.get(linkedProcessorId) ?? null;
+        } else if (!linkedReturnFormId) {
+          const creatorId = (form as { created_by?: string }).created_by;
+          if (creatorId) {
+            processed_by = linkedProcessorNames.get(creatorId) ?? null;
+          }
+        }
       }
 
       let new_assigned_user:
@@ -3955,6 +4229,87 @@ async function buildTransferFormBatches(forms: any[]): Promise<any[]> {
     }
   }
 
+  // The transfer form does not store who process-signed it, so resolve the
+  // actual processor from the linked return form (asset_return_forms.process_signed_by).
+  const transferIds = forms
+    .map((f: any) => f.formID ?? f.form_id ?? null)
+    .filter((id: string | null): id is string => !!id);
+  const transferToReturnFormId = new Map<string, string>();
+  const linkedReturnFormIds = new Set<string>();
+  if (transferIds.length > 0) {
+    const linkPlaceholders = transferIds.map(() => '?').join(',');
+    try {
+      const [linkRows] = (await pool.execute(
+        `SELECT formID, return_form_id FROM asset_transfer_forms
+         WHERE formID IN (${linkPlaceholders}) AND return_form_id IS NOT NULL`,
+        transferIds
+      )) as any[];
+      for (const r of linkRows || []) {
+        if (r.formID && r.return_form_id) {
+          transferToReturnFormId.set(r.formID, r.return_form_id);
+          linkedReturnFormIds.add(r.return_form_id);
+        }
+      }
+    } catch {
+      // asset_transfer_forms may predate the return_form_id column
+    }
+  }
+
+  const returnProcessorById = new Map<string, string>();
+  const returnFormIdsList = Array.from(linkedReturnFormIds);
+  if (returnFormIdsList.length > 0) {
+    const retPlaceholders = returnFormIdsList.map(() => '?').join(',');
+    const [retRows] = (await pool.execute(
+      `SELECT formID, process_signed_by FROM asset_return_forms
+       WHERE formID IN (${retPlaceholders}) AND process_signed_by IS NOT NULL`,
+      returnFormIdsList
+    )) as any[];
+    for (const r of retRows || []) {
+      if (r.formID && r.process_signed_by) {
+        returnProcessorById.set(r.formID, r.process_signed_by);
+      }
+    }
+  }
+
+  // Transfer forms created in transfer-request flows are linked to a return
+  // form whose process_signed_by identifies the actual processor. Standalone
+  // transfers (direct/hold IT transfers) have no linked return form — there the
+  // transfer creator is the processor, so fall back to created_by.
+  const fallbackCreatorIds = new Set<string>();
+  for (const f of forms) {
+    const fid =
+      (f as { formID?: string; form_id?: string }).formID ??
+      (f as { formID?: string; form_id?: string }).form_id ??
+      null;
+    const linkedRfid =
+      (f as { return_form_id?: string }).return_form_id ??
+      (fid ? transferToReturnFormId.get(fid) : null);
+    if (!linkedRfid && (f as { created_by?: string }).created_by) {
+      fallbackCreatorIds.add((f as { created_by?: string }).created_by!);
+    }
+  }
+
+  const processorUserIdSet = new Set<string>([
+    ...returnProcessorById.values(),
+    ...fallbackCreatorIds,
+  ]);
+  const processorNameMap = new Map<string, string>();
+  if (processorUserIdSet.size > 0) {
+    const procPlaceholders = Array.from(processorUserIdSet)
+      .map(() => '?')
+      .join(',');
+    const [userRows] = (await pool.execute(
+      `SELECT userID, first_name, last_name FROM users WHERE userID IN (${procPlaceholders})`,
+      Array.from(processorUserIdSet)
+    )) as any[];
+    for (const u of userRows || []) {
+      processorNameMap.set(
+        u.userID,
+        `${u.first_name || ''} ${u.last_name || ''}`.trim()
+      );
+    }
+  }
+
   for (const form of forms) {
     const formId =
       (form as { formID?: string; form_id?: string }).formID ??
@@ -4037,14 +4392,21 @@ async function buildTransferFormBatches(forms: any[]): Promise<any[]> {
         .processor_pending_signed_at != null;
     let processed_by: string | null = null;
     if (hasProcessorSignature) {
-      const [processorRows] = (await pool.execute(
-        'SELECT first_name, last_name FROM users WHERE userID = ?',
-        [toBind((form as { created_by?: string }).created_by)]
-      )) as any[];
-      processed_by =
-        processorRows[0]?.first_name && processorRows[0]?.last_name
-          ? `${processorRows[0].first_name} ${processorRows[0].last_name}`
-          : null;
+      const linkedReturnFormId =
+        (form as { return_form_id?: string }).return_form_id ??
+        transferToReturnFormId.get(formId) ??
+        null;
+      const linkedProcessorId = linkedReturnFormId
+        ? (returnProcessorById.get(linkedReturnFormId) ?? null)
+        : null;
+      if (linkedProcessorId) {
+        processed_by = processorNameMap.get(linkedProcessorId) ?? null;
+      } else if (!linkedReturnFormId) {
+        const creatorId = (form as { created_by?: string }).created_by;
+        if (creatorId) {
+          processed_by = processorNameMap.get(creatorId) ?? null;
+        }
+      }
     }
 
     let new_assigned_user:
@@ -4106,6 +4468,22 @@ async function buildTransferFormBatches(forms: any[]): Promise<any[]> {
         processor_pending_signature?: string | null;
       }
     );
+    let intangibleAssetsForForm: Array<{
+      id: string;
+      name: string;
+      type: string;
+      description: string | null;
+      notes: string | null;
+    }> = [];
+    try {
+      intangibleAssetsForForm =
+        await AssetTransferFormModel.getFormIntangibleAssets(formId);
+    } catch (intangibleErr) {
+      logger.error('Failed to load transfer form intangible assets', {
+        formId,
+        err: intangibleErr,
+      });
+    }
     batches.push({
       formID: formId,
       form_number: form.form_number,
@@ -4145,6 +4523,7 @@ async function buildTransferFormBatches(forms: any[]): Promise<any[]> {
         : null,
       declined_at: form.declined_at ?? null,
       executed_at: form.executed_at ?? null,
+      intangibleAssets: intangibleAssetsForForm,
       returns: (recordRows as any[]).map((r: any) => ({
         return_id: r.record_id,
         assignment_id: r.assignment_id,
@@ -4226,19 +4605,26 @@ export async function getAllAssetTransferFormsHandler(
   res: Response
 ) {
   try {
-    const { companyId } = await getAssetScope(pool, req.user!.userID);
+    const { companyId, departmentIds } = await getAssetScope(
+      pool,
+      req.user!.userID
+    );
     const forms = await AssetTransferFormModel.findAll();
     let filteredForms = forms;
     if (companyId) {
       // Need company_id on forms. AssetTransferFormModel.findAll() might not have it joined.
       // Assuming for now it has it or we filter after enrichment if needed.
       // But more efficient is to join.
-      const [rows] = await pool.execute(
-        `SELECT atf.* FROM asset_transfer_forms atf
+      let sql = `SELECT atf.* FROM asset_transfer_forms atf
          LEFT JOIN asset_mngmnt_departments d ON atf.department_id = d.departmentID
-         WHERE atf.deleted_at IS NULL AND d.company_id = ?`,
-        [companyId]
-      );
+         WHERE atf.deleted_at IS NULL AND d.company_id = ?`;
+      const params: unknown[] = [companyId];
+      if (departmentIds && departmentIds.length > 0) {
+        const ph = departmentIds.map(() => '?').join(',');
+        sql += ` AND d.departmentID IN (${ph})`;
+        params.push(...departmentIds);
+      }
+      const [rows] = await pool.execute(sql, params);
       filteredForms = rows as any[];
     } else {
       return res.json({ assetTransferForms: [] });
@@ -4962,6 +5348,73 @@ export async function signAssetTransferFormHandler(
       ipAddress: req.ip,
       userAgent: req.get ? req.get('User-Agent') : 'Unknown',
     });
+
+    // Notify Manager Approver 1 users in the transferrer's department AND company
+    // that the transfer form has been signed and needs approval.
+    try {
+      const transferrerUserDeptId = await getUserDepartmentId(form.user_id);
+      let signCompanyId = (form as any).company_id || null;
+      if (!signCompanyId && form.department_id) {
+        const deptRow = await getDepartmentById(form.department_id);
+        signCompanyId = deptRow?.company_id ?? null;
+      }
+      if (!signCompanyId) {
+        const transferrerUser = await getUserById(form.user_id);
+        signCompanyId = transferrerUser?.company_id ?? null;
+      }
+      if (transferrerUserDeptId && signCompanyId) {
+        const managerApprover1UserIds =
+          await getManagerApprover1UserIdsInDepartmentAndCompany(
+            transferrerUserDeptId,
+            signCompanyId
+          );
+        const transferrerRow = await getUserNamesById(req.user!.userID);
+        const transferrerName = transferrerRow
+          ? `${transferrerRow.first_name} ${transferrerRow.last_name}`.trim()
+          : 'A user';
+        const transferFormAssignments =
+          await AssetTransferFormModel.getFormAssignmentIds(formId);
+        const assetCount = transferFormAssignments.length;
+
+        const io = getIoInstance();
+        for (const approverUserId of managerApprover1UserIds) {
+          if (approverUserId !== req.user!.userID) {
+            const message = `${transferrerName} has signed the asset transfer form for ${assetCount} asset${assetCount !== 1 ? 's' : ''} and requires your approval.`;
+            const payloadData = {
+              form_id: formId,
+              form_number: form.form_number,
+              requester_id: form.user_id,
+              requester_name: transferrerName,
+              asset_count: assetCount,
+              route: '/approvals',
+              actionTarget: 'transfer_request_approval',
+            };
+            await createNotificationForApi({
+              user_id: approverUserId,
+              title: 'Asset Transfer Request Approval Needed',
+              message,
+              type: 'system',
+              data: payloadData,
+            });
+            if (io) {
+              emitNotification(io, approverUserId, 'notification', {
+                id: formId,
+                title: 'Asset Transfer Request Approval Needed',
+                message,
+                type: 'system',
+                data: payloadData,
+                time: new Date().toISOString(),
+              });
+            }
+          }
+        }
+      }
+    } catch (notifError) {
+      logger.error(
+        'Failed to send Manager Approver 1 notification after transfer form sign:',
+        notifError
+      );
+    }
 
     return createSuccessResponse(
       res,

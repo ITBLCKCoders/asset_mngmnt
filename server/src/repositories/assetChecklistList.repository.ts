@@ -6,7 +6,11 @@ import {
   hasItManagerSignColumns,
 } from './assetChecklist.repository.js';
 
-export async function getAssetChecklists(employeeId?: string) {
+export async function getAssetChecklists(
+  employeeId?: string,
+  companyId?: string,
+  departmentIds?: string[]
+) {
   const [includeEmployeeSign, includeDeptHeadSign, includeItManagerSign] =
     await Promise.all([
       hasEmployeeSignColumns(),
@@ -40,7 +44,23 @@ export async function getAssetChecklists(employeeId?: string) {
       NULL AS it_manager_digital_signature,
       NULL AS it_manager_name,`;
 
-  const whereClause = employeeId ? 'WHERE ac.employee_id = ?' : '';
+  const whereParts: string[] = [];
+  const params: unknown[] = [];
+  if (employeeId) {
+    whereParts.push('ac.employee_id = ?');
+    params.push(employeeId);
+  }
+  if (companyId) {
+    whereParts.push('c.companyID = ?');
+    params.push(companyId);
+  }
+  if (departmentIds && departmentIds.length > 0) {
+    const ph = departmentIds.map(() => '?').join(',');
+    whereParts.push(`cdept.departmentID IN (${ph})`);
+    params.push(...departmentIds);
+  }
+  const whereClause =
+    whereParts.length > 0 ? `WHERE ${whereParts.join(' AND ')}` : '';
 
   const query = `
     SELECT
@@ -87,7 +107,6 @@ export async function getAssetChecklists(employeeId?: string) {
   `;
 
   try {
-    const params = employeeId ? [employeeId] : [];
     const [rows] = await pool.query(query, params);
     return (rows as any[]).map(checklist => ({
       ...checklist,

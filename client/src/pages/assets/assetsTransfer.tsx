@@ -208,6 +208,7 @@ export default function AssetsTransfer() {
   const [selectedAssignments, setSelectedAssignments] = useState<string[]>([]);
   const [intangibleAssets, setIntangibleAssets] = useState<any[]>([]);
   const [selectedIntangibleAssetIds, setSelectedIntangibleAssetIds] = useState<string[]>([]);
+  const [intangibleNotes, setIntangibleNotes] = useState<Record<string, string>>({});
   const [intangibleSearchTerm, setIntangibleSearchTerm] = useState('');
   const [buildings, setBuildings] = useState<string[]>([]);
   const [transferring, setTransferring] = useState(false);
@@ -610,6 +611,7 @@ export default function AssetsTransfer() {
       }))
     );
     setExpandedTransferAssets(new Set(selectedData.map(a => a.asset.id)));
+    setIntangibleNotes({});
     setTransferTypeTransfer(false);
     setTransferTypeOffboarding(false);
     setReceivedBy(currentUser?.position?.trim() || '');
@@ -653,6 +655,13 @@ export default function AssetsTransfer() {
         )
         .filter(Boolean) as AssetAssignment[];
       const ownerIds = new Set(details.map(a => a.user.id).filter(Boolean));
+      for (const id of selectedIntangibleAssetIds) {
+        const ia = intangibleAssets.find(a => a.id === id);
+        const iaOwnerIds = (ia?.assignees ?? [])
+          .map((as: any) => as?.userId)
+          .filter(Boolean);
+        for (const oid of iaOwnerIds) ownerIds.add(oid);
+      }
       if (ownerIds.size > 1) {
         toast.error(
           'When the asset owner is absent, select assets that belong to the same owner only.'
@@ -681,7 +690,7 @@ export default function AssetsTransfer() {
         (currentUser as { digitalSignature?: string | null })?.digitalSignature ??
         null;
       const intangibleAssetItems = selectedIntangibleAssetIds.length > 0
-        ? selectedIntangibleAssetIds.map(id => ({ id }))
+        ? selectedIntangibleAssetIds.map(id => ({ id, notes: intangibleNotes[id] ?? '' }))
         : undefined;
       const payload: Record<string, unknown> = {
         assetTransfers: assetTransferData.map(d => ({
@@ -718,6 +727,7 @@ export default function AssetsTransfer() {
       setShowTransferDialog(false);
       setSelectedAssignments([]);
       setSelectedIntangibleAssetIds([]);
+      setIntangibleNotes({});
       await Promise.all([fetchAssignments(), fetchTransferHistory(), fetchIntangibleAssets()]);
     } catch (err: any) {
       const data = err?.data ?? err?.response?.data;
@@ -2611,6 +2621,7 @@ export default function AssetsTransfer() {
               setTransferTypeTransfer(false);
               setTransferTypeOffboarding(false);
               setReceivedBy('');
+              setIntangibleNotes({});
             }
           }}
         >
@@ -2676,6 +2687,16 @@ export default function AssetsTransfer() {
                   </label>
                 </div>
               </div>
+
+              {/* Tangible Asset table */}
+              {assetTransferData.length > 0 && (
+                <div className="rounded-xl border border-slate-200 bg-white p-5 shadow-sm">
+                  <Label className="text-sm font-semibold text-slate-800 tracking-tight uppercase flex items-center gap-2">
+                    <Package className="h-4 w-4 text-red-500" />
+                    Tangible Asset ({assetTransferData.length})
+                  </Label>
+                </div>
+              )}
 
               {/* Asset Cards */}
               {assetTransferData.map((td, idx) => {
@@ -2827,6 +2848,54 @@ export default function AssetsTransfer() {
                   </div>
                 );
               })}
+
+              {/* Intangible Asset table */}
+              {selectedIntangibleAssetIds.length > 0 && (
+                <div className="rounded-xl border border-slate-200 bg-white p-5 shadow-sm">
+                  <Label className="text-sm font-semibold text-slate-800 tracking-tight uppercase flex items-center gap-2 mb-4">
+                    <Layers className="h-4 w-4 text-red-500" />
+                    Intangible Asset ({selectedIntangibleAssetIds.length})
+                  </Label>
+                  <div className="overflow-x-auto">
+                    <table className="w-full text-sm">
+                      <thead>
+                        <tr className="border-b border-slate-200">
+                          <th className="text-left py-2 px-3 font-semibold text-slate-700">Name</th>
+                          <th className="text-left py-2 px-3 font-semibold text-slate-700">Type</th>
+                          <th className="text-left py-2 px-3 font-semibold text-slate-700">Description</th>
+                          <th className="text-left py-2 px-3 font-semibold text-slate-700">Notes</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {selectedIntangibleAssetIds.map(id => {
+                          const asset = intangibleAssets.find(a => a.id === id);
+                          if (!asset) return null;
+                          return (
+                            <tr key={id} className="border-b border-slate-100 last:border-0">
+                              <td className="py-2 px-3 text-slate-900 font-medium">{asset.name}</td>
+                              <td className="py-2 px-3">
+                                <Badge variant="outline" className={asset.type === 'IT scope' ? 'bg-red-100 text-red-800 border-red-200' : 'bg-orange-100 text-orange-800 border-orange-200'}>
+                                  {asset.type}
+                                </Badge>
+                              </td>
+                              <td className="py-2 px-3 text-slate-600">{asset.description || '—'}</td>
+                              <td className="py-2 px-3">
+                                <Textarea
+                                  placeholder="Notes..."
+                                  value={intangibleNotes[id] ?? ''}
+                                  onChange={e => setIntangibleNotes(prev => ({ ...prev, [id]: e.target.value }))}
+                                  className="border-slate-200 focus:border-red-500 focus:ring-red-500/20 rounded-lg resize-none text-xs"
+                                  rows={2}
+                                />
+                              </td>
+                            </tr>
+                          );
+                        })}
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+              )}
 
               {/* New Assignment Details */}
               <div className="rounded-xl border border-slate-200 bg-white p-5 shadow-sm space-y-4">

@@ -258,6 +258,36 @@ describe('assetReturns.controller', () => {
         })
       );
     });
+
+    it('counts linked transfer form assignments for held transfers (no asset_returns rows yet)', async () => {
+      req.params = { formId: 'f1' };
+      req.body = { digitalSignature: 'sig-data' };
+      transferRepo.getReturnFormById.mockResolvedValue({ formID: 'f1', form_number: 'RET-001', user_id: 'u1', signed_at: null, owner_absent: 0, company_id: '10', department_id: 'd1' });
+      returnRepo.fetchUserDigitalSignature.mockResolvedValue('dig-sig');
+      transferRepo.getUserDepartmentId.mockResolvedValue('d1');
+      transferRepo.getDepartmentById.mockResolvedValue({ company_id: '10' });
+      transferRepo.getUserNamesById.mockResolvedValue({ first_name: 'John', last_name: 'Doe' });
+      returnModel.findByFormId.mockResolvedValue([]);
+      transferRepo.getTransferFormIdsByReturnFormId.mockResolvedValue(['tf1']);
+      transferRepo.getTransferFormAssignments.mockResolvedValue([{ assignment_id: 'a1' }, { assignment_id: 'a2' }, { assignment_id: 'a3' }]);
+      getManagerApprover1UserIdsInDepartmentAndCompany.mockResolvedValue(['u-ma1']);
+      await assetReturnsController.signAssetReturnFormHandler(req, res);
+      expect(res._json.message).toContain('signed');
+      expect(transferRepo.getTransferFormIdsByReturnFormId).toHaveBeenCalledWith('f1');
+      expect(createNotificationForApi).toHaveBeenCalledWith(
+        expect.objectContaining({
+          user_id: 'u-ma1',
+          title: 'Asset Return Request Approval Needed',
+          message:
+            'John Doe has signed the asset return form for 3 assets and requires your approval.',
+          data: expect.objectContaining({
+            form_id: 'f1',
+            asset_count: 3,
+            actionTarget: 'return_request_approval',
+          }),
+        })
+      );
+    });
   });
 
   describe('approveReturnFormHandler', () => {
@@ -683,6 +713,59 @@ describe('assetReturns.controller', () => {
         );
       expect(fields.processed_by).toBe('Jane Processor');
       expect(transferRepo.getUserNamesById).toHaveBeenCalledWith('proc-1');
+    });
+
+    it('does not resolve the returner as the processor when created_by equals the returner', async () => {
+      const processorNames = new Map<string, string>([
+        ['emp-1', 'Erin Employee'],
+      ]);
+      const fields =
+        await assetReturnsController.resolveReturnProcessorFieldsForBatch(
+          {
+            formID: 'f1',
+            user_id: 'emp-1',
+            created_by: 'emp-1',
+            process_signed_at: '2024-06-01 10:00:00',
+            process_digital_signature: null,
+            process_signed_by: null,
+          },
+          {
+            processorNames,
+            linkedTransfer: {
+              created_by: 'emp-1',
+              process_signed_at: '2024-06-01 10:00:00',
+              process_digital_signature: null,
+              processor_pending_signed_at: null,
+              processor_pending_signature: null,
+            },
+          }
+        );
+      expect(fields.processed_by).toBe('');
+      expect(returnRepo.fetchUserDigitalSignature).not.toHaveBeenCalled();
+    });
+
+    it('resolves the processor from process_signed_by even when created_by equals the returner', async () => {
+      const processorNames = new Map<string, string>([
+        ['emp-1', 'Erin Employee'],
+        ['proc-1', 'Jane Processor'],
+      ]);
+      returnRepo.fetchUserDigitalSignature.mockResolvedValue('sig');
+      const fields =
+        await assetReturnsController.resolveReturnProcessorFieldsForBatch(
+          {
+            formID: 'f1',
+            user_id: 'emp-1',
+            created_by: 'emp-1',
+            process_signed_at: '2024-06-01 10:00:00',
+            process_digital_signature: null,
+            process_signed_by: 'proc-1',
+          },
+          { processorNames, linkedTransfer: null }
+        );
+      expect(fields.processed_by).toBe('Jane Processor');
+      expect(returnRepo.fetchUserDigitalSignature).toHaveBeenCalledWith(
+        'proc-1'
+      );
     });
   });
 

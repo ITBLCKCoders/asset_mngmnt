@@ -47,6 +47,7 @@ import {
 import { matchesFormListSearch } from '@/utils/formListSearch';
 import { cn } from '@/lib/utils';
 import { classifyDepartmentScopeByName } from '@/lib/assetScope';
+import { getRoleAssetTypeScope } from '@/utils/roleAssetTypeScope';
 
 type StatusFilter = 'all' | 'active' | 'disabled';
 type AssetTypeFilter = 'all' | 'it' | 'admin';
@@ -82,13 +83,22 @@ export default function AccountabilityFormsPage() {
   const showCompanyFilter = !userCompanyScope || isSuperAdminOrAdmin || hasHrAccountabilityReceiver;
   
   useEffect(() => {
-    if (userCompanyScope && companyFilterId !== userCompanyScope) {
+    if (
+      userCompanyScope &&
+      !isSuperAdminOrAdmin &&
+      !hasHrAccountabilityReceiver &&
+      companyFilterId !== userCompanyScope
+    ) {
       setCompanyFilterId(userCompanyScope);
     }
-  }, [userCompanyScope]);
+  }, [userCompanyScope, isSuperAdminOrAdmin, hasHrAccountabilityReceiver]);
   
   // Get user's role asset type for scoping
-  const userRoleAssetType = currentUser?.role?.asset_type || 'none';
+  const { roleScope: userRoleScope, isRoleScoped: isAssetTypeRoleScoped } =
+    getRoleAssetTypeScope(currentUser?.role?.asset_type);
+  const effectiveAssetTypeFilter: AssetTypeFilter = isAssetTypeRoleScoped
+    ? userRoleScope
+    : assetTypeFilter;
   const [selectedForm, setSelectedForm] = useState<AccountabilityForm | null>(
     null
   );
@@ -201,9 +211,10 @@ export default function AccountabilityFormsPage() {
   };
   
   const filterByAssetType = (list: AccountabilityForm[]) => {
-    if (assetTypeFilter === 'all') return list;
+    if (effectiveAssetTypeFilter === 'all') return list;
     
-    const targetScope = assetTypeFilter === 'it' ? 'IT' : 'Admin';
+    const targetScope =
+      effectiveAssetTypeFilter === 'it' ? 'IT' : 'Admin';
     
     return list.filter((f: AccountabilityForm) => {
       // Check if any asset in the form matches the selected asset type
@@ -274,14 +285,14 @@ export default function AccountabilityFormsPage() {
           filterByAssetType(filterByCompanyAndDepartment(forms))
         )
       ),
-    [forms, searchQuery, statusFilter, companyFilterId, departmentFilterId, assetTypeFilter]
+    [forms, searchQuery, statusFilter, companyFilterId, departmentFilterId, effectiveAssetTypeFilter]
   );
   const filteredHrCopy = useMemo(
     () =>
       applyStatusFilter(
         filterBySearch(filterByAssetType(filterByCompanyAndDepartment(hrCopyForms)))
       ),
-    [hrCopyForms, searchQuery, statusFilter, companyFilterId, departmentFilterId, assetTypeFilter]
+    [hrCopyForms, searchQuery, statusFilter, companyFilterId, departmentFilterId, effectiveAssetTypeFilter]
   );
 
   const pageCount = useMemo(() => {
@@ -604,44 +615,46 @@ export default function AccountabilityFormsPage() {
                     Disabled
                   </Button>
                 </div>
-                <div className="flex gap-2 flex-wrap">
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    onClick={() => setAssetTypeFilter('all')}
-                    className={
-                      assetTypeFilter === 'all'
-                        ? 'bg-red-600 text-white hover:bg-red-700 hover:text-white border-red-600'
-                        : ''
+                {!isAssetTypeRoleScoped && (
+                  <div className="flex gap-2 flex-wrap">
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() => setAssetTypeFilter('all')}
+                      className={
+                        effectiveAssetTypeFilter === 'all'
+                          ? 'bg-red-600 text-white hover:bg-red-700 hover:text-white border-red-600'
+                          : ''
                     }
-                  >
-                    All Assets
-                  </Button>
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    onClick={() => setAssetTypeFilter('it')}
-                    className={
-                      assetTypeFilter === 'it'
-                        ? 'bg-red-600 text-white hover:bg-red-700 hover:text-white border-red-600'
-                        : ''
+                    >
+                      All Assets
+                    </Button>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() => setAssetTypeFilter('it')}
+                      className={
+                        effectiveAssetTypeFilter === 'it'
+                          ? 'bg-red-600 text-white hover:bg-red-700 hover:text-white border-red-600'
+                          : ''
                     }
-                  >
-                    IT Assets
-                  </Button>
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    onClick={() => setAssetTypeFilter('admin')}
-                    className={
-                      assetTypeFilter === 'admin'
-                        ? 'bg-red-600 text-white hover:bg-red-700 hover:text-white border-red-600'
-                        : ''
+                    >
+                      IT Assets
+                    </Button>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() => setAssetTypeFilter('admin')}
+                      className={
+                        effectiveAssetTypeFilter === 'admin'
+                          ? 'bg-red-600 text-white hover:bg-red-700 hover:text-white border-red-600'
+                          : ''
                     }
-                  >
-                    Admin Assets
-                  </Button>
-                </div>
+                    >
+                      Admin Assets
+                    </Button>
+                  </div>
+                )}
               </div>
 
               <TabsContent value="all" className="mt-0">
@@ -770,44 +783,46 @@ export default function AccountabilityFormsPage() {
                     Disabled
                   </Button>
                 </div>
-                <div className="flex gap-2 flex-wrap">
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    onClick={() => setAssetTypeFilter('all')}
-                    className={
-                      assetTypeFilter === 'all'
-                        ? 'bg-red-600 text-white hover:bg-red-700 hover:text-white border-red-600'
-                        : ''
+                {!isAssetTypeRoleScoped && (
+                  <div className="flex gap-2 flex-wrap">
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() => setAssetTypeFilter('all')}
+                      className={
+                        effectiveAssetTypeFilter === 'all'
+                          ? 'bg-red-600 text-white hover:bg-red-700 hover:text-white border-red-600'
+                          : ''
                     }
-                  >
-                    All Assets
-                  </Button>
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    onClick={() => setAssetTypeFilter('it')}
-                    className={
-                      assetTypeFilter === 'it'
-                        ? 'bg-red-600 text-white hover:bg-red-700 hover:text-white border-red-600'
-                        : ''
+                    >
+                      All Assets
+                    </Button>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() => setAssetTypeFilter('it')}
+                      className={
+                        effectiveAssetTypeFilter === 'it'
+                          ? 'bg-red-600 text-white hover:bg-red-700 hover:text-white border-red-600'
+                          : ''
                     }
-                  >
-                    IT Assets
-                  </Button>
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    onClick={() => setAssetTypeFilter('admin')}
-                    className={
-                      assetTypeFilter === 'admin'
-                        ? 'bg-red-600 text-white hover:bg-red-700 hover:text-white border-red-600'
-                        : ''
+                    >
+                      IT Assets
+                    </Button>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() => setAssetTypeFilter('admin')}
+                      className={
+                        effectiveAssetTypeFilter === 'admin'
+                          ? 'bg-red-600 text-white hover:bg-red-700 hover:text-white border-red-600'
+                          : ''
                     }
-                  >
-                    Admin Assets
-                  </Button>
-                </div>
+                    >
+                      Admin Assets
+                    </Button>
+                  </div>
+                )}
               </div>
 
               <div className="flex items-center gap-2 mb-4">

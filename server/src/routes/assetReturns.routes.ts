@@ -9,6 +9,7 @@ import {
   getPendingApprovalsHandler,
   getApprovedByMeHandler,
   getPendingStaffHandler,
+  getReturnProcessedByMeHandler,
   getReceivePendingApprovalsHandler,
   receiveReturnFormHandler,
   processReturnFormHandler,
@@ -182,6 +183,8 @@ router.get(
 router.get('/forms/approved-by-me', authenticate, getApprovedByMeHandler);
 
 router.get('/forms/pending-staff', authenticate, getPendingStaffHandler);
+
+router.get('/forms/processed-by-me', authenticate, getReturnProcessedByMeHandler);
 
 router.get(
   '/forms/receive-pending-approvals',

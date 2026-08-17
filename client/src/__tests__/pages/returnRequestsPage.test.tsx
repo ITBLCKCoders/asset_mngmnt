@@ -50,4 +50,23 @@ describe('ReturnRequestsPage', () => {
       expect(api.get).toHaveBeenCalled();
     });
   });
+
+  it('renders Request and Processed tabs', async () => {
+    render(<BrowserRouter><ReturnRequestsPage /></BrowserRouter>);
+    await waitFor(() => {
+      expect(screen.getByRole('tab', { name: 'Request' })).toBeInTheDocument();
+      expect(
+        screen.getByRole('tab', { name: 'Processed' })
+      ).toBeInTheDocument();
+    });
+  });
+
+  it('fetches processed-by-me return requests on mount', async () => {
+    render(<BrowserRouter><ReturnRequestsPage /></BrowserRouter>);
+    await waitFor(() => {
+      expect(api.get).toHaveBeenCalledWith(
+        '/asset-returns/forms/processed-by-me'
+      );
+    });
+  });
 });

@@ -50,4 +50,23 @@ describe('TransferRequestsPage', () => {
       expect(api.get).toHaveBeenCalled();
     });
   });
+
+  it('renders Request and Processed tabs', async () => {
+    render(<BrowserRouter><TransferRequestsPage /></BrowserRouter>);
+    await waitFor(() => {
+      expect(screen.getByRole('tab', { name: 'Request' })).toBeInTheDocument();
+      expect(
+        screen.getByRole('tab', { name: 'Processed' })
+      ).toBeInTheDocument();
+    });
+  });
+
+  it('fetches processed-by-me transfer requests on mount', async () => {
+    render(<BrowserRouter><TransferRequestsPage /></BrowserRouter>);
+    await waitFor(() => {
+      expect(api.get).toHaveBeenCalledWith(
+        '/asset-transfers/forms/processed-by-me'
+      );
+    });
+  });
 });

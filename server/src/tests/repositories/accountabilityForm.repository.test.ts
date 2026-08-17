@@ -8,6 +8,7 @@ jest.mock('../../logger.js', () => ({ __esModule: true, default: { info: jest.fn
 const {
   findFormsByAssetId,
   getActiveIntangibleAssetsByUserAndDepartment,
+  listAccountabilityForms,
 } = require('../../repositories/accountabilityForm.repository.js');
 
 describe('accountabilityForm.repository', () => {
@@ -40,6 +41,32 @@ describe('accountabilityForm.repository', () => {
       const [sql, params] = mockPool.execute.mock.calls[0];
       expect(sql).toContain('intangible_asset_assignments');
       expect(params).toEqual(['u1', 'd1']);
+    });
+  });
+
+  describe('listAccountabilityForms', () => {
+    it('filters by company and department scope', async () => {
+      mockPool.execute.mockResolvedValue([[{ formID: 'f1' }], []]);
+      const result = await listAccountabilityForms({
+        userId: 'u1',
+        status: 'Pending',
+        companyId: 'c1',
+        departmentIds: ['d1', 'd2'],
+      });
+      expect(result).toEqual([{ formID: 'f1' }]);
+      const [sql, params] = mockPool.execute.mock.calls[0];
+      expect(sql).toContain('u.company_id = ?');
+      expect(sql).toContain('(ud.departmentID IN (?,?) OR d.departmentID IN (?,?))');
+      expect(params).toEqual(['u1', 'Pending', 'c1', 'd1', 'd2', 'd1', 'd2']);
+    });
+
+    it('skips company/dept filters when not provided', async () => {
+      mockPool.execute.mockResolvedValue([[{ formID: 'f2' }], []]);
+      await listAccountabilityForms({});
+      const [sql, params] = mockPool.execute.mock.calls[0];
+      expect(sql).not.toContain('u.company_id');
+      expect(sql).not.toContain('departmentID IN');
+      expect(params).toEqual([]);
     });
   });
 });

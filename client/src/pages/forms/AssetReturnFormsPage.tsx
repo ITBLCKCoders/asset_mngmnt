@@ -38,6 +38,7 @@ import {
   returnBatchMatchesOrgFilters,
   returnBatchMatchesAssetType,
 } from '@/utils/formBatchOrgFilters';
+import { getRoleAssetTypeScope } from '@/utils/roleAssetTypeScope';
 
 type AssetTypeFilter = 'all' | 'it' | 'admin';
 
@@ -50,6 +51,11 @@ export default function AssetReturnFormsPage() {
   const [companyFilterId, setCompanyFilterId] = useState('');
   const [departmentFilterId, setDepartmentFilterId] = useState('');
   const [assetTypeFilter, setAssetTypeFilter] = useState<AssetTypeFilter>('all');
+  const { roleScope: userRoleScope, isRoleScoped: isAssetTypeRoleScoped } =
+    getRoleAssetTypeScope(currentUser?.role?.asset_type);
+  const effectiveAssetTypeFilter: AssetTypeFilter = isAssetTypeRoleScoped
+    ? userRoleScope
+    : assetTypeFilter;
   
   // Auto-set company filter to user's company if they have one
   const userCompanyScope = currentUser?.company_id || '';
@@ -153,8 +159,8 @@ export default function AssetReturnFormsPage() {
       );
 
       // Apply asset type filter
-      if (assetTypeFilter !== 'all') {
-        const targetScope = assetTypeFilter === 'it' ? 'IT' : 'Admin';
+      if (effectiveAssetTypeFilter !== 'all') {
+        const targetScope = effectiveAssetTypeFilter === 'it' ? 'IT' : 'Admin';
         result = result.filter(batch =>
           returnBatchMatchesAssetType(batch, targetScope)
         );
@@ -162,7 +168,7 @@ export default function AssetReturnFormsPage() {
 
       return result;
     },
-    [batches, companyFilterId, departmentFilterId, assetTypeFilter]
+    [batches, companyFilterId, departmentFilterId, effectiveAssetTypeFilter]
   );
 
   const filteredBatches = useMemo(() => {
@@ -274,13 +280,14 @@ export default function AssetReturnFormsPage() {
                 </div>
               </div>
             </div>
+            {!isAssetTypeRoleScoped && (
             <div className="flex gap-2 flex-wrap">
               <Button
                 variant="outline"
                 size="sm"
                 onClick={() => setAssetTypeFilter('all')}
                 className={
-                  assetTypeFilter === 'all'
+                  effectiveAssetTypeFilter === 'all'
                     ? 'bg-red-600 text-white hover:bg-red-700 hover:text-white border-red-600'
                     : ''
                 }
@@ -292,7 +299,7 @@ export default function AssetReturnFormsPage() {
                 size="sm"
                 onClick={() => setAssetTypeFilter('it')}
                 className={
-                  assetTypeFilter === 'it'
+                  effectiveAssetTypeFilter === 'it'
                     ? 'bg-red-600 text-white hover:bg-red-700 hover:text-white border-red-600'
                     : ''
                 }
@@ -304,7 +311,7 @@ export default function AssetReturnFormsPage() {
                 size="sm"
                 onClick={() => setAssetTypeFilter('admin')}
                 className={
-                  assetTypeFilter === 'admin'
+                  effectiveAssetTypeFilter === 'admin'
                     ? 'bg-red-600 text-white hover:bg-red-700 hover:text-white border-red-600'
                     : ''
                 }
@@ -312,6 +319,7 @@ export default function AssetReturnFormsPage() {
                 Admin Assets
               </Button>
             </div>
+            )}
           </div>
 
           <div className="flex items-center gap-2 mb-4">

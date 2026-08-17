@@ -568,6 +568,8 @@ export async function findFormsByAssetId(
 export async function listAccountabilityForms(filters: {
   userId?: string | undefined;
   status?: string | undefined;
+  companyId?: string | undefined;
+  departmentIds?: string[] | undefined;
 }): Promise<RowDataPacket[]> {
   const where: string[] = ['af.deleted_at IS NULL'];
   const params: unknown[] = [];
@@ -578,6 +580,17 @@ export async function listAccountabilityForms(filters: {
   if (filters.status) {
     where.push('af.status = ?');
     params.push(filters.status);
+  }
+  if (filters.companyId) {
+    where.push('u.company_id = ?');
+    params.push(filters.companyId);
+  }
+  if (filters.departmentIds && filters.departmentIds.length > 0) {
+    const ph = filters.departmentIds.map(() => '?').join(',');
+    where.push(
+      `(ud.departmentID IN (${ph}) OR d.departmentID IN (${ph}))`
+    );
+    params.push(...filters.departmentIds, ...filters.departmentIds);
   }
   const [rows] = await pool.execute<RowDataPacket[]>(
     `${FORM_FULL_SELECT_AND_JOINS}
