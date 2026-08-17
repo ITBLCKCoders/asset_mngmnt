@@ -6,7 +6,7 @@ import type { AuthRequest } from '../middleware/authenticate.js';
 import logger from '../logger.js';
 import { createAuditLog } from '../utils/audit.js';
 import { handleAccountabilityFormOnAssetReturn } from '../utils/accountabilityFormOnReturn.js';
-import { getAssetScope } from '../utils/assetScope.js';
+import { getAssetScope, getDepartmentIdsForScope } from '../utils/assetScope.js';
 import { createAccountabilityFormHandler } from './accountabilityForms.controller.js';
 import {
   isUserManagerApprover1,
@@ -2248,6 +2248,10 @@ export async function getAssetReturnsHandler(req: AuthRequest, res: Response) {
         'You can only view your own return requests'
       );
     }
+
+    // Get scope from query param (for Global Admin to switch between IT/Admin)
+    const scope = req.query.scope as 'it' | 'admin' | undefined;
+
     const assetReturns = requestedUserId
       ? await AssetReturnModel.findByUserId(requestedUserId)
       : await AssetReturnModel.findAll();
@@ -2256,11 +2260,26 @@ export async function getAssetReturnsHandler(req: AuthRequest, res: Response) {
     );
 
     // Scope list by the user's company and IT/Admin department scope.
-    const scope = await getAssetScope(pool, req.user!.userID);
-    const scopeCompanyId = scope.companyId ?? undefined;
-    const scopeDeptIds = scope.departmentIds?.length
-      ? scope.departmentIds
+    const assetScope = await getAssetScope(pool, req.user!.userID);
+    const scopeCompanyId = assetScope.companyId ?? undefined;
+    const scopeDeptIds = assetScope.departmentIds?.length
+      ? assetScope.departmentIds
       : undefined;
+    const isSuperAdmin = assetScope.isSuperAdmin;
+
+    // For Global Admin with scope param, get category IDs for that scope
+    let scopeCategoryIds: string[] | null = null;
+    if (isSuperAdmin && scope) {
+      const departmentIds = await getDepartmentIdsForScope(pool, scope, scopeCompanyId);
+      if (departmentIds.length > 0) {
+        const placeholders = departmentIds.map(() => '?').join(',');
+        const [rows] = (await pool.execute(
+          `SELECT categoryID FROM asset_categories WHERE department_id IN (${placeholders}) AND deleted_at IS NULL`,
+          departmentIds
+        )) as any[];
+        scopeCategoryIds = (rows as any[]).map(r => String(r.categoryID));
+      }
+    }
 
     // Fetch all return forms (including declined) for full history and status.
     // Department scope applies to the general listing only; a self-view
@@ -2755,6 +2774,28 @@ export async function getAssetReturnsHandler(req: AuthRequest, res: Response) {
         new Date(b.created_at || 0).getTime() -
         new Date(a.created_at || 0).getTime()
     );
+
+    // Filter by scope category IDs (for Global Admin with IT/Admin scope)
+    if (scopeCategoryIds && scopeCategoryIds.length > 0) {
+      const categorySet = new Set(scopeCategoryIds);
+      const filterFn = (r: any) => {
+        const catId = r.assignment?.asset?.category_id ?? r.asset?.category_id ?? null;
+        return catId && categorySet.has(String(catId));
+      };
+      // Filter flat history
+      const filteredHistory = flatReturnHistory.filter(filterFn);
+      flatReturnHistory.length = 0;
+      flatReturnHistory.push(...filteredHistory);
+
+      // Filter assetReturnForms - keep only forms that have returns matching the scope
+      for (const form of assetReturnForms) {
+        form.returns = form.returns.filter(filterFn);
+      }
+      // Remove forms with no returns
+      const filteredForms = assetReturnForms.filter(f => f.returns.length > 0);
+      assetReturnForms.length = 0;
+      assetReturnForms.push(...filteredForms);
+    }
 
     // Attach return form number to each flattened history row
     for (const r of flatReturnHistory as any[]) {
@@ -3658,13 +3699,38 @@ export async function getPendingStaffHandler(req: AuthRequest, res: Response) {
   }
 }
 
-/** GET return forms processed by the current user. Mirrors getPendingStaffHandler but filters forms where process_signed_at is set and process_signed_by matches the current user. */
+/** GET return forms processed by the current user. Mirrors getPendingStaffHandler but filters forms where process_signed_at is set and process_signed_by matches the current user. For admins (global admin, admin role), shows all processed forms in their company scope. Supports optional scope filter (it | admin). */
 export async function getReturnProcessedByMeHandler(
   req: AuthRequest,
   res: Response
 ) {
   try {
     const userId = req.user!.userID;
+    const scope = (req.query.scope as 'it' | 'admin' | undefined)?.toLowerCase();
+    const { companyId, departmentIds, isSuperAdmin } = await getAssetScope(pool, userId);
+    if (!companyId) {
+      return res.json({ assetReturnForms: [] });
+    }
+
+    const isAdminScope = isSuperAdmin || departmentIds === null;
+
+    // For admins (global admin, admin), apply scope filter to department IDs
+    let effectiveDeptIds = departmentIds;
+    if ((isSuperAdmin || departmentIds === null) && scope) {
+      const targetDeptPattern = scope === 'it' ? '%IT%' : '%Admin%';
+      const patterns = [
+        targetDeptPattern,
+        targetDeptPattern === '%IT%'
+          ? '%Information Technology%'
+          : '%Administration%',
+      ];
+      let sql = `SELECT departmentID 
+         FROM asset_mngmnt_departments 
+         WHERE (name LIKE ? OR name LIKE ?) AND deleted_at IS NULL AND company_id = ?`;
+      const params = [...patterns, companyId];
+      const [deptRows] = (await pool.execute(sql, params)) as any[];
+      effectiveDeptIds = deptRows.map((row: any) => row.departmentID);
+    }
 
     const [formRows] = (await pool.execute(
       `SELECT arf.formID, arf.form_number, arf.user_id, arf.department_id, arf.location_id, arf.location_room_id, arf.created_by, arf.created_at, arf.updated_at, arf.deleted_at,
@@ -3678,12 +3744,18 @@ export async function getReturnProcessedByMeHandler(
        LEFT JOIN asset_mngmnt_departments d ON arf.department_id = d.departmentID
        WHERE arf.deleted_at IS NULL
          AND arf.process_signed_at IS NOT NULL
-         AND arf.process_signed_by = ?
+         AND d.company_id = ?
+         ${!isAdminScope ? 'AND arf.process_signed_by = ?' : ''}
        ORDER BY arf.process_signed_at DESC`,
-      [userId]
+      isAdminScope ? [companyId] : [companyId, userId]
     )) as any[];
 
-    const formIds = (formRows as any[]).map((r: any) => r.formID);
+    // Apply department scope filter (effectiveDeptIds includes scope filter for admins)
+    const filteredRows = effectiveDeptIds && effectiveDeptIds.length > 0
+      ? (formRows as any[]).filter((r: any) => r.department_id && effectiveDeptIds.includes(String(r.department_id)))
+      : formRows;
+
+    const formIds = (filteredRows as any[]).map((r: any) => r.formID);
     if (formIds.length === 0) {
       return res.json({ assetReturnForms: [] });
     }
@@ -3701,11 +3773,8 @@ export async function getReturnProcessedByMeHandler(
       }
     }
 
-    const processorNames = await getUserNamesById(userId);
-    const processedByName = processorNames
-      ? `${processorNames.first_name || ''} ${processorNames.last_name || ''}`
-          .trim() || 'Unknown'
-      : 'Unknown';
+    // For admin scope, we need the actual processor name per form
+    const processorNamesCache = new Map<string, string>();
 
     const assetReturnForms: {
       formID: string;
@@ -3728,9 +3797,31 @@ export async function getReturnProcessedByMeHandler(
       returns: (typeof returnsWithDetails)[0][];
     }[] = [];
 
-    for (const form of formRows as any[]) {
+    for (const form of filteredRows as any[]) {
       const returns = returnsByFormId.get(form.formID) ?? [];
       if (returns.length === 0) continue;
+
+      let processedByName: string;
+      if (isAdminScope) {
+        // Get the actual processor name for this form
+        if (!processorNamesCache.has(form.process_signed_by)) {
+          const processorNames = await getUserNamesById(form.process_signed_by);
+          processedByName = processorNames
+            ? `${processorNames.first_name || ''} ${processorNames.last_name || ''}`
+                .trim() || 'Unknown'
+            : 'Unknown';
+          processorNamesCache.set(form.process_signed_by, processedByName);
+        } else {
+          processedByName = processorNamesCache.get(form.process_signed_by)!;
+        }
+      } else {
+        // Regular user: they are the processor
+        const myNames = await getUserNamesById(userId);
+        processedByName = myNames
+          ? `${myNames.first_name || ''} ${myNames.last_name || ''}`.trim() || 'Unknown'
+          : 'Unknown';
+      }
+
       assetReturnForms.push({
         formID: form.formID,
         form_number: form.form_number,

@@ -2,15 +2,27 @@
 
 import { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
-import { Undo2, ArrowLeft, FileText, Package } from 'lucide-react';
+import { Undo2, ArrowLeft, FileText, Package, Download } from 'lucide-react';
 import { Shimmer } from '@/components/ui/shimmer';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { PageHeader } from '@/components/common/PageHeader';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
+import { Input } from '@/components/ui/input';
 import { api } from '@/lib/api';
 import { toast } from 'sonner';
 import { useCurrentUser } from '@/hooks/useCurrentUser';
+import { useAssetMovementExport } from '@/hooks/useAssetMovementExport';
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogHeader,
+  DialogTitle,
+} from '@/components/ui/dialog';
+import { Label } from '@/components/ui/label';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import { Checkbox } from '@/components/ui/checkbox';
 
 /** Minimal batch shape from GET /asset-returns/user/:userId (assetReturnForms) */
 interface ReturnFormBatch {
@@ -62,6 +74,22 @@ export default function MyReturnRequestsPage() {
   const [batches, setBatches] = useState<ReturnFormBatch[]>([]);
   const [loading, setLoading] = useState(true);
 
+  const {
+    isExportDialogOpen,
+    setIsExportDialogOpen,
+    exportType,
+    setExportType,
+    exportStep,
+    setExportStep,
+    filters,
+    setFilters,
+    handleExportClick,
+    handleExportConfirm,
+    handleFilterChange,
+    handlePrevStep,
+    resetDialog,
+  } = useAssetMovementExport();
+
   const fetchForms = async () => {
     if (!currentUser?.id) {
       setBatches([]);
@@ -99,16 +127,38 @@ export default function MyReturnRequestsPage() {
           title="My Asset Return Requests"
           description="View status of your return requests"
         >
-          <Link to="/assets/return-request">
-            <Button
-              variant="header"
-              size="sm"
-              className="flex items-center gap-2"
-            >
-              <ArrowLeft className="h-4 w-4" />
-              Back to Return Request
-            </Button>
-          </Link>
+          <div className="flex items-center gap-2">
+            <Link to="/assets/return-request">
+              <Button
+                variant="header"
+                size="sm"
+                className="flex items-center gap-2"
+              >
+                <ArrowLeft className="h-4 w-4" />
+                Back to Return Request
+              </Button>
+            </Link>
+            <div className="relative" role="group">
+              <Button
+                variant="header"
+                size="sm"
+                onClick={() => handleExportClick('pdf')}
+                className="flex items-center gap-2"
+              >
+                <Download className="h-4 w-4" />
+                Export PDF
+              </Button>
+              <Button
+                variant="header"
+                size="sm"
+                onClick={() => handleExportClick('excel')}
+                className="flex items-center gap-2"
+              >
+                <Download className="h-4 w-4" />
+                Export Excel
+              </Button>
+            </div>
+          </div>
         </PageHeader>
 
         {loading ? (
@@ -229,6 +279,114 @@ export default function MyReturnRequestsPage() {
           </div>
         )}
       </main>
+
+      <Dialog open={isExportDialogOpen} onOpenChange={setIsExportDialogOpen}>
+        <DialogContent className="max-w-xl sm:max-w-2xl">
+          <DialogHeader>
+            <DialogTitle>
+              {exportStep === 1
+                ? `Export ${exportType?.toUpperCase() ?? ''} — Step 1: Format`
+                : `Export ${exportType?.toUpperCase() ?? ''} — Step 2: Filters`}
+            </DialogTitle>
+            <DialogDescription>
+              {exportStep === 1
+                ? 'Choose the export format.'
+                : 'Apply optional filters to narrow down the exported data.'}
+            </DialogDescription>
+          </DialogHeader>
+          <div className="py-4 space-y-6">
+            {exportStep === 1 && (
+              <div className="grid grid-cols-2 gap-4">
+                <Button
+                  variant="outline"
+                  className="h-24 flex-col gap-3"
+                  onClick={() => {
+                    setExportType('pdf');
+                    setExportStep(2);
+                  }}
+                >
+                  <FileText className="h-8 w-8 text-red-600" />
+                  <span className="font-semibold">PDF</span>
+                  <span className="text-xs text-gray-500">Document format</span>
+                </Button>
+                <Button
+                  variant="outline"
+                  className="h-24 flex-col gap-3"
+                  onClick={() => {
+                    setExportType('excel');
+                    setExportStep(2);
+                  }}
+                >
+                  <FileText className="h-8 w-8 text-green-600" />
+                  <span className="font-semibold">Excel</span>
+                  <span className="text-xs text-gray-500">Spreadsheet format</span>
+                </Button>
+              </div>
+            )}
+            {exportStep === 2 && (
+              <div className="space-y-4">
+                <div className="grid grid-cols-2 gap-4">
+                  <div>
+                    <Label className="text-sm font-medium">From Date</Label>
+                    <Input
+                      type="date"
+                      value={filters.fromDate}
+                      onChange={e => handleFilterChange('fromDate', e.target.value)}
+                      className="mt-1 h-9 text-sm"
+                    />
+                  </div>
+                  <div>
+                    <Label className="text-sm font-medium">To Date</Label>
+                    <Input
+                      type="date"
+                      value={filters.toDate}
+                      onChange={e => handleFilterChange('toDate', e.target.value)}
+                      className="mt-1 h-9 text-sm"
+                    />
+                  </div>
+                </div>
+                <div className="grid grid-cols-2 gap-4">
+                  <div>
+                    <Label className="text-sm font-medium">Accountability Form No</Label>
+                    <Input
+                      type="text"
+                      placeholder="e.g. AF-001"
+                      value={filters.accountabilityFormNo}
+                      onChange={e => handleFilterChange('accountabilityFormNo', e.target.value)}
+                      className="mt-1 h-9 text-sm"
+                    />
+                  </div>
+                  <div>
+                    <Label className="text-sm font-medium">Asset Code</Label>
+                    <Input
+                      type="text"
+                      placeholder="e.g. AST-001"
+                      value={filters.assetCode}
+                      onChange={e => handleFilterChange('assetCode', e.target.value)}
+                      className="mt-1 h-9 text-sm"
+                    />
+                  </div>
+                </div>
+              </div>
+            )}
+          </div>
+          <div className="flex justify-between pt-4 border-t">
+            {exportStep === 2 && (
+              <Button variant="outline" onClick={handlePrevStep}>
+                Back
+              </Button>
+            )}
+            <div className="flex gap-2">
+              <Button variant="outline" onClick={resetDialog}>
+                Cancel
+              </Button>
+              <Button onClick={handleExportConfirm} disabled={!exportType}>
+                {exportStep === 1 ? 'Next' : `Export ${exportType?.toUpperCase()}`}
+              </Button>
+            </div>
+          </div>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

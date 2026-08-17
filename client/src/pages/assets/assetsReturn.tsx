@@ -24,6 +24,8 @@ import {
   ImageIcon,
   Crown,
   Layers,
+  Download,
+  FileText,
 } from 'lucide-react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { PageHeader } from '@/components/common/PageHeader';
@@ -49,7 +51,14 @@ import { cn } from '@/lib/utils';
 import { toast } from 'sonner';
 import { useCurrentUser } from '@/hooks/useCurrentUser';
 import { useUserPermissions } from '@/hooks/useUserPermissions';
-import { Dialog } from '@/components/ui/dialog';
+import { useAssetMovementExport } from '@/hooks/useAssetMovementExport';
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogDescription,
+} from '@/components/ui/dialog';
 import {
   AppDialogFrame,
   AppDialogGradientHeader,
@@ -220,6 +229,37 @@ export default function AssetsReturn() {
     : currentUser?.company_id || undefined;
   const [scope, setScope] = useState<'it' | 'admin'>('it');
   const displayLoading = loading;
+
+  // Return History Export & Search
+  const {
+    isExportDialogOpen: isReturnHistoryExportOpen,
+    setIsExportDialogOpen: setIsReturnHistoryExportOpen,
+    exportType: returnHistoryExportType,
+    setExportType: setReturnHistoryExportType,
+    exportStep: returnHistoryExportStep,
+    setExportStep: setReturnHistoryExportStep,
+    filters: returnHistoryFilters,
+    setFilters: setReturnHistoryFilters,
+    handleExportClick: handleReturnHistoryExportClick,
+    handleExportConfirm: handleReturnHistoryExportConfirm,
+    handleFilterChange: handleReturnHistoryFilterChange,
+    handlePrevStep: handleReturnHistoryPrevStep,
+    resetDialog: resetReturnHistoryExportDialog,
+  } = useAssetMovementExport();
+
+  // Return history search column options
+  const returnHistorySearchColumns = [
+    { label: 'All Columns', value: 'all' },
+    { label: 'Asset', value: 'asset' },
+    { label: 'Return Form #', value: 'formNumber' },
+    { label: 'Returned By', value: 'returnedBy' },
+    { label: 'From Department', value: 'fromDepartment' },
+    { label: 'To Department', value: 'toDepartment' },
+    { label: 'Processed By', value: 'processedBy' },
+    { label: 'Status', value: 'status' },
+    { label: 'Return Location', value: 'returnLocation' },
+    { label: 'Return Date', value: 'returnDate' },
+  ];
 
   const flattenedReturnHistory = useMemo((): ReturnHistoryRow[] => {
     return returnHistory.map((returnRecord: any) => {
@@ -609,7 +649,14 @@ export default function AssetsReturn() {
   const fetchReturnHistory = async () => {
     try {
       setReturnHistoryLoading(true);
-      const response = await api.get('/asset-returns');
+      const queryParams = new URLSearchParams();
+      if (showScopeTabs) {
+        queryParams.append('scope', scope);
+      }
+      const url = queryParams.toString()
+        ? `/asset-returns?${queryParams.toString()}`
+        : '/asset-returns';
+      const response = await api.get(url);
       setReturnHistory(response.assetReturns || []);
     } catch (error) {
       console.error('Failed to fetch return history:', error);
@@ -621,7 +668,7 @@ export default function AssetsReturn() {
 
   useEffect(() => {
     fetchReturnHistory();
-  }, []);
+  }, [scope, showScopeTabs]);
 
   const handleBuilderReturnWhole = (builderId: string) => {
     const entry = buildersWithAssignments.find(
@@ -2010,15 +2057,37 @@ export default function AssetsReturn() {
         {/* Return History Table */}
         <Card className="shadow-xl border-0 bg-white/80 backdrop-blur-sm">
           <CardHeader>
-            <CardTitle className="flex items-center gap-3 text-xl">
-              <div className="p-2 bg-red-100 rounded-lg">
-                <RotateCcw className="h-5 w-5 text-red-600" />
+            <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 w-full">
+              <CardTitle className="flex items-center gap-3 text-xl">
+                <div className="p-2 bg-red-100 rounded-lg">
+                  <RotateCcw className="h-5 w-5 text-red-600" />
+                </div>
+                Return History
+                <Badge variant="secondary" className="ml-auto">
+                  {flattenedReturnHistory.length} returns
+                </Badge>
+              </CardTitle>
+              <div className="flex items-center gap-2">
+                <Button
+                  variant="header"
+                  size="sm"
+                  onClick={() => handleReturnHistoryExportClick('pdf')}
+                  className="flex items-center gap-2"
+                >
+                  <Download className="h-4 w-4" />
+                  Export PDF
+                </Button>
+                <Button
+                  variant="header"
+                  size="sm"
+                  onClick={() => handleReturnHistoryExportClick('excel')}
+                  className="flex items-center gap-2"
+                >
+                  <Download className="h-4 w-4" />
+                  Export Excel
+                </Button>
               </div>
-              Return History
-              <Badge variant="secondary" className="ml-auto">
-                {returnHistory.length} returns
-              </Badge>
-            </CardTitle>
+            </div>
           </CardHeader>
 
           <CardContent>
@@ -2053,7 +2122,7 @@ export default function AssetsReturn() {
                   </div>
                 ))}
               </div>
-            ) : returnHistory.length === 0 ? (
+            ) : flattenedReturnHistory.length === 0 ? (
               <div className="text-center py-12">
                 <div className="inline-flex items-center justify-center w-20 h-20 rounded-full bg-gradient-to-br from-red-100 to-red-200 mb-4">
                   <RotateCcw className="h-10 w-10 text-red-600" />
@@ -2071,6 +2140,7 @@ export default function AssetsReturn() {
                 data={flattenedReturnHistory}
                 columns={returnHistoryColumns}
                 searchPlaceholder="Search return history..."
+                searchColumnOptions={returnHistorySearchColumns}
                 emptyState={
                   <div className="text-center py-8">
                     <p className="text-gray-500">No matching returns</p>
@@ -2726,6 +2796,114 @@ export default function AssetsReturn() {
           </AppDialogFrame>
         </Dialog>
 
+        {/* Return History Export Dialog */}
+        <Dialog open={isReturnHistoryExportOpen} onOpenChange={setIsReturnHistoryExportOpen}>
+          <DialogContent className="max-w-xl sm:max-w-2xl">
+            <DialogHeader>
+              <DialogTitle>
+                {returnHistoryExportStep === 1
+                  ? `Export ${returnHistoryExportType?.toUpperCase() ?? ''} — Step 1: Format`
+                  : `Export ${returnHistoryExportType?.toUpperCase() ?? ''} — Step 2: Filters`}
+              </DialogTitle>
+              <DialogDescription>
+                {returnHistoryExportStep === 1
+                  ? 'Choose the export format.'
+                  : 'Apply optional filters to narrow down the exported data.'}
+              </DialogDescription>
+            </DialogHeader>
+            <div className="py-4 space-y-6">
+              {returnHistoryExportStep === 1 && (
+                <div className="grid grid-cols-2 gap-4">
+                  <Button
+                    variant="outline"
+                    className="h-24 flex-col gap-3"
+                    onClick={() => {
+                      setReturnHistoryExportType('pdf');
+                      setReturnHistoryExportStep(2);
+                    }}
+                  >
+                    <FileText className="h-8 w-8 text-red-600" />
+                    <span className="font-semibold">PDF</span>
+                    <span className="text-xs text-gray-500">Document format</span>
+                  </Button>
+                  <Button
+                    variant="outline"
+                    className="h-24 flex-col gap-3"
+                    onClick={() => {
+                      setReturnHistoryExportType('excel');
+                      setReturnHistoryExportStep(2);
+                    }}
+                  >
+                    <FileText className="h-8 w-8 text-green-600" />
+                    <span className="font-semibold">Excel</span>
+                    <span className="text-xs text-gray-500">Spreadsheet format</span>
+                  </Button>
+                </div>
+              )}
+              {returnHistoryExportStep === 2 && (
+                <div className="space-y-4">
+                  <div className="grid grid-cols-2 gap-4">
+                    <div>
+                      <Label className="text-sm font-medium">From Date</Label>
+                      <Input
+                        type="date"
+                        value={returnHistoryFilters.fromDate}
+                        onChange={e => handleReturnHistoryFilterChange('fromDate', e.target.value)}
+                        className="mt-1 h-9 text-sm"
+                      />
+                    </div>
+                    <div>
+                      <Label className="text-sm font-medium">To Date</Label>
+                      <Input
+                        type="date"
+                        value={returnHistoryFilters.toDate}
+                        onChange={e => handleReturnHistoryFilterChange('toDate', e.target.value)}
+                        className="mt-1 h-9 text-sm"
+                      />
+                    </div>
+                  </div>
+                  <div className="grid grid-cols-2 gap-4">
+                    <div>
+                      <Label className="text-sm font-medium">Accountability Form No</Label>
+                      <Input
+                        type="text"
+                        placeholder="e.g. AF-001"
+                        value={returnHistoryFilters.accountabilityFormNo}
+                        onChange={e => handleReturnHistoryFilterChange('accountabilityFormNo', e.target.value)}
+                        className="mt-1 h-9 text-sm"
+                      />
+                    </div>
+                    <div>
+                      <Label className="text-sm font-medium">Asset Code</Label>
+                      <Input
+                        type="text"
+                        placeholder="e.g. AST-001"
+                        value={returnHistoryFilters.assetCode}
+                        onChange={e => handleReturnHistoryFilterChange('assetCode', e.target.value)}
+                        className="mt-1 h-9 text-sm"
+                      />
+                    </div>
+                  </div>
+                </div>
+              )}
+            </div>
+            <div className="flex justify-between pt-4 border-t">
+              {returnHistoryExportStep === 2 && (
+                <Button variant="outline" onClick={handleReturnHistoryPrevStep}>
+                  Back
+                </Button>
+              )}
+              <div className="flex gap-2">
+                <Button variant="outline" onClick={resetReturnHistoryExportDialog}>
+                  Cancel
+                </Button>
+                <Button onClick={handleReturnHistoryExportConfirm} disabled={!returnHistoryExportType}>
+                  {returnHistoryExportStep === 1 ? 'Next' : `Export ${returnHistoryExportType?.toUpperCase()}`}
+                </Button>
+              </div>
+            </div>
+          </DialogContent>
+        </Dialog>
       </main>
     </div>
   );

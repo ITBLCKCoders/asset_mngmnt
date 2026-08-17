@@ -114,6 +114,7 @@ export interface AssetResponseDto {
   assignmentHistory: AssetAssignmentDto[];
   accountabilityForms: AccountabilityFormDto[];
   isAssetBuilder: boolean;
+  isBuilderChild?: boolean;
   builderStatus: string | null;
   children: AssetChildDto[];
 }

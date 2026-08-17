@@ -48,6 +48,7 @@ import {
 import { api } from '@/lib/api';
 import { toast } from 'sonner';
 import { useCurrentUser } from '@/hooks/useCurrentUser';
+import { useUserPermissions } from '@/hooks/useUserPermissions';
 import { cn } from '@/lib/utils';
 import { Shimmer } from '@/components/ui/shimmer';
 import {
@@ -138,12 +139,14 @@ type PendingForm = {
   user_id: string;
   return_type?: string | null;
   processor_wet_return_pdf_url?: string | null;
+  processed_by?: string | null;
   returns: PendingReturn[];
 };
 
 export default function ReturnRequestsPage() {
   const navigate = useNavigate();
   const { user: currentUser } = useCurrentUser();
+  const { roleCustodian } = useUserPermissions();
   const userCompanyId = currentUser?.company_id;
   const [forms, setForms] = useState<PendingForm[]>([]);
   const [processedForms, setProcessedForms] = useState<PendingForm[]>([]);
@@ -153,6 +156,13 @@ export default function ReturnRequestsPage() {
   const [processedLoading, setProcessedLoading] = useState(false);
   const [activeTab, setActiveTab] = useState('request');
   const [readOnly, setReadOnly] = useState(false);
+  const [scope, setScope] = useState<'it' | 'admin'>('it');
+
+  // Show scope tabs for Global Admin, Admin, and Overall Manager
+  const isSuperAdmin = currentUser?.role?.name?.toLowerCase() === 'global admin';
+  const isAdmin = currentUser?.role?.name?.toLowerCase() === 'admin';
+  const isOverallManager = roleCustodian?.managerRole === 'overallManager';
+  const showScopeTabs = isSuperAdmin || isAdmin || isOverallManager;
   const [processForm, setProcessForm] = useState<PendingForm | null>(null);
   const [processorConditions, setProcessorConditions] = useState<
     Record<string, string>
@@ -215,7 +225,7 @@ export default function ReturnRequestsPage() {
     try {
       setLoading(true);
       const res = await api.get<{ assetReturnForms?: PendingForm[] }>(
-        '/asset-returns/forms/pending-staff'
+        `/asset-returns/forms/pending-staff?scope=${scope}`
       );
       setForms(res.assetReturnForms ?? []);
     } catch (e) {
@@ -231,7 +241,7 @@ export default function ReturnRequestsPage() {
     try {
       setProcessedLoading(true);
       const res = await api.get<{ assetReturnForms?: PendingForm[] }>(
-        '/asset-returns/forms/processed-by-me'
+        `/asset-returns/forms/processed-by-me?scope=${scope}`
       );
       setProcessedForms(res.assetReturnForms ?? []);
     } catch (e) {
@@ -245,7 +255,7 @@ export default function ReturnRequestsPage() {
 
   const fetchDepartments = async () => {
     try {
-      const url = userCompanyId ? `/departments?companyId=${userCompanyId}` : '/departments';
+      const url = userCompanyId ? `/departments?companyId=${userCompanyId}&scope=${scope}` : `/departments?scope=${scope}`;
       const response = await api.get<{ departments?: Department[] }>(url);
       setDepartments(response.departments ?? []);
     } catch (error) {
@@ -256,7 +266,7 @@ export default function ReturnRequestsPage() {
 
   const fetchLocations = async () => {
     try {
-      const url = userCompanyId ? `/locations?companyId=${userCompanyId}` : '/locations';
+      const url = userCompanyId ? `/locations?companyId=${userCompanyId}&scope=${scope}` : `/locations?scope=${scope}`;
       const response = await api.get<{ locations?: Location[] }>(url);
       setLocations(response.locations ?? []);
     } catch (error) {
@@ -281,7 +291,7 @@ export default function ReturnRequestsPage() {
     fetchDepartments();
     fetchLocations();
     fetchIntangibleAssets();
-  }, []);
+  }, [scope]);
 
   // Note: wet-upload notification deep-link is handled on `/assets/return`
   // (processors may not have `Return Request` permission).
@@ -779,6 +789,14 @@ export default function ReturnRequestsPage() {
           title="Return Requests"
           description="Process return requests approved by Department Head"
         >
+          {showScopeTabs && (
+            <Tabs value={scope} onValueChange={v => setScope(v as 'it' | 'admin')} className="w-full sm:w-auto">
+              <TabsList className={segmentTabsListClassName + ' grid grid-cols-2 max-w-full sm:max-w-[280px]'}>
+                <TabsTrigger value="it" className={segmentTabsTriggerClassName}>IT Asset</TabsTrigger>
+                <TabsTrigger value="admin" className={segmentTabsTriggerClassName}>Admin Asset</TabsTrigger>
+              </TabsList>
+            </Tabs>
+          )}
           <Button
             variant="header"
             size="sm"
@@ -955,6 +973,17 @@ export default function ReturnRequestsPage() {
                         </p>
                       </div>
                     </div>
+
+                    {isProcessedTab && form.processed_by && (
+                      <div className="flex items-start gap-3">
+                        <User className="h-4 w-4 text-emerald-400 mt-0.5 flex-shrink-0" />
+                        <div className="flex-1 min-w-0">
+                          <p className="font-medium text-sm text-emerald-700">
+                            Processed by: {form.processed_by}
+                          </p>
+                        </div>
+                      </div>
+                    )}
 
                     <div className="flex items-start gap-3">
                       <FileText className="h-4 w-4 text-gray-400 mt-0.5 flex-shrink-0" />

@@ -1856,17 +1856,48 @@ export async function getTransferProcessedByMeHandler(
 ) {
   try {
     const userId = req.user!.userID;
+    const scope = (req.query.scope as 'it' | 'admin' | undefined)?.toLowerCase();
+    const { companyId, departmentIds, isSuperAdmin } = await getAssetScope(pool, userId);
+    if (!companyId) {
+      return res.json({ assetTransferForms: [] });
+    }
+
+    // For admins (global admin, admin), apply scope filter to department IDs
+    let effectiveDeptIds = departmentIds;
+    if ((isSuperAdmin || departmentIds === null) && scope) {
+      // Get department IDs for the requested scope
+      const targetDeptPattern = scope === 'it' ? '%IT%' : '%Admin%';
+      const patterns = [
+        targetDeptPattern,
+        targetDeptPattern === '%IT%'
+          ? '%Information Technology%'
+          : '%Administration%',
+      ];
+      let sql = `SELECT departmentID 
+         FROM asset_mngmnt_departments 
+         WHERE (name LIKE ? OR name LIKE ?) AND deleted_at IS NULL AND company_id = ?`;
+      const params = [...patterns, companyId];
+      const [deptRows] = (await pool.execute(sql, params)) as any[];
+      effectiveDeptIds = deptRows.map((row: any) => row.departmentID);
+    }
+
     let formRows: any[];
     try {
       const [rows] = (await pool.execute(
         `SELECT atf.*,
-                arf.process_signed_by AS linked_process_signed_by
+                arf.process_signed_by AS linked_process_signed_by,
+                d.company_id AS form_company_id,
+                d.departmentID AS form_department_id
          FROM asset_transfer_forms atf
          LEFT JOIN asset_return_forms arf
            ON arf.formID = atf.return_form_id AND arf.deleted_at IS NULL
+         LEFT JOIN asset_mngmnt_departments d
+           ON d.departmentID = atf.department_id AND d.deleted_at IS NULL
          WHERE atf.deleted_at IS NULL
            AND (atf.executed_at IS NOT NULL OR atf.process_signed_at IS NOT NULL)
-         ORDER BY COALESCE(atf.executed_at, atf.process_signed_at, atf.created_at) DESC`
+           AND d.company_id = ?
+         ORDER BY COALESCE(atf.executed_at, atf.process_signed_at, atf.created_at) DESC`,
+        [companyId]
       )) as any[];
       formRows = rows || [];
     } catch (colErr: any) {
@@ -1877,12 +1908,25 @@ export async function getTransferProcessedByMeHandler(
       throw colErr;
     }
 
+    // Admins (global admin, admin role, overall manager) see all processed forms in their company scope
+    const isAdminScope = isSuperAdmin || departmentIds === null;
+
     const processedRows = (formRows as any[]).filter((row: any) => {
-      const linkedProcessorId = row.linked_process_signed_by ?? null;
-      const processorId = row.return_form_id
-        ? linkedProcessorId
-        : (row.created_by ?? null);
-      return processorId === userId;
+      // Company already filtered in SQL; apply department scope if limited
+      if (effectiveDeptIds && effectiveDeptIds.length > 0) {
+        if (!row.form_department_id || !effectiveDeptIds.includes(String(row.form_department_id))) {
+          return false;
+        }
+      }
+      // For non-admin scope, filter by processor
+      if (!isAdminScope) {
+        const linkedProcessorId = row.linked_process_signed_by ?? null;
+        const processorId = row.return_form_id
+          ? linkedProcessorId
+          : (row.created_by ?? null);
+        return processorId === userId;
+      }
+      return true;
     });
 
     const batches = await buildTransferFormBatches(processedRows);
@@ -3507,13 +3551,32 @@ export async function getTransferHistoryHandler(
   res: Response
 ) {
   try {
-    const { companyId } = await getAssetScope(pool, req.user!.userID);
+    const { companyId, departmentIds, isSuperAdmin } = await getAssetScope(pool, req.user!.userID);
     if (!companyId) {
       return createSuccessResponse(res, { records: [] });
     }
 
+    // Get scope from query param (for Global Admin to switch between IT/Admin)
+    const scope = req.query.scope as 'it' | 'admin' | undefined;
+
+    // Determine effective scope departments for filtering
+    let scopeDeptIds: string[] | null = departmentIds;
+    if (isSuperAdmin && scope) {
+      scopeDeptIds = await getDepartmentIdsForScope(pool, scope, companyId);
+    }
+
+    // Build category department filter for asset scope
+    let categoryDeptFilter = '';
+    const categoryDeptParams: (string | number)[] = [];
+    if (scopeDeptIds && scopeDeptIds.length > 0) {
+      const placeholders = scopeDeptIds.map(() => '?').join(',');
+      categoryDeptFilter = `AND cat.department_id IN (${placeholders})`;
+      categoryDeptParams.push(...scopeDeptIds);
+    }
+
     // 1) Executed transfers (from asset_transfer)
     // Show transfers where asset is currently in company OR involves users from this company
+    // Filter by asset category department if scope is specified
     const query = `
       SELECT
         atr.record_id,
@@ -3547,21 +3610,25 @@ export async function getTransferHistoryHandler(
       JOIN asset_transfer_forms atf ON atr.form_id = atf.formID AND atf.deleted_at IS NULL
       JOIN asset_assignments aa ON atr.assignment_id = aa.assignmentID AND aa.deleted_at IS NULL
       JOIN assets a ON aa.asset_id = a.assetID AND a.deleted_at IS NULL
+      LEFT JOIN asset_categories cat ON a.category_id = cat.categoryID AND cat.deleted_at IS NULL
       LEFT JOIN users past_owner ON atf.user_id = past_owner.userID
       LEFT JOIN users recipient ON atf.new_assigned_user_id = recipient.userID
       LEFT JOIN users processor ON atf.created_by = processor.userID
       LEFT JOIN asset_mngmnt_departments dfrom ON past_owner.department_id = dfrom.departmentID AND dfrom.deleted_at IS NULL
       LEFT JOIN asset_mngmnt_departments dto ON recipient.department_id = dto.departmentID AND dto.deleted_at IS NULL
-      WHERE atr.deleted_at IS NULL AND (
-        a.company_id = ? OR
-        past_owner.company_id = ? OR
-        recipient.company_id = ? OR
-        processor.company_id = ?
-      )
+      WHERE atr.deleted_at IS NULL
+        AND (
+          a.company_id = ? OR
+          past_owner.company_id = ? OR
+          recipient.company_id = ? OR
+          processor.company_id = ?
+        )
+        ${categoryDeptFilter}
       ORDER BY atr.created_at DESC
     `;
 
-    const [rows] = (await pool.execute(query, [companyId, companyId, companyId, companyId])) as any[];
+    const queryParams = [companyId, companyId, companyId, companyId, ...categoryDeptParams];
+    const [rows] = (await pool.execute(query, queryParams)) as any[];
 
     const executedRecords = await Promise.all(
       (rows as any[]).map(async (r: any) => {
@@ -3638,6 +3705,7 @@ export async function getTransferHistoryHandler(
 
     // 2) Held/pending forms (have transfer_form_assignments but no asset_transfer yet)
     // Show pending transfers where asset is currently in company OR involves users from this company
+    // Filter by asset category department if scope is specified
     const pendingQuery = `
       SELECT
         atf.formID as form_id,
@@ -3670,27 +3738,25 @@ export async function getTransferHistoryHandler(
       JOIN asset_transfer_forms atf ON tfa.form_id = atf.formID AND atf.deleted_at IS NULL
       JOIN asset_assignments aa ON tfa.assignment_id = aa.assignmentID AND aa.deleted_at IS NULL
       JOIN assets a ON aa.asset_id = a.assetID AND a.deleted_at IS NULL
+      LEFT JOIN asset_categories cat ON a.category_id = cat.categoryID AND cat.deleted_at IS NULL
       LEFT JOIN asset_transfer atr ON atr.form_id = atf.formID AND atr.assignment_id = tfa.assignment_id AND atr.deleted_at IS NULL
       LEFT JOIN users past_owner ON atf.user_id = past_owner.userID
       LEFT JOIN users recipient ON atf.new_assigned_user_id = recipient.userID
       LEFT JOIN users processor ON atf.created_by = processor.userID
       LEFT JOIN asset_mngmnt_departments dfrom ON past_owner.department_id = dfrom.departmentID AND dfrom.deleted_at IS NULL
       LEFT JOIN asset_mngmnt_departments dto ON recipient.department_id = dto.departmentID AND dto.deleted_at IS NULL
-      WHERE atr.record_id IS NULL AND (
-        a.company_id = ? OR
-        past_owner.company_id = ? OR
-        recipient.company_id = ? OR
-        processor.company_id = ?
-      )
+      WHERE atr.record_id IS NULL
+        AND (
+          a.company_id = ? OR
+          past_owner.company_id = ? OR
+          recipient.company_id = ? OR
+          processor.company_id = ?
+        )
+        ${categoryDeptFilter}
       ORDER BY atf.created_at DESC
     `;
 
-    const [pendingRows] = (await pool.execute(pendingQuery, [
-      companyId,
-      companyId,
-      companyId,
-      companyId,
-    ])) as any[];
+    const [pendingRows] = (await pool.execute(pendingQuery, queryParams)) as any[];
 
     const pendingRecords = await Promise.all(
       (pendingRows as any[]).map(async (r: any) => {

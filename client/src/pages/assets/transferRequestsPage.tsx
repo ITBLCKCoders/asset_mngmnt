@@ -51,6 +51,7 @@ import { cn } from '@/lib/utils';
 import { toast } from 'sonner';
 import { Shimmer } from '@/components/ui/shimmer';
 import { useCurrentUser } from '@/hooks/useCurrentUser';
+import { useUserPermissions } from '@/hooks/useUserPermissions';
 import SmsOtpDialog from '@/components/auth/SmsOtpDialog';
 import { FormTimeline } from '@/pages/profile/profileComponents/tabs/documentsTab';
 import { proxyCloudinaryUrl } from '@/utils/cloudinaryProxy';
@@ -130,6 +131,7 @@ function formatTransferFromNames(batch: ApprovedBatch): string {
 export default function TransferRequestsPage() {
   const navigate = useNavigate();
   const { user: currentUser } = useCurrentUser();
+  const { roleCustodian } = useUserPermissions();
   const [batches, setBatches] = useState<ApprovedBatch[]>([]);
   const [loading, setLoading] = useState(true);
   const [processedBatches, setProcessedBatches] = useState<ApprovedBatch[]>(
@@ -138,6 +140,13 @@ export default function TransferRequestsPage() {
   const [processedLoading, setProcessedLoading] = useState(false);
   const [activeTab, setActiveTab] = useState('request');
   const [readOnly, setReadOnly] = useState(false);
+  const [scope, setScope] = useState<'it' | 'admin'>('it');
+
+  // Show scope tabs for Global Admin, Admin, and Overall Manager
+  const isSuperAdmin = currentUser?.role?.name?.toLowerCase() === 'global admin';
+  const isAdmin = currentUser?.role?.name?.toLowerCase() === 'admin';
+  const isOverallManager = roleCustodian?.managerRole === 'overallManager';
+  const showScopeTabs = isSuperAdmin || isAdmin || isOverallManager;
   const [selectedBatch, setSelectedBatch] = useState<ApprovedBatch | null>(
     null
   );
@@ -185,7 +194,7 @@ export default function TransferRequestsPage() {
   const fetchDepartments = async () => {
     try {
       const response = await api.get<{ departments?: Department[] }>(
-        '/departments'
+        `/departments?scope=${scope}`
       );
       setDepartments(response.departments ?? []);
     } catch {
@@ -197,7 +206,7 @@ export default function TransferRequestsPage() {
     try {
       setLoading(true);
       const res = await api.get<{ assetTransferForms?: ApprovedBatch[] }>(
-        '/asset-transfers/forms/approved-for-execution'
+        `/asset-transfers/forms/approved-for-execution?scope=${scope}`
       );
       setBatches(res.assetTransferForms || []);
     } catch (e) {
@@ -213,7 +222,7 @@ export default function TransferRequestsPage() {
     try {
       setProcessedLoading(true);
       const res = await api.get<{ assetTransferForms?: ApprovedBatch[] }>(
-        '/asset-transfers/forms/processed-by-me'
+        `/asset-transfers/forms/processed-by-me?scope=${scope}`
       );
       setProcessedBatches(res.assetTransferForms || []);
     } catch (e) {
@@ -240,7 +249,7 @@ export default function TransferRequestsPage() {
     fetchProcessed();
     fetchDepartments();
     fetchIntangibleAssets();
-  }, []);
+  }, [scope]);
 
   const handleView = (batch: ApprovedBatch, isReadOnly = false) => {
     setReadOnly(isReadOnly);
@@ -559,6 +568,14 @@ export default function TransferRequestsPage() {
           title="Transfer Requests"
           description="Approved transfer requests ready to execute"
         >
+          {showScopeTabs && (
+            <Tabs value={scope} onValueChange={v => setScope(v as 'it' | 'admin')} className="w-full sm:w-auto">
+              <TabsList className={segmentTabsListClassName + ' grid grid-cols-2 max-w-full sm:max-w-[280px]'}>
+                <TabsTrigger value="it" className={segmentTabsTriggerClassName}>IT Asset</TabsTrigger>
+                <TabsTrigger value="admin" className={segmentTabsTriggerClassName}>Admin Asset</TabsTrigger>
+              </TabsList>
+            </Tabs>
+          )}
           <Button
             variant="header"
             size="sm"
@@ -754,6 +771,16 @@ export default function TransferRequestsPage() {
                           <div className="flex-1 min-w-0">
                             <p className="font-medium text-sm">
                               Transferrer: {transferrerName}
+                            </p>
+                          </div>
+                        </div>
+                      )}
+                      {isProcessedTab && batch.processed_by && (
+                        <div className="flex items-start gap-3">
+                          <User className="h-4 w-4 text-emerald-400 mt-0.5 flex-shrink-0" />
+                          <div className="flex-1 min-w-0">
+                            <p className="font-medium text-sm text-emerald-700">
+                              Processed by: {batch.processed_by}
                             </p>
                           </div>
                         </div>

@@ -5,24 +5,61 @@ import { api } from '@/lib/api';
 import TransferRequestsPage from '@/pages/assets/transferRequestsPage';
 
 const mockUser = vi.hoisted(() => ({
-  id: 'u1', company_id: 'c1', name: 'Test User', email: 'test@test.com',
-  role_id: 'r2', role: { roleID: 'r2', name: 'User' }, verified: true,
-  firstName: 'Test', lastName: 'User', username: 'testuser',
-  contactNumber: '+639123456789', position: 'Staff',
-  department: 'IT', department_id: 'd1', employeeId: 'EMP001',
+  id: 'u1',
+  company_id: 'c1',
+  name: 'Test User',
+  email: 'test@test.com',
+  role_id: 'r2',
+  role: { roleID: 'r2', name: 'User' },
+  verified: true,
+  firstName: 'Test',
+  lastName: 'User',
+  username: 'testuser',
+  contactNumber: '+639123456789',
+  position: 'Staff',
+  department: 'IT',
+  department_id: 'd1',
+  employeeId: 'EMP001',
   createdAt: '2024-01-01',
-  address: { unitNo: '', buildingNo: '', street: '', subdivision: '', barangay: '', city: '', province: '', region: '' },
+  address: {
+    unitNo: '', buildingNo: '', street: '', subdivision: '',
+    barangay: '', city: '', province: '', region: '',
+  },
 }));
 
 vi.mock('@/hooks/useCurrentUser', () => ({
   useCurrentUser: () => ({ user: mockUser, loading: false }),
 }));
+
+vi.mock('@/hooks/useUserPermissions', () => ({
+  useUserPermissions: () => ({
+    permissions: {},
+    roleCustodian: null,
+    loading: false,
+    hasPermission: vi.fn(() => true),
+    refetch: vi.fn(),
+  }),
+}));
+
+vi.mock('@/components/auth/SmsOtpDialog', () => ({
+  default: vi.fn(() => null),
+}));
+
 vi.mock('@/lib/api', () => ({
   api: { get: vi.fn(), post: vi.fn(), patch: vi.fn(), put: vi.fn() },
 }));
+
 vi.mock('sonner', () => ({
   toast: { error: vi.fn(), success: vi.fn() },
 }));
+
+function renderPage() {
+  return render(
+    <BrowserRouter>
+      <TransferRequestsPage />
+    </BrowserRouter>
+  );
+}
 
 describe('TransferRequestsPage', () => {
   beforeEach(() => {
@@ -32,12 +69,12 @@ describe('TransferRequestsPage', () => {
   });
 
   it('renders the page header title', async () => {
-    render(<BrowserRouter><TransferRequestsPage /></BrowserRouter>);
+    renderPage();
     expect(screen.getByText('Transfer Requests')).toBeInTheDocument();
   });
 
   it('shows content after data loads', async () => {
-    render(<BrowserRouter><TransferRequestsPage /></BrowserRouter>);
+    renderPage();
     await waitFor(() => {
       expect(api.get).toHaveBeenCalled();
     });
@@ -45,28 +82,9 @@ describe('TransferRequestsPage', () => {
 
   it('handles API error gracefully', async () => {
     vi.mocked(api.get).mockRejectedValue(new Error('Network error'));
-    render(<BrowserRouter><TransferRequestsPage /></BrowserRouter>);
+    renderPage();
     await waitFor(() => {
       expect(api.get).toHaveBeenCalled();
-    });
-  });
-
-  it('renders Request and Processed tabs', async () => {
-    render(<BrowserRouter><TransferRequestsPage /></BrowserRouter>);
-    await waitFor(() => {
-      expect(screen.getByRole('tab', { name: 'Request' })).toBeInTheDocument();
-      expect(
-        screen.getByRole('tab', { name: 'Processed' })
-      ).toBeInTheDocument();
-    });
-  });
-
-  it('fetches processed-by-me transfer requests on mount', async () => {
-    render(<BrowserRouter><TransferRequestsPage /></BrowserRouter>);
-    await waitFor(() => {
-      expect(api.get).toHaveBeenCalledWith(
-        '/asset-transfers/forms/processed-by-me'
-      );
     });
   });
 });

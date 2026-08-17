@@ -164,7 +164,7 @@ describe('intangibleAssets.controller', () => {
       intangibleAssetsService.hasActiveAssignment.mockResolvedValue(false);
       intangibleAssetsService.assignIntangibleAsset.mockResolvedValue({ assigned: true });
       await intangibleAssetsController.assignIntangibleAsset(req, res);
-      expect(res._json).toEqual({ success: true });
+      expect(res._json).toEqual({ success: true, formError: null });
     });
 
     it('returns 400 when already assigned to same user', async () => {

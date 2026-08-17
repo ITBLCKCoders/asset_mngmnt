@@ -235,7 +235,18 @@ export const assignIntangibleAsset = async (req: AuthRequest, res: Response) => 
       return res.status(400).json({ error: 'No active company found' });
     }
 
-    const { assignedTo, assignmentId, departmentId, locationId, locationRoomId } = req.body;
+    const {
+      assignedTo,
+      assignmentId,
+      departmentId,
+      locationId,
+      locationRoomId,
+      signAsIssuer,
+      issuerSignature,
+      signITCopy,
+      itCopySignature,
+      tempAccountability,
+    } = req.body;
 
     if (!assignedTo) {
       return res.status(400).json({ error: 'User ID is required for assignment' });
@@ -285,7 +296,206 @@ export const assignIntangibleAsset = async (req: AuthRequest, res: Response) => 
       companyId: activeCompany.id,
     });
 
-    res.json({ success: true });
+    // Handle accountability form with user's existing tangible assets (same logic as batch assign)
+    let formErrorMsg: string | null = null;
+    if (departmentId && assignedTo) {
+      const [deptRows] = await pool.execute(
+        'SELECT name FROM asset_mngmnt_departments WHERE departmentID = ?',
+        [departmentId]
+      );
+      const deptName = (deptRows as any[])[0]?.name;
+
+      if (deptName) {
+        const [catRows] = await pool.execute(
+          'SELECT categoryID FROM asset_categories WHERE department_id = ? AND deleted_at IS NULL',
+          [departmentId]
+        );
+        const categoryIds = (catRows as any[]).map(r => String(r.categoryID)).filter(Boolean);
+
+        const departmentAssetsRows = categoryIds.length > 0
+          ? await repo.getActiveAssignmentsByUserAndCategories(assignedTo, categoryIds)
+          : [];
+
+        // All of the user's currently-active intangible assets in this department
+        // (includes the asset being assigned plus previously assigned ones).
+        const intangibleRows = departmentId
+          ? await formRepo.getActiveIntangibleAssetsByUserAndDepartment(assignedTo, departmentId)
+          : [];
+
+        const combinedAssets = [
+          ...departmentAssetsRows.map(row => ({
+            id: row.assetID,
+            code: row.asset_code,
+            name: row.name || row.asset_code,
+            category: row.category_name,
+            type: row.type_name,
+            department: row.department_name,
+            serialNo: row.serial || '',
+            modelNo: row.model || '',
+            brand: row.brand || '',
+          })),
+          ...(intangibleRows as any[]).map(ia => ({
+            id: ia.id,
+            code: ia.name || ia.id,
+            name: ia.name || '',
+            description: ia.description || '',
+            category: 'Intangible',
+            type: ia.type || 'Intangible',
+            department: ia.type_department_name || deptName,
+            serialNo: '',
+            modelNo: '',
+            brand: '',
+          })),
+        ];
+
+        if (combinedAssets.length > 0) {
+          // Disable existing accountability forms
+          const existingForms = await repo.getExistingAccountabilityForms(assignedTo, deptName);
+          for (const form of existingForms) {
+            await repo.disableAccountabilityForm(form.formID);
+          }
+
+          // Generate form number
+          const settings = await formRepo.getAccountabilityFormSettings(activeCompany.id);
+          if (!settings) {
+            formErrorMsg = 'Accountability form settings not configured for company';
+          } else {
+            const companyInfo = await formRepo.getCompanyCodePrefix(activeCompany.id);
+            const deptInfo = await formRepo.getDepartmentCodePrefix(departmentId);
+
+            // Determine IT vs Admin from the intangible asset type's department
+            // (mirrors how tangible assets route by their category's department).
+            const typeDeptNames = (intangibleRows as any[])
+              .map((ia: any) => ia.type_department_name)
+              .filter(Boolean)
+              .map((n: string) => n.toLowerCase());
+            const isIT = typeDeptNames.some(
+              (n: string) => n.includes('it') || n.includes('information technology')
+            );
+            const isAdmin = typeDeptNames.some(
+              (n: string) => n.includes('admin') || n.includes('administration')
+            );
+            const isITAsset = isIT || (!isAdmin);
+            const assetCode = isITAsset
+              ? settings.it_asset_code
+              : settings.admin_asset_code;
+
+            const parts: string[] = [];
+            const companyPart = settings.company_format === 'code' ? companyInfo?.code : companyInfo?.prefix;
+            if (companyPart) parts.push(companyPart);
+            const deptPart = settings.department_format === 'code' ? deptInfo?.code : deptInfo?.prefix;
+            if (deptPart) parts.push(deptPart);
+            if (assetCode) parts.push(assetCode);
+            const now = new Date();
+            const dateStr = settings.date_format === 'YYYYMMDD'
+              ? `${now.getFullYear()}${String(now.getMonth() + 1).padStart(2, '0')}${String(now.getDate()).padStart(2, '0')}`
+              : `${String(now.getMonth() + 1).padStart(2, '0')}${now.getFullYear()}`;
+            if (settings.include_date) parts.push(dateStr);
+
+            // For MMYYYY: reset per year, so match any month in the same year
+            const basePattern = settings.include_date
+              ? parts.slice(0, -1).join('-')
+              : parts.join('-');
+            const year = settings.include_date ? now.getFullYear() : null;
+            const likeParam =
+              settings.include_date && settings.date_format === 'MMYYYY'
+                ? `${basePattern}-%${year}`
+                : parts.join('-');
+            const nextSeq = await formRepo.getNextFormSequence(likeParam);
+            parts.push(String(nextSeq).padStart(4, '0'));
+            const formNumber = parts.join('-');
+
+            const assetsDataPayload: Record<string, unknown> = {
+              assets: combinedAssets,
+              assignment_ids: [assignmentId],
+            };
+
+            await formRepo.insertAccountabilityFormMulti({
+              formNumber,
+              userId: assignedTo,
+              departmentId: departmentId || null,
+              locationId: locationId || null,
+              createdBy: userId,
+              assetsDataJson: JSON.stringify(assetsDataPayload),
+              issuerSignature: issuerSignature || null,
+              itCopySignature: itCopySignature || null,
+              assignmentId: null,
+            });
+
+            const resolvedFormId = await formRepo.findFormIdByFormNumber(formNumber);
+            if (!resolvedFormId) {
+              formErrorMsg = 'Form inserted but could not resolve form ID';
+              logger.error(formErrorMsg, { formNumber });
+            } else {
+              logger.info('Created accountability form:', { formID: resolvedFormId, formNumber });
+
+              const userDetails = await formRepo.getUserCompanyAndName(assignedTo);
+              const userName = `${userDetails?.first_name || ''} ${userDetails?.last_name || ''}`.trim();
+              await createAuditLog({
+                userId,
+                action: 'Created Accountability Form',
+                resourceType: 'accountability_form',
+                resourceId: resolvedFormId,
+                resourceName: formNumber,
+                details: `Accountability form ${formNumber} created for ${userName} with ${combinedAssets.length} assets`,
+                newValues: { form_number: formNumber, user_id: assignedTo, assets: combinedAssets },
+                ipAddress: req.ip || 'unknown',
+                userAgent: req.get('User-Agent') || 'unknown',
+                companyId: activeCompany.id,
+              });
+
+              try {
+                const createdByRow = await formRepo.getUserNameById(userId);
+                const assignerName = createdByRow
+                  ? `${createdByRow.first_name ?? ''} ${createdByRow.last_name ?? ''}`.trim() || userId
+                  : userId;
+
+                await NotificationService.createNotification(
+                  {
+                    user_id: assignedTo,
+                    title: 'New accountability form has been issued',
+                    message: `by ${assignerName}. Review it and check your assets and sign the form`,
+                    type: 'accountability_form',
+                    status: 'unread',
+                    data: JSON.stringify({
+                      description: `by ${assignerName}. Review it and check your assets and sign the form`,
+                      route: '/profile?tab=documents',
+                      actionTarget: 'profile_documents',
+                      formId: resolvedFormId,
+                      formNumber,
+                      assignedBy: assignerName,
+                      timestamp: new Date().toISOString(),
+                    }),
+                  },
+                  userId,
+                  req.ip,
+                  req.get('User-Agent')
+                );
+
+                const io = getIoInstance();
+                if (io) {
+                  emitNotification(io, assignedTo, 'notification', {
+                    title: 'New accountability form has been issued',
+                    description: `by ${assignerName}. Review it and check your assets and sign the form`,
+                    type: 'accountability_form',
+                    route: '/profile?tab=documents',
+                    actionTarget: 'profile_documents',
+                    formId: resolvedFormId,
+                    formNumber,
+                    assignedBy: assignerName,
+                    timestamp: new Date().toISOString(),
+                  });
+                }
+              } catch (notifError) {
+                logger.error('Failed to send form notification:', notifError);
+              }
+            }
+          }
+        }
+      }
+    }
+
+    res.json({ success: !formErrorMsg, formError: formErrorMsg });
   } catch (err: any) {
     logger.error('Assign intangible asset error', { err });
     res.status(500).json({ error: 'Failed to assign intangible asset' });

@@ -117,6 +117,7 @@ export interface Asset {
   builderStatus?: string;
   children?: Asset[];
   expanded?: boolean;
+  isBuilderChild?: boolean;
   isOldUnit?: boolean;
   is_old_unit?: boolean;
 }

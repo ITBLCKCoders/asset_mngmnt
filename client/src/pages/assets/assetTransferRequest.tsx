@@ -1,6 +1,7 @@
 'use client';
 
 import { useEffect, useState, useMemo, useRef } from 'react';
+import { Link } from 'react-router-dom';
 import {
   Package,
   Search,
@@ -11,6 +12,9 @@ import {
   Boxes,
   Crown,
   Layers,
+  Download,
+  FileText,
+  ArrowLeft,
 } from 'lucide-react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { PageHeader } from '@/components/common/PageHeader';
@@ -56,6 +60,14 @@ import SmsOtpDialog from '@/components/auth/SmsOtpDialog';
 import { DataTable } from '@/components/ui/dataTable';
 import type { ColumnDef } from '@tanstack/react-table';
 import { Shimmer } from '@/components/ui/shimmer';
+import { useAssetMovementExport } from '@/hooks/useAssetMovementExport';
+import {
+  Dialog as UIDialog,
+  DialogContent,
+  DialogDescription,
+  DialogHeader,
+  DialogTitle,
+} from '@/components/ui/dialog';
 
 interface AssetAssignment {
   assignmentID: string;
@@ -235,6 +247,23 @@ const myTransferRequestColumns: ColumnDef<TransferRequestRow>[] = [
 export default function AssetTransferRequest() {
   const { user: currentUser } = useCurrentUser();
   const { hasPermission } = useUserPermissions();
+
+  const {
+    isExportDialogOpen,
+    setIsExportDialogOpen,
+    exportType,
+    setExportType,
+    exportStep,
+    setExportStep,
+    filters,
+    setFilters,
+    handleExportClick,
+    handleExportConfirm,
+    handleFilterChange,
+    handlePrevStep,
+    resetDialog,
+  } = useAssetMovementExport();
+
   const [assignments, setAssignments] = useState<AssetAssignment[]>([]);
   const [transferRequests, setTransferRequests] = useState<
     TransferRequestRow[]
@@ -767,6 +796,16 @@ export default function AssetTransferRequest() {
           title="Transfer asset"
           description="Request to transfer your assigned assets to another user"
         >
+          <Link to="/assets/transfer">
+            <Button
+              variant="header"
+              size="sm"
+              className="flex items-center gap-2"
+            >
+              <ArrowLeft className="h-4 w-4" />
+              Back to Asset Transfer
+            </Button>
+          </Link>
         </PageHeader>
 
         <div className="grid grid-cols-1 xl:grid-cols-3 gap-8">
@@ -2118,6 +2157,28 @@ export default function AssetTransferRequest() {
                       </p>
                     </div>
                   }
+                  children={
+                    <div className="flex items-center gap-2">
+                      <Button
+                        variant="header"
+                        size="sm"
+                        onClick={() => handleExportClick('pdf')}
+                        className="flex items-center gap-2"
+                      >
+                        <Download className="h-4 w-4" />
+                        Export PDF
+                      </Button>
+                      <Button
+                        variant="header"
+                        size="sm"
+                        onClick={() => handleExportClick('excel')}
+                        className="flex items-center gap-2"
+                      >
+                        <Download className="h-4 w-4" />
+                        Export Excel
+                      </Button>
+                    </div>
+                  }
                   mobileCardFields={[
                     {
                       key: 'assets',
@@ -2166,6 +2227,114 @@ export default function AssetTransferRequest() {
           </Card>
         </div>
       </main>
+
+      <UIDialog open={isExportDialogOpen} onOpenChange={setIsExportDialogOpen}>
+        <DialogContent className="max-w-xl sm:max-w-2xl">
+          <DialogHeader>
+            <DialogTitle>
+              {exportStep === 1
+                ? `Export ${exportType?.toUpperCase() ?? ''} — Step 1: Format`
+                : `Export ${exportType?.toUpperCase() ?? ''} — Step 2: Filters`}
+            </DialogTitle>
+            <DialogDescription>
+              {exportStep === 1
+                ? 'Choose the export format.'
+                : 'Apply optional filters to narrow down the exported data.'}
+            </DialogDescription>
+          </DialogHeader>
+          <div className="py-4 space-y-6">
+            {exportStep === 1 && (
+              <div className="grid grid-cols-2 gap-4">
+                <Button
+                  variant="outline"
+                  className="h-24 flex-col gap-3"
+                  onClick={() => {
+                    setExportType('pdf');
+                    setExportStep(2);
+                  }}
+                >
+                  <FileText className="h-8 w-8 text-red-600" />
+                  <span className="font-semibold">PDF</span>
+                  <span className="text-xs text-gray-500">Document format</span>
+                </Button>
+                <Button
+                  variant="outline"
+                  className="h-24 flex-col gap-3"
+                  onClick={() => {
+                    setExportType('excel');
+                    setExportStep(2);
+                  }}
+                >
+                  <FileText className="h-8 w-8 text-green-600" />
+                  <span className="font-semibold">Excel</span>
+                  <span className="text-xs text-gray-500">Spreadsheet format</span>
+                </Button>
+              </div>
+            )}
+            {exportStep === 2 && (
+              <div className="space-y-4">
+                <div className="grid grid-cols-2 gap-4">
+                  <div>
+                    <Label className="text-sm font-medium">From Date</Label>
+                    <Input
+                      type="date"
+                      value={filters.fromDate}
+                      onChange={e => handleFilterChange('fromDate', e.target.value)}
+                      className="mt-1 h-9 text-sm"
+                    />
+                  </div>
+                  <div>
+                    <Label className="text-sm font-medium">To Date</Label>
+                    <Input
+                      type="date"
+                      value={filters.toDate}
+                      onChange={e => handleFilterChange('toDate', e.target.value)}
+                      className="mt-1 h-9 text-sm"
+                    />
+                  </div>
+                </div>
+                <div className="grid grid-cols-2 gap-4">
+                  <div>
+                    <Label className="text-sm font-medium">Accountability Form No</Label>
+                    <Input
+                      type="text"
+                      placeholder="e.g. AF-001"
+                      value={filters.accountabilityFormNo}
+                      onChange={e => handleFilterChange('accountabilityFormNo', e.target.value)}
+                      className="mt-1 h-9 text-sm"
+                    />
+                  </div>
+                  <div>
+                    <Label className="text-sm font-medium">Asset Code</Label>
+                    <Input
+                      type="text"
+                      placeholder="e.g. AST-001"
+                      value={filters.assetCode}
+                      onChange={e => handleFilterChange('assetCode', e.target.value)}
+                      className="mt-1 h-9 text-sm"
+                    />
+                  </div>
+                </div>
+              </div>
+            )}
+          </div>
+          <div className="flex justify-between pt-4 border-t">
+            {exportStep === 2 && (
+              <Button variant="outline" onClick={handlePrevStep}>
+                Back
+              </Button>
+            )}
+            <div className="flex gap-2">
+              <Button variant="outline" onClick={resetDialog}>
+                Cancel
+              </Button>
+              <Button onClick={handleExportConfirm} disabled={!exportType}>
+                {exportStep === 1 ? 'Next' : `Export ${exportType?.toUpperCase()}`}
+              </Button>
+            </div>
+          </div>
+        </DialogContent>
+      </UIDialog>
     </div>
   );
 }

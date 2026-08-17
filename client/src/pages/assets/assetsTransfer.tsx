@@ -23,6 +23,8 @@ import {
   Images,
   Crown,
   Layers,
+  Download,
+  FileText,
 } from 'lucide-react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { PageHeader } from '@/components/common/PageHeader';
@@ -46,7 +48,13 @@ import { Textarea } from '@/components/ui/textarea';
 import { api } from '@/lib/api';
 import { cn } from '@/lib/utils';
 import { Tabs, TabsContent, TabsList, TabsTrigger, segmentTabsListClassName, segmentTabsTriggerClassName } from '@/components/ui/tabs';
-import { Dialog } from '@/components/ui/dialog';
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogDescription,
+} from '@/components/ui/dialog';
 import {
   AppDialogFrame,
   AppDialogGradientHeader,
@@ -56,6 +64,7 @@ import {
 import { toast } from 'sonner';
 import { useCurrentUser } from '@/hooks/useCurrentUser';
 import { useUserPermissions } from '@/hooks/useUserPermissions';
+import { useAssetMovementExport } from '@/hooks/useAssetMovementExport';
 import { DataTable } from '@/components/ui/dataTable';
 import type { ColumnDef } from '@tanstack/react-table';
 import { Shimmer } from '@/components/ui/shimmer';
@@ -274,6 +283,36 @@ export default function AssetsTransfer() {
   const showScopeTabs = isSuperAdmin || isAdmin || isOverallManager;
   const [scope, setScope] = useState<'it' | 'admin'>('it');
 
+  // Transfer History Export & Search
+  const {
+    isExportDialogOpen: isTransferHistoryExportOpen,
+    setIsExportDialogOpen: setIsTransferHistoryExportOpen,
+    exportType: transferHistoryExportType,
+    setExportType: setTransferHistoryExportType,
+    exportStep: transferHistoryExportStep,
+    setExportStep: setTransferHistoryExportStep,
+    filters: transferHistoryFilters,
+    setFilters: setTransferHistoryFilters,
+    handleExportClick: handleTransferHistoryExportClick,
+    handleExportConfirm: handleTransferHistoryExportConfirm,
+    handleFilterChange: handleTransferHistoryFilterChange,
+    handlePrevStep: handleTransferHistoryPrevStep,
+    resetDialog: resetTransferHistoryExportDialog,
+  } = useAssetMovementExport();
+
+  // Transfer history search column options
+  const transferHistorySearchColumns = [
+    { label: 'All Columns', value: 'all' },
+    { label: 'Asset', value: 'asset' },
+    { label: 'Transfer Form #', value: 'transferForm' },
+    { label: 'From Department', value: 'from' },
+    { label: 'To Department', value: 'to' },
+    { label: 'Processed By', value: 'processedBy' },
+    { label: 'Transferrer', value: 'transferrer' },
+    { label: 'Transferee', value: 'transferee' },
+    { label: 'Status', value: 'status' },
+  ];
+
   const fetchDepartments = async () => {
     try {
       let companyId: string | undefined;
@@ -395,7 +434,14 @@ export default function AssetsTransfer() {
   const fetchTransferHistory = async () => {
     try {
       setTransferHistoryLoading(true);
-      const response = await api.get('/asset-transfers/history');
+      const queryParams = new URLSearchParams();
+      if (showScopeTabs) {
+        queryParams.append('scope', scope);
+      }
+      const url = queryParams.toString()
+        ? `/asset-transfers/history?${queryParams.toString()}`
+        : '/asset-transfers/history';
+      const response = await api.get(url);
       const data = response?.data ?? response;
       setTransferHistory(data?.records ?? []);
     } catch (error) {
@@ -2499,15 +2545,37 @@ export default function AssetsTransfer() {
         {/* Transfer History Table */}
         <Card className="shadow-xl border-0 bg-white/80 backdrop-blur-sm">
           <CardHeader>
-            <CardTitle className="flex items-center gap-3 text-xl">
-              <div className="p-2 bg-red-100 rounded-lg">
-                <ArrowRightLeft className="h-5 w-5 text-red-600" />
+            <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 w-full">
+              <CardTitle className="flex items-center gap-3 text-xl">
+                <div className="p-2 bg-red-100 rounded-lg">
+                  <ArrowRightLeft className="h-5 w-5 text-red-600" />
+                </div>
+                Transfer History
+                <Badge variant="secondary" className="ml-auto">
+                  {transferHistory.length} transfers
+                </Badge>
+              </CardTitle>
+              <div className="flex items-center gap-2">
+                <Button
+                  variant="header"
+                  size="sm"
+                  onClick={() => handleTransferHistoryExportClick('pdf')}
+                  className="flex items-center gap-2"
+                >
+                  <Download className="h-4 w-4" />
+                  Export PDF
+                </Button>
+                <Button
+                  variant="header"
+                  size="sm"
+                  onClick={() => handleTransferHistoryExportClick('excel')}
+                  className="flex items-center gap-2"
+                >
+                  <Download className="h-4 w-4" />
+                  Export Excel
+                </Button>
               </div>
-              Transfer History
-              <Badge variant="secondary" className="ml-auto">
-                {transferHistory.length} transfers
-              </Badge>
-            </CardTitle>
+            </div>
           </CardHeader>
 
           <CardContent>
@@ -2560,6 +2628,7 @@ export default function AssetsTransfer() {
                 data={transferHistory}
                 columns={transferHistoryColumns}
                 searchPlaceholder="Search transfer history..."
+                searchColumnOptions={transferHistorySearchColumns}
                 emptyState={
                   <div className="text-center py-8">
                     <p className="text-gray-500">No matching transfers</p>
@@ -3245,6 +3314,115 @@ export default function AssetsTransfer() {
             (currentUser as { contactNumber?: string })?.contactNumber
           }
         />
+
+        {/* Transfer History Export Dialog */}
+        <Dialog open={isTransferHistoryExportOpen} onOpenChange={setIsTransferHistoryExportOpen}>
+          <DialogContent className="max-w-xl sm:max-w-2xl">
+            <DialogHeader>
+              <DialogTitle>
+                {transferHistoryExportStep === 1
+                  ? `Export ${transferHistoryExportType?.toUpperCase() ?? ''} — Step 1: Format`
+                  : `Export ${transferHistoryExportType?.toUpperCase() ?? ''} — Step 2: Filters`}
+              </DialogTitle>
+              <DialogDescription>
+                {transferHistoryExportStep === 1
+                  ? 'Choose the export format.'
+                  : 'Apply optional filters to narrow down the exported data.'}
+              </DialogDescription>
+            </DialogHeader>
+            <div className="py-4 space-y-6">
+              {transferHistoryExportStep === 1 && (
+                <div className="grid grid-cols-2 gap-4">
+                  <Button
+                    variant="outline"
+                    className="h-24 flex-col gap-3"
+                    onClick={() => {
+                      setTransferHistoryExportType('pdf');
+                      setTransferHistoryExportStep(2);
+                    }}
+                  >
+                    <FileText className="h-8 w-8 text-red-600" />
+                    <span className="font-semibold">PDF</span>
+                    <span className="text-xs text-gray-500">Document format</span>
+                  </Button>
+                  <Button
+                    variant="outline"
+                    className="h-24 flex-col gap-3"
+                    onClick={() => {
+                      setTransferHistoryExportType('excel');
+                      setTransferHistoryExportStep(2);
+                    }}
+                  >
+                    <FileText className="h-8 w-8 text-green-600" />
+                    <span className="font-semibold">Excel</span>
+                    <span className="text-xs text-gray-500">Spreadsheet format</span>
+                  </Button>
+                </div>
+              )}
+              {transferHistoryExportStep === 2 && (
+                <div className="space-y-4">
+                  <div className="grid grid-cols-2 gap-4">
+                    <div>
+                      <Label className="text-sm font-medium">From Date</Label>
+                      <Input
+                        type="date"
+                        value={transferHistoryFilters.fromDate}
+                        onChange={e => handleTransferHistoryFilterChange('fromDate', e.target.value)}
+                        className="mt-1 h-9 text-sm"
+                      />
+                    </div>
+                    <div>
+                      <Label className="text-sm font-medium">To Date</Label>
+                      <Input
+                        type="date"
+                        value={transferHistoryFilters.toDate}
+                        onChange={e => handleTransferHistoryFilterChange('toDate', e.target.value)}
+                        className="mt-1 h-9 text-sm"
+                      />
+                    </div>
+                  </div>
+                  <div className="grid grid-cols-2 gap-4">
+                    <div>
+                      <Label className="text-sm font-medium">Accountability Form No</Label>
+                      <Input
+                        type="text"
+                        placeholder="e.g. AF-001"
+                        value={transferHistoryFilters.accountabilityFormNo}
+                        onChange={e => handleTransferHistoryFilterChange('accountabilityFormNo', e.target.value)}
+                        className="mt-1 h-9 text-sm"
+                      />
+                    </div>
+                    <div>
+                      <Label className="text-sm font-medium">Asset Code</Label>
+                      <Input
+                        type="text"
+                        placeholder="e.g. AST-001"
+                        value={transferHistoryFilters.assetCode}
+                        onChange={e => handleTransferHistoryFilterChange('assetCode', e.target.value)}
+                        className="mt-1 h-9 text-sm"
+                      />
+                    </div>
+                  </div>
+                </div>
+              )}
+            </div>
+            <div className="flex justify-between pt-4 border-t">
+              {transferHistoryExportStep === 2 && (
+                <Button variant="outline" onClick={handleTransferHistoryPrevStep}>
+                  Back
+                </Button>
+              )}
+              <div className="flex gap-2">
+                <Button variant="outline" onClick={resetTransferHistoryExportDialog}>
+                  Cancel
+                </Button>
+                <Button onClick={handleTransferHistoryExportConfirm} disabled={!transferHistoryExportType}>
+                  {transferHistoryExportStep === 1 ? 'Next' : `Export ${transferHistoryExportType?.toUpperCase()}`}
+                </Button>
+              </div>
+            </div>
+          </DialogContent>
+        </Dialog>
       </main>
     </div>
   );
