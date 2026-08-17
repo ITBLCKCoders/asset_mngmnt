@@ -2025,6 +2025,331 @@ export async function getAccountabilityFormByIdHandler(
 }
 
 /**
+ * GET /api/accountability-forms/:formId/movement
+ * Build the per-asset movement tree for a form: for each asset in the form,
+ * resolve the linked return form, transfer form, and the current
+ * (new) accountability form that covers the asset — i.e. where the asset went.
+ */
+export async function getAccountabilityFormMovementHandler(
+  req: AuthRequest,
+  res: Response
+) {
+  try {
+    const { formId } = req.params;
+    const currentUserId = req.user!.userID;
+
+    if (!formId) {
+      return res.status(400).json({ error: 'Form ID is required' });
+    }
+
+    const row = await repo.getFormFullDetailById(formId);
+    if (!row) {
+      return res.status(404).json({ error: 'Accountability form not found' });
+    }
+
+    const hrAccess = await userHasHrAccountabilityFullAccess(currentUserId);
+    if (
+      row.user_id !== currentUserId &&
+      row.created_by !== currentUserId &&
+      !hrAccess
+    ) {
+      return res.status(403).json({
+        error: 'You can only view forms assigned to you or that you issued',
+      });
+    }
+
+    const parsed = parseAccountabilityAssetsData(row.assets_data);
+    const assets = parsed.assets;
+    const assignmentIds = parsed.assignmentIds;
+
+    const assetList: any[] = [];
+    if (assets.length === 0 && row.asset_id) {
+      assetList.push({
+        id: row.asset_id,
+        code: row.asset_code,
+        name: row.asset_name,
+        category: row.category_name || row.category_id,
+        type: row.type_name || row.type_id,
+        serialNo: row.serial,
+        modelNo: row.assetModelNo,
+      });
+    } else {
+      assetList.push(...assets);
+    }
+
+    const assetIds = assetList
+      .map((a: any) => String(a?.id ?? '').trim())
+      .filter(Boolean);
+    const uniqueAssetIds = [...new Set(assetIds)];
+
+    // Resolve assignment → asset mapping so return/transfer forms can be
+    // attributed to the correct asset in the tree.
+    const assignmentMapping = await repo.getAssignmentAssetMapping(
+      assignmentIds
+    );
+    const assignmentToAssetId = new Map<string, string>();
+    for (const m of assignmentMapping) {
+      assignmentToAssetId.set(m.assignment_id, m.asset_id);
+    }
+    // Fallback: derive assignment→asset from the form assets if not resolved.
+    for (const a of assetList) {
+      const id = String(a?.id ?? '');
+      if (id && ![...assignmentToAssetId.values()].includes(id)) {
+        // assets_data may also store assignment_ids inline per asset
+        const inline = a?.assignmentId || a?.assignment_id;
+        if (inline) assignmentToAssetId.set(String(inline), id);
+      }
+    }
+
+    const returnForms = await repo.getReturnFormsByAssignmentIds(
+      assignmentIds
+    );
+    const returnFormIds = [
+      ...new Set(returnForms.map(r => r.formID).filter(Boolean)),
+    ];
+    const transferForms = await repo.getTransferFormsForMovement(
+      assignmentIds,
+      returnFormIds
+    );
+    const activeForms = await repo.getActiveAccountabilityFormsForAssetIds(
+      uniqueAssetIds,
+      formId
+    );
+
+    // Map active forms to the asset ids they cover (via their assets_data)
+    const activeFormAssetIds = new Map<string, Set<string>>();
+    for (const f of activeForms) {
+      const covered = new Set<string>();
+      const raw = f.assets_data;
+      if (raw != null) {
+        try {
+          const data =
+            typeof raw === 'string' ? JSON.parse(raw) : raw;
+          const fa = data?.assets;
+          if (Array.isArray(fa)) {
+            for (const a of fa) {
+              if (a?.id != null && String(a.id).trim()) {
+                covered.add(String(a.id));
+              }
+            }
+          }
+        } catch {
+          /* ignore malformed assets_data */
+        }
+      }
+      activeFormAssetIds.set(f.formID, covered);
+    }
+
+    const assetsResult = assetList.map((a: any) => {
+      const assetId = String(a?.id ?? '').trim();
+      const matchingAssignments = assignmentIds.filter(
+        id => assignmentToAssetId.get(id) === assetId
+      );
+
+      const assetReturnForms = dedupeByFormId(
+        returnForms.filter(r => matchingAssignments.includes(r.assignment_id))
+      );
+      const assetTransferForms = dedupeByFormId(
+        transferForms.filter(
+          t =>
+            (t.assignment_id &&
+              matchingAssignments.includes(t.assignment_id)) ||
+            (t.return_form_id &&
+              assetReturnForms.some(r => r.formID === t.return_form_id))
+        )
+      );
+      const assetNewForms = dedupeByFormId(
+        activeForms.filter(f => {
+          const covered = activeFormAssetIds.get(f.formID);
+          return covered ? covered.has(assetId) : false;
+        })
+      );
+
+      return {
+        asset: {
+          id: assetId,
+          code: a?.code ?? '',
+          name: a?.name ?? a?.code ?? '',
+          category: a?.category ?? '',
+          type: a?.type ?? '',
+          serialNo: a?.serialNo ?? '',
+          modelNo: a?.modelNo ?? '',
+        },
+        returnForms: assetReturnForms.map(r => ({
+          id: r.formID,
+          formNumber: r.form_number,
+          userId: r.user_id,
+          userName: r.user_name || '',
+          created_at: r.created_at,
+        })),
+        transferForms: assetTransferForms.map(t => ({
+          id: t.formID,
+          formNumber: t.form_number,
+          userId: t.user_id,
+          userName: t.user_name || '',
+          newAssignedUserId: t.new_assigned_user_id,
+          newUserName: t.new_user_name || '',
+          created_at: t.created_at,
+        })),
+        newAccountabilityForms: assetNewForms.map(f => ({
+          id: f.formID,
+          formNumber: f.form_number,
+          userId: f.user_id,
+          userName: f.user_name || '',
+          status: f.status,
+          created_at: f.created_at,
+        })),
+      };
+    });
+
+    return res.json({
+      form: {
+        id: row.formID,
+        formNumber: row.form_number,
+        status: row.status,
+      },
+      assets: assetsResult,
+    });
+  } catch (error: any) {
+    logger.error('Get accountability form movement failed:', error);
+    return res
+      .status(500)
+      .json({ error: 'Failed to fetch accountability form movement' });
+  }
+}
+
+/**
+ * Asset-level movement: for a single asset, resolve the accountability forms it
+ * has appeared on and, for each, the return / transfer / new accountability
+ * chain showing where the asset went. Returns a per-form tree for the asset.
+ */
+export async function getAssetMovementHandler(
+  req: AuthRequest,
+  res: Response
+) {
+  try {
+    const { assetId } = req.params;
+    const currentUserId = req.user!.userID;
+
+    if (!assetId) {
+      return res.status(400).json({ error: 'Asset ID is required' });
+    }
+
+    const rows = await repo.findFormsByAssetId(assetId);
+    if (rows.length === 0) {
+      return res.json({ asset: { id: assetId }, forms: [] });
+    }
+
+    const hrAccess = await userHasHrAccountabilityFullAccess(currentUserId);
+
+    const result: any[] = [];
+    let assetInfo: any = { id: assetId, code: '', name: '' };
+    for (const row of rows) {
+      if (
+        row.user_id !== currentUserId &&
+        row.created_by !== currentUserId &&
+        !hrAccess
+      ) {
+        continue;
+      }
+      const formId = row.formID;
+      const parsed = parseAccountabilityAssetsData(row.assets_data);
+      const assignmentIds = parsed.assignmentIds;
+
+      assetInfo = {
+        id: assetId,
+        code: row.asset_code ?? '',
+        name: row.asset_name ?? '',
+        category: row.category_name || row.category_id || '',
+        type: row.type_name || row.type_id || '',
+        serialNo: row.serial ?? '',
+        modelNo: row.assetModelNo ?? '',
+      };
+      const inline = parsed.assets.find(
+        (a: any) => String(a?.id ?? '').trim() === String(assetId).trim()
+      );
+      if (inline) {
+        assetInfo = {
+          id: String(inline.id ?? assetId).trim(),
+          code: inline.code ?? assetInfo.code,
+          name: inline.name ?? assetInfo.name,
+          category: inline.category ?? assetInfo.category,
+          type: inline.type ?? assetInfo.type,
+          serialNo: inline.serialNo ?? assetInfo.serialNo,
+          modelNo: inline.modelNo ?? assetInfo.modelNo,
+        };
+      }
+
+      const assignmentMapping = await repo.getAssignmentAssetMapping(
+        assignmentIds
+      );
+      const assignmentToAssetId = new Map<string, string>();
+      for (const m of assignmentMapping) {
+        assignmentToAssetId.set(m.assignment_id, m.asset_id);
+      }
+      const matchingAssignments = assignmentIds.filter(
+        id => assignmentToAssetId.get(id) === assetId
+      );
+
+      const returnForms = await repo.getReturnFormsByAssignmentIds(
+        matchingAssignments
+      );
+      const returnFormIds = [
+        ...new Set(returnForms.map(r => r.formID).filter(Boolean)),
+      ];
+      const transferForms = await repo.getTransferFormsForMovement(
+        matchingAssignments,
+        returnFormIds
+      );
+      const activeForms = await repo.getActiveAccountabilityFormsForAssetIds(
+        [assetId],
+        formId
+      );
+
+      result.push({
+        form: {
+          id: formId,
+          formNumber: row.form_number,
+          status: row.status,
+          userId: row.user_id,
+          userName: `${row.first_name ?? ''} ${row.last_name ?? ''}`.trim(),
+          created_at: row.created_at,
+        },
+        returnForms: dedupeByFormId(returnForms).map(r => ({
+          id: r.formID,
+          formNumber: r.form_number,
+          userId: r.user_id,
+          userName: r.user_name || '',
+          created_at: r.created_at,
+        })),
+        transferForms: dedupeByFormId(transferForms).map(t => ({
+          id: t.formID,
+          formNumber: t.form_number,
+          userId: t.user_id,
+          userName: t.user_name || '',
+          newAssignedUserId: t.new_assigned_user_id,
+          newUserName: t.new_user_name || '',
+          created_at: t.created_at,
+        })),
+        newAccountabilityForms: dedupeByFormId(activeForms).map(f => ({
+          id: f.formID,
+          formNumber: f.form_number,
+          userId: f.user_id,
+          userName: f.user_name || '',
+          status: f.status,
+          created_at: f.created_at,
+        })),
+      });
+    }
+
+    return res.json({ asset: assetInfo, forms: result });
+  } catch (error: any) {
+    logger.error('Get asset movement failed:', error);
+    return res.status(500).json({ error: 'Failed to fetch asset movement' });
+  }
+}
+
+/**
  * Check if a user has unsigned accountability forms
  * Returns list of unsigned forms for the specified user
  */
@@ -2062,4 +2387,19 @@ export async function checkUnsignedAccountabilityFormsHandler(
       .status(500)
       .json({ error: 'Failed to check unsigned accountability forms' });
   }
+}
+
+/** Deduplicate rows by their formID (transfer/return forms can yield one row per assignment). */
+function dedupeByFormId<T extends { formID?: string | null }>(
+  rows: T[]
+): T[] {
+  const seen = new Set<string>();
+  const out: T[] = [];
+  for (const r of rows) {
+    const key = String(r.formID ?? '').trim();
+    if (!key || seen.has(key)) continue;
+    seen.add(key);
+    out.push(r);
+  }
+  return out;
 }

@@ -136,6 +136,9 @@ interface ReturnHistoryRow {
   conditionImages?: string[];
   status?: string;
   viaAssetTransfer?: boolean;
+  fromAccountabilityFormNumber?: string | null;
+  toAccountabilityFormNumber?: string | null;
+  newOwnerName?: string | null;
 }
 
 export default function AssetsReturn() {
@@ -301,6 +304,11 @@ export default function AssetsReturn() {
           conditionImages.length > 0 ? conditionImages : undefined,
         status: returnRecord.status ?? 'Processed',
         viaAssetTransfer: returnRecord.viaAssetTransfer ?? false,
+        fromAccountabilityFormNumber:
+          returnRecord.fromAccountabilityFormNumber ?? null,
+        toAccountabilityFormNumber:
+          returnRecord.toAccountabilityFormNumber ?? null,
+        newOwnerName: returnRecord.newOwnerName ?? null,
       };
     });
   }, [returnHistory, locations]);
@@ -328,6 +336,39 @@ export default function AssetsReturn() {
         header: 'Return Form #',
         accessorKey: 'formNumber',
         size: 140,
+      },
+      {
+        id: 'fromAccountability',
+        header: 'From Asset Accountability',
+        accessorKey: 'fromAccountabilityFormNumber',
+        size: 170,
+        cell: ({ row }) => (
+          <span className="text-sm text-gray-900">
+            {row.original.fromAccountabilityFormNumber ?? '—'}
+          </span>
+        ),
+      },
+      {
+        id: 'toAccountability',
+        header: 'New Asset Accountability',
+        accessorKey: 'toAccountabilityFormNumber',
+        size: 170,
+        cell: ({ row }) => (
+          <span className="text-sm text-gray-900">
+            {row.original.toAccountabilityFormNumber ?? '—'}
+          </span>
+        ),
+      },
+      {
+        id: 'newOwner',
+        header: 'New Owner',
+        accessorKey: 'newOwnerName',
+        size: 160,
+        cell: ({ row }) => (
+          <span className="text-sm text-gray-900">
+            {row.original.newOwnerName ?? '—'}
+          </span>
+        ),
       },
       {
         id: 'returnedBy',

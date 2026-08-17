@@ -851,6 +851,7 @@ export default function AccountabilityFormsPage() {
                   headerInParentChrome
                   viewContext={viewDetailContext}
                   hrViewMode
+                  showAssetMovement
                   onReceiveCompleted={async () => {
                     await fetchForms();
                   }}

@@ -28,6 +28,7 @@ jest.mock('../../repositories/assetTransferForm.repository.js', () => ({
   getDepartmentById: jest.fn(), getUserById: jest.fn(), getUserDepartmentId: jest.fn(),
   getUserNamesById: jest.fn(), getCategoryDepartmentsByAssetIds: jest.fn(),
   getBuilderItemsByAssetIds: jest.fn(), getBuilderItemCount: jest.fn(),
+  findAccountabilityFormForAsset: jest.fn(),
 }));
 jest.mock('../../controllers/accountabilityForms.controller.js', () => ({ createAccountabilityFormHandler: jest.fn() }));
 
@@ -585,13 +586,17 @@ describe('assetTransfers.controller', () => {
       )).toBe(true);
     });
 
-    it('notifies Manager Approver 2 users in the processor company/department and excludes the processor', async () => {
+    it('notifies Manager Approver 2 users in the transfer form company/department and excludes the processor', async () => {
       transferRepo.getUserNamesById.mockResolvedValue({ first_name: 'Jane', last_name: 'Doe' });
       transferRepo.getUserById.mockResolvedValue({ userID: 'u-proc', company_id: '10' });
       transferRepo.getUserDepartmentId.mockResolvedValue('d1');
       getManagerApprover2UserIdsForProcessedReturn.mockResolvedValue(['u-ma2', 'u-proc']);
 
-      await assetTransfersController.notifyTransferProcessedNotifications(baseParams as any);
+      await assetTransfersController.notifyTransferProcessedNotifications({
+        ...baseParams,
+        companyId: '10',
+        departmentId: 'd1',
+      } as any);
 
       expect(getManagerApprover2UserIdsForProcessedReturn).toHaveBeenCalledWith('10', 'd1');
       const calls = createNotificationForApi.mock.calls.map((c: any) => c[0]);
@@ -602,6 +607,97 @@ describe('assetTransfers.controller', () => {
         c.data.route === '/approvals?tab=receive'
       )).toBe(true);
       expect(calls.some((c: any) => c.user_id === 'u-proc' && c.title === 'An asset has been transferred, checked and verified')).toBe(false);
+    });
+
+    it('falls back to the processor company/department when form company/department is absent', async () => {
+      transferRepo.getUserNamesById.mockResolvedValue({ first_name: 'Jane', last_name: 'Doe' });
+      transferRepo.getUserById.mockResolvedValue({ userID: 'u-proc', company_id: '10' });
+      transferRepo.getUserDepartmentId.mockResolvedValue('d1');
+      getManagerApprover2UserIdsForProcessedReturn.mockResolvedValue(['u-ma2']);
+
+      await assetTransfersController.notifyTransferProcessedNotifications(baseParams as any);
+
+      expect(getManagerApprover2UserIdsForProcessedReturn).toHaveBeenCalledWith('10', 'd1');
+    });
+  });
+
+  describe('getTransferHistoryHandler', () => {
+    it('enriches executed and pending records with accountability form numbers', async () => {
+      getAssetScope.mockResolvedValue({ companyId: 10, departmentIds: null, isSuperAdmin: false });
+      pool.execute
+        .mockResolvedValueOnce([
+          [
+            {
+              record_id: 'r1',
+              form_id: 'f1',
+              form_number: 'TRF-001',
+              assetID: '10',
+              asset_code: 'AST-001',
+              asset_name: 'Laptop',
+              category_id: 'c1',
+              from_user_id: 'u1',
+              to_user_id: 'u2',
+              from_first_name: 'John',
+              from_last_name: 'Doe',
+              to_first_name: 'Jane',
+              to_last_name: 'Doe',
+              from_department_name: 'IT',
+              to_department_name: 'HR',
+              processor_first_name: 'Proc',
+              processor_last_name: 'One',
+              transfer_condition: 'Good',
+              transfer_notes: 'ok',
+              condition_images: '[]',
+              process_signed_at: '2026-01-02 10:00:00',
+              created_at: '2026-01-02 09:00:00',
+            },
+          ],
+          [],
+        ])
+        .mockResolvedValueOnce([
+          [
+            {
+              form_id: 'f2',
+              form_number: 'TRF-002',
+              assignment_id: 'a2',
+              assetID: '11',
+              asset_code: 'AST-002',
+              asset_name: 'Monitor',
+              category_id: 'c1',
+              from_user_id: 'u3',
+              to_user_id: 'u4',
+              from_first_name: 'Bob',
+              from_last_name: 'Smith',
+              to_first_name: 'Amy',
+              to_last_name: 'Smith',
+              from_department_name: 'Finance',
+              to_department_name: 'IT',
+              processor_first_name: 'Proc',
+              processor_last_name: 'Two',
+              transfer_condition: 'Good',
+              transfer_notes: 'ok',
+              condition_images: null,
+              created_at: '2026-01-03 09:00:00',
+            },
+          ],
+          [],
+        ]);
+      transferRepo.findAccountabilityFormForAsset
+        .mockResolvedValue({ form_number: 'AF-TO-PENDING', created_at: '2026-01-03 12:00:00', user_id: 'u-proc', owner_first_name: 'Proc', owner_last_name: 'Two' })
+        .mockResolvedValueOnce({ form_number: 'AF-FROM', created_at: '2026-01-01 00:00:00', user_id: 'u1', owner_first_name: 'John', owner_last_name: 'Doe' })
+        .mockResolvedValueOnce({ form_number: 'AF-TO', created_at: '2026-01-02 12:00:00', user_id: 'u2', owner_first_name: 'Jane', owner_last_name: 'Doe' })
+        .mockResolvedValueOnce({ form_number: 'AF-FROM', created_at: '2026-01-01 00:00:00', user_id: 'u1', owner_first_name: 'John', owner_last_name: 'Doe' });
+
+      await assetTransfersController.getTransferHistoryHandler(req, res);
+
+      const records = res._json.records;
+      expect(records).toHaveLength(2);
+      const executed = records.find((r: any) => r.formNumber === 'TRF-001');
+      const pending = records.find((r: any) => r.formNumber === 'TRF-002');
+      expect(executed.fromAccountabilityFormNumber).toBe('AF-FROM');
+      expect(executed.toAccountabilityFormNumber).toBe('AF-TO');
+      expect(pending.fromAccountabilityFormNumber).toBe('AF-FROM');
+      expect(pending.toAccountabilityFormNumber).toBe('AF-TO-PENDING');
     });
   });
 });

@@ -739,3 +739,152 @@ export async function updateFormStatusTx(
     [status, formId]
   );
 }
+
+// ---------------------------------------------------------------------------
+// Asset Movement (disabled form lineage)
+// ---------------------------------------------------------------------------
+
+/**
+ * Resolve the assignment → asset mapping for the assignment ids stored in a
+ * form's assets_data. Used by the movement resolver to attribute return /
+ * transfer forms to the correct asset.
+ */
+export async function getAssignmentAssetMapping(
+  assignmentIds: string[]
+): Promise<Array<{ assignment_id: string; asset_id: string }>> {
+  if (assignmentIds.length === 0) return [];
+  const placeholders = assignmentIds.map(() => '?').join(',');
+  const [rows] = (await pool.execute(
+    `SELECT assignmentID AS assignment_id, asset_id
+     FROM asset_assignments
+     WHERE assignmentID IN (${placeholders}) AND deleted_at IS NULL`,
+    assignmentIds
+  )) as any[];
+  return rows as any[];
+}
+
+/**
+ * Find return forms linked to the given assignment ids. A return form groups
+ * one or more returned assignments (`asset_returns.assignment_id` →
+ * `asset_return_forms.formID`).
+ */
+export async function getReturnFormsByAssignmentIds(
+  assignmentIds: string[]
+): Promise<
+  Array<{
+    formID: string;
+    form_number: string;
+    assignment_id: string;
+    user_id: string;
+    user_name: string;
+    created_at: string;
+  }>
+> {
+  if (assignmentIds.length === 0) return [];
+  const placeholders = assignmentIds.map(() => '?').join(',');
+  const [rows] = (await pool.execute(
+    `SELECT arf.formID, arf.form_number, ar.assignment_id, arf.user_id,
+            CONCAT(u.first_name, ' ', u.last_name) AS user_name,
+            DATE_FORMAT(arf.created_at, '%Y-%m-%d %H:%i:%s') AS created_at
+     FROM asset_returns ar
+     JOIN asset_return_forms arf
+       ON ar.form_id = arf.formID AND arf.deleted_at IS NULL
+     LEFT JOIN users u ON arf.user_id = u.userID
+     WHERE ar.assignment_id IN (${placeholders}) AND ar.deleted_at IS NULL
+     ORDER BY arf.created_at DESC`,
+    assignmentIds
+  )) as any[];
+  return rows as any[];
+}
+
+/**
+ * Find transfer forms linked to the given assignments (via
+ * `transfer_form_assignments.assignment_id`) or to the given return forms
+ * (via `asset_transfer_forms.return_form_id`).
+ */
+export async function getTransferFormsForMovement(
+  assignmentIds: string[],
+  returnFormIds: string[]
+): Promise<
+  Array<{
+    formID: string;
+    form_number: string;
+    assignment_id: string | null;
+    return_form_id: string | null;
+    user_id: string;
+    user_name: string;
+    new_assigned_user_id: string | null;
+    new_user_name: string;
+    created_at: string;
+  }>
+> {
+  const conditions: string[] = ['atf.deleted_at IS NULL'];
+  const params: unknown[] = [];
+  if (assignmentIds.length > 0) {
+    const ph = assignmentIds.map(() => '?').join(',');
+    conditions.push(`tfa.assignment_id IN (${ph})`);
+    params.push(...assignmentIds);
+  }
+  if (returnFormIds.length > 0) {
+    const ph = returnFormIds.map(() => '?').join(',');
+    conditions.push(`atf.return_form_id IN (${ph})`);
+    params.push(...returnFormIds);
+  }
+  if (conditions.length === 1) return [];
+  const [rows] = (await pool.execute(
+    `SELECT DISTINCT atf.formID, atf.form_number, tfa.assignment_id,
+            atf.return_form_id, atf.user_id,
+            CONCAT(u.first_name, ' ', u.last_name) AS user_name,
+            atf.new_assigned_user_id,
+            CONCAT(nu.first_name, ' ', nu.last_name) AS new_user_name,
+            DATE_FORMAT(atf.created_at, '%Y-%m-%d %H:%i:%s') AS created_at
+     FROM asset_transfer_forms atf
+     LEFT JOIN transfer_form_assignments tfa ON atf.formID = tfa.form_id
+     LEFT JOIN users u ON atf.user_id = u.userID
+     LEFT JOIN users nu ON atf.new_assigned_user_id = nu.userID
+     WHERE ${conditions.join(' OR ')}
+     ORDER BY created_at DESC`,
+    params
+  )) as any[];
+  return rows as any[];
+}
+
+/**
+ * Find the currently-active accountability forms that still cover the given
+ * asset ids (i.e. where each asset went after this form was disabled). Excludes
+ * the form itself and disabled/declined/revoked forms.
+ */
+export async function getActiveAccountabilityFormsForAssetIds(
+  assetIds: string[],
+  excludeFormId: string
+): Promise<
+  Array<{
+    formID: string;
+    form_number: string;
+    user_id: string;
+    user_name: string;
+    status: string;
+    created_at: string;
+    assets_data: unknown;
+  }>
+> {
+  if (assetIds.length === 0) return [];
+  const placeholders = assetIds.map(() => '?').join(',');
+  const [rows] = (await pool.execute(
+    `SELECT af.formID, af.form_number, af.user_id, af.status,
+            CONCAT(u.first_name, ' ', u.last_name) AS user_name,
+            DATE_FORMAT(af.created_at, '%Y-%m-%d %H:%i:%s') AS created_at,
+            af.assets_data
+     FROM accountability_forms af
+     LEFT JOIN users u ON af.user_id = u.userID
+     WHERE af.deleted_at IS NULL
+       AND af.formID != ?
+       AND af.status NOT IN ('Disabled', 'Revoked', 'Declined')
+       AND (af.asset_id IN (${placeholders})
+            OR (af.assets_data IS NOT NULL
+                AND JSON_OVERLAPS(JSON_EXTRACT(af.assets_data, '$.assets[*].id'), ?)))
+     ORDER BY af.created_at DESC`,
+    [excludeFormId, ...assetIds, JSON.stringify(assetIds)]
+  )) as any[];
+  return rows as any[];
+}

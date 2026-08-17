@@ -1503,7 +1503,8 @@ export const TransferFormCard: React.FC<{
     !!currentUser?.id &&
     currentUser.id === batch.user_id &&
     !!batch.formID &&
-    !batch.signed_at;
+    !batch.signed_at &&
+    !batch.owner_absent;
   const [showConfirmDialog, setShowConfirmDialog] = useState(false);
   const [showOtpDialog, setShowOtpDialog] = useState(false);
   const [agreeTransfer, setAgreeTransfer] = useState(false);
@@ -2531,6 +2532,8 @@ export interface AssetTransferFormBatch {
   it_manager_signed_at?: string | null;
   it_manager_digital_signature?: string | null;
   it_manager_user_name?: string | null;
+  /** True when the asset owner is marked absent (processor-initiated hold transfer) */
+  owner_absent?: boolean;
   returns: AssetReturnForm[];
 }
 

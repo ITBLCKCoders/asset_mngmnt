@@ -133,6 +133,9 @@ type ReportRow = {
   formNumber?: string;
   fromDepartmentName?: string;
   toDepartmentName?: string;
+  fromAccountabilityFormNumber?: string | null;
+  toAccountabilityFormNumber?: string | null;
+  newOwnerName?: string | null;
 };
 
 type CompanyOption = { id: string; name: string; logo_url?: string | null };
@@ -497,6 +500,37 @@ export default function ReportsPage() {
                   accessorKey: 'formNumber',
                   size: 150,
                 },
+                {
+                  id: 'fromAccountability',
+                  header: 'From Asset Accountability',
+                  accessorKey: 'fromAccountabilityFormNumber',
+                  size: 170,
+                  cell: ({ row }: { row: { original: ReportRow } }) => (
+                    <span>{row.original.fromAccountabilityFormNumber ?? '—'}</span>
+                  ),
+                },
+                {
+                  id: 'toAccountability',
+                  header: 'New Asset Accountability',
+                  accessorKey: 'toAccountabilityFormNumber',
+                  size: 170,
+                  cell: ({ row }: { row: { original: ReportRow } }) => (
+                    <span>{row.original.toAccountabilityFormNumber ?? '—'}</span>
+                  ),
+                },
+                ...(focusedTableKey === 'return'
+                  ? [
+                      {
+                        id: 'newOwner',
+                        header: 'New Owner',
+                        accessorKey: 'newOwnerName',
+                        size: 160,
+                        cell: ({ row }: { row: { original: ReportRow } }) => (
+                          <span>{row.original.newOwnerName ?? '—'}</span>
+                        ),
+                      },
+                    ]
+                  : []),
               ]
             : column.id === 'person'
               ? [
@@ -638,6 +672,25 @@ export default function ReportsPage() {
           focusedTableKey === 'return' ? 'To Department' : 'Transferee Department',
         render: (row: ReportRow) => row.toDepartmentName ?? '',
       },
+      {
+        key: 'fromAccountability',
+        label: 'From Asset Accountability',
+        render: (row: ReportRow) => row.fromAccountabilityFormNumber ?? '—',
+      },
+      {
+        key: 'toAccountability',
+        label: 'New Asset Accountability',
+        render: (row: ReportRow) => row.toAccountabilityFormNumber ?? '—',
+      },
+      ...(focusedTableKey === 'return'
+        ? [
+            {
+              key: 'newOwner',
+              label: 'New Owner',
+              render: (row: ReportRow) => row.newOwnerName ?? '—',
+            },
+          ]
+        : []),
       { key: 'transferee', label: 'Transferee', render: (row: ReportRow) => row.transferee ?? '' },
       { key: 'departmentName', label: 'Department', render: (row: ReportRow) => row.departmentName },
       { key: 'processor', label: 'Processed By', render: (row: ReportRow) => row.processor },
@@ -654,7 +707,10 @@ export default function ReportsPage() {
             field =>
               field.key !== 'formNumber' &&
               field.key !== 'fromDepartmentName' &&
-              field.key !== 'toDepartmentName'
+              field.key !== 'toDepartmentName' &&
+              field.key !== 'fromAccountability' &&
+              field.key !== 'toAccountability' &&
+              field.key !== 'newOwner'
           );
     const transferFields =
       focusedTableKey === 'transfer'
@@ -1115,6 +1171,9 @@ export default function ReportsPage() {
                     tableKey === 'return' ? 'Return Form #' : 'Transfer Form #',
                     tableKey === 'return' ? 'From Department' : 'Transferrer Department',
                     tableKey === 'return' ? 'To Department' : 'Transferee Department',
+                    'From Asset Accountability',
+                    'New Asset Accountability',
+                    ...(tableKey === 'return' ? ['New Owner'] : []),
                   ]
                 : []),
               ...(showTransferee ? ['Transferee'] : []),
@@ -1144,6 +1203,9 @@ export default function ReportsPage() {
                         row.formNumber ?? '',
                         row.fromDepartmentName ?? '',
                         row.toDepartmentName ?? '',
+                        row.fromAccountabilityFormNumber ?? '',
+                        row.toAccountabilityFormNumber ?? '',
+                        ...(tableKey === 'return' ? [row.newOwnerName ?? ''] : []),
                       ]
                     : []),
                   ...(showTransferee ? [row.transferee ?? ''] : []),
@@ -1177,6 +1239,9 @@ export default function ReportsPage() {
                           '',
                           '',
                           '',
+                          '',
+                          '',
+                          ...(tableKey === 'return' ? [''] : []),
                         ]
                       : []),
                     ...(showTransferee ? [''] : []),
@@ -1363,6 +1428,11 @@ export default function ReportsPage() {
               formNumber: row.form_number ?? 'N/A',
               fromDepartmentName: row.assignment?.department?.name ?? 'Unknown',
               toDepartmentName: toDepartment ?? 'Unknown',
+              fromAccountabilityFormNumber:
+                row.fromAccountabilityFormNumber ?? null,
+              toAccountabilityFormNumber:
+                row.toAccountabilityFormNumber ?? null,
+              newOwnerName: row.newOwnerName ?? null,
             };
           })
         );
@@ -1398,6 +1468,9 @@ export default function ReportsPage() {
             formNumber: row.formNumber ?? 'N/A',
             fromDepartmentName: row.from?.department ?? 'Unknown',
             toDepartmentName: row.to?.department ?? 'Unknown',
+            fromAccountabilityFormNumber:
+              row.fromAccountabilityFormNumber ?? null,
+            toAccountabilityFormNumber: row.toAccountabilityFormNumber ?? null,
           }))
         );
 

@@ -40,6 +40,7 @@ import {
 import { Label } from '@/components/ui/label';
 import { Badge } from '@/components/ui/badge';
 import { Checkbox } from '@/components/ui/checkbox';
+import { Switch } from '@/components/ui/switch';
 import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
 import { api } from '@/lib/api';
@@ -191,6 +192,8 @@ interface TransferHistoryRecord {
   transferNotes: string | null;
   conditionImages: string[];
   transferDate: string;
+  fromAccountabilityFormNumber: string | null;
+  toAccountabilityFormNumber: string | null;
 }
 
 export default function AssetsTransfer() {
@@ -224,6 +227,7 @@ export default function AssetsTransfer() {
   const [photoPreviewOpen, setPhotoPreviewOpen] = useState(false);
   const [photoPreviewImages, setPhotoPreviewImages] = useState<string[]>([]);
   const [verificationConfirmSign, setVerificationConfirmSign] = useState(false);
+  const [ownerAbsent, setOwnerAbsent] = useState(false);
   const [expandedTransferAssets, setExpandedTransferAssets] = useState<
     Set<string>
   >(new Set());
@@ -642,6 +646,20 @@ export default function AssetsTransfer() {
         return false;
       }
     }
+    if (ownerAbsent) {
+      const details = assetTransferData
+        .map(td =>
+          assignments.find(a => a.assignmentID === td.assignmentId)
+        )
+        .filter(Boolean) as AssetAssignment[];
+      const ownerIds = new Set(details.map(a => a.user.id).filter(Boolean));
+      if (ownerIds.size > 1) {
+        toast.error(
+          'When the asset owner is absent, select assets that belong to the same owner only.'
+        );
+        return false;
+      }
+    }
     if (
       !verificationTag ||
       !verificationCondition ||
@@ -682,6 +700,7 @@ export default function AssetsTransfer() {
           roomName: newAssignmentRoom || null,
         },
         intangibleAssetItems,
+        ownerAbsent,
       };
       if (verificationConfirmSign) {
         payload.processSignature = {
@@ -692,7 +711,9 @@ export default function AssetsTransfer() {
       await api.post('/asset-transfers/create-held', payload);
 
       toast.success(
-        'Transfer has been processed. It will appear in Transfer History below.'
+        ownerAbsent
+          ? 'Transfer request created. The asset owner was marked absent, the department head can approve in Approvals. The assets will be transferred after approval.'
+          : 'Transfer has been initialized. The transferer must sign the forms in Profile → Documents, then the department head must approve before the assets are transferred.'
       );
       setShowTransferDialog(false);
       setSelectedAssignments([]);
@@ -822,6 +843,28 @@ export default function AssetsTransfer() {
         cell: ({ row }) => (
           <span className="text-sm font-medium text-gray-900">
             {row.original.formNumber ?? '—'}
+          </span>
+        ),
+      },
+      {
+        id: 'fromAccountability',
+        header: 'From Asset Accountability',
+        accessorFn: row => row.fromAccountabilityFormNumber ?? '',
+        size: 170,
+        cell: ({ row }) => (
+          <span className="text-sm text-gray-900">
+            {row.original.fromAccountabilityFormNumber ?? '—'}
+          </span>
+        ),
+      },
+      {
+        id: 'toAccountability',
+        header: 'New Asset Accountability',
+        accessorFn: row => row.toAccountabilityFormNumber ?? '',
+        size: 170,
+        cell: ({ row }) => (
+          <span className="text-sm text-gray-900">
+            {row.original.toAccountabilityFormNumber ?? '—'}
           </span>
         ),
       },
@@ -2564,6 +2607,7 @@ export default function AssetsTransfer() {
               setVerificationTag(false);
               setVerificationCondition(false);
               setVerificationConfirmSign(false);
+              setOwnerAbsent(false);
               setTransferTypeTransfer(false);
               setTransferTypeOffboarding(false);
               setReceivedBy('');
@@ -3037,8 +3081,32 @@ export default function AssetsTransfer() {
                     transfer
                   </span>
                 </label>
+                <div className="flex flex-col gap-2 rounded-lg border border-slate-200 bg-slate-50/80 p-3 sm:flex-row sm:items-center sm:justify-between">
+                  <div className="space-y-0.5 pr-2">
+                    <Label
+                      htmlFor="owner-absent-transfer-switch"
+                      className="text-sm font-medium text-slate-800"
+                    >
+                      Asset owner is not in office anymore
+                    </Label>
+                    <p className="text-xs text-slate-600">
+                      The transfer form will not go to the asset owner for
+                      digital signing; route it to the asset owner&apos;s
+                      department head for approval. Use only when all selected
+                      assets belong to the same owner.
+                    </p>
+                  </div>
+                  <Switch
+                    id="owner-absent-transfer-switch"
+                    checked={ownerAbsent}
+                    onCheckedChange={setOwnerAbsent}
+                    className="shrink-0"
+                  />
+                </div>
                 <p className="text-sm text-slate-600">
-                  All selected assets will be transferred.
+                  {ownerAbsent
+                    ? "The asset owner will not see this form in Profile. Department heads in the owner's department can approve in Approvals."
+                    : 'All selected assets will be transferred after the transferer signs the forms and the department head approves.'}
                 </p>
               </div>
             </AppDialogBody>

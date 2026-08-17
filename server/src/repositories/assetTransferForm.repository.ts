@@ -474,3 +474,85 @@ export async function getTransferFormsByAssetId(
   // with the current database schema
   return [];
 }
+
+export interface AccountabilityFormLookupRow extends RowDataPacket {
+  form_number: string | null;
+  created_at: string | null;
+  user_id: string | null;
+  owner_first_name: string | null;
+  owner_last_name: string | null;
+}
+
+/**
+ * Find the most relevant accountability form that contains an asset for a given
+ * owner, constrained by a `created_at` boundary. Used to surface "from / new"
+ * accountability form numbers on transfer and return history rows.
+ *
+ * - `direction: 'before'` (default) returns the latest form created at or before
+ *   `dateBoundary` (the form the asset belonged to before the event).
+ * - `direction: 'after'` returns the earliest form created at or after
+ *   `dateBoundary` (the form created by the event).
+ * - Pass `formOrigin: 'processor_return'` to restrict to temporary
+ *   accountability forms held by a return processor.
+ */
+export async function findAccountabilityFormForAsset(params: {
+  assetId: string;
+  userId?: string | null;
+  dateBoundary?: string | null;
+  direction?: 'before' | 'after';
+  formOrigin?: 'processor_return';
+}): Promise<AccountabilityFormLookupRow | null> {
+  const {
+    assetId,
+    userId,
+    dateBoundary,
+    direction = 'before',
+    formOrigin,
+  } = params;
+  const buildWhere = (withOrigin: boolean): [string[], unknown[]] => {
+    const where: string[] = ['af.deleted_at IS NULL'];
+    const bind: unknown[] = [];
+    if (userId) {
+      where.push('af.user_id = ?');
+      bind.push(userId);
+    }
+    if (withOrigin && formOrigin) {
+      where.push(
+        "JSON_UNQUOTE(JSON_EXTRACT(af.assets_data, '$.form_origin')) = ?"
+      );
+      bind.push(formOrigin);
+    }
+    if (dateBoundary) {
+      where.push(
+        direction === 'before' ? 'af.created_at <= ?' : 'af.created_at >= ?'
+      );
+      bind.push(dateBoundary);
+    }
+    return [where, bind];
+  };
+  const order = direction === 'before' ? 'DESC' : 'ASC';
+  const lookup = async (withOrigin: boolean) => {
+    const [where, bind] = buildWhere(withOrigin);
+    const [rows] = await pool.execute<AccountabilityFormLookupRow[]>(
+      `SELECT af.form_number, af.created_at, af.user_id,
+              u.first_name as owner_first_name, u.last_name as owner_last_name
+       FROM accountability_forms af
+       LEFT JOIN users u ON af.user_id = u.userID
+       WHERE ${where.join(' AND ')}
+         AND (af.asset_id = ? OR af.assets_data LIKE ?)
+       ORDER BY af.created_at ${order}
+       LIMIT 1`,
+      [...bind, assetId, `%${assetId}%`]
+    );
+    return rows[0] ?? null;
+  };
+
+  const matched = await lookup(true);
+  if (matched) return matched;
+
+  // Fallback: when restricted to a form origin (e.g. processor_return temp
+  // forms) but no matching form exists, retry without the origin filter so
+  // older records still resolve to the next form the asset belongs to.
+  if (formOrigin) return lookup(false);
+  return null;
+}

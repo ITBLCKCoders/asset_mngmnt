@@ -55,6 +55,7 @@ import {
   getTransferFormByReturnFormId,
   getTransferFormIdsByReturnFormId,
   getTransferFormAssignments,
+  findAccountabilityFormForAsset,
   getActiveAssignmentsByIds,
   getCategoryDepartmentsByAssetIds,
   getDepartmentById,
@@ -2739,6 +2740,42 @@ export async function getAssetReturnsHandler(req: AuthRequest, res: Response) {
       const form = r.form_id ? formById.get(r.form_id) : null;
       r.form_number = form ? form.form_number : null;
     }
+
+    // Attach accountability form numbers (from / new) and the temp-form owner
+    await Promise.all(
+      (flatReturnHistory as any[]).map(async (r: any) => {
+        const assetId =
+          r.assignment?.asset?.id ?? r.asset?.id ?? r.asset_id ?? null;
+        const returnerUserId = r.assignment?.user?.id ?? r.user_id ?? null;
+        const boundary = r.created_at ?? null;
+        if (!assetId) {
+          r.fromAccountabilityFormNumber = null;
+          r.toAccountabilityFormNumber = null;
+          r.newOwnerName = null;
+          return;
+        }
+        const [fromForm, toForm] = await Promise.all([
+          findAccountabilityFormForAsset({
+            assetId,
+            userId: returnerUserId,
+            dateBoundary: boundary,
+            direction: 'before',
+          }),
+          findAccountabilityFormForAsset({
+            assetId,
+            dateBoundary: boundary,
+            direction: 'after',
+            formOrigin: 'processor_return',
+          }),
+        ]);
+        r.fromAccountabilityFormNumber = fromForm?.form_number ?? null;
+        r.toAccountabilityFormNumber = toForm?.form_number ?? null;
+        r.newOwnerName =
+          toForm?.owner_first_name && toForm?.owner_last_name
+            ? `${toForm.owner_first_name} ${toForm.owner_last_name}`
+            : null;
+      })
+    );
 
     return res.json({
       assetReturns: flatReturnHistory,

@@ -48,6 +48,7 @@ import {
   Calendar,
   MapPin,
   ShieldCheck,
+  GitBranch,
 } from 'lucide-react';
 import SmsOtpDialog from '@/components/auth/SmsOtpDialog';
 import { api } from '@/lib/api';
@@ -78,6 +79,7 @@ import {
   sortAssetsByLast5Digits,
 } from '@/lib/pdfGenerator/shared';
 import type { AccountabilityForm } from './accountabilityFormTypes';
+import { AssetMovementTab } from './AssetMovementTab';
 import type { AssetBuilderRecord } from '@/utils/builderScan';
 import {
   buildBuilderGroupedAssetRows,
@@ -2974,6 +2976,8 @@ interface AccountabilityFormDetailProps {
   onDecline?: (formId: string, reason: string) => Promise<void>;
   /** Callback to notify parent when receive copy action completes */
   onReceiveCompleted?: () => void;
+  /** When true, show an Asset Movement tab (return/transfer/replacement chain) alongside the PDF */
+  showAssetMovement?: boolean;
 }
 
 export function AccountabilityFormDetail({
@@ -2991,6 +2995,7 @@ export function AccountabilityFormDetail({
   showDeclineButton = false,
   onDecline,
   onReceiveCompleted,
+  showAssetMovement = false,
 }: AccountabilityFormDetailProps) {
   const { user: currentUser } = useCurrentUser();
   const [pdfUrl, setPdfUrl] = useState<string>('');
@@ -3018,6 +3023,7 @@ export function AccountabilityFormDetail({
   const pendingReceiveActionRef = useRef<(() => Promise<void>) | null>(null);
   const [intangibleAssets, setIntangibleAssets] = useState<any[]>([]);
   const [intangibleAssetsLoading, setIntangibleAssetsLoading] = useState(false);
+  const [movementTabActive, setMovementTabActive] = useState(false);
 
   const isAssignedUser = currentUser?.id === form.user.id;
   const canSign = !readOnly && isAssignedUser && form.status === 'Pending';
@@ -3549,9 +3555,63 @@ export function AccountabilityFormDetail({
               ) : null}
             </div>
           )}
-          <div className="flex h-[70vh] flex-1 flex-col overflow-hidden">
-            <PDFViewer pdfUrl={pdfUrl} className="h-full w-full" />
-          </div>
+          {showAssetMovement ? (
+            <div className="flex min-h-0 flex-1 flex-col overflow-hidden">
+              <Tabs
+                value={movementTabActive ? 'movement' : 'form'}
+                onValueChange={tab => setMovementTabActive(tab === 'movement')}
+                className="flex min-h-0 w-full min-w-0 flex-1 flex-col"
+              >
+                <TabsList className={`grid w-full grid-cols-2 mb-3 ${segmentTabsListClassName}`}>
+                  <TabsTrigger value="form" className={cn(segmentTabsTriggerClassName, 'flex h-10 items-center justify-center gap-2')}>
+                    <FileText className="h-4 w-4 shrink-0" />
+                    Form
+                  </TabsTrigger>
+                  <TabsTrigger value="movement" className={cn(segmentTabsTriggerClassName, 'flex h-10 items-center justify-center gap-2')}>
+                    <GitBranch className="h-4 w-4 shrink-0" />
+                    Asset Movement
+                  </TabsTrigger>
+                </TabsList>
+                <TabsContent value="form" className="mt-0 min-h-0 flex-1">
+                  <div className="flex h-[70vh] flex-col overflow-hidden">
+                    <PDFViewer pdfUrl={pdfUrl} className="h-full w-full" />
+                  </div>
+                </TabsContent>
+                <TabsContent value="movement" className="mt-0 min-h-0 flex-1 overflow-auto">
+                  <AssetMovementTab formId={form.id} formStatus={localForm.status} />
+                </TabsContent>
+              </Tabs>
+            </div>
+          ) : (
+            <div className="flex h-[70vh] flex-1 flex-col overflow-hidden">
+              <PDFViewer pdfUrl={pdfUrl} className="h-full w-full" />
+            </div>
+          )}
+        </div>
+      ) : showAssetMovement ? (
+        <div className={previewClassName}>
+          <Tabs
+            value={movementTabActive ? 'movement' : 'form'}
+            onValueChange={tab => setMovementTabActive(tab === 'movement')}
+            className="flex min-h-0 flex-1 flex-col"
+          >
+            <TabsList className={`grid w-full grid-cols-2 mb-3 ${segmentTabsListClassName}`}>
+              <TabsTrigger value="form" className={cn(segmentTabsTriggerClassName, 'flex h-10 items-center justify-center gap-2')}>
+                <FileText className="h-4 w-4 shrink-0" />
+                Form
+              </TabsTrigger>
+              <TabsTrigger value="movement" className={cn(segmentTabsTriggerClassName, 'flex h-10 items-center justify-center gap-2')}>
+                <GitBranch className="h-4 w-4 shrink-0" />
+                Asset Movement
+              </TabsTrigger>
+            </TabsList>
+            <TabsContent value="form" className="mt-0 min-h-0 flex-1">
+              <PDFViewer pdfUrl={pdfUrl} className="h-full w-full" />
+            </TabsContent>
+            <TabsContent value="movement" className="mt-0 min-h-0 flex-1 overflow-auto">
+              <AssetMovementTab formId={form.id} formStatus={localForm.status} />
+            </TabsContent>
+          </Tabs>
         </div>
       ) : (
         <div className={previewClassName}>

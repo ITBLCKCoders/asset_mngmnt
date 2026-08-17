@@ -51,6 +51,7 @@ jest.mock('../../repositories/assetTransferForm.repository.js', () => ({
   getBuilderItemCount: jest.fn(),
   getAssetCodeByAssetId: jest.fn(),
   executeRawWrite: jest.fn(),
+  findAccountabilityFormForAsset: jest.fn(),
 }));
 jest.mock('../../services/assetReturn.service.js', () => ({ resolveReturnFormContext: jest.fn() }));
 jest.mock('../../controllers/accountabilityForms.controller.js', () => ({ createAccountabilityFormHandler: jest.fn() }));

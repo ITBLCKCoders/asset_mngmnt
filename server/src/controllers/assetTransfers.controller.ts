@@ -73,6 +73,7 @@ import {
   getAssetAssignmentDetailsByUserIdAndAssetIds,
   getAccountabilityFormsByUserIdAndStatus,
   getApprovedTransferFormsByCompanyId,
+  findAccountabilityFormForAsset,
   executeRawWrite,
 } from '../repositories/assetTransferForm.repository.js';
 
@@ -925,8 +926,6 @@ export async function createAssetTransferHandler(
       if (row.category_id) g.categoryIds.add(row.category_id);
     }
 
-const createdAccountabilityForms: Array<{ formID: string; form_number: string | null }> = [];
-
   for (const [deptName, deptInfo] of Object.entries(departmentGroups)) {
       const categoryIds = Array.from(deptInfo.categoryIds).filter(Boolean);
 
@@ -1080,7 +1079,13 @@ export async function createHeldTransferHandler(
       newAssignment,
       processSignature,
       intangibleAssetItems,
+      ownerAbsent: ownerAbsentRaw,
     } = req.body;
+    const ownerAbsent =
+      ownerAbsentRaw === true ||
+      ownerAbsentRaw === 'true' ||
+      ownerAbsentRaw === 1 ||
+      ownerAbsentRaw === '1';
 
     const hasIntangibleItems = intangibleAssetItems && Array.isArray(intangibleAssetItems) && intangibleAssetItems.length > 0;
     if (
@@ -1109,6 +1114,18 @@ export async function createHeldTransferHandler(
       return res
         .status(404)
         .json({ error: 'One or more assignments not found or not active' });
+    }
+
+    if (ownerAbsent) {
+      const ownerIds = [
+        ...new Set(assignmentRows.map((r: any) => r.user_id).filter(Boolean)),
+      ];
+      if (ownerIds.length > 1) {
+        return res.status(400).json({
+          error:
+            'When the asset owner is absent, select assets that belong to the same owner only.',
+        });
+      }
     }
 
     const firstAssignment = assignmentRows[0] as any;
@@ -1166,6 +1183,7 @@ export async function createHeldTransferHandler(
       process_digital_signature: processDigitalSignature,
       return_type: returnForTransferNote,
       received_by: receivedBy ?? null,
+      owner_absent: ownerAbsent ? 1 : 0,
     });
     const returnFormId = returnForm!.formID;
 
@@ -1266,14 +1284,130 @@ export async function createHeldTransferHandler(
       );
     }
 
+    // Notify the transferrer (asset owner) to sign the linked return form and transfer form,
+    // unless the owner is marked absent (owner-absent flow skips the owner signature and
+    // routes directly to the asset owner's Manager Approver 1 for approval).
+    if (!ownerAbsent) {
+      try {
+        const io = getIoInstance();
+        const transferrerUserIds = [
+          ...new Set(assignmentRows.map((r: any) => r.user_id)),
+        ].filter((id: string) => id !== req.user!.userID);
+        for (const transferrerId of transferrerUserIds) {
+          await createNotificationForApi({
+            user_id: transferrerId,
+            title: 'An asset transfer has been initialized',
+            message:
+              'Your assets are being transferred. Sign your transfer form and return form to process this transfer.',
+            type: 'system',
+            data: {
+              form_id,
+              form_number: transferForm!.form_number ?? null,
+              route: '/profile?tab=documents&docTab=transfers',
+              actionTarget: 'my_transfer_requests',
+            },
+          });
+          if (io) {
+            emitNotification(io, transferrerId, 'notification', {
+              id: form_id,
+              title: 'An asset transfer has been initialized',
+              message:
+                'Your assets are being transferred. Sign your transfer form and return form to process this transfer.',
+              type: 'system',
+              data: {
+                form_id,
+                form_number: transferForm!.form_number ?? null,
+                route: '/profile?tab=documents&docTab=transfers',
+                actionTarget: 'my_transfer_requests',
+              },
+            });
+          }
+        }
+      } catch (notifErr) {
+        logger.error(
+          'Failed to notify transferrer about initialized transfer:',
+          notifErr
+        );
+      }
+    }
+
+    // Owner-absent flow: route directly to the asset owner's Manager Approver 1.
+    // The owner will not sign, so the form is routed for department-head approval
+    // first; the new owner and IT staff are notified after approval (see approveTransferFormHandler).
+    if (ownerAbsent) {
+      try {
+        const ownerDeptId = pastOwnerUserId
+          ? await getUserDepartmentId(pastOwnerUserId)
+          : null;
+        const managerApprover1UserIds =
+          ownerDeptId && companyId
+            ? (await getManagerApprover1UserIdsInDepartmentAndCompany(
+                ownerDeptId,
+                companyId
+              )) ?? []
+            : [];
+        const ownerNames = pastOwnerUserId
+          ? await getUserNamesById(pastOwnerUserId)
+          : null;
+        const ownerName = ownerNames
+          ? `${ownerNames.first_name || ''} ${ownerNames.last_name || ''}`.trim()
+          : 'The asset owner';
+        const assetCount = assignmentRows.length;
+        const io = getIoInstance();
+        for (const approverUserId of managerApprover1UserIds) {
+          if (approverUserId === req.user!.userID) continue;
+          const approvalMessage = `${ownerName} is no longer in office. An asset transfer has been initialized for ${assetCount} asset${assetCount !== 1 ? 's' : ''} and requires your approval as the asset owner's department head.`;
+          await createNotificationForApi({
+            user_id: approverUserId,
+            title: 'Asset Transfer Request Approval Needed',
+            message: approvalMessage,
+            type: 'system',
+            data: {
+              form_id,
+              form_number: transferForm!.form_number ?? null,
+              requester_id: req.user!.userID,
+              requester_name: ownerName,
+              asset_count: assetCount,
+              route: '/approvals',
+              actionTarget: 'transfer_request_approval',
+            },
+          });
+          if (io) {
+            emitNotification(io, approverUserId, 'notification', {
+              id: form_id,
+              title: 'Asset Transfer Request Approval Needed',
+              message: approvalMessage,
+              type: 'system',
+              data: {
+                form_id,
+                form_number: transferForm!.form_number ?? null,
+                requester_id: req.user!.userID,
+                requester_name: ownerName,
+                asset_count: assetCount,
+                route: '/approvals',
+                actionTarget: 'transfer_request_approval',
+              },
+              time: new Date().toISOString(),
+            });
+          }
+        }
+      } catch (notifErr) {
+        logger.error(
+          'Failed to notify Manager Approver 1 about owner-absent transfer:',
+          notifErr
+        );
+      }
+    }
+
     return createSuccessResponse(
       res,
       {
         formID: form_id,
         returnFormID: returnFormId,
         form_number: transferForm!.form_number,
-        message:
-          'Transfer is on hold. The transferer must sign the return form and transfer form in Profile → Documents; then the department head will approve or decline.',
+        message: ownerAbsent
+          ? 'Transfer request created. The asset owner was marked absent, the department head can approve in Approvals. The assets will be transferred after approval.'
+          : 'Transfer is on hold. The transferer must sign the return form and transfer form in Profile → Documents; then the department head will approve or decline.',
       },
       'Transfer on hold',
       201
@@ -2689,6 +2823,8 @@ export async function runTransferFormExecution(
     if (row.category_id) g.categoryIds.add(row.category_id);
   }
 
+  const createdAccountabilityForms: Array<{ formID: string; form_number: string | null }> = [];
+
   for (const [deptName, deptInfo] of Object.entries(departmentGroups)) {
     const categoryIds = Array.from(deptInfo.categoryIds).filter(Boolean);
 
@@ -2897,7 +3033,7 @@ export async function runTransferFormExecution(
   }
 
   // Notify new owner (asset assigned + accountability form issued) and Manager
-  // Approver 2 users in the processor's company/department.
+  // Approver 2 users in the transfer form's company/department.
   try {
     await notifyTransferProcessedNotifications({
       formId,
@@ -2907,6 +3043,8 @@ export async function runTransferFormExecution(
       newOwnerUserId: newUserId,
       assetCodes: executedAssetCodes,
       createdAccountabilityForms,
+      companyId,
+      departmentId: form.department_id ?? null,
     });
   } catch (notifError: any) {
     logger.error('Failed to send transfer processed notifications:', notifError);
@@ -2931,6 +3069,8 @@ export async function notifyTransferProcessedNotifications(params: {
     formID: string;
     form_number: string | null;
   }>;
+  companyId?: string | null;
+  departmentId?: string | null;
 }): Promise<void> {
   try {
     const {
@@ -2941,6 +3081,8 @@ export async function notifyTransferProcessedNotifications(params: {
       newOwnerUserId,
       assetCodes,
       createdAccountabilityForms,
+      companyId,
+      departmentId,
     } = params;
 
     const processorRow = await getUserNamesById(processorUserId);
@@ -3030,8 +3172,8 @@ export async function notifyTransferProcessedNotifications(params: {
     const processorDepartmentId = await getUserDepartmentId(processorUserId);
     const managerApprover2UserIds =
       await getManagerApprover2UserIdsForProcessedReturn(
-        processorCompanyId,
-        processorDepartmentId
+        companyId ?? processorCompanyId,
+        departmentId ?? processorDepartmentId
       );
     for (const approverUserId of managerApprover2UserIds) {
       if (approverUserId === processorUserId) continue;
@@ -3161,6 +3303,8 @@ export async function getTransferHistoryHandler(
         atr.created_at,
         atf.form_number,
         atf.process_signed_at,
+        atf.user_id as from_user_id,
+        atf.new_assigned_user_id as to_user_id,
         a.assetID,
         a.asset_code,
         a.name as asset_name,
@@ -3197,58 +3341,78 @@ export async function getTransferHistoryHandler(
 
     const [rows] = (await pool.execute(query, [companyId, companyId, companyId, companyId])) as any[];
 
-    const executedRecords = (rows as any[]).map((r: any) => {
-      const pastOwnerName =
-        r.from_first_name && r.from_last_name
-          ? `${r.from_first_name} ${r.from_last_name}`
-          : 'Unknown';
-      const processorName =
-        r.processor_first_name && r.processor_last_name
-          ? `${r.processor_first_name} ${r.processor_last_name}`
-          : 'Unknown';
-      const action = `Returned by ${pastOwnerName} for transfer, processed by ${processorName}`;
+    const executedRecords = await Promise.all(
+      (rows as any[]).map(async (r: any) => {
+        const pastOwnerName =
+          r.from_first_name && r.from_last_name
+            ? `${r.from_first_name} ${r.from_last_name}`
+            : 'Unknown';
+        const processorName =
+          r.processor_first_name && r.processor_last_name
+            ? `${r.processor_first_name} ${r.processor_last_name}`
+            : 'Unknown';
+        const action = `Returned by ${pastOwnerName} for transfer, processed by ${processorName}`;
 
-      let conditionImages: string[] = [];
-      const raw = r.condition_images;
-      if (Array.isArray(raw)) {
-        conditionImages = raw.slice(0, 5);
-      } else if (typeof raw === 'string') {
-        try {
-          const p = JSON.parse(raw);
-          conditionImages = Array.isArray(p) ? p.slice(0, 5) : [];
-        } catch {
-          conditionImages = [];
+        let conditionImages: string[] = [];
+        const raw = r.condition_images;
+        if (Array.isArray(raw)) {
+          conditionImages = raw.slice(0, 5);
+        } else if (typeof raw === 'string') {
+          try {
+            const p = JSON.parse(raw);
+            conditionImages = Array.isArray(p) ? p.slice(0, 5) : [];
+          } catch {
+            conditionImages = [];
+          }
         }
-      }
 
-      return {
-        recordId: r.record_id,
-        formId: r.form_id,
-        formNumber: r.form_number,
-        asset: {
-          id: r.assetID,
-          code: r.asset_code,
-          name: r.asset_name,
-          category_id: r.category_id ?? null,
-        },
-        from: { name: pastOwnerName, department: r.from_department_name ?? null },
-        to: {
-          name:
-            r.to_first_name && r.to_last_name
-              ? `${r.to_first_name} ${r.to_last_name}`
-              : 'Unknown',
-          department: r.to_department_name ?? null,
-        },
-        processor: processorName,
-        status: 'Transferred',
-        action,
-        condition: r.transfer_condition ?? null,
-        transferNotes: r.transfer_notes ?? null,
-        conditionImages,
-        transferDate:
-          r.process_signed_at ?? r.created_at ?? new Date().toISOString(),
-      };
-    });
+        const transferDate =
+          r.process_signed_at ?? r.created_at ?? new Date().toISOString();
+        const [fromForm, toForm] = await Promise.all([
+          findAccountabilityFormForAsset({
+            assetId: r.assetID,
+            userId: r.from_user_id,
+            dateBoundary: transferDate,
+            direction: 'before',
+          }),
+          findAccountabilityFormForAsset({
+            assetId: r.assetID,
+            userId: r.to_user_id,
+            dateBoundary: transferDate,
+            direction: 'after',
+          }),
+        ]);
+
+        return {
+          recordId: r.record_id,
+          formId: r.form_id,
+          formNumber: r.form_number,
+          asset: {
+            id: r.assetID,
+            code: r.asset_code,
+            name: r.asset_name,
+            category_id: r.category_id ?? null,
+          },
+          from: { name: pastOwnerName, department: r.from_department_name ?? null },
+          to: {
+            name:
+              r.to_first_name && r.to_last_name
+                ? `${r.to_first_name} ${r.to_last_name}`
+                : 'Unknown',
+            department: r.to_department_name ?? null,
+          },
+          processor: processorName,
+          status: 'Transferred',
+          action,
+          condition: r.transfer_condition ?? null,
+          transferNotes: r.transfer_notes ?? null,
+          conditionImages,
+          transferDate,
+          fromAccountabilityFormNumber: fromForm?.form_number ?? null,
+          toAccountabilityFormNumber: toForm?.form_number ?? null,
+        };
+      })
+    );
 
     // 2) Held/pending forms (have transfer_form_assignments but no asset_transfer yet)
     // Show pending transfers where asset is currently in company OR involves users from this company
@@ -3259,6 +3423,8 @@ export async function getTransferHistoryHandler(
         atf.created_at,
         atf.dept_head_signed_at,
         atf.declined_at,
+        atf.user_id as from_user_id,
+        atf.new_assigned_user_id as to_user_id,
         tfa.assignment_id,
         tfa.transfer_condition,
         tfa.transfer_notes,
@@ -3304,65 +3470,85 @@ export async function getTransferHistoryHandler(
       companyId,
     ])) as any[];
 
-    const pendingRecords = (pendingRows as any[]).map((r: any) => {
-      const pastOwnerName =
-        r.from_first_name && r.from_last_name
-          ? `${r.from_first_name} ${r.from_last_name}`
-          : 'Unknown';
-      const processorName =
-        r.processor_first_name && r.processor_last_name
-          ? `${r.processor_first_name} ${r.processor_last_name}`
-          : 'Unknown';
-      let status: string;
-      if (r.declined_at) {
-        status = 'Declined by dept head';
-      } else if (r.dept_head_signed_at) {
-        status = 'Approved by dept head';
-      } else {
-        status = 'Pending';
-      }
-      const action = `Transfer on hold. Returned by ${pastOwnerName} for transfer${processorName ? `, processor ${processorName}` : ''}.`;
-
-      let conditionImages: string[] = [];
-      const raw = r.condition_images;
-      if (Array.isArray(raw)) {
-        conditionImages = raw.slice(0, 5);
-      } else if (typeof raw === 'string') {
-        try {
-          const p = JSON.parse(raw);
-          conditionImages = Array.isArray(p) ? p.slice(0, 5) : [];
-        } catch {
-          conditionImages = [];
+    const pendingRecords = await Promise.all(
+      (pendingRows as any[]).map(async (r: any) => {
+        const pastOwnerName =
+          r.from_first_name && r.from_last_name
+            ? `${r.from_first_name} ${r.from_last_name}`
+            : 'Unknown';
+        const processorName =
+          r.processor_first_name && r.processor_last_name
+            ? `${r.processor_first_name} ${r.processor_last_name}`
+            : 'Unknown';
+        let status: string;
+        if (r.declined_at) {
+          status = 'Declined by dept head';
+        } else if (r.dept_head_signed_at) {
+          status = 'Approved by dept head';
+        } else {
+          status = 'Pending';
         }
-      }
+        const action = `Transfer on hold. Returned by ${pastOwnerName} for transfer${processorName ? `, processor ${processorName}` : ''}.`;
 
-      return {
-        recordId: `form-${r.form_id}-${r.assignment_id}`,
-        formId: r.form_id,
-        formNumber: r.form_number,
-        asset: {
-          id: r.assetID,
-          code: r.asset_code,
-          name: r.asset_name,
-          category_id: r.category_id ?? null,
-        },
-        from: { name: pastOwnerName, department: r.from_department_name ?? null },
-        to: {
-          name:
-            r.to_first_name && r.to_last_name
-              ? `${r.to_first_name} ${r.to_last_name}`
-              : 'Unknown',
-          department: r.to_department_name ?? null,
-        },
-        processor: processorName,
-        status,
-        action,
-        condition: r.transfer_condition ?? null,
-        transferNotes: r.transfer_notes ?? null,
-        conditionImages,
-        transferDate: r.created_at ?? new Date().toISOString(),
-      };
-    });
+        let conditionImages: string[] = [];
+        const raw = r.condition_images;
+        if (Array.isArray(raw)) {
+          conditionImages = raw.slice(0, 5);
+        } else if (typeof raw === 'string') {
+          try {
+            const p = JSON.parse(raw);
+            conditionImages = Array.isArray(p) ? p.slice(0, 5) : [];
+          } catch {
+            conditionImages = [];
+          }
+        }
+
+        const boundary = r.created_at ?? null;
+        const [fromForm, toForm] = await Promise.all([
+          findAccountabilityFormForAsset({
+            assetId: r.assetID,
+            userId: r.from_user_id,
+            dateBoundary: boundary,
+            direction: 'before',
+          }),
+          findAccountabilityFormForAsset({
+            assetId: r.assetID,
+            dateBoundary: boundary,
+            direction: 'after',
+            formOrigin: 'processor_return',
+          }),
+        ]);
+
+        return {
+          recordId: `form-${r.form_id}-${r.assignment_id}`,
+          formId: r.form_id,
+          formNumber: r.form_number,
+          asset: {
+            id: r.assetID,
+            code: r.asset_code,
+            name: r.asset_name,
+            category_id: r.category_id ?? null,
+          },
+          from: { name: pastOwnerName, department: r.from_department_name ?? null },
+          to: {
+            name:
+              r.to_first_name && r.to_last_name
+                ? `${r.to_first_name} ${r.to_last_name}`
+                : 'Unknown',
+            department: r.to_department_name ?? null,
+          },
+          processor: processorName,
+          status,
+          action,
+          condition: r.transfer_condition ?? null,
+          transferNotes: r.transfer_notes ?? null,
+          conditionImages,
+          transferDate: r.created_at ?? new Date().toISOString(),
+          fromAccountabilityFormNumber: fromForm?.form_number ?? null,
+          toAccountabilityFormNumber: toForm?.form_number ?? null,
+        };
+      })
+    );
 
     const records = [...executedRecords, ...pendingRecords].sort(
       (a, b) =>
@@ -3448,12 +3634,36 @@ export async function getAssetTransferFormsByUserHandler(
     }
 
     const batches: any[] = [];
+    // Owner-absent transfer forms are routed straight to dept head approval; the
+    // transferrer is not asked to sign, so hide them from the transferrer's list.
+    const transferFormReturnFormIds = forms
+      .map((f: any) => f.return_form_id)
+      .filter(Boolean) as string[];
+    const ownerAbsentFormIds = new Set<string>();
+    if (transferFormReturnFormIds.length > 0) {
+      const placeholders = transferFormReturnFormIds.map(() => '?').join(',');
+      const [rfRows] = (await pool.execute(
+        `SELECT formID, owner_absent FROM asset_return_forms WHERE formID IN (${placeholders})`,
+        transferFormReturnFormIds
+      )) as any[];
+      for (const r of rfRows ?? []) {
+        if (Number(r.owner_absent) === 1) {
+          ownerAbsentFormIds.add(String(r.formID));
+        }
+      }
+    }
     for (const form of forms) {
       const formId =
         (form as { formID?: string; form_id?: string }).formID ??
         (form as { formID?: string; form_id?: string }).form_id ??
         null;
       if (!formId) continue;
+      if (
+        (form as { return_form_id?: string | null }).return_form_id &&
+        ownerAbsentFormIds.has(String((form as { return_form_id?: string | null }).return_form_id))
+      ) {
+        continue;
+      }
       let [recordRows] = (await pool.execute(
         `SELECT atr.record_id, atr.assignment_id, atr.user_id, atr.transfer_condition, atr.transfer_notes, atr.condition_images, atr.created_at,
                 aa.asset_id, aa.assigned_date, aa.assignment_notes,
@@ -3573,12 +3783,13 @@ export async function getAssetTransferFormsByUserHandler(
           processor_pending_signature?: string | null;
         }
       );
-      batches.push({
-        formID: formId,
-        form_number: form.form_number,
-        return_batch_id: formId,
-        created_at: form.created_at,
-        user_id: formUserId,
+batches.push({
+      formID: formId,
+      form_number: form.form_number,
+      return_batch_id: formId,
+      created_at: form.created_at,
+      user_id: formUserId,
+      owner_absent: Number((form as { owner_absent?: unknown }).owner_absent ?? 0) === 1,
       processed_by,
       new_assigned_user_id: form.new_assigned_user_id,
       new_assigned_user,
@@ -4061,15 +4272,16 @@ export async function getTransferPendingApprovalsHandler(
                   DATE_FORMAT(atf.processor_pending_signed_at, '%Y-%m-%d %H:%i:%s') AS processor_pending_signed_at,
                   atf.processor_pending_signature,
                   atf.transfer_type, atf.received_by,
-                  d.company_id AS form_company_id
+                  d.company_id AS form_company_id,
+                  arf.owner_absent
            FROM asset_transfer_forms atf
            LEFT JOIN asset_mngmnt_departments d ON atf.department_id = d.departmentID
            LEFT JOIN asset_return_forms arf ON atf.return_form_id = arf.formID AND arf.deleted_at IS NULL
            WHERE atf.deleted_at IS NULL
              AND (atf.declined_at IS NULL)
-             AND atf.signed_at IS NOT NULL
+             AND (atf.signed_at IS NOT NULL OR arf.owner_absent = 1)
              AND atf.dept_head_signed_at IS NULL
-             AND (atf.return_form_id IS NULL OR (arf.formID IS NOT NULL AND arf.signed_at IS NOT NULL AND arf.declined_at IS NULL))
+             AND (atf.return_form_id IS NULL OR (arf.formID IS NOT NULL AND (arf.signed_at IS NOT NULL OR arf.owner_absent = 1) AND arf.declined_at IS NULL))
              AND d.company_id = ?`,
           [companyId]
         )) as any[];
@@ -4108,16 +4320,17 @@ export async function getTransferPendingApprovalsHandler(
                 DATE_FORMAT(atf.processor_pending_signed_at, '%Y-%m-%d %H:%i:%s') AS processor_pending_signed_at,
                 atf.processor_pending_signature,
                 atf.transfer_type, atf.received_by,
-                d.company_id AS form_company_id
+                d.company_id AS form_company_id,
+                arf.owner_absent
          FROM asset_transfer_forms atf
          LEFT JOIN asset_mngmnt_departments d ON atf.department_id = d.departmentID
          LEFT JOIN users transferer ON transferer.userID = atf.user_id
          LEFT JOIN asset_return_forms arf ON atf.return_form_id = arf.formID AND arf.deleted_at IS NULL
          WHERE atf.deleted_at IS NULL
            AND (atf.declined_at IS NULL)
-           AND atf.signed_at IS NOT NULL
+           AND (atf.signed_at IS NOT NULL OR arf.owner_absent = 1)
            AND atf.dept_head_signed_at IS NULL
-           AND (atf.return_form_id IS NULL OR (arf.formID IS NOT NULL AND arf.signed_at IS NOT NULL AND arf.declined_at IS NULL))
+           AND (atf.return_form_id IS NULL OR (arf.formID IS NOT NULL AND (arf.signed_at IS NOT NULL OR arf.owner_absent = 1) AND arf.declined_at IS NULL))
            AND transferer.department_id <=> ? AND d.company_id = ?`,
         [approverDepartmentId, companyId]
       )) as any[];
