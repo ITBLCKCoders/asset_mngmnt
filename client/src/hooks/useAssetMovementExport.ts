@@ -31,7 +31,11 @@ interface ExportFilters {
   fromDate: string;
   toDate: string;
   accountabilityFormNo: string;
+  oldAccountabilityFormNo: string;
+  newAccountabilityFormNo: string;
   assetCode: string;
+  departmentId: string;
+  userId: string;
 }
 
 export function useAssetMovementExport() {
@@ -43,7 +47,11 @@ export function useAssetMovementExport() {
     fromDate: '',
     toDate: '',
     accountabilityFormNo: '',
+    oldAccountabilityFormNo: '',
+    newAccountabilityFormNo: '',
     assetCode: '',
+    departmentId: '',
+    userId: '',
   });
 
   const handleExportClick = useCallback((type: 'pdf' | 'excel') => {
@@ -63,7 +71,11 @@ export function useAssetMovementExport() {
       if (filters.fromDate) params.append('from', filters.fromDate);
       if (filters.toDate) params.append('to', filters.toDate);
       if (filters.accountabilityFormNo) params.append('formNumber', filters.accountabilityFormNo);
+      if (filters.oldAccountabilityFormNo) params.append('oldAccountabilityFormNo', filters.oldAccountabilityFormNo);
+      if (filters.newAccountabilityFormNo) params.append('newAccountabilityFormNo', filters.newAccountabilityFormNo);
       if (filters.assetCode) params.append('assetCode', filters.assetCode);
+      if (filters.departmentId) params.append('departmentId', filters.departmentId);
+      if (filters.userId) params.append('userId', filters.userId);
 
       const response = await api.get<{ data: MovementRow[] }>(`/asset-movements/my?${params.toString()}`);
       const movements = response.data ?? [];

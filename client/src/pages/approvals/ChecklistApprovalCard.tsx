@@ -23,6 +23,7 @@ export type ChecklistApprovalBatch = {
   checklist_count: number;
   checklists: AssetChecklistData[];
   dept_head_signed_at?: string | null;
+  sub_approver_1_signed_at?: string | null;
   it_manager_signed_at?: string | null;
 };
 
@@ -30,7 +31,7 @@ function getStatusBadge(batch: ChecklistApprovalBatch) {
   if (batch.it_manager_signed_at) {
     return { label: 'Received', className: 'bg-green-100 text-green-800' };
   }
-  if (batch.dept_head_signed_at) {
+  if (batch.dept_head_signed_at || batch.sub_approver_1_signed_at) {
     return { label: 'Approved', className: 'bg-blue-100 text-blue-800' };
   }
   return { label: 'Pending', className: 'bg-amber-100 text-amber-800' };
@@ -71,6 +72,9 @@ export function ChecklistApprovalCard({
               <ClipboardList className="h-5 w-5 text-white shrink-0" />
             </div>
             <div>
+              <p className="text-[11px] font-semibold uppercase tracking-wider text-red-600">
+                Checklist Form
+              </p>
               <CardTitle className="text-lg">{checklistFormNumber(batch)}</CardTitle>
               <p className="text-sm text-gray-500">
                 Created {new Date(batch.created_at).toLocaleDateString()}

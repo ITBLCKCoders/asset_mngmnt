@@ -833,6 +833,15 @@ export function AssetsPage() {
         'annualDepreciation',
         data.annualDepreciation?.toString() || ''
       );
+      formData.append('bookValue', data.bookValue?.toString() || '');
+      formData.append(
+        'accumulatedDepreciation',
+        data.accumulatedDepreciation?.toString() || ''
+      );
+      formData.append(
+        'monthlyDepreciation',
+        data.monthlyDepreciation?.toString() || ''
+      );
       formData.append(
         'depreciationStartDate',
         data.depreciationStartDate || ''
@@ -1647,6 +1656,15 @@ export function AssetsPage() {
       apiFormData.append(
         'annualDepreciation',
         formData.annualDepreciation?.toString() || ''
+      );
+      apiFormData.append('bookValue', formData.bookValue?.toString() || '');
+      apiFormData.append(
+        'accumulatedDepreciation',
+        formData.accumulatedDepreciation?.toString() || ''
+      );
+      apiFormData.append(
+        'monthlyDepreciation',
+        formData.monthlyDepreciation?.toString() || ''
       );
       apiFormData.append(
         'depreciationStartDate',

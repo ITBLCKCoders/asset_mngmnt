@@ -6,10 +6,13 @@ import * as checklistRepo from '../repositories/assetChecklist.repository.js';
 import { getAssetScope } from '../utils/assetScope.js';
 import { createNotificationForApi } from '../utils/notificationsApi.js';
 import {
-  getManagerApprover2UserIdsInItDepartmentAndCompany,
-  isUserInItDepartmentForCompany,
+  getManagerApprover2UserIdsInItAndAdminDepartmentsAndCompany,
+  getSubApprover2UserIdsInItAndAdminDepartmentsAndCompany,
+  isUserInItOrAdminDepartmentForCompany,
   isUserManagerApprover1,
   isUserManagerApprover2,
+  isUserSubApprover1,
+  isUserSubApprover2,
 } from '../utils/approverNotifications.js';
 import { createAuditLog } from '../utils/audit.js';
 
@@ -56,7 +59,10 @@ export async function getPendingChecklistApprovalsHandler(
       return res.status(200).json({ checklistBatches: [] });
     }
 
-    if (!(await isUserManagerApprover1(userId))) {
+    if (
+      !(await isUserManagerApprover1(userId)) &&
+      !(await isUserSubApprover1(userId))
+    ) {
       return res.status(200).json({ checklistBatches: [] });
     }
 
@@ -129,7 +135,10 @@ export async function approveChecklistsDeptHeadHandler(
       return res.status(400).json({ error: 'checklistIds is required' });
     }
 
-    if (!(await isUserManagerApprover1(userId))) {
+    if (
+      !(await isUserManagerApprover1(userId)) &&
+      !(await isUserSubApprover1(userId))
+    ) {
       return res
         .status(403)
         .json({ error: 'Not authorized as department head approver' });
@@ -161,12 +170,14 @@ export async function approveChecklistsDeptHeadHandler(
           : null;
     }
 
+    const isSubApprover1 = await isUserSubApprover1(userId);
     const approvedCount = await checklistRepo.approveChecklistsAsDeptHead({
       checklistIds,
       approverUserId: userId,
       approverDepartmentId,
       companyId,
       digitalSignature,
+      isSubApprover: isSubApprover1,
     });
 
     if (approvedCount === 0) {
@@ -178,10 +189,14 @@ export async function approveChecklistsDeptHeadHandler(
 
     await createAuditLog({
       userId,
-      action: 'Approved Asset Checklists',
+      action: isSubApprover1
+        ? 'Approved Asset Checklists (Sub Approver 1)'
+        : 'Approved Asset Checklists',
       resourceType: 'asset_checklist',
       resourceId: checklistIds.join(','),
-      details: `Department head approved ${approvedCount} asset checklist(s)`,
+      details: isSubApprover1
+        ? `Sub Approver 1 approved ${approvedCount} asset checklist(s) as stand-in for the requestor's department head`
+        : `Department head approved ${approvedCount} asset checklist(s)`,
       newValues: { approved_count: approvedCount, checklist_ids: checklistIds },
       ipAddress: req.ip,
       userAgent: req.get ? req.get('User-Agent') : 'Unknown',
@@ -189,7 +204,14 @@ export async function approveChecklistsDeptHeadHandler(
 
     try {
       const itApproverIds =
-        await getManagerApprover2UserIdsInItDepartmentAndCompany(companyId);
+        await getManagerApprover2UserIdsInItAndAdminDepartmentsAndCompany(
+          companyId
+        );
+      const sub2ApproverIds =
+        await getSubApprover2UserIdsInItAndAdminDepartmentsAndCompany(companyId);
+      const receiveApproverIds = [
+        ...new Set([...itApproverIds, ...sub2ApproverIds]),
+      ];
       const [approverNameRows] = (await pool.query(
         `SELECT name, first_name, last_name FROM users WHERE userID = ? LIMIT 1`,
         [userId]
@@ -208,13 +230,13 @@ export async function approveChecklistsDeptHeadHandler(
           .join(' ')
           .trim() ||
         approverRow?.name ||
-        'Department head';
-      for (const itUserId of itApproverIds) {
-        if (itUserId === userId) continue;
+        (isSubApprover1 ? 'Sub approver' : 'Department head');
+      for (const receiveUserId of receiveApproverIds) {
+        if (receiveUserId === userId) continue;
         await createNotificationForApi({
-          user_id: itUserId,
+          user_id: receiveUserId,
           title: 'Asset Checklist Receive Approval Needed',
-          message: `${deptHeadName} approved ${approvedCount} asset checklist${approvedCount !== 1 ? 's' : ''} — IT receive approval required.`,
+          message: `${deptHeadName} approved ${approvedCount} asset checklist${approvedCount !== 1 ? 's' : ''} — receive approval required.`,
           type: 'system',
           data: {
             route: '/approvals?tab=receive',
@@ -224,7 +246,7 @@ export async function approveChecklistsDeptHeadHandler(
         });
       }
     } catch (notifError) {
-      logger.error('Failed to notify IT checklist receivers:', notifError);
+      logger.error('Failed to notify checklist receivers:', notifError);
     }
 
     return res.status(200).json({
@@ -254,7 +276,9 @@ export async function getReceivePendingChecklistApprovalsHandler(
 ) {
   try {
     const userId = req.user!.userID;
-    if (!(await isUserManagerApprover2(userId))) {
+    const isManager2 = await isUserManagerApprover2(userId);
+    const isSub2 = await isUserSubApprover2(userId);
+    if (!isManager2 && !isSub2) {
       return res.status(200).json({ checklistBatches: [] });
     }
 
@@ -263,7 +287,7 @@ export async function getReceivePendingChecklistApprovalsHandler(
       return res.status(200).json({ checklistBatches: [] });
     }
 
-    if (!(await isUserInItDepartmentForCompany(userId, companyId))) {
+    if (!(await isUserInItOrAdminDepartmentForCompany(userId, companyId))) {
       return res.status(200).json({ checklistBatches: [] });
     }
 
@@ -274,6 +298,10 @@ export async function getReceivePendingChecklistApprovalsHandler(
       ...batch,
       dept_head_signed_at: batch.checklists[0]?.dept_head_signed_at ?? null,
       it_manager_signed_at: batch.checklists[0]?.it_manager_signed_at ?? null,
+      sub_approver_1_signed_at:
+        batch.checklists[0]?.sub_approver_1_signed_at ?? null,
+      sub_approver_2_signed_at:
+        batch.checklists[0]?.sub_approver_2_signed_at ?? null,
     }));
 
     return res.status(200).json({ checklistBatches });
@@ -304,10 +332,12 @@ export async function receiveChecklistsItManagerHandler(
       return res.status(400).json({ error: 'checklistIds is required' });
     }
 
-    if (!(await isUserManagerApprover2(userId))) {
+    const isManager2 = await isUserManagerApprover2(userId);
+    const isSub2 = await isUserSubApprover2(userId);
+    if (!isManager2 && !isSub2) {
       return res
         .status(403)
-        .json({ error: 'Not authorized as IT manager approver' });
+        .json({ error: 'Not authorized as receive approver' });
     }
 
     const { companyId } = await getAssetScope(pool, userId);
@@ -315,10 +345,10 @@ export async function receiveChecklistsItManagerHandler(
       return res.status(400).json({ error: 'Company context required' });
     }
 
-    if (!(await isUserInItDepartmentForCompany(userId, companyId))) {
+    if (!(await isUserInItOrAdminDepartmentForCompany(userId, companyId))) {
       return res
         .status(403)
-        .json({ error: 'Only IT department Manager Approver 2 can receive' });
+        .json({ error: 'Only IT/Admin department receive approvers can receive' });
     }
 
     const [approverRows] = (await pool.query(
@@ -339,6 +369,7 @@ export async function receiveChecklistsItManagerHandler(
       approverUserId: userId,
       companyId,
       digitalSignature,
+      isSubApprover: isSub2 && !isManager2,
     });
 
     if (receivedCount === 0) {
@@ -348,12 +379,13 @@ export async function receiveChecklistsItManagerHandler(
       });
     }
 
+    const actionLabel = isSub2 && !isManager2 ? ' (Sub Approver 2)' : '';
     await createAuditLog({
       userId,
-      action: 'Received Asset Checklists (IT)',
+      action: `Received Asset Checklists${actionLabel}`,
       resourceType: 'asset_checklist',
       resourceId: checklistIds.join(','),
-      details: `IT manager received ${receivedCount} asset checklist(s)`,
+      details: `Receive approver received ${receivedCount} asset checklist(s)`,
       newValues: { received_count: receivedCount, checklist_ids: checklistIds },
       ipAddress: req.ip,
       userAgent: req.get ? req.get('User-Agent') : 'Unknown',

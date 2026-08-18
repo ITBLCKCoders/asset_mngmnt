@@ -308,7 +308,11 @@ export default function AccountabilityFormsPage() {
 
   const handleSignForm = async (formId: string) => {
     try {
-      await api.post(`/accountability-forms/${formId}/sign`, {});
+      await api.post(`/accountability-forms/${formId}/sign`, {
+        acknowledgments: currentUser?.digitalSignature
+          ? { digitalSignature: currentUser.digitalSignature }
+          : undefined,
+      });
       await fetchForms();
       toast.success('Form signed successfully');
     } catch (error: unknown) {

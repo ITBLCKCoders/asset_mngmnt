@@ -46,6 +46,7 @@ import { Checkbox } from '@/components/ui/checkbox';
 import { Switch } from '@/components/ui/switch';
 import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
+import { Combobox } from '@/components/ui/combobox';
 import { api } from '@/lib/api';
 import { cn } from '@/lib/utils';
 import { toast } from 'sonner';
@@ -201,6 +202,11 @@ export default function AssetsReturn() {
   const [selectedIntangibleAssetIds, setSelectedIntangibleAssetIds] = useState<string[]>([]);
   const [smsOtpDialogOpen, setSmsOtpDialogOpen] = useState(false);
   const pendingReturnActionRef = useRef<(() => Promise<void>) | null>(null);
+  // Export filter departments and users
+  const [exportDepartments, setExportDepartments] = useState<any[]>([]);
+  const [exportUsers, setExportUsers] = useState<any[]>([]);
+  // Export filter accountability form options
+  const [exportAccountabilityForms, setExportAccountabilityForms] = useState<string[]>([]);
 
   // Checklist dialog state for return flow
   const [checklistDialogOpen, setChecklistDialogOpen] = useState(false);
@@ -252,6 +258,8 @@ export default function AssetsReturn() {
     { label: 'All Columns', value: 'all' },
     { label: 'Asset', value: 'asset' },
     { label: 'Return Form #', value: 'formNumber' },
+    { label: 'From Accountability', value: 'fromAccountabilityFormNumber' },
+    { label: 'To Accountability', value: 'toAccountabilityFormNumber' },
     { label: 'Returned By', value: 'returnedBy' },
     { label: 'From Department', value: 'fromDepartment' },
     { label: 'To Department', value: 'toDepartment' },
@@ -534,6 +542,46 @@ export default function AssetsReturn() {
     }
   };
 
+  const fetchExportDepartments = async () => {
+    try {
+      const url = effectiveCompanyId ? `/departments?companyId=${effectiveCompanyId}` : '/departments';
+      const response = await api.get(url);
+      setExportDepartments(response.departments || []);
+    } catch (error) {
+      console.error('Failed to fetch export departments:', error);
+      setExportDepartments([]);
+    }
+  };
+
+  const fetchExportUsers = async () => {
+    try {
+      const url = effectiveCompanyId ? `/users?companyId=${effectiveCompanyId}` : '/users';
+      const response = await api.get(url);
+      setExportUsers(response.users || []);
+    } catch (error) {
+      console.error('Failed to fetch export users:', error);
+      setExportUsers([]);
+    }
+  };
+
+  const fetchExportAccountabilityForms = async () => {
+    try {
+      const response = await api.get('/accountability-forms');
+      const forms = response.forms || [];
+      const formNumbers = Array.from(
+        new Set<string>(
+          forms
+            .map((f: any) => f.formNumber)
+            .filter((n: unknown): n is string => typeof n === 'string' && n.trim() !== '')
+        )
+      ).sort((a: string, b: string) => a.localeCompare(b));
+      setExportAccountabilityForms(formNumbers);
+    } catch (error) {
+      console.error('Failed to fetch export accountability forms:', error);
+      setExportAccountabilityForms([]);
+    }
+  };
+
 
   const fetchCategories = async () => {
     try {
@@ -644,6 +692,15 @@ export default function AssetsReturn() {
     setSelectedAssignments([]);
     setExpandedBuilderForSelect(null);
   }, [scope, showScopeTabs]);
+
+  // Fetch export departments and users when export dialog opens
+  useEffect(() => {
+    if (isReturnHistoryExportOpen) {
+      fetchExportDepartments();
+      fetchExportUsers();
+      fetchExportAccountabilityForms();
+    }
+  }, [isReturnHistoryExportOpen]);
 
   // Fetch return history
   const fetchReturnHistory = async () => {
@@ -2864,7 +2921,7 @@ export default function AssetsReturn() {
                   </div>
                   <div className="grid grid-cols-2 gap-4">
                     <div>
-                      <Label className="text-sm font-medium">Accountability Form No</Label>
+                      <Label className="text-sm font-medium">Accountability Form No (All)</Label>
                       <Input
                         type="text"
                         placeholder="e.g. AF-001"
@@ -2880,6 +2937,71 @@ export default function AssetsReturn() {
                         placeholder="e.g. AST-001"
                         value={returnHistoryFilters.assetCode}
                         onChange={e => handleReturnHistoryFilterChange('assetCode', e.target.value)}
+                        className="mt-1 h-9 text-sm"
+                      />
+                    </div>
+                  </div>
+                  <div className="grid grid-cols-2 gap-4">
+                    <div>
+                      <Label className="text-sm font-medium">From Asset Accountability</Label>
+                      <Combobox
+                        options={[
+                          { value: '', label: 'All Forms' },
+                          ...exportAccountabilityForms.map(n => ({ value: n, label: n })),
+                        ]}
+                        value={returnHistoryFilters.oldAccountabilityFormNo}
+                        onChange={v => handleReturnHistoryFilterChange('oldAccountabilityFormNo', v)}
+                        placeholder="Search from accountability"
+                        className="mt-1 h-9 text-sm"
+                      />
+                    </div>
+                    <div>
+                      <Label className="text-sm font-medium">To Asset Accountability</Label>
+                      <Combobox
+                        options={[
+                          { value: '', label: 'All Forms' },
+                          ...exportAccountabilityForms.map(n => ({ value: n, label: n })),
+                        ]}
+                        value={returnHistoryFilters.newAccountabilityFormNo}
+                        onChange={v => handleReturnHistoryFilterChange('newAccountabilityFormNo', v)}
+                        placeholder="Search to accountability"
+                        className="mt-1 h-9 text-sm"
+                      />
+                    </div>
+                  </div>
+                  <div className="grid grid-cols-2 gap-4">
+                    <div>
+                      <Label className="text-sm font-medium">Department</Label>
+                      <Combobox
+                        options={[
+                          { value: '', label: 'All Departments' },
+                          ...exportDepartments.map((dept: any) => ({ value: dept.departmentID, label: dept.name })),
+                        ]}
+                        value={returnHistoryFilters.departmentId}
+                        onChange={v => handleReturnHistoryFilterChange('departmentId', v)}
+                        placeholder="Search department"
+                        className="mt-1 h-9 text-sm"
+                      />
+                    </div>
+                    <div>
+                      <Label className="text-sm font-medium">User</Label>
+                      <Combobox
+                        options={[
+                          { value: '', label: 'All Users' },
+                          ...exportUsers
+                            .filter(
+                              (u: any) =>
+                                !returnHistoryFilters.departmentId ||
+                                u.department_id === returnHistoryFilters.departmentId
+                            )
+                            .map((user: any) => ({
+                              value: user.userID,
+                              label: `${user.first_name} ${user.last_name} (${user.email})`,
+                            })),
+                        ]}
+                        value={returnHistoryFilters.userId}
+                        onChange={v => handleReturnHistoryFilterChange('userId', v)}
+                        placeholder="Search user"
                         className="mt-1 h-9 text-sm"
                       />
                     </div>

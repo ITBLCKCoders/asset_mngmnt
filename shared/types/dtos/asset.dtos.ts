@@ -24,6 +24,9 @@ export interface CreateAssetDto {
   depreciationMethod?: DepreciationMethod | null;
   usefulLifeYears?: number | null;
   annualDepreciation?: number | null;
+  bookValue?: number | null;
+  accumulatedDepreciation?: number | null;
+  monthlyDepreciation?: number | null;
   depreciationStartDate?: string | null;
   companyId?: string | null;
   locationId?: string | null;
@@ -63,6 +66,9 @@ export interface AssetResponseDto {
   depreciation_method: string | null;
   useful_life_years: number | null;
   annual_depreciation: number | null;
+  book_value?: number | null;
+  accumulated_depreciation?: number | null;
+  monthly_depreciation?: number | null;
   depreciation_start_date: string | null;
   company_id: string | null;
   company_name: string | null;

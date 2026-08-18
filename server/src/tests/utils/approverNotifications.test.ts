@@ -21,7 +21,7 @@ const {
   getManagerApprover1UserIdsInDepartmentAndCompany,
   getManagerApprover2UserIdsInDepartment,
   getManagerApprover2UserIdsForProcessedReturn,
-  isUserInItDepartmentForCompany,
+  isUserInItOrAdminDepartmentForCompany,
   getManagerApprover1UserIdsByCompany,
   getCustodianReturnAccessUserIds,
   getHrAccountabilityReceiverUserIds,
@@ -160,11 +160,11 @@ describe('approverNotifications', () => {
     });
   });
 
-  describe('isUserInItDepartmentForCompany', () => {
+  describe('isUserInItOrAdminDepartmentForCompany', () => {
     it('should return true when user is in IT department', async () => {
       mockPool.execute.mockResolvedValue([[{ department_id: 'it-dept', company_id: 'c1' }], []]);
       mockGetDepartmentIdsForScope.mockResolvedValue(['it-dept']);
-      const result = await isUserInItDepartmentForCompany('u1', 'c1');
+      const result = await isUserInItOrAdminDepartmentForCompany('u1', 'c1');
       expect(result).toBe(true);
     });
   });

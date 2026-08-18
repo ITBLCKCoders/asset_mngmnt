@@ -324,6 +324,82 @@ export function AssetMovementTab({
     );
   }
 
+  let orgRoot: OrgChartNodeData | null = null;
+
+  if (formId && formData) {
+    const assetNodes = formData.assets
+      .map<OrgChartNodeData | null>(assetItem => {
+        const children = buildChildNodes(
+          assetItem.returnForms,
+          assetItem.transferForms,
+          assetItem.newAccountabilityForms,
+          handleViewReturnForm,
+          handleViewTransferForm,
+          handleViewAccountabilityForm
+        );
+        if (children.length === 0) return null;
+        return {
+          id: `a-${assetItem.asset.id}`,
+          icon: <Package className="h-4 w-4 text-slate-600" />,
+          iconClass: 'bg-slate-100 text-slate-600',
+          label: 'Asset',
+          title: assetItem.asset.code || 'Asset',
+          subtitle: assetItem.asset.name,
+          children,
+        };
+      })
+      .filter((n): n is OrgChartNodeData => n !== null);
+
+    if (assetNodes.length > 0) {
+      orgRoot = {
+        id: `form-${formData.form.id}`,
+        icon: <FileCheck2 className="h-4 w-4 text-green-600" />,
+        iconClass: 'bg-green-50 text-green-700',
+        label: 'Accountability Form',
+        title: formData.form.formNumber,
+        badge: formData.form.status,
+        children: assetNodes,
+      };
+    }
+  } else if (assetId && assetData) {
+    const formNodes = assetData.forms
+      .map<OrgChartNodeData | null>(formItem => {
+        const children = buildChildNodes(
+          formItem.returnForms,
+          formItem.transferForms,
+          formItem.newAccountabilityForms,
+          handleViewReturnForm,
+          handleViewTransferForm,
+          handleViewAccountabilityForm
+        );
+        if (children.length === 0) return null;
+        return {
+          id: `f-${formItem.form.id}`,
+          icon: <FileCheck2 className="h-4 w-4 text-green-600" />,
+          iconClass: 'bg-green-50 text-green-700',
+          label: 'Accountability Form',
+          title: formItem.form.formNumber,
+          subtitle: formItem.form.userName,
+          badge: formItem.form.status,
+          date: formItem.form.created_at,
+          children,
+        };
+      })
+      .filter((n): n is OrgChartNodeData => n !== null);
+
+    if (formNodes.length > 0) {
+      orgRoot = {
+        id: `asset-${assetData.asset.id}`,
+        icon: <Package className="h-4 w-4 text-slate-600" />,
+        iconClass: 'bg-slate-100 text-slate-600',
+        label: 'Asset',
+        title: assetData.asset.code || assetData.asset.name || 'Asset',
+        subtitle: assetData.asset.name,
+        children: formNodes,
+      };
+    }
+  }
+
   return (
     <div className="space-y-4">
       {formStatus && (
@@ -340,59 +416,13 @@ export function AssetMovementTab({
         </div>
       )}
 
-      {/* Form-based mode: per-asset tree */}
-      {formId &&
-        formData?.assets.map(assetItem => {
-          const children = buildChildrenNodes(
-            assetItem.returnForms,
-            assetItem.transferForms,
-            assetItem.newAccountabilityForms,
-            handleViewReturnForm,
-            handleViewTransferForm,
-            handleViewAccountabilityForm
-          );
-          if (children.length === 0) return null;
-
-          return (
-            <TreeBranch
-              key={assetItem.asset.id}
-              rootLabel={assetItem.asset.code || 'Asset'}
-              rootSubLabel={assetItem.asset.name}
-              rootIcon={<Package className="h-4 w-4 text-slate-600" />}
-              rootIconClass="bg-slate-100 text-slate-600"
-            >
-              {children}
-            </TreeBranch>
-          );
-        })}
-
-      {/* Asset-based mode: per-form tree */}
-      {assetId &&
-        assetData?.forms.map(formItem => {
-          const children = buildChildrenNodes(
-            formItem.returnForms,
-            formItem.transferForms,
-            formItem.newAccountabilityForms,
-            handleViewReturnForm,
-            handleViewTransferForm,
-            handleViewAccountabilityForm
-          );
-          if (children.length === 0) return null;
-
-          return (
-            <TreeBranch
-              key={formItem.form.id}
-              rootLabel={formItem.form.formNumber}
-              rootSubLabel={formItem.form.userName}
-              rootBadge={formItem.form.status}
-              rootDate={formItem.form.created_at}
-              rootIcon={<FileCheck2 className="h-4 w-4 text-green-600" />}
-              rootIconClass="bg-green-50 text-green-700"
-            >
-              {children}
-            </TreeBranch>
-          );
-        })}
+      {orgRoot && (
+        <div className="overflow-x-auto pb-4">
+          <div className="flex min-w-max justify-center py-2">
+            <OrgChartNode node={orgRoot} />
+          </div>
+        </div>
+      )}
 
       {/* Return form preview dialog */}
       {returnBatch && (
@@ -471,200 +501,154 @@ export function AssetMovementTab({
   );
 }
 
-type MovementChildNode = React.ReactNode;
+interface OrgChartNodeData {
+  id: string;
+  icon?: React.ReactNode;
+  iconClass?: string;
+  label: string;
+  title: string;
+  subtitle?: string;
+  badge?: string;
+  date?: string;
+  action?: () => void;
+  children: OrgChartNodeData[];
+}
 
-function buildChildrenNodes(
+function buildChildNodes(
   returnForms: MovementForm[],
   transferForms: Array<MovementForm & { newUserName: string }>,
   newAccountabilityForms: Array<MovementForm & { status: string }>,
   onViewReturn: (id: string) => void,
   onViewTransfer: (id: string) => void,
   onViewNew: (id: string) => void
-): MovementChildNode[] {
-  const nodes: MovementChildNode[] = [];
+): OrgChartNodeData[] {
+  const nodes: OrgChartNodeData[] = [];
 
   for (const form of returnForms) {
-    nodes.push(
-      <TreeNode
-        key={`r-${form.id}`}
-        icon={<Undo2 className="h-4 w-4 text-amber-600" />}
-        iconClass="bg-amber-50 text-amber-700"
-        label="Return Form"
-        title={form.formNumber}
-        subtitle={form.userName}
-        created_at={form.created_at}
-        onView={() => onViewReturn(form.id)}
-      />
-    );
+    nodes.push({
+      id: `r-${form.id}`,
+      icon: <Undo2 className="h-4 w-4 text-amber-600" />,
+      iconClass: 'bg-amber-50 text-amber-700',
+      label: 'Return Form',
+      title: form.formNumber,
+      subtitle: form.userName,
+      date: form.created_at,
+      action: () => onViewReturn(form.id),
+      children: [],
+    });
   }
 
   for (const form of transferForms) {
-    nodes.push(
-      <TreeNode
-        key={`t-${form.id}`}
-        icon={<ArrowRightLeft className="h-4 w-4 text-blue-600" />}
-        iconClass="bg-blue-50 text-blue-700"
-        label="Transfer Form"
-        title={form.formNumber}
-        subtitle={
-          form.newUserName ? `${form.userName} → ${form.newUserName}` : form.userName
-        }
-        created_at={form.created_at}
-        onView={() => onViewTransfer(form.id)}
-      />
-    );
+    nodes.push({
+      id: `t-${form.id}`,
+      icon: <ArrowRightLeft className="h-4 w-4 text-blue-600" />,
+      iconClass: 'bg-blue-50 text-blue-700',
+      label: 'Transfer Form',
+      title: form.formNumber,
+      subtitle: form.newUserName
+        ? `${form.userName} → ${form.newUserName}`
+        : form.userName,
+      date: form.created_at,
+      action: () => onViewTransfer(form.id),
+      children: [],
+    });
   }
 
   for (const form of newAccountabilityForms) {
-    nodes.push(
-      <TreeNode
-        key={`n-${form.id}`}
-        icon={<FileCheck2 className="h-4 w-4 text-green-600" />}
-        iconClass="bg-green-50 text-green-700"
-        label="New Accountability Form"
-        title={form.formNumber}
-        subtitle={form.userName}
-        created_at={form.created_at}
-        status={form.status}
-        onView={() => onViewNew(form.id)}
-      />
-    );
+    nodes.push({
+      id: `n-${form.id}`,
+      icon: <FileCheck2 className="h-4 w-4 text-green-600" />,
+      iconClass: 'bg-green-50 text-green-700',
+      label: 'New Accountability Form',
+      title: form.formNumber,
+      subtitle: form.userName,
+      date: form.created_at,
+      badge: form.status,
+      action: () => onViewNew(form.id),
+      children: [],
+    });
   }
 
   return nodes;
 }
 
-interface TreeBranchProps {
-  rootLabel: string;
-  rootSubLabel?: string;
-  rootBadge?: string;
-  rootDate?: string;
-  rootIcon?: React.ReactNode;
-  rootIconClass?: string;
-  children?: React.ReactNode;
-}
-
-/** Root of a movement branch: shows the asset/accountability form with children indented below. */
-function TreeBranch({
-  rootLabel,
-  rootSubLabel,
-  rootBadge,
-  rootDate,
-  rootIcon,
-  rootIconClass = 'bg-slate-100 text-slate-600',
-  children,
-}: TreeBranchProps) {
+/** Org-chart card: fixed-width, truncated, with optional badge/date and a View action. */
+function OrgCard({ node }: { node: OrgChartNodeData }) {
   return (
-    <div className="overflow-hidden rounded-lg border border-slate-200 bg-white">
-      <div className="flex items-center justify-between gap-3 border-b border-slate-100 bg-slate-50/70 px-4 py-3">
-        <div className="flex min-w-0 items-center gap-2">
-          <span
-            className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-md ${rootIconClass}`}
-          >
-            {rootIcon ?? <Package className="h-4 w-4" />}
-          </span>
-          <div className="min-w-0">
-            <p className="truncate font-mono text-sm font-semibold text-gray-800">
-              {rootLabel}
-            </p>
-            {rootSubLabel ? (
-              <p className="truncate text-xs text-gray-500">{rootSubLabel}</p>
-            ) : null}
-          </div>
+    <div className="flex w-[210px] flex-col gap-2 rounded-lg border border-slate-200 bg-white p-3 shadow-sm">
+      <div className="flex items-center gap-2">
+        <span
+          className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-md ${
+            node.iconClass ?? 'bg-slate-100 text-slate-600'
+          }`}
+        >
+          {node.icon ?? <Package className="h-4 w-4" />}
+        </span>
+        <div className="min-w-0">
+          <p className="truncate text-[11px] font-medium uppercase tracking-wide text-gray-400">
+            {node.label}
+          </p>
+          <p className="truncate font-mono text-sm font-semibold text-gray-800">
+            {node.title}
+          </p>
         </div>
-        <div className="flex shrink-0 items-center gap-2">
-          {rootBadge && (
+      </div>
+      {node.subtitle ? (
+        <p className="truncate text-xs text-gray-500" title={node.subtitle}>
+          {node.subtitle}
+        </p>
+      ) : null}
+      <div className="flex items-center justify-between gap-2">
+        <div className="flex min-w-0 items-center gap-2">
+          {node.badge ? (
             <Badge
               className={
-                formStatusBadgeClass[rootBadge] ||
+                formStatusBadgeClass[node.badge] ||
                 'bg-gray-500/15 text-gray-700 border-gray-500/30'
               }
             >
-              {rootBadge}
+              {node.badge}
             </Badge>
-          )}
-          {rootDate && (
-            <span className="text-xs text-gray-400">{formatDate(rootDate)}</span>
-          )}
+          ) : null}
+          {node.date ? (
+            <span className="shrink-0 text-xs text-gray-400">
+              {formatDate(node.date)}
+            </span>
+          ) : null}
         </div>
+        {node.action ? (
+          <Button variant="ghost" size="sm" onClick={node.action} className="gap-1">
+            <Eye className="h-3.5 w-3.5" />
+            View
+          </Button>
+        ) : null}
       </div>
-      {children ? (
-        <div className="px-4 py-3">
-          <div className="ml-3 space-y-2 border-l-2 border-slate-200 pl-4">
-            {children}
-          </div>
-        </div>
-      ) : null}
     </div>
   );
 }
 
-interface TreeNodeProps {
-  icon: React.ReactNode;
-  iconClass: string;
-  label: string;
-  title: string;
-  subtitle?: string;
-  created_at?: string;
-  status?: string;
-  onView?: () => void;
-}
-
-/** Child node of a movement branch (return / transfer / new accountability form). */
-function TreeNode({
-  icon,
-  iconClass,
-  label,
-  title,
-  subtitle,
-  created_at,
-  status,
-  onView,
-}: TreeNodeProps) {
+/** Recursive org-chart node: centered card with connector lines branching to children. */
+function OrgChartNode({ node }: { node: OrgChartNodeData }) {
+  const hasChildren = node.children.length > 0;
   return (
-    <div className="relative flex items-center justify-between gap-3 rounded-lg border border-slate-200 bg-white px-3 py-2">
-      <div className="flex min-w-0 items-center gap-2">
-        <span
-          className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-md ${iconClass}`}
-        >
-          {icon}
-        </span>
-        <div className="min-w-0">
-          <p className="text-[11px] font-medium uppercase tracking-wide text-gray-400">
-            {label}
-          </p>
-          <p className="truncate text-sm font-semibold text-gray-800">
-            {title}
-          </p>
-          {subtitle ? (
-            <p className="truncate text-xs text-gray-500">{subtitle}</p>
-          ) : null}
-          <p className="text-xs text-gray-400">{formatDate(created_at)}</p>
+    <div className="flex flex-col items-center">
+      <OrgCard node={node} />
+      {hasChildren ? (
+        <div className="flex flex-col items-center">
+          <div className="h-6 w-px bg-slate-300" />
+          <div className="relative">
+            <div className="absolute inset-x-0 top-0 h-px bg-slate-300" />
+            <div className="flex items-start">
+              {node.children.map(child => (
+                <div key={child.id} className="flex flex-col items-center px-4">
+                  <div className="h-6 w-px bg-slate-300" />
+                  <OrgChartNode node={child} />
+                </div>
+              ))}
+            </div>
+          </div>
         </div>
-      </div>
-      <div className="flex shrink-0 items-center gap-2">
-        {status && (
-          <Badge
-            className={
-              formStatusBadgeClass[status] ||
-              'bg-gray-500/15 text-gray-700 border-gray-500/30'
-            }
-          >
-            {status}
-          </Badge>
-        )}
-        {onView && (
-          <Button
-            variant="ghost"
-            size="sm"
-            onClick={onView}
-            className="gap-1"
-          >
-            <Eye className="h-3.5 w-3.5" />
-            View
-          </Button>
-        )}
-      </div>
+      ) : null}
     </div>
   );
 }

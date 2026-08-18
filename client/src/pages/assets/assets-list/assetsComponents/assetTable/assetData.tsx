@@ -101,6 +101,9 @@ export interface Asset {
   salvageValue: number;
   depreciationMethod: string;
   annualDepreciation: number;
+  bookValue?: number;
+  accumulatedDepreciation?: number;
+  monthlyDepreciation?: number;
   depreciationStartDate: Date | null;
   company: string;
   building: string;

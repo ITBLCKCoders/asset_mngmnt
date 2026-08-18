@@ -228,7 +228,7 @@ export function RoleFormDialog({
                         {
                           key: 'm3',
                           label: 'Sub Approver 1',
-                          desc: 'Sub approver or 2nd line approver if the DH/manager of the requestor is absent.',
+                          desc: 'Stand-in for Manager Approver 1. Approves the request when the dept head / manager of the requestor is absent. If the primary is also set, only one of them signs.',
                           checked: form.manager_approver_3,
                           set: (v: boolean) =>
                             setForm(prev => ({
@@ -239,7 +239,7 @@ export function RoleFormDialog({
                         {
                           key: 's2',
                           label: 'Sub Approver 2',
-                          desc: 'Sub approver for the dept head / manager of the IT department / admin department if they are not present for verifying all requests and transactions in the system.',
+                          desc: 'Stand-in for Manager Approver 2. Verifies all requests and transactions in both IT and Admin departments when the dept head / manager is absent. If the primary is also set, only one of them signs.',
                           checked: form.sub_approver_2,
                           set: (v: boolean) =>
                             setForm(prev => ({

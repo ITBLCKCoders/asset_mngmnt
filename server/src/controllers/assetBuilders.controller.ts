@@ -630,7 +630,7 @@ export async function updateAssetBuilderHandler(
         builderId,
         name.trim(),
         description?.trim() || null,
-        status || 'Available',
+        status ?? null,
         userId,
       ]
     )) as any[];

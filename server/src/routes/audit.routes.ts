@@ -4,6 +4,7 @@ import {
   getAssetAuditLogsHandler,
   getBuilderAuditLogsHandler,
   verifyAuditChainHandler,
+  recordAuditExportHandler,
 } from '../controllers/audit.controller.js';
 import { authenticate } from '../middleware/authenticate.js';
 
@@ -70,6 +71,28 @@ router.get('/builders/:builderId', getBuilderAuditLogsHandler);
  *       401: { description: Unauthorized }
  */
 router.get('/', getAuditLogsHandler);
+
+/**
+ * @swagger
+ * /api/audit/export:
+ *   post:
+ *     tags: [Audit]
+ *     summary: Record an audit log export event (JSON/CSV/PDF download)
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             properties:
+ *               format: { type: string, enum: [json, csv, pdf] }
+ *               rowCount: { type: integer }
+ *               scope: { type: string }
+ *     responses:
+ *       200: { description: Export recorded }
+ *       401: { description: Unauthorized }
+ */
+router.post('/export', recordAuditExportHandler);
 
 /**
  * @swagger

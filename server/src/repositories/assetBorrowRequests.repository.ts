@@ -25,6 +25,10 @@ export interface AssetBorrowRequestRow extends RowDataPacket {
   requester_company_logo_url?: string | null;
   dept_head_signed_by?: string | null;
   dept_head_name?: string | null;
+  sub_approver_1_signed_at?: Date | string | null;
+  sub_approver_1_digital_signature?: string | null;
+  sub_approver_1_signed_by?: string | null;
+  sub_approver_1_name?: string | null;
   approved_at?: Date | string | null;
   approved_by?: string | null;
   pre_usage_condition?: string | null;
@@ -74,7 +78,7 @@ export async function insertAssetBorrowRequest(
     `INSERT INTO asset_borrow_requests (
       borrow_request_id, company_id, user_id, borrow_scope,
       category_id, type_id, form_number, expected_return_at, purpose, status, requested_by_signature
-    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'pending_staff', ?)`,
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'pending_dept_head', ?)`,
     [
       params.id,
       params.companyId,
@@ -275,15 +279,20 @@ export async function findPendingDeptHeadBorrowRequests(
       d.name AS requester_department_name,
       br.requested_by_signature,
       br.processor_signature,
-      DATE_FORMAT(br.processor_signed_at, '%Y-%m-%d %H:%i:%s') AS processor_signed_at
+      DATE_FORMAT(br.processor_signed_at, '%Y-%m-%d %H:%i:%s') AS processor_signed_at,
+      DATE_FORMAT(br.sub_approver_1_signed_at, '%Y-%m-%d %H:%i:%s') AS sub_approver_1_signed_at,
+      br.sub_approver_1_signed_by,
+      IFNULL(CONCAT(sa1.first_name, ' ', sa1.last_name), NULL) AS sub_approver_1_name
     FROM asset_borrow_requests br
     INNER JOIN asset_categories c ON br.category_id = c.categoryID AND c.deleted_at IS NULL
     INNER JOIN asset_types t ON br.type_id = t.typeID AND t.deleted_at IS NULL
     INNER JOIN users req ON br.user_id = req.userID
     LEFT JOIN companies co ON req.company_id = co.companyID AND co.deleted_at IS NULL
     LEFT JOIN asset_mngmnt_departments d ON req.department_id = d.departmentID AND d.deleted_at IS NULL
+    LEFT JOIN users sa1 ON br.sub_approver_1_signed_by = sa1.userID
     WHERE br.company_id = ?
       AND br.dept_head_signed_at IS NULL
+      AND br.sub_approver_1_signed_at IS NULL
       AND br.declined_at IS NULL
       AND req.department_id <=> ?
     ORDER BY br.created_at DESC
@@ -324,19 +333,26 @@ export async function findBorrowRequestsApprovedByDeptHeadMe(
       d.name AS requester_department_name,
       br.requested_by_signature,
       br.processor_signature,
-      DATE_FORMAT(br.processor_signed_at, '%Y-%m-%d %H:%i:%s') AS processor_signed_at
+      DATE_FORMAT(br.processor_signed_at, '%Y-%m-%d %H:%i:%s') AS processor_signed_at,
+      DATE_FORMAT(br.sub_approver_1_signed_at, '%Y-%m-%d %H:%i:%s') AS sub_approver_1_signed_at,
+      br.sub_approver_1_signed_by,
+      IFNULL(CONCAT(sa1.first_name, ' ', sa1.last_name), NULL) AS sub_approver_1_name
     FROM asset_borrow_requests br
     INNER JOIN asset_categories c ON br.category_id = c.categoryID AND c.deleted_at IS NULL
     INNER JOIN asset_types t ON br.type_id = t.typeID AND t.deleted_at IS NULL
     INNER JOIN users req ON br.user_id = req.userID
     LEFT JOIN companies co ON req.company_id = co.companyID AND co.deleted_at IS NULL
     LEFT JOIN asset_mngmnt_departments d ON req.department_id = d.departmentID AND d.deleted_at IS NULL
+    LEFT JOIN users sa1 ON br.sub_approver_1_signed_by = sa1.userID
     WHERE br.company_id = ?
-      AND br.dept_head_signed_by = ?
-      AND br.dept_head_signed_at IS NOT NULL
-    ORDER BY br.dept_head_signed_at DESC
+      AND (
+        br.dept_head_signed_by = ?
+        OR br.sub_approver_1_signed_by = ?
+      )
+      AND (br.dept_head_signed_at IS NOT NULL OR br.sub_approver_1_signed_at IS NOT NULL)
+    ORDER BY COALESCE(br.dept_head_signed_at, br.sub_approver_1_signed_at) DESC
   `;
-  const [rows] = await pool.execute(sql, [companyId, deptHeadUserId]);
+  const [rows] = await pool.execute(sql, [companyId, deptHeadUserId, deptHeadUserId]);
   return rows as AssetBorrowRequestRow[];
 }
 
@@ -387,6 +403,10 @@ export async function getBorrowRequestById(
       a.serial AS asset_serial,
       CONCAT(ap.first_name, ' ', ap.last_name) AS approved_by_name,
       IFNULL(CONCAT(dh.first_name, ' ', dh.last_name), NULL) AS dept_head_name,
+      DATE_FORMAT(br.sub_approver_1_signed_at, '%Y-%m-%d %H:%i:%s') AS sub_approver_1_signed_at,
+      br.sub_approver_1_digital_signature,
+      br.sub_approver_1_signed_by,
+      IFNULL(CONCAT(sa1.first_name, ' ', sa1.last_name), NULL) AS sub_approver_1_name,
       br.requested_by_signature,
       br.processor_signature,
       DATE_FORMAT(br.processor_signed_at, '%Y-%m-%d %H:%i:%s') AS processor_signed_at
@@ -398,6 +418,7 @@ export async function getBorrowRequestById(
     LEFT JOIN assets a ON br.asset_id = a.assetID AND a.deleted_at IS NULL
     LEFT JOIN users ap ON br.approved_by = ap.userID
     LEFT JOIN users dh ON br.dept_head_signed_by = dh.userID
+    LEFT JOIN users sa1 ON br.sub_approver_1_signed_by = sa1.userID
     WHERE br.borrow_request_id = ?
     LIMIT 1
   `;
@@ -409,8 +430,26 @@ export async function getBorrowRequestById(
 export async function updateBorrowRequestDeptHeadApprove(
   pool: Pool,
   borrowRequestId: string,
-  signedByUserId: string
+  signedByUserId: string,
+  isSubApprover = false
 ): Promise<boolean> {
+  if (isSubApprover) {
+    const [result] = await pool.execute(
+      `UPDATE asset_borrow_requests
+       SET sub_approver_1_signed_at = NOW(),
+           sub_approver_1_signed_by = ?,
+           sub_approver_1_digital_signature = NULL,
+           status = 'pending_staff',
+           updated_at = NOW()
+       WHERE borrow_request_id = ?
+         AND dept_head_signed_at IS NULL
+         AND sub_approver_1_signed_at IS NULL
+         AND declined_at IS NULL`,
+      [signedByUserId, borrowRequestId]
+    );
+    return (result as { affectedRows?: number }).affectedRows === 1;
+  }
+
   const [result] = await pool.execute(
     `UPDATE asset_borrow_requests
      SET dept_head_signed_at = NOW(),

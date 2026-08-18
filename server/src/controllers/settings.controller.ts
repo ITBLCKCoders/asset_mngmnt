@@ -1392,12 +1392,26 @@ export async function updateGlobalMFASettingsHandler(
   }
 
   try {
+    const previousValue = await SettingModel.getValue('mfa_enabled');
     const setting = await SettingModel.setValue(
       'mfa_enabled',
       mfaEnabled.toString(),
       'boolean',
       userId
     );
+
+    await createAuditLog({
+      userId,
+      action: 'Updated Global MFA Setting',
+      resourceType: 'setting',
+      resourceId: 'mfa_enabled',
+      resourceName: 'mfa_enabled',
+      details: `Global MFA ${mfaEnabled ? 'enabled' : 'disabled'}`,
+      oldValues: { mfa_enabled: previousValue ?? null },
+      newValues: { mfa_enabled: mfaEnabled },
+      ipAddress: req.ip,
+      userAgent: req.get('User-Agent'),
+    });
 
     return res.json({
       message: 'MFA settings updated successfully',
@@ -1483,43 +1497,45 @@ export async function updateSecuritySettingsHandler(
   }
 
   try {
-    // Update each setting if provided
-    if (passwordMinLength !== undefined) {
-      await SettingModel.setValue('password_min_length', passwordMinLength.toString(), 'number', userId);
+    const changedKeys: string[] = [];
+    const oldValues: Record<string, unknown> = {};
+    const newValues: Record<string, unknown> = {};
+    const settingKeys: Array<[keyof typeof req.body, string, 'string' | 'number' | 'boolean']> = [
+      ['passwordMinLength', 'password_min_length', 'number'],
+      ['passwordRequireUppercase', 'password_require_uppercase', 'boolean'],
+      ['passwordRequireLowercase', 'password_require_lowercase', 'boolean'],
+      ['passwordRequireNumbers', 'password_require_numbers', 'boolean'],
+      ['passwordRequireSpecial', 'password_require_special', 'boolean'],
+      ['passwordExpirationDays', 'password_expiration_days', 'number'],
+      ['maxLoginAttempts', 'max_login_attempts', 'number'],
+      ['lockoutDurationMinutes', 'lockout_duration_minutes', 'number'],
+      ['failedAttemptResetMinutes', 'failed_attempt_reset_minutes', 'number'],
+      ['sessionTimeoutMinutes', 'session_timeout_minutes', 'number'],
+      ['auditLoggingEnabled', 'audit_logging_enabled', 'boolean'],
+      ['otpExpirySeconds', 'otp_expiry_seconds', 'number'],
+    ];
+
+    for (const [bodyKey, settingKey, valueType] of settingKeys) {
+      const value = req.body[bodyKey];
+      if (value === undefined) continue;
+      changedKeys.push(settingKey);
+      oldValues[settingKey] = (await SettingModel.getValue(settingKey)) ?? null;
+      newValues[settingKey] = value;
+      await SettingModel.setValue(settingKey, value.toString(), valueType, userId);
     }
-    if (passwordRequireUppercase !== undefined) {
-      await SettingModel.setValue('password_require_uppercase', passwordRequireUppercase.toString(), 'boolean', userId);
-    }
-    if (passwordRequireLowercase !== undefined) {
-      await SettingModel.setValue('password_require_lowercase', passwordRequireLowercase.toString(), 'boolean', userId);
-    }
-    if (passwordRequireNumbers !== undefined) {
-      await SettingModel.setValue('password_require_numbers', passwordRequireNumbers.toString(), 'boolean', userId);
-    }
-    if (passwordRequireSpecial !== undefined) {
-      await SettingModel.setValue('password_require_special', passwordRequireSpecial.toString(), 'boolean', userId);
-    }
-    if (passwordExpirationDays !== undefined) {
-      await SettingModel.setValue('password_expiration_days', passwordExpirationDays.toString(), 'number', userId);
-    }
-    if (maxLoginAttempts !== undefined) {
-      await SettingModel.setValue('max_login_attempts', maxLoginAttempts.toString(), 'number', userId);
-    }
-    if (lockoutDurationMinutes !== undefined) {
-      await SettingModel.setValue('lockout_duration_minutes', lockoutDurationMinutes.toString(), 'number', userId);
-    }
-    if (failedAttemptResetMinutes !== undefined) {
-      await SettingModel.setValue('failed_attempt_reset_minutes', failedAttemptResetMinutes.toString(), 'number', userId);
-    }
-    if (sessionTimeoutMinutes !== undefined) {
-      await SettingModel.setValue('session_timeout_minutes', sessionTimeoutMinutes.toString(), 'number', userId);
-    }
-    if (auditLoggingEnabled !== undefined) {
-      await SettingModel.setValue('audit_logging_enabled', auditLoggingEnabled.toString(), 'boolean', userId);
-    }
-    if (otpExpirySeconds !== undefined) {
-      await SettingModel.setValue('otp_expiry_seconds', otpExpirySeconds.toString(), 'number', userId);
-    }
+
+    await createAuditLog({
+      userId,
+      action: 'Updated Security Settings',
+      resourceType: 'setting',
+      resourceId: 'security_settings',
+      resourceName: 'security_settings',
+      details: `Updated security setting(s): ${changedKeys.join(', ')}`,
+      oldValues,
+      newValues,
+      ipAddress: req.ip,
+      userAgent: req.get('User-Agent'),
+    });
 
     return res.json({
       message: 'Security settings updated successfully',

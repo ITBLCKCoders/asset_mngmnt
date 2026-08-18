@@ -19,6 +19,9 @@ export const ASSET_AUDIT_DIFF_KEYS = [
   'depreciation_method',
   'useful_life_years',
   'annual_depreciation',
+  'book_value',
+  'accumulated_depreciation',
+  'monthly_depreciation',
   'depreciation_start_date',
   'company_id',
   'location_id',
@@ -49,7 +52,10 @@ function normalizeForCompare(key: string, value: unknown): string | null {
     if (
       key === 'asset_value' ||
       key === 'salvage_value' ||
-      key === 'annual_depreciation'
+      key === 'annual_depreciation' ||
+      key === 'book_value' ||
+      key === 'accumulated_depreciation' ||
+      key === 'monthly_depreciation'
     ) {
       return String(Number(value));
     }
@@ -70,7 +76,10 @@ function normalizeForCompare(key: string, value: unknown): string | null {
     if (
       key === 'asset_value' ||
       key === 'salvage_value' ||
-      key === 'annual_depreciation'
+      key === 'annual_depreciation' ||
+      key === 'book_value' ||
+      key === 'accumulated_depreciation' ||
+      key === 'monthly_depreciation'
     ) {
       const n = Number(t);
       return Number.isNaN(n) ? t : String(n);
@@ -119,6 +128,44 @@ export function buildAssetUpdateAuditDiff(
       newValues[key] = rawNew ?? null;
     }
   }
+
+  return {
+    oldValues,
+    newValues,
+    changeCount: Object.keys(oldValues).length,
+  };
+}
+
+/**
+ * Merges an assigned-user change into an existing asset audit diff.
+ * The assigned user lives in `asset_assignments`, not on the `assets` row,
+ * so it must be captured separately and folded into the same "Updated Asset" entry.
+ */
+export function mergeAssignmentIntoDiff(
+  diff: {
+    oldValues: Record<string, unknown>;
+    newValues: Record<string, unknown>;
+    changeCount: number;
+  },
+  oldAssigneeName: string | null | undefined,
+  newAssigneeName: string | null | undefined
+): {
+  oldValues: Record<string, unknown>;
+  newValues: Record<string, unknown>;
+  changeCount: number;
+} {
+  const normalizedOld = (oldAssigneeName ?? '').trim();
+  const normalizedNew = (newAssigneeName ?? '').trim();
+
+  if (normalizedOld === normalizedNew) {
+    return diff;
+  }
+
+  const oldValues = { ...diff.oldValues };
+  const newValues = { ...diff.newValues };
+
+  oldValues.assigned_to = normalizedOld || null;
+  newValues.assigned_to = normalizedNew || null;
 
   return {
     oldValues,

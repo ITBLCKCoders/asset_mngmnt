@@ -148,14 +148,14 @@ export async function getUserDepartmentId(
 
 export async function getUserNamesByIds(
   userIds: string[]
-): Promise<Array<{ userID: string; first_name: string | null; last_name: string | null }>> {
+): Promise<Array<{ userID: string; first_name: string | null; last_name: string | null; position?: string | null }>> {
   if (userIds.length === 0) return [];
   const placeholders = userIds.map(() => '?').join(',');
   const [rows] = await pool.execute<RowDataPacket[]>(
-    `SELECT userID, first_name, last_name FROM users WHERE userID IN (${placeholders})`,
+    `SELECT userID, first_name, last_name, position FROM users WHERE userID IN (${placeholders})`,
     userIds
   );
-  return rows as Array<{ userID: string; first_name: string | null; last_name: string | null }>;
+  return rows as Array<{ userID: string; first_name: string | null; last_name: string | null; position?: string | null }>;
 }
 
 export async function getCategoryDepartmentsByAssetIds(

@@ -122,6 +122,13 @@ export interface BorrowRequestRow {
   processor_wet_borrow_pdf_url?: string | null;
   dept_head_signed_at?: string | null;
   dept_head_name?: string | null;
+  dept_head_signed_by?: string | null;
+  dept_head_digital_signature?: string | null;
+  sub_approver_1_signed_at?: string | null;
+  sub_approver_1_name?: string | null;
+  sub_approver_1_signed_by?: string | null;
+  sub_approver_1_position?: string | null;
+  sub_approver_1_digital_signature?: string | null;
   processor_declined_at?: string | null;
   /** Staff decline remarks (processor), when applicable */
   processor_decline_reason?: string | null;

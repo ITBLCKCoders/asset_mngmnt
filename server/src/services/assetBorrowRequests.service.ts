@@ -8,7 +8,10 @@ import {
   getBorrowRequestListScope,
   getDepartmentIdsForScope,
 } from '../utils/assetScope.js';
-import { isUserManagerApprover1 } from '../utils/approverNotifications.js';
+import {
+  isUserManagerApprover1,
+  isUserSubApprover1,
+} from '../utils/approverNotifications.js';
 import { generateBorrowFormNumber } from '../utils/borrowFormNumber.js';
 import {
   findApprovedBorrowRequestsForReceive,
@@ -174,7 +177,8 @@ export class AssetBorrowRequestsService {
     }
 
     const isManager1 = await isUserManagerApprover1(userId);
-    if (!isManager1) {
+    const isSub1 = await isUserSubApprover1(userId);
+    if (!isManager1 && !isSub1) {
       return { rows: [] };
     }
 
@@ -221,7 +225,9 @@ export class AssetBorrowRequestsService {
     borrowRequestId: string,
     body: DeptHeadApproveBorrowRequestDto
   ): Promise<{ ok: true } | { error: string; status: number }> {
-    if (!(await isUserManagerApprover1(userId))) {
+    const isManager1 = await isUserManagerApprover1(userId);
+    const isSub1 = await isUserSubApprover1(userId);
+    if (!isManager1 && !isSub1) {
       return { error: 'Not authorized as department head approver', status: 403 };
     }
 
@@ -246,7 +252,7 @@ export class AssetBorrowRequestsService {
     if (row.company_id !== companyId) {
       return { error: 'Borrow request not in your company', status: 403 };
     }
-    if (row.dept_head_signed_at || row.declined_at) {
+    if (row.dept_head_signed_at || row.sub_approver_1_signed_at || row.declined_at) {
       return { error: 'Borrow request is no longer pending approval', status: 400 };
     }
 
@@ -258,7 +264,8 @@ export class AssetBorrowRequestsService {
     const updated = await updateBorrowRequestDeptHeadApprove(
       pool,
       borrowRequestId,
-      userId
+      userId,
+      isSub1 && !isManager1
     );
     if (!updated) {
       return { error: 'Could not approve borrow request', status: 409 };
@@ -272,7 +279,9 @@ export class AssetBorrowRequestsService {
     userId: string,
     borrowRequestId: string
   ): Promise<{ ok: true } | { error: string; status: number }> {
-    if (!(await isUserManagerApprover1(userId))) {
+    const isManager1 = await isUserManagerApprover1(userId);
+    const isSub1 = await isUserSubApprover1(userId);
+    if (!isManager1 && !isSub1) {
       return { error: 'Not authorized as department head approver', status: 403 };
     }
 
@@ -297,7 +306,7 @@ export class AssetBorrowRequestsService {
     if (row.company_id !== companyId) {
       return { error: 'Borrow request not in your company', status: 403 };
     }
-    if (row.dept_head_signed_at || row.declined_at) {
+    if (row.dept_head_signed_at || row.sub_approver_1_signed_at || row.declined_at) {
       return { error: 'Borrow request is no longer pending approval', status: 400 };
     }
 
@@ -347,6 +356,12 @@ export class AssetBorrowRequestsService {
     ) {
       return { error: 'This borrow request is not open for asset selection', status: 400 };
     }
+    if (!row.dept_head_signed_at && !row.sub_approver_1_signed_at) {
+      return {
+        error: 'This borrow request still requires department head approval',
+        status: 400,
+      };
+    }
     const departmentIds = await getDepartmentIdsForScope(
       pool,
       row.borrow_scope,
@@ -395,6 +410,12 @@ export class AssetBorrowRequestsService {
     }
     if (row.approved_at) {
       return { error: 'Borrow request is already processed', status: 400 };
+    }
+    if (!row.dept_head_signed_at && !row.sub_approver_1_signed_at) {
+      return {
+        error: 'Borrow request still requires department head approval',
+        status: 400,
+      };
     }
 
     const departmentIds = await getDepartmentIdsForScope(
@@ -463,6 +484,12 @@ export class AssetBorrowRequestsService {
     }
     if (row.processor_declined_at || row.declined_at || row.status === 'declined') {
       return { error: 'Borrow request is already closed', status: 400 };
+    }
+    if (!row.dept_head_signed_at && !row.sub_approver_1_signed_at) {
+      return {
+        error: 'Borrow request still requires department head approval',
+        status: 400,
+      };
     }
     const updated = await updateBorrowRequestStaffDecline(pool, {
       borrowRequestId: params.borrowRequestId,

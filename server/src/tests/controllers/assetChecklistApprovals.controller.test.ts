@@ -18,8 +18,11 @@ jest.mock('../../utils/assetScope.js', () => ({ getAssetScope: jest.fn() }));
 jest.mock('../../utils/approverNotifications.js', () => ({
   isUserManagerApprover1: jest.fn(),
   isUserManagerApprover2: jest.fn(),
-  isUserInItDepartmentForCompany: jest.fn(),
-  getManagerApprover2UserIdsInItDepartmentAndCompany: jest.fn(),
+  isUserSubApprover1: jest.fn(),
+  isUserSubApprover2: jest.fn(),
+  isUserInItOrAdminDepartmentForCompany: jest.fn(),
+  getManagerApprover2UserIdsInItAndAdminDepartmentsAndCompany: jest.fn(),
+  getSubApprover2UserIdsInItAndAdminDepartmentsAndCompany: jest.fn(),
 }));
 jest.mock('../../utils/notificationsApi.js', () => ({ createNotificationForApi: jest.fn() }));
 jest.mock('../../utils/audit.js', () => ({ createAuditLog: jest.fn() }));
@@ -85,7 +88,8 @@ describe('assetChecklistApprovals.controller', () => {
       mockPool.pool.query
         .mockResolvedValueOnce([[{ department_id: 'd-1', digital_signature: 'sig' }]]);
       checklistRepo.approveChecklistsAsDeptHead.mockResolvedValue(2);
-      approverNotif.getManagerApprover2UserIdsInItDepartmentAndCompany.mockResolvedValue(['it-user-1']);
+      approverNotif.getManagerApprover2UserIdsInItAndAdminDepartmentsAndCompany.mockResolvedValue(['it-user-1']);
+      approverNotif.getSubApprover2UserIdsInItAndAdminDepartmentsAndCompany.mockResolvedValue([]);
       mockPool.pool.query.mockResolvedValueOnce([[{ first_name: 'Dept', last_name: 'Head' }]]);
       await checklistController.approveChecklistsDeptHeadHandler(req, res);
       expect(res._json.message).toContain('Approved 2 checklist(s)');
@@ -109,7 +113,7 @@ describe('assetChecklistApprovals.controller', () => {
     it('returns receive-pending batches', async () => {
       approverNotif.isUserManagerApprover2.mockResolvedValue(true);
       getAssetScope.mockResolvedValue({ companyId: 'c-1' });
-      approverNotif.isUserInItDepartmentForCompany.mockResolvedValue(true);
+      approverNotif.isUserInItOrAdminDepartmentForCompany.mockResolvedValue(true);
       checklistRepo.findPendingItManagerReceiveChecklists.mockResolvedValue([
         { employee_id: 'emp-1', employee_name: 'Bob', created_at: '2024-01-01', checklist_id: 'cl-1' },
       ]);
@@ -117,8 +121,9 @@ describe('assetChecklistApprovals.controller', () => {
       expect(res._json.checklistBatches).toHaveLength(1);
     });
 
-    it('returns empty when not approver 2', async () => {
+    it('returns empty when not approver 2 or sub approver 2', async () => {
       approverNotif.isUserManagerApprover2.mockResolvedValue(false);
+      approverNotif.isUserSubApprover2.mockResolvedValue(false);
       await checklistController.getReceivePendingChecklistApprovalsHandler(req, res);
       expect(res._json.checklistBatches).toEqual([]);
     });
@@ -129,7 +134,7 @@ describe('assetChecklistApprovals.controller', () => {
       req.body = { checklistIds: ['cl-1'] };
       approverNotif.isUserManagerApprover2.mockResolvedValue(true);
       getAssetScope.mockResolvedValue({ companyId: 'c-1' });
-      approverNotif.isUserInItDepartmentForCompany.mockResolvedValue(true);
+      approverNotif.isUserInItOrAdminDepartmentForCompany.mockResolvedValue(true);
       mockPool.pool.query.mockResolvedValue([[{ digital_signature: null }]]);
       checklistRepo.receiveChecklistsAsItManager.mockResolvedValue(1);
       await checklistController.receiveChecklistsItManagerHandler(req, res);
@@ -145,6 +150,7 @@ describe('assetChecklistApprovals.controller', () => {
     it('returns 403 when not authorized', async () => {
       req.body = { checklistIds: ['cl-1'] };
       approverNotif.isUserManagerApprover2.mockResolvedValue(false);
+      approverNotif.isUserSubApprover2.mockResolvedValue(false);
       await checklistController.receiveChecklistsItManagerHandler(req, res);
       expect(res._status).toBe(403);
     });

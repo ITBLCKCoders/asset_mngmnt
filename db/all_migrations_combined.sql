@@ -1895,8 +1895,9 @@ CREATE PROCEDURE `sp_cleanup_expired_auth_data`()
 BEGIN
   DELETE FROM sessions WHERE expires < NOW();
   DELETE FROM sessions WHERE last_activity < DATE_SUB(NOW(), INTERVAL 5 MINUTE);
-  DELETE FROM verification_tokens WHERE expires < NOW();
+  DELETE FROM verification_tokens WHERE expires < UTC_TIMESTAMP();
   DELETE FROM password_reset_tokens WHERE expires < NOW();
+  DELETE FROM mfa_recovery_tokens WHERE expires < UTC_TIMESTAMP();
   SELECT 1 AS success;
 END ;;
 DELIMITER ;

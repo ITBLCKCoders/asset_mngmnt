@@ -369,6 +369,14 @@ export default function AssetBorrowing() {
         borrowerCompanyLogoUrl: row.requester_company_logo_url ?? null,
         requestedBySignature: row.requested_by_signature ?? null,
         requestedAt: row.created_at ?? null,
+        deptHeadSignedAt: row.sub_approver_1_signed_at ?? row.dept_head_signed_at ?? null,
+        deptHeadSignedBy: row.sub_approver_1_name ?? row.dept_head_name ?? null,
+        deptHeadSignature:
+          row.sub_approver_1_digital_signature ?? row.dept_head_digital_signature ?? null,
+        subApprover1SignedAt: row.sub_approver_1_signed_at ?? null,
+        subApprover1SignedBy: row.sub_approver_1_name ?? null,
+        subApprover1Position: row.sub_approver_1_position ?? null,
+        subApprover1Signature: row.sub_approver_1_digital_signature ?? null,
       });
       downloadPDF(blob, `Borrow_Form_${row.form_number ?? row.borrow_request_id}.pdf`);
       toast.success('Borrow form downloaded');

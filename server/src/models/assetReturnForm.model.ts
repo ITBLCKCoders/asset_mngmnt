@@ -26,6 +26,12 @@ export interface AssetReturnForm {
   it_manager_signed_at?: string | null;
   it_manager_digital_signature?: string | null;
   it_manager_signed_by?: string | null;
+  sub_approver_1_signed_at?: string | null;
+  sub_approver_1_digital_signature?: string | null;
+  sub_approver_1_signed_by?: string | null;
+  sub_approver_2_signed_at?: string | null;
+  sub_approver_2_digital_signature?: string | null;
+  sub_approver_2_signed_by?: string | null;
   declined_at?: string | null;
   declined_by?: string | null;
   processor_declined_at?: string | null;
@@ -126,6 +132,10 @@ export class AssetReturnFormModel {
          dept_head_digital_signature, dept_head_signed_by,
          DATE_FORMAT(it_manager_signed_at, '%Y-%m-%d %H:%i:%s') AS it_manager_signed_at,
          it_manager_digital_signature, it_manager_signed_by,
+         DATE_FORMAT(sub_approver_1_signed_at, '%Y-%m-%d %H:%i:%s') AS sub_approver_1_signed_at,
+         sub_approver_1_digital_signature, sub_approver_1_signed_by,
+         DATE_FORMAT(sub_approver_2_signed_at, '%Y-%m-%d %H:%i:%s') AS sub_approver_2_signed_at,
+         sub_approver_2_digital_signature, sub_approver_2_signed_by,
          declined_at, declined_by,
          DATE_FORMAT(processor_declined_at, '%Y-%m-%d %H:%i:%s') AS processor_declined_at,
          processor_declined_by, processor_decline_reason, process_user_position, owner_absent
@@ -152,6 +162,10 @@ export class AssetReturnFormModel {
          dept_head_digital_signature, dept_head_signed_by,
          DATE_FORMAT(it_manager_signed_at, '%Y-%m-%d %H:%i:%s') AS it_manager_signed_at,
          it_manager_digital_signature, it_manager_signed_by,
+         DATE_FORMAT(sub_approver_1_signed_at, '%Y-%m-%d %H:%i:%s') AS sub_approver_1_signed_at,
+         sub_approver_1_digital_signature, sub_approver_1_signed_by,
+         DATE_FORMAT(sub_approver_2_signed_at, '%Y-%m-%d %H:%i:%s') AS sub_approver_2_signed_at,
+         sub_approver_2_digital_signature, sub_approver_2_signed_by,
          declined_at, declined_by, owner_absent
          FROM asset_return_forms WHERE deleted_at IS NULL AND (declined_at IS NULL) ORDER BY created_at DESC`
       );
@@ -174,6 +188,10 @@ export class AssetReturnFormModel {
          dept_head_digital_signature, dept_head_signed_by,
          DATE_FORMAT(it_manager_signed_at, '%Y-%m-%d %H:%i:%s') AS it_manager_signed_at,
          it_manager_digital_signature, it_manager_signed_by,
+         DATE_FORMAT(sub_approver_1_signed_at, '%Y-%m-%d %H:%i:%s') AS sub_approver_1_signed_at,
+         sub_approver_1_digital_signature, sub_approver_1_signed_by,
+         DATE_FORMAT(sub_approver_2_signed_at, '%Y-%m-%d %H:%i:%s') AS sub_approver_2_signed_at,
+         sub_approver_2_digital_signature, sub_approver_2_signed_by,
          declined_at, declined_by, owner_absent
          FROM asset_return_forms WHERE user_id = ? AND deleted_at IS NULL AND (declined_at IS NULL) ORDER BY created_at DESC`,
         [userId]

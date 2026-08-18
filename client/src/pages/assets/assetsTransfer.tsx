@@ -45,6 +45,7 @@ import { Checkbox } from '@/components/ui/checkbox';
 import { Switch } from '@/components/ui/switch';
 import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
+import { Combobox } from '@/components/ui/combobox';
 import { api } from '@/lib/api';
 import { cn } from '@/lib/utils';
 import { Tabs, TabsContent, TabsList, TabsTrigger, segmentTabsListClassName, segmentTabsTriggerClassName } from '@/components/ui/tabs';
@@ -276,6 +277,11 @@ export default function AssetsTransfer() {
   const [companyTransferTab, setCompanyTransferTab] = useState<'asset' | 'built'>('asset');
   const [smsOtpDialogOpen, setSmsOtpDialogOpen] = useState(false);
   const pendingTransferActionRef = useRef<(() => Promise<void>) | null>(null);
+  // Export filter departments and users
+  const [exportDepartments, setExportDepartments] = useState<Department[]>([]);
+  const [exportUsers, setExportUsers] = useState<User[]>([]);
+  // Export filter accountability form options
+  const [exportAccountabilityForms, setExportAccountabilityForms] = useState<string[]>([]);
 
   const isSuperAdmin = currentUser?.role?.name?.toLowerCase() === 'global admin';
   const isAdmin = currentUser?.role?.name?.toLowerCase() === 'admin';
@@ -305,6 +311,8 @@ export default function AssetsTransfer() {
     { label: 'All Columns', value: 'all' },
     { label: 'Asset', value: 'asset' },
     { label: 'Transfer Form #', value: 'transferForm' },
+    { label: 'From Accountability', value: 'fromAccountabilityFormNumber' },
+    { label: 'To Accountability', value: 'toAccountabilityFormNumber' },
     { label: 'From Department', value: 'from' },
     { label: 'To Department', value: 'to' },
     { label: 'Processed By', value: 'processedBy' },
@@ -369,6 +377,60 @@ export default function AssetsTransfer() {
     } catch (error) {
       console.error('Failed to fetch users:', error);
       setUsers([]);
+    }
+  };
+
+  const fetchExportDepartments = async () => {
+    try {
+      let companyId: string | undefined;
+      const userRole = currentUser?.role?.name?.toLowerCase();
+      if (userRole === 'global admin' || userRole === 'admin') {
+        companyId = activeCompany?.id || undefined;
+      } else {
+        companyId = currentUser?.company_id || undefined;
+      }
+      const url = companyId ? `/departments?companyId=${companyId}` : '/departments';
+      const response = await api.get(url);
+      setExportDepartments(response.departments || []);
+    } catch (error) {
+      console.error('Failed to fetch export departments:', error);
+      setExportDepartments([]);
+    }
+  };
+
+  const fetchExportUsers = async () => {
+    try {
+      let companyId: string | undefined;
+      const userRole = currentUser?.role?.name?.toLowerCase();
+      if (userRole === 'global admin' || userRole === 'admin') {
+        companyId = activeCompany?.id || undefined;
+      } else {
+        companyId = currentUser?.company_id || undefined;
+      }
+      const url = companyId ? `/users?companyId=${companyId}` : '/users';
+      const response = await api.get(url);
+      setExportUsers(response.users || []);
+    } catch (error) {
+      console.error('Failed to fetch export users:', error);
+      setExportUsers([]);
+    }
+  };
+
+  const fetchExportAccountabilityForms = async () => {
+    try {
+      const response = await api.get('/accountability-forms');
+      const forms = response.forms || [];
+      const formNumbers = Array.from(
+        new Set<string>(
+          forms
+            .map((f: any) => f.formNumber)
+            .filter((n: unknown): n is string => typeof n === 'string' && n.trim() !== '')
+        )
+      ).sort((a: string, b: string) => a.localeCompare(b));
+      setExportAccountabilityForms(formNumbers);
+    } catch (error) {
+      console.error('Failed to fetch export accountability forms:', error);
+      setExportAccountabilityForms([]);
     }
   };
 
@@ -510,6 +572,15 @@ export default function AssetsTransfer() {
     setSelectedIntangibleAssetIds([]);
     setExpandedBuilderForSelect(null);
   }, [scope, showScopeTabs]);
+
+  // Fetch export departments and users when export dialog opens
+  useEffect(() => {
+    if (isTransferHistoryExportOpen) {
+      fetchExportDepartments();
+      fetchExportUsers();
+      fetchExportAccountabilityForms();
+    }
+  }, [isTransferHistoryExportOpen]);
 
   const assignedBuilders = useMemo(() => {
     return assetBuilders.filter(
@@ -905,7 +976,7 @@ export default function AssetsTransfer() {
       {
         id: 'fromAccountability',
         header: 'From Asset Accountability',
-        accessorFn: row => row.fromAccountabilityFormNumber ?? '',
+        accessorKey: 'fromAccountabilityFormNumber',
         size: 170,
         cell: ({ row }) => (
           <span className="text-sm text-gray-900">
@@ -916,7 +987,7 @@ export default function AssetsTransfer() {
       {
         id: 'toAccountability',
         header: 'New Asset Accountability',
-        accessorFn: row => row.toAccountabilityFormNumber ?? '',
+        accessorKey: 'toAccountabilityFormNumber',
         size: 170,
         cell: ({ row }) => (
           <span className="text-sm text-gray-900">
@@ -3383,7 +3454,7 @@ export default function AssetsTransfer() {
                   </div>
                   <div className="grid grid-cols-2 gap-4">
                     <div>
-                      <Label className="text-sm font-medium">Accountability Form No</Label>
+                      <Label className="text-sm font-medium">Accountability Form No (All)</Label>
                       <Input
                         type="text"
                         placeholder="e.g. AF-001"
@@ -3399,6 +3470,71 @@ export default function AssetsTransfer() {
                         placeholder="e.g. AST-001"
                         value={transferHistoryFilters.assetCode}
                         onChange={e => handleTransferHistoryFilterChange('assetCode', e.target.value)}
+                        className="mt-1 h-9 text-sm"
+                      />
+                    </div>
+                  </div>
+                  <div className="grid grid-cols-2 gap-4">
+                    <div>
+                      <Label className="text-sm font-medium">From Asset Accountability</Label>
+                      <Combobox
+                        options={[
+                          { value: '', label: 'All Forms' },
+                          ...exportAccountabilityForms.map(n => ({ value: n, label: n })),
+                        ]}
+                        value={transferHistoryFilters.oldAccountabilityFormNo}
+                        onChange={v => handleTransferHistoryFilterChange('oldAccountabilityFormNo', v)}
+                        placeholder="Search from accountability"
+                        className="mt-1 h-9 text-sm"
+                      />
+                    </div>
+                    <div>
+                      <Label className="text-sm font-medium">To Asset Accountability</Label>
+                      <Combobox
+                        options={[
+                          { value: '', label: 'All Forms' },
+                          ...exportAccountabilityForms.map(n => ({ value: n, label: n })),
+                        ]}
+                        value={transferHistoryFilters.newAccountabilityFormNo}
+                        onChange={v => handleTransferHistoryFilterChange('newAccountabilityFormNo', v)}
+                        placeholder="Search to accountability"
+                        className="mt-1 h-9 text-sm"
+                      />
+                    </div>
+                  </div>
+                  <div className="grid grid-cols-2 gap-4">
+                    <div>
+                      <Label className="text-sm font-medium">Department</Label>
+                      <Combobox
+                        options={[
+                          { value: '', label: 'All Departments' },
+                          ...exportDepartments.map(dept => ({ value: dept.departmentID, label: dept.name })),
+                        ]}
+                        value={transferHistoryFilters.departmentId}
+                        onChange={v => handleTransferHistoryFilterChange('departmentId', v)}
+                        placeholder="Search department"
+                        className="mt-1 h-9 text-sm"
+                      />
+                    </div>
+                    <div>
+                      <Label className="text-sm font-medium">User</Label>
+                      <Combobox
+                        options={[
+                          { value: '', label: 'All Users' },
+                          ...exportUsers
+                            .filter(
+                              (u: User) =>
+                                !transferHistoryFilters.departmentId ||
+                                u.department_id === transferHistoryFilters.departmentId
+                            )
+                            .map((user: User) => ({
+                              value: user.userID,
+                              label: `${user.first_name} ${user.last_name} (${user.email})`,
+                            })),
+                        ]}
+                        value={transferHistoryFilters.userId}
+                        onChange={v => handleTransferHistoryFilterChange('userId', v)}
+                        placeholder="Search user"
                         className="mt-1 h-9 text-sm"
                       />
                     </div>

@@ -11,8 +11,13 @@ import { createAccountabilityFormHandler } from './accountabilityForms.controlle
 import {
   isUserManagerApprover1,
   isUserManagerApprover2,
+  isUserSubApprover1,
+  isUserSubApprover2,
   getManagerApprover1UserIdsInDepartmentAndCompany,
+  getSubApprover1UserIdsInDepartment,
   getManagerApprover2UserIdsForProcessedReturn,
+  getManagerApprover2UserIdsInItAndAdminDepartmentsAndCompany,
+  getSubApprover2UserIdsInItAndAdminDepartmentsAndCompany,
   getAssetRoleUsersForAssignmentsAndCompany,
 } from '../utils/approverNotifications.js';
 import { createNotificationForApi } from '../utils/notificationsApi.js';
@@ -1414,8 +1419,13 @@ async function notifyManagerApprover2OfProcessedReturn(params: {
 
   const managerApprover2UserIds =
     await getManagerApprover2UserIdsForProcessedReturn(companyId, departmentId);
+  const subApprover2UserIds =
+    await getSubApprover2UserIdsInItAndAdminDepartmentsAndCompany(companyId);
+  const receiveApproverUserIds = [
+    ...new Set([...managerApprover2UserIds, ...subApprover2UserIds]),
+  ];
   const io = getIoInstance();
-  for (const approverUserId of managerApprover2UserIds) {
+  for (const approverUserId of receiveApproverUserIds) {
     if (approverUserId === processorUserId) continue;
     const payload = {
       user_id: approverUserId,
@@ -3138,7 +3148,8 @@ export async function getPendingApprovalsHandler(
     }
 
     const isManager1 = await isUserManagerApprover1(userId);
-    if (!isManager1) {
+    const isSub1 = await isUserSubApprover1(userId);
+    if (!isManager1 && !isSub1) {
       return res.json({ assetReturnForms: [] });
     }
 
@@ -3212,6 +3223,14 @@ export async function getPendingApprovalsHandler(
       dept_head_digital_signature?: string | null;
       dept_head_signed_by?: string | null;
       dept_head_user_name?: string | null;
+      sub_approver_1_signed_at?: string | null;
+      sub_approver_1_digital_signature?: string | null;
+      sub_approver_1_signed_by?: string | null;
+      sub_approver_1_user_name?: string | null;
+      sub_approver_2_signed_at?: string | null;
+      sub_approver_2_digital_signature?: string | null;
+      sub_approver_2_signed_by?: string | null;
+      sub_approver_2_user_name?: string | null;
       form_department?: { id: string; name: string } | null;
       owner_absent?: boolean;
       returns: (typeof returnsWithDetails)[0][];
@@ -3373,6 +3392,14 @@ export async function getPendingApprovalsHandler(
         dept_head_digital_signature: null,
         dept_head_signed_by: null,
         dept_head_user_name: null,
+        sub_approver_1_signed_at: null,
+        sub_approver_1_digital_signature: null,
+        sub_approver_1_signed_by: null,
+        sub_approver_1_user_name: null,
+        sub_approver_2_signed_at: null,
+        sub_approver_2_digital_signature: null,
+        sub_approver_2_signed_by: null,
+        sub_approver_2_user_name: null,
         form_department:
           form.department_id && form.form_department_name
             ? { id: form.department_id, name: form.form_department_name }
@@ -3403,11 +3430,19 @@ export async function getApprovedByMeHandler(req: AuthRequest, res: Response) {
         arf.dept_head_digital_signature, arf.dept_head_signed_by,
         DATE_FORMAT(arf.it_manager_signed_at, '%Y-%m-%d %H:%i:%s') AS it_manager_signed_at,
         arf.it_manager_digital_signature, arf.it_manager_signed_by,
+        DATE_FORMAT(arf.sub_approver_1_signed_at, '%Y-%m-%d %H:%i:%s') AS sub_approver_1_signed_at,
+        arf.sub_approver_1_digital_signature, arf.sub_approver_1_signed_by,
+        DATE_FORMAT(arf.sub_approver_2_signed_at, '%Y-%m-%d %H:%i:%s') AS sub_approver_2_signed_at,
+        arf.sub_approver_2_digital_signature, arf.sub_approver_2_signed_by,
         d.name AS form_department_name
        FROM asset_return_forms arf
        LEFT JOIN asset_mngmnt_departments d ON arf.department_id = d.departmentID
-       WHERE arf.deleted_at IS NULL AND arf.dept_head_signed_at IS NOT NULL AND (arf.dept_head_signed_by = ? OR arf.it_manager_signed_by = ?)`,
-      [userId, userId]
+       WHERE arf.deleted_at IS NULL AND arf.dept_head_signed_at IS NOT NULL
+         AND (arf.dept_head_signed_by = ?
+              OR arf.it_manager_signed_by = ?
+              OR arf.sub_approver_1_signed_by = ?
+              OR arf.sub_approver_2_signed_by = ?)`,
+      [userId, userId, userId, userId]
     )) as any[];
 
     if (formRows.length === 0) {
@@ -3477,6 +3512,42 @@ export async function getApprovedByMeHandler(req: AuthRequest, res: Response) {
       }
     }
 
+    const subApprover1SignedByIds = [
+      ...new Set(
+        formRows.map((f: any) => f.sub_approver_1_signed_by).filter(Boolean)
+      ),
+    ] as string[];
+    const subApprover1Names = new Map<string, string>();
+    const subApprover1Positions = new Map<string, string>();
+    if (subApprover1SignedByIds.length > 0) {
+      const userRows4 = await getUserNamesByIds(subApprover1SignedByIds);
+      for (const u of userRows4) {
+        subApprover1Names.set(
+          u.userID,
+          `${u.first_name || ''} ${u.last_name || ''}`.trim() || 'Unknown'
+        );
+        if (u.position) subApprover1Positions.set(u.userID, String(u.position));
+      }
+    }
+
+    const subApprover2SignedByIds = [
+      ...new Set(
+        formRows.map((f: any) => f.sub_approver_2_signed_by).filter(Boolean)
+      ),
+    ] as string[];
+    const subApprover2Names = new Map<string, string>();
+    const subApprover2Positions = new Map<string, string>();
+    if (subApprover2SignedByIds.length > 0) {
+      const userRows5 = await getUserNamesByIds(subApprover2SignedByIds);
+      for (const u of userRows5) {
+        subApprover2Names.set(
+          u.userID,
+          `${u.first_name || ''} ${u.last_name || ''}`.trim() || 'Unknown'
+        );
+        if (u.position) subApprover2Positions.set(u.userID, String(u.position));
+      }
+    }
+
     const assetReturnForms: {
       formID: string;
       form_number: string | null;
@@ -3501,6 +3572,16 @@ export async function getApprovedByMeHandler(req: AuthRequest, res: Response) {
       it_manager_digital_signature?: string | null;
       it_manager_signed_by?: string | null;
       it_manager_user_name?: string | null;
+      sub_approver_1_signed_at?: string | null;
+      sub_approver_1_digital_signature?: string | null;
+      sub_approver_1_signed_by?: string | null;
+      sub_approver_1_user_name?: string | null;
+      sub_approver_1_position?: string | null;
+      sub_approver_2_signed_at?: string | null;
+      sub_approver_2_digital_signature?: string | null;
+      sub_approver_2_signed_by?: string | null;
+      sub_approver_2_user_name?: string | null;
+      sub_approver_2_position?: string | null;
       form_department?: { id: string; name: string } | null;
       returns: (typeof returnsWithDetails)[0][];
     }[] = [];
@@ -3557,6 +3638,30 @@ export async function getApprovedByMeHandler(req: AuthRequest, res: Response) {
         it_manager_signed_by: form.it_manager_signed_by ?? null,
         it_manager_user_name: form.it_manager_signed_by
           ? (itManagerNames.get(form.it_manager_signed_by) ?? null)
+          : null,
+        sub_approver_1_signed_at: formatItManagerSignedAtForApi(
+          form.sub_approver_1_signed_at
+        ),
+        sub_approver_1_digital_signature:
+          form.sub_approver_1_digital_signature ?? null,
+        sub_approver_1_signed_by: form.sub_approver_1_signed_by ?? null,
+        sub_approver_1_user_name: form.sub_approver_1_signed_by
+          ? (subApprover1Names.get(form.sub_approver_1_signed_by) ?? null)
+          : null,
+        sub_approver_1_position: form.sub_approver_1_signed_by
+          ? (subApprover1Positions.get(form.sub_approver_1_signed_by) ?? null)
+          : null,
+        sub_approver_2_signed_at: formatItManagerSignedAtForApi(
+          form.sub_approver_2_signed_at
+        ),
+        sub_approver_2_digital_signature:
+          form.sub_approver_2_digital_signature ?? null,
+        sub_approver_2_signed_by: form.sub_approver_2_signed_by ?? null,
+        sub_approver_2_user_name: form.sub_approver_2_signed_by
+          ? (subApprover2Names.get(form.sub_approver_2_signed_by) ?? null)
+          : null,
+        sub_approver_2_position: form.sub_approver_2_signed_by
+          ? (subApprover2Positions.get(form.sub_approver_2_signed_by) ?? null)
           : null,
         form_department:
           form.department_id && form.form_department_name
@@ -3865,7 +3970,8 @@ export async function getReceivePendingApprovalsHandler(
     const userId = req.user!.userID;
 
     const managerApprover2 = await isUserManagerApprover2(userId);
-    if (!managerApprover2) {
+    const subApprover2 = await isUserSubApprover2(userId);
+    if (!managerApprover2 && !subApprover2) {
       return res.json({ assetReturnForms: [] });
     }
 
@@ -3883,6 +3989,10 @@ export async function getReceivePendingApprovalsHandler(
         arf.dept_head_digital_signature, arf.dept_head_signed_by,
         DATE_FORMAT(arf.it_manager_signed_at, '%Y-%m-%d %H:%i:%s') AS it_manager_signed_at,
         arf.it_manager_digital_signature, arf.it_manager_signed_by,
+        DATE_FORMAT(arf.sub_approver_1_signed_at, '%Y-%m-%d %H:%i:%s') AS sub_approver_1_signed_at,
+        arf.sub_approver_1_digital_signature, arf.sub_approver_1_signed_by,
+        DATE_FORMAT(arf.sub_approver_2_signed_at, '%Y-%m-%d %H:%i:%s') AS sub_approver_2_signed_at,
+        arf.sub_approver_2_digital_signature, arf.sub_approver_2_signed_by,
         arf.owner_absent,
         d.company_id AS form_company_id, d.name AS form_department_name
        FROM asset_return_forms arf
@@ -3891,6 +4001,7 @@ export async function getReceivePendingApprovalsHandler(
          AND (arf.signed_at IS NOT NULL OR arf.owner_absent = 1)
          AND arf.dept_head_signed_at IS NOT NULL
          AND arf.it_manager_signed_at IS NULL
+         AND arf.sub_approver_2_signed_at IS NULL
          AND (
            arf.process_signed_at IS NOT NULL
            OR EXISTS (
@@ -3985,6 +4096,15 @@ export async function getReceivePendingApprovalsHandler(
       it_manager_digital_signature?: string | null;
       it_manager_signed_by?: string | null;
       it_manager_user_name?: string | null;
+      sub_approver_1_signed_at?: string | null;
+      sub_approver_1_digital_signature?: string | null;
+      sub_approver_1_signed_by?: string | null;
+      sub_approver_1_user_name?: string | null;
+      sub_approver_1_position?: string | null;
+      sub_approver_2_signed_at?: string | null;
+      sub_approver_2_digital_signature?: string | null;
+      sub_approver_2_signed_by?: string | null;
+      sub_approver_2_user_name?: string | null;
       form_department?: { id: string; name: string } | null;
       returns: (typeof returnsWithDetails)[0][];
     }[] = [];
@@ -4005,10 +4125,29 @@ export async function getReceivePendingApprovalsHandler(
       }
     }
 
+    const subApprover1SignedByIds = [
+      ...new Set(
+        pendingForms.map((f: any) => f.sub_approver_1_signed_by).filter(Boolean)
+      ),
+    ] as string[];
+    const subApprover1Names = new Map<string, string>();
+    const subApprover1Positions = new Map<string, string>();
+    if (subApprover1SignedByIds.length > 0) {
+      const userRows4 = await getUserNamesByIds(subApprover1SignedByIds);
+      for (const u of userRows4) {
+        subApprover1Names.set(
+          u.userID,
+          `${u.first_name || ''} ${u.last_name || ''}`.trim() || 'Unknown'
+        );
+        if (u.position) subApprover1Positions.set(u.userID, String(u.position));
+      }
+    }
+
     for (const form of pendingForms) {
       const returns = returnsByFormId.get(form.formID) ?? [];
       if (returns.length === 0) continue;
       const deptHeadSignedBy = form.dept_head_signed_by ?? null;
+      const subApprover1SignedBy = form.sub_approver_1_signed_by ?? null;
       const processorFields = await resolveReturnProcessorFieldsForBatch(
         {
           formID: form.formID,
@@ -4049,6 +4188,22 @@ export async function getReceivePendingApprovalsHandler(
         it_manager_digital_signature: null,
         it_manager_signed_by: null,
         it_manager_user_name: null,
+        sub_approver_1_signed_at: formatItManagerSignedAtForApi(
+          form.sub_approver_1_signed_at
+        ),
+        sub_approver_1_digital_signature:
+          form.sub_approver_1_digital_signature ?? null,
+        sub_approver_1_signed_by: subApprover1SignedBy,
+        sub_approver_1_user_name: subApprover1SignedBy
+          ? (subApprover1Names.get(subApprover1SignedBy) ?? null)
+          : null,
+        sub_approver_1_position: subApprover1SignedBy
+          ? (subApprover1Positions.get(subApprover1SignedBy) ?? null)
+          : null,
+        sub_approver_2_signed_at: null,
+        sub_approver_2_digital_signature: null,
+        sub_approver_2_signed_by: null,
+        sub_approver_2_user_name: null,
         form_department:
           form.department_id && form.form_department_name
             ? { id: form.department_id, name: form.form_department_name }
@@ -4081,7 +4236,8 @@ export async function receiveReturnFormHandler(
     }
 
     const managerApprover2 = await isUserManagerApprover2(userId);
-    if (!managerApprover2) {
+    const subApprover2 = await isUserSubApprover2(userId);
+    if (!managerApprover2 && !subApprover2) {
       return res
         .status(403)
         .json({ error: 'You do not have permission to receive this form' });
@@ -4099,7 +4255,7 @@ export async function receiveReturnFormHandler(
         .status(400)
         .json({ error: 'Return form must be signed by the returner first' });
     }
-    if (!form.dept_head_signed_at) {
+    if (!form.dept_head_signed_at && !form.sub_approver_1_signed_at) {
       return res.status(400).json({
         error: 'Return form must be approved by Department Head first',
       });
@@ -4110,7 +4266,7 @@ export async function receiveReturnFormHandler(
           'Return form must be signed by IT Staff / IT Inventory Manager first',
       });
     }
-    if (form.it_manager_signed_at) {
+    if (form.it_manager_signed_at || form.sub_approver_2_signed_at) {
       return res.status(400).json({
         error:
           'This return form is already received (IT Manager / IT Department Head signature present)',
@@ -4121,23 +4277,42 @@ export async function receiveReturnFormHandler(
       (typeof digitalSignature === 'string' && digitalSignature.trim()) ||
       (await fetchUserDigitalSignature(userId));
 
-    await executeRawWrite(
-      `UPDATE asset_return_forms
-       SET it_manager_signed_at = NOW(), it_manager_digital_signature = ?, it_manager_signed_by = ?, updated_at = NOW()
-       WHERE formID = ?`,
-      [itManagerDigitalSignature, userId, formId]
-    );
+    const isSubApprover2Receiving = subApprover2 && !managerApprover2;
+    if (isSubApprover2Receiving) {
+      await executeRawWrite(
+        `UPDATE asset_return_forms
+         SET sub_approver_2_signed_at = NOW(), sub_approver_2_digital_signature = ?, sub_approver_2_signed_by = ?, updated_at = NOW()
+         WHERE formID = ?`,
+        [itManagerDigitalSignature, userId, formId]
+      );
+    } else {
+      await executeRawWrite(
+        `UPDATE asset_return_forms
+         SET it_manager_signed_at = NOW(), it_manager_digital_signature = ?, it_manager_signed_by = ?, updated_at = NOW()
+         WHERE formID = ?`,
+        [itManagerDigitalSignature, userId, formId]
+      );
+    }
 
     await createAuditLog({
       userId,
-      action: 'Received Asset Return Form (IT Manager / IT Department Head)',
+      action: isSubApprover2Receiving
+        ? 'Received Asset Return Form (Sub Approver 2)'
+        : 'Received Asset Return Form (IT Manager / IT Department Head)',
       resourceType: 'asset_return_form',
       resourceId: formId,
-      details: `User received asset return form ${form.form_number} as IT Manager / IT Department Head`,
-      newValues: {
-        it_manager_signed_at: new Date().toISOString(),
-        it_manager_signed_by: userId,
-      },
+      details: isSubApprover2Receiving
+        ? `User received asset return form ${form.form_number} as Sub Approver 2 (stand-in for IT/Admin dept head)`
+        : `User received asset return form ${form.form_number} as IT Manager / IT Department Head`,
+      newValues: isSubApprover2Receiving
+        ? {
+            sub_approver_2_signed_at: new Date().toISOString(),
+            sub_approver_2_signed_by: userId,
+          }
+        : {
+            it_manager_signed_at: new Date().toISOString(),
+            it_manager_signed_by: userId,
+          },
     });
 
     // Auto-receive linked offboarding checklists as IT Manager
@@ -4146,7 +4321,7 @@ export async function receiveReturnFormHandler(
       if (assignmentIds.length > 0) {
         const checklists = await checklistRepo.getChecklistsByAssignmentIds(assignmentIds);
         const unreceivedChecklists = checklists.filter(
-          (c: any) => c.dept_head_signed_at && !c.it_manager_signed_at
+          (c: any) => c.dept_head_signed_at && !c.it_manager_signed_at && !c.sub_approver_2_signed_at
         );
         if (unreceivedChecklists.length > 0) {
           const formCompanyId = (form as any).form_company_id || (form as any).company_id || null;
@@ -4156,6 +4331,7 @@ export async function receiveReturnFormHandler(
               approverUserId: userId,
               companyId: formCompanyId,
               digitalSignature: itManagerDigitalSignature,
+              isSubApprover: isSubApprover2Receiving,
             });
           }
         }
@@ -4920,9 +5096,9 @@ export async function approveReturnFormHandler(
         .status(400)
         .json({ error: 'Return form must be signed by the returner first' });
     }
-    if (form.dept_head_signed_at) {
+    if (form.dept_head_signed_at || form.sub_approver_1_signed_at) {
       return res.status(400).json({
-        error: 'This return form is already approved by Department Head',
+        error: 'This return form is already approved by the department head or sub approver',
       });
     }
 
@@ -4945,8 +5121,9 @@ export async function approveReturnFormHandler(
     const canApproveByPermission = hasApprovalsCreate && hasApprovalsEdit;
 
     const managerApprover1 = await isUserManagerApprover1(userId);
+    const subApprover1 = await isUserSubApprover1(userId);
 
-    if (!canApproveByPermission && !managerApprover1) {
+    if (!canApproveByPermission && !managerApprover1 && !subApprover1) {
       return res
         .status(403)
         .json({ error: 'You do not have permission to approve this form' });
@@ -4956,23 +5133,42 @@ export async function approveReturnFormHandler(
       (typeof digitalSignature === 'string' && digitalSignature.trim()) ||
       (await fetchUserDigitalSignature(userId));
 
-    await executeRawWrite(
-      `UPDATE asset_return_forms
-       SET dept_head_signed_at = NOW(), dept_head_digital_signature = ?, dept_head_signed_by = ?, updated_at = NOW()
-       WHERE formID = ?`,
-      [deptHeadDigitalSignature, userId, formId]
-    );
+    const isSubApprover1Approver = subApprover1 && !managerApprover1;
+    if (isSubApprover1Approver) {
+      await executeRawWrite(
+        `UPDATE asset_return_forms
+         SET sub_approver_1_signed_at = NOW(), sub_approver_1_digital_signature = ?, sub_approver_1_signed_by = ?, updated_at = NOW()
+         WHERE formID = ?`,
+        [deptHeadDigitalSignature, userId, formId]
+      );
+    } else {
+      await executeRawWrite(
+        `UPDATE asset_return_forms
+         SET dept_head_signed_at = NOW(), dept_head_digital_signature = ?, dept_head_signed_by = ?, updated_at = NOW()
+         WHERE formID = ?`,
+        [deptHeadDigitalSignature, userId, formId]
+      );
+    }
 
     await createAuditLog({
       userId,
-      action: 'Approved Asset Return Form (Dept Head)',
+      action: isSubApprover1Approver
+        ? 'Approved Asset Return Form (Sub Approver 1)'
+        : 'Approved Asset Return Form (Dept Head)',
       resourceType: 'asset_return_form',
       resourceId: formId,
-      details: `User approved asset return form ${form.form_number} as Department Head`,
-      newValues: {
-        dept_head_signed_at: new Date().toISOString(),
-        dept_head_signed_by: userId,
-      },
+      details: isSubApprover1Approver
+        ? `User approved asset return form ${form.form_number} as Sub Approver 1 (stand-in for the requestor's department head)`
+        : `User approved asset return form ${form.form_number} as Department Head`,
+      newValues: isSubApprover1Approver
+        ? {
+            sub_approver_1_signed_at: new Date().toISOString(),
+            sub_approver_1_signed_by: userId,
+          }
+        : {
+            dept_head_signed_at: new Date().toISOString(),
+            dept_head_signed_by: userId,
+          },
     });
 
     let hadLinkedTransfer = false;
@@ -4986,12 +5182,19 @@ export async function approveReturnFormHandler(
     if (linkedTf) {
       hadLinkedTransfer = true;
       // Auto-approve the linked transfer form so the transfer and return are approved together.
-      if (!linkedTf.dept_head_signed_at) {
+      if (!linkedTf.dept_head_signed_at && !linkedTf.sub_approver_1_signed_at) {
         try {
-          await pool.execute(
-            `UPDATE asset_transfer_forms SET dept_head_signed_at = NOW(), dept_head_digital_signature = ?, dept_head_signed_by = ?, updated_at = NOW() WHERE formID = ? AND dept_head_signed_at IS NULL AND declined_at IS NULL`,
-            [deptHeadDigitalSignature || null, userId, linkedTf.formID]
-          );
+          if (isSubApprover1Approver) {
+            await pool.execute(
+              `UPDATE asset_transfer_forms SET sub_approver_1_signed_at = NOW(), sub_approver_1_digital_signature = ?, sub_approver_1_signed_by = ?, updated_at = NOW() WHERE formID = ? AND dept_head_signed_at IS NULL AND sub_approver_1_signed_at IS NULL AND declined_at IS NULL`,
+              [deptHeadDigitalSignature || null, userId, linkedTf.formID]
+            );
+          } else {
+            await pool.execute(
+              `UPDATE asset_transfer_forms SET dept_head_signed_at = NOW(), dept_head_digital_signature = ?, dept_head_signed_by = ?, updated_at = NOW() WHERE formID = ? AND dept_head_signed_at IS NULL AND sub_approver_1_signed_at IS NULL AND declined_at IS NULL`,
+              [deptHeadDigitalSignature || null, userId, linkedTf.formID]
+            );
+          }
           linkedTf.dept_head_signed_at = new Date();
         } catch (autoApproveErr: any) {
           logger.error(
@@ -5146,7 +5349,9 @@ export async function approveReturnFormHandler(
         await createNotificationForApi({
           user_id: form.user_id,
           title: 'Asset Return Request Approved',
-          message: `Your asset return request has been approved by your department head ${approverName}`,
+          message: isSubApprover1Approver
+            ? `Your asset return request has been approved by your department's sub approver ${approverName}`
+            : `Your asset return request has been approved by your department head ${approverName}`,
           type: 'system',
           data: {
             form_id: formId,
@@ -5481,8 +5686,9 @@ export async function declineReturnFormHandler(
     const canDeclineByPermission = hasApprovalsCreate && hasApprovalsEdit;
 
     const managerApprover1 = await isUserManagerApprover1(userId);
+    const subApprover1 = await isUserSubApprover1(userId);
 
-    if (!canDeclineByPermission && !managerApprover1) {
+    if (!canDeclineByPermission && !managerApprover1 && !subApprover1) {
       return res
         .status(403)
         .json({ error: 'You do not have permission to decline this form' });

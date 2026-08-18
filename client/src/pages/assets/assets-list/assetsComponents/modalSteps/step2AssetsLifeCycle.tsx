@@ -130,6 +130,66 @@ export function Step2Lifecycle({
     }
   }, [annualDepreciation, formData.annualDepreciation, updateForm]);
 
+  // Tracks whether the user manually overrode the auto-calculated fields.
+  // A stored value that differs from the computed value is treated as a manual
+  // override so reopening an asset in edit mode does not clobber saved values.
+  const manualOverrideRef = useRef<{
+    bookValue: boolean;
+    monthlyDepreciation: boolean;
+  }>({
+    bookValue:
+      formData.bookValue !== undefined &&
+      formData.bookValue !== null &&
+      formData.bookValue !==
+        Math.round(
+          (formData.assetValue ?? 0) -
+            (formData.accumulatedDepreciation ?? 0)
+        ) *
+          100 /
+          100,
+    monthlyDepreciation:
+      formData.annualDepreciation != null &&
+      formData.monthlyDepreciation !== undefined &&
+      formData.monthlyDepreciation !== null &&
+      formData.monthlyDepreciation !==
+        Math.round((formData.annualDepreciation / 12) * 100) / 100,
+  });
+
+  // Auto-calc Book Value = Asset Value − Accumulated Depreciation (unless overridden)
+  useEffect(() => {
+    if (formData.isOldUnit) return;
+    if (manualOverrideRef.current.bookValue) return;
+    const cost = formData.assetValue ?? 0;
+    const acc = formData.accumulatedDepreciation ?? 0;
+    if (cost === 0 && acc === 0) return;
+    const next = Math.round((cost - acc) * 100) / 100;
+    if (formData.bookValue !== next) {
+      updateForm('bookValue', next);
+    }
+  }, [
+    formData.assetValue,
+    formData.accumulatedDepreciation,
+    formData.isOldUnit,
+    formData.bookValue,
+    updateForm,
+  ]);
+
+  // Auto-calc Depreciation per Month = Annual Depreciation ÷ 12 (unless overridden)
+  useEffect(() => {
+    if (formData.isOldUnit) return;
+    if (manualOverrideRef.current.monthlyDepreciation) return;
+    if (formData.annualDepreciation == null) return;
+    const next = Math.round((formData.annualDepreciation / 12) * 100) / 100;
+    if (formData.monthlyDepreciation !== next) {
+      updateForm('monthlyDepreciation', next);
+    }
+  }, [
+    formData.annualDepreciation,
+    formData.isOldUnit,
+    formData.monthlyDepreciation,
+    updateForm,
+  ]);
+
   useEffect(() => {
     const isOld = !!formData.isOldUnit;
     const wasOld = prevIsOldUnitRef.current;
@@ -166,6 +226,24 @@ export function Step2Lifecycle({
         formData.warrantyMonths !== undefined
       ) {
         updateForm('warrantyMonths', undefined);
+      }
+      if (
+        formData.bookValue !== null &&
+        formData.bookValue !== undefined
+      ) {
+        updateForm('bookValue', undefined);
+      }
+      if (
+        formData.accumulatedDepreciation !== null &&
+        formData.accumulatedDepreciation !== undefined
+      ) {
+        updateForm('accumulatedDepreciation', undefined);
+      }
+      if (
+        formData.monthlyDepreciation !== null &&
+        formData.monthlyDepreciation !== undefined
+      ) {
+        updateForm('monthlyDepreciation', undefined);
       }
     } else {
       if (wasOld === true && clearPurchaseDateWhenDisablingOldUnit) {
@@ -257,6 +335,10 @@ export function Step2Lifecycle({
             >
               <Calendar
                 mode="single"
+                captionLayout="dropdown"
+                fixedWeeks
+                fromYear={1950}
+                toYear={new Date().getFullYear()}
                 selected={
                   formData.purchaseDate
                     ? new Date(formData.purchaseDate)
@@ -390,6 +472,69 @@ export function Step2Lifecycle({
         </div>
 
         <div className="space-y-2">
+          <Label className="text-base font-semibold">Book Value</Label>
+          <div className="relative">
+            {pesoIcon}
+            <Input
+              type="number"
+              placeholder="0"
+              value={formData.bookValue ?? ''}
+              onChange={e => {
+                manualOverrideRef.current.bookValue = true;
+                handleNumberChange('bookValue', e.target.value);
+              }}
+              className="h-12 pl-10 text-lg font-medium"
+              disabled={formData.isOldUnit || false}
+            />
+          </div>
+          <p className="text-xs text-muted-foreground italic">
+            Asset Value − Accumulated Depreciation (auto-calculated)
+          </p>
+        </div>
+
+        <div className="space-y-2">
+          <Label className="text-base font-semibold">
+            Accumulated Depreciation
+          </Label>
+          <div className="relative">
+            {pesoIcon}
+            <Input
+              type="number"
+              placeholder="0"
+              value={formData.accumulatedDepreciation ?? ''}
+              onChange={e =>
+                handleNumberChange('accumulatedDepreciation', e.target.value)
+              }
+              className="h-12 pl-10 text-lg font-medium"
+              disabled={formData.isOldUnit || false}
+            />
+          </div>
+        </div>
+
+        <div className="space-y-2">
+          <Label className="text-base font-semibold">
+            Depreciation per Month
+          </Label>
+          <div className="relative">
+            {pesoIcon}
+            <Input
+              type="number"
+              placeholder="0"
+              value={formData.monthlyDepreciation ?? ''}
+              onChange={e => {
+                manualOverrideRef.current.monthlyDepreciation = true;
+                handleNumberChange('monthlyDepreciation', e.target.value);
+              }}
+              className="h-12 pl-10 text-lg font-medium"
+              disabled={formData.isOldUnit || false}
+            />
+          </div>
+          <p className="text-xs text-muted-foreground italic">
+            Annual Depreciation ÷ 12 (auto-calculated)
+          </p>
+        </div>
+
+        <div className="space-y-2">
           <Label className="text-base font-semibold">
             Depreciation Start Date
           </Label>
@@ -417,6 +562,10 @@ export function Step2Lifecycle({
             <PopoverContent className="w-auto p-0 bg-white z-[9999]">
               <Calendar
                 mode="single"
+                captionLayout="dropdown"
+                fixedWeeks
+                fromYear={1950}
+                toYear={new Date().getFullYear()}
                 selected={
                   formData.depreciationStartDate
                     ? new Date(formData.depreciationStartDate)

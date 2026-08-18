@@ -193,6 +193,32 @@ export function Step4Review({
                 }
               />
               <InfoRow
+                label="Book Value"
+                value={
+                  formData.bookValue != null && formData.bookValue > 0
+                    ? formatCurrency(formData.bookValue)
+                    : '—'
+                }
+              />
+              <InfoRow
+                label="Accumulated Depreciation"
+                value={
+                  formData.accumulatedDepreciation != null &&
+                  formData.accumulatedDepreciation > 0
+                    ? formatCurrency(formData.accumulatedDepreciation)
+                    : '—'
+                }
+              />
+              <InfoRow
+                label="Depreciation / Month"
+                value={
+                  formData.monthlyDepreciation != null &&
+                  formData.monthlyDepreciation > 0
+                    ? formatCurrency(formData.monthlyDepreciation)
+                    : '—'
+                }
+              />
+              <InfoRow
                 label="Depreciation Method"
                 value={
                   formData.depreciationMethod

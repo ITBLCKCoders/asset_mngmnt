@@ -67,8 +67,12 @@ export async function getMyAssetMovementsHandler(req: AuthRequest, res: Response
       toDate = new Date(toDate.getFullYear(), toDate.getMonth(), toDate.getDate(), 23, 59, 59, 999);
     }
     const formNumberFilter = (req.query.formNumber as string) ?? '';
+    const oldAccountabilityFormNoFilter = (req.query.oldAccountabilityFormNo as string) ?? '';
+    const newAccountabilityFormNoFilter = (req.query.newAccountabilityFormNo as string) ?? '';
     const assetCodeFilter = (req.query.assetCode as string) ?? '';
     const typeFilter = (req.query.type as string) ?? 'all';
+    const departmentIdFilter = (req.query.departmentId as string) ?? '';
+    const userIdFilter = (req.query.userId as string) ?? '';
 
     const [transferForms, returnForms] = await Promise.all([
       AssetTransferFormModel.findByUserId(currentUserId),
@@ -88,14 +92,17 @@ export async function getMyAssetMovementsHandler(req: AuthRequest, res: Response
           `SELECT atr.record_id, atr.assignment_id, atr.transfer_condition, atr.transfer_notes, atr.created_at,
                   aa.asset_id, aa.assigned_date, aa.assignment_notes,
                   a.asset_code, a.name as asset_name,
-                  u.first_name, u.last_name, u.email, u.employee_number, u.position
+                  u.first_name, u.last_name, u.email, u.employee_number, u.position,
+                  u.department_id
            FROM asset_transfer atr
            JOIN asset_assignments aa ON atr.assignment_id = aa.assignmentID
            JOIN assets a ON aa.asset_id = a.assetID AND a.deleted_at IS NULL
            LEFT JOIN users u ON aa.user_id = u.userID
            WHERE atr.form_id = ? AND atr.deleted_at IS NULL
+           ${departmentIdFilter ? 'AND u.department_id = ?' : ''}
+           ${userIdFilter ? 'AND u.userID = ?' : ''}
            ORDER BY atr.created_at ASC`,
-          [form.formID]
+          [form.formID, ...(departmentIdFilter ? [departmentIdFilter] : []), ...(userIdFilter ? [userIdFilter] : [])]
         )) as any[];
 
         const oldOwnerNames = await getUserFullNames(
@@ -158,7 +165,9 @@ export async function getMyAssetMovementsHandler(req: AuthRequest, res: Response
           if (
             !matchesFilter(oldFormNo, formNumberFilter) &&
             !matchesFilter(newFormNo, formNumberFilter) &&
-            !matchesFilter(form.form_number, formNumberFilter)
+            !matchesFilter(form.form_number, formNumberFilter) &&
+            !matchesFilter(oldFormNo, oldAccountabilityFormNoFilter) &&
+            !matchesFilter(newFormNo, newAccountabilityFormNoFilter)
           ) continue;
 
           allMovements.push({
@@ -225,12 +234,14 @@ export async function getMyAssetMovementsHandler(req: AuthRequest, res: Response
           const [assignmentRows] = (await pool.execute(
             `SELECT aa.assignmentID, aa.asset_id, aa.user_id,
                     a.asset_code, a.name as asset_name,
-                    u.first_name, u.last_name
+                    u.first_name, u.last_name, u.department_id
              FROM asset_assignments aa
              JOIN assets a ON aa.asset_id = a.assetID AND a.deleted_at IS NULL
              LEFT JOIN users u ON aa.user_id = u.userID
-             WHERE aa.assignmentID = ?`,
-            [ret.assignment_id]
+             WHERE aa.assignmentID = ?
+             ${departmentIdFilter ? 'AND u.department_id = ?' : ''}
+             ${userIdFilter ? 'AND u.userID = ?' : ''}`,
+            [ret.assignment_id, ...(departmentIdFilter ? [departmentIdFilter] : []), ...(userIdFilter ? [userIdFilter] : [])]
           )) as any[];
 
           const assignment = assignmentRows[0];
@@ -282,7 +293,9 @@ export async function getMyAssetMovementsHandler(req: AuthRequest, res: Response
           if (
             !matchesFilter(oldFormNo, formNumberFilter) &&
             !matchesFilter(newFormNo, formNumberFilter) &&
-            !matchesFilter(formDetail.form_number, formNumberFilter)
+            !matchesFilter(formDetail.form_number, formNumberFilter) &&
+            !matchesFilter(oldFormNo, oldAccountabilityFormNoFilter) &&
+            !matchesFilter(newFormNo, newAccountabilityFormNoFilter)
           ) continue;
 
           allMovements.push({

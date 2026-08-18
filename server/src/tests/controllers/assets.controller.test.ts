@@ -1,4 +1,5 @@
 import { describe, it, expect, jest, beforeEach } from '@jest/globals';
+import { EventEmitter } from 'events';
 import * as assetsController from '../../controllers/assets.controller.js';
 import { createMockRes } from '../helpers/mockRes.js';
 
@@ -6,7 +7,11 @@ jest.mock('../../db.js', () => ({ pool: { execute: jest.fn(), getConnection: jes
 jest.mock('../../logger.js', () => ({ __esModule: true, default: { error: jest.fn(), info: jest.fn(), warn: jest.fn(), debug: jest.fn() } }));
 jest.mock('../../utils/audit.js', () => ({ createAuditLog: jest.fn() }));
 jest.mock('../../utils/cloudinary.js', () => ({ uploadToCloudinary: jest.fn(), uploadDocumentToCloudinary: jest.fn() }));
-jest.mock('../../utils/assetAuditDiff.js', () => ({ buildAssetUpdateAuditDiff: jest.fn() }));
+jest.mock('../../utils/assetAuditDiff.js', () => ({
+  buildAssetUpdateAuditDiff: jest.fn(),
+  mergeAssignmentIntoDiff: jest.fn(),
+}));
+jest.mock('busboy', () => ({ __esModule: true, default: jest.fn() }));
 jest.mock('../../utils/assetScope.js', () => ({ getAssetScope: jest.fn(), classifyDepartmentScopeByName: jest.fn(), getDepartmentIdsForScope: jest.fn() }));
 jest.mock('../../utils/companyTransferVisibility.js', () => ({ getTransferredOutAssetsForCompany: jest.fn(), setAssetOriginatingCompany: jest.fn() }));
 jest.mock('../../repositories/asset.repository.js', () => ({
@@ -34,6 +39,10 @@ jest.mock('../../repositories/asset.repository.js', () => ({
   getAssetById: jest.fn(),
   getAssetsBySearch: jest.fn(),
   upsertAssetToDepartmentAccess: jest.fn(),
+  getCompanyIdByIdOrName: jest.fn(),
+  getLocationIdById: jest.fn(),
+  getRoomIdByIdOrName: jest.fn(),
+  getDepartmentIdByIdOrName: jest.fn(),
 }));
 
 jest.mock('../../repositories/accountabilityForm.repository.js', () => ({ findFormsByAssetId: jest.fn() }));
@@ -231,6 +240,160 @@ describe('assets.controller', () => {
     it('returns 400 when assetId missing', async () => {
       await assetsController.getAllFormsByAssetIdHandler(req, res);
       expect(res._status).toBe(400);
+    });
+  });
+
+  describe('updateAssetHandler audit logging', () => {
+    const mockBusboy = jest.requireMock('busboy').default;
+    const { buildAssetUpdateAuditDiff, mergeAssignmentIntoDiff } =
+      jest.requireMock('../../utils/assetAuditDiff.js');
+
+    const oldRow = {
+      assetID: 'a1',
+      asset_code: 'AST-001',
+      name: 'Laptop',
+      description: null,
+      category_id: 'c1',
+      type_id: 't1',
+      supplier: null,
+      brand: null,
+      model: null,
+      serial: null,
+      image_url: null,
+      purchase_date: null,
+      asset_value: null,
+      salvage_value: 0,
+      depreciation_method: null,
+      useful_life_years: null,
+      annual_depreciation: null,
+      depreciation_start_date: null,
+      company_id: 'co1',
+      location_id: 'lo1',
+      location_room_id: 'r1',
+      department_id: 'd1',
+      location_notes: null,
+      warranty_months: null,
+      condition: 'Good',
+      maintenance_schedule: 'None',
+      status: 'Available',
+      is_old_unit: 0,
+    };
+
+    function makeReq(): { req: any; busboy: EventEmitter } {
+      const busboy = new EventEmitter();
+      mockBusboy.mockReturnValue(busboy);
+      const req: any = {
+        params: { assetId: 'AST-001' },
+        headers: { 'content-type': 'multipart/form-data; boundary=test' },
+        pipe: jest.fn(),
+        ip: '127.0.0.1',
+        get: jest.fn().mockReturnValue('test-agent'),
+        user: { userID: 'u1' },
+      };
+      return { req, busboy };
+    }
+
+    function emitFields(
+      busboy: EventEmitter,
+      fields: Record<string, string>
+    ): void {
+      for (const [k, v] of Object.entries(fields)) {
+        busboy.emit('field', k, v);
+      }
+      busboy.emit('finish');
+    }
+
+    function setupCommon(): void {
+      assetRepo.getAssetForUpdateByCode.mockResolvedValue(oldRow);
+      assetRepo.getCompanyIdByIdOrName.mockResolvedValue(null);
+      assetRepo.getLocationIdById.mockResolvedValue(null);
+      assetRepo.getRoomIdByIdOrName.mockResolvedValue(null);
+      assetRepo.getDepartmentIdByIdOrName.mockResolvedValue(null);
+      const conn = {
+        beginTransaction: jest.fn().mockResolvedValue(undefined),
+        execute: jest.fn().mockResolvedValue([[[oldRow]], []]),
+        commit: jest.fn().mockResolvedValue(undefined),
+        rollback: jest.fn().mockResolvedValue(undefined),
+        release: jest.fn().mockResolvedValue(undefined),
+      };
+      pool.getConnection.mockResolvedValue(conn);
+    }
+
+    it('logs assigned_to old → new when only the assignment changes', async () => {
+      const { req, busboy } = makeReq();
+      setupCommon();
+      assetRepo.getCurrentAssignmentForAssetId.mockResolvedValue({
+        assigned_user_name: 'Jane Doe',
+      });
+      assetRepo.getUserBasicByIdSimple.mockResolvedValue({
+        first_name: 'John',
+        last_name: 'Smith',
+      });
+      buildAssetUpdateAuditDiff.mockReturnValue({
+        oldValues: {},
+        newValues: {},
+        changeCount: 0,
+      });
+      mergeAssignmentIntoDiff.mockReturnValue({
+        oldValues: { assigned_to: 'Jane Doe' },
+        newValues: { assigned_to: 'John Smith' },
+        changeCount: 1,
+      });
+
+      const pending = assetsController.updateAssetHandler(req, res);
+      emitFields(busboy, {
+        name: 'Laptop',
+        categoryId: 'c1',
+        typeId: 't1',
+        condition: 'Good',
+        status: 'Available',
+        isOldUnit: '0',
+        maintenanceSchedule: 'None',
+        salvageValue: '0',
+        assignedUser: 'u2',
+      });
+      await pending;
+
+      expect(mergeAssignmentIntoDiff).toHaveBeenCalledWith(
+        expect.objectContaining({ changeCount: 0 }),
+        'Jane Doe',
+        'John Smith'
+      );
+      expect(createAuditLog).toHaveBeenCalledWith(
+        expect.objectContaining({
+          action: 'Updated Asset',
+          details: 'Updated 1 field(s)',
+          oldValues: { assigned_to: 'Jane Doe' },
+          newValues: { assigned_to: 'John Smith' },
+        })
+      );
+    });
+
+    it('skips the audit entry when there are no field changes', async () => {
+      const { req, busboy } = makeReq();
+      setupCommon();
+      assetRepo.getCurrentAssignmentForAssetId.mockResolvedValue(null);
+      buildAssetUpdateAuditDiff.mockReturnValue({
+        oldValues: {},
+        newValues: {},
+        changeCount: 0,
+      });
+
+      const pending = assetsController.updateAssetHandler(req, res);
+      emitFields(busboy, {
+        name: 'Laptop',
+        categoryId: 'c1',
+        typeId: 't1',
+        condition: 'Good',
+        status: 'Available',
+        isOldUnit: '0',
+        maintenanceSchedule: 'None',
+        salvageValue: '0',
+      });
+      await pending;
+
+      expect(mergeAssignmentIntoDiff).not.toHaveBeenCalled();
+      expect(createAuditLog).not.toHaveBeenCalled();
     });
   });
 });

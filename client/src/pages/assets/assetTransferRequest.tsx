@@ -8,6 +8,7 @@ import {
   User,
   CheckCircle2,
   AlertTriangle,
+  ImageIcon,
   ArrowRightLeft,
   Boxes,
   Crown,
@@ -44,6 +45,7 @@ import {
 } from '@/components/common/appDialogChrome';
 import { api } from '@/lib/api';
 import { cn } from '@/lib/utils';
+import { proxyCloudinaryUrl } from '@/utils/cloudinaryProxy';
 import { toast } from 'sonner';
 import { useCurrentUser } from '@/hooks/useCurrentUser';
 import { useUserPermissions } from '@/hooks/useUserPermissions';
@@ -109,15 +111,23 @@ interface AssetAssignment {
   };
 }
 
+/** One row = one asset within a transfer form (mirrors Transfer History table). */
 interface TransferRequestRow {
+  id: string;
   formID: string;
   form_number: string;
   request_date: string;
   status: TransferFormUiStatus;
   target_user?: string;
-  asset_count: number;
-  /** Comma-separated asset names (same pattern as My return requests). */
-  assets_label: string;
+  assetName: string;
+  assetCode: string;
+  fromDepartment: string;
+  toDepartment: string;
+  processedBy: string;
+  transferDate: string;
+  condition: string;
+  notes: string;
+  conditionImages: string[];
 }
 
 interface SubmitTransferRequestResponse {
@@ -141,7 +151,11 @@ function isReturnBatchInProgress(batch: AssetReturnFormBatch): boolean {
   // A processor-initiated (hold) form sets process_signed_at at creation, so it
   // stays in progress until the dept head approves (which executes the return).
   // Owner-submitted returns only set process_signed_at after dept approval.
-  if (batch.process_signed_at && batch.dept_head_signed_at) return false;
+  if (
+    batch.process_signed_at &&
+    (batch.dept_head_signed_at || batch.sub_approver_1_signed_at)
+  )
+    return false;
   if (
     batch.returns?.some(
       r => (r as { status?: string }).status === 'Declined by dept head'
@@ -159,90 +173,6 @@ function getTransferStatusBadgeClass(status: string): string {
     return 'bg-red-100 text-red-800 border-red-200';
   return 'bg-amber-100 text-amber-800 border-amber-200';
 }
-
-function getMyTransferAssetSummary(
-  returns: AssetTransferFormBatch['returns']
-): string {
-  if (!returns?.length) return '-';
-  const names = returns
-    .map(r => r.assignment?.asset?.name)
-    .filter((n): n is string => Boolean(n));
-  if (names.length === 0) return '-';
-  return (
-    names.slice(0, 3).join(', ') +
-    (names.length > 3 ? ` +${names.length - 3} more` : '')
-  );
-}
-
-const myTransferRequestColumns: ColumnDef<TransferRequestRow>[] = [
-  {
-    id: 'form_number',
-    header: 'Form / Request',
-    accessorFn: row =>
-      row.form_number !== '-'
-        ? row.form_number
-        : `Transfer ${new Date(row.request_date).toLocaleDateString()}`,
-    size: 220,
-    cell: ({ row }) => {
-      const r = row.original;
-      const label =
-        r.form_number !== '-'
-          ? r.form_number
-          : `Transfer ${new Date(r.request_date).toLocaleDateString()}`;
-      return <span className="font-medium">{label}</span>;
-    },
-  },
-  {
-    id: 'created',
-    header: 'Created',
-    accessorFn: row => new Date(row.request_date).toLocaleDateString(),
-    size: 130,
-    cell: ({ row }) => (
-      <span className="text-muted-foreground">
-        {new Date(row.original.request_date).toLocaleDateString()}
-      </span>
-    ),
-  },
-  {
-    id: 'status',
-    header: 'Status',
-    accessorFn: row => formatTransferFormUiStatus(row.status),
-    size: 140,
-    cell: ({ row }) => (
-      <Badge
-        variant="outline"
-        className={`text-xs ${getTransferStatusBadgeClass(row.original.status)}`}
-      >
-        {formatTransferFormUiStatus(row.original.status)}
-      </Badge>
-    ),
-  },
-  {
-    id: 'transfer_to',
-    header: 'Transfer To',
-    accessorFn: row => row.target_user ?? '',
-    size: 200,
-    cell: ({ row }) => (
-      <span className="text-muted-foreground">
-        {row.original.target_user ?? '-'}
-      </span>
-    ),
-  },
-  {
-    id: 'assets',
-    header: 'Assets',
-    accessorFn: row => row.assets_label,
-    size: 320,
-    cell: ({ row }) => (
-      <span
-        className="text-muted-foreground"
-        title={row.original.assets_label}
-      >
-        {row.original.assets_label}
-      </span>
-    ),
-  },
-];
 
 export default function AssetTransferRequest() {
   const { user: currentUser } = useCurrentUser();

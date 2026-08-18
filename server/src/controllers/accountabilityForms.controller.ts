@@ -1254,7 +1254,13 @@ export async function signAccountabilityFormHandler(
         : null
     );
 
-  // Sign linked asset checklists before marking the accountability form signed
+    // Persist the resolved signature so the stored acknowledgments always
+    // contain it, even when the client omits it from the request body.
+    if (digitalSignature) {
+      updatedAcknowledgments.digitalSignature = digitalSignature;
+    }
+
+    // Sign linked asset checklists before marking the accountability form signed
     try {
       await signLinkedChecklistsForAccountabilityForm({
         formId,

@@ -26,17 +26,17 @@ import { ProcessBorrowReturnDtoSchema } from '../dtos/assetBorrowRequests/Proces
 const router = Router();
 
 router.get('/mine', authenticate, listMyAssetBorrowRequests);
-// Department head approval endpoints removed - borrow requests now go directly to staff
-// router.get(
-//   '/pending-dept-approvals',
-//   authenticate,
-//   listPendingDeptHeadBorrowRequests
-// );
-// router.get(
-//   '/approved-by-dept-head-me',
-//   authenticate,
-//   listApprovedByDeptHeadMeBorrowRequests
-// );
+// Department head approval endpoints - re-enabled with Sub Approver 1 support
+router.get(
+  '/pending-dept-approvals',
+  authenticate,
+  listPendingDeptHeadBorrowRequests
+);
+router.get(
+  '/approved-by-dept-head-me',
+  authenticate,
+  listApprovedByDeptHeadMeBorrowRequests
+);
 router.get('/', authenticate, listAssetBorrowRequests);
 router.post(
   '/',
@@ -44,18 +44,18 @@ router.post(
   validateDto(CreateAssetBorrowRequestDtoSchema),
   createAssetBorrowRequest
 );
-// Department head approval endpoints removed - borrow requests now go directly to staff
-// router.post(
-//   '/:borrowRequestId/dept-head-approve',
-//   authenticate,
-//   validateDto(DeptHeadApproveBorrowRequestDtoSchema),
-//   approveDeptHeadBorrowRequest
-// );
-// router.post(
-//   '/:borrowRequestId/dept-head-decline',
-//   authenticate,
-//   declineDeptHeadBorrowRequest
-// );
+// Department head approval endpoints - re-enabled with Sub Approver 1 support
+router.post(
+  '/:borrowRequestId/dept-head-approve',
+  authenticate,
+  validateDto(DeptHeadApproveBorrowRequestDtoSchema),
+  approveDeptHeadBorrowRequest
+);
+router.post(
+  '/:borrowRequestId/dept-head-decline',
+  authenticate,
+  declineDeptHeadBorrowRequest
+);
 
 router.get(
   '/:borrowRequestId/available-assets',

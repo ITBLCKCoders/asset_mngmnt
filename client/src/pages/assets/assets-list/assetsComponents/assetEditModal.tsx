@@ -470,6 +470,9 @@ export function EditAssetModal({
         : 'straight-line',
       usefulLifeYears: asset.usefulLifeYears,
       annualDepreciation: asset.annualDepreciation,
+      bookValue: asset.bookValue,
+      accumulatedDepreciation: asset.accumulatedDepreciation,
+      monthlyDepreciation: asset.monthlyDepreciation,
       depreciationStartDate: asset.depreciationStartDate
         ? asset.depreciationStartDate.toISOString()
         : undefined,
@@ -717,6 +720,14 @@ export function EditAssetModal({
         originalAsset.usefulLifeYears !== newData.usefulLifeYears,
       annualDepreciation:
         originalAsset.annualDepreciation !== newData.annualDepreciation,
+      bookValue:
+        (originalAsset.bookValue ?? 0) !== (newData.bookValue ?? 0),
+      accumulatedDepreciation:
+        (originalAsset.accumulatedDepreciation ?? 0) !==
+        (newData.accumulatedDepreciation ?? 0),
+      monthlyDepreciation:
+        (originalAsset.monthlyDepreciation ?? 0) !==
+        (newData.monthlyDepreciation ?? 0),
       depreciationStartDate:
         originalAsset.depreciationStartDate?.toISOString() !==
         newData.depreciationStartDate,
@@ -814,6 +825,15 @@ export function EditAssetModal({
               : undefined,
             annualDepreciation: formData.annualDepreciation
               ? Number(formData.annualDepreciation)
+              : undefined,
+            bookValue: formData.bookValue
+              ? Number(formData.bookValue)
+              : undefined,
+            accumulatedDepreciation: formData.accumulatedDepreciation
+              ? Number(formData.accumulatedDepreciation)
+              : undefined,
+            monthlyDepreciation: formData.monthlyDepreciation
+              ? Number(formData.monthlyDepreciation)
               : undefined,
             warrantyMonths: formData.warrantyMonths
               ? Number(formData.warrantyMonths)

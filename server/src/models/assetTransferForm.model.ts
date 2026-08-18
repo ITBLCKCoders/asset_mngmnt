@@ -28,6 +28,12 @@ export interface AssetTransferForm {
   it_manager_signed_at?: string | null;
   it_manager_digital_signature?: string | null;
   it_manager_signed_by?: string | null;
+  sub_approver_1_signed_at?: string | null;
+  sub_approver_1_digital_signature?: string | null;
+  sub_approver_1_signed_by?: string | null;
+  sub_approver_2_signed_at?: string | null;
+  sub_approver_2_digital_signature?: string | null;
+  sub_approver_2_signed_by?: string | null;
   executed_at?: string | null;
   return_form_id?: string | null;
   declined_at?: string | null;
@@ -93,6 +99,8 @@ export class AssetTransferFormModel {
               transfer_type, received_by,
               dept_head_signed_at, dept_head_digital_signature, dept_head_signed_by,
               it_manager_signed_at, it_manager_digital_signature, it_manager_signed_by,
+              sub_approver_1_signed_at, sub_approver_1_digital_signature, sub_approver_1_signed_by,
+              sub_approver_2_signed_at, sub_approver_2_digital_signature, sub_approver_2_signed_by,
               executed_at, return_form_id, declined_at
        FROM asset_transfer_forms
        WHERE user_id = ? AND deleted_at IS NULL

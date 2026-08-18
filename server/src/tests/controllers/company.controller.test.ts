@@ -14,6 +14,7 @@ jest.mock('../../utils/cloudinary.js', () => ({
 }));
 
 const mockPool = jest.requireMock('../../db.js') as { pool: { query: jest.Mock; execute: jest.Mock } };
+const createAuditLog = jest.requireMock('../../utils/audit.js').createAuditLog as jest.Mock;
 
 describe('company.controller', () => {
   let req: any;
@@ -81,6 +82,14 @@ describe('company.controller', () => {
       req.params = { id: 'c-1' };
       await companyController.setActiveCompany(req, res);
       expect(res._json).toEqual({ success: true });
+      expect(createAuditLog).toHaveBeenCalledWith(
+        expect.objectContaining({
+          userId: '1',
+          action: 'Set Active Company',
+          resourceType: 'company',
+          resourceId: 'c-1',
+        })
+      );
     });
   });
 
@@ -89,6 +98,38 @@ describe('company.controller', () => {
       req.params = { id: 'c-1' };
       await companyController.setMainCompany(req, res);
       expect(res._json).toEqual({ success: true });
+      expect(createAuditLog).toHaveBeenCalledWith(
+        expect.objectContaining({
+          userId: '1',
+          action: 'Set Main Company',
+          resourceType: 'company',
+          resourceId: 'c-1',
+        })
+      );
+    });
+  });
+
+  describe('deleteCompanyLogo', () => {
+    it('removes logo and records audit log', async () => {
+      req.params = { id: 'c-1' };
+      mockPool.pool.query.mockResolvedValue([[{ logo_url: 'https://cdn/logo.png' }]]);
+      await companyController.deleteCompanyLogo(req, res);
+      expect(res._json).toEqual({ message: 'Logo removed successfully' });
+      expect(createAuditLog).toHaveBeenCalledWith(
+        expect.objectContaining({
+          userId: '1',
+          action: 'Deleted Company Logo',
+          resourceType: 'company',
+          resourceId: 'c-1',
+        })
+      );
+    });
+
+    it('returns 500 on error', async () => {
+      req.params = { id: 'c-1' };
+      mockPool.pool.query.mockRejectedValue(new Error('DB error'));
+      await companyController.deleteCompanyLogo(req, res);
+      expect(res._status).toBe(500);
     });
   });
 

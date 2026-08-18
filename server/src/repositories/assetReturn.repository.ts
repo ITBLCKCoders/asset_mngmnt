@@ -128,8 +128,26 @@ export async function fetchAssetReturnFormsRowsForUserList(
 // Pending dept-head approval list
 // ---------------------------------------------------------------------------
 
-/** Dept-head pending list: prefers owner_absent + declined_at; falls back for older schemas. */
+/** Dept-head pending list: prefers owner_absent + declined_at + sub_approver mutual exclusion; falls back for older schemas. */
 export const PENDING_DH_APPROVAL_FORMS_SQL_FULL = `
+SELECT arf.formID, arf.form_number, arf.user_id, arf.department_id, arf.location_id, arf.location_room_id, arf.created_by, arf.created_at, arf.updated_at, arf.deleted_at,
+  arf.signed_at, arf.signed_by, arf.signed_digital_signature,
+  DATE_FORMAT(arf.process_signed_at, '%Y-%m-%d %H:%i:%s') AS process_signed_at,
+  arf.process_digital_signature, arf.process_signed_by, arf.return_type, arf.received_by,
+  DATE_FORMAT(arf.dept_head_signed_at, '%Y-%m-%d %H:%i:%s') AS dept_head_signed_at,
+  arf.dept_head_digital_signature, arf.dept_head_signed_by,
+  DATE_FORMAT(arf.sub_approver_1_signed_at, '%Y-%m-%d %H:%i:%s') AS sub_approver_1_signed_at,
+  arf.sub_approver_1_digital_signature, arf.sub_approver_1_signed_by,
+  arf.owner_absent,
+  d.company_id AS form_company_id, d.name AS form_department_name
+ FROM asset_return_forms arf
+ LEFT JOIN asset_mngmnt_departments d ON arf.department_id = d.departmentID
+ LEFT JOIN users ru ON arf.user_id = ru.userID
+ WHERE arf.deleted_at IS NULL AND (arf.declined_at IS NULL) AND (arf.signed_at IS NOT NULL OR arf.owner_absent = 1) AND arf.dept_head_signed_at IS NULL
+   AND arf.sub_approver_1_signed_at IS NULL
+   AND ru.department_id <=> ? AND d.company_id = ?`;
+
+export const PENDING_DH_APPROVAL_FORMS_SQL_FULL_NO_SUB = `
 SELECT arf.formID, arf.form_number, arf.user_id, arf.department_id, arf.location_id, arf.location_room_id, arf.created_by, arf.created_at, arf.updated_at, arf.deleted_at,
   arf.signed_at, arf.signed_by, arf.signed_digital_signature,
   DATE_FORMAT(arf.process_signed_at, '%Y-%m-%d %H:%i:%s') AS process_signed_at,
@@ -174,6 +192,23 @@ SELECT arf.formID, arf.form_number, arf.user_id, arf.department_id, arf.location
 
 /** Same as FULL but without department filter — for Global Admin / full-scope users */
 export const PENDING_DH_APPROVAL_FORMS_SQL_FULL_NO_DEPT = `
+SELECT arf.formID, arf.form_number, arf.user_id, arf.department_id, arf.location_id, arf.location_room_id, arf.created_by, arf.created_at, arf.updated_at, arf.deleted_at,
+  arf.signed_at, arf.signed_by, arf.signed_digital_signature,
+  DATE_FORMAT(arf.process_signed_at, '%Y-%m-%d %H:%i:%s') AS process_signed_at,
+  arf.process_digital_signature, arf.process_signed_by, arf.return_type, arf.received_by,
+  DATE_FORMAT(arf.dept_head_signed_at, '%Y-%m-%d %H:%i:%s') AS dept_head_signed_at,
+  arf.dept_head_digital_signature, arf.dept_head_signed_by,
+  DATE_FORMAT(arf.sub_approver_1_signed_at, '%Y-%m-%d %H:%i:%s') AS sub_approver_1_signed_at,
+  arf.sub_approver_1_digital_signature, arf.sub_approver_1_signed_by,
+  arf.owner_absent,
+  d.company_id AS form_company_id, d.name AS form_department_name
+ FROM asset_return_forms arf
+ LEFT JOIN asset_mngmnt_departments d ON arf.department_id = d.departmentID
+ WHERE arf.deleted_at IS NULL AND (arf.declined_at IS NULL) AND (arf.signed_at IS NOT NULL OR arf.owner_absent = 1) AND arf.dept_head_signed_at IS NULL
+   AND arf.sub_approver_1_signed_at IS NULL
+   AND d.company_id = ?`;
+
+export const PENDING_DH_APPROVAL_FORMS_SQL_FULL_NO_DEPT_NO_SUB = `
 SELECT arf.formID, arf.form_number, arf.user_id, arf.department_id, arf.location_id, arf.location_room_id, arf.created_by, arf.created_at, arf.updated_at, arf.deleted_at,
   arf.signed_at, arf.signed_by, arf.signed_digital_signature,
   DATE_FORMAT(arf.process_signed_at, '%Y-%m-%d %H:%i:%s') AS process_signed_at,
@@ -227,6 +262,19 @@ export async function fetchPendingDeptHeadApprovalFormRows(
   } catch (e: unknown) {
     if (!isMysqlUnknownColumnError(e)) throw e;
     logger.warn(
+      'pending-approvals: full query failed (unknown column); trying without sub_approver columns',
+      e
+    );
+  }
+  try {
+    const [rows] = await pool.execute(
+      PENDING_DH_APPROVAL_FORMS_SQL_FULL_NO_SUB,
+      params
+    );
+    return rows as any[];
+  } catch (e: unknown) {
+    if (!isMysqlUnknownColumnError(e)) throw e;
+    logger.warn(
       'pending-approvals: full query failed (unknown column); trying without owner_absent',
       e
     );
@@ -256,6 +304,19 @@ export async function fetchPendingDeptHeadApprovalFormRowsByCompany(
   try {
     const [rows] = await pool.execute(
       PENDING_DH_APPROVAL_FORMS_SQL_FULL_NO_DEPT,
+      params
+    );
+    return rows as any[];
+  } catch (e: unknown) {
+    if (!isMysqlUnknownColumnError(e)) throw e;
+    logger.warn(
+      'pending-approvals (no-dept): full query failed; trying without sub_approver columns',
+      e
+    );
+  }
+  try {
+    const [rows] = await pool.execute(
+      PENDING_DH_APPROVAL_FORMS_SQL_FULL_NO_DEPT_NO_SUB,
       params
     );
     return rows as any[];

@@ -111,6 +111,14 @@ export interface AssetReturnData {
   dept_head_digital_signature?: string | null;
   /** Dept Head display name for PDF */
   dept_head_user_name?: string | null;
+  /** Sub Approver 1 (stand-in for dept head) signature date/time */
+  sub_approver_1_signed_at?: string | null;
+  /** Sub Approver 1 digital signature image (base64 data URL) */
+  sub_approver_1_digital_signature?: string | null;
+  /** Sub Approver 1 display name for PDF */
+  sub_approver_1_user_name?: string | null;
+  /** Sub Approver 1 position for PDF */
+  sub_approver_1_position?: string | null;
   /** IT Manager / IT Department Head signature date/time */
   it_manager_signed_at?: string | null;
   /** IT Manager digital signature image (base64 data URL) */
@@ -435,7 +443,8 @@ export const generateAssetReturnPDF = async (
   const sectionBStartY = (doc as any).lastAutoTable.finalY;
   const sectionBHalfWidth = tableWidth / 2;
   const hasReturnerSignature = !!returnData.signed_at;
-  const hasDeptHeadSignature = !!returnData.dept_head_signed_at;
+  const hasDeptHeadSignature =
+    !!returnData.dept_head_signed_at || !!returnData.sub_approver_1_signed_at;
   const hasItManagerSignature = !!returnData.it_manager_signed_at;
   const showProcessorSignatureBlock = !!returnData.showProcessorSignatureBlock;
   const processUserNameForCell = (returnData.process_user_name ?? '').trim();
@@ -619,10 +628,21 @@ export const generateAssetReturnPDF = async (
         doc.setFont('helvetica', 'normal');
         doc.setTextColor(0, 0, 0);
 
-        const deptHeadName = (returnData.dept_head_user_name || '').trim();
-        if (returnData.dept_head_digital_signature) {
+        const isSubApprover1Signed = !!returnData.sub_approver_1_signed_at;
+        const deptHeadName = (
+          (isSubApprover1Signed
+            ? returnData.sub_approver_1_user_name
+            : returnData.dept_head_user_name) || ''
+        ).trim();
+        const deptHeadPosition = isSubApprover1Signed
+          ? (returnData.sub_approver_1_position || '').trim()
+          : '';
+        const deptHeadDigitalSignature = isSubApprover1Signed
+          ? returnData.sub_approver_1_digital_signature
+          : returnData.dept_head_digital_signature;
+        if (deptHeadDigitalSignature) {
           pendingReturnSignatures.push({
-            data: returnData.dept_head_digital_signature,
+            data: deptHeadDigitalSignature,
             x: cell.x + 1 - 30,
             y: yTop + 25,
             anchorBottomY: signatureAnchorBottomY(nameY),
@@ -636,13 +656,31 @@ export const generateAssetReturnPDF = async (
           const nameMaxWidth = Math.max(15, contentWidth - 6);
           const nameLines = doc.splitTextToSize(deptHeadName, nameMaxWidth);
           doc.text(nameLines, xMin, nameY);
+          if (deptHeadPosition) {
+            doc.setFontSize(6.5);
+            const positionLines = doc.splitTextToSize(
+              deptHeadPosition,
+              nameMaxWidth
+            );
+            doc.text(positionLines, xMin, nameY + 3.5);
+          }
+        }
+
+        if (isSubApprover1Signed) {
+          doc.setFontSize(6.5);
+          doc.setFont('helvetica', 'italic');
+          doc.text('(Stand-in approver)', xMin, nameY + 7);
         }
 
         const deptHeadSignedDate = formatSignedDate(
-          returnData.dept_head_signed_at
+          isSubApprover1Signed
+            ? returnData.sub_approver_1_signed_at
+            : returnData.dept_head_signed_at
         );
         const deptHeadSignedTime = formatSignedTime(
-          returnData.dept_head_signed_at
+          isSubApprover1Signed
+            ? returnData.sub_approver_1_signed_at
+            : returnData.dept_head_signed_at
         );
         if (deptHeadSignedDate && deptHeadSignedTime) {
           doc.setFontSize(7);
@@ -733,6 +771,20 @@ export const generateAssetReturnPDF = async (
     );
   }
   doc.setPage(1);
+
+  // Stand-in approver note under the table
+  if (returnData.sub_approver_1_signed_at) {
+    doc.setFontSize(6.5);
+    doc.setFont('helvetica', 'italic');
+    doc.setTextColor(80, 80, 80);
+    doc.text(
+      'Stand-in approver note: This user is a stand-in approver since the department manager of the requestor is currently not present',
+      tableMargin.left,
+      (doc as any).lastAutoTable.finalY + 4,
+      { maxWidth: tableWidth }
+    );
+    doc.setTextColor(0, 0, 0);
+  }
 
   // Document No under the table
   const docNoY = (doc as any).lastAutoTable.finalY + 8;

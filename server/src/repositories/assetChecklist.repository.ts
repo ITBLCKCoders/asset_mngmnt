@@ -4,6 +4,7 @@ import logger from '../logger.js';
 let employeeSignColumnsAvailable: boolean | null = null;
 let deptHeadSignColumnsAvailable: boolean | null = null;
 let itManagerSignColumnsAvailable: boolean | null = null;
+let subApproverSignColumnsAvailable: boolean | null = null;
 
 async function columnExists(columnName: string): Promise<boolean> {
   const [rows] = (await pool.query(
@@ -51,13 +52,31 @@ export async function hasItManagerSignColumns(): Promise<boolean> {
   return itManagerSignColumnsAvailable;
 }
 
+export async function hasSubApproverSignColumns(): Promise<boolean> {
+  if (subApproverSignColumnsAvailable === null) {
+    try {
+      subApproverSignColumnsAvailable =
+        (await columnExists('sub_approver_1_signed_at')) &&
+        (await columnExists('sub_approver_2_signed_at'));
+    } catch {
+      subApproverSignColumnsAvailable = false;
+    }
+  }
+  return subApproverSignColumnsAvailable;
+}
+
 function buildChecklistSelect(options: {
   includeEmployeeSign: boolean;
   includeDeptHeadSign: boolean;
   includeItManagerSign: boolean;
+  includeSubApproverSign: boolean;
 }): string {
-  const { includeEmployeeSign, includeDeptHeadSign, includeItManagerSign } =
-    options;
+  const {
+    includeEmployeeSign,
+    includeDeptHeadSign,
+    includeItManagerSign,
+    includeSubApproverSign,
+  } = options;
   const employeeSignFields = includeEmployeeSign
     ? `ac.employee_signed_at,
     ac.employee_digital_signature,`
@@ -81,6 +100,23 @@ function buildChecklistSelect(options: {
     NULL AS it_manager_signed_by,
     NULL AS it_manager_digital_signature,
     NULL AS it_manager_name,`;
+  const subApproverSignFields = includeSubApproverSign
+    ? `ac.sub_approver_1_signed_at,
+    ac.sub_approver_1_signed_by,
+    ac.sub_approver_1_digital_signature,
+    sa1.name AS sub_approver_1_name,
+    ac.sub_approver_2_signed_at,
+    ac.sub_approver_2_signed_by,
+    ac.sub_approver_2_digital_signature,
+    sa2.name AS sub_approver_2_name,`
+    : `NULL AS sub_approver_1_signed_at,
+    NULL AS sub_approver_1_signed_by,
+    NULL AS sub_approver_1_digital_signature,
+    NULL AS sub_approver_1_name,
+    NULL AS sub_approver_2_signed_at,
+    NULL AS sub_approver_2_signed_by,
+    NULL AS sub_approver_2_digital_signature,
+    NULL AS sub_approver_2_name,`;
 
   return `
   SELECT 
@@ -102,6 +138,7 @@ function buildChecklistSelect(options: {
     ${employeeSignFields}
     ${deptHeadSignFields}
     ${itManagerSignFields}
+    ${subApproverSignFields}
     u.name AS creator_name,
     u.digital_signature AS creator_digital_signature,
     c.logo_url AS employee_company_logo_url,
@@ -112,6 +149,8 @@ function buildChecklistSelect(options: {
   LEFT JOIN users u ON ac.created_by = u.userID
   LEFT JOIN users dh ON ac.dept_head_signed_by = dh.userID
   LEFT JOIN users im ON ac.it_manager_signed_by = im.userID
+  LEFT JOIN users sa1 ON ac.sub_approver_1_signed_by = sa1.userID
+  LEFT JOIN users sa2 ON ac.sub_approver_2_signed_by = sa2.userID
   LEFT JOIN companies c ON ac.employee_company = c.name AND c.deleted_at IS NULL
   LEFT JOIN asset_assignments aa ON ac.assignment_id = aa.assignmentID
   LEFT JOIN assets a ON aa.asset_id = a.assetID AND a.deleted_at IS NULL
@@ -119,13 +158,23 @@ function buildChecklistSelect(options: {
 }
 
 async function checklistSelectFlags() {
-  const [includeEmployeeSign, includeDeptHeadSign, includeItManagerSign] =
-    await Promise.all([
-      hasEmployeeSignColumns(),
-      hasDeptHeadSignColumns(),
-      hasItManagerSignColumns(),
-    ]);
-  return { includeEmployeeSign, includeDeptHeadSign, includeItManagerSign };
+  const [
+    includeEmployeeSign,
+    includeDeptHeadSign,
+    includeItManagerSign,
+    includeSubApproverSign,
+  ] = await Promise.all([
+    hasEmployeeSignColumns(),
+    hasDeptHeadSignColumns(),
+    hasItManagerSignColumns(),
+    hasSubApproverSignColumns(),
+  ]);
+  return {
+    includeEmployeeSign,
+    includeDeptHeadSign,
+    includeItManagerSign,
+    includeSubApproverSign,
+  };
 }
 
 export async function createAssetChecklist(data: {
@@ -407,10 +456,15 @@ export async function findPendingDeptHeadApprovalChecklists(
     return [];
   }
   try {
-    const [rows] = await pool.query(PENDING_DEPT_HEAD_CHECKLIST_SQL, [
-      approverDepartmentId,
-      companyId,
-    ]);
+    let sql = PENDING_DEPT_HEAD_CHECKLIST_SQL;
+    const args: (string | number)[] = [approverDepartmentId, companyId];
+    if (await hasSubApproverSignColumns()) {
+      sql = sql.replace(
+        '    AND ac.dept_head_signed_at IS NULL\n',
+        '    AND ac.dept_head_signed_at IS NULL\n    AND ac.sub_approver_1_signed_at IS NULL\n'
+      );
+    }
+    const [rows] = await pool.query(sql, args);
     return (rows as any[]).map(mapChecklistRow);
   } catch (error) {
     logger.error('Failed to find pending dept head approval checklists:', error);
@@ -427,16 +481,31 @@ export async function findChecklistsApprovedByDeptHead(
   }
   const flags = await checklistSelectFlags();
   const hasItManagerCols = await hasItManagerSignColumns();
-  const whereClause = hasItManagerCols
-    ? `WHERE (ac.dept_head_signed_by = ? OR ac.it_manager_signed_by = ?)
-      AND ac.dept_head_signed_at IS NOT NULL
-      AND emp.company_id = ?`
-    : `WHERE ac.dept_head_signed_by = ?
+  const hasSubCols = await hasSubApproverSignColumns();
+
+  let whereClause: string;
+  let args: (string | number)[];
+  if (hasSubCols) {
+    whereClause = `WHERE (
+        ac.dept_head_signed_by = ?
+        OR ac.it_manager_signed_by = ?
+        OR ac.sub_approver_1_signed_by = ?
+        OR ac.sub_approver_2_signed_by = ?
+      )
       AND ac.dept_head_signed_at IS NOT NULL
       AND emp.company_id = ?`;
-  const args = hasItManagerCols
-    ? [approverUserId, approverUserId, companyId]
-    : [approverUserId, companyId];
+    args = [approverUserId, approverUserId, approverUserId, approverUserId, companyId];
+  } else if (hasItManagerCols) {
+    whereClause = `WHERE (ac.dept_head_signed_by = ? OR ac.it_manager_signed_by = ?)
+      AND ac.dept_head_signed_at IS NOT NULL
+      AND emp.company_id = ?`;
+    args = [approverUserId, approverUserId, companyId];
+  } else {
+    whereClause = `WHERE ac.dept_head_signed_by = ?
+      AND ac.dept_head_signed_at IS NOT NULL
+      AND emp.company_id = ?`;
+    args = [approverUserId, companyId];
+  }
   const query = `
     ${buildChecklistSelect(flags)}
     INNER JOIN users emp ON ac.employee_id = emp.userID
@@ -458,6 +527,7 @@ export async function approveChecklistsAsDeptHead(params: {
   approverDepartmentId: string;
   companyId: string;
   digitalSignature: string | null;
+  isSubApprover?: boolean;
 }): Promise<number> {
   if (!(await hasDeptHeadSignColumns())) {
     const err = new Error(
@@ -473,34 +543,71 @@ export async function approveChecklistsAsDeptHead(params: {
     approverDepartmentId,
     companyId,
     digitalSignature,
+    isSubApprover = false,
   } = params;
   const ids = [...new Set(checklistIds.filter(id => id?.trim()))];
   if (ids.length === 0) {
     return 0;
   }
 
-  const placeholders = ids.map(() => '?').join(',');
-  const query = `
-    UPDATE asset_checklists ac
-    INNER JOIN users emp ON ac.employee_id = emp.userID
-    SET ac.dept_head_signed_at = NOW(),
-        ac.dept_head_signed_by = ?,
-        ac.dept_head_digital_signature = ?
-    WHERE ac.id IN (${placeholders})
-      AND ac.employee_signed_at IS NOT NULL
-      AND ac.dept_head_signed_at IS NULL
-      AND emp.department_id <=> ?
-      AND emp.company_id = ?
-  `;
+  const hasSubCols = await hasSubApproverSignColumns();
+  if (isSubApprover && !hasSubCols) {
+    const err = new Error(
+      'sub_approver_1_signed_at column missing — run db/migration_add_sub_approver_signatures_all_forms.sql'
+    );
+    (err as Error & { code?: string }).code = 'SCHEMA_MISSING_SUB_APPROVER_SIGN';
+    throw err;
+  }
 
-  try {
-    const [result] = await pool.query(query, [
+  const placeholders = ids.map(() => '?').join(',');
+
+  let setClause: string;
+  let exclusionClause: string;
+  let values: (string | null | number)[];
+
+  if (isSubApprover) {
+    setClause = `SET ac.sub_approver_1_signed_at = NOW(),
+        ac.sub_approver_1_signed_by = ?,
+        ac.sub_approver_1_digital_signature = ?`;
+    exclusionClause = hasSubCols
+      ? 'AND ac.dept_head_signed_at IS NULL\n      AND ac.sub_approver_1_signed_at IS NULL'
+      : 'AND ac.dept_head_signed_at IS NULL';
+    values = [
       approverUserId,
       digitalSignature,
       ...ids,
       approverDepartmentId,
       companyId,
-    ]);
+    ];
+  } else {
+    setClause = `SET ac.dept_head_signed_at = NOW(),
+        ac.dept_head_signed_by = ?,
+        ac.dept_head_digital_signature = ?`;
+    exclusionClause = hasSubCols
+      ? 'AND ac.dept_head_signed_at IS NULL\n      AND ac.sub_approver_1_signed_at IS NULL'
+      : 'AND ac.dept_head_signed_at IS NULL';
+    values = [
+      approverUserId,
+      digitalSignature,
+      ...ids,
+      approverDepartmentId,
+      companyId,
+    ];
+  }
+
+  const query = `
+    UPDATE asset_checklists ac
+    INNER JOIN users emp ON ac.employee_id = emp.userID
+    ${setClause}
+    WHERE ac.id IN (${placeholders})
+      AND ac.employee_signed_at IS NOT NULL
+      ${exclusionClause}
+      AND emp.department_id <=> ?
+      AND emp.company_id = ?
+  `;
+
+  try {
+    const [result] = await pool.query(query, values);
     return (result as { affectedRows?: number }).affectedRows ?? 0;
   } catch (error) {
     logger.error('Failed to approve checklists as dept head:', error);
@@ -563,9 +670,14 @@ export async function findPendingItManagerReceiveChecklists(companyId: string) {
     return [];
   }
   try {
-    const [rows] = await pool.query(PENDING_IT_RECEIVE_CHECKLIST_SQL, [
-      companyId,
-    ]);
+    let sql = PENDING_IT_RECEIVE_CHECKLIST_SQL;
+    if (await hasSubApproverSignColumns()) {
+      sql = sql.replace(
+        '    AND ac.it_manager_signed_at IS NULL\n',
+        '    AND ac.it_manager_signed_at IS NULL\n    AND ac.sub_approver_2_signed_at IS NULL\n'
+      );
+    }
+    const [rows] = await pool.query(sql, [companyId]);
     return (rows as any[]).map(mapChecklistRow);
   } catch (error) {
     logger.error('Failed to find pending IT receive checklists:', error);
@@ -578,6 +690,7 @@ export async function receiveChecklistsAsItManager(params: {
   approverUserId: string;
   companyId: string;
   digitalSignature: string | null;
+  isSubApprover?: boolean;
 }): Promise<number> {
   if (!(await hasItManagerSignColumns())) {
     const err = new Error(
@@ -587,23 +700,55 @@ export async function receiveChecklistsAsItManager(params: {
     throw err;
   }
 
-  const { checklistIds, approverUserId, companyId, digitalSignature } = params;
+  const {
+    checklistIds,
+    approverUserId,
+    companyId,
+    digitalSignature,
+    isSubApprover = false,
+  } = params;
   const ids = [...new Set(checklistIds.filter(id => id?.trim()))];
   if (ids.length === 0) {
     return 0;
   }
 
+  const hasSubCols = await hasSubApproverSignColumns();
+  if (isSubApprover && !hasSubCols) {
+    const err = new Error(
+      'sub_approver_2_signed_at column missing — run db/migration_add_sub_approver_signatures_all_forms.sql'
+    );
+    (err as Error & { code?: string }).code = 'SCHEMA_MISSING_SUB_APPROVER_SIGN';
+    throw err;
+  }
+
   const placeholders = ids.map(() => '?').join(',');
+
+  let setClause: string;
+  let exclusionClause: string;
+  if (isSubApprover) {
+    setClause = `SET ac.sub_approver_2_signed_at = NOW(),
+        ac.sub_approver_2_signed_by = ?,
+        ac.sub_approver_2_digital_signature = ?`;
+    exclusionClause = hasSubCols
+      ? 'AND ac.it_manager_signed_at IS NULL\n      AND ac.sub_approver_2_signed_at IS NULL'
+      : 'AND ac.it_manager_signed_at IS NULL';
+  } else {
+    setClause = `SET ac.it_manager_signed_at = NOW(),
+        ac.it_manager_signed_by = ?,
+        ac.it_manager_digital_signature = ?`;
+    exclusionClause = hasSubCols
+      ? 'AND ac.it_manager_signed_at IS NULL\n      AND ac.sub_approver_2_signed_at IS NULL'
+      : 'AND ac.it_manager_signed_at IS NULL';
+  }
+
   const query = `
     UPDATE asset_checklists ac
     INNER JOIN users emp ON ac.employee_id = emp.userID
-    SET ac.it_manager_signed_at = NOW(),
-        ac.it_manager_signed_by = ?,
-        ac.it_manager_digital_signature = ?
+    ${setClause}
     WHERE ac.id IN (${placeholders})
       AND ac.employee_signed_at IS NOT NULL
       AND ac.dept_head_signed_at IS NOT NULL
-      AND ac.it_manager_signed_at IS NULL
+      ${exclusionClause}
       AND emp.company_id = ?
   `;
 

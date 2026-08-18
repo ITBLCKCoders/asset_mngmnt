@@ -77,6 +77,10 @@ export interface AssetTransferData {
   dept_head_signed_at?: string | null;
   dept_head_digital_signature?: string | null;
   dept_head_user_name?: string | null;
+  sub_approver_1_signed_at?: string | null;
+  sub_approver_1_digital_signature?: string | null;
+  sub_approver_1_user_name?: string | null;
+  sub_approver_1_position?: string | null;
   it_manager_signed_at?: string | null;
   it_manager_digital_signature?: string | null;
   it_manager_user_name?: string | null;
@@ -391,7 +395,9 @@ export const generateAssetTransferPDF = async (
   const sectionBHalfWidth = tableWidth / 2;
   const hasTransferrerSignature = !!transferData.signed_at;
   const hasProcessSignature = !!transferData.process_signed_at;
-  const hasDeptHeadSignature = !!transferData.dept_head_signed_at;
+  const hasDeptHeadSignature =
+    !!transferData.dept_head_signed_at ||
+    !!transferData.sub_approver_1_signed_at;
   const hasItManagerSignature = !!transferData.it_manager_signed_at;
   const showProcessorSignatureBlock =
     !!transferData.showProcessorSignatureBlock;
@@ -614,10 +620,21 @@ export const generateAssetTransferPDF = async (
         doc.setFont('helvetica', 'normal');
         doc.setTextColor(0, 0, 0);
 
-        const deptHeadName = (transferData.dept_head_user_name || '').trim();
-        if (transferData.dept_head_digital_signature) {
+        const isSubApprover1Signed = !!transferData.sub_approver_1_signed_at;
+        const deptHeadName = (
+          (isSubApprover1Signed
+            ? transferData.sub_approver_1_user_name
+            : transferData.dept_head_user_name) || ''
+        ).trim();
+        const deptHeadPosition = isSubApprover1Signed
+          ? (transferData.sub_approver_1_position || '').trim()
+          : '';
+        const digitalSignature = isSubApprover1Signed
+          ? transferData.sub_approver_1_digital_signature
+          : transferData.dept_head_digital_signature;
+        if (digitalSignature) {
           pendingTransferSignatures.push({
-            data: transferData.dept_head_digital_signature,
+            data: digitalSignature,
             x: cell.x + 1 - 30,
             y: yTop + 25,
             anchorBottomY: signatureAnchorBottomY(nameY),
@@ -631,9 +648,26 @@ export const generateAssetTransferPDF = async (
           const nameMaxWidth = Math.max(15, contentWidth - 6);
           const nameLines = doc.splitTextToSize(deptHeadName, nameMaxWidth);
           doc.text(nameLines, xMin, nameY);
+          if (deptHeadPosition) {
+            doc.setFontSize(6.5);
+            const positionLines = doc.splitTextToSize(
+              deptHeadPosition,
+              nameMaxWidth
+            );
+            doc.text(positionLines, xMin, nameY + 3.5);
+          }
         }
 
-        const rawDept = transferData.dept_head_signed_at?.trim() ?? '';
+        if (isSubApprover1Signed) {
+          doc.setFontSize(6.5);
+          doc.setFont('helvetica', 'italic');
+          doc.text('(Stand-in approver)', xMin, nameY + 7);
+        }
+
+        const rawDept = (isSubApprover1Signed
+          ? transferData.sub_approver_1_signed_at
+          : transferData.dept_head_signed_at
+        )?.trim() ?? '';
         const deptSignedDate = rawDept
           ? new Date(
               rawDept.endsWith('Z') || /[+-]\d{2}:?\d{2}$/.test(rawDept)
@@ -750,6 +784,18 @@ export const generateAssetTransferPDF = async (
   doc.setPage(1);
 
   const docNoY = (doc as any).lastAutoTable.finalY + 8;
+  if (transferData.sub_approver_1_signed_at) {
+    doc.setFontSize(6.5);
+    doc.setFont('helvetica', 'italic');
+    doc.setTextColor(80, 80, 80);
+    doc.text(
+      'Stand-in approver note: This user is a stand-in approver since the department manager of the requestor is currently not present',
+      tableMargin.left,
+      (doc as any).lastAutoTable.finalY + 4,
+      { maxWidth: tableWidth }
+    );
+    doc.setTextColor(0, 0, 0);
+  }
   const docNoText = `Document No: ${transferData.form_number || 'TRF'} ver1 01Jan2026`;
   doc.setFontSize(10);
   doc.setFont('helvetica', 'normal');

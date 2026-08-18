@@ -570,6 +570,16 @@ export default function AuditTrail() {
         return;
       }
 
+      try {
+        await api.post('/audit/export', {
+          format: formatType,
+          rowCount: rows.length,
+          scope: 'current view',
+        });
+      } catch (exportLogErr) {
+        console.warn('Failed to record audit export', exportLogErr);
+      }
+
       const now = format(new Date(), 'yyyyMMdd-HHmmss');
       if (formatType === 'json') {
         const blob = new Blob([JSON.stringify(rows, null, 2)], {
@@ -651,6 +661,14 @@ export default function AuditTrail() {
     const now = new Date();
     const stamp = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}_${String(now.getHours()).padStart(2, '0')}${String(now.getMinutes()).padStart(2, '0')}`;
     doc.save(`asset-audit-trail-${stamp}.pdf`);
+
+    api
+      .post('/audit/export', {
+        format: 'pdf',
+        rowCount: logs.length,
+        scope: 'current view',
+      })
+      .catch(err => console.warn('Failed to record audit export', err));
   };
 
   return (

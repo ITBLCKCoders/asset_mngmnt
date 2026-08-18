@@ -85,6 +85,9 @@ interface ApprovedBatch {
   received_by?: string | null;
   dept_head_signed_at?: string | null;
   dept_head_user_name?: string | null;
+  sub_approver_1_signed_at?: string | null;
+  sub_approver_1_user_name?: string | null;
+  sub_approver_1_position?: string | null;
   returns: Array<{
     assignment_id: string;
     return_condition?: string | null;
@@ -770,7 +773,7 @@ export default function TransferRequestsPage() {
                           <User className="h-4 w-4 text-gray-400 mt-0.5 flex-shrink-0" />
                           <div className="flex-1 min-w-0">
                             <p className="font-medium text-sm">
-                              Transferrer: {transferrerName}
+                              Transferred by: {transferrerName}
                             </p>
                           </div>
                         </div>
@@ -824,6 +827,15 @@ export default function TransferRequestsPage() {
                         }
                         dept_head_user_name={
                           batch.dept_head_user_name
+                        }
+                        sub_approver_1_signed_at={
+                          batch.sub_approver_1_signed_at
+                        }
+                        sub_approver_1_user_name={
+                          batch.sub_approver_1_user_name
+                        }
+                        sub_approver_1_position={
+                          batch.sub_approver_1_position
                         }
                         process_signed_at={batch.process_signed_at}
                       />

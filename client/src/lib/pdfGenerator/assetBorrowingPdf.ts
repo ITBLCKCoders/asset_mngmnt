@@ -41,6 +41,20 @@ export interface AssetBorrowingData {
   requestedBySignature?: string | null;
   /** When the request was submitted */
   requestedAt?: string | null;
+  /** Dept Head (requestor's department head) approval date/time */
+  deptHeadSignedAt?: string | null;
+  /** Dept Head display name for PDF */
+  deptHeadSignedBy?: string | null;
+  /** Dept Head digital signature image (base64 data URL) */
+  deptHeadSignature?: string | null;
+  /** Sub Approver 1 (stand-in for dept head) approval date/time */
+  subApprover1SignedAt?: string | null;
+  /** Sub Approver 1 display name for PDF */
+  subApprover1SignedBy?: string | null;
+  /** Sub Approver 1 position for PDF */
+  subApprover1Position?: string | null;
+  /** Sub Approver 1 digital signature image (base64 data URL) */
+  subApprover1Signature?: string | null;
 }
 
 /** Remove white/light background from signature image */
@@ -317,17 +331,42 @@ export const generateAssetBorrowingPDF = async (
     });
   }
 
-  // Signature area (3 columns) per spec
+  const deptHeadSignature = borrowData.subApprover1Signature || borrowData.deptHeadSignature || null;
+  const deptHeadSignedAt =
+    borrowData.subApprover1SignedAt || borrowData.deptHeadSignedAt || null;
+  const deptHeadName =
+    borrowData.subApprover1SignedBy ||
+    borrowData.deptHeadSignedBy ||
+    '—';
+  const isSubApprover1Signed = !!borrowData.subApprover1SignedAt;
+  let deptHeadSigImg: HTMLImageElement | null = null;
+  if (deptHeadSignature) {
+    deptHeadSigImg = await new Promise<HTMLImageElement | null>(resolve => {
+      const img = new Image();
+      img.crossOrigin = 'anonymous';
+      img.onload = () => {
+        const processedSrc = removeSignatureBackground(img);
+        const processedImg = new Image();
+        processedImg.onload = () => resolve(processedImg);
+        processedImg.onerror = () => resolve(null);
+        processedImg.src = processedSrc;
+      };
+      img.onerror = () => resolve(null);
+      img.src = deptHeadSignature!;
+    });
+  }
+
+  // Signature area (4 columns) per spec: Requested by | Department Head | IT received BY | IT approved by
   const sigStartY = (doc as any).lastAutoTable.finalY;
-  const sigColW = tableWidth / 3;
+  const sigColW = tableWidth / 4;
   const sigRowHeight = borrowData.requestedBySignature ? 30 : 22;
   autoTable(doc, {
     startY: sigStartY,
     margin: tableMargin,
     body: [
-      ['Requested by', 'IT received BY:', 'IT approved by:'],
-      ['', '', ''],
-      ['Requestor', 'End User Support', 'IT Officer / Dept Head'],
+      ['Requested by', "Department Head", 'IT received BY:', 'IT approved by:'],
+      ['', '', '', ''],
+      ['Requestor', 'Department Head', 'End User Support', 'IT Officer / Dept Head'],
     ],
     theme: 'grid',
     styles: { fontSize: 9, cellPadding: 3 },
@@ -335,6 +374,7 @@ export const generateAssetBorrowingPDF = async (
       0: { cellWidth: sigColW },
       1: { cellWidth: sigColW },
       2: { cellWidth: sigColW },
+      3: { cellWidth: sigColW },
     },
     didParseCell: data => {
       // Big empty row
@@ -403,6 +443,67 @@ export const generateAssetBorrowingPDF = async (
       }
 
       if (data.column.index === 1) {
+        // Draw Department Head signature (or Sub Approver 1 stand-in)
+        let sigY = cell.y + 5;
+        let sigH = 0;
+        if (deptHeadSigImg) {
+          const sigMaxH = 35;
+          const aspectRatio = deptHeadSigImg.width / deptHeadSigImg.height;
+          let sigW = sigMaxH * aspectRatio;
+          sigH = sigMaxH;
+          if (sigW > cell.width - 4) {
+            sigW = cell.width - 4;
+            sigH = sigW / aspectRatio;
+          }
+          const sigX = cell.x - 3;
+
+          const signedDate = deptHeadSignedAt ? new Date(deptHeadSignedAt) : null;
+          if (signedDate) {
+            const dateStr = signedDate.toLocaleDateString();
+            const timeStr = signedDate.toLocaleTimeString();
+
+            doc.setFontSize(7);
+            doc.setTextColor(100, 100, 100);
+            doc.text(dateStr, cell.x + 45, sigY + 3, {
+              align: 'left',
+            });
+            doc.text(timeStr, cell.x + 45, sigY + 6, {
+              align: 'left',
+            });
+          }
+
+          doc.addImage(deptHeadSigImg, 'PNG', sigX, sigY, sigW, sigH);
+        }
+
+        const nameY = deptHeadSigImg ? sigY + sigH + 5 : cell.y + 25;
+        doc.setFontSize(9);
+        doc.setFont('helvetica', 'normal');
+        doc.setTextColor(0, 0, 0);
+        doc.text(deptHeadName, cell.x + 3, nameY, {
+          align: 'left',
+        });
+
+        if (isSubApprover1Signed) {
+          doc.setFontSize(6.5);
+          doc.setFont('helvetica', 'italic');
+          doc.setTextColor(90, 90, 90);
+          doc.text('(Stand-in approver)', cell.x + 3, nameY + 3.5, {
+            align: 'left',
+          });
+          if (borrowData.subApprover1Position) {
+            doc.text(
+              borrowData.subApprover1Position,
+              cell.x + 3,
+              nameY + 6.5,
+              { align: 'left' }
+            );
+          }
+        }
+
+        return;
+      }
+
+      if (data.column.index === 2) {
         // Draw IT received by signature image if available
         let sigY = cell.y + 5;
         let sigH = 0;
@@ -452,7 +553,7 @@ export const generateAssetBorrowingPDF = async (
         return;
       }
 
-      if (data.column.index === 2) {
+      if (data.column.index === 3) {
         let sigY = cell.y + 5;
         let sigH = 0;
         if (itApprovedSigImg) {
@@ -505,8 +606,10 @@ export const generateAssetBorrowingPDF = async (
         data.column.index === 0
           ? borrowData.requestedBy
           : data.column.index === 1
-            ? borrowData.itReceivedBy
-            : borrowData.itApprovedBy;
+            ? deptHeadName
+            : data.column.index === 2
+              ? borrowData.itReceivedBy
+              : borrowData.itApprovedBy;
       if (!value) return;
       doc.text(String(value), cell.x + cell.width / 2, cell.y + cell.height / 2 + 2, {
         align: 'center',
@@ -551,6 +654,18 @@ export const generateAssetBorrowingPDF = async (
   });
 
   const docNoY = (doc as any).lastAutoTable.finalY + 8;
+  if (borrowData.subApprover1SignedAt) {
+    doc.setFontSize(6.5);
+    doc.setFont('helvetica', 'italic');
+    doc.setTextColor(80, 80, 80);
+    doc.text(
+      'Stand-in approver note: This user is a stand-in approver since the department manager of the requestor is currently not present',
+      tableMargin.left,
+      (doc as any).lastAutoTable.finalY + 4,
+      { maxWidth: tableWidth }
+    );
+    doc.setTextColor(0, 0, 0);
+  }
   const docNoText = `Document No: ${borrowData.formNumber || 'BRW'} ver1 01Jan2026`;
   doc.setFontSize(10);
   doc.setFont('helvetica', 'normal');

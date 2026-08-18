@@ -34,6 +34,7 @@ interface ReturnFormBatch {
   signed_at?: string | null;
   process_signed_at?: string | null;
   dept_head_signed_at?: string | null;
+  sub_approver_1_signed_at?: string | null;
   processor_declined_at?: string | null;
   processor_decline_reason?: string | null;
   status?: string;
@@ -54,7 +55,8 @@ function getStatusLabel(batch: ReturnFormBatch): string {
   if (batch.status === 'declined') return 'Declined';
   if (batch.status) return batch.status;
   if (batch.process_signed_at) return 'Returned';
-  if (batch.dept_head_signed_at) return 'Approved by Department head';
+  if (batch.dept_head_signed_at || batch.sub_approver_1_signed_at)
+    return 'Approved by Department head';
   if (batch.processor_declined_at) return 'Declined by processor';
   return 'Submitted';
 }

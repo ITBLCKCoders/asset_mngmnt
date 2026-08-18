@@ -25,6 +25,9 @@ export interface AssetFormData {
   depreciationMethod?: DepreciationMethod;
   usefulLifeYears?: number;
   annualDepreciation?: number;
+  bookValue?: number;
+  accumulatedDepreciation?: number;
+  monthlyDepreciation?: number;
   depreciationStartDate?: string;
 
   // === LOCATION & ASSIGNMENT===
@@ -122,6 +125,9 @@ export const initialAssetFormData: AssetFormData = {
   depreciationMethod: 'straight-line',
   salvageValue: undefined,
   annualDepreciation: 0,
+  bookValue: undefined,
+  accumulatedDepreciation: 0,
+  monthlyDepreciation: undefined,
   company: '',
   locationSite: '',
   locationBuilding: '',

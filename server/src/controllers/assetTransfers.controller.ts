@@ -9,9 +9,14 @@ import { handleAccountabilityFormOnAssetReturn, type ProcessSignature } from '..
 import {
   isUserManagerApprover1,
   isUserManagerApprover2,
+  isUserSubApprover1,
+  isUserSubApprover2,
   getManagerApprover1UserIdsInDepartmentAndCompany,
+  getSubApprover1UserIdsInDepartment,
   getAssetRoleUsersForAssignmentsAndCompany,
   getManagerApprover2UserIdsForProcessedReturn,
+  getManagerApprover2UserIdsInItAndAdminDepartmentsAndCompany,
+  getSubApprover2UserIdsInItAndAdminDepartmentsAndCompany,
 } from '../utils/approverNotifications.js';
 import { createNotificationForApi } from '../utils/notificationsApi.js';
 import { getIoInstance } from '../utils/socketManager.js';
@@ -1957,6 +1962,28 @@ async function buildTransferFormBatchesFromAssignments(
     }
   }
 
+  const subApprover1SignedByIds = [
+    ...new Set(
+      forms.map((f: any) => f.sub_approver_1_signed_by).filter(Boolean)
+    ),
+  ] as string[];
+  const subApprover1Names = new Map<string, string>();
+  const subApprover1Positions = new Map<string, string>();
+  if (subApprover1SignedByIds.length > 0) {
+    const placeholders = subApprover1SignedByIds.map(() => '?').join(',');
+    const [userRows] = (await pool.execute(
+      `SELECT userID, first_name, last_name, position FROM users WHERE userID IN (${placeholders})`,
+      subApprover1SignedByIds
+    )) as any[];
+    for (const u of userRows) {
+      subApprover1Names.set(
+        u.userID,
+        `${u.first_name || ''} ${u.last_name || ''}`.trim() || 'Unknown'
+      );
+      if (u.position) subApprover1Positions.set(u.userID, String(u.position));
+    }
+  }
+
   // The transfer form does not store who process-signed it, so resolve the
   // actual processor from the linked return form (asset_return_forms.process_signed_by).
   const transferIds = forms
@@ -2166,6 +2193,16 @@ const processed_by =
       dept_head_signed_by: form.dept_head_signed_by ?? null,
       dept_head_user_name: form.dept_head_signed_by
         ? (deptHeadNames.get(form.dept_head_signed_by) ?? null)
+        : null,
+      sub_approver_1_signed_at: form.sub_approver_1_signed_at ?? null,
+      sub_approver_1_digital_signature:
+        form.sub_approver_1_digital_signature ?? null,
+      sub_approver_1_signed_by: form.sub_approver_1_signed_by ?? null,
+      sub_approver_1_user_name: form.sub_approver_1_signed_by
+        ? (subApprover1Names.get(form.sub_approver_1_signed_by) ?? null)
+        : null,
+      sub_approver_1_position: form.sub_approver_1_signed_by
+        ? (subApprover1Positions.get(form.sub_approver_1_signed_by) ?? null)
         : null,
       it_manager_signed_at: null,
       it_manager_digital_signature: null,
@@ -4275,6 +4312,46 @@ async function buildTransferFormBatches(forms: any[]): Promise<any[]> {
     }
   }
 
+  const subApprover1SignedByIds = [
+    ...new Set(forms.map((f: any) => f.sub_approver_1_signed_by).filter(Boolean)),
+  ] as string[];
+  const subApprover1Names = new Map<string, string>();
+  const subApprover1Positions = new Map<string, string>();
+  if (subApprover1SignedByIds.length > 0) {
+    const placeholders = subApprover1SignedByIds.map(() => '?').join(',');
+    const [userRows] = (await pool.execute(
+      `SELECT userID, first_name, last_name, position FROM users WHERE userID IN (${placeholders})`,
+      subApprover1SignedByIds
+    )) as any[];
+    for (const u of userRows) {
+      subApprover1Names.set(
+        u.userID,
+        `${u.first_name || ''} ${u.last_name || ''}`.trim() || 'Unknown'
+      );
+      if (u.position) subApprover1Positions.set(u.userID, String(u.position));
+    }
+  }
+
+  const subApprover2SignedByIds = [
+    ...new Set(forms.map((f: any) => f.sub_approver_2_signed_by).filter(Boolean)),
+  ] as string[];
+  const subApprover2Names = new Map<string, string>();
+  const subApprover2Positions = new Map<string, string>();
+  if (subApprover2SignedByIds.length > 0) {
+    const placeholders = subApprover2SignedByIds.map(() => '?').join(',');
+    const [userRows] = (await pool.execute(
+      `SELECT userID, first_name, last_name, position FROM users WHERE userID IN (${placeholders})`,
+      subApprover2SignedByIds
+    )) as any[];
+    for (const u of userRows) {
+      subApprover2Names.set(
+        u.userID,
+        `${u.first_name || ''} ${u.last_name || ''}`.trim() || 'Unknown'
+      );
+      if (u.position) subApprover2Positions.set(u.userID, String(u.position));
+    }
+  }
+
   const formDeptIds = [
     ...new Set(forms.map((f: any) => f.department_id).filter(Boolean)),
   ] as string[];
@@ -4587,6 +4664,26 @@ async function buildTransferFormBatches(forms: any[]): Promise<any[]> {
       it_manager_user_name: form.it_manager_signed_by
         ? (itManagerNames.get(form.it_manager_signed_by) ?? null)
         : null,
+      sub_approver_1_signed_at: form.sub_approver_1_signed_at ?? null,
+      sub_approver_1_digital_signature:
+        form.sub_approver_1_digital_signature ?? null,
+      sub_approver_1_signed_by: form.sub_approver_1_signed_by ?? null,
+      sub_approver_1_user_name: form.sub_approver_1_signed_by
+        ? (subApprover1Names.get(form.sub_approver_1_signed_by) ?? null)
+        : null,
+      sub_approver_1_position: form.sub_approver_1_signed_by
+        ? (subApprover1Positions.get(form.sub_approver_1_signed_by) ?? null)
+        : null,
+      sub_approver_2_signed_at: form.sub_approver_2_signed_at ?? null,
+      sub_approver_2_digital_signature:
+        form.sub_approver_2_digital_signature ?? null,
+      sub_approver_2_signed_by: form.sub_approver_2_signed_by ?? null,
+      sub_approver_2_user_name: form.sub_approver_2_signed_by
+        ? (subApprover2Names.get(form.sub_approver_2_signed_by) ?? null)
+        : null,
+      sub_approver_2_position: form.sub_approver_2_signed_by
+        ? (subApprover2Positions.get(form.sub_approver_2_signed_by) ?? null)
+        : null,
       declined_at: form.declined_at ?? null,
       executed_at: form.executed_at ?? null,
       intangibleAssets: intangibleAssetsForForm,
@@ -4733,6 +4830,7 @@ export async function getTransferPendingApprovalsHandler(
              AND (atf.declined_at IS NULL)
              AND (atf.signed_at IS NOT NULL OR arf.owner_absent = 1)
              AND atf.dept_head_signed_at IS NULL
+             AND atf.sub_approver_1_signed_at IS NULL
              AND (atf.return_form_id IS NULL OR (arf.formID IS NOT NULL AND (arf.signed_at IS NOT NULL OR arf.owner_absent = 1) AND arf.declined_at IS NULL))
              AND d.company_id = ?`,
           [companyId]
@@ -4741,7 +4839,8 @@ export async function getTransferPendingApprovalsHandler(
       } catch (colErr: any) {
         if (
           colErr?.message?.includes('declined_at') ||
-          colErr?.message?.includes('return_form_id')
+          colErr?.message?.includes('return_form_id') ||
+          colErr?.message?.includes('sub_approver_1_signed_at')
         ) {
           return res.json({ assetTransferForms: [] });
         }
@@ -4752,7 +4851,8 @@ export async function getTransferPendingApprovalsHandler(
     }
 
     const isManager1 = await isUserManagerApprover1(userId);
-    if (!isManager1) return res.json({ assetTransferForms: [] });
+    const isSub1 = await isUserSubApprover1(userId);
+    if (!isManager1 && !isSub1) return res.json({ assetTransferForms: [] });
 
     const [approverDeptRows] = (await pool.execute(
       'SELECT department_id FROM users WHERE userID = ?',
@@ -4782,6 +4882,7 @@ export async function getTransferPendingApprovalsHandler(
            AND (atf.declined_at IS NULL)
            AND (atf.signed_at IS NOT NULL OR arf.owner_absent = 1)
            AND atf.dept_head_signed_at IS NULL
+           AND atf.sub_approver_1_signed_at IS NULL
            AND (atf.return_form_id IS NULL OR (arf.formID IS NOT NULL AND (arf.signed_at IS NOT NULL OR arf.owner_absent = 1) AND arf.declined_at IS NULL))
            AND transferer.department_id <=> ? AND d.company_id = ?`,
         [approverDepartmentId, companyId]
@@ -4790,7 +4891,8 @@ export async function getTransferPendingApprovalsHandler(
     } catch (colErr: any) {
       if (
         colErr?.message?.includes('declined_at') ||
-        colErr?.message?.includes('return_form_id')
+        colErr?.message?.includes('return_form_id') ||
+        colErr?.message?.includes('sub_approver_1_signed_at')
       ) {
         return res.json({ assetTransferForms: [] });
       }
@@ -4837,6 +4939,7 @@ export async function getTransferReceivePendingApprovalsHandler(
            AND atf.dept_head_signed_at IS NOT NULL
            AND atf.executed_at IS NOT NULL
            AND atf.it_manager_signed_at IS NULL
+           AND atf.sub_approver_2_signed_at IS NULL
            AND d.company_id = ?`,
         [companyId]
       )) as any[];
@@ -4844,7 +4947,8 @@ export async function getTransferReceivePendingApprovalsHandler(
     } catch (colErr: any) {
       if (
         colErr?.message?.includes('executed_at') ||
-        colErr?.message?.includes('declined_at')
+        colErr?.message?.includes('declined_at') ||
+        colErr?.message?.includes('sub_approver_2_signed_at')
       ) {
         return res.json({ assetTransferForms: [] });
       }
@@ -4891,10 +4995,18 @@ export async function getTransferApprovedByMeHandler(
               DATE_FORMAT(atf.dept_head_signed_at, '%Y-%m-%d %H:%i:%s') AS dept_head_signed_at,
               atf.dept_head_digital_signature, atf.dept_head_signed_by,
               DATE_FORMAT(atf.it_manager_signed_at, '%Y-%m-%d %H:%i:%s') AS it_manager_signed_at,
-              atf.it_manager_digital_signature, atf.it_manager_signed_by
+              atf.it_manager_digital_signature, atf.it_manager_signed_by,
+              DATE_FORMAT(atf.sub_approver_1_signed_at, '%Y-%m-%d %H:%i:%s') AS sub_approver_1_signed_at,
+              atf.sub_approver_1_digital_signature, atf.sub_approver_1_signed_by,
+              DATE_FORMAT(atf.sub_approver_2_signed_at, '%Y-%m-%d %H:%i:%s') AS sub_approver_2_signed_at,
+              atf.sub_approver_2_digital_signature, atf.sub_approver_2_signed_by
        FROM asset_transfer_forms atf
-       WHERE atf.deleted_at IS NULL AND atf.dept_head_signed_at IS NOT NULL AND (atf.dept_head_signed_by = ? OR atf.it_manager_signed_by = ?)`,
-      [userId, userId]
+       WHERE atf.deleted_at IS NULL AND atf.dept_head_signed_at IS NOT NULL
+         AND (atf.dept_head_signed_by = ?
+              OR atf.it_manager_signed_by = ?
+              OR atf.sub_approver_1_signed_by = ?
+              OR atf.sub_approver_2_signed_by = ?)`,
+      [userId, userId, userId, userId]
     )) as any[];
     const batches = await buildTransferFormBatches(formRows || []);
     return res.json({ assetTransferForms: batches });
@@ -4926,9 +5038,9 @@ export async function approveTransferFormHandler(
       });
     }
     const formAny = form as any;
-    if (formAny.dept_head_signed_at) {
+    if (formAny.dept_head_signed_at || formAny.sub_approver_1_signed_at) {
       return res.status(400).json({
-        error: 'This transfer form is already approved by Department Head',
+        error: 'This transfer form is already approved by the department head or sub approver',
       });
     }
     const [permRows] = (await pool.execute(
@@ -4948,7 +5060,8 @@ export async function approveTransferFormHandler(
         r.granted === 1
     );
     const managerApprover1 = await isUserManagerApprover1(userId);
-    if (!(hasCreate && hasEdit) && !managerApprover1) {
+    const subApprover1 = await isUserSubApprover1(userId);
+    if (!(hasCreate && hasEdit) && !managerApprover1 && !subApprover1) {
       return res
         .status(403)
         .json({ error: 'You do not have permission to approve this form' });
@@ -4966,19 +5079,31 @@ export async function approveTransferFormHandler(
         : '') ||
       (await fetchUserDigitalSignature(userId));
 
-    await pool.execute(
-      `UPDATE asset_transfer_forms SET dept_head_signed_at = NOW(), dept_head_digital_signature = ?, dept_head_signed_by = ?, updated_at = NOW() WHERE formID = ?`,
-      [deptHeadDigitalSignature || null, userId, formId]
-    );
+    const isSubApprover1Approver = subApprover1 && !managerApprover1;
+    if (isSubApprover1Approver) {
+      await pool.execute(
+        `UPDATE asset_transfer_forms SET sub_approver_1_signed_at = NOW(), sub_approver_1_digital_signature = ?, sub_approver_1_signed_by = ?, updated_at = NOW() WHERE formID = ?`,
+        [deptHeadDigitalSignature || null, userId, formId]
+      );
+    } else {
+      await pool.execute(
+        `UPDATE asset_transfer_forms SET dept_head_signed_at = NOW(), dept_head_digital_signature = ?, dept_head_signed_by = ?, updated_at = NOW() WHERE formID = ?`,
+        [deptHeadDigitalSignature || null, userId, formId]
+      );
+    }
     const returnFormId = formAny.return_form_id ?? null;
     let returnFormNumber: string | null = null;
     await createAuditLog({
       userId,
-      action: 'Approved Asset Transfer Form (Dept Head)',
+      action: isSubApprover1Approver
+        ? 'Approved Asset Transfer Form (Sub Approver 1)'
+        : 'Approved Asset Transfer Form (Dept Head)',
       resourceType: 'asset_transfer_form',
       resourceId: formId,
       resourceName: form.form_number,
-      details: `User approved asset transfer form ${form.form_number} as Department Head`,
+      details: isSubApprover1Approver
+        ? `User approved asset transfer form ${form.form_number} as Sub Approver 1 (stand-in for the requestor's department head)`
+        : `User approved asset transfer form ${form.form_number} as Department Head`,
       ipAddress: req.ip,
       userAgent: req.get ? req.get('User-Agent') : 'Unknown',
     });
@@ -4990,7 +5115,9 @@ export async function approveTransferFormHandler(
       await createNotificationForApi({
         user_id: form.user_id,
         title: 'Asset Transfer Request Approved',
-        message: `Your asset transfer request has been approved by your department head ${approverName}`,
+        message: isSubApprover1Approver
+          ? `Your asset transfer request has been approved by your department's sub approver ${approverName}`
+          : `Your asset transfer request has been approved by your department head ${approverName}`,
         type: 'system',
         data: {
           form_id: formId,
@@ -5009,22 +5136,35 @@ export async function approveTransferFormHandler(
     if (returnFormId) {
       try {
         const [returnFormRows] = (await pool.execute(
-          `SELECT form_number, dept_head_signed_at FROM asset_return_forms WHERE formID = ? AND deleted_at IS NULL`,
+          `SELECT form_number, dept_head_signed_at, sub_approver_1_signed_at FROM asset_return_forms WHERE formID = ? AND deleted_at IS NULL`,
           [returnFormId]
         )) as any[];
         const returnFormRow = returnFormRows?.[0];
         returnFormNumber = returnFormRow?.form_number ?? null;
-        if (returnFormRow && !returnFormRow.dept_head_signed_at) {
-          await pool.execute(
-            `UPDATE asset_return_forms SET dept_head_signed_at = NOW(), dept_head_digital_signature = ?, dept_head_signed_by = ?, updated_at = NOW() WHERE formID = ? AND dept_head_signed_at IS NULL AND declined_at IS NULL`,
-            [deptHeadDigitalSignature || null, userId, returnFormId]
-          );
+        if (
+          returnFormRow &&
+          !returnFormRow.dept_head_signed_at &&
+          !returnFormRow.sub_approver_1_signed_at
+        ) {
+          if (isSubApprover1Approver) {
+            await pool.execute(
+              `UPDATE asset_return_forms SET sub_approver_1_signed_at = NOW(), sub_approver_1_digital_signature = ?, sub_approver_1_signed_by = ?, updated_at = NOW() WHERE formID = ? AND dept_head_signed_at IS NULL AND sub_approver_1_signed_at IS NULL AND declined_at IS NULL`,
+              [deptHeadDigitalSignature || null, userId, returnFormId]
+            );
+          } else {
+            await pool.execute(
+              `UPDATE asset_return_forms SET dept_head_signed_at = NOW(), dept_head_digital_signature = ?, dept_head_signed_by = ?, updated_at = NOW() WHERE formID = ? AND dept_head_signed_at IS NULL AND sub_approver_1_signed_at IS NULL AND declined_at IS NULL`,
+              [deptHeadDigitalSignature || null, userId, returnFormId]
+            );
+          }
           const approverRow = await getUserNamesById(userId);
           const approverName = approverRow ? `${approverRow.first_name} ${approverRow.last_name}` : 'A user';
           await createNotificationForApi({
             user_id: form.user_id,
             title: 'Asset Return Request Approved',
-            message: `Your asset return request has been approved by your department head ${approverName}`,
+            message: isSubApprover1Approver
+              ? `Your asset return request has been approved by your department's sub approver ${approverName}`
+              : `Your asset return request has been approved by your department head ${approverName}`,
             type: 'system',
             data: {
               form_id: returnFormId,
@@ -5240,7 +5380,8 @@ export async function declineTransferFormHandler(
         r.granted === 1
     );
     const managerApprover1 = await isUserManagerApprover1(userId);
-    if (!(hasCreate && hasEdit) && !managerApprover1) {
+    const subApprover1 = await isUserSubApprover1(userId);
+    if (!(hasCreate && hasEdit) && !managerApprover1 && !subApprover1) {
       return res
         .status(403)
         .json({ error: 'You do not have permission to decline this form' });
@@ -5294,7 +5435,8 @@ export async function receiveTransferFormHandler(
     const { digitalSignature } = req.body as { digitalSignature?: string };
     if (!formId) return res.status(400).json({ error: 'Form ID is required' });
     const isManagerApprover2 = await isUserManagerApprover2(userId);
-    if (!isManagerApprover2) {
+    const isSubApprover2 = await isUserSubApprover2(userId);
+    if (!isManagerApprover2 && !isSubApprover2) {
       return res
         .status(403)
         .json({ error: 'You do not have permission to receive this form' });
@@ -5308,12 +5450,12 @@ export async function receiveTransferFormHandler(
         error: 'Transfer form must be signed by the transferrer first',
       });
     }
-    if (!formAny.dept_head_signed_at) {
+    if (!formAny.dept_head_signed_at && !formAny.sub_approver_1_signed_at) {
       return res.status(400).json({
         error: 'Transfer form must be approved by Department Head first',
       });
     }
-    if (formAny.it_manager_signed_at) {
+    if (formAny.it_manager_signed_at || formAny.sub_approver_2_signed_at) {
       return res
         .status(400)
         .json({ error: 'This transfer form is already received' });
@@ -5322,17 +5464,29 @@ export async function receiveTransferFormHandler(
       (typeof digitalSignature === 'string' && digitalSignature.trim()) ||
       (await fetchUserDigitalSignature(userId));
 
-    await pool.execute(
-      `UPDATE asset_transfer_forms SET it_manager_signed_at = NOW(), it_manager_digital_signature = ?, it_manager_signed_by = ?, updated_at = NOW() WHERE formID = ?`,
-      [itManagerDigitalSignature, userId, formId]
-    );
+    const isSubApprover2Receiving = isSubApprover2 && !isManagerApprover2;
+    if (isSubApprover2Receiving) {
+      await pool.execute(
+        `UPDATE asset_transfer_forms SET sub_approver_2_signed_at = NOW(), sub_approver_2_digital_signature = ?, sub_approver_2_signed_by = ?, updated_at = NOW() WHERE formID = ? AND it_manager_signed_at IS NULL AND sub_approver_2_signed_at IS NULL`,
+        [itManagerDigitalSignature, userId, formId]
+      );
+    } else {
+      await pool.execute(
+        `UPDATE asset_transfer_forms SET it_manager_signed_at = NOW(), it_manager_digital_signature = ?, it_manager_signed_by = ?, updated_at = NOW() WHERE formID = ? AND it_manager_signed_at IS NULL AND sub_approver_2_signed_at IS NULL`,
+        [itManagerDigitalSignature, userId, formId]
+      );
+    }
     await createAuditLog({
       userId,
-      action: 'Received Asset Transfer Form (IT Manager)',
+      action: isSubApprover2Receiving
+        ? 'Received Asset Transfer Form (Sub Approver 2)'
+        : 'Received Asset Transfer Form (IT Manager)',
       resourceType: 'asset_transfer_form',
       resourceId: formId,
       resourceName: form.form_number,
-      details: `User received asset transfer form ${form.form_number} as IT Manager`,
+      details: isSubApprover2Receiving
+        ? `User received asset transfer form ${form.form_number} as Sub Approver 2 (stand-in for IT/Admin dept head)`
+        : `User received asset transfer form ${form.form_number} as IT Manager`,
       ipAddress: req.ip,
       userAgent: req.get ? req.get('User-Agent') : 'Unknown',
     });

@@ -9,7 +9,10 @@ import {
   uploadDocumentToCloudinary,
 } from '../utils/cloudinary.js';
 import { createAuditLog } from '../utils/audit.js';
-import { buildAssetUpdateAuditDiff } from '../utils/assetAuditDiff.js';
+import {
+  buildAssetUpdateAuditDiff,
+  mergeAssignmentIntoDiff,
+} from '../utils/assetAuditDiff.js';
 import {
   CreateAssetDtoSchema,
   UpdateAssetDtoSchema,
@@ -685,6 +688,9 @@ export async function createAssetHandler(req: AuthRequest, res: Response) {
     depreciationMethod,
     usefulLifeYears,
     annualDepreciation,
+    bookValue,
+    accumulatedDepreciation,
+    monthlyDepreciation,
     depreciationStartDate,
     companyId,
     locationId,
@@ -706,6 +712,9 @@ export async function createAssetHandler(req: AuthRequest, res: Response) {
     salvageValue: fields.salvageValue ? Number(fields.salvageValue) : undefined,
     usefulLifeYears: fields.usefulLifeYears ? Number(fields.usefulLifeYears) : undefined,
     annualDepreciation: fields.annualDepreciation ? Number(fields.annualDepreciation) : undefined,
+    bookValue: fields.bookValue ? Number(fields.bookValue) : undefined,
+    accumulatedDepreciation: fields.accumulatedDepreciation ? Number(fields.accumulatedDepreciation) : undefined,
+    monthlyDepreciation: fields.monthlyDepreciation ? Number(fields.monthlyDepreciation) : undefined,
     warrantyMonths: fields.warrantyMonths ? Number(fields.warrantyMonths) : undefined,
     depreciationMethod: fields.depreciationMethod || undefined,
     isOldUnit: fields.isOldUnit === 'true' || fields.isOldUnit === '1',
@@ -810,7 +819,7 @@ export async function createAssetHandler(req: AuthRequest, res: Response) {
   try {
     // Create asset using regular asset creation
     const [rows] = (await pool.execute(
-      'CALL sp_create_asset(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
+      'CALL sp_create_asset(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
       [
         name.trim(),
         description?.trim() || null,
@@ -862,6 +871,9 @@ export async function createAssetHandler(req: AuthRequest, res: Response) {
         userId,
         userId,
         null, // Let the stored procedure set created_at to NOW()
+        bookValue || null,
+        accumulatedDepreciation || null,
+        monthlyDepreciation || null,
       ]
     )) as any[];
 
@@ -898,6 +910,9 @@ export async function createAssetHandler(req: AuthRequest, res: Response) {
         depreciation_method: asset.depreciation_method,
         useful_life_years: asset.useful_life_years,
         annual_depreciation: asset.annual_depreciation,
+        book_value: asset.book_value,
+        accumulated_depreciation: asset.accumulated_depreciation,
+        monthly_depreciation: asset.monthly_depreciation,
         depreciation_start_date: asset.depreciation_start_date,
         company_id: asset.company_id,
         location_id: asset.location_id,
@@ -1010,6 +1025,9 @@ export async function createAssetHandler(req: AuthRequest, res: Response) {
         depreciation_method: asset.depreciation_method,
         useful_life_years: asset.useful_life_years,
         annual_depreciation: asset.annual_depreciation,
+        book_value: asset.book_value,
+        accumulated_depreciation: asset.accumulated_depreciation,
+        monthly_depreciation: asset.monthly_depreciation,
         depreciation_start_date: asset.depreciation_start_date,
         company_id: asset.company_id,
         location_id: asset.location_id,
@@ -1303,6 +1321,9 @@ export async function updateAssetHandler(req: AuthRequest, res: Response) {
     depreciationMethod,
     usefulLifeYears,
     annualDepreciation,
+    bookValue,
+    accumulatedDepreciation,
+    monthlyDepreciation,
     depreciationStartDate,
     companyId,
     locationId,
@@ -1325,6 +1346,9 @@ export async function updateAssetHandler(req: AuthRequest, res: Response) {
     salvageValue: fields.salvageValue ? Number(fields.salvageValue) : undefined,
     usefulLifeYears: fields.usefulLifeYears ? Number(fields.usefulLifeYears) : undefined,
     annualDepreciation: fields.annualDepreciation ? Number(fields.annualDepreciation) : undefined,
+    bookValue: fields.bookValue ? Number(fields.bookValue) : undefined,
+    accumulatedDepreciation: fields.accumulatedDepreciation ? Number(fields.accumulatedDepreciation) : undefined,
+    monthlyDepreciation: fields.monthlyDepreciation ? Number(fields.monthlyDepreciation) : undefined,
     warrantyMonths: fields.warrantyMonths ? Number(fields.warrantyMonths) : undefined,
     depreciationMethod: fields.depreciationMethod || undefined,
     isOldUnit: fields.isOldUnit === 'true' || fields.isOldUnit === '1',
@@ -1435,7 +1459,7 @@ export async function updateAssetHandler(req: AuthRequest, res: Response) {
       // so it must run after sp_update_asset to produce the correct code (e.g.
       // dropping "-OU-" when the old-unit switch is turned off).
       const [updateRows] = (await conn.execute(
-        'CALL sp_update_asset(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
+        'CALL sp_update_asset(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
         [
           asset.assetID,
           name.trim(),
@@ -1486,6 +1510,9 @@ export async function updateAssetHandler(req: AuthRequest, res: Response) {
           normalizeAssetStatusForStoredProcedure(status, oldAsset.status),
           isOldUnit || 0,
           userId,
+          bookValue || null,
+          accumulatedDepreciation || null,
+          monthlyDepreciation || null,
         ]
       )) as any[];
 
@@ -1509,7 +1536,7 @@ export async function updateAssetHandler(req: AuthRequest, res: Response) {
     } else {
       // No category or type change, use regular update
       const [rows] = (await conn.execute(
-        'CALL sp_update_asset(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
+        'CALL sp_update_asset(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
         [
           asset.assetID,
           name.trim(),
@@ -1560,6 +1587,9 @@ export async function updateAssetHandler(req: AuthRequest, res: Response) {
           normalizeAssetStatusForStoredProcedure(status, oldAsset.status),
           isOldUnit || 0,
           userId,
+          bookValue || null,
+          accumulatedDepreciation || null,
+          monthlyDepreciation || null,
         ]
       )) as any[];
 
@@ -1569,27 +1599,51 @@ export async function updateAssetHandler(req: AuthRequest, res: Response) {
     // Commit the core asset + code-regeneration update as a single transaction.
     await conn.commit();
 
-    const auditDiff = buildAssetUpdateAuditDiff(
+    // Capture assignment change for the audit diff. The assigned user is stored
+    // in asset_assignments (not on the assets row), so it must be compared
+    // separately from the asset column diff.
+    const oldAssignment =
+      await assetRepo.getCurrentAssignmentForAssetId(asset.assetID);
+    const oldAssigneeName = oldAssignment?.assigned_user_name ?? null;
+
+    let newAssigneeName: string | null = null;
+    if (assignedUser) {
+      const assignedUserRow =
+        await assetRepo.getUserBasicByIdSimple(assignedUser);
+      newAssigneeName = assignedUserRow
+        ? `${assignedUserRow.first_name} ${assignedUserRow.last_name}`.trim() ||
+          null
+        : String(assignedUser);
+    }
+
+    let auditDiff = buildAssetUpdateAuditDiff(
       oldAsset as Record<string, unknown>,
       updatedAsset as Record<string, unknown>
     );
+    if (assignedUser) {
+      auditDiff = mergeAssignmentIntoDiff(
+        auditDiff,
+        oldAssigneeName,
+        newAssigneeName
+      );
+    }
     const hasFieldChanges = auditDiff.changeCount > 0;
 
-    await createAuditLog({
-      userId,
-      action: 'Updated Asset',
-      resourceType: 'asset',
-      resourceId: asset.asset_code || updatedAsset.asset_code || String(asset.assetID),
-      resourceName: asset.asset_code || updatedAsset.asset_code || String(asset.assetID),
-      details: hasFieldChanges
-        ? `Updated ${auditDiff.changeCount} field(s)`
-        : 'Updated asset details',
-      oldValues: hasFieldChanges ? auditDiff.oldValues : undefined,
-      newValues: hasFieldChanges ? auditDiff.newValues : undefined,
-      ipAddress: req.ip,
-      userAgent: req.get('User-Agent'),
-      companyId: updatedAsset.company_id,
-    });
+    if (hasFieldChanges) {
+      await createAuditLog({
+        userId,
+        action: 'Updated Asset',
+        resourceType: 'asset',
+        resourceId: asset.asset_code || updatedAsset.asset_code || String(asset.assetID),
+        resourceName: asset.asset_code || updatedAsset.asset_code || String(asset.assetID),
+        details: `Updated ${auditDiff.changeCount} field(s)`,
+        oldValues: auditDiff.oldValues,
+        newValues: auditDiff.newValues,
+        ipAddress: req.ip,
+        userAgent: req.get('User-Agent'),
+        companyId: updatedAsset.company_id,
+      });
+    }
 
     // Handle document uploads if any
     if (documents && documents.length > 0) {
@@ -1694,6 +1748,9 @@ export async function updateAssetHandler(req: AuthRequest, res: Response) {
         depreciation_method: updatedAsset.depreciation_method,
         useful_life_years: updatedAsset.useful_life_years,
         annual_depreciation: updatedAsset.annual_depreciation,
+        book_value: updatedAsset.book_value,
+        accumulated_depreciation: updatedAsset.accumulated_depreciation,
+        monthly_depreciation: updatedAsset.monthly_depreciation,
         depreciation_start_date: updatedAsset.depreciation_start_date,
         company_id: updatedAsset.company_id,
         location_id: updatedAsset.location_id,

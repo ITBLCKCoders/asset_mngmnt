@@ -183,6 +183,11 @@ export function buildReturnDataForPDFFromBatch(
     dept_head_signed_at: batch.dept_head_signed_at ?? undefined,
     dept_head_digital_signature: batch.dept_head_digital_signature ?? undefined,
     dept_head_user_name: batch.dept_head_user_name ?? undefined,
+    sub_approver_1_signed_at: batch.sub_approver_1_signed_at ?? undefined,
+    sub_approver_1_digital_signature:
+      batch.sub_approver_1_digital_signature ?? undefined,
+    sub_approver_1_user_name: batch.sub_approver_1_user_name ?? undefined,
+    sub_approver_1_position: batch.sub_approver_1_position ?? undefined,
     it_manager_signed_at: batch.it_manager_signed_at ?? undefined,
     it_manager_digital_signature:
       batch.it_manager_digital_signature ?? undefined,
@@ -308,6 +313,11 @@ export function buildTransferDataForPDFFromBatch(
     dept_head_signed_at: batch.dept_head_signed_at ?? undefined,
     dept_head_digital_signature: batch.dept_head_digital_signature ?? undefined,
     dept_head_user_name: batch.dept_head_user_name ?? undefined,
+    sub_approver_1_signed_at: batch.sub_approver_1_signed_at ?? undefined,
+    sub_approver_1_digital_signature:
+      batch.sub_approver_1_digital_signature ?? undefined,
+    sub_approver_1_user_name: batch.sub_approver_1_user_name ?? undefined,
+    sub_approver_1_position: batch.sub_approver_1_position ?? undefined,
     it_manager_signed_at: batch.it_manager_signed_at ?? undefined,
     it_manager_digital_signature:
       batch.it_manager_digital_signature ?? undefined,
@@ -699,6 +709,9 @@ export function FormTimeline({
   signerName,
   dept_head_signed_at,
   dept_head_user_name,
+  sub_approver_1_signed_at,
+  sub_approver_1_user_name,
+  sub_approver_1_position,
   process_signed_at,
 }: {
   type: 'return' | 'transfer';
@@ -706,6 +719,9 @@ export function FormTimeline({
   signerName: string;
   dept_head_signed_at?: string | null;
   dept_head_user_name?: string | null;
+  sub_approver_1_signed_at?: string | null;
+  sub_approver_1_user_name?: string | null;
+  sub_approver_1_position?: string | null;
   process_signed_at?: string | null;
 }) {
   const formatDate = (d: string | null | undefined) =>
@@ -715,7 +731,8 @@ export function FormTimeline({
         new Date(d).toLocaleTimeString()
       : null;
   const step1Done = true;
-  const step2Done = !!dept_head_signed_at;
+  const approvedBySub = !!sub_approver_1_signed_at;
+  const step2Done = !!dept_head_signed_at || approvedBySub;
   const step3Done = !!process_signed_at;
   const completedLabel =
     type === 'return'
@@ -796,11 +813,23 @@ export function FormTimeline({
           <div className="flex-1 min-w-0 pb-1">
             {stepContent(
               'Approved by the department head',
-              step2Done ? (formatDate(dept_head_signed_at) ?? '—') : 'Pending',
-              undefined,
-              step2Done && dept_head_user_name ? (
+              step2Done
+                ? (formatDate(
+                    sub_approver_1_signed_at ?? dept_head_signed_at
+                  ) ?? '—')
+                : 'Pending',
+              approvedBySub ? (
+                <span className="mt-1 inline-block rounded bg-blue-100 px-2 py-0.5 text-xs font-medium text-blue-700">
+                  Stand-in approver
+                </span>
+              ) : undefined,
+              step2Done && (dept_head_user_name || sub_approver_1_user_name) ? (
                 <p className="mt-1.5 text-xs text-muted-foreground">
-                  — {dept_head_user_name}
+                  —{' '}
+                  {sub_approver_1_user_name ?? dept_head_user_name}
+                  {approvedBySub && sub_approver_1_position
+                    ? ` (${sub_approver_1_position})`
+                    : ''}
                 </p>
               ) : undefined
             )}
@@ -990,6 +1019,9 @@ export const ReturnFormCard: React.FC<{
               <FileSignature className="h-5 w-5 text-white" />
             </div>
             <div>
+              <p className="text-[11px] font-semibold uppercase tracking-wider text-red-600">
+                Return Form
+              </p>
               <CardTitle className="text-lg">{formNumber}</CardTitle>
               <p className="text-sm text-gray-500">
                 Created {new Date(batch.created_at).toLocaleDateString()}
@@ -1410,6 +1442,9 @@ export const BorrowRequestCard: React.FC<{
             <HandHelping className="h-5 w-5 text-red-700" />
           </div>
           <div>
+            <p className="text-[11px] font-semibold uppercase tracking-wider text-red-600">
+              Borrow Form
+            </p>
             <p className="text-lg font-semibold">
               {formNumber}
             </p>
@@ -1587,6 +1622,9 @@ export const TransferFormCard: React.FC<{
               <ArrowRightLeft className="h-5 w-5 text-white" />
             </div>
             <div>
+              <p className="text-[11px] font-semibold uppercase tracking-wider text-red-600">
+                Transfer Form
+              </p>
               <CardTitle className="text-lg">{formNumber}</CardTitle>
               <p className="text-sm text-gray-500">
                 Created {new Date(batch.created_at).toLocaleDateString()}
@@ -1673,7 +1711,7 @@ export const TransferFormCard: React.FC<{
                 <User className="h-4 w-4 text-gray-400 mt-0.5 flex-shrink-0" />
                 <div className="flex-1 min-w-0">
                   <p className="font-medium text-sm">
-                    Transferrer: {transferrerName}
+                    Transferred by: {transferrerName}
                   </p>
                 </div>
               </div>
@@ -1899,6 +1937,13 @@ export interface AssetBorrowFormBatch {
   requester_company_logo_url?: string | null;
   dept_head_signed_at?: string | null;
   dept_head_name?: string | null;
+  dept_head_signed_by?: string | null;
+  dept_head_digital_signature?: string | null;
+  sub_approver_1_signed_at?: string | null;
+  sub_approver_1_signed_by?: string | null;
+  sub_approver_1_digital_signature?: string | null;
+  sub_approver_1_name?: string | null;
+  sub_approver_1_position?: string | null;
   approved_at?: string | null;
   pre_usage_condition?: string | null;
   asset_name?: string | null;
@@ -2005,6 +2050,14 @@ export function buildBorrowDataForPDFFromBatch(
     borrowerCompanyLogoUrl: batch.requester_company_logo_url ?? null,
     requestedBySignature: batch.requested_by_signature ?? null,
     requestedAt: batch.created_at ?? null,
+    deptHeadSignedAt: batch.sub_approver_1_signed_at ?? batch.dept_head_signed_at ?? null,
+    deptHeadSignedBy: batch.sub_approver_1_name ?? batch.dept_head_name ?? null,
+    deptHeadSignature:
+      batch.sub_approver_1_digital_signature ?? batch.dept_head_digital_signature ?? null,
+    subApprover1SignedAt: batch.sub_approver_1_signed_at ?? null,
+    subApprover1SignedBy: batch.sub_approver_1_name ?? null,
+    subApprover1Position: batch.sub_approver_1_position ?? null,
+    subApprover1Signature: batch.sub_approver_1_digital_signature ?? null,
   };
 }
 
@@ -2553,6 +2606,10 @@ export interface AssetTransferFormBatch {
   dept_head_signed_at?: string | null;
   dept_head_digital_signature?: string | null;
   dept_head_user_name?: string | null;
+  sub_approver_1_signed_at?: string | null;
+  sub_approver_1_digital_signature?: string | null;
+  sub_approver_1_user_name?: string | null;
+  sub_approver_1_position?: string | null;
   it_manager_signed_at?: string | null;
   it_manager_digital_signature?: string | null;
   it_manager_user_name?: string | null;
@@ -2653,6 +2710,11 @@ export interface AssetReturnFormBatch {
   dept_head_digital_signature?: string | null;
   dept_head_signed_by?: string | null;
   dept_head_user_name?: string | null;
+  sub_approver_1_signed_at?: string | null;
+  sub_approver_1_digital_signature?: string | null;
+  sub_approver_1_signed_by?: string | null;
+  sub_approver_1_user_name?: string | null;
+  sub_approver_1_position?: string | null;
   it_manager_signed_at?: string | null;
   it_manager_digital_signature?: string | null;
   it_manager_signed_by?: string | null;

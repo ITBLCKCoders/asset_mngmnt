@@ -1,8 +1,16 @@
-import { render, screen, waitFor } from '@testing-library/react';
+import { render, screen, waitFor, fireEvent } from '@testing-library/react';
 import { vi, describe, it, expect, beforeEach } from 'vitest';
 import { MemoryRouter } from 'react-router-dom';
 import { api } from '@/lib/api';
 import ApprovalsPage from '@/pages/approvals/ApprovalsPage';
+
+vi.mock('@/lib/pdfGenerator', () => ({
+  generateAssetReturnPDF: vi.fn(() => new Blob(['pdf'])),
+  generateAssetTransferPDF: vi.fn(() => new Blob(['pdf'])),
+  generateAssetChecklistPDF: vi.fn(() => new Blob(['pdf'])),
+  generateAssetBorrowingPDF: vi.fn(() => new Blob(['pdf'])),
+  downloadPDF: vi.fn(),
+}));
 
 const mockUser = vi.hoisted(() => ({
   id: 'u1', company_id: 'c1', name: 'Test User', email: 'test@test.com',
@@ -19,7 +27,10 @@ vi.mock('@/hooks/useCurrentUser', () => ({
 }));
 
 const mockPermissions = vi.hoisted(() => ({
-  roleCustodian: null as { managerApprover2?: boolean } | null,
+  roleCustodian: null as {
+    managerApprover1?: boolean;
+    managerApprover2?: boolean;
+  } | null,
 }));
 
 vi.mock('@/hooks/useUserPermissions', () => ({
@@ -101,5 +112,90 @@ describe('ApprovalsPage', () => {
       });
       expect(forApprovalTrigger.getAttribute('data-state')).toBe('active');
     });
+  });
+
+  it('should not show Approve/Receive buttons when viewing from the Approved tab', async () => {
+    mockPermissions.roleCustodian = {
+      managerApprover1: true,
+      managerApprover2: true,
+    };
+    const approvedReturnBatch = {
+      formID: 'f1',
+      form_number: 'RET-001',
+      return_batch_id: 'rb1',
+      created_at: '2026-01-01T00:00:00Z',
+      user_id: 'u1',
+      process_signed_at: '2026-01-02T00:00:00Z',
+      dept_head_signed_at: '2026-01-03T00:00:00Z',
+      it_manager_signed_at: null,
+      returns: [
+        {
+          return_id: 'r1',
+          form_id: 'f1',
+          form_number: 'RET-001',
+          return_batch_id: 'rb1',
+          assignment_id: 'a1',
+          user_id: 'u1',
+          return_condition: 'Good',
+          return_notes: '',
+          created_at: '2026-01-01T00:00:00Z',
+          updated_at: '2026-01-01T00:00:00Z',
+          assignment: {
+            assignmentID: 'a1',
+            asset: {
+              id: 'ast1',
+              code: 'AST-001',
+              name: 'Laptop',
+              category_id: 'cat1',
+              type_id: 'type1',
+            },
+            user: {
+              id: 'u1',
+              first_name: 'Test',
+              last_name: 'User',
+              email: 'test@test.com',
+              employeeNumber: 'EMP001',
+              position: 'Staff',
+            },
+            department: { id: 'd1', name: 'IT' },
+            location: null,
+            assigned_date: '2025-01-01',
+            expected_return_date: null,
+            actual_return_date: '2026-01-01',
+            assignment_notes: null,
+            status: 'returned',
+            assigned_by: { id: 'u2', first_name: 'Admin', last_name: 'User' },
+          },
+        },
+      ],
+    };
+    (api.get as any).mockImplementation(async (url: string) => {
+      if (url === '/asset-returns/forms/approved-by-me') {
+        return { assetReturnForms: [approvedReturnBatch] };
+      }
+      if (url === '/asset-returns/forms/pending-approvals') {
+        return { assetReturnForms: [] };
+      }
+      if (url === '/asset-returns/forms/receive-pending-approvals') {
+        return { assetReturnForms: [] };
+      }
+      return {
+        assetTransferForms: [],
+        checklistBatches: [],
+        assetBorrowForms: [],
+        success: true,
+        data: { borrowRequests: [] },
+      };
+    });
+    renderPage();
+    const approvedTab = screen.getByRole('tab', { name: /approved/i });
+    fireEvent.mouseDown(approvedTab);
+    fireEvent.click(approvedTab);
+    const viewButton = await screen.findByRole('button', { name: /view/i });
+    fireEvent.click(viewButton);
+    await screen.findByRole('button', { name: /download pdf/i });
+    expect(screen.queryByRole('button', { name: /^approve$/i })).toBeNull();
+    expect(screen.queryByRole('button', { name: /^receive$/i })).toBeNull();
+    expect(screen.queryByRole('button', { name: /^decline$/i })).toBeNull();
   });
 });

@@ -536,6 +536,34 @@ export const assetColumns = [
     cell: ({ row }: any) => formatCurrency(row.original.annualDepreciation),
   },
 
+  // Book Value
+  {
+    id: 'bookValue',
+    header: 'Book Value',
+    accessorKey: 'bookValue',
+    size: 150,
+    cell: ({ row }: any) => formatCurrency(row.original.bookValue ?? 0),
+  },
+
+  // Accumulated Depreciation
+  {
+    id: 'accumulatedDepreciation',
+    header: 'Accumulated Depreciation',
+    accessorKey: 'accumulatedDepreciation',
+    size: 190,
+    cell: ({ row }: any) =>
+      formatCurrency(row.original.accumulatedDepreciation ?? 0),
+  },
+
+  // Depreciation per Month
+  {
+    id: 'monthlyDepreciation',
+    header: 'Depreciation / Month',
+    accessorKey: 'monthlyDepreciation',
+    size: 180,
+    cell: ({ row }: any) => formatCurrency(row.original.monthlyDepreciation ?? 0),
+  },
+
   // Depreciation Start Date
   {
     id: 'depreciationStartDate',

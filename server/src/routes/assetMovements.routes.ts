@@ -30,7 +30,27 @@ const router = Router();
  *         name: formNumber
  *         schema:
  *           type: string
- *         description: Filter by accountability form number (partial match)
+ *         description: Filter by accountability form number (partial match, matches both old and new)
+ *       - in: query
+ *         name: oldAccountabilityFormNo
+ *         schema:
+ *           type: string
+ *         description: Filter by FROM/OLD accountability form number (partial match)
+ *       - in: query
+ *         name: newAccountabilityFormNo
+ *         schema:
+ *           type: string
+ *         description: Filter by TO/NEW accountability form number (partial match)
+ *       - in: query
+ *         name: departmentId
+ *         schema:
+ *           type: string
+ *         description: Filter by department ID
+ *       - in: query
+ *         name: userId
+ *         schema:
+ *           type: string
+ *         description: Filter by user ID
  *       - in: query
  *         name: assetCode
  *         schema:
