@@ -775,14 +775,16 @@ export default function AccountTab() {
                           </code>
                         ))}
                       </div>
-                      <div className="flex gap-2">
-                        <Button onClick={copyMfaBackupCodes} variant="outline" className="flex-1 border-red-600 text-red-600 hover:bg-red-600 hover:text-white">
+                      <div className="flex flex-col sm:flex-row gap-2">
+                        <Button onClick={copyMfaBackupCodes} variant="outline" className="w-full sm:flex-1 border-red-600 text-red-600 hover:bg-red-600 hover:text-white">
                           <Copy className="w-4 h-4 mr-2" />
-                          Copy
+                          <span className="hidden sm:inline">Copy</span>
+                          <span className="sm:hidden">Copy</span>
                         </Button>
-                        <Button onClick={downloadMfaBackupCodes} variant="outline" className="flex-1 border-red-600 text-red-600 hover:bg-red-600 hover:text-white">
+                        <Button onClick={downloadMfaBackupCodes} variant="outline" className="w-full sm:flex-1 border-red-600 text-red-600 hover:bg-red-600 hover:text-white">
                           <RefreshCw className="w-4 h-4 mr-2" />
-                          Download
+                          <span className="hidden sm:inline">Download</span>
+                          <span className="sm:hidden">DL</span>
                         </Button>
                       </div>
                     </div>

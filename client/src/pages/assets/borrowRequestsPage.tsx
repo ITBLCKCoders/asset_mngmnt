@@ -1102,9 +1102,9 @@ export default function BorrowRequestsPage() {
             </div>
           </div>
 
-          <div className="flex gap-2 mt-4">
+          <div className="flex flex-col sm:flex-row gap-2 mt-4">
             <Button
-              className="flex-1 bg-red-600 text-white hover:bg-white hover:text-red-600 hover:border-red-600 border-2 border-red-600"
+              className="w-full sm:flex-1 bg-red-600 text-white hover:bg-white hover:text-red-600 hover:border-red-600 border-2 border-red-600"
               onClick={() => {
                 // For approved and declined tabs, always show details dialog
                 if (activeTab === 'approved' || activeTab === 'declined') {
@@ -1121,16 +1121,24 @@ export default function BorrowRequestsPage() {
               }}
             >
               <Eye className="h-4 w-4 mr-2" />
-              {activeTab === 'approved' || activeTab === 'declined'
+              <span className="hidden sm:inline">{activeTab === 'approved' || activeTab === 'declined'
                 ? 'View details'
                 : isBorrowRequestStaffReadOnly(r)
                   ? 'View details'
                   : r.status === 'approved'
                     ? 'Process Return'
-                    : 'View / Process'}
+                    : 'View / Process'}</span>
+              <span className="sm:hidden">{activeTab === 'approved' || activeTab === 'declined'
+                ? 'View'
+                : isBorrowRequestStaffReadOnly(r)
+                  ? 'View'
+                  : r.status === 'approved'
+                    ? 'Return'
+                    : 'View'}</span>
             </Button>
-            <Button variant="outline" className="flex-1 hover:bg-red-600 hover:text-white hover:border-red-600" onClick={() => void handleDownload(r)}>
-              Download PDF
+            <Button variant="outline" className="w-full sm:flex-1 hover:bg-red-600 hover:text-white hover:border-red-600" onClick={() => void handleDownload(r)}>
+              <span className="hidden sm:inline">Download PDF</span>
+              <span className="sm:hidden">Download</span>
             </Button>
           </div>
         </div>

@@ -750,9 +750,9 @@ export default function AssetBorrowing() {
                             </div>
                           </div>
 
-                          <div className="flex gap-2 mt-4">
+                          <div className="flex flex-col sm:flex-row gap-2 mt-4">
                             <Button
-                              className="flex-1 bg-red-600 text-white hover:bg-white hover:text-red-600 hover:border-red-600 border-2 border-red-600"
+                              className="w-full sm:flex-1 bg-red-600 text-white hover:bg-white hover:text-red-600 hover:border-red-600 border-2 border-red-600"
                               onClick={(e) => {
                                 e.stopPropagation();
                                 if (request.status === 'approved') {
@@ -765,7 +765,8 @@ export default function AssetBorrowing() {
                               }}
                             >
                               <Eye className="h-4 w-4 mr-2" />
-                              {request.status === 'approved' ? 'Return' : 'View'}
+                              <span className="hidden sm:inline">{request.status === 'approved' ? 'Return' : 'View'}</span>
+                              <span className="sm:hidden">{request.status === 'approved' ? 'Return' : 'View'}</span>
                             </Button>
                           </div>
                         </div>

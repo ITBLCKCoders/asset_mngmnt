@@ -842,15 +842,16 @@ export default function TransferRequestsPage() {
                     </CardContent>
                   </TabsContent>
                 </Tabs>
-                <div className="flex gap-2 p-4 mt-auto border-t border-slate-100">
+                <div className="flex flex-col sm:flex-row gap-2 p-4 mt-auto border-t border-slate-100">
                   <Button
                     variant="outline"
                     size="sm"
                     onClick={() => handleView(batch, isProcessedTab)}
-                    className="flex-1 bg-red-600 text-white border-red-600 hover:bg-white hover:text-red-600 hover:border-red-600 shadow-sm"
+                    className="w-full sm:flex-1 bg-red-600 text-white border-red-600 hover:bg-white hover:text-red-600 hover:border-red-600 shadow-sm"
                   >
                     <Eye className="h-4 w-4 mr-2" />
-                    {isProcessedTab ? 'View' : 'View & Transfer'}
+                    <span className="hidden sm:inline">{isProcessedTab ? 'View' : 'View & Transfer'}</span>
+                    <span className="sm:hidden">{isProcessedTab ? 'View' : 'Transfer'}</span>
                   </Button>
                 </div>
               </Card>

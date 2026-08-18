@@ -156,24 +156,26 @@ export function ChecklistApprovalCard({
       </CardContent>
 
       {/* Footer actions */}
-      <div className="flex gap-2 border-t border-slate-100 p-4">
+      <div className="flex flex-col sm:flex-row gap-2 border-t border-slate-100 p-4">
         <Button
           variant="outline"
           size="sm"
           onClick={onView}
-          className="flex-1 bg-red-600 text-white border-red-600 hover:bg-white hover:text-red-600 hover:border-red-600 shadow-sm"
+          className="w-full sm:flex-1 bg-red-600 text-white border-red-600 hover:bg-white hover:text-red-600 hover:border-red-600 shadow-sm"
         >
           <Eye className="h-4 w-4 mr-2" />
-          View
+          <span className="hidden sm:inline">View</span>
+          <span className="sm:hidden">View</span>
         </Button>
         <Button
           variant="outline"
           size="sm"
           onClick={onDownload}
-          className="flex-1 bg-white text-red-600 border-red-600 hover:bg-red-600 hover:text-white shadow-sm"
+          className="w-full sm:flex-1 bg-white text-red-600 border-red-600 hover:bg-red-600 hover:text-white shadow-sm"
         >
           <Download className="h-4 w-4 mr-2" />
-          Download
+          <span className="hidden sm:inline">Download</span>
+          <span className="sm:hidden">DL</span>
         </Button>
       </div>
     </Card>

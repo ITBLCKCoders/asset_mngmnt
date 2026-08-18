@@ -481,27 +481,29 @@ export default function AssetChecklistFormsPage() {
                   </div>
                 </CardContent>
 
-                <div className="flex gap-2 border-t border-slate-100 p-4">
+                <div className="flex flex-col sm:flex-row gap-2 border-t border-slate-100 p-4">
                   <Button
                     variant="outline"
                     size="sm"
-                    className="flex-1 bg-red-600 text-white border-red-600 hover:bg-white hover:text-red-600 hover:border-red-600 shadow-sm"
+                    className="w-full sm:flex-1 bg-red-600 text-white border-red-600 hover:bg-white hover:text-red-600 hover:border-red-600 shadow-sm"
                     onClick={() => {
                       setSelectedChecklist(row);
                       setShowPreview(true);
                     }}
                   >
                     <Eye className="mr-2 h-4 w-4" />
-                    View
+                    <span className="hidden sm:inline">View</span>
+                    <span className="sm:hidden">View</span>
                   </Button>
                   <Button
                     variant="outline"
                     size="sm"
-                    className="flex-1 bg-white text-red-600 border-red-600 hover:bg-red-600 hover:text-white shadow-sm"
+                    className="w-full sm:flex-1 bg-white text-red-600 border-red-600 hover:bg-red-600 hover:text-white shadow-sm"
                     onClick={() => handleDownload(row)}
                   >
                     <Download className="mr-2 h-4 w-4" />
-                    Download
+                    <span className="hidden sm:inline">Download</span>
+                    <span className="sm:hidden">DL</span>
                   </Button>
                 </div>
               </Card>
