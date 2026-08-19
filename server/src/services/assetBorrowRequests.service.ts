@@ -9,8 +9,11 @@ import {
   getDepartmentIdsForScope,
 } from '../utils/assetScope.js';
 import {
-  isUserManagerApprover1,
-  isUserSubApprover1,
+  isDesignatedApprover,
+  isDesignatedSubApprover,
+  getDesignatedApproverUserId,
+  getDesignatedSubApproverUserId,
+  getRequestorMA1Status,
 } from '../utils/approverNotifications.js';
 import { generateBorrowFormNumber } from '../utils/borrowFormNumber.js';
 import {
@@ -21,6 +24,7 @@ import {
   findBorrowRequestsForList,
   findBorrowRequestsForUser,
   findPendingDeptHeadBorrowRequests,
+  findPendingDeptHeadBorrowRequestsByCompany,
   getAssignmentForBorrowRequest,
   getAvailableAssetByCodeForBorrowStaffPool,
   getBorrowRequestById,
@@ -176,24 +180,16 @@ export class AssetBorrowRequestsService {
       return { rows: [] };
     }
 
-    const isManager1 = await isUserManagerApprover1(userId);
-    const isSub1 = await isUserSubApprover1(userId);
-    if (!isManager1 && !isSub1) {
+    // Check if user is designated approver or sub approver for this company
+    const isApprover = await isDesignatedApprover(userId, companyId);
+    const isSubApprover = await isDesignatedSubApprover(userId, companyId);
+    if (!isApprover && !isSubApprover) {
       return { rows: [] };
     }
 
-    const [approverRows] = (await pool.execute(
-      'SELECT department_id FROM users WHERE userID = ?',
-      [userId]
-    )) as [{ department_id: string | null }[], unknown];
-    const approverDepartmentId = approverRows[0]?.department_id ?? null;
-    if (approverDepartmentId == null) {
-      return { rows: [] };
-    }
-
-    const rows = await findPendingDeptHeadBorrowRequests(
+    // Designated approvers see all pending requests in the company (company-wide)
+    const rows = await findPendingDeptHeadBorrowRequestsByCompany(
       pool,
-      approverDepartmentId,
       companyId
     );
     return { rows };
@@ -225,24 +221,16 @@ export class AssetBorrowRequestsService {
     borrowRequestId: string,
     body: DeptHeadApproveBorrowRequestDto
   ): Promise<{ ok: true } | { error: string; status: number }> {
-    const isManager1 = await isUserManagerApprover1(userId);
-    const isSub1 = await isUserSubApprover1(userId);
-    if (!isManager1 && !isSub1) {
-      return { error: 'Not authorized as department head approver', status: 403 };
-    }
-
     const { companyId } = await getAssetScope(pool, userId);
     if (!companyId) {
       return { error: 'Company context required', status: 400 };
     }
 
-    const [approverRows] = (await pool.execute(
-      'SELECT department_id FROM users WHERE userID = ?',
-      [userId]
-    )) as [{ department_id: string | null }[], unknown];
-    const approverDepartmentId = approverRows[0]?.department_id ?? null;
-    if (approverDepartmentId == null) {
-      return { error: 'Approver has no department', status: 400 };
+    // Check if user is designated approver or sub approver for this company
+    const isApprover = await isDesignatedApprover(userId, companyId);
+    const isSubApprover = await isDesignatedSubApprover(userId, companyId);
+    if (!isApprover && !isSubApprover) {
+      return { error: 'Not authorized as department head approver', status: 403 };
     }
 
     const row = await getBorrowRequestById(pool, borrowRequestId);
@@ -256,16 +244,12 @@ export class AssetBorrowRequestsService {
       return { error: 'Borrow request is no longer pending approval', status: 400 };
     }
 
-    const requesterDept = row.requester_department_id ?? null;
-    if (requesterDept !== approverDepartmentId) {
-      return { error: 'Not authorized for this requester department', status: 403 };
-    }
-
+    const isSubApproverAction = isSubApprover && !isApprover;
     const updated = await updateBorrowRequestDeptHeadApprove(
       pool,
       borrowRequestId,
       userId,
-      isSub1 && !isManager1
+      isSubApproverAction
     );
     if (!updated) {
       return { error: 'Could not approve borrow request', status: 409 };
@@ -279,24 +263,16 @@ export class AssetBorrowRequestsService {
     userId: string,
     borrowRequestId: string
   ): Promise<{ ok: true } | { error: string; status: number }> {
-    const isManager1 = await isUserManagerApprover1(userId);
-    const isSub1 = await isUserSubApprover1(userId);
-    if (!isManager1 && !isSub1) {
-      return { error: 'Not authorized as department head approver', status: 403 };
-    }
-
     const { companyId } = await getAssetScope(pool, userId);
     if (!companyId) {
       return { error: 'Company context required', status: 400 };
     }
 
-    const [approverRows] = (await pool.execute(
-      'SELECT department_id FROM users WHERE userID = ?',
-      [userId]
-    )) as [{ department_id: string | null }[], unknown];
-    const approverDepartmentId = approverRows[0]?.department_id ?? null;
-    if (approverDepartmentId == null) {
-      return { error: 'Approver has no department', status: 400 };
+    // Check if user is designated approver or sub approver for this company
+    const isApprover = await isDesignatedApprover(userId, companyId);
+    const isSubApprover = await isDesignatedSubApprover(userId, companyId);
+    if (!isApprover && !isSubApprover) {
+      return { error: 'Not authorized as department head approver', status: 403 };
     }
 
     const row = await getBorrowRequestById(pool, borrowRequestId);
@@ -308,11 +284,6 @@ export class AssetBorrowRequestsService {
     }
     if (row.dept_head_signed_at || row.sub_approver_1_signed_at || row.declined_at) {
       return { error: 'Borrow request is no longer pending approval', status: 400 };
-    }
-
-    const requesterDept = row.requester_department_id ?? null;
-    if (requesterDept !== approverDepartmentId) {
-      return { error: 'Not authorized for this requester department', status: 403 };
     }
 
     const updated = await updateBorrowRequestDeptHeadDecline(

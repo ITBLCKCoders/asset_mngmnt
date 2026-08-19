@@ -32,6 +32,7 @@ import notificationsRoutes from './routes/notifications.routes.js';
 import assetRequestsRoutes from './routes/assetRequests.routes.js';
 import assetBorrowRequestsRoutes from './routes/assetBorrowRequests.routes.js';
 import gatePassRoutes from './routes/gatePass.routes.js';
+import companyApproversRoutes from './routes/companyApprovers.routes.js';
 import intangibleAssetsRoutes from './routes/intangibleAssets.routes.js';
 import intangibleAssetTypesRoutes from './routes/intangibleAssetTypes.routes.js';
 import riskLevelsRoutes from './routes/riskLevels.routes.js';
@@ -174,6 +175,7 @@ app.use('/api/asset-builders', assetBuildersRoutes); // NEW: Asset builders rout
 app.use('/api/notifications', notificationsRoutes); // NEW: Notifications routes mounted
 app.use('/api/asset-requests', assetRequestsRoutes); // NEW: Asset requests routes mounted
 app.use('/api/asset-borrow-requests', assetBorrowRequestsRoutes);
+app.use('/api/companies', companyApproversRoutes);
 app.use('/api/intangible-assets', intangibleAssetsRoutes);
 app.use('/api/intangible-asset-types', intangibleAssetTypesRoutes);
 app.use('/api/risk-levels', riskLevelsRoutes);

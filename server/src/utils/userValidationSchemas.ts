@@ -23,6 +23,7 @@ export const UserDtoSchema = z.object({
   manager_approver_3: z.boolean().optional(),
   finance_approver: z.boolean().optional(),
   sub_approver_2: z.boolean().optional(),
+  sub_approver_1: z.boolean().optional(),
 });
 
 export const UpdateUserDtoSchema = UserDtoSchema.partial();

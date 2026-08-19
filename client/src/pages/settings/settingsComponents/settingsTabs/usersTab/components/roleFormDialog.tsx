@@ -258,6 +258,17 @@ export function RoleFormDialog({
                               finance_approver: v,
                             })),
                         },
+                        {
+                          key: 's1',
+                          label: 'Sub Approver 1',
+                          desc: 'Stand-in for Manager Approver 1. Approves the request when the dept head / manager of the requestor is absent.',
+                          checked: form.sub_approver_1,
+                          set: (v: boolean) =>
+                            setForm(prev => ({
+                              ...prev,
+                              sub_approver_1: v,
+                            })),
+                        },
                       ] satisfies ReadonlyArray<{
                         key: string;
                         label: string;

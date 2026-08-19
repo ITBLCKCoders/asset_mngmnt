@@ -18,7 +18,13 @@ import { randomUUID } from 'crypto';
 import { resolveChecklistAssignmentIds } from '../utils/accountabilityFormAssetsData.js';
 import { isComputerTypeName } from '../utils/computerTypeAsset.js';
 import * as assignmentRepo from '../repositories/assetAssignment.repository.js';
-import { getManagerApprover1UserIdsInDepartmentAndCompany } from '../utils/approverNotifications.js';
+import {
+  isDesignatedApprover,
+  isDesignatedSubApprover,
+  getDesignatedApproverUserId,
+  getDesignatedSubApproverUserId,
+  getRequestorMA1Status,
+} from '../utils/approverNotifications.js';
 
 async function userHasHrAccountabilityReceiverAccess(
   userId: string
@@ -142,24 +148,26 @@ async function notifyChecklistApproversAfterEmployeeSign(params: {
     unknown,
   ];
   const emp = empRows[0];
-  const departmentId = emp?.department_id ?? null;
   const companyId = emp?.company_id ?? null;
 
-  if (!departmentId || !companyId) {
+  if (!companyId) {
     return;
   }
 
-  const approverIds = await getManagerApprover1UserIdsInDepartmentAndCompany(
-    departmentId,
-    companyId
-  );
+  // Check if employee has MA1 custodian access
+  const employeeHasMA1 = await getRequestorMA1Status(employeeId);
+  // Use designated approver for the company (MA1/MA3 combined)
+  const approverUserId = await getDesignatedApproverUserId(companyId);
+  const subApproverUserId = await getDesignatedSubApproverUserId(companyId);
+  
   const employeeName =
     [emp?.first_name, emp?.last_name].filter(Boolean).join(' ').trim() ||
     emp?.name ||
     'An employee';
 
-  for (const approverUserId of approverIds) {
-    if (approverUserId === employeeId) continue;
+  const notifyUsers = [approverUserId, subApproverUserId].filter((id): id is string => id !== null && id !== employeeId);
+  
+  for (const approverUserId of notifyUsers) {
     await createNotificationForApi({
       user_id: approverUserId,
       title: 'Asset Checklist Approval Needed',

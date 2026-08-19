@@ -448,6 +448,49 @@ const PENDING_DEPT_HEAD_CHECKLIST_SQL = `
   ORDER BY ac.created_at DESC
 `;
 
+const PENDING_DEPT_HEAD_CHECKLIST_SQL_BY_COMPANY = `
+  SELECT
+    ac.id,
+    ac.form_number,
+    ac.assignment_id,
+    ac.employee_id,
+    ac.employee_name,
+    ac.employee_designation,
+    ac.employee_department,
+    ac.employee_company,
+    ac.type_onboarding,
+    ac.type_offboarding,
+    ac.received_by,
+    ac.checklist_data,
+    ac.remarks,
+    ac.created_at,
+    ac.created_by,
+    ac.employee_signed_at,
+    ac.employee_digital_signature,
+    ac.dept_head_signed_at,
+    ac.dept_head_signed_by,
+    ac.dept_head_digital_signature,
+    u.name AS creator_name,
+    u.digital_signature AS creator_digital_signature,
+    c.logo_url AS employee_company_logo_url,
+    aa.asset_id,
+    a.asset_code,
+    a.name AS asset_name,
+    emp.department_id AS employee_department_id,
+    d.name AS employee_department_name
+  FROM asset_checklists ac
+  INNER JOIN users emp ON ac.employee_id = emp.userID
+  LEFT JOIN asset_mngmnt_departments d ON emp.department_id = d.departmentID
+  LEFT JOIN users u ON ac.created_by = u.userID
+  LEFT JOIN companies c ON ac.employee_company = c.name AND c.deleted_at IS NULL
+  LEFT JOIN asset_assignments aa ON ac.assignment_id = aa.assignmentID
+  LEFT JOIN assets a ON aa.asset_id = a.assetID AND a.deleted_at IS NULL
+  WHERE ac.employee_signed_at IS NOT NULL
+    AND ac.dept_head_signed_at IS NULL
+    AND emp.company_id = ?
+  ORDER BY ac.created_at DESC
+`;
+
 export async function findPendingDeptHeadApprovalChecklists(
   approverDepartmentId: string,
   companyId: string
@@ -468,6 +511,30 @@ export async function findPendingDeptHeadApprovalChecklists(
     return (rows as any[]).map(mapChecklistRow);
   } catch (error) {
     logger.error('Failed to find pending dept head approval checklists:', error);
+    throw error;
+  }
+}
+
+/** Find pending checklists for designated approver (company-wide, no department filter) */
+export async function findPendingDeptHeadApprovalChecklistsByCompany(
+  companyId: string
+) {
+  if (!(await hasDeptHeadSignColumns()) || !(await hasEmployeeSignColumns())) {
+    return [];
+  }
+  try {
+    let sql = PENDING_DEPT_HEAD_CHECKLIST_SQL_BY_COMPANY;
+    const args: (string | number)[] = [companyId];
+    if (await hasSubApproverSignColumns()) {
+      sql = sql.replace(
+        '    AND ac.dept_head_signed_at IS NULL\n',
+        '    AND ac.dept_head_signed_at IS NULL\n    AND ac.sub_approver_1_signed_at IS NULL\n'
+      );
+    }
+    const [rows] = await pool.query(sql, args);
+    return (rows as any[]).map(mapChecklistRow);
+  } catch (error) {
+    logger.error('Failed to find pending dept head approval checklists by company:', error);
     throw error;
   }
 }

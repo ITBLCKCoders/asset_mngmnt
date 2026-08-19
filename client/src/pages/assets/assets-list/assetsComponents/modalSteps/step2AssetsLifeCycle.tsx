@@ -55,6 +55,44 @@ function isOldUnitPlaceholderPurchaseDate(iso: string | undefined): boolean {
   );
 }
 
+/** Full calendar days elapsed between the given ISO date and today (minimum 0). */
+function daysElapsedSince(iso: string | undefined): number {
+  if (!iso) return 0;
+  const start = new Date(iso);
+  if (Number.isNaN(start.getTime())) return 0;
+  const ms = Date.now() - start.getTime();
+  return Math.max(0, Math.floor(ms / 86_400_000));
+}
+
+/**
+ * Auto-calculated Accumulated Depreciation (daily proration):
+ * Depreciation per Month × (days elapsed ÷ 30) since the Depreciation Start Date
+ * (falls back to Purchase Date), capped at Asset Value − Salvage so Book Value
+ * never drops below salvage. Returns undefined when it cannot be computed.
+ */
+function computeAccumulatedDepreciation(formData: AssetFormData): number | undefined {
+  if (formData.isOldUnit) return undefined;
+  // Use the per-month value when present; otherwise derive it from the annual
+  // depreciation so the calculation does not depend on effect ordering.
+  const monthly =
+    formData.monthlyDepreciation ??
+    (formData.annualDepreciation != null
+      ? Math.round((formData.annualDepreciation / 12) * 100) / 100
+      : 0);
+  if (monthly <= 0) return undefined;
+  const startIso = formData.depreciationStartDate || formData.purchaseDate;
+  if (!startIso) return undefined;
+  const days = daysElapsedSince(startIso);
+  if (days <= 0) return 0;
+  let next = Math.round(monthly * (days / 30) * 100) / 100;
+  const cost = formData.assetValue;
+  const salvage = formData.salvageValue;
+  if (cost != null && salvage != null) {
+    next = Math.min(next, Math.max(0, cost - salvage));
+  }
+  return Math.max(0, next);
+}
+
 interface Step2LifecycleProps {
   formData: AssetFormData;
   updateForm: UpdateFormHandler;
@@ -125,34 +163,26 @@ export function Step2Lifecycle({
   }, [formData.depreciationMethod]);
 
   useEffect(() => {
+    if (manualOverrideRef.current.annualDepreciation) return;
     if (formData.annualDepreciation !== annualDepreciation) {
       updateForm('annualDepreciation', annualDepreciation);
     }
   }, [annualDepreciation, formData.annualDepreciation, updateForm]);
 
   // Tracks whether the user manually overrode the auto-calculated fields.
-  // A stored value that differs from the computed value is treated as a manual
-  // override so reopening an asset in edit mode does not clobber saved values.
+  // Starts false so stored values (including legacy/garbage ones from earlier
+  // builds) are recomputed on mount; typing in a field marks it overridden,
+  // and clearing it back to empty lets auto-calculation resume.
   const manualOverrideRef = useRef<{
+    annualDepreciation: boolean;
     bookValue: boolean;
+    accumulatedDepreciation: boolean;
     monthlyDepreciation: boolean;
   }>({
-    bookValue:
-      formData.bookValue !== undefined &&
-      formData.bookValue !== null &&
-      formData.bookValue !==
-        Math.round(
-          (formData.assetValue ?? 0) -
-            (formData.accumulatedDepreciation ?? 0)
-        ) *
-          100 /
-          100,
-    monthlyDepreciation:
-      formData.annualDepreciation != null &&
-      formData.monthlyDepreciation !== undefined &&
-      formData.monthlyDepreciation !== null &&
-      formData.monthlyDepreciation !==
-        Math.round((formData.annualDepreciation / 12) * 100) / 100,
+    annualDepreciation: false,
+    bookValue: false,
+    accumulatedDepreciation: false,
+    monthlyDepreciation: false,
   });
 
   // Auto-calc Book Value = Asset Value − Accumulated Depreciation (unless overridden)
@@ -171,6 +201,28 @@ export function Step2Lifecycle({
     formData.accumulatedDepreciation,
     formData.isOldUnit,
     formData.bookValue,
+    updateForm,
+  ]);
+
+  // Auto-calc Accumulated Depreciation = Monthly Depreciation × months elapsed
+  // (unless overridden). Capped at Asset Value − Salvage via the helper.
+  useEffect(() => {
+    if (formData.isOldUnit) return;
+    if (manualOverrideRef.current.accumulatedDepreciation) return;
+    const computed = computeAccumulatedDepreciation(formData);
+    if (computed === undefined) return;
+    if (formData.accumulatedDepreciation !== computed) {
+      updateForm('accumulatedDepreciation', computed);
+    }
+  }, [
+    formData.monthlyDepreciation,
+    formData.annualDepreciation,
+    formData.depreciationStartDate,
+    formData.purchaseDate,
+    formData.assetValue,
+    formData.salvageValue,
+    formData.isOldUnit,
+    formData.accumulatedDepreciation,
     updateForm,
   ]);
 
@@ -456,18 +508,20 @@ export function Step2Lifecycle({
           <div className="relative">
             {pesoIcon}
             <Input
-              type="text"
-              value={
-                annualDepreciation > 0
-                  ? formatCurrency(annualDepreciation)
-                  : '—'
-              }
-              disabled
-              className="h-12 pl-10 bg-emerald-50/50 border-emerald-200 font-bold text-emerald-700"
+              type="number"
+              placeholder="0"
+              value={formData.annualDepreciation ?? ''}
+              onChange={e => {
+                manualOverrideRef.current.annualDepreciation =
+                  e.target.value !== '';
+                handleNumberChange('annualDepreciation', e.target.value);
+              }}
+              className="h-12 pl-10 text-lg font-medium"
+              disabled={formData.isOldUnit || false}
             />
           </div>
           <p className="text-xs text-muted-foreground italic">
-            {depreciationFormula}
+            {depreciationFormula} (auto-calculated)
           </p>
         </div>
 
@@ -480,7 +534,7 @@ export function Step2Lifecycle({
               placeholder="0"
               value={formData.bookValue ?? ''}
               onChange={e => {
-                manualOverrideRef.current.bookValue = true;
+                manualOverrideRef.current.bookValue = e.target.value !== '';
                 handleNumberChange('bookValue', e.target.value);
               }}
               className="h-12 pl-10 text-lg font-medium"
@@ -502,13 +556,18 @@ export function Step2Lifecycle({
               type="number"
               placeholder="0"
               value={formData.accumulatedDepreciation ?? ''}
-              onChange={e =>
-                handleNumberChange('accumulatedDepreciation', e.target.value)
-              }
+              onChange={e => {
+                manualOverrideRef.current.accumulatedDepreciation =
+                  e.target.value !== '';
+                handleNumberChange('accumulatedDepreciation', e.target.value);
+              }}
               className="h-12 pl-10 text-lg font-medium"
               disabled={formData.isOldUnit || false}
             />
           </div>
+          <p className="text-xs text-muted-foreground italic">
+            Monthly Depreciation × days since start date ÷ 30 (auto-calculated)
+          </p>
         </div>
 
         <div className="space-y-2">
@@ -522,7 +581,8 @@ export function Step2Lifecycle({
               placeholder="0"
               value={formData.monthlyDepreciation ?? ''}
               onChange={e => {
-                manualOverrideRef.current.monthlyDepreciation = true;
+                manualOverrideRef.current.monthlyDepreciation =
+                  e.target.value !== '';
                 handleNumberChange('monthlyDepreciation', e.target.value);
               }}
               className="h-12 pl-10 text-lg font-medium"

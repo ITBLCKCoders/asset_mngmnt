@@ -323,6 +323,25 @@ export const api = {
       }),
     });
   },
+
+  // Company Approvers API
+  async getCompanyApprovers<T = any>(companyId: string) {
+    return fetchApi<T>(`/companies/${companyId}/approvers`, { method: 'GET' });
+  },
+  async setCompanyApprover<T = any>(companyId: string, data: { approverType: string; userId: string }) {
+    return fetchApi<T>(`/companies/${companyId}/approvers`, {
+      method: 'POST',
+      body: JSON.stringify(data),
+    });
+  },
+  async removeCompanyApprover<T = any>(companyId: string, approverType: string) {
+    return fetchApi<T>(`/companies/${companyId}/approvers/${approverType}`, {
+      method: 'DELETE',
+    });
+  },
+  async getCompanyEligibleApprovers<T = any>(companyId: string, approverType: string) {
+    return fetchApi<T>(`/companies/${companyId}/approvers/eligible/${approverType}`, { method: 'GET' });
+  },
 };
 
 export default api;

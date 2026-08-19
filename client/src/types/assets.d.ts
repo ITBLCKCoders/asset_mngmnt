@@ -99,6 +99,7 @@ export interface Role {
   manager_approver_3?: boolean;
   finance_approver?: boolean;
   sub_approver_2?: boolean;
+  sub_approver_1?: boolean;
 }
 
 export interface User {
@@ -133,6 +134,7 @@ export interface User {
   manager_approver_3?: boolean;
   finance_approver?: boolean;
   sub_approver_2?: boolean;
+  sub_approver_1?: boolean;
 }
 
 declare module '*.png' {

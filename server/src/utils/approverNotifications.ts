@@ -1,5 +1,8 @@
 /**
- * Helpers for notifying approver users (e.g. Manager Approver 1) when forms are signed.
+ * Helpers for notifying approver users when forms are signed.
+ * 
+ * MA1/MA3/Sub1 now use designated company approvers (company_approvers table).
+ * MA2/Sub2/Finance/HR still use role-based logic.
  */
 import { pool } from '../db.js';
 import {
@@ -8,23 +11,67 @@ import {
   classifyDepartmentScopeByName,
 } from './assetScope.js';
 import { getActiveCompany } from './activeCompany.js';
+import {
+  getDesignatedApprover,
+  getEligibleApproversByType,
+  getUserCustodianMA1Status,
+} from '../repositories/companyApprovers.repository.js';
 
 /**
- * Returns true if the given user is Manager Approver 1 (role or user_custodian_settings).
- * Used to restrict pending-approvals list and approve/decline actions.
+ * Check if user is the designated MA1/MA3 approver for their company
  */
-export async function isUserManagerApprover1(userId: string): Promise<boolean> {
-  const [rows] = (await pool.execute(
-    `SELECT 1
-     FROM users u
-     LEFT JOIN asset_mngmnt_roles r ON u.role_id = r.roleID AND r.deleted_at IS NULL
-     LEFT JOIN user_custodian_settings uc ON u.userID = uc.user_id
-     WHERE u.userID = ?
-       AND (r.manager_approver_1 = 1 OR COALESCE(uc.manager_approver_1, 0) = 1)
-     LIMIT 1`,
-    [userId]
-  )) as [unknown[], unknown];
-  return Array.isArray(rows) && rows.length > 0;
+export async function isDesignatedApprover(
+  userId: string,
+  companyId: string
+): Promise<boolean> {
+  const designated = await getDesignatedApprover(companyId, 'approver');
+  return designated === userId;
+}
+
+/**
+ * Check if user is the designated Sub1 approver for their company
+ */
+export async function isDesignatedSubApprover(
+  userId: string,
+  companyId: string
+): Promise<boolean> {
+  const designated = await getDesignatedApprover(companyId, 'sub_approver');
+  return designated === userId;
+}
+
+/**
+ * Get the designated approver user ID for a company (MA1/MA3 combined)
+ */
+export async function getDesignatedApproverUserId(companyId: string): Promise<string | null> {
+  return getDesignatedApprover(companyId, 'approver');
+}
+
+/**
+ * Get the designated sub approver user ID for a company (Sub1)
+ */
+export async function getDesignatedSubApproverUserId(companyId: string): Promise<string | null> {
+  return getDesignatedApprover(companyId, 'sub_approver');
+}
+
+/**
+ * Get eligible users for Approver dropdown (MA1 or MA3 flag)
+ */
+export async function getEligibleApprovers(companyId: string) {
+  return getEligibleApproversByType(companyId, 'approver');
+}
+
+/**
+ * Get eligible users for Sub Approver dropdown (Sub1 flag)
+ */
+export async function getEligibleSubApprovers(companyId: string) {
+  return getEligibleApproversByType(companyId, 'sub_approver');
+}
+
+/**
+ * Check if requestor has MA1 custodian access (for routing MA1 vs MA3)
+ */
+export async function getRequestorMA1Status(userId: string): Promise<boolean> {
+  return getUserCustodianMA1Status(userId);
 }
 
 /**
@@ -39,24 +86,6 @@ export async function isUserManagerApprover2(userId: string): Promise<boolean> {
      LEFT JOIN user_custodian_settings uc ON u.userID = uc.user_id
      WHERE u.userID = ?
        AND (r.manager_approver_2 = 1 OR COALESCE(uc.manager_approver_2, 0) = 1)
-     LIMIT 1`,
-    [userId]
-  )) as [unknown[], unknown];
-  return Array.isArray(rows) && rows.length > 0;
-}
-
-/**
- * Returns true if the given user is Sub Approver 1 (role or user_custodian_settings).
- * Sub Approver 1 is the stand-in for Manager Approver 1 (requestor's dept head/manager).
- */
-export async function isUserSubApprover1(userId: string): Promise<boolean> {
-  const [rows] = (await pool.execute(
-    `SELECT 1
-     FROM users u
-     LEFT JOIN asset_mngmnt_roles r ON u.role_id = r.roleID AND r.deleted_at IS NULL
-     LEFT JOIN user_custodian_settings uc ON u.userID = uc.user_id
-     WHERE u.userID = ?
-       AND (r.manager_approver_3 = 1 OR COALESCE(uc.manager_approver_3, 0) = 1)
      LIMIT 1`,
     [userId]
   )) as [unknown[], unknown];
@@ -79,90 +108,6 @@ export async function isUserSubApprover2(userId: string): Promise<boolean> {
     [userId]
   )) as [unknown[], unknown];
   return Array.isArray(rows) && rows.length > 0;
-}
-
-/**
- * Returns user IDs of users who are Manager Approver 1 in the given department.
- * Checks role (asset_mngmnt_roles.manager_approver_1) and per-user override (user_custodian_settings.manager_approver_1).
- * Returns [] if departmentId is null.
- */
-export async function getManagerApprover1UserIdsInDepartment(
-  departmentId: string | null
-): Promise<string[]> {
-  if (departmentId == null || departmentId === '') {
-    return [];
-  }
-  const [rows] = (await pool.execute(
-    `SELECT DISTINCT u.userID
-     FROM users u
-     LEFT JOIN asset_mngmnt_roles r ON u.role_id = r.roleID AND r.deleted_at IS NULL
-     LEFT JOIN user_custodian_settings uc ON u.userID = uc.user_id
-     WHERE u.department_id = ? AND u.is_active = 1
-       AND (r.manager_approver_1 = 1 OR COALESCE(uc.manager_approver_1, 0) = 1)`,
-    [departmentId]
-  )) as [{ userID: string }[], unknown];
-  return (rows || []).map(row => row.userID);
-}
-
-/**
- * Returns user IDs of users who are Sub Approver 1 in the given department.
- * Sub Approver 1 stands in for Manager Approver 1 within the requestor's department.
- * Checks role (asset_mngmnt_roles.manager_approver_3) and per-user override
- * (user_custodian_settings.manager_approver_3). Returns [] if departmentId is null.
- */
-export async function getSubApprover1UserIdsInDepartment(
-  departmentId: string | null
-): Promise<string[]> {
-  if (departmentId == null || departmentId === '') {
-    return [];
-  }
-  const [rows] = (await pool.execute(
-    `SELECT DISTINCT u.userID
-     FROM users u
-     LEFT JOIN asset_mngmnt_roles r ON u.role_id = r.roleID AND r.deleted_at IS NULL
-     LEFT JOIN user_custodian_settings uc ON u.userID = uc.user_id
-     WHERE u.department_id = ? AND u.is_active = 1
-       AND (r.manager_approver_3 = 1 OR COALESCE(uc.manager_approver_3, 0) = 1)`,
-    [departmentId]
-  )) as [{ userID: string }[], unknown];
-  return (rows || []).map(row => row.userID);
-}
-
-/**
- * Manager Approver 1 users who can see a pending dept-head approval for a form in the
- * given department/company. Mirrors the Approvals "pending approvals" visibility
- * (getPendingApprovalsHandler):
- *  - Global Admins see all forms in the currently active company
- *  - everyone else sees only forms in their own department + company
- */
-export async function getManagerApprover1UserIdsInDepartmentAndCompany(
-  departmentId: string | null,
-  companyId: string | null
-): Promise<string[]> {
-  if (
-    departmentId == null ||
-    departmentId === '' ||
-    companyId == null ||
-    companyId === ''
-  ) {
-    return [];
-  }
-  const activeCompany = await getActiveCompany(pool);
-  const activeCompanyId = activeCompany?.id ?? null;
-  const [rows] = (await pool.execute(
-    `SELECT DISTINCT u.userID
-     FROM users u
-     LEFT JOIN asset_mngmnt_roles r ON u.role_id = r.roleID AND r.deleted_at IS NULL
-     LEFT JOIN user_custodian_settings uc ON u.userID = uc.user_id
-     WHERE u.is_active = 1
-       AND (r.manager_approver_1 = 1 OR COALESCE(uc.manager_approver_1, 0) = 1)
-       AND (
-         (u.company_id = ? AND u.department_id = ?)
-         OR (LOWER(r.name) = 'global admin' AND ? = ?)
-       )`,
-    [companyId, departmentId, companyId, activeCompanyId]
-  )) as [{ userID: string }[], unknown];
-  return (rows || []).map(row => row.userID);
 }
 
 /**
@@ -287,27 +232,6 @@ export async function isUserInItOrAdminDepartmentForCompany(
 }
 
 /**
- * Returns user IDs of active Manager Approver 1 users in a company.
- * If companyId is null/empty, returns all active Manager Approver 1 users.
- */
-export async function getManagerApprover1UserIdsByCompany(
-  companyId: string | null
-): Promise<string[]> {
-  const hasCompanyScope = companyId != null && companyId !== '';
-  const [rows] = (await pool.execute(
-    `SELECT DISTINCT u.userID
-     FROM users u
-     LEFT JOIN asset_mngmnt_roles r ON u.role_id = r.roleID AND r.deleted_at IS NULL
-     LEFT JOIN user_custodian_settings uc ON u.userID = uc.user_id
-     WHERE u.is_active = 1
-       AND (? = 0 OR u.company_id = ?)
-       AND (r.manager_approver_1 = 1 OR COALESCE(uc.manager_approver_1, 0) = 1)`,
-    [hasCompanyScope ? 1 : 0, companyId]
-  )) as [{ userID: string }[], unknown];
-  return (rows || []).map(row => row.userID);
-}
-
-/**
  * Manager Approver 2 users who can see a processed return form in the Approvals
  * "Receive Approve" tab for the given company/department. Mirrors
  * getReceivePendingApprovalsHandler visibility:
@@ -365,6 +289,7 @@ export async function getCustodianReturnAccessUserIds(): Promise<string[]> {
   )) as [{ userID: string }[], unknown];
   return (rows || []).map(row => row.userID);
 }
+
 /**
  * Active users flagged as HR accountability / 201-file receivers:
  * role `hr_accountability_receiver` or per-user `user_custodian_settings.hr_accountability_receiver`.
@@ -377,9 +302,9 @@ export async function getHrAccountabilityReceiverUserIds(): Promise<string[]> {
      LEFT JOIN user_custodian_settings uc ON u.userID = uc.user_id
      WHERE u.is_active = 1
        AND (
-         COALESCE(r.hr_accountability_receiver, 0) = 1
-         OR COALESCE(uc.hr_accountability_receiver, 0) = 1
-       )`
+           COALESCE(r.hr_accountability_receiver, 0) = 1
+           OR COALESCE(uc.hr_accountability_receiver, 0) = 1
+         )`
   )) as [{ userID: string }[], unknown];
   return (rows || []).map(row => String(row.userID));
 }

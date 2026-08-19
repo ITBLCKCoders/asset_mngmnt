@@ -9,10 +9,13 @@ import {
   getManagerApprover2UserIdsInItAndAdminDepartmentsAndCompany,
   getSubApprover2UserIdsInItAndAdminDepartmentsAndCompany,
   isUserInItOrAdminDepartmentForCompany,
-  isUserManagerApprover1,
   isUserManagerApprover2,
-  isUserSubApprover1,
   isUserSubApprover2,
+  isDesignatedApprover,
+  isDesignatedSubApprover,
+  getDesignatedApproverUserId,
+  getDesignatedSubApproverUserId,
+  getRequestorMA1Status,
 } from '../utils/approverNotifications.js';
 import { createAuditLog } from '../utils/audit.js';
 
@@ -59,26 +62,15 @@ export async function getPendingChecklistApprovalsHandler(
       return res.status(200).json({ checklistBatches: [] });
     }
 
-    if (
-      !(await isUserManagerApprover1(userId)) &&
-      !(await isUserSubApprover1(userId))
-    ) {
+    // Check if user is designated approver or sub approver for this company
+    const isApprover = await isDesignatedApprover(userId, companyId);
+    const isSubApprover = await isDesignatedSubApprover(userId, companyId);
+    if (!isApprover && !isSubApprover) {
       return res.status(200).json({ checklistBatches: [] });
     }
 
-    const [approverRows] = (await pool.query(
-      'SELECT department_id FROM users WHERE userID = ? LIMIT 1',
-      [userId]
-    )) as [{ department_id: string | null }[], unknown];
-    const approverDepartmentId = approverRows[0]?.department_id ?? null;
-    if (approverDepartmentId == null) {
-      return res.status(200).json({ checklistBatches: [] });
-    }
-
-    const rows = await checklistRepo.findPendingDeptHeadApprovalChecklists(
-      approverDepartmentId,
-      companyId
-    );
+    // Designated approvers see all pending checklists in the company (company-wide)
+    const rows = await checklistRepo.findPendingDeptHeadApprovalChecklistsByCompany(companyId);
     const checklistBatches = groupChecklistsIntoBatches(rows);
 
     return res.status(200).json({ checklistBatches });
@@ -122,6 +114,11 @@ export async function approveChecklistsDeptHeadHandler(
 ) {
   try {
     const userId = req.user!.userID;
+    const { companyId } = await getAssetScope(pool, userId);
+    if (!companyId) {
+      return res.status(400).json({ error: 'Company context required' });
+    }
+
     const bodyIds = req.body?.checklistIds;
     const checklistIds = Array.isArray(bodyIds)
       ? bodyIds.map((id: unknown) => String(id).trim()).filter(Boolean)
@@ -135,18 +132,13 @@ export async function approveChecklistsDeptHeadHandler(
       return res.status(400).json({ error: 'checklistIds is required' });
     }
 
-    if (
-      !(await isUserManagerApprover1(userId)) &&
-      !(await isUserSubApprover1(userId))
-    ) {
+    // Check if user is designated approver or sub approver for this company
+    const isApprover = await isDesignatedApprover(userId, companyId);
+    const isSubApprover = await isDesignatedSubApprover(userId, companyId);
+    if (!isApprover && !isSubApprover) {
       return res
         .status(403)
         .json({ error: 'Not authorized as department head approver' });
-    }
-
-    const { companyId } = await getAssetScope(pool, userId);
-    if (!companyId) {
-      return res.status(400).json({ error: 'Company context required' });
     }
 
     const [approverRows] = (await pool.query(
@@ -170,14 +162,13 @@ export async function approveChecklistsDeptHeadHandler(
           : null;
     }
 
-    const isSubApprover1 = await isUserSubApprover1(userId);
     const approvedCount = await checklistRepo.approveChecklistsAsDeptHead({
       checklistIds,
       approverUserId: userId,
       approverDepartmentId,
       companyId,
       digitalSignature,
-      isSubApprover: isSubApprover1,
+      isSubApprover,
     });
 
     if (approvedCount === 0) {
@@ -189,12 +180,12 @@ export async function approveChecklistsDeptHeadHandler(
 
     await createAuditLog({
       userId,
-      action: isSubApprover1
+      action: isSubApprover
         ? 'Approved Asset Checklists (Sub Approver 1)'
         : 'Approved Asset Checklists',
       resourceType: 'asset_checklist',
       resourceId: checklistIds.join(','),
-      details: isSubApprover1
+      details: isSubApprover
         ? `Sub Approver 1 approved ${approvedCount} asset checklist(s) as stand-in for the requestor's department head`
         : `Department head approved ${approvedCount} asset checklist(s)`,
       newValues: { approved_count: approvedCount, checklist_ids: checklistIds },
@@ -230,7 +221,7 @@ export async function approveChecklistsDeptHeadHandler(
           .join(' ')
           .trim() ||
         approverRow?.name ||
-        (isSubApprover1 ? 'Sub approver' : 'Department head');
+        (isSubApprover ? 'Sub approver' : 'Department head');
       for (const receiveUserId of receiveApproverIds) {
         if (receiveUserId === userId) continue;
         await createNotificationForApi({

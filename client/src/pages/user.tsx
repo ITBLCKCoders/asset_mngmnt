@@ -16,6 +16,8 @@ import {
   UserCheck,
   AlertCircle,
   UserX,
+  Check,
+  ChevronsUpDown,
 } from 'lucide-react';
 import { api } from '@/lib/api';
 import { User } from '@/types/assets';
@@ -23,6 +25,15 @@ import { cn } from '@/lib/utils';
 import { useCurrentUser } from '@/hooks/useCurrentUser';
 import { useUserPermissions } from '@/hooks/useUserPermissions';
 import { useCompanyContext } from '@/context/CompanyContext';
+import {
+  useCompanyApprovers,
+  type EligibleApprover,
+} from '@/hooks/useCompanyApprovers';
+import {
+  Popover,
+  PopoverContent,
+  PopoverTrigger,
+} from '@/components/ui/popover';
 import {
   AlertDialog,
   AlertDialogAction,
@@ -44,6 +55,7 @@ import {
   SelectValue,
 } from '@/components/ui/select';
 import { Label } from '@/components/ui/label';
+import { Input } from '@/components/ui/input';
 import { toast } from 'sonner';
 import type { Role } from '@/types/assets';
 import { Shimmer } from '@/components/ui/shimmer';
@@ -92,6 +104,163 @@ interface PermissionData {
   };
 }
 
+interface SearchableApproverSelectProps {
+  title: string;
+  placeholder: string;
+  /** Optional helper text shown below the title (e.g. the MA1/MA3 list hint). */
+  hint?: React.ReactNode;
+  users: EligibleApprover[];
+  value: string;
+  onChange: (userId: string) => void;
+}
+
+function SearchableApproverSelect({
+  title,
+  placeholder,
+  hint,
+  users,
+  value,
+  onChange,
+}: SearchableApproverSelectProps) {
+  const [open, setOpen] = useState(false);
+  const [search, setSearch] = useState('');
+  const [departmentName, setDepartmentName] = useState('');
+
+  // Distinct department names (deduped by name) so no duplicate options appear.
+  const departmentNames = React.useMemo(() => {
+    const set = new Set<string>();
+    for (const u of users) {
+      const name = u.department_name ? u.department_name.trim() : '';
+      if (name) set.add(name);
+    }
+    return Array.from(set).sort((a, b) => a.localeCompare(b));
+  }, [users]);
+
+  const filtered = React.useMemo(() => {
+    const q = search.trim().toLowerCase();
+    const dept = departmentName.trim();
+    return users.filter(u => {
+      if (dept && (u.department_name ? u.department_name.trim() : '') !== dept) {
+        return false;
+      }
+      if (!q) return true;
+      return (
+        `${u.first_name} ${u.last_name}`.toLowerCase().includes(q) ||
+        u.email.toLowerCase().includes(q)
+      );
+    });
+  }, [users, search, departmentName]);
+
+  const selected = users.find(u => u.userID === value);
+
+  return (
+    <div className="rounded-xl border border-gray-200/80 bg-white p-3 shadow-sm transition-colors hover:bg-gray-50 sm:p-4">
+      <Label className="mb-2 block text-sm font-semibold text-gray-800">
+        {title}
+      </Label>
+      {hint ? <div className="mb-3">{hint}</div> : null}
+      <Popover open={open} onOpenChange={setOpen}>
+        <PopoverTrigger asChild>
+          <Button
+            type="button"
+            variant="outline"
+            role="combobox"
+            aria-expanded={open}
+            className={cn(
+              'h-11 w-full justify-between rounded-xl border-gray-200 bg-gray-50/50 px-3 text-sm font-normal text-gray-800 shadow-sm transition-colors hover:bg-gray-100 hover:text-gray-900',
+              open && 'border-red-400 ring-2 ring-red-500/20'
+            )}
+          >
+            {selected ? (
+              <span className="truncate">
+                {selected.first_name} {selected.last_name}
+                <span className="ml-1.5 hidden text-xs text-gray-400 sm:inline">
+                  ({selected.email})
+                </span>
+              </span>
+            ) : (
+              <span className="truncate text-gray-400">{placeholder}</span>
+            )}
+            <ChevronsUpDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
+          </Button>
+        </PopoverTrigger>
+        <PopoverContent
+          className="w-[var(--radix-popover-trigger-width)] overflow-hidden rounded-xl border-gray-200 bg-white p-0 shadow-xl"
+          align="start"
+        >
+          <div className="space-y-2 border-b border-gray-100 p-2">
+            <div className="relative">
+              <Search className="absolute left-2.5 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-400" />
+              <Input
+                value={search}
+                onChange={e => setSearch(e.target.value)}
+                placeholder="Search users..."
+                className="h-9 pl-8"
+              />
+            </div>
+            <select
+              value={departmentName}
+              onChange={e => setDepartmentName(e.target.value)}
+              className="h-9 w-full rounded-lg border border-gray-200 bg-white px-2.5 text-sm text-gray-700 focus:border-red-400 focus:outline-none focus:ring-2 focus:ring-red-500/20"
+            >
+              <option value="">All Departments</option>
+              {departmentNames.map(name => (
+                <option key={name} value={name}>
+                  {name}
+                </option>
+              ))}
+            </select>
+          </div>
+          <div className="max-h-72 overflow-y-auto p-1">
+            {filtered.length === 0 ? (
+              <div className="px-3 py-6 text-center text-sm text-gray-500">
+                No eligible users found
+              </div>
+            ) : (
+              filtered.map(u => (
+                <button
+                  key={u.userID}
+                  type="button"
+                  onClick={() => {
+                    onChange(u.userID);
+                    setOpen(false);
+                    setSearch('');
+                    setDepartmentName('');
+                  }}
+                  className={cn(
+                    'flex w-full items-start gap-2 rounded-lg px-3 py-2 text-left transition-colors hover:bg-gray-100',
+                    value === u.userID && 'bg-red-50'
+                  )}
+                >
+                  <Check
+                    className={cn(
+                      'mt-0.5 h-4 w-4 shrink-0',
+                      value === u.userID ? 'opacity-100' : 'opacity-0'
+                    )}
+                  />
+                  <span className="min-w-0 flex-1">
+                    <span className="block truncate text-sm font-medium text-gray-800">
+                      {u.first_name} {u.last_name}
+                    </span>
+                    <span className="block truncate text-xs text-gray-500">
+                      {u.email}
+                    </span>
+                    {u.department_name ? (
+                      <span className="block truncate text-xs text-gray-400">
+                        {u.department_name}
+                      </span>
+                    ) : null}
+                  </span>
+                </button>
+              ))
+            )}
+          </div>
+        </PopoverContent>
+      </Popover>
+    </div>
+  );
+}
+
 function UserPermissions() {
   const { user: currentUser } = useCurrentUser();
   const { refetch: refetchPermissions, hasPermission } = useUserPermissions();
@@ -108,7 +277,7 @@ function UserPermissions() {
   const [rolesLoading, setRolesLoading] = useState(false);
   const [assignRoleSaving, setAssignRoleSaving] = useState(false);
   const [selectedRoleId, setSelectedRoleId] = useState<string>('');
-  const [userTab, setUserTab] = useState<'permissions' | 'assign-role'>(
+  const [userTab, setUserTab] = useState<'permissions' | 'assign-role' | 'approver-assignment'>(
     'permissions'
   );
   const [userCustodianForm, setUserCustodianForm] = useState({
@@ -118,7 +287,25 @@ function UserPermissions() {
     manager_approver_3: false,
     finance_approver: false,
     sub_approver_2: false,
+    sub_approver_1: false,
   });
+  const selectedUserRole = roles.find(
+    r => r.roleID === String(selectedUser?.role_id ?? '')
+  );
+  // Effective MA1 custodian access = per-user setting OR the user's role flag,
+  // matching the backend routing check (getUserCustodianMA1Status).
+  const selectedUserHasMA1 =
+    Boolean(selectedUser?.manager_approver_1) ||
+    Boolean(selectedUserRole?.manager_approver_1);
+  // Normal users pick the MA1-eligible approver; users with MA1 access pick MA3-eligible.
+  const approverListType: 'approver' | 'ma3' = selectedUserHasMA1
+    ? 'ma3'
+    : 'approver';
+  const { designated, eligible, loading: approversLoading } = useCompanyApprovers(
+    selectedUser?.company_id,
+    approverListType
+  );
+  const [approverChanges, setApproverChanges] = useState<Record<string, string>>({});
   const displayLoading = loading;
 
   const custodianFormHasChanges = React.useMemo(() => {
@@ -135,7 +322,9 @@ function UserPermissions() {
       Boolean(userCustodianForm.finance_approver) !==
         Boolean(selectedUser.finance_approver) ||
       Boolean(userCustodianForm.sub_approver_2) !==
-        Boolean(selectedUser.sub_approver_2)
+        Boolean(selectedUser.sub_approver_2) ||
+      Boolean(userCustodianForm.sub_approver_1) !==
+        Boolean(selectedUser.sub_approver_1)
     );
   }, [selectedUser, userCustodianForm]);
 
@@ -145,6 +334,8 @@ function UserPermissions() {
     (selectedRoleId !==
       (selectedUser.role_id != null ? String(selectedUser.role_id) : '') ||
       custodianFormHasChanges);
+
+  const hasApproverChanges = Object.keys(approverChanges).length > 0;
 
   const users = companyUsers.filter(u => u.is_active);
   const stats = React.useMemo(() => {
@@ -249,7 +440,12 @@ function UserPermissions() {
       manager_approver_3: Boolean(selectedUser.manager_approver_3),
       finance_approver: Boolean(selectedUser.finance_approver),
       sub_approver_2: Boolean(selectedUser.sub_approver_2),
+      sub_approver_1: Boolean(selectedUser.sub_approver_1),
     });
+  }, [selectedUser?.userID]);
+
+  useEffect(() => {
+    setApproverChanges({});
   }, [selectedUser?.userID]);
 
   useEffect(() => {
@@ -303,6 +499,7 @@ function UserPermissions() {
         manager_approver_3: userCustodianForm.manager_approver_3,
         finance_approver: userCustodianForm.finance_approver,
         sub_approver_2: userCustodianForm.sub_approver_2,
+        sub_approver_1: userCustodianForm.sub_approver_1,
       });
       try {
         await api.post(`/users/${selectedUser.userID}/apply-role-permissions`);
@@ -343,6 +540,26 @@ function UserPermissions() {
       }
     } finally {
       setAssignRoleSaving(false);
+    }
+  };
+
+  const handleSaveApprovers = async () => {
+    if (!selectedUser || !selectedUser.company_id) return;
+    try {
+      for (const [approverType, userId] of Object.entries(approverChanges)) {
+        if (userId) {
+          await api.setCompanyApprover(selectedUser.company_id, { approverType: approverType as 'approver' | 'sub_approver', userId });
+        }
+      }
+      toast.success('Approvers saved successfully');
+      setApproverChanges({});
+    } catch (error: unknown) {
+      if (error instanceof Error) {
+        console.error('Failed to save approvers:', error);
+        toast.error(error.message || 'Failed to save approvers');
+      } else {
+        toast.error('Failed to save approvers');
+      }
     }
   };
 
@@ -516,7 +733,7 @@ function UserPermissions() {
                 <Tabs
                   value={userTab}
                   onValueChange={v =>
-                    setUserTab(v as 'permissions' | 'assign-role')
+                    setUserTab(v as 'permissions' | 'assign-role' | 'approver-assignment')
                   }
                   className="w-full flex-1 flex flex-col min-h-0"
                 >
@@ -540,7 +757,7 @@ function UserPermissions() {
                           </div>
                         </div>
                         <div className="flex w-full flex-col gap-2 lg:w-auto lg:items-end">
-                          <TabsList className="grid h-auto w-full grid-cols-2 gap-2 bg-transparent p-0 lg:w-auto lg:grid-cols-none lg:flex lg:flex-row">
+                          <TabsList className="grid h-auto w-full grid-cols-3 gap-2 bg-transparent p-0 lg:w-auto lg:grid-cols-none lg:flex lg:flex-row">
                             <TabsTrigger
                               value="permissions"
                               className="min-w-0 rounded-lg border-0 bg-transparent px-4 py-2 text-white/80 data-[state=active]:bg-white/25 data-[state=active]:font-semibold data-[state=active]:text-white data-[state=active]:shadow-none no-underline lg:min-w-[7rem]"
@@ -552,6 +769,12 @@ function UserPermissions() {
                               className="min-w-0 rounded-lg border-0 bg-transparent px-4 py-2 text-white/80 data-[state=active]:bg-white/25 data-[state=active]:font-semibold data-[state=active]:text-white data-[state=active]:shadow-none no-underline lg:min-w-[7rem]"
                             >
                               Assign Role
+                            </TabsTrigger>
+                            <TabsTrigger
+                              value="approver-assignment"
+                              className="min-w-0 rounded-lg border-0 bg-transparent px-4 py-2 text-white/80 data-[state=active]:bg-white/25 data-[state=active]:font-semibold data-[state=active]:text-white data-[state=active]:shadow-none no-underline lg:min-w-[7rem]"
+                            >
+                              Approver Assignment
                             </TabsTrigger>
                           </TabsList>
                           {canManagePermissions && (
@@ -583,6 +806,21 @@ function UserPermissions() {
                                   className="bg-white/20 hover:bg-white/30 text-white border-0 text-xs font-medium min-w-[7rem]"
                                 >
                                   {assignRoleSaving ? 'Saving...' : 'Save Role'}
+                                </Button>
+                              )}
+                              {userTab === 'approver-assignment' && (
+                                <Button
+                                  size="sm"
+                                  onClick={handleSaveApprovers}
+                                  disabled={
+                                    !selectedUser ||
+                                    !selectedUser.company_id ||
+                                    !hasApproverChanges ||
+                                    approversLoading
+                                  }
+                                  className="bg-white/20 hover:bg-white/30 text-white border-0 text-xs font-medium min-w-[7rem]"
+                                >
+                                  {approversLoading ? 'Saving...' : 'Save Approvers'}
                                 </Button>
                               )}
                             </div>
@@ -643,6 +881,102 @@ function UserPermissions() {
                             />
                           </div>
                         )}
+                      </TabsContent>
+                      {/* Approver Assignment Tab - Designated Approvers dropdowns */}
+                      <TabsContent
+                        value="approver-assignment"
+                        forceMount
+                        className="m-0 flex-1 flex flex-col min-h-[360px] overflow-auto custom-scrollbar data-[state=inactive]:hidden"
+                      >
+                        {!canManagePermissions && (
+                          <div className="mx-6 mt-6 flex items-start gap-3 rounded-xl border border-amber-200 bg-amber-50/80 px-4 py-3 shadow-sm">
+                            <AlertCircle className="h-5 w-5 shrink-0 text-amber-600 mt-0.5" />
+                            <p className="text-sm font-medium text-amber-800">
+                              You do not have permission to manage approvers. Ask an
+                              administrator for Users create or edit access.
+                            </p>
+                          </div>
+                        )}
+                        {!selectedUser && (
+                          <div className="mx-6 mt-6 flex items-start gap-3 rounded-xl border border-slate-200 bg-slate-50/80 px-4 py-3 shadow-sm">
+                            <UserX className="h-5 w-5 shrink-0 text-slate-500 mt-0.5" />
+                            <p className="text-sm font-medium text-slate-700">
+                              Select a user from the list to assign approvers.
+                            </p>
+                          </div>
+                        )}
+                        <div className="flex-1 p-6 pt-4">
+                          <div className="w-full space-y-6">
+                            <div className="flex items-center gap-4">
+                              <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-xl bg-gradient-to-br from-blue-500 to-blue-600 text-white shadow-md ring-2 ring-blue-200/50">
+                                <UserCheck className="h-6 w-6" />
+                              </div>
+                              <div>
+                                <h3 className="text-xl font-bold tracking-tight text-gray-900">
+                                  Designated Approvers
+                                </h3>
+                                <p className="mt-0.5 text-sm text-gray-500">
+                                  Select the specific users who will act as approvers for this company.
+                                  Eligible users must have the corresponding custodian access enabled in the Assign Role tab.
+                                </p>
+                              </div>
+                            </div>
+
+                            <div className="relative overflow-hidden rounded-2xl border border-gray-200/80 bg-white p-4 shadow-sm ring-1 ring-gray-100 sm:p-6">
+                              <div className="absolute left-0 top-0 h-full w-1 bg-gradient-to-b from-purple-400 to-purple-500" />
+                              <div className="pl-4 space-y-4">
+                                <div className="flex items-center gap-2">
+                                  <UserCheck className="h-4 w-4 text-gray-500" />
+                                  <Label className="text-sm font-semibold text-gray-800">
+                                    Designated Approvers
+                                  </Label>
+                                </div>
+                                <p className="text-xs text-gray-500">
+                                  Select the specific users who will act as approvers for this company.
+                                  Users must have the corresponding eligibility enabled in the Assign Role tab.
+                                </p>
+                                <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
+                                  <SearchableApproverSelect
+                                    title="Approver (MA1/MA3)"
+                                    placeholder="Select Approver (MA1/MA3)"
+                                    hint={
+                                      <p className="text-xs text-gray-400">
+                                        {selectedUserHasMA1
+                                          ? 'This user has MA1 custodian access — showing MA3-eligible approvers.'
+                                          : 'This user does not have MA1 custodian access — showing MA1-eligible approvers.'}
+                                      </p>
+                                    }
+                                    users={eligible.approver}
+                                    value={approverChanges.approver || designated.approver || ''}
+                                    onChange={v =>
+                                      setApproverChanges(prev => ({
+                                        ...prev,
+                                        approver: v,
+                                      }))
+                                    }
+                                  />
+                                  <SearchableApproverSelect
+                                    title="Sub Approver (Sub1)"
+                                    placeholder="Select Sub Approver (Sub1)"
+                                    hint={
+                                      <p className="text-xs text-gray-400">
+                                        Stand-in for the Approver when the primary approver is absent.
+                                      </p>
+                                    }
+                                    users={eligible.sub_approver}
+                                    value={approverChanges.sub_approver || designated.sub_approver || ''}
+                                    onChange={v =>
+                                      setApproverChanges(prev => ({
+                                        ...prev,
+                                        sub_approver: v,
+                                      }))
+                                    }
+                                  />
+                                </div>
+                            </div>
+                          </div>
+                        </div>
+                      </div>
                       </TabsContent>
                       <TabsContent
                         value="assign-role"
@@ -747,37 +1081,23 @@ function UserPermissions() {
                               </div>
                             </div>
 
-                            <div className="grid grid-cols-1 gap-6">
+                              {/* Custodian & Approver Access */}
                               <div className="relative overflow-hidden rounded-2xl border border-gray-200/80 bg-white p-4 shadow-sm ring-1 ring-gray-100 sm:p-6">
                                 <div className="absolute left-0 top-0 h-full w-1 bg-gradient-to-b from-red-400 to-red-500" />
                                 <div className="pl-4 space-y-4">
                                   <div className="flex items-center gap-2">
                                     <UserCheck className="h-4 w-4 text-gray-500" />
                                     <Label className="text-sm font-semibold text-gray-800">
-                                      Approver custodian
+                                      Custodian & Approver Access
                                     </Label>
                                   </div>
                                   <div className="space-y-4">
                                     {[
                                       {
-                                        key: 'hr',
-                                        label:
-                                          'HR asset accountability Receiver',
-                                        desc: 'HR accountability receiver of employees.',
-                                        checked:
-                                          userCustodianForm.hr_accountability_receiver,
-                                        set: (v: boolean) =>
-                                          setUserCustodianForm(prev => ({
-                                            ...prev,
-                                            hr_accountability_receiver: v,
-                                          })),
-                                      },
-                                      {
-                                        key: 'm1',
-                                        label: 'Manager Approver 1',
-                                        desc: 'Approver of request — dept head or manager of the requestor.',
-                                        checked:
-                                          userCustodianForm.manager_approver_1,
+                                        key: 'ma1',
+                                        label: 'Manager Approver 1 (MA1)',
+                                        desc: 'Dept head / manager of the requestor. Appears in the Approver dropdown for non-MA1 users.',
+                                        checked: userCustodianForm.manager_approver_1,
                                         set: (v: boolean) =>
                                           setUserCustodianForm(prev => ({
                                             ...prev,
@@ -785,23 +1105,10 @@ function UserPermissions() {
                                           })),
                                       },
                                       {
-                                        key: 'm2',
-                                        label: 'Manager Approver 2',
-                                        desc: 'Department head / manager of IT department / admin department for verifying all requests and transactions in the system.',
-                                        checked:
-                                          userCustodianForm.manager_approver_2,
-                                        set: (v: boolean) =>
-                                          setUserCustodianForm(prev => ({
-                                            ...prev,
-                                            manager_approver_2: v,
-                                          })),
-                                      },
-                                      {
-                                        key: 'm3',
-                                        label: 'Sub Approver 1',
-                                        desc: 'Stand-in for Manager Approver 1. Approves the request when the dept head / manager of the requestor is absent. If the primary is also set, only one of them signs.',
-                                        checked:
-                                          userCustodianForm.manager_approver_3,
+                                        key: 'ma3',
+                                        label: 'Manager Approver 3 (MA3)',
+                                        desc: 'Company-wide approver. Appears in the Approver dropdown for users who have MA1 custodian access.',
+                                        checked: userCustodianForm.manager_approver_3,
                                         set: (v: boolean) =>
                                           setUserCustodianForm(prev => ({
                                             ...prev,
@@ -809,11 +1116,32 @@ function UserPermissions() {
                                           })),
                                       },
                                       {
-                                        key: 's2',
+                                        key: 'sub_approver',
+                                        label: 'Sub Approver (Sub1)',
+                                        desc: 'Eligible as stand-in for Approver when primary is absent.',
+                                        checked: userCustodianForm.sub_approver_1,
+                                        set: (v: boolean) =>
+                                          setUserCustodianForm(prev => ({
+                                            ...prev,
+                                            sub_approver_1: v,
+                                          })),
+                                      },
+                                      {
+                                        key: 'ma2',
+                                        label: 'Manager Approver 2',
+                                        desc: 'Department head / manager of IT department / admin department for verifying all requests and transactions in the system.',
+                                        checked: userCustodianForm.manager_approver_2,
+                                        set: (v: boolean) =>
+                                          setUserCustodianForm(prev => ({
+                                            ...prev,
+                                            manager_approver_2: v,
+                                          })),
+                                      },
+                                      {
+                                        key: 'sub2',
                                         label: 'Sub Approver 2',
-                                        desc: 'Stand-in for Manager Approver 2. Verifies all requests and transactions in both IT and Admin departments when the dept head / manager is absent. If the primary is also set, only one of them signs.',
-                                        checked:
-                                          userCustodianForm.sub_approver_2,
+                                        desc: 'Stand-in for Manager Approver 2. Verifies all requests and transactions in both IT and Admin departments when the dept head / manager is absent.',
+                                        checked: userCustodianForm.sub_approver_2,
                                         set: (v: boolean) =>
                                           setUserCustodianForm(prev => ({
                                             ...prev,
@@ -824,12 +1152,22 @@ function UserPermissions() {
                                         key: 'fa',
                                         label: 'Finance Approver',
                                         desc: 'For finance employee to edit asset finance and life cycle.',
-                                        checked:
-                                          userCustodianForm.finance_approver,
+                                        checked: userCustodianForm.finance_approver,
                                         set: (v: boolean) =>
                                           setUserCustodianForm(prev => ({
                                             ...prev,
                                             finance_approver: v,
+                                          })),
+                                      },
+                                      {
+                                        key: 'hr',
+                                        label: 'HR Accountability Receiver',
+                                        desc: 'HR accountability receiver of employees.',
+                                        checked: userCustodianForm.hr_accountability_receiver,
+                                        set: (v: boolean) =>
+                                          setUserCustodianForm(prev => ({
+                                            ...prev,
+                                            hr_accountability_receiver: v,
                                           })),
                                       },
                                     ].map(
@@ -846,8 +1184,7 @@ function UserPermissions() {
                                               checked={checked}
                                               onCheckedChange={set}
                                               disabled={
-                                                !canManagePermissions ||
-                                                !selectedUser
+                                                !canManagePermissions || !selectedUser
                                               }
                                             />
                                           </div>
@@ -859,14 +1196,13 @@ function UserPermissions() {
                                         </div>
                                       )
                                     )}
-                                  </div>
                                 </div>
                               </div>
                             </div>
                           </div>
                         </div>
                       </TabsContent>
-                    </CardContent>
+                      </CardContent>
                   </div>
                 </Tabs>
               </Card>

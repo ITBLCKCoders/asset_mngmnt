@@ -301,6 +301,57 @@ export async function findPendingDeptHeadBorrowRequests(
   return rows as AssetBorrowRequestRow[];
 }
 
+/** Pending department head approval: company-wide (for designated approvers). */
+export async function findPendingDeptHeadBorrowRequestsByCompany(
+  pool: Pool,
+  companyId: string
+): Promise<AssetBorrowRequestRow[]> {
+  const sql = `
+    SELECT
+      br.borrow_request_id,
+      br.company_id,
+      br.user_id,
+      br.borrow_scope,
+      br.category_id,
+      br.type_id,
+      br.form_number,
+      br.expected_return_at,
+      br.purpose,
+      br.status,
+      br.created_at,
+      br.update_at,
+      c.name AS category_name,
+      t.name AS type_name,
+      req.first_name AS requester_first_name,
+      req.last_name AS requester_last_name,
+      req.username AS requester_username,
+      req.email AS requester_email,
+      co.name AS requester_company_name,
+      co.logo_url AS requester_company_logo_url,
+      d.name AS requester_department_name,
+      br.requested_by_signature,
+      br.processor_signature,
+      DATE_FORMAT(br.processor_signed_at, '%Y-%m-%d %H:%i:%s') AS processor_signed_at,
+      DATE_FORMAT(br.sub_approver_1_signed_at, '%Y-%m-%d %H:%i:%s') AS sub_approver_1_signed_at,
+      br.sub_approver_1_signed_by,
+      IFNULL(CONCAT(sa1.first_name, ' ', sa1.last_name), NULL) AS sub_approver_1_name
+    FROM asset_borrow_requests br
+    INNER JOIN asset_categories c ON br.category_id = c.categoryID AND c.deleted_at IS NULL
+    INNER JOIN asset_types t ON br.type_id = t.typeID AND t.deleted_at IS NULL
+    INNER JOIN users req ON br.user_id = req.userID
+    LEFT JOIN companies co ON req.company_id = co.companyID AND co.deleted_at IS NULL
+    LEFT JOIN asset_mngmnt_departments d ON req.department_id = d.departmentID AND d.deleted_at IS NULL
+    LEFT JOIN users sa1 ON br.sub_approver_1_signed_by = sa1.userID
+    WHERE br.company_id = ?
+      AND br.dept_head_signed_at IS NULL
+      AND br.sub_approver_1_signed_at IS NULL
+      AND br.declined_at IS NULL
+    ORDER BY br.created_at DESC
+  `;
+  const [rows] = await pool.execute(sql, [companyId]);
+  return rows as AssetBorrowRequestRow[];
+}
+
 export async function findBorrowRequestsApprovedByDeptHeadMe(
   pool: Pool,
   companyId: string,

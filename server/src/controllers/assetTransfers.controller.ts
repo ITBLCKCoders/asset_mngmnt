@@ -7,16 +7,17 @@ import logger from '../logger.js';
 import { createAuditLog } from '../utils/audit.js';
 import { handleAccountabilityFormOnAssetReturn, type ProcessSignature } from '../utils/accountabilityFormOnReturn.js';
 import {
-  isUserManagerApprover1,
   isUserManagerApprover2,
-  isUserSubApprover1,
   isUserSubApprover2,
-  getManagerApprover1UserIdsInDepartmentAndCompany,
-  getSubApprover1UserIdsInDepartment,
   getAssetRoleUsersForAssignmentsAndCompany,
   getManagerApprover2UserIdsForProcessedReturn,
   getManagerApprover2UserIdsInItAndAdminDepartmentsAndCompany,
   getSubApprover2UserIdsInItAndAdminDepartmentsAndCompany,
+  isDesignatedApprover,
+  isDesignatedSubApprover,
+  getDesignatedApproverUserId,
+  getDesignatedSubApproverUserId,
+  getRequestorMA1Status,
 } from '../utils/approverNotifications.js';
 import { createNotificationForApi } from '../utils/notificationsApi.js';
 import { getIoInstance } from '../utils/socketManager.js';
@@ -1376,13 +1377,11 @@ export async function createHeldTransferHandler(
         const ownerDeptId = pastOwnerUserId
           ? await getUserDepartmentId(pastOwnerUserId)
           : null;
-        const managerApprover1UserIds =
-          ownerDeptId && companyId
-            ? (await getManagerApprover1UserIdsInDepartmentAndCompany(
-                ownerDeptId,
-                companyId
-              )) ?? []
-            : [];
+        // Use designated approver for the company
+        const approverUserId = companyId
+          ? await getDesignatedApproverUserId(companyId)
+          : null;
+        
         const ownerNames = pastOwnerUserId
           ? await getUserNamesById(pastOwnerUserId)
           : null;
@@ -1391,8 +1390,7 @@ export async function createHeldTransferHandler(
           : 'The asset owner';
         const assetCount = assignmentRows.length;
         const io = getIoInstance();
-        for (const approverUserId of managerApprover1UserIds) {
-          if (approverUserId === req.user!.userID) continue;
+        if (approverUserId && approverUserId !== req.user!.userID) {
           const approvalMessage = `${ownerName} is no longer in office. An asset transfer has been initialized for ${assetCount} asset${assetCount !== 1 ? 's' : ''} and requires your approval as the asset owner's department head.`;
           await createNotificationForApi({
             user_id: approverUserId,
@@ -1430,7 +1428,7 @@ export async function createHeldTransferHandler(
         }
       } catch (notifErr) {
         logger.error(
-          'Failed to notify Manager Approver 1 about owner-absent transfer:',
+          'Failed to notify designated approver about owner-absent transfer:',
           notifErr
         );
       }
@@ -1685,19 +1683,41 @@ export async function submitTransferRequestHandler(
       createdForms.push(entry);
       if (!firstForm) firstForm = entry;
 
-      // Send notification to Manager Approver 1 users in the transferer's department AND company
-      if (transfererUserDeptId && companyId) {
+      // Send notification to designated Approver for the company
+      if (companyId) {
         try {
-          const managerApprover1UserIds = await getManagerApprover1UserIdsInDepartmentAndCompany(transfererUserDeptId, companyId);
+          // Check if requestor has MA1 custodian access - if so, route to same approver (MA3 capacity)
+          const requestorHasMA1 = await getRequestorMA1Status(firstDeptAssignment.user_id);
+          // For MA1/MA3 combined, we use the same designated approver
+          const approverUserId = await getDesignatedApproverUserId(companyId);
+          const subApproverUserId = await getDesignatedSubApproverUserId(companyId);
+          
           const requesterRow = await getUserNamesById(firstDeptAssignment.user_id);
           const requesterName = requesterRow ? `${requesterRow.first_name} ${requesterRow.last_name}`.trim() : 'A user';
           const assetCount = deptAssignments.length;
 
           const io = getIoInstance();
-          for (const approverUserId of managerApprover1UserIds) {
-            if (approverUserId !== currentUserId) {
-              await createNotificationForApi({
-                user_id: approverUserId,
+          const notifyUsers = [approverUserId, subApproverUserId].filter((id): id is string => id !== null && id !== currentUserId);
+          
+          for (const approverUserId of notifyUsers) {
+            await createNotificationForApi({
+              user_id: approverUserId,
+              title: 'Asset Transfer Request Approval Needed',
+              message: `${requesterName} has submitted an asset transfer request for ${assetCount} asset${assetCount !== 1 ? 's' : ''} and requires your approval.`,
+              type: 'system',
+              data: {
+                form_id: formId,
+                form_number: transferForm!.form_number,
+                requester_id: currentUserId,
+                requester_name: requesterName,
+                asset_count: assetCount,
+                route: '/approvals',
+                actionTarget: 'transfer_request_approval',
+              },
+            });
+            if (io) {
+              emitNotification(io, approverUserId, 'notification', {
+                id: formId,
                 title: 'Asset Transfer Request Approval Needed',
                 message: `${requesterName} has submitted an asset transfer request for ${assetCount} asset${assetCount !== 1 ? 's' : ''} and requires your approval.`,
                 type: 'system',
@@ -1710,28 +1730,28 @@ export async function submitTransferRequestHandler(
                   route: '/approvals',
                   actionTarget: 'transfer_request_approval',
                 },
+                time: new Date().toISOString(),
               });
-              if (io) {
-                emitNotification(io, approverUserId, 'notification', {
-                  id: formId,
-                  title: 'Asset Transfer Request Approval Needed',
-                  message: `${requesterName} has submitted an asset transfer request for ${assetCount} asset${assetCount !== 1 ? 's' : ''} and requires your approval.`,
-                  type: 'system',
-                  data: {
-                    form_id: formId,
-                    form_number: transferForm!.form_number,
-                    requester_id: currentUserId,
-                    requester_name: requesterName,
-                    asset_count: assetCount,
-                    route: '/approvals',
-                    actionTarget: 'transfer_request_approval',
-                  },
-                  time: new Date().toISOString(),
-                });
-              }
-              // Also notify for the linked return form (transfer requests create both forms)
-              await createNotificationForApi({
-                user_id: approverUserId,
+            }
+            // Also notify for the linked return form (transfer requests create both forms)
+            await createNotificationForApi({
+              user_id: approverUserId,
+              title: 'Asset Return Request Approval Needed',
+              message: `${requesterName} has submitted an asset return request for ${assetCount} asset${assetCount !== 1 ? 's' : ''} and requires your approval.`,
+              type: 'system',
+              data: {
+                form_id: returnFormId,
+                form_number: returnForm?.form_number ?? returnFormNumber,
+                requester_id: currentUserId,
+                requester_name: requesterName,
+                asset_count: assetCount,
+                route: '/approvals',
+                actionTarget: 'return_request_approval',
+              },
+            });
+            if (io) {
+              emitNotification(io, approverUserId, 'notification', {
+                id: returnFormId,
                 title: 'Asset Return Request Approval Needed',
                 message: `${requesterName} has submitted an asset return request for ${assetCount} asset${assetCount !== 1 ? 's' : ''} and requires your approval.`,
                 type: 'system',
@@ -1744,25 +1764,8 @@ export async function submitTransferRequestHandler(
                   route: '/approvals',
                   actionTarget: 'return_request_approval',
                 },
+                time: new Date().toISOString(),
               });
-              if (io) {
-                emitNotification(io, approverUserId, 'notification', {
-                  id: returnFormId,
-                  title: 'Asset Return Request Approval Needed',
-                  message: `${requesterName} has submitted an asset return request for ${assetCount} asset${assetCount !== 1 ? 's' : ''} and requires your approval.`,
-                  type: 'system',
-                  data: {
-                    form_id: returnFormId,
-                    form_number: returnForm?.form_number ?? returnFormNumber,
-                    requester_id: currentUserId,
-                    requester_name: requesterName,
-                    asset_count: assetCount,
-                    route: '/approvals',
-                    actionTarget: 'return_request_approval',
-                  },
-                  time: new Date().toISOString(),
-                });
-              }
             }
           }
         } catch (notifError) {
@@ -4800,7 +4803,7 @@ export async function getAllAssetTransferFormsHandler(
   }
 }
 
-/** GET transfer forms pending Dept Head approval. Only Manager Approver 1 users; only forms where transferer's user department = approver's department. When return_form_id set, linked return form must be signed. */
+/** GET transfer forms pending Dept Head approval. Only designated Approver/Sub Approver users for the company. */
 export async function getTransferPendingApprovalsHandler(
   req: AuthRequest,
   res: Response
@@ -4850,18 +4853,12 @@ export async function getTransferPendingApprovalsHandler(
       return res.json({ assetTransferForms: batches });
     }
 
-    const isManager1 = await isUserManagerApprover1(userId);
-    const isSub1 = await isUserSubApprover1(userId);
-    if (!isManager1 && !isSub1) return res.json({ assetTransferForms: [] });
+    // Check if user is designated approver or sub approver for this company
+    const isApprover = await isDesignatedApprover(userId, companyId);
+    const isSubApprover = await isDesignatedSubApprover(userId, companyId);
+    if (!isApprover && !isSubApprover) return res.json({ assetTransferForms: [] });
 
-    const [approverDeptRows] = (await pool.execute(
-      'SELECT department_id FROM users WHERE userID = ?',
-      [userId]
-    )) as any[];
-    const approverDepartmentId = approverDeptRows[0]?.department_id ?? null;
-    if (approverDepartmentId == null)
-      return res.json({ assetTransferForms: [] });
-
+    // Designated approvers see all pending forms in the company (company-wide)
     let formRows: any[];
     try {
       const [rows] = (await pool.execute(
@@ -4884,8 +4881,8 @@ export async function getTransferPendingApprovalsHandler(
            AND atf.dept_head_signed_at IS NULL
            AND atf.sub_approver_1_signed_at IS NULL
            AND (atf.return_form_id IS NULL OR (arf.formID IS NOT NULL AND (arf.signed_at IS NOT NULL OR arf.owner_absent = 1) AND arf.declined_at IS NULL))
-           AND transferer.department_id <=> ? AND d.company_id = ?`,
-        [approverDepartmentId, companyId]
+           AND d.company_id = ?`,
+        [companyId]
       )) as any[];
       formRows = rows || [];
     } catch (colErr: any) {
@@ -5043,6 +5040,13 @@ export async function approveTransferFormHandler(
         error: 'This transfer form is already approved by the department head or sub approver',
       });
     }
+    
+    // Get the company ID from the form
+    const { companyId } = await getAssetScope(pool, userId);
+    if (!companyId) {
+      return res.status(400).json({ error: 'Company context required' });
+    }
+
     const [permRows] = (await pool.execute(
       'SELECT module_name, permission_type, granted FROM user_permissions WHERE user_id = ?',
       [userId]
@@ -5059,9 +5063,12 @@ export async function approveTransferFormHandler(
         r.permission_type === 'edit' &&
         r.granted === 1
     );
-    const managerApprover1 = await isUserManagerApprover1(userId);
-    const subApprover1 = await isUserSubApprover1(userId);
-    if (!(hasCreate && hasEdit) && !managerApprover1 && !subApprover1) {
+    
+    // Check if user is designated approver or sub approver for this company
+    const isApprover = await isDesignatedApprover(userId, companyId);
+    const isSubApprover = await isDesignatedSubApprover(userId, companyId);
+    
+    if (!(hasCreate && hasEdit) && !isApprover && !isSubApprover) {
       return res
         .status(403)
         .json({ error: 'You do not have permission to approve this form' });
@@ -5079,7 +5086,7 @@ export async function approveTransferFormHandler(
         : '') ||
       (await fetchUserDigitalSignature(userId));
 
-    const isSubApprover1Approver = subApprover1 && !managerApprover1;
+    const isSubApprover1Approver = isSubApprover && !isApprover;
     if (isSubApprover1Approver) {
       await pool.execute(
         `UPDATE asset_transfer_forms SET sub_approver_1_signed_at = NOW(), sub_approver_1_digital_signature = ?, sub_approver_1_signed_by = ?, updated_at = NOW() WHERE formID = ?`,
@@ -5363,6 +5370,13 @@ export async function declineTransferFormHandler(
         .status(400)
         .json({ error: 'Cannot decline an executed transfer form' });
     }
+    
+    // Get the company ID from the form
+    const { companyId } = await getAssetScope(pool, userId);
+    if (!companyId) {
+      return res.status(400).json({ error: 'Company context required' });
+    }
+
     const [permRows] = (await pool.execute(
       'SELECT module_name, permission_type, granted FROM user_permissions WHERE user_id = ?',
       [userId]
@@ -5379,9 +5393,12 @@ export async function declineTransferFormHandler(
         r.permission_type === 'edit' &&
         r.granted === 1
     );
-    const managerApprover1 = await isUserManagerApprover1(userId);
-    const subApprover1 = await isUserSubApprover1(userId);
-    if (!(hasCreate && hasEdit) && !managerApprover1 && !subApprover1) {
+    
+    // Check if user is designated approver or sub approver for this company
+    const isApprover = await isDesignatedApprover(userId, companyId);
+    const isSubApprover = await isDesignatedSubApprover(userId, companyId);
+    
+    if (!(hasCreate && hasEdit) && !isApprover && !isSubApprover) {
       return res
         .status(403)
         .json({ error: 'You do not have permission to decline this form' });
@@ -5582,12 +5599,9 @@ export async function signAssetTransferFormHandler(
         const transferrerUser = await getUserById(form.user_id);
         signCompanyId = transferrerUser?.company_id ?? null;
       }
-      if (transferrerUserDeptId && signCompanyId) {
-        const managerApprover1UserIds =
-          await getManagerApprover1UserIdsInDepartmentAndCompany(
-            transferrerUserDeptId,
-            signCompanyId
-          );
+      if (signCompanyId) {
+        const approverUserId = await getDesignatedApproverUserId(signCompanyId);
+        const subApproverUserId = await getDesignatedSubApproverUserId(signCompanyId);
         const transferrerRow = await getUserNamesById(req.user!.userID);
         const transferrerName = transferrerRow
           ? `${transferrerRow.first_name} ${transferrerRow.last_name}`.trim()
@@ -5597,35 +5611,34 @@ export async function signAssetTransferFormHandler(
         const assetCount = transferFormAssignments.length;
 
         const io = getIoInstance();
-        for (const approverUserId of managerApprover1UserIds) {
-          if (approverUserId !== req.user!.userID) {
-            const message = `${transferrerName} has signed the asset transfer form for ${assetCount} asset${assetCount !== 1 ? 's' : ''} and requires your approval.`;
-            const payloadData = {
-              form_id: formId,
-              form_number: form.form_number,
-              requester_id: form.user_id,
-              requester_name: transferrerName,
-              asset_count: assetCount,
-              route: '/approvals',
-              actionTarget: 'transfer_request_approval',
-            };
-            await createNotificationForApi({
-              user_id: approverUserId,
+        const notifyUsers = [approverUserId, subApproverUserId].filter((id): id is string => id !== null && id !== req.user!.userID);
+        for (const approverUserId of notifyUsers) {
+          const message = `${transferrerName} has signed the asset transfer form for ${assetCount} asset${assetCount !== 1 ? 's' : ''} and requires your approval.`;
+          const payloadData = {
+            form_id: formId,
+            form_number: form.form_number,
+            requester_id: form.user_id,
+            requester_name: transferrerName,
+            asset_count: assetCount,
+            route: '/approvals',
+            actionTarget: 'transfer_request_approval',
+          };
+          await createNotificationForApi({
+            user_id: approverUserId,
+            title: 'Asset Transfer Request Approval Needed',
+            message,
+            type: 'system',
+            data: payloadData,
+          });
+          if (io) {
+            emitNotification(io, approverUserId, 'notification', {
+              id: formId,
               title: 'Asset Transfer Request Approval Needed',
               message,
               type: 'system',
               data: payloadData,
+              time: new Date().toISOString(),
             });
-            if (io) {
-              emitNotification(io, approverUserId, 'notification', {
-                id: formId,
-                title: 'Asset Transfer Request Approval Needed',
-                message,
-                type: 'system',
-                data: payloadData,
-                time: new Date().toISOString(),
-              });
-            }
           }
         }
       }
