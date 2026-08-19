@@ -319,7 +319,7 @@ export async function findPendingDeptHeadBorrowRequestsByCompany(
       br.purpose,
       br.status,
       br.created_at,
-      br.update_at,
+      br.updated_at,
       c.name AS category_name,
       t.name AS type_name,
       req.first_name AS requester_first_name,
