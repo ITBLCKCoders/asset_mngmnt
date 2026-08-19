@@ -26,9 +26,9 @@ import { useCurrentUser } from '@/hooks/useCurrentUser';
 import { useUserPermissions } from '@/hooks/useUserPermissions';
 import { useCompanyContext } from '@/context/CompanyContext';
 import {
-  useCompanyApprovers,
+  useUserApprovers,
   type EligibleApprover,
-} from '@/hooks/useCompanyApprovers';
+} from '@/hooks/useUserApprovers';
 import {
   Popover,
   PopoverContent,
@@ -306,7 +306,8 @@ function UserPermissions() {
     eligible,
     loading: approversLoading,
     refresh: refreshApprovers,
-  } = useCompanyApprovers(selectedUser?.company_id, approverListType);
+    saveApprover,
+  } = useUserApprovers(selectedUser?.userID, approverListType);
   const [approverChanges, setApproverChanges] = useState<Record<string, string>>({});
   const displayLoading = loading;
 
@@ -562,11 +563,15 @@ function UserPermissions() {
   };
 
   const handleSaveApprovers = async () => {
-    if (!selectedUser || !selectedUser.company_id) return;
+    if (!selectedUser) return;
     try {
       for (const [approverType, userId] of Object.entries(approverChanges)) {
         if (userId) {
-          await api.setCompanyApprover(selectedUser.company_id, { approverType: approverType as 'approver' | 'sub_approver', userId });
+          const ok = await saveApprover(
+            approverType as 'approver' | 'sub_approver',
+            userId
+          );
+          if (!ok) throw new Error('Failed to save approver');
         }
       }
       toast.success('Approvers saved successfully');
@@ -935,7 +940,7 @@ function UserPermissions() {
                                   Designated Approvers
                                 </h3>
                                 <p className="mt-0.5 text-sm text-gray-500">
-                                  Select the specific users who will act as approvers for this company.
+                                  Select the specific users who will act as approvers for the selected employee.
                                   Eligible users must have the corresponding custodian access enabled in the Assign Role tab.
                                 </p>
                               </div>
@@ -951,7 +956,7 @@ function UserPermissions() {
                                   </Label>
                                 </div>
                                 <p className="text-xs text-gray-500">
-                                  Select the specific users who will act as approvers for this company.
+                                  Select the specific users who will act as approvers for the selected employee.
                                   Users must have the corresponding eligibility enabled in the Assign Role tab.
                                 </p>
                                 <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
