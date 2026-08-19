@@ -434,7 +434,7 @@ export async function getActiveIntangibleAssetsByUserAndDepartment(
        td.departmentID AS type_department_id,
        td.name AS type_department_name
      FROM intangible_asset_assignments iaa
-     INNER JOIN intangible_assets ia ON iaa.intangible_asset_id = ia.id AND ia.deleted_at IS NULL
+     INNER JOIN intangible_assets ia ON iaa.intangible_asset_id = ia.id
      LEFT JOIN intangible_asset_types iat
        ON ia.type = iat.name
        AND iat.company_id = ia.company_id

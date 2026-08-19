@@ -301,10 +301,12 @@ function UserPermissions() {
   const approverListType: 'approver' | 'ma3' = selectedUserHasMA1
     ? 'ma3'
     : 'approver';
-  const { designated, eligible, loading: approversLoading } = useCompanyApprovers(
-    selectedUser?.company_id,
-    approverListType
-  );
+  const {
+    designated,
+    eligible,
+    loading: approversLoading,
+    refresh: refreshApprovers,
+  } = useCompanyApprovers(selectedUser?.company_id, approverListType);
   const [approverChanges, setApproverChanges] = useState<Record<string, string>>({});
   const displayLoading = loading;
 
@@ -448,6 +450,21 @@ function UserPermissions() {
     setApproverChanges({});
   }, [selectedUser?.userID]);
 
+  // Refresh approvers when selected user's company changes
+  useEffect(() => {
+    if (selectedUser?.company_id) {
+      refreshApprovers();
+    }
+  }, [selectedUser?.company_id, refreshApprovers]);
+
+  // Refetch eligible approvers each time the Approver Assignment tab opens so
+  // custodian toggles saved in the Assign Role tab are reflected immediately.
+  useEffect(() => {
+    if (userTab === 'approver-assignment') {
+      refreshApprovers();
+    }
+  }, [userTab, refreshApprovers]);
+
   useEffect(() => {
     const fetchPermissions = async () => {
       if (!selectedUser) return;
@@ -530,6 +547,7 @@ function UserPermissions() {
             : u
         )
       );
+      refreshApprovers();
       toast.success('Role assigned successfully');
     } catch (error: unknown) {
       if (error instanceof Error) {
@@ -553,6 +571,7 @@ function UserPermissions() {
       }
       toast.success('Approvers saved successfully');
       setApproverChanges({});
+      await refreshApprovers();
     } catch (error: unknown) {
       if (error instanceof Error) {
         console.error('Failed to save approvers:', error);

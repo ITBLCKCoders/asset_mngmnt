@@ -130,7 +130,6 @@ export default function AssetBuilderPage() {
     if (!groupedAssetIds) return [];
     return assets.filter(
       asset =>
-        asset.status === 'Available' &&
         !groupedAssetIds.has(asset.id.trim()) &&
         (!asset.builderHistory || asset.builderHistory.length === 0)
     );

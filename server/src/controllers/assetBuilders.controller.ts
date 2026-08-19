@@ -65,11 +65,11 @@ export async function createAssetBuilderHandler(
       });
     }
 
-    // Validate that all asset codes exist and are available
+    // Validate that all asset codes exist
     const placeholders = assetIds.map(() => '?').join(',');
     const [assetRows] = (await pool.execute(
       `SELECT assetID, asset_code, name FROM assets
-       WHERE asset_code IN (${placeholders}) AND status = 'Available' AND deleted_at IS NULL`,
+       WHERE asset_code IN (${placeholders}) AND deleted_at IS NULL`,
       assetIds
     )) as any[];
 
@@ -83,7 +83,7 @@ export async function createAssetBuilderHandler(
         assetRows.map((a: any) => `${a.asset_code} (${a.assetID})`)
       );
       return res.status(400).json({
-        error: 'Some assets are not available or do not exist',
+        error: 'One or more assets do not exist',
       });
     }
 
@@ -555,17 +555,13 @@ export async function updateAssetBuilderHandler(
       [builderId]
     )) as any[];
 
-    const currentAssetIdsSet = new Set(
-      currentItems.map((item: any) => item.asset_id)
-    );
-
     // If no assetIds provided, keep existing assets (for status-only updates)
     let assetRows: any[] = [];
     if (assetIds && Array.isArray(assetIds) && assetIds.length > 0) {
-      // Validate: all asset codes must exist. Only NEW assets (not already in builder) must be Available.
+      // Validate: all asset codes must exist.
       const placeholders = assetIds.map(() => '?').join(',');
       const [rows] = (await pool.execute(
-        `SELECT assetID, asset_code, name, status FROM assets
+        `SELECT assetID, asset_code, name FROM assets
          WHERE asset_code IN (${placeholders}) AND deleted_at IS NULL`,
         assetIds
       )) as any[];
@@ -577,18 +573,6 @@ export async function updateAssetBuilderHandler(
         return res.status(400).json({
           error: 'One or more assets do not exist',
         });
-      }
-
-      // New assets (not currently in this builder) must be Available
-      for (const row of rows as any[]) {
-        if (
-          !currentAssetIdsSet.has(row.assetID) &&
-          row.status !== 'Available'
-        ) {
-          return res.status(400).json({
-            error: `Asset ${row.asset_code} is not available (status: ${row.status}). Only available assets can be added to a builder.`,
-          });
-        }
       }
 
       // Validate parentAssetId if provided

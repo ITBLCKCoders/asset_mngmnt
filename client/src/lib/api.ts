@@ -331,6 +331,7 @@ export const api = {
   async setCompanyApprover<T = any>(companyId: string, data: { approverType: string; userId: string }) {
     return fetchApi<T>(`/companies/${companyId}/approvers`, {
       method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(data),
     });
   },

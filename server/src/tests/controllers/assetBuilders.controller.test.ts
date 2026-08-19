@@ -48,6 +48,20 @@ describe('assetBuilders.controller', () => {
       expect(res._json.builder.name).toBe('Test Builder');
     });
 
+    it('creates builder with non-available assets', async () => {
+      req.body = { name: 'My Builder', assetIds: ['A001', 'A002'] };
+      pool.execute.mockImplementation(async (sql: string) => {
+        if (sql.includes('SELECT assetID')) return [[{ assetID: 1, asset_code: 'A001', name: 'Asset 1', status: 'In Use' }, { assetID: 2, asset_code: 'A002', name: 'Asset 2', status: 'In Maintenance' }], []];
+        if (sql.includes('SELECT company_id FROM users')) return [[{ company_id: 10 }], []];
+        if (sql.includes('CALL sp_create_asset_builder')) return [[[mockBuilder]], []];
+        if (sql.includes('INSERT INTO asset_builder_items')) return [{ affectedRows: 2 }, []];
+        return [[], []];
+      });
+      await assetBuildersController.createAssetBuilderHandler(req, res);
+      expect(res._status).toBe(201);
+      expect(res._json.builder.name).toBe('Test Builder');
+    });
+
     it('returns 400 when name or assetIds missing', async () => {
       req.body = { name: 'My Builder' };
       await assetBuildersController.createAssetBuilderHandler(req, res);

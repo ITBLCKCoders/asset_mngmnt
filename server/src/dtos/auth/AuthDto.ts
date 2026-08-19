@@ -144,10 +144,16 @@ export const ResetPasswordDtoSchema = z.object({
 
 export type ResetPasswordDto = z.infer<typeof ResetPasswordDtoSchema>;
 
-export const ChangePasswordDtoSchema = z.object({
-  currentPassword: z.string().min(1, 'Current password is required'),
-  newPassword: z.string().min(6, 'New password must be at least 6 characters'),
-});
+export const ChangePasswordDtoSchema = z
+  .object({
+    currentPassword: z.string().min(1, 'Current password is required'),
+    newPassword: z.string().min(6, 'New password must be at least 6 characters'),
+    confirmPassword: z.string(),
+  })
+  .refine(data => data.newPassword === data.confirmPassword, {
+    message: "Passwords don't match",
+    path: ['confirmPassword'],
+  });
 
 export type ChangePasswordDto = z.infer<typeof ChangePasswordDtoSchema>;
 
