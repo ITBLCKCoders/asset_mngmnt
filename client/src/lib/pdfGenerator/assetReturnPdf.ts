@@ -125,6 +125,14 @@ export interface AssetReturnData {
   it_manager_digital_signature?: string | null;
   /** IT Manager display name for PDF */
   it_manager_user_name?: string | null;
+  /** Sub Approver 2 (stand-in for IT Manager) signature date/time */
+  sub_approver_2_signed_at?: string | null;
+  /** Sub Approver 2 digital signature image (base64 data URL) */
+  sub_approver_2_digital_signature?: string | null;
+  /** Sub Approver 2 display name for PDF */
+  sub_approver_2_user_name?: string | null;
+  /** Sub Approver 2 position for PDF */
+  sub_approver_2_position?: string | null;
   /** When true, show the processor (IT Staff) block; when false, hide it until Dept Head has signed */
   showProcessorSignatureBlock?: boolean;
   /** When true, the asset owner is not in office anymore; the Returner cell shows a note instead of a signature */
@@ -445,7 +453,9 @@ export const generateAssetReturnPDF = async (
   const hasReturnerSignature = !!returnData.signed_at;
   const hasDeptHeadSignature =
     !!returnData.dept_head_signed_at || !!returnData.sub_approver_1_signed_at;
-  const hasItManagerSignature = !!returnData.it_manager_signed_at;
+  const hasItManagerSignature =
+    !!returnData.it_manager_signed_at ||
+    !!returnData.sub_approver_2_signed_at;
   const showProcessorSignatureBlock = !!returnData.showProcessorSignatureBlock;
   const processUserNameForCell = (returnData.process_user_name ?? '').trim();
   const approvalSignatureRowHeight = 40;
@@ -531,10 +541,21 @@ export const generateAssetReturnPDF = async (
         doc.setFont('helvetica', 'normal');
         doc.setTextColor(0, 0, 0);
 
-        const itManagerName = (returnData.it_manager_user_name || '').trim();
-        if (returnData.it_manager_digital_signature) {
+        const isSubApprover2Signed = !!returnData.sub_approver_2_signed_at;
+        const itManagerName = (
+          (isSubApprover2Signed
+            ? returnData.sub_approver_2_user_name
+            : returnData.it_manager_user_name) || ''
+        ).trim();
+        const itManagerPosition = isSubApprover2Signed
+          ? (returnData.sub_approver_2_position || '').trim()
+          : '';
+        const itManagerSignature = isSubApprover2Signed
+          ? returnData.sub_approver_2_digital_signature
+          : returnData.it_manager_digital_signature;
+        if (itManagerSignature) {
           pendingReturnSignatures.push({
-            data: returnData.it_manager_digital_signature,
+            data: itManagerSignature,
             x: cell.x + 1 - 30,
             y: yTop + 25,
             anchorBottomY: signatureAnchorBottomY(nameY),
@@ -548,13 +569,31 @@ export const generateAssetReturnPDF = async (
           const nameMaxWidth = Math.max(15, contentWidth - 6);
           const nameLines = doc.splitTextToSize(itManagerName, nameMaxWidth);
           doc.text(nameLines, xMin, nameY);
+          if (itManagerPosition) {
+            doc.setFontSize(6.5);
+            const positionLines = doc.splitTextToSize(
+              itManagerPosition,
+              nameMaxWidth
+            );
+            doc.text(positionLines, xMin, nameY + 3.5);
+          }
+        }
+
+        if (isSubApprover2Signed) {
+          doc.setFontSize(6.5);
+          doc.setFont('helvetica', 'italic');
+          doc.text('(Stand-in approver)', xMin, nameY + 7);
         }
 
         const itManagerSignedDate = formatSignedDate(
-          returnData.it_manager_signed_at
+          isSubApprover2Signed
+            ? returnData.sub_approver_2_signed_at
+            : returnData.it_manager_signed_at
         );
         const itManagerSignedTime = formatSignedTime(
-          returnData.it_manager_signed_at
+          isSubApprover2Signed
+            ? returnData.sub_approver_2_signed_at
+            : returnData.it_manager_signed_at
         );
         if (itManagerSignedDate && itManagerSignedTime) {
           doc.setFontSize(7);
@@ -773,7 +812,10 @@ export const generateAssetReturnPDF = async (
   doc.setPage(1);
 
   // Stand-in approver note under the table
-  if (returnData.sub_approver_1_signed_at) {
+  if (
+    returnData.sub_approver_1_signed_at ||
+    returnData.sub_approver_2_signed_at
+  ) {
     doc.setFontSize(6.5);
     doc.setFont('helvetica', 'italic');
     doc.setTextColor(80, 80, 80);

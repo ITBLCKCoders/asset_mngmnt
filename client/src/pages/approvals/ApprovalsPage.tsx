@@ -853,22 +853,32 @@ export default function ApprovalsPage() {
             .filter(Boolean)
             .join(' ')
             .trim();
+        const isSubApprover2Receiver =
+          roleCustodian?.subApprover2 === true &&
+          roleCustodian?.managerApprover2 !== true;
+        const receiverFields = isSubApprover2Receiver
+          ? {
+              sub_approver_2_signed_at: itManagerSignedAt,
+              sub_approver_2_digital_signature: sig || null,
+              sub_approver_2_signed_by: currentUser?.id ?? null,
+              sub_approver_2_user_name: receiverName || null,
+            }
+          : {
+              it_manager_signed_at: itManagerSignedAt,
+              it_manager_digital_signature: sig || null,
+              it_manager_signed_by: currentUser?.id ?? null,
+              it_manager_user_name: receiverName || null,
+            };
         if (formBatch.formType === 'return' && formBatch.form_number) {
           clearReturnPdfCacheForFormNumber(formBatch.form_number);
           setSelectedBatch({
             ...(selectedBatch as AssetReturnFormBatch),
-            it_manager_signed_at: itManagerSignedAt,
-            it_manager_digital_signature: sig || null,
-            it_manager_signed_by: currentUser?.id ?? null,
-            it_manager_user_name: receiverName || null,
+            ...receiverFields,
           } as FormApprovalBatch);
         } else if (formBatch.formType === 'transfer') {
           setSelectedBatch({
             ...(selectedBatch as AssetTransferFormBatch),
-            it_manager_signed_at: itManagerSignedAt,
-            it_manager_digital_signature: sig || null,
-            it_manager_signed_by: currentUser?.id ?? null,
-            it_manager_user_name: receiverName || null,
+            ...receiverFields,
           } as FormApprovalBatch);
         } else {
           setShowDetail(false);

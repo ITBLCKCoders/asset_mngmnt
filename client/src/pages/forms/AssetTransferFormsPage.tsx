@@ -82,7 +82,12 @@ export default function AssetTransferFormsPage() {
       }>('/asset-transfers/forms');
       const list: AssetTransferFormBatch[] =
         response.assetTransferForms ?? response.data?.assetTransferForms ?? [];
-      setBatches(Array.isArray(list) ? list : []);
+      setBatches(
+        (Array.isArray(list) ? list : []).sort(
+          (a, b) =>
+            new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
+        )
+      );
     } catch (error) {
       console.error('Failed to fetch asset transfer forms:', error);
       toast.error('Failed to load asset transfer forms');

@@ -72,4 +72,27 @@ describe('AssetReturnFormsPage', () => {
       expect(screen.getByText('Asset Return Forms')).toBeDefined();
     });
   });
+
+  it('should render the newest return form first regardless of API order', async () => {
+    (api.get as any).mockResolvedValue({
+      assetReturnForms: [
+        {
+          formID: 'rf1', form_number: 'RF-001',
+          returns: [{ return_id: 'r1', assignment: { user: { first_name: 'John', last_name: 'Doe', company: { id: 'c1', name: 'Test Corp' } }, asset: { name: 'Laptop', code: 'LT-001' } } }],
+          created_at: '2024-01-01',
+        },
+        {
+          formID: 'rf2', form_number: 'RF-002',
+          returns: [{ return_id: 'r2', assignment: { user: { first_name: 'Jane', last_name: 'Doe', company: { id: 'c1', name: 'Test Corp' } }, asset: { name: 'PC', code: 'PC-001' } } }],
+          created_at: '2024-06-01',
+        },
+      ],
+    });
+    renderPage();
+    await waitFor(() => {
+      const titles = screen.getAllByText(/RF-00[12]/);
+      expect(titles[0].textContent).toBe('RF-002');
+      expect(titles[1].textContent).toBe('RF-001');
+    });
+  });
 });

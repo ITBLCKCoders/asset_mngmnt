@@ -134,6 +134,32 @@ const BasicInfoTab = forwardRef<BasicInfoTabHandle, BasicInfoTabProps>(
         signature.startsWith('http://') ||
         signature.startsWith('https://'));
 
+    // Both helpers resolve the live canvas instance and guard against the
+    // library's refNullError ('react-signature-canvas is currently mounting
+    // or unmounting: React refs are null during this phase.'). While the
+    // SignatureCanvas is mid-mount/unmount its internal _sigPad/_canvas are
+    // null, so method calls throw. We treat that as "empty / no-op" rather
+    // than letting it propagate to the console.
+    const safeCanvasIsEmpty = (): boolean => {
+      const canvas = canvasRef || sigCanvas.current;
+      if (!canvas) return true;
+      try {
+        return canvas.isEmpty();
+      } catch {
+        return true;
+      }
+    };
+
+    const safeClearCanvas = (): void => {
+      const canvas = canvasRef || sigCanvas.current;
+      if (!canvas) return;
+      try {
+        canvas.clear();
+      } catch {
+        /* ignore mount/unmount phase */
+      }
+    };
+
     useEffect(() => {
       if (user && !isEditing) {
         setFormData({
@@ -163,9 +189,7 @@ const BasicInfoTab = forwardRef<BasicInfoTabHandle, BasicInfoTabProps>(
         }
         setSignatureMarkedDone(false);
 
-        if (sigCanvas.current) {
-          sigCanvas.current.clear();
-        }
+        safeClearCanvas();
       }
     }, [user, isEditing]);
 
@@ -189,7 +213,7 @@ const BasicInfoTab = forwardRef<BasicInfoTabHandle, BasicInfoTabProps>(
         const existingSignature = user?.digitalSignature;
         console.log('Loading signature onto canvas, hasCanvas:', !!canvas, 'hasSignature:', !!existingSignature);
         if (!canvas) return;
-        canvas.clear();
+        safeClearCanvas();
         if (isImageSignature(existingSignature)) {
           try {
             (canvas as any).fromDataURL(existingSignature);
@@ -214,8 +238,7 @@ const BasicInfoTab = forwardRef<BasicInfoTabHandle, BasicInfoTabProps>(
     };
 
     const isSettingInitials = (): boolean => {
-      const canvas = canvasRef || sigCanvas.current;
-      return !!(signatureReadyToSave || (canvas && !canvas.isEmpty()));
+      return !!(signatureReadyToSave || !safeCanvasIsEmpty());
     };
 
     const sendOtp = async () => {
@@ -283,7 +306,7 @@ const BasicInfoTab = forwardRef<BasicInfoTabHandle, BasicInfoTabProps>(
         return signatureReadyToSave;
       }
       const canvas = canvasRef || sigCanvas.current;
-      if (canvas && !canvas.isEmpty()) {
+      if (canvas && !safeCanvasIsEmpty()) {
         let signatureDataURL: string | null = null;
         try {
           const signatureData = canvas.toData();
@@ -440,8 +463,8 @@ const BasicInfoTab = forwardRef<BasicInfoTabHandle, BasicInfoTabProps>(
         } else {
           const canvas = canvasRef || sigCanvas.current;
           console.log('Canvas ref exists:', !!canvas);
-          console.log('Canvas isEmpty:', canvas?.isEmpty());
-          if (canvas && !canvas.isEmpty()) {
+          console.log('Canvas isEmpty:', safeCanvasIsEmpty());
+          if (canvas && !safeCanvasIsEmpty()) {
             let signatureDataURL: string | null = null;
             try {
               const signatureData = canvas.toData();
@@ -566,8 +589,7 @@ const BasicInfoTab = forwardRef<BasicInfoTabHandle, BasicInfoTabProps>(
 
         clearPreview();
 
-        const didSaveInitials = !!(signatureReadyToSave ||
-          ((canvasRef || sigCanvas.current) && !(canvasRef || sigCanvas.current)?.isEmpty()));
+        const didSaveInitials = !!(signatureReadyToSave || !safeCanvasIsEmpty());
 
         if (didSaveInitials) {
           setSignatureSaved(true);

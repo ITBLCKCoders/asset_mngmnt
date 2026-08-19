@@ -84,6 +84,10 @@ export interface AssetTransferData {
   it_manager_signed_at?: string | null;
   it_manager_digital_signature?: string | null;
   it_manager_user_name?: string | null;
+  sub_approver_2_signed_at?: string | null;
+  sub_approver_2_digital_signature?: string | null;
+  sub_approver_2_user_name?: string | null;
+  sub_approver_2_position?: string | null;
 }
 
 export const generateAssetTransferPDF = async (
@@ -398,7 +402,9 @@ export const generateAssetTransferPDF = async (
   const hasDeptHeadSignature =
     !!transferData.dept_head_signed_at ||
     !!transferData.sub_approver_1_signed_at;
-  const hasItManagerSignature = !!transferData.it_manager_signed_at;
+  const hasItManagerSignature =
+    !!transferData.it_manager_signed_at ||
+    !!transferData.sub_approver_2_signed_at;
   const showProcessorSignatureBlock =
     !!transferData.showProcessorSignatureBlock;
   const processUserNameForCell = (transferData.process_user_name ?? '').trim();
@@ -489,10 +495,21 @@ export const generateAssetTransferPDF = async (
         doc.setFont('helvetica', 'normal');
         doc.setTextColor(0, 0, 0);
 
-        const itManagerName = (transferData.it_manager_user_name || '').trim();
-        if (transferData.it_manager_digital_signature) {
+        const isSubApprover2Signed = !!transferData.sub_approver_2_signed_at;
+        const itManagerName = (
+          (isSubApprover2Signed
+            ? transferData.sub_approver_2_user_name
+            : transferData.it_manager_user_name) || ''
+        ).trim();
+        const itManagerPosition = isSubApprover2Signed
+          ? (transferData.sub_approver_2_position || '').trim()
+          : '';
+        const itManagerSignature = isSubApprover2Signed
+          ? transferData.sub_approver_2_digital_signature
+          : transferData.it_manager_digital_signature;
+        if (itManagerSignature) {
           pendingTransferSignatures.push({
-            data: transferData.it_manager_digital_signature,
+            data: itManagerSignature,
             x: cell.x + 1 - 30,
             y: yTop + 25,
             anchorBottomY: signatureAnchorBottomY(nameY),
@@ -506,9 +523,26 @@ export const generateAssetTransferPDF = async (
           const nameMaxWidth = Math.max(15, contentWidth - 6);
           const nameLines = doc.splitTextToSize(itManagerName, nameMaxWidth);
           doc.text(nameLines, xMin, nameY);
+          if (itManagerPosition) {
+            doc.setFontSize(6.5);
+            const positionLines = doc.splitTextToSize(
+              itManagerPosition,
+              nameMaxWidth
+            );
+            doc.text(positionLines, xMin, nameY + 3.5);
+          }
         }
 
-        const rawIt = transferData.it_manager_signed_at?.trim() ?? '';
+        if (isSubApprover2Signed) {
+          doc.setFontSize(6.5);
+          doc.setFont('helvetica', 'italic');
+          doc.text('(Stand-in approver)', xMin, nameY + 7);
+        }
+
+        const rawIt = (isSubApprover2Signed
+          ? transferData.sub_approver_2_signed_at
+          : transferData.it_manager_signed_at
+        )?.trim() ?? '';
         const itSignedDate = rawIt
           ? new Date(
               rawIt.endsWith('Z') || /[+-]\d{2}:?\d{2}$/.test(rawIt)
@@ -784,7 +818,10 @@ export const generateAssetTransferPDF = async (
   doc.setPage(1);
 
   const docNoY = (doc as any).lastAutoTable.finalY + 8;
-  if (transferData.sub_approver_1_signed_at) {
+  if (
+    transferData.sub_approver_1_signed_at ||
+    transferData.sub_approver_2_signed_at
+  ) {
     doc.setFontSize(6.5);
     doc.setFont('helvetica', 'italic');
     doc.setTextColor(80, 80, 80);

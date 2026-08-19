@@ -192,6 +192,11 @@ export function buildReturnDataForPDFFromBatch(
     it_manager_digital_signature:
       batch.it_manager_digital_signature ?? undefined,
     it_manager_user_name: batch.it_manager_user_name ?? undefined,
+    sub_approver_2_signed_at: batch.sub_approver_2_signed_at ?? undefined,
+    sub_approver_2_digital_signature:
+      batch.sub_approver_2_digital_signature ?? undefined,
+    sub_approver_2_user_name: batch.sub_approver_2_user_name ?? undefined,
+    sub_approver_2_position: batch.sub_approver_2_position ?? undefined,
     ownerAbsent: batch.owner_absent === true,
   };
 }
@@ -322,6 +327,11 @@ export function buildTransferDataForPDFFromBatch(
     it_manager_digital_signature:
       batch.it_manager_digital_signature ?? undefined,
     it_manager_user_name: batch.it_manager_user_name ?? undefined,
+    sub_approver_2_signed_at: batch.sub_approver_2_signed_at ?? undefined,
+    sub_approver_2_digital_signature:
+      batch.sub_approver_2_digital_signature ?? undefined,
+    sub_approver_2_user_name: batch.sub_approver_2_user_name ?? undefined,
+    sub_approver_2_position: batch.sub_approver_2_position ?? undefined,
   };
 }
 
@@ -2621,6 +2631,11 @@ export interface AssetTransferFormBatch {
   it_manager_signed_at?: string | null;
   it_manager_digital_signature?: string | null;
   it_manager_user_name?: string | null;
+  sub_approver_2_signed_at?: string | null;
+  sub_approver_2_digital_signature?: string | null;
+  sub_approver_2_signed_by?: string | null;
+  sub_approver_2_user_name?: string | null;
+  sub_approver_2_position?: string | null;
   /** True when the asset owner is marked absent (processor-initiated hold transfer) */
   owner_absent?: boolean;
   /** Intangible assets linked to this transfer form (persisted at creation) */
@@ -2727,6 +2742,11 @@ export interface AssetReturnFormBatch {
   it_manager_digital_signature?: string | null;
   it_manager_signed_by?: string | null;
   it_manager_user_name?: string | null;
+  sub_approver_2_signed_at?: string | null;
+  sub_approver_2_digital_signature?: string | null;
+  sub_approver_2_signed_by?: string | null;
+  sub_approver_2_user_name?: string | null;
+  sub_approver_2_position?: string | null;
   /** Form's owning department (IT/Admin) for PDF header and scope; from category department */
   form_department?: { id: string; name: string } | null;
   /** True when the asset owner is marked absent (processor-initiated hold return) */

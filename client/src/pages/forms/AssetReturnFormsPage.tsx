@@ -101,7 +101,12 @@ export default function AssetReturnFormsPage() {
             new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
         );
       }
-      setBatches(list);
+      setBatches(
+        (Array.isArray(list) ? list : []).sort(
+          (a, b) =>
+            new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
+        )
+      );
     } catch (error) {
       console.error('Failed to fetch asset return forms:', error);
       toast.error('Failed to load asset return forms');
