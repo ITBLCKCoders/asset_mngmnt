@@ -21,8 +21,8 @@ import * as assignmentRepo from '../repositories/assetAssignment.repository.js';
 import {
   isDesignatedApprover,
   isDesignatedSubApprover,
-  getDesignatedApproverUserId,
-  getDesignatedSubApproverUserId,
+  getDesignatedApproverUserIdForRequester,
+  getDesignatedSubApproverUserIdForRequester,
   getRequestorMA1Status,
 } from '../utils/approverNotifications.js';
 
@@ -156,9 +156,9 @@ async function notifyChecklistApproversAfterEmployeeSign(params: {
 
   // Check if employee has MA1 custodian access
   const employeeHasMA1 = await getRequestorMA1Status(employeeId);
-  // Use designated approver for the company (MA1/MA3 combined)
-  const approverUserId = await getDesignatedApproverUserId(companyId);
-  const subApproverUserId = await getDesignatedSubApproverUserId(companyId);
+  // Use the employee's designated approver (user-level, local-admin fallback)
+  const approverUserId = await getDesignatedApproverUserIdForRequester(employeeId);
+  const subApproverUserId = await getDesignatedSubApproverUserIdForRequester(employeeId);
   
   const employeeName =
     [emp?.first_name, emp?.last_name].filter(Boolean).join(' ').trim() ||

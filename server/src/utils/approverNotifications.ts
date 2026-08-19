@@ -1,7 +1,7 @@
 /**
  * Helpers for notifying approver users when forms are signed.
  * 
- * MA1/MA3/Sub1 now use designated company approvers (company_approvers table).
+ * MA1/MA3/Sub1 now use designated user approvers (user_approvers table) with fallback to local admins.
  * MA2/Sub2/Finance/HR still use role-based logic.
  */
 import { pool } from '../db.js';
@@ -10,68 +10,79 @@ import {
   getDepartmentIdsForScope,
   classifyDepartmentScopeByName,
 } from './assetScope.js';
-import { getActiveCompany } from './activeCompany.js';
 import {
-  getDesignatedApprover,
-  getEligibleApproversByType,
-  getUserCustodianMA1Status,
-} from '../repositories/companyApprovers.repository.js';
+  getDesignatedApproverUserId,
+  getEligibleApprovers,
+} from '../services/userApprovers.service.js';
 
 /**
- * Check if user is the designated MA1/MA3 approver for their company
+ * Check if user is the designated MA1/MA3 approver for a specific user
  */
 export async function isDesignatedApprover(
   userId: string,
-  companyId: string
+  requesterUserId: string
 ): Promise<boolean> {
-  const designated = await getDesignatedApprover(companyId, 'approver');
+  const designated = await getDesignatedApproverUserId(requesterUserId, 'approver');
   return designated === userId;
 }
 
 /**
- * Check if user is the designated Sub1 approver for their company
+ * Check if user is the designated Sub1 approver for a specific user
  */
 export async function isDesignatedSubApprover(
   userId: string,
-  companyId: string
+  requesterUserId: string
 ): Promise<boolean> {
-  const designated = await getDesignatedApprover(companyId, 'sub_approver');
+  const designated = await getDesignatedApproverUserId(requesterUserId, 'sub_approver');
   return designated === userId;
 }
 
 /**
- * Get the designated approver user ID for a company (MA1/MA3 combined)
+ * Get the designated approver user ID for a user (with fallback to local admins)
  */
-export async function getDesignatedApproverUserId(companyId: string): Promise<string | null> {
-  return getDesignatedApprover(companyId, 'approver');
+export async function getDesignatedApproverUserIdForRequester(requesterUserId: string): Promise<string | null> {
+  return getDesignatedApproverUserId(requesterUserId, 'approver');
 }
 
 /**
- * Get the designated sub approver user ID for a company (Sub1)
+ * Get the designated sub approver user ID for a user (with fallback to local admins)
  */
-export async function getDesignatedSubApproverUserId(companyId: string): Promise<string | null> {
-  return getDesignatedApprover(companyId, 'sub_approver');
+export async function getDesignatedSubApproverUserIdForRequester(requesterUserId: string): Promise<string | null> {
+  return getDesignatedApproverUserId(requesterUserId, 'sub_approver');
 }
 
 /**
- * Get eligible users for Approver dropdown (MA1 or MA3 flag)
+ * Get eligible users for Approver dropdown (MA1 or MA3 flag) for a specific user
  */
-export async function getEligibleApprovers(companyId: string) {
-  return getEligibleApproversByType(companyId, 'approver');
+export async function getEligibleApproversForUser(requesterUserId: string, approverListType: 'approver' | 'ma3' = 'approver') {
+  const eligible = await getEligibleApprovers(requesterUserId, approverListType);
+  return eligible.approver;
 }
 
 /**
- * Get eligible users for Sub Approver dropdown (Sub1 flag)
+ * Get eligible users for Sub Approver dropdown (Sub1 flag) for a specific user
  */
-export async function getEligibleSubApprovers(companyId: string) {
-  return getEligibleApproversByType(companyId, 'sub_approver');
+export async function getEligibleSubApproversForUser(requesterUserId: string) {
+  const eligible = await getEligibleApprovers(requesterUserId, 'sub_approver');
+  return eligible.sub_approver;
 }
 
 /**
  * Check if requestor has MA1 custodian access (for routing MA1 vs MA3)
  */
 export async function getRequestorMA1Status(userId: string): Promise<boolean> {
-  return getUserCustodianMA1Status(userId);
+  const [rows] = await pool.execute(
+    `SELECT 
+      COALESCE(uc.manager_approver_1, 0) as user_ma1,
+      COALESCE(r.manager_approver_1, 0) as role_ma1
+    FROM users u
+    LEFT JOIN user_custodian_settings uc ON u.userID = uc.user_id
+    LEFT JOIN asset_mngmnt_roles r ON u.role_id = r.roleID AND r.deleted_at IS NULL
+    WHERE u.userID = ?`,
+    [userId]
+  );
+  const row = (rows as any[])[0];
+  return (row?.user_ma1 === 1) || (row?.role_ma1 === 1);
 }
 
 /**

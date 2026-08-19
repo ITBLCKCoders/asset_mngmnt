@@ -7,7 +7,8 @@ jest.mock('../../logger.js', () => ({ __esModule: true, default: { error: jest.f
 jest.mock('../../utils/audit.js', () => ({ createAuditLog: jest.fn(() => Promise.resolve()) }));
 jest.mock('../../utils/accountabilityFormOnReturn.js', () => ({ handleAccountabilityFormOnAssetReturn: jest.fn() }));
 jest.mock('../../utils/assetScope.js', () => ({ getAssetScope: jest.fn(), classifyDepartmentScopeByName: jest.fn() }));
-jest.mock('../../utils/approverNotifications.js', () => ({ isUserManagerApprover1: jest.fn(), isUserManagerApprover2: jest.fn(), getManagerApprover1UserIdsInDepartmentAndCompany: jest.fn(), getManagerApprover2UserIdsForProcessedReturn: jest.fn(), getAssetRoleUsersForAssignmentsAndCompany: jest.fn() }));
+jest.mock('../../utils/approverNotifications.js', () => ({ isUserManagerApprover1: jest.fn(), isUserManagerApprover2: jest.fn(), getManagerApprover1UserIdsInDepartmentAndCompany: jest.fn(), getManagerApprover2UserIdsForProcessedReturn: jest.fn(), getAssetRoleUsersForAssignmentsAndCompany: jest.fn(), isDesignatedApprover: jest.fn(), isDesignatedSubApprover: jest.fn(), getDesignatedApproverUserIdForRequester: jest.fn(), getDesignatedSubApproverUserIdForRequester: jest.fn() }));
+jest.mock('../../services/userApprovers.service.js', () => ({ getRequestersAssignedToApprover: jest.fn() }));
 jest.mock('../../utils/notificationsApi.js', () => ({ createNotificationForApi: jest.fn() }));
 jest.mock('../../utils/responseWrapper.js', () => ({ createErrorResponse: jest.fn((res: any, error: any, errors: any, statusCode: any, message: any) => { res.status(statusCode).json({ error: message }); return res; }) }));
 jest.mock('../../utils/returnFormNumber.js', () => ({ generateReturnFormNumber: jest.fn(), generateReturnFormNumberFallback: jest.fn() }));
@@ -64,6 +65,8 @@ const { getAssetScope } = jest.requireMock('../../utils/assetScope.js') as { get
 const transferRepo = jest.requireMock('../../repositories/assetTransferForm.repository.js') as Record<string, jest.Mock>;
 const returnRepo = jest.requireMock('../../repositories/assetReturn.repository.js') as Record<string, jest.Mock>;
 const { isUserManagerApprover1, getManagerApprover1UserIdsInDepartmentAndCompany, getManagerApprover2UserIdsForProcessedReturn, getAssetRoleUsersForAssignmentsAndCompany } = jest.requireMock('../../utils/approverNotifications.js') as { isUserManagerApprover1: jest.Mock; getManagerApprover1UserIdsInDepartmentAndCompany: jest.Mock; getManagerApprover2UserIdsForProcessedReturn: jest.Mock; getAssetRoleUsersForAssignmentsAndCompany: jest.Mock };
+const { isDesignatedApprover, isDesignatedSubApprover, getDesignatedApproverUserIdForRequester, getDesignatedSubApproverUserIdForRequester } = jest.requireMock('../../utils/approverNotifications.js');
+const { getRequestersAssignedToApprover } = jest.requireMock('../../services/userApprovers.service.js');
 const { createNotificationForApi } = jest.requireMock('../../utils/notificationsApi.js') as { createNotificationForApi: jest.Mock };
 const { generateReturnFormNumber, generateReturnFormNumberFallback } = jest.requireMock('../../utils/returnFormNumber.js') as { generateReturnFormNumber: jest.Mock; generateReturnFormNumberFallback: jest.Mock };
 const { createErrorResponse } = jest.requireMock('../../utils/responseWrapper.js') as { createErrorResponse: jest.Mock };
@@ -82,6 +85,11 @@ describe('assetReturns.controller', () => {
     const { createAuditLog } = jest.requireMock('../../utils/audit.js') as { createAuditLog: jest.Mock };
     createAuditLog.mockResolvedValue(undefined);
     getAssetRoleUsersForAssignmentsAndCompany.mockResolvedValue([]);
+    isDesignatedApprover.mockResolvedValue(false);
+    isDesignatedSubApprover.mockResolvedValue(false);
+    getDesignatedApproverUserIdForRequester.mockResolvedValue(null);
+    getDesignatedSubApproverUserIdForRequester.mockResolvedValue(null);
+    getRequestersAssignedToApprover.mockResolvedValue([]);
   });
 
   describe('submitAssetReturnRequestHandler', () => {

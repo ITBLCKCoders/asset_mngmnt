@@ -11,10 +11,8 @@ import {
 import {
   isDesignatedApprover,
   isDesignatedSubApprover,
-  getDesignatedApproverUserId,
-  getDesignatedSubApproverUserId,
-  getRequestorMA1Status,
 } from '../utils/approverNotifications.js';
+import { getRequestersAssignedToApprover } from './userApprovers.service.js';
 import { generateBorrowFormNumber } from '../utils/borrowFormNumber.js';
 import {
   findApprovedBorrowRequestsForReceive,
@@ -180,18 +178,18 @@ export class AssetBorrowRequestsService {
       return { rows: [] };
     }
 
-    // Check if user is designated approver or sub approver for this company
-    const isApprover = await isDesignatedApprover(userId, companyId);
-    const isSubApprover = await isDesignatedSubApprover(userId, companyId);
-    if (!isApprover && !isSubApprover) {
+    // User only sees pending requests for employees assigned to them as approver
+    const requesterIds = await getRequestersAssignedToApprover(userId, companyId);
+    if (requesterIds.length === 0) {
       return { rows: [] };
     }
+    const requesterSet = new Set(requesterIds);
 
-    // Designated approvers see all pending requests in the company (company-wide)
-    const rows = await findPendingDeptHeadBorrowRequestsByCompany(
+    const allRows = await findPendingDeptHeadBorrowRequestsByCompany(
       pool,
       companyId
     );
+    const rows = allRows.filter(r => requesterSet.has(String(r.user_id)));
     return { rows };
   }
 
@@ -226,13 +224,6 @@ export class AssetBorrowRequestsService {
       return { error: 'Company context required', status: 400 };
     }
 
-    // Check if user is designated approver or sub approver for this company
-    const isApprover = await isDesignatedApprover(userId, companyId);
-    const isSubApprover = await isDesignatedSubApprover(userId, companyId);
-    if (!isApprover && !isSubApprover) {
-      return { error: 'Not authorized as department head approver', status: 403 };
-    }
-
     const row = await getBorrowRequestById(pool, borrowRequestId);
     if (!row) {
       return { error: 'Borrow request not found', status: 404 };
@@ -242,6 +233,13 @@ export class AssetBorrowRequestsService {
     }
     if (row.dept_head_signed_at || row.sub_approver_1_signed_at || row.declined_at) {
       return { error: 'Borrow request is no longer pending approval', status: 400 };
+    }
+
+    // Authorization is checked against the request owner's designated approver
+    const isApprover = await isDesignatedApprover(userId, row.user_id);
+    const isSubApprover = await isDesignatedSubApprover(userId, row.user_id);
+    if (!isApprover && !isSubApprover) {
+      return { error: 'Not authorized as department head approver', status: 403 };
     }
 
     const isSubApproverAction = isSubApprover && !isApprover;
@@ -268,13 +266,6 @@ export class AssetBorrowRequestsService {
       return { error: 'Company context required', status: 400 };
     }
 
-    // Check if user is designated approver or sub approver for this company
-    const isApprover = await isDesignatedApprover(userId, companyId);
-    const isSubApprover = await isDesignatedSubApprover(userId, companyId);
-    if (!isApprover && !isSubApprover) {
-      return { error: 'Not authorized as department head approver', status: 403 };
-    }
-
     const row = await getBorrowRequestById(pool, borrowRequestId);
     if (!row) {
       return { error: 'Borrow request not found', status: 404 };
@@ -284,6 +275,13 @@ export class AssetBorrowRequestsService {
     }
     if (row.dept_head_signed_at || row.sub_approver_1_signed_at || row.declined_at) {
       return { error: 'Borrow request is no longer pending approval', status: 400 };
+    }
+
+    // Authorization is checked against the request owner's designated approver
+    const isApprover = await isDesignatedApprover(userId, row.user_id);
+    const isSubApprover = await isDesignatedSubApprover(userId, row.user_id);
+    if (!isApprover && !isSubApprover) {
+      return { error: 'Not authorized as department head approver', status: 403 };
     }
 
     const updated = await updateBorrowRequestDeptHeadDecline(

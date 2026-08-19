@@ -12,7 +12,8 @@ jest.mock('../../utils/responseWrapper.js', () => ({
 }));
 jest.mock('../../utils/cloudinary.js', () => ({ uploadReturnConditionImageToCloudinary: jest.fn(), signedRawUrlFromStoredSecureUrl: jest.fn() }));
 jest.mock('../../utils/assetScope.js', () => ({ getAssetScope: jest.fn(), getDepartmentIdsForScope: jest.fn() }));
-jest.mock('../../utils/approverNotifications.js', () => ({ isUserManagerApprover1: jest.fn(), isUserManagerApprover2: jest.fn(), getManagerApprover1UserIdsInDepartmentAndCompany: jest.fn(), getAssetRoleUsersForAssignmentsAndCompany: jest.fn(), getManagerApprover2UserIdsForProcessedReturn: jest.fn() }));
+jest.mock('../../utils/approverNotifications.js', () => ({ isUserManagerApprover1: jest.fn(), isUserManagerApprover2: jest.fn(), getManagerApprover1UserIdsInDepartmentAndCompany: jest.fn(), getAssetRoleUsersForAssignmentsAndCompany: jest.fn(), getManagerApprover2UserIdsForProcessedReturn: jest.fn(), isDesignatedApprover: jest.fn(), isDesignatedSubApprover: jest.fn(), getDesignatedApproverUserIdForRequester: jest.fn(), getDesignatedSubApproverUserIdForRequester: jest.fn() }));
+jest.mock('../../services/userApprovers.service.js', () => ({ getRequestersAssignedToApprover: jest.fn() }));
 jest.mock('../../utils/notificationsApi.js', () => ({ createNotificationForApi: jest.fn() }));
 jest.mock('../../utils/transferFormNumber.js', () => ({ generateTransferFormNumber: jest.fn(), generateTransferFormNumberFallback: jest.fn() }));
 jest.mock('../../utils/returnFormNumber.js', () => ({ generateReturnFormNumber: jest.fn(), generateReturnFormNumberFallback: jest.fn() }));
@@ -38,6 +39,8 @@ const returnFormModel = jest.requireMock('../../models/assetReturnForm.model.js'
 const assetReturnModel = jest.requireMock('../../models/assetReturn.model.js').AssetReturnModel;
 const { getAssetScope } = jest.requireMock('../../utils/assetScope.js');
 const { isUserManagerApprover1, isUserManagerApprover2, getManagerApprover1UserIdsInDepartmentAndCompany, getAssetRoleUsersForAssignmentsAndCompany, getManagerApprover2UserIdsForProcessedReturn } = jest.requireMock('../../utils/approverNotifications.js');
+const { isDesignatedApprover, isDesignatedSubApprover, getDesignatedApproverUserIdForRequester, getDesignatedSubApproverUserIdForRequester } = jest.requireMock('../../utils/approverNotifications.js');
+const { getRequestersAssignedToApprover } = jest.requireMock('../../services/userApprovers.service.js');
 const { createNotificationForApi } = jest.requireMock('../../utils/notificationsApi.js');
 const transferRepo = jest.requireMock('../../repositories/assetTransferForm.repository.js');
 const { fetchUserDigitalSignature } = jest.requireMock('../../repositories/assetReturn.repository.js');
@@ -56,6 +59,11 @@ describe('assetTransfers.controller', () => {
     req = { body: {}, params: {}, query: {}, ip: '127.0.0.1', get: jest.fn(), user: { userID: 'u1' } };
     res = createMockRes();
     getAssetRoleUsersForAssignmentsAndCompany.mockResolvedValue([]);
+    isDesignatedApprover.mockResolvedValue(false);
+    isDesignatedSubApprover.mockResolvedValue(false);
+    getDesignatedApproverUserIdForRequester.mockResolvedValue(null);
+    getDesignatedSubApproverUserIdForRequester.mockResolvedValue(null);
+    getRequestersAssignedToApprover.mockResolvedValue([]);
   });
 
   describe('submitTransferRequestHandler', () => {

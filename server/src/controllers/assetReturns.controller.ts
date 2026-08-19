@@ -17,10 +17,11 @@ import {
   getAssetRoleUsersForAssignmentsAndCompany,
   isDesignatedApprover,
   isDesignatedSubApprover,
-  getDesignatedApproverUserId,
-  getDesignatedSubApproverUserId,
+  getDesignatedApproverUserIdForRequester,
+  getDesignatedSubApproverUserIdForRequester,
   getRequestorMA1Status,
 } from '../utils/approverNotifications.js';
+import { getRequestersAssignedToApprover } from '../services/userApprovers.service.js';
 import { createNotificationForApi } from '../utils/notificationsApi.js';
 import { getIoInstance } from '../utils/socketManager.js';
 import { emitNotification } from '../sockets/socketHandlers.js';
@@ -476,9 +477,9 @@ export async function submitAssetReturnRequestHandler(
         try {
           // Check if requestor has MA1 custodian access - if so, route to same approver (MA3 capacity)
           const requestorHasMA1 = await getRequestorMA1Status(firstDeptAssignment.user_id);
-          // For MA1/MA3 combined, we use the same designated approver
-          const approverUserId = await getDesignatedApproverUserId(companyId);
-          const subApproverUserId = await getDesignatedSubApproverUserId(companyId);
+          // Use the requester's designated approver (user-level, local-admin fallback)
+          const approverUserId = await getDesignatedApproverUserIdForRequester(firstDeptAssignment.user_id);
+          const subApproverUserId = await getDesignatedSubApproverUserIdForRequester(firstDeptAssignment.user_id);
           
           const requesterRow = await getUserNamesById(firstDeptAssignment.user_id);
           const requesterName = requesterRow ? `${requesterRow.first_name} ${requesterRow.last_name}`.trim() : 'A user';
@@ -864,12 +865,12 @@ export async function createAssetReturnHandler(
           const ownerDeptId = firstAssignment.user_id
             ? await getUserDepartmentId(firstAssignment.user_id)
             : null;
-          // Use designated approver for the company
-          const approverUserId = companyId
-            ? await getDesignatedApproverUserId(companyId)
+          // Use the asset owner's designated approver (user-level, local-admin fallback)
+          const approverUserId = firstAssignment.user_id
+            ? await getDesignatedApproverUserIdForRequester(firstAssignment.user_id)
             : null;
-          const subApproverUserId = companyId
-            ? await getDesignatedSubApproverUserId(companyId)
+          const subApproverUserId = firstAssignment.user_id
+            ? await getDesignatedSubApproverUserIdForRequester(firstAssignment.user_id)
             : null;
           const ownerNames = await getUserNamesById(firstAssignment.user_id);
           const ownerName = ownerNames
@@ -3050,9 +3051,9 @@ export async function signAssetReturnFormHandler(
 const signerUser = await getUserById(form.user_id);
       signCompanyId = signerUser?.company_id ?? null;
     }
-    if (signCompanyId) {
-      const approverUserId = await getDesignatedApproverUserId(signCompanyId);
-      const subApproverUserId = await getDesignatedSubApproverUserId(signCompanyId);
+    if (signCompanyId && form.user_id) {
+      const approverUserId = await getDesignatedApproverUserIdForRequester(form.user_id);
+      const subApproverUserId = await getDesignatedSubApproverUserIdForRequester(form.user_id);
       const signerRow = await getUserNamesById(userId);
       const signerName = signerRow
         ? `${signerRow.first_name} ${signerRow.last_name}`.trim()
@@ -3323,15 +3324,15 @@ export async function getPendingApprovalsHandler(
       return res.json({ assetReturnForms });
     }
 
-    // Check if user is designated approver or sub approver for this company
-    const isApprover = await isDesignatedApprover(userId, companyId);
-    const isSubApprover = await isDesignatedSubApprover(userId, companyId);
-    if (!isApprover && !isSubApprover) {
+    // Only see pending forms for requesters assigned to this user as approver
+    const requesterIds = await getRequestersAssignedToApprover(userId, companyId);
+    if (requesterIds.length === 0) {
       return res.json({ assetReturnForms: [] });
     }
+    const requesterSet = new Set(requesterIds);
 
-    // Designated approvers see all pending forms in the company (company-wide)
-    const pendingForms = await fetchPendingDeptHeadApprovalFormRowsByCompany(companyId);
+    const allPendingForms = await fetchPendingDeptHeadApprovalFormRowsByCompany(companyId);
+    const pendingForms = allPendingForms.filter((r: any) => requesterSet.has(String(r.user_id)));
     const formIds = pendingForms.map((r: any) => r.formID);
 
     if (formIds.length === 0) {
@@ -5288,9 +5289,13 @@ export async function approveReturnFormHandler(
     );
     const canApproveByPermission = hasApprovalsCreate && hasApprovalsEdit;
 
-    // Check if user is designated approver or sub approver for this company
-    const isApprover = await isDesignatedApprover(userId, companyId);
-    const isSubApprover = await isDesignatedSubApprover(userId, companyId);
+    // Check if user is the designated approver or sub approver for the form's requester
+    const isApprover = form.user_id
+      ? await isDesignatedApprover(userId, form.user_id)
+      : false;
+    const isSubApprover = form.user_id
+      ? await isDesignatedSubApprover(userId, form.user_id)
+      : false;
 
     if (!canApproveByPermission && !isApprover && !isSubApprover) {
       return res
@@ -5864,9 +5869,13 @@ export async function declineReturnFormHandler(
     );
     const canDeclineByPermission = hasApprovalsCreate && hasApprovalsEdit;
 
-    // Check if user is designated approver or sub approver for this company
-    const isApprover = await isDesignatedApprover(userId, companyId);
-    const isSubApprover = await isDesignatedSubApprover(userId, companyId);
+    // Check if user is the designated approver or sub approver for the form's requester
+    const isApprover = form.user_id
+      ? await isDesignatedApprover(userId, form.user_id)
+      : false;
+    const isSubApprover = form.user_id
+      ? await isDesignatedSubApprover(userId, form.user_id)
+      : false;
 
     if (!canDeclineByPermission && !isApprover && !isSubApprover) {
       return res

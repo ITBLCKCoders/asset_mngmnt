@@ -28,7 +28,8 @@ jest.mock('../../db.js', () => ({ pool: mockPool }));
 jest.mock('../../logger.js', () => ({ __esModule: true, default: { info: jest.fn(), warn: jest.fn(), error: jest.fn(), debug: jest.fn() } }));
 jest.mock('../../utils/activeCompany.js', () => ({ getScopedActiveCompany: jest.fn() }));
 jest.mock('../../utils/assetScope.js', () => ({ classifyDepartmentScopeByName: jest.fn(), getAssetScope: jest.fn(), getBorrowRequestListScope: jest.fn(), getDepartmentIdsForScope: jest.fn() }));
-jest.mock('../../utils/approverNotifications.js', () => ({ isUserManagerApprover1: jest.fn() }));
+jest.mock('../../utils/approverNotifications.js', () => ({ isUserManagerApprover1: jest.fn(), isDesignatedApprover: jest.fn(), isDesignatedSubApprover: jest.fn() }));
+jest.mock('../../services/userApprovers.service.js', () => ({ getRequestersAssignedToApprover: jest.fn() }));
 jest.mock('../../utils/borrowFormNumber.js', () => ({ generateBorrowFormNumber: jest.fn() }));
 jest.mock('../../repositories/assetBorrowRequests.repository.js', () => mockRepo);
 
@@ -36,11 +37,16 @@ const { AssetBorrowRequestsService } = require('../../services/assetBorrowReques
 const { getScopedActiveCompany } = jest.requireMock('../../utils/activeCompany.js');
 const { generateBorrowFormNumber } = jest.requireMock('../../utils/borrowFormNumber.js');
 const { isUserManagerApprover1 } = jest.requireMock('../../utils/approverNotifications.js');
+const { isDesignatedApprover, isDesignatedSubApprover } = jest.requireMock('../../utils/approverNotifications.js');
+const { getRequestersAssignedToApprover } = jest.requireMock('../../services/userApprovers.service.js');
 const { classifyDepartmentScopeByName, getAssetScope, getBorrowRequestListScope, getDepartmentIdsForScope } = jest.requireMock('../../utils/assetScope.js');
 
 describe('AssetBorrowRequestsService', () => {
   beforeEach(() => {
     jest.clearAllMocks();
+    isDesignatedApprover.mockResolvedValue(false);
+    isDesignatedSubApprover.mockResolvedValue(false);
+    getRequestersAssignedToApprover.mockResolvedValue([]);
   });
 
   describe('create', () => {

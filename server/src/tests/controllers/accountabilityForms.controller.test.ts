@@ -9,7 +9,7 @@ jest.mock('../../utils/assetScope.js', () => ({ getAssetScope: jest.fn() }));
 jest.mock('../../utils/cloudinary.js', () => ({ signedRawUrlFromStoredSecureUrl: jest.fn() }));
 jest.mock('../../utils/returnAssignmentSideEffects.js', () => ({ applyReturnAssignmentSideEffectsOnConnection: jest.fn() }));
 jest.mock('../../utils/notificationsApi.js', () => ({ createNotificationForApi: jest.fn() }));
-jest.mock('../../utils/approverNotifications.js', () => ({ getHrAccountabilityReceiverUserIds: jest.fn(), getManagerApprover1UserIdsInDepartmentAndCompany: jest.fn() }));
+jest.mock('../../utils/approverNotifications.js', () => ({ getHrAccountabilityReceiverUserIds: jest.fn(), getManagerApprover1UserIdsInDepartmentAndCompany: jest.fn(), isDesignatedApprover: jest.fn(), isDesignatedSubApprover: jest.fn(), getDesignatedApproverUserIdForRequester: jest.fn(), getDesignatedSubApproverUserIdForRequester: jest.fn() }));
 jest.mock('../../utils/socketManager.js', () => ({ getIoInstance: jest.fn() }));
 jest.mock('../../sockets/socketHandlers.js', () => ({ emitNotification: jest.fn() }));
 jest.mock('../../services/notification.service.js', () => ({ NotificationService: { createNotification: jest.fn() } }));
@@ -66,6 +66,7 @@ const { createAuditLog } = jest.requireMock('../../utils/audit.js');
 const { getAssetScope } = jest.requireMock('../../utils/assetScope.js');
 const { createNotificationForApi } = jest.requireMock('../../utils/notificationsApi.js');
 const { getHrAccountabilityReceiverUserIds } = jest.requireMock('../../utils/approverNotifications.js');
+const { isDesignatedApprover, isDesignatedSubApprover, getDesignatedApproverUserIdForRequester, getDesignatedSubApproverUserIdForRequester } = jest.requireMock('../../utils/approverNotifications.js');
 const { NotificationService } = jest.requireMock('../../services/notification.service.js');
 const { getIoInstance } = jest.requireMock('../../utils/socketManager.js');
 const { emitNotification } = jest.requireMock('../../sockets/socketHandlers.js');
@@ -103,6 +104,10 @@ describe('accountabilityForms.controller', () => {
     res = createMockRes();
     pool.execute.mockResolvedValue([[], []]);
     pool.query.mockResolvedValue([[], []]);
+    isDesignatedApprover.mockResolvedValue(false);
+    isDesignatedSubApprover.mockResolvedValue(false);
+    getDesignatedApproverUserIdForRequester.mockResolvedValue(null);
+    getDesignatedSubApproverUserIdForRequester.mockResolvedValue(null);
   });
 
   describe('getAccountabilityFormsByAssetIdHandler', () => {

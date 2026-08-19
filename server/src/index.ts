@@ -33,6 +33,7 @@ import assetRequestsRoutes from './routes/assetRequests.routes.js';
 import assetBorrowRequestsRoutes from './routes/assetBorrowRequests.routes.js';
 import gatePassRoutes from './routes/gatePass.routes.js';
 import companyApproversRoutes from './routes/companyApprovers.routes.js';
+import userApproversRoutes from './routes/userApprovers.routes.js';
 import intangibleAssetsRoutes from './routes/intangibleAssets.routes.js';
 import intangibleAssetTypesRoutes from './routes/intangibleAssetTypes.routes.js';
 import riskLevelsRoutes from './routes/riskLevels.routes.js';
@@ -152,6 +153,7 @@ app.get('/api-docs.json', (_req: Request, res: Response) => res.json(specs));
 // ROUTES
 app.use('/api/auth', authRoutes);
 app.use('/api/users', usersRoutes); // NEW: Users routes mounted
+app.use('/api/users', userApproversRoutes); // NEW: User approvers routes mounted
 app.use('/api/companies', companyRoutes); // NEW: Company routes mounted
 app.use('/api/categories', categoriesRoutes); // NEW: Categories routes mounted
 app.use('/api/types', typesRoutes); // NEW: Types routes mounted

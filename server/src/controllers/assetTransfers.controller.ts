@@ -15,10 +15,11 @@ import {
   getSubApprover2UserIdsInItAndAdminDepartmentsAndCompany,
   isDesignatedApprover,
   isDesignatedSubApprover,
-  getDesignatedApproverUserId,
-  getDesignatedSubApproverUserId,
+  getDesignatedApproverUserIdForRequester,
+  getDesignatedSubApproverUserIdForRequester,
   getRequestorMA1Status,
 } from '../utils/approverNotifications.js';
+import { getRequestersAssignedToApprover } from '../services/userApprovers.service.js';
 import { createNotificationForApi } from '../utils/notificationsApi.js';
 import { getIoInstance } from '../utils/socketManager.js';
 import { emitNotification } from '../sockets/socketHandlers.js';
@@ -1377,9 +1378,9 @@ export async function createHeldTransferHandler(
         const ownerDeptId = pastOwnerUserId
           ? await getUserDepartmentId(pastOwnerUserId)
           : null;
-        // Use designated approver for the company
-        const approverUserId = companyId
-          ? await getDesignatedApproverUserId(companyId)
+        // Use the asset owner's designated approver (user-level, local-admin fallback)
+        const approverUserId = pastOwnerUserId
+          ? await getDesignatedApproverUserIdForRequester(pastOwnerUserId)
           : null;
         
         const ownerNames = pastOwnerUserId
@@ -1688,9 +1689,9 @@ export async function submitTransferRequestHandler(
         try {
           // Check if requestor has MA1 custodian access - if so, route to same approver (MA3 capacity)
           const requestorHasMA1 = await getRequestorMA1Status(firstDeptAssignment.user_id);
-          // For MA1/MA3 combined, we use the same designated approver
-          const approverUserId = await getDesignatedApproverUserId(companyId);
-          const subApproverUserId = await getDesignatedSubApproverUserId(companyId);
+          // Use the requester's designated approver (user-level, local-admin fallback)
+          const approverUserId = await getDesignatedApproverUserIdForRequester(firstDeptAssignment.user_id);
+          const subApproverUserId = await getDesignatedSubApproverUserIdForRequester(firstDeptAssignment.user_id);
           
           const requesterRow = await getUserNamesById(firstDeptAssignment.user_id);
           const requesterName = requesterRow ? `${requesterRow.first_name} ${requesterRow.last_name}`.trim() : 'A user';
@@ -4853,12 +4854,11 @@ export async function getTransferPendingApprovalsHandler(
       return res.json({ assetTransferForms: batches });
     }
 
-    // Check if user is designated approver or sub approver for this company
-    const isApprover = await isDesignatedApprover(userId, companyId);
-    const isSubApprover = await isDesignatedSubApprover(userId, companyId);
-    if (!isApprover && !isSubApprover) return res.json({ assetTransferForms: [] });
+    // Only see pending forms for requesters assigned to this user as approver
+    const requesterIds = await getRequestersAssignedToApprover(userId, companyId);
+    if (requesterIds.length === 0) return res.json({ assetTransferForms: [] });
+    const requesterSet = new Set(requesterIds);
 
-    // Designated approvers see all pending forms in the company (company-wide)
     let formRows: any[];
     try {
       const [rows] = (await pool.execute(
@@ -4885,6 +4885,8 @@ export async function getTransferPendingApprovalsHandler(
         [companyId]
       )) as any[];
       formRows = rows || [];
+      formRows = (rows || []).filter((r: any) => requesterSet.has(String(r.user_id)));
+
     } catch (colErr: any) {
       if (
         colErr?.message?.includes('declined_at') ||
@@ -5064,9 +5066,13 @@ export async function approveTransferFormHandler(
         r.granted === 1
     );
     
-    // Check if user is designated approver or sub approver for this company
-    const isApprover = await isDesignatedApprover(userId, companyId);
-    const isSubApprover = await isDesignatedSubApprover(userId, companyId);
+    // Check if user is the designated approver or sub approver for the form's requester
+    const isApprover = form.user_id
+      ? await isDesignatedApprover(userId, form.user_id)
+      : false;
+    const isSubApprover = form.user_id
+      ? await isDesignatedSubApprover(userId, form.user_id)
+      : false;
     
     if (!(hasCreate && hasEdit) && !isApprover && !isSubApprover) {
       return res
@@ -5394,9 +5400,13 @@ export async function declineTransferFormHandler(
         r.granted === 1
     );
     
-    // Check if user is designated approver or sub approver for this company
-    const isApprover = await isDesignatedApprover(userId, companyId);
-    const isSubApprover = await isDesignatedSubApprover(userId, companyId);
+    // Check if user is the designated approver or sub approver for the form's requester
+    const isApprover = form.user_id
+      ? await isDesignatedApprover(userId, form.user_id)
+      : false;
+    const isSubApprover = form.user_id
+      ? await isDesignatedSubApprover(userId, form.user_id)
+      : false;
     
     if (!(hasCreate && hasEdit) && !isApprover && !isSubApprover) {
       return res
@@ -5599,9 +5609,9 @@ export async function signAssetTransferFormHandler(
         const transferrerUser = await getUserById(form.user_id);
         signCompanyId = transferrerUser?.company_id ?? null;
       }
-      if (signCompanyId) {
-        const approverUserId = await getDesignatedApproverUserId(signCompanyId);
-        const subApproverUserId = await getDesignatedSubApproverUserId(signCompanyId);
+      if (signCompanyId && (form as any).user_id) {
+        const approverUserId = await getDesignatedApproverUserIdForRequester((form as any).user_id);
+        const subApproverUserId = await getDesignatedSubApproverUserIdForRequester((form as any).user_id);
         const transferrerRow = await getUserNamesById(req.user!.userID);
         const transferrerName = transferrerRow
           ? `${transferrerRow.first_name} ${transferrerRow.last_name}`.trim()

@@ -13,11 +13,10 @@ import {
   isUserSubApprover2,
   isDesignatedApprover,
   isDesignatedSubApprover,
-  getDesignatedApproverUserId,
-  getDesignatedSubApproverUserId,
   getRequestorMA1Status,
 } from '../utils/approverNotifications.js';
 import { createAuditLog } from '../utils/audit.js';
+import { getRequestersAssignedToApprover } from '../services/userApprovers.service.js';
 
 function groupChecklistsIntoBatches(checklists: Record<string, unknown>[]) {
   const byEmployee = new Map<string, Record<string, unknown>[]>();
@@ -62,15 +61,17 @@ export async function getPendingChecklistApprovalsHandler(
       return res.status(200).json({ checklistBatches: [] });
     }
 
-    // Check if user is designated approver or sub approver for this company
-    const isApprover = await isDesignatedApprover(userId, companyId);
-    const isSubApprover = await isDesignatedSubApprover(userId, companyId);
-    if (!isApprover && !isSubApprover) {
+    // Check if user is a designated approver or sub-approver for any employee
+    const requesterIds = await getRequestersAssignedToApprover(userId, companyId);
+    if (requesterIds.length === 0) {
       return res.status(200).json({ checklistBatches: [] });
     }
+    const requesterSet = new Set(requesterIds);
 
-    // Designated approvers see all pending checklists in the company (company-wide)
-    const rows = await checklistRepo.findPendingDeptHeadApprovalChecklistsByCompany(companyId);
+    // Designated approvers only see pending checklists for their assigned employees
+    const rows = (
+      await checklistRepo.findPendingDeptHeadApprovalChecklistsByCompany(companyId)
+    ).filter(row => requesterSet.has(String((row as { employee_id?: string }).employee_id)));
     const checklistBatches = groupChecklistsIntoBatches(rows);
 
     return res.status(200).json({ checklistBatches });
@@ -132,14 +133,46 @@ export async function approveChecklistsDeptHeadHandler(
       return res.status(400).json({ error: 'checklistIds is required' });
     }
 
-    // Check if user is designated approver or sub approver for this company
-    const isApprover = await isDesignatedApprover(userId, companyId);
-    const isSubApprover = await isDesignatedSubApprover(userId, companyId);
-    if (!isApprover && !isSubApprover) {
+    // Designated approvers may only approve checklists for employees assigned to them
+    const placeholders = checklistIds.map(() => '?').join(',');
+    const [employeeRows] = (await pool.execute(
+      `SELECT DISTINCT employee_id
+       FROM asset_checklists
+       WHERE id IN (${placeholders}) AND deleted_at IS NULL`,
+      checklistIds
+    )) as [{ employee_id: string }[], unknown];
+    const employeeIds = employeeRows
+      .map(r => String(r.employee_id))
+      .filter(Boolean);
+    if (employeeIds.length === 0) {
+      return res.status(400).json({ error: 'No matching checklists found' });
+    }
+    let authorized = true;
+    const approvalRoles = new Set<'approver' | 'sub'>();
+    for (const empId of employeeIds) {
+      if (await isDesignatedApprover(userId, empId)) {
+        approvalRoles.add('approver');
+        continue;
+      }
+      if (await isDesignatedSubApprover(userId, empId)) {
+        approvalRoles.add('sub');
+        continue;
+      }
+      authorized = false;
+      break;
+    }
+    if (!authorized) {
       return res
         .status(403)
         .json({ error: 'Not authorized as department head approver' });
     }
+    if (approvalRoles.size !== 1) {
+      return res.status(403).json({
+        error:
+          'Cannot approve a mixed batch of approver and sub-approver checklists at once',
+      });
+    }
+    const isSubApprover = approvalRoles.has('sub');
 
     const [approverRows] = (await pool.query(
       'SELECT department_id, digital_signature FROM users WHERE userID = ? LIMIT 1',
