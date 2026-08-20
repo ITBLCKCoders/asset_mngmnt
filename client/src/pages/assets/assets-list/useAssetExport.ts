@@ -346,6 +346,14 @@ export const useAssetExport = () => {
       'location',
       'purchasePrice',
       'purchaseDate',
+      'usefulLifeYears',
+      'salvageValue',
+      'depreciationMethod',
+      'depreciationStartDate',
+      'annualDepreciation',
+      'bookValue',
+      'accumulatedDepreciation',
+      'monthlyDepreciation',
     ])
   );
 
@@ -375,8 +383,11 @@ export const useAssetExport = () => {
     { key: 'usefulLifeYears', label: 'Useful Life (Years)' },
     { key: 'salvageValue', label: 'Salvage Value' },
     { key: 'depreciationMethod', label: 'Depreciation Method' },
-    { key: 'annualDepreciation', label: 'Annual Depreciation' },
     { key: 'depreciationStartDate', label: 'Depreciation Start Date' },
+    { key: 'annualDepreciation', label: 'Annual Depreciation' },
+    { key: 'bookValue', label: 'Book Value' },
+    { key: 'accumulatedDepreciation', label: 'Accumulated Depreciation' },
+    { key: 'monthlyDepreciation', label: 'Depreciation / Month' },
     { key: 'company', label: 'Company' },
     { key: 'building', label: 'Building' },
     { key: 'createdBy', label: 'Created By' },
@@ -418,6 +429,12 @@ export const useAssetExport = () => {
     if (colKey === 'salvageValue' && value)
       return formatCurrency(value);
     if (colKey === 'annualDepreciation' && value)
+      return formatCurrency(value);
+    if (colKey === 'bookValue' && value)
+      return formatCurrency(value);
+    if (colKey === 'accumulatedDepreciation' && value)
+      return formatCurrency(value);
+    if (colKey === 'monthlyDepreciation' && value)
       return formatCurrency(value);
     return value ?? '';
   };
@@ -694,8 +711,11 @@ builderGroups.forEach(group => {
       usefulLifeYears: 20,
       salvageValue: 18,
       depreciationMethod: 25,
-      annualDepreciation: 20,
       depreciationStartDate: 22,
+      annualDepreciation: 20,
+      bookValue: 18,
+      accumulatedDepreciation: 20,
+      monthlyDepreciation: 18,
       company: 25,
       building: 20,
       createdBy: 25,
@@ -856,8 +876,11 @@ filterLabel?: string
       usefulLifeYears: 20,
       salvageValue: 18,
       depreciationMethod: 25,
-      annualDepreciation: 20,
       depreciationStartDate: 22,
+      annualDepreciation: 20,
+      bookValue: 18,
+      accumulatedDepreciation: 20,
+      monthlyDepreciation: 18,
       company: 25,
       building: 20,
       createdBy: 25,
@@ -1170,6 +1193,14 @@ filterLabel?: string
       'location',
       'purchasePrice',
       'purchaseDate',
+      'usefulLifeYears',
+      'salvageValue',
+      'depreciationMethod',
+      'depreciationStartDate',
+      'annualDepreciation',
+      'bookValue',
+      'accumulatedDepreciation',
+      'monthlyDepreciation',
     ])
   );
 

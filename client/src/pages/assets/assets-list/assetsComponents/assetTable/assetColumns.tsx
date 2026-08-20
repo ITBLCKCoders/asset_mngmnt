@@ -527,6 +527,18 @@ export const assetColumns = [
     size: 170,
   },
 
+  // Depreciation Start Date
+  {
+    id: 'depreciationStartDate',
+    header: 'Depreciation Start Date',
+    accessorKey: 'depreciationStartDate',
+    size: 180,
+    cell: ({ row }: any) =>
+      row.original.depreciationStartDate
+        ? format(row.original.depreciationStartDate, 'MMM dd, yyyy')
+        : '—',
+  },
+
   // Annual Depreciation
   {
     id: 'annualDepreciation',
@@ -555,25 +567,13 @@ export const assetColumns = [
       formatCurrency(row.original.accumulatedDepreciation ?? 0),
   },
 
-  // Depreciation per Month
+  // Depreciation / Month
   {
     id: 'monthlyDepreciation',
     header: 'Depreciation / Month',
     accessorKey: 'monthlyDepreciation',
     size: 180,
     cell: ({ row }: any) => formatCurrency(row.original.monthlyDepreciation ?? 0),
-  },
-
-  // Depreciation Start Date
-  {
-    id: 'depreciationStartDate',
-    header: 'Depreciation Start Date',
-    accessorKey: 'depreciationStartDate',
-    size: 180,
-    cell: ({ row }: any) =>
-      row.original.depreciationStartDate
-        ? format(row.original.depreciationStartDate, 'MMM dd, yyyy')
-        : '—',
   },
 
   // Company
