@@ -41,6 +41,10 @@ export interface AssetBorrowingData {
   requestedBySignature?: string | null;
   /** When the request was submitted */
   requestedAt?: string | null;
+  /** IT receiver position for PDF */
+  itReceivedByPosition?: string | null;
+  /** IT approver position for PDF */
+  itApprovedByPosition?: string | null;
   /** Dept Head (requestor's department head) approval date/time */
   deptHeadSignedAt?: string | null;
   /** Dept Head display name for PDF */
@@ -341,6 +345,9 @@ export const generateAssetBorrowingPDF = async (
     borrowData.deptHeadSignedBy ||
     '—';
   const isSubApprover1Signed = !!borrowData.subApprover1SignedAt;
+  const deptHeadPosition = isSubApprover1Signed
+    ? (borrowData.subApprover1Position || '').trim()
+    : (borrowData.deptHeadPosition || '').trim();
   let deptHeadSigImg: HTMLImageElement | null = null;
   if (deptHeadSignature) {
     deptHeadSigImg = await new Promise<HTMLImageElement | null>(resolve => {
@@ -485,21 +492,21 @@ export const generateAssetBorrowingPDF = async (
           align: 'left',
         });
 
+        // Position under name (sub-approver position or dept head position)
+        if (deptHeadPosition) {
+          doc.setFontSize(6.5);
+          doc.text(deptHeadPosition, cell.x + 3, nameY + 3.5, {
+            align: 'left',
+          });
+        }
+
         if (isSubApprover1Signed) {
           doc.setFontSize(6.5);
           doc.setFont('helvetica', 'italic');
           doc.setTextColor(90, 90, 90);
-          doc.text('(Stand-in approver)', cell.x + 3, nameY + 3.5, {
+          doc.text('(Stand-in approver)', cell.x + 3, nameY + 6.5, {
             align: 'left',
           });
-          if (borrowData.subApprover1Position) {
-            doc.text(
-              borrowData.subApprover1Position,
-              cell.x + 3,
-              nameY + 6.5,
-              { align: 'left' }
-            );
-          }
         }
 
         return;
@@ -551,6 +558,13 @@ export const generateAssetBorrowingPDF = async (
         doc.text(borrowData.itReceivedBy, cell.x + 3, nameY, {
           align: 'left',
         });
+        // IT received by position
+        if (borrowData.itReceivedByPosition) {
+          doc.setFontSize(6.5);
+          doc.text(borrowData.itReceivedByPosition, cell.x + 3, nameY + 3.5, {
+            align: 'left',
+          });
+        }
 
         return;
       }
@@ -596,6 +610,13 @@ export const generateAssetBorrowingPDF = async (
         doc.text(borrowData.itApprovedBy, cell.x + 3, nameY, {
           align: 'left',
         });
+        // IT approved by position
+        if (borrowData.itApprovedByPosition) {
+          doc.setFontSize(6.5);
+          doc.text(borrowData.itApprovedByPosition, cell.x + 3, nameY + 3.5, {
+            align: 'left',
+          });
+        }
 
         return;
       }
@@ -661,7 +682,7 @@ export const generateAssetBorrowingPDF = async (
     doc.setFont('helvetica', 'italic');
     doc.setTextColor(80, 80, 80);
     doc.text(
-      'Stand-in approver note: This user is a stand-in approver since the department manager of the requestor is currently not present',
+      'Stand-in approver note: The signee is a stand-in approver for the Department Head, who is currently not present.',
       tableMargin.left,
       (doc as any).lastAutoTable.finalY + 4,
       { maxWidth: tableWidth }

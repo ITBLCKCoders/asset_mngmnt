@@ -86,15 +86,41 @@ async function fetchAllAssets(
   const apiUrl = `/assets?${params.toString()}`;
   const res = await api.get<{ assets: AssetResponseDto[] }>(apiUrl);
 
+  const mapped = (res.assets ?? []).map(mapDtoToAsset);
+  const flattened: Asset[] = [];
+  const seen = new Set<string>();
+
+  for (const asset of mapped) {
+    if (!seen.has(asset.id)) {
+      flattened.push(asset);
+      seen.add(asset.id);
+    }
+    // The server hides builder component assets from the top-level response but
+    // nests them under the parent's `children`. Flatten them so export lookups
+    // (assets.find(a => a.id === item.asset_code)) can resolve builder items and
+    // summary counts include the components. This only affects the export path:
+    // the on-screen Asset List table reads from a separate data hook.
+    if (asset.children?.length) {
+      for (const child of asset.children) {
+        if (!seen.has(child.id)) {
+          flattened.push(child);
+          seen.add(child.id);
+        }
+      }
+    }
+  }
+
   console.log(
     '[AssetExport fetchAllAssets]',
     apiUrl,
     '→',
     res.assets?.length ?? 0,
-    'assets returned',
+    'assets returned,',
+    flattened.length,
+    'after flattening builder children',
   );
 
-  return (res.assets ?? []).map(mapDtoToAsset);
+  return flattened;
 }
 
 function formatScopeLabel(scope: string): string {
@@ -214,6 +240,66 @@ function mapDtoToAsset(dto: AssetResponseDto): Asset {
       }];
       return { ...form, assets: assetsArray } as AccountabilityForm;
     })(),
+    isAssetBuilder: Boolean(dto.isAssetBuilder),
+    builderStatus: dto.builderStatus ?? undefined,
+    children: Array.isArray(dto.children)
+      ? dto.children.map((child: unknown) => {
+        // Handles both a full AssetResponseDto (has asset_code) and the
+        // server's minimal fallback { asset_code, name }.
+        return 'asset_code' in (child as any) && (child as any).asset_code
+          ? mapDtoToAsset(child as AssetResponseDto)
+          : mapChildToAsset(child, dto.builderStatus);
+      })
+      : undefined,
+  };
+}
+
+/**
+ * Convert a builder child entry into an Asset. The server may send a full
+ * asset DTO inside `children`, or a minimal fallback like { asset_code, name }
+ * when the child isn't part of the current result set. Mirrors the child
+ * resolution in the asset list data hook so export lookup + summary counts see
+ * the same component assets the parent shows when expanded on screen.
+ */
+function mapChildToAsset(child: unknown, builderStatus?: string | null): Asset {
+  const c = (child ?? {}) as Record<string, string>;
+  const code = c.asset_code || c.id || '';
+  return {
+    id: code,
+    assetID: c.assetID,
+    name: c.name || code,
+    image: '',
+    description: '',
+    category: c.category_name || '',
+    type: c.type_name || '',
+    serialNo: c.serial || '',
+    modelNo: c.model || '',
+    brand: c.brand || '',
+    status: (builderStatus as Asset['status']) || 'Partial',
+    assignedTo: '',
+    department: '',
+    location: '',
+    purchaseDate: null,
+    purchasePrice: 0,
+    supplier: '',
+    warranty: null,
+    warranty_months: null,
+    documents: [],
+    maintenanceSchedule: 'None',
+    lastMaintenanceDate: null,
+    nextMaintenanceDate: null,
+    condition: 'Good',
+    usefulLifeYears: 0,
+    salvageValue: 0,
+    depreciationMethod: '',
+    annualDepreciation: 0,
+    depreciationStartDate: null,
+    company: '',
+    building: '',
+    createdAt: new Date(0),
+    createdBy: '',
+    updatedAt: new Date(0),
+    updatedBy: '',
   };
 }
 
