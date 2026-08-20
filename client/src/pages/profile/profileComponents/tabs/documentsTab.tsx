@@ -183,6 +183,7 @@ export function buildReturnDataForPDFFromBatch(
     dept_head_signed_at: batch.dept_head_signed_at ?? undefined,
     dept_head_digital_signature: batch.dept_head_digital_signature ?? undefined,
     dept_head_user_name: batch.dept_head_user_name ?? undefined,
+    dept_head_position: batch.dept_head_position ?? undefined,
     sub_approver_1_signed_at: batch.sub_approver_1_signed_at ?? undefined,
     sub_approver_1_digital_signature:
       batch.sub_approver_1_digital_signature ?? undefined,
@@ -192,6 +193,7 @@ export function buildReturnDataForPDFFromBatch(
     it_manager_digital_signature:
       batch.it_manager_digital_signature ?? undefined,
     it_manager_user_name: batch.it_manager_user_name ?? undefined,
+    it_manager_position: batch.it_manager_position ?? undefined,
     sub_approver_2_signed_at: batch.sub_approver_2_signed_at ?? undefined,
     sub_approver_2_digital_signature:
       batch.sub_approver_2_digital_signature ?? undefined,
@@ -318,6 +320,7 @@ export function buildTransferDataForPDFFromBatch(
     dept_head_signed_at: batch.dept_head_signed_at ?? undefined,
     dept_head_digital_signature: batch.dept_head_digital_signature ?? undefined,
     dept_head_user_name: batch.dept_head_user_name ?? undefined,
+    dept_head_position: batch.dept_head_position ?? undefined,
     sub_approver_1_signed_at: batch.sub_approver_1_signed_at ?? undefined,
     sub_approver_1_digital_signature:
       batch.sub_approver_1_digital_signature ?? undefined,
@@ -327,6 +330,7 @@ export function buildTransferDataForPDFFromBatch(
     it_manager_digital_signature:
       batch.it_manager_digital_signature ?? undefined,
     it_manager_user_name: batch.it_manager_user_name ?? undefined,
+    it_manager_position: batch.it_manager_position ?? undefined,
     sub_approver_2_signed_at: batch.sub_approver_2_signed_at ?? undefined,
     sub_approver_2_digital_signature:
       batch.sub_approver_2_digital_signature ?? undefined,
@@ -712,7 +716,7 @@ export const TransferFormDetail: React.FC<{
   );
 };
 
-/** Shared timeline for return/transfer forms: Submitted → Approved by dept head → Completed */
+/** Shared timeline for return/transfer forms: Submitted/Initiated → Approved by dept head → Completed */
 export function FormTimeline({
   type,
   created_at,
@@ -723,6 +727,9 @@ export function FormTimeline({
   sub_approver_1_user_name,
   sub_approver_1_position,
   process_signed_at,
+  executed_at,
+  owner_absent,
+  processorName,
 }: {
   type: 'return' | 'transfer';
   created_at: string;
@@ -733,6 +740,12 @@ export function FormTimeline({
   sub_approver_1_user_name?: string | null;
   sub_approver_1_position?: string | null;
   process_signed_at?: string | null;
+  /** Transfer execution timestamp (transfer completion signal). Optional: pages without it fall back to process_signed_at. */
+  executed_at?: string | null;
+  /** True when the processor (IT/Admin) initiated on behalf of an absent owner. */
+  owner_absent?: boolean;
+  /** Name of the processor who initiated a held (owner absent) form. */
+  processorName?: string;
 }) {
   const formatDate = (d: string | null | undefined) =>
     d && !isNaN(new Date(d).getTime())
@@ -741,9 +754,28 @@ export function FormTimeline({
         new Date(d).toLocaleTimeString()
       : null;
   const step1Done = true;
+  const ownerAbsent = !!owner_absent;
   const approvedBySub = !!sub_approver_1_signed_at;
   const step2Done = !!dept_head_signed_at || approvedBySub;
-  const step3Done = !!process_signed_at;
+  const step3Done =
+    type === 'transfer'
+      ? executed_at === undefined
+        ? !!process_signed_at
+        : !!executed_at
+      : ownerAbsent
+        ? step2Done
+        : !!process_signed_at;
+  const step1Date = ownerAbsent
+    ? formatDate(process_signed_at ?? created_at) ?? '—'
+    : formatDate(created_at) ?? '—';
+  const step3Date =
+    type === 'transfer'
+      ? formatDate(executed_at ?? process_signed_at)
+      : ownerAbsent
+        ? formatDate(
+            sub_approver_1_signed_at ?? dept_head_signed_at ?? process_signed_at
+          )
+        : formatDate(process_signed_at);
   const completedLabel =
     type === 'return'
       ? 'Your return is completed'
@@ -793,69 +825,83 @@ export function FormTimeline({
 
   return (
     <div className="relative py-1">
-      {/* Vertical line behind nodes */}
-      <div
-        className="absolute left-[18px] top-2 bottom-2 w-0.5 rounded-full bg-gradient-to-b from-green-500 via-border to-muted-foreground/20"
-        aria-hidden
-      />
-      <div className="relative space-y-4">
-        {/* Step 1: Submitted */}
-        <div className="flex gap-4">
-          <div className="relative z-10 flex flex-col items-center">
-            {stepNode(step1Done, 1)}
-          </div>
-          <div className="flex-1 min-w-0 pb-1">
-            {stepContent(
-              'Submitted',
-              formatDate(created_at) ?? '—',
+      {/* Step 1: Submitted / Initiated by IT/Admin */}
+      <div className="flex gap-4">
+        <div className="flex flex-col items-center">
+          {stepNode(step1Done, 1)}
+          <div
+            className={`w-0.5 flex-1 rounded-full ${
+              step2Done ? 'bg-green-500' : 'bg-muted-foreground/20'
+            }`}
+            aria-hidden
+          />
+        </div>
+        <div className="flex-1 min-w-0 pb-4">
+          {stepContent(
+            ownerAbsent ? 'Initiated by IT / Admin' : 'Submitted',
+            step1Date,
+            ownerAbsent ? (
+              <>
+                The asset owner is marked absent.{' '}
+                {processorName || 'IT/Admin'} initiated this{' '}
+                {type === 'return' ? 'return' : 'transfer'} on the owner's
+                behalf. Has been pending for approval of the department head.
+              </>
+            ) : (
               <>
                 Signed by {signerName || '—'}. Has been pending for approval of
                 your department head.
               </>
-            )}
-          </div>
+            )
+          )}
         </div>
-        {/* Step 2: Approved by department head */}
-        <div className="flex gap-4">
-          <div className="relative z-10 flex flex-col items-center">
-            {stepNode(step2Done, 2)}
-          </div>
-          <div className="flex-1 min-w-0 pb-1">
-            {stepContent(
-              'Approved by the department head',
-              step2Done
-                ? (formatDate(
-                    sub_approver_1_signed_at ?? dept_head_signed_at
-                  ) ?? '—')
-                : 'Pending',
-              approvedBySub ? (
-                <span className="mt-1 inline-block rounded bg-blue-100 px-2 py-0.5 text-xs font-medium text-blue-700">
-                  Stand-in approver
-                </span>
-              ) : undefined,
-              step2Done && (dept_head_user_name || sub_approver_1_user_name) ? (
-                <p className="mt-1.5 text-xs text-muted-foreground">
-                  —{' '}
-                  {sub_approver_1_user_name ?? dept_head_user_name}
-                  {approvedBySub && sub_approver_1_position
-                    ? ` (${sub_approver_1_position})`
-                    : ''}
-                </p>
-              ) : undefined
-            )}
-          </div>
+      </div>
+      {/* Step 2: Approved by department head */}
+      <div className="flex gap-4">
+        <div className="flex flex-col items-center">
+          {stepNode(step2Done, 2)}
+          <div
+            className={`w-0.5 flex-1 rounded-full ${
+              step3Done ? 'bg-green-500' : 'bg-muted-foreground/20'
+            }`}
+            aria-hidden
+          />
         </div>
-        {/* Step 3: Completed */}
-        <div className="flex gap-4">
-          <div className="relative z-10 flex flex-col items-center">
-            {stepNode(step3Done, 3)}
-          </div>
-          <div className="flex-1 min-w-0">
-            {stepContent(
-              completedLabel,
-              step3Done ? (formatDate(process_signed_at) ?? '—') : 'Pending'
-            )}
-          </div>
+        <div className="flex-1 min-w-0 pb-4">
+          {stepContent(
+            'Approved by the department head',
+            step2Done
+              ? (formatDate(
+                  sub_approver_1_signed_at ?? dept_head_signed_at
+                ) ?? '—')
+              : 'Pending',
+            approvedBySub ? (
+              <span className="mt-1 inline-block rounded bg-blue-100 px-2 py-0.5 text-xs font-medium text-blue-700">
+                Stand-in approver
+              </span>
+            ) : undefined,
+            step2Done && (dept_head_user_name || sub_approver_1_user_name) ? (
+              <p className="mt-1.5 text-xs text-muted-foreground">
+                —{' '}
+                {sub_approver_1_user_name ?? dept_head_user_name}
+                {approvedBySub && sub_approver_1_position
+                  ? ` (${sub_approver_1_position})`
+                  : ''}
+              </p>
+            ) : undefined
+          )}
+        </div>
+      </div>
+      {/* Step 3: Completed */}
+      <div className="flex gap-4">
+        <div className="flex flex-col items-center">
+          {stepNode(step3Done, 3)}
+        </div>
+        <div className="flex-1 min-w-0">
+          {stepContent(
+            completedLabel,
+            step3Done ? (step3Date ?? '—') : 'Pending'
+          )}
         </div>
       </div>
     </div>
@@ -1190,7 +1236,12 @@ export const ReturnFormCard: React.FC<{
               signerName={returnedBy ?? ''}
               dept_head_signed_at={batch.dept_head_signed_at}
               dept_head_user_name={batch.dept_head_user_name}
+              sub_approver_1_signed_at={batch.sub_approver_1_signed_at}
+              sub_approver_1_user_name={batch.sub_approver_1_user_name}
+              sub_approver_1_position={batch.sub_approver_1_position}
               process_signed_at={batch.process_signed_at}
+              owner_absent={batch.owner_absent}
+              processorName={batch.processed_by ?? ''}
             />
           </CardContent>
         </TabsContent>
@@ -1790,7 +1841,13 @@ export const TransferFormCard: React.FC<{
               signerName={transferrerName ?? ''}
               dept_head_signed_at={batch.dept_head_signed_at}
               dept_head_user_name={batch.dept_head_user_name}
+              sub_approver_1_signed_at={batch.sub_approver_1_signed_at}
+              sub_approver_1_user_name={batch.sub_approver_1_user_name}
+              sub_approver_1_position={batch.sub_approver_1_position}
               process_signed_at={batch.process_signed_at}
+              executed_at={batch.executed_at}
+              owner_absent={batch.owner_absent}
+              processorName={batch.processed_by ?? ''}
             />
           </CardContent>
         </TabsContent>
@@ -1955,6 +2012,7 @@ export interface AssetBorrowFormBatch {
   dept_head_name?: string | null;
   dept_head_signed_by?: string | null;
   dept_head_digital_signature?: string | null;
+  dept_head_position?: string | null;
   sub_approver_1_signed_at?: string | null;
   sub_approver_1_signed_by?: string | null;
   sub_approver_1_digital_signature?: string | null;
@@ -1965,6 +2023,7 @@ export interface AssetBorrowFormBatch {
   asset_name?: string | null;
   asset_serial?: string | null;
   approved_by_name?: string | null;
+  approved_by_position?: string | null;
   /** From API — used for badges / timeline (e.g. processor decline). */
   status?: string | null;
   declined_at?: string | null;
@@ -1981,6 +2040,7 @@ export interface AssetBorrowFormBatch {
   /** Manager Approver 2 who received the borrow request */
   received_by?: string | null;
   received_by_name?: string | null;
+  received_by_position?: string | null;
   /** Manager Approver 2's digital signature when receiving */
   received_by_signature?: string | null;
   received_at?: string | null;
@@ -2070,10 +2130,13 @@ export function buildBorrowDataForPDFFromBatch(
     deptHeadSignedBy: batch.sub_approver_1_name ?? batch.dept_head_name ?? null,
     deptHeadSignature:
       batch.sub_approver_1_digital_signature ?? batch.dept_head_digital_signature ?? null,
+    deptHeadPosition: batch.dept_head_position ?? batch.sub_approver_1_position ?? null,
     subApprover1SignedAt: batch.sub_approver_1_signed_at ?? null,
     subApprover1SignedBy: batch.sub_approver_1_name ?? null,
     subApprover1Position: batch.sub_approver_1_position ?? null,
     subApprover1Signature: batch.sub_approver_1_digital_signature ?? null,
+    itReceivedByPosition: batch.approved_by_position ?? null,
+    itApprovedByPosition: batch.received_by_position ?? null,
   };
 }
 
@@ -2624,6 +2687,7 @@ export interface AssetTransferFormBatch {
   dept_head_signed_at?: string | null;
   dept_head_digital_signature?: string | null;
   dept_head_user_name?: string | null;
+  dept_head_position?: string | null;
   sub_approver_1_signed_at?: string | null;
   sub_approver_1_digital_signature?: string | null;
   sub_approver_1_user_name?: string | null;
@@ -2631,6 +2695,7 @@ export interface AssetTransferFormBatch {
   it_manager_signed_at?: string | null;
   it_manager_digital_signature?: string | null;
   it_manager_user_name?: string | null;
+  it_manager_position?: string | null;
   sub_approver_2_signed_at?: string | null;
   sub_approver_2_digital_signature?: string | null;
   sub_approver_2_signed_by?: string | null;
@@ -2733,6 +2798,7 @@ export interface AssetReturnFormBatch {
   dept_head_digital_signature?: string | null;
   dept_head_signed_by?: string | null;
   dept_head_user_name?: string | null;
+  dept_head_position?: string | null;
   sub_approver_1_signed_at?: string | null;
   sub_approver_1_digital_signature?: string | null;
   sub_approver_1_signed_by?: string | null;
@@ -2742,6 +2808,7 @@ export interface AssetReturnFormBatch {
   it_manager_digital_signature?: string | null;
   it_manager_signed_by?: string | null;
   it_manager_user_name?: string | null;
+  it_manager_position?: string | null;
   sub_approver_2_signed_at?: string | null;
   sub_approver_2_digital_signature?: string | null;
   sub_approver_2_signed_by?: string | null;

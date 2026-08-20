@@ -259,6 +259,23 @@ describe('assetTransfers.controller', () => {
       expect(res._status).toBe(400);
     });
 
+    it('approves owner-absent transfer without transferrer signature', async () => {
+      req.params = { formId: 'f1' };
+      req.body = { digitalSignature: 'sig' };
+      formModel.findById.mockResolvedValue({ ...mockForm, signed_at: null, dept_head_signed_at: null, return_form_id: 'rf1' });
+      pool.execute.mockImplementation(async (sql: string) => {
+        const s = String(sql);
+        if (s.includes('SELECT owner_absent FROM asset_return_forms')) return [[{ owner_absent: 1 }], []];
+        if (s.includes('SELECT module_name')) return [[{ module_name: 'Approvals', permission_type: 'create', granted: 1 }, { module_name: 'Approvals', permission_type: 'edit', granted: 1 }], []];
+        return [[], []];
+      });
+      isUserManagerApprover1.mockResolvedValue(false);
+      fetchUserDigitalSignature.mockResolvedValue('dig-sig');
+      getAssetScope.mockResolvedValue({ companyId: 10, departmentIds: null, isSuperAdmin: false, isAdmin: false });
+      await assetTransfersController.approveTransferFormHandler(req, res);
+      expect(res._json.message).toContain('approved');
+    });
+
     it('returns 404 when form not found', async () => {
       req.params = { formId: 'f1' };
       formModel.findById.mockResolvedValue(null);

@@ -87,9 +87,10 @@ import {
 } from './builderAssetGrouping';
 import {
   fetchAssignedIntangibleAssetsForForm,
+  getAssetDisplayScope,
   getFormAssignedIntangibleAssets,
   getFormDisplayAssets,
-  isIntangibleAssetLike,
+  intangibleMatchesFormScope,
   mergeAssetsById,
   splitDisplayAssets,
 } from './accountabilityFormAssets';
@@ -103,6 +104,12 @@ const pdfCache = new Map<string, Blob>();
 
 // Simple in-memory image cache
 const imageCache = new Map<string, string>();
+
+// In-flight dedupe for the company-wide intangible asset list. Every list card
+// resolves the same /intangible-assets payload on mount; sharing one promise
+// collapses N concurrent DB calls into a single one. Cleared once settled so
+// later refetches still get fresh data.
+let intangibleAssetsFetchPromise: Promise<any> | null = null;
 
 // Debounce utility
 const debounce = <T extends (...args: T[]) => void>(
@@ -371,21 +378,14 @@ const getAccountabilityFormAssignmentIds = (
 
 // Classify a display asset (embedded form asset or resolved intangible) into the
 // IT/Admin bucket used by the card badges. Mirrors the PDF split at
-// generateAccountabilityFormPDF: intangibles classified as 'Admin' stay Admin,
-// every other intangible is treated as IT.
+// generateAccountabilityFormPDF: intangibles are classified solely by their
+// Intangible Asset Type's department (Admin only when that department is
+// Admin/Administration; otherwise IT), so assignment department / type name do
+// not influence the bucket.
 const getDisplayScopeType = (
   asset: any,
   form: AccountabilityForm
-): ClientAssetScopeType => {
-  if (isIntangibleAssetLike(asset)) {
-    return classifyDepartmentScopeByName(
-      asset.type_department?.name || asset.department || asset.type || ''
-    ) === 'Admin'
-      ? 'Admin'
-      : 'IT';
-  }
-  return getAssetScopeType(asset, form);
-};
+): ClientAssetScopeType => getAssetDisplayScope(asset, form);
 
 const getIntangibleAssetDescription = (asset: any): string =>
   String(asset?.description ?? '').trim();
@@ -398,7 +398,9 @@ const enrichIntangibleAssetsWithDescriptions = async (
   if (
     assets.every(
       asset =>
-        getIntangibleAssetDescription(asset) && asset.risk_level?.id
+        getIntangibleAssetDescription(asset) &&
+        asset.risk_level?.id &&
+        asset.type_department != null
     )
   ) {
     return assets;
@@ -421,6 +423,8 @@ const enrichIntangibleAssetsWithDescriptions = async (
         name: asset.name || fromApi.name,
         type: asset.type || fromApi.type,
         risk_level: fromApi.risk_level ?? asset.risk_level ?? null,
+        type_department:
+          fromApi.type_department ?? asset.type_department ?? null,
       };
     });
   } catch {
@@ -437,10 +441,12 @@ export const generateAccountabilityFormPDF = async (
 ): Promise<Blob> => {
   // Resolve the complete intangible set: the intangibles embedded in the form
   // snapshot unioned with the intangibles currently assigned to the form's user
-  // (from the caller-provided list or fetched from /intangible-assets). This
-  // keeps every "View PDF" entry point consistent with the Accountability Forms
-  // page, which always renders the full assigned set.
-  const embeddedIntangibles = fetchAssignedIntangibleAssetsForForm(form);
+  // (from the caller-provided list or fetched from /intangible-assets). Only
+  // intangibles matching the form's scope are included, so an Admin form never
+  // prints IT intangibles (and vice versa).
+  const embeddedIntangibles = fetchAssignedIntangibleAssetsForForm(form).filter(
+    (asset: any) => intangibleMatchesFormScope(asset, form)
+  );
   let resolvedIntangibleAssets: any[] = embeddedIntangibles;
   if (intangibleAssets && intangibleAssets.length > 0) {
     resolvedIntangibleAssets = mergeAssetsById(
@@ -624,16 +630,10 @@ export const generateAccountabilityFormPDF = async (
   );
 
   const itIntangibleAssets = assignedIntangibleAssets.filter(
-    (asset: any) =>
-      classifyDepartmentScopeByName(
-        asset.type_department?.name || asset.department || asset.type || ''
-      ) !== 'Admin'
+    (asset: any) => getAssetDisplayScope(asset, form) === 'IT'
   );
   const adminIntangibleAssets = assignedIntangibleAssets.filter(
-    (asset: any) =>
-      classifyDepartmentScopeByName(
-        asset.type_department?.name || asset.department || asset.type || ''
-      ) === 'Admin'
+    (asset: any) => getAssetDisplayScope(asset, form) === 'Admin'
   );
 
   // Determine which department to show in the acknowledgment text
@@ -1454,6 +1454,73 @@ function ChecklistSummaryCard({
   );
 }
 
+function FormAssetSection({
+  tangibleAssets,
+  intangibleAssets,
+  intangibleAssetsLoading,
+}: {
+  tangibleAssets: any[];
+  intangibleAssets: any[];
+  intangibleAssetsLoading: boolean;
+}) {
+  if (
+    !intangibleAssetsLoading &&
+    tangibleAssets.length === 0 &&
+    intangibleAssets.length === 0
+  ) {
+    return <p className="font-medium text-sm">No Assets</p>;
+  }
+  return (
+    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+      <div className="min-w-0">
+        <p className="flex items-center gap-1.5 font-medium text-sm">
+          <Package className="h-4 w-4 text-blue-600 flex-shrink-0" />
+          Tangible Assets <span className="text-gray-400">({tangibleAssets.length})</span>
+        </p>
+        {tangibleAssets.length > 0 ? (
+          <div className="max-h-[120px] overflow-y-auto scrollbar-hide text-xs text-gray-500 mt-1">
+            <div className="space-y-1">
+              {tangibleAssets.map(asset => (
+                <div key={asset.id} className="flex items-start min-w-0">
+                  <span className="w-1 h-1 bg-gray-400 rounded-full mr-2 mt-1.5 flex-shrink-0"></span>
+                  <span className="break-words">{asset.name || asset.code}</span>
+                </div>
+              ))}
+            </div>
+          </div>
+        ) : (
+          <p className="text-xs text-gray-400 mt-1">None</p>
+        )}
+      </div>
+      <div className="min-w-0">
+        <p className="flex items-center gap-1.5 font-medium text-sm">
+          <FileText className="h-4 w-4 text-amber-600 flex-shrink-0" />
+          Intangible Assets <span className="text-gray-400">({intangibleAssets.length})</span>
+        </p>
+        {intangibleAssetsLoading ? (
+          <div className="space-y-1.5 mt-1">
+            <Shimmer className="h-4 w-24 rounded" />
+            <Shimmer className="h-4 w-32 rounded" />
+          </div>
+        ) : intangibleAssets.length > 0 ? (
+          <div className="max-h-[120px] overflow-y-auto scrollbar-hide text-xs text-gray-500 mt-1">
+            <div className="space-y-1">
+              {intangibleAssets.map(asset => (
+                <div key={asset.id} className="flex items-start min-w-0">
+                  <span className="w-1 h-1 bg-gray-400 rounded-full mr-2 mt-1.5 flex-shrink-0"></span>
+                  <span className="break-words">{asset.name || asset.code}</span>
+                </div>
+              ))}
+            </div>
+          </div>
+        ) : (
+          <p className="text-xs text-gray-400 mt-1">None</p>
+        )}
+      </div>
+    </div>
+  );
+}
+
 export function AccountabilityFormCard({
   form,
   onSign,
@@ -1545,8 +1612,6 @@ export function AccountabilityFormCard({
     tangible: tangibleAssets,
     intangible: intangibleDisplayAssets,
   } = splitDisplayAssets(displayAssets);
-  const hasAnyAssets =
-    tangibleAssets.length > 0 || intangibleDisplayAssets.length > 0;
 
   // OTP verification state
   const [showOtpDialog, setShowOtpDialog] = useState(false);
@@ -1632,7 +1697,14 @@ export function AccountabilityFormCard({
     const fetchIntangibleAssets = async () => {
       try {
         setIntangibleAssetsLoading(true);
-        const response = await api.get('/intangible-assets');
+        if (!intangibleAssetsFetchPromise) {
+          intangibleAssetsFetchPromise = api
+            .get('/intangible-assets')
+            .finally(() => {
+              intangibleAssetsFetchPromise = null;
+            });
+        }
+        const response = await intangibleAssetsFetchPromise;
         setIntangibleAssets(getFormAssignedIntangibleAssets(response, form));
       } catch (error) {
         console.error('Failed to fetch intangible assets:', error);
@@ -2049,63 +2121,11 @@ export function AccountabilityFormCard({
               {/* Asset Info */}
               <div className="flex items-start gap-3">
                 <div className="flex-1">
-                  {intangibleAssetsLoading ? (
-                    <div className="space-y-1.5">
-                      <Shimmer className="h-4 w-24 rounded" />
-                      <Shimmer className="h-4 w-40 rounded" />
-                    </div>
-                  ) : hasAnyAssets ? (
-                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                      <div className="min-w-0">
-                        <p className="flex items-center gap-1.5 font-medium text-sm">
-                          <Package className="h-4 w-4 text-blue-600 flex-shrink-0" />
-                          Tangible Assets{' '}
-                          <span className="text-gray-400">
-                            ({tangibleAssets.length})
-                          </span>
-                        </p>
-                        {tangibleAssets.length > 0 ? (
-                          <div className="max-h-[120px] overflow-y-auto scrollbar-hide text-xs text-gray-500 mt-1">
-                            <div className="space-y-1">
-                              {tangibleAssets.map(asset => (
-                                <div key={asset.id} className="flex items-start min-w-0">
-                                  <span className="w-1 h-1 bg-gray-400 rounded-full mr-2 mt-1.5 flex-shrink-0"></span>
-                                  <span className="break-words">{asset.name || asset.code}</span>
-                                </div>
-                              ))}
-                            </div>
-                          </div>
-                        ) : (
-                          <p className="text-xs text-gray-400 mt-1">None</p>
-                        )}
-                      </div>
-                      <div className="min-w-0">
-                        <p className="flex items-center gap-1.5 font-medium text-sm">
-                          <FileText className="h-4 w-4 text-amber-600 flex-shrink-0" />
-                          Intangible Assets{' '}
-                          <span className="text-gray-400">
-                            ({intangibleDisplayAssets.length})
-                          </span>
-                        </p>
-                        {intangibleDisplayAssets.length > 0 ? (
-                          <div className="max-h-[120px] overflow-y-auto scrollbar-hide text-xs text-gray-500 mt-1">
-                            <div className="space-y-1">
-                              {intangibleDisplayAssets.map(asset => (
-                                <div key={asset.id} className="flex items-start min-w-0">
-                                  <span className="w-1 h-1 bg-gray-400 rounded-full mr-2 mt-1.5 flex-shrink-0"></span>
-                                  <span className="break-words">{asset.name || asset.code}</span>
-                                </div>
-                              ))}
-                            </div>
-                          </div>
-                        ) : (
-                          <p className="text-xs text-gray-400 mt-1">None</p>
-                        )}
-                      </div>
-                    </div>
-                  ) : (
-                    <p className="font-medium text-sm">No Assets</p>
-                  )}
+                  <FormAssetSection
+                    tangibleAssets={tangibleAssets}
+                    intangibleAssets={intangibleDisplayAssets}
+                    intangibleAssetsLoading={intangibleAssetsLoading}
+                  />
                 </div>
               </div>
 
@@ -2257,63 +2277,11 @@ export function AccountabilityFormCard({
             {/* Asset Info */}
             <div className="flex items-start gap-3">
               <div className="flex-1">
-                {intangibleAssetsLoading ? (
-                  <div className="space-y-1.5">
-                    <Shimmer className="h-4 w-24 rounded" />
-                    <Shimmer className="h-4 w-40 rounded" />
-                  </div>
-                ) : hasAnyAssets ? (
-                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                    <div className="min-w-0">
-                      <p className="flex items-center gap-1.5 font-medium text-sm">
-                        <Package className="h-4 w-4 text-blue-600 flex-shrink-0" />
-                        Tangible Assets{' '}
-                        <span className="text-gray-400">
-                          ({tangibleAssets.length})
-                        </span>
-                      </p>
-                      {tangibleAssets.length > 0 ? (
-                        <div className="max-h-[120px] overflow-y-auto scrollbar-hide text-xs text-gray-500 mt-1">
-                          <div className="space-y-1">
-                            {tangibleAssets.map(asset => (
-                              <div key={asset.id} className="flex items-start min-w-0">
-                                <span className="w-1 h-1 bg-gray-400 rounded-full mr-2 mt-1.5 flex-shrink-0"></span>
-                                <span className="break-words">{asset.name || asset.code}</span>
-                              </div>
-                            ))}
-                          </div>
-                        </div>
-                      ) : (
-                        <p className="text-xs text-gray-400 mt-1">None</p>
-                      )}
-                    </div>
-                    <div className="min-w-0">
-                      <p className="flex items-center gap-1.5 font-medium text-sm">
-                        <FileText className="h-4 w-4 text-amber-600 flex-shrink-0" />
-                        Intangible Assets{' '}
-                        <span className="text-gray-400">
-                          ({intangibleDisplayAssets.length})
-                        </span>
-                      </p>
-                      {intangibleDisplayAssets.length > 0 ? (
-                        <div className="max-h-[120px] overflow-y-auto scrollbar-hide text-xs text-gray-500 mt-1">
-                          <div className="space-y-1">
-                            {intangibleDisplayAssets.map(asset => (
-                              <div key={asset.id} className="flex items-start min-w-0">
-                                <span className="w-1 h-1 bg-gray-400 rounded-full mr-2 mt-1.5 flex-shrink-0"></span>
-                                <span className="break-words">{asset.name || asset.code}</span>
-                              </div>
-                            ))}
-                          </div>
-                        </div>
-                      ) : (
-                        <p className="text-xs text-gray-400 mt-1">None</p>
-                      )}
-                    </div>
-                  </div>
-                ) : (
-                  <p className="font-medium text-sm">No Assets</p>
-                )}
+                <FormAssetSection
+                  tangibleAssets={tangibleAssets}
+                  intangibleAssets={intangibleDisplayAssets}
+                  intangibleAssetsLoading={intangibleAssetsLoading}
+                />
               </div>
             </div>
 
@@ -3053,7 +3021,14 @@ export function AccountabilityFormDetail({
     const fetchIntangibleAssets = async () => {
       try {
         setIntangibleAssetsLoading(true);
-        const response = await api.get('/intangible-assets');
+        if (!intangibleAssetsFetchPromise) {
+          intangibleAssetsFetchPromise = api
+            .get('/intangible-assets')
+            .finally(() => {
+              intangibleAssetsFetchPromise = null;
+            });
+        }
+        const response = await intangibleAssetsFetchPromise;
         setIntangibleAssets(getFormAssignedIntangibleAssets(response, form));
       } catch (error) {
         console.error('Failed to fetch intangible assets:', error);
@@ -3576,12 +3551,12 @@ export function AccountabilityFormDetail({
                     Asset Movement
                   </TabsTrigger>
                 </TabsList>
-                <TabsContent value="form" className="mt-0 min-h-0 flex-1">
+                <TabsContent value="form" className="mt-0 min-h-0 flex-1 px-4 sm:px-6">
                   <div className="flex h-[70vh] flex-col overflow-hidden">
                     <PDFViewer pdfUrl={pdfUrl} className="h-full w-full" />
                   </div>
                 </TabsContent>
-                <TabsContent value="movement" className="mt-0 min-h-0 flex-1 overflow-auto">
+                <TabsContent value="movement" className="mt-0 min-h-0 flex-1 overflow-auto px-4 sm:px-6">
                   <AssetMovementTab formId={form.id} formStatus={localForm.status} />
                 </TabsContent>
               </Tabs>
@@ -3609,10 +3584,10 @@ export function AccountabilityFormDetail({
                 Asset Movement
               </TabsTrigger>
             </TabsList>
-            <TabsContent value="form" className="mt-0 min-h-0 flex-1">
+            <TabsContent value="form" className="mt-0 min-h-0 flex-1 px-4 sm:px-6">
               <PDFViewer pdfUrl={pdfUrl} className="h-full w-full" />
             </TabsContent>
-            <TabsContent value="movement" className="mt-0 min-h-0 flex-1 overflow-auto">
+            <TabsContent value="movement" className="mt-0 min-h-0 flex-1 overflow-auto px-4 sm:px-6">
               <AssetMovementTab formId={form.id} formStatus={localForm.status} />
             </TabsContent>
           </Tabs>

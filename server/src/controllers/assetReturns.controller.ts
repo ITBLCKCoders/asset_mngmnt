@@ -2413,6 +2413,7 @@ export async function getAssetReturnsHandler(req: AuthRequest, res: Response) {
       ),
     ] as string[];
     const deptHeadNames = new Map<string, string>();
+    const deptHeadPositions = new Map<string, string>();
     if (deptHeadSignedByIds.length > 0) {
       const userRows = await getUserNamesByIds(deptHeadSignedByIds);
       for (const u of userRows) {
@@ -2420,6 +2421,7 @@ export async function getAssetReturnsHandler(req: AuthRequest, res: Response) {
           u.userID,
           `${u.first_name || ''} ${u.last_name || ''}`.trim() || 'Unknown'
         );
+        if (u.position) deptHeadPositions.set(u.userID, String(u.position));
       }
     }
 
@@ -2436,6 +2438,7 @@ export async function getAssetReturnsHandler(req: AuthRequest, res: Response) {
       ),
     ] as string[];
     const itManagerNames = new Map<string, string>();
+    const itManagerPositions = new Map<string, string>();
     if (itManagerSignedByIds.length > 0) {
       const userRows = await getUserNamesByIds(itManagerSignedByIds);
       for (const u of userRows) {
@@ -2443,6 +2446,7 @@ export async function getAssetReturnsHandler(req: AuthRequest, res: Response) {
           u.userID,
           `${u.first_name || ''} ${u.last_name || ''}`.trim() || 'Unknown'
         );
+        if (u.position) itManagerPositions.set(u.userID, String(u.position));
       }
     }
 
@@ -2692,6 +2696,9 @@ export async function getAssetReturnsHandler(req: AuthRequest, res: Response) {
         dept_head_user_name: deptHeadSignedBy
           ? (deptHeadNames.get(deptHeadSignedBy) ?? null)
           : null,
+        dept_head_position: deptHeadSignedBy
+          ? (deptHeadPositions.get(deptHeadSignedBy) ?? null)
+          : null,
         it_manager_signed_at: formatItManagerSignedAtForApi(
           formWithProcess.it_manager_signed_at
         ),
@@ -2700,6 +2707,9 @@ export async function getAssetReturnsHandler(req: AuthRequest, res: Response) {
         it_manager_signed_by: itManagerSignedBy,
         it_manager_user_name: itManagerSignedBy
           ? (itManagerNames.get(itManagerSignedBy) ?? null)
+          : null,
+        it_manager_position: itManagerSignedBy
+          ? (itManagerPositions.get(itManagerSignedBy) ?? null)
           : null,
         status: submitterStatus,
         form_department:
@@ -3143,13 +3153,13 @@ export async function getPendingApprovalsHandler(
   try {
     const userId = req.user!.userID;
 
-    const { companyId, isSuperAdmin } = await getAssetScope(pool, userId);
+    const { companyId, isSuperAdmin, isAdmin } = await getAssetScope(pool, userId);
     if (!companyId) {
       return res.json({ assetReturnForms: [] });
     }
 
-    if (isSuperAdmin) {
-      // Global Admin: show all forms in the company (no department filter)
+    if (isSuperAdmin || isAdmin) {
+      // Global Admin: show all forms in the active company. Local Admin: show all forms in own company.
       const pendingForms = await fetchPendingDeptHeadApprovalFormRowsByCompany(companyId);
       const formIds = pendingForms.map((r: any) => r.formID);
 
@@ -3269,20 +3279,95 @@ export async function getPendingApprovalsHandler(
                  LEFT JOIN asset_mngmnt_departments ud ON u.department_id = ud.departmentID AND ud.deleted_at IS NULL
                  LEFT JOIN asset_mngmnt_departments d ON aa.department_id = d.departmentID
                  LEFT JOIN asset_mngmnt_locations l ON aa.location_id = l.locationID
-                 LEFT JOIN asset_mngmnt_location_rooms lr ON aa.location_room_id = lr.location_room_id
+                 LEFT JOIN asset_mngmnt_location_rooms lr ON aa.location_room_id = lr.roomID
                 WHERE aa.assignmentID = ? AND aa.deleted_at IS NULL`,
                 [assignmentId]
               )) as any[];
               if (assignRows.length > 0) {
-                syntheticReturns.push(assignRows[0]);
+                const a = assignRows[0];
+                const tfaInfo = tfaByAssignment.get(assignmentId) ?? { condition: null, notes: null };
+                const historyDepartment = a.department_id
+                  ? { id: a.department_id, name: a.department_name }
+                  : null;
+                const historyLocation = a.location_id
+                  ? {
+                      id: a.location_id,
+                      name: a.location_name,
+                      floor_unit: a.floor_unit ?? '',
+                      building: a.building ?? '',
+                      room_name: a.room_name ?? null,
+                    }
+                  : null;
+                syntheticReturns.push({
+                  return_id: `synthetic-${assignmentId}`,
+                  assignment_id: assignmentId,
+                  form_id: form.formID,
+                  user_id: form.user_id,
+                  return_condition: tfaInfo.condition ?? 'Good',
+                  return_notes: tfaInfo.notes ?? '',
+                  return_batch_id: form.return_batch_id ?? null,
+                  return_location_id: a.location_id ?? null,
+                  return_location_room_id: a.location_room_id ?? null,
+                  return_department_id: a.department_id ?? null,
+                  condition_images: null,
+                  created_at: form.created_at,
+                  updated_at: form.updated_at,
+                  deleted_at: null,
+                  processed_by: form.processed_by ?? 'Unknown',
+                  assignment: a
+                    ? {
+                        assignmentID: a.assignmentID,
+                        asset: {
+                          id: a.asset_id,
+                          code: a.asset_code,
+                          name: a.asset_name,
+                          category_id: a.category_id,
+                          category_name: a.category_name,
+                          type_id: a.type_id,
+                          type_name: a.type_name,
+                        },
+                        user: {
+                          id: a.user_id,
+                          first_name: a.first_name,
+                          last_name: a.last_name,
+                          email: a.email,
+                          employeeNumber: a.employee_number,
+                          position: a.position ?? null,
+                          company:
+                            a.user_company_id != null
+                              ? { id: a.user_company_id, name: a.user_company_name }
+                              : undefined,
+                          department:
+                            a.user_department_id != null
+                              ? {
+                                  id: a.user_department_id,
+                                  name: a.user_department_name,
+                                }
+                              : undefined,
+                        },
+                        department: historyDepartment,
+                        location: historyLocation,
+                        assigned_date: a.assigned_date,
+                        expected_return_date: a.expected_return_date,
+                        actual_return_date: a.actual_return_date,
+                        assignment_notes: a.assignment_notes,
+                        status: 'Returned',
+                        assigned_by: {
+                          id: a.assigned_by ?? '',
+                          first_name: a.assigned_by_first_name ?? '',
+                          last_name: a.assigned_by_last_name ?? '',
+                        },
+                      }
+                    : null,
+                } as any);
               }
             }
             returns = syntheticReturns;
           }
         }
         const requesterRow = returns[0];
-        const requesterName = requesterRow
-          ? `${requesterRow.first_name || ''} ${requesterRow.last_name || ''}`.trim()
+        const requesterName = requesterRow?.assignment?.user
+          ? `${requesterRow.assignment.user.first_name || ''} ${requesterRow.assignment.user.last_name || ''}`.trim()
           : 'Unknown';
         const formDept = form.form_department_name
           ? { id: form.department_id ?? '', name: form.form_department_name }
@@ -3652,6 +3737,7 @@ export async function getApprovedByMeHandler(req: AuthRequest, res: Response) {
       ),
     ] as string[];
     const deptHeadNames = new Map<string, string>();
+    const deptHeadPositions = new Map<string, string>();
     if (deptHeadSignedByIds.length > 0) {
       const deptHeadUserRows = await getUserNamesByIds(deptHeadSignedByIds);
       for (const u of deptHeadUserRows) {
@@ -3659,6 +3745,7 @@ export async function getApprovedByMeHandler(req: AuthRequest, res: Response) {
           u.userID,
           `${u.first_name || ''} ${u.last_name || ''}`.trim() || 'Unknown'
         );
+        if (u.position) deptHeadPositions.set(u.userID, String(u.position));
       }
     }
 
@@ -3668,6 +3755,7 @@ export async function getApprovedByMeHandler(req: AuthRequest, res: Response) {
       ),
     ] as string[];
     const itManagerNames = new Map<string, string>();
+    const itManagerPositions = new Map<string, string>();
     if (itManagerSignedByIds.length > 0) {
       const userRows3 = await getUserNamesByIds(itManagerSignedByIds);
       for (const u of userRows3) {
@@ -3675,6 +3763,7 @@ export async function getApprovedByMeHandler(req: AuthRequest, res: Response) {
           u.userID,
           `${u.first_name || ''} ${u.last_name || ''}`.trim() || 'Unknown'
         );
+        if (u.position) itManagerPositions.set(u.userID, String(u.position));
       }
     }
 
@@ -3797,6 +3886,9 @@ export async function getApprovedByMeHandler(req: AuthRequest, res: Response) {
         dept_head_user_name: form.dept_head_signed_by
           ? (deptHeadNames.get(form.dept_head_signed_by) ?? null)
           : null,
+        dept_head_position: form.dept_head_signed_by
+          ? (deptHeadPositions.get(form.dept_head_signed_by) ?? null)
+          : null,
         it_manager_signed_at: formatItManagerSignedAtForApi(
           form.it_manager_signed_at
         ),
@@ -3804,6 +3896,9 @@ export async function getApprovedByMeHandler(req: AuthRequest, res: Response) {
         it_manager_signed_by: form.it_manager_signed_by ?? null,
         it_manager_user_name: form.it_manager_signed_by
           ? (itManagerNames.get(form.it_manager_signed_by) ?? null)
+          : null,
+        it_manager_position: form.it_manager_signed_by
+          ? (itManagerPositions.get(form.it_manager_signed_by) ?? null)
           : null,
         sub_approver_1_signed_at: formatItManagerSignedAtForApi(
           form.sub_approver_1_signed_at
@@ -4137,11 +4232,11 @@ export async function getReceivePendingApprovalsHandler(
 
     const managerApprover2 = await isUserManagerApprover2(userId);
     const subApprover2 = await isUserSubApprover2(userId);
-    if (!managerApprover2 && !subApprover2) {
+    const { companyId, departmentIds, isSuperAdmin, isAdmin } = await getAssetScope(pool, userId);
+    if (!isSuperAdmin && !isAdmin && !managerApprover2 && !subApprover2) {
       return res.json({ assetReturnForms: [] });
     }
 
-    const { companyId, departmentIds } = await getAssetScope(pool, userId);
     if (!companyId) {
       return res.json({ assetReturnForms: [] });
     }
@@ -4281,6 +4376,7 @@ export async function getReceivePendingApprovalsHandler(
       ),
     ] as string[];
     const deptHeadNames = new Map<string, string>();
+    const deptHeadPositions = new Map<string, string>();
     if (deptHeadSignedByIds.length > 0) {
       const userRows3 = await getUserNamesByIds(deptHeadSignedByIds);
       for (const u of userRows3) {
@@ -4288,6 +4384,7 @@ export async function getReceivePendingApprovalsHandler(
           u.userID,
           `${u.first_name || ''} ${u.last_name || ''}`.trim() || 'Unknown'
         );
+        if (u.position) deptHeadPositions.set(u.userID, String(u.position));
       }
     }
 
@@ -4350,6 +4447,9 @@ export async function getReceivePendingApprovalsHandler(
         dept_head_user_name: deptHeadSignedBy
           ? (deptHeadNames.get(deptHeadSignedBy) ?? null)
           : null,
+        dept_head_position: deptHeadSignedBy
+          ? (deptHeadPositions.get(deptHeadSignedBy) ?? null)
+          : null,
         it_manager_signed_at: null,
         it_manager_digital_signature: null,
         it_manager_signed_by: null,
@@ -4403,7 +4503,10 @@ export async function receiveReturnFormHandler(
 
     const managerApprover2 = await isUserManagerApprover2(userId);
     const subApprover2 = await isUserSubApprover2(userId);
-    if (!managerApprover2 && !subApprover2) {
+    const { isSuperAdmin: scopeIsSuperAdmin, isAdmin: scopeIsAdmin } =
+      await getAssetScope(pool, userId);
+    const isAdminRole = scopeIsSuperAdmin || scopeIsAdmin;
+    if (!isAdminRole && !managerApprover2 && !subApprover2) {
       return res
         .status(403)
         .json({ error: 'You do not have permission to receive this form' });
@@ -5297,7 +5400,11 @@ export async function approveReturnFormHandler(
       ? await isDesignatedSubApprover(userId, form.user_id)
       : false;
 
-    if (!canApproveByPermission && !isApprover && !isSubApprover) {
+    const { isSuperAdmin: scopeIsSuperAdmin, isAdmin: scopeIsAdmin } =
+      await getAssetScope(pool, userId);
+    const isAdminRole = scopeIsSuperAdmin || scopeIsAdmin;
+
+    if (!canApproveByPermission && !isApprover && !isSubApprover && !isAdminRole) {
       return res
         .status(403)
         .json({ error: 'You do not have permission to approve this form' });
@@ -5877,7 +5984,11 @@ export async function declineReturnFormHandler(
       ? await isDesignatedSubApprover(userId, form.user_id)
       : false;
 
-    if (!canDeclineByPermission && !isApprover && !isSubApprover) {
+    const { isSuperAdmin: scopeIsSuperAdmin, isAdmin: scopeIsAdmin } =
+      await getAssetScope(pool, userId);
+    const isAdminRole = scopeIsSuperAdmin || scopeIsAdmin;
+
+    if (!canDeclineByPermission && !isApprover && !isSubApprover && !isAdminRole) {
       return res
         .status(403)
         .json({ error: 'You do not have permission to decline this form' });

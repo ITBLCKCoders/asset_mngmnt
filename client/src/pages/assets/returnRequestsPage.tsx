@@ -22,6 +22,7 @@ import {
   Calendar,
   Layers,
   Search,
+  Download,
 } from 'lucide-react';
 import { PageHeader } from '@/components/common/PageHeader';
 import { isIntangibleAssignedToUser } from '@/utils/intangibleAssets';
@@ -72,6 +73,12 @@ import {
 } from '@/pages/assets/asset-issuance/components/AssetChecklistDialog';
 import { filterComputerTypeAssets } from '@/utils/assetTypeDetection';
 import { proxyCloudinaryUrl } from '@/utils/cloudinaryProxy';
+import {
+  ReturnFormDetail,
+  buildReturnDataForPDFFromBatch,
+  type AssetReturnFormBatch,
+} from '@/pages/profile/profileComponents/tabs/documentsTab';
+import { generateAssetReturnPDF, downloadPDF } from '@/lib/pdfGenerator';
 
 const conditionOptions = [
   {
@@ -354,6 +361,35 @@ export default function ReturnRequestsPage() {
     setVerificationConfirmSign(false);
     setSelectedIntangibleAssetIds([]);
     setIntangibleNotes({});
+  };
+
+  const [showFormDetail, setShowFormDetail] = useState(false);
+  const [formDetailBatch, setFormDetailBatch] =
+    useState<AssetReturnFormBatch | null>(null);
+
+  const handleViewForm = (form: PendingForm) => {
+    setFormDetailBatch(form as unknown as AssetReturnFormBatch);
+    setShowFormDetail(true);
+  };
+
+  const handleDownloadFormDetail = async () => {
+    if (!formDetailBatch) return;
+    try {
+      const data = buildReturnDataForPDFFromBatch(formDetailBatch);
+      if (!data) {
+        toast.error('Cannot generate PDF for this form');
+        return;
+      }
+      const blob = await generateAssetReturnPDF(data);
+      const fileName = formDetailBatch.form_number
+        ? `Asset_Return_Form_${formDetailBatch.form_number}_${Date.now()}.pdf`
+        : `Asset_Return_Form_${Date.now()}.pdf`;
+      downloadPDF(blob, fileName);
+      toast.success('Return form downloaded successfully');
+    } catch (e) {
+      console.error(e);
+      toast.error('Failed to download PDF');
+    }
   };
 
   const toggleAssetExpansion = (assetId: string) => {
@@ -1004,6 +1040,17 @@ export default function ReturnRequestsPage() {
                       <Eye className="h-4 w-4 mr-2" />
                       {isProcessedTab ? 'View' : 'View / Return Asset'}
                     </Button>
+                    {isProcessedTab && (
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={() => handleViewForm(form)}
+                        className="flex-1 rounded-xl border-red-300 text-red-600 hover:bg-red-600 hover:text-white hover:border-red-600 shadow-sm"
+                      >
+                        <FileText className="h-4 w-4 mr-2" />
+                        View Form
+                      </Button>
+                    )}
                   </div>
                 </Card>
               );
@@ -1567,14 +1614,27 @@ export default function ReturnRequestsPage() {
 
                 <AppDialogChromeFooter className="justify-end flex-wrap gap-2">
                   {readOnly ? (
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      onClick={() => setProcessForm(null)}
-                      className="rounded-lg border-slate-300 hover:bg-slate-100"
-                    >
-                      Close
-                    </Button>
+                    <>
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={() =>
+                          processForm && handleViewForm(processForm)
+                        }
+                        className="rounded-lg border-red-300 text-red-600 hover:bg-red-600 hover:text-white hover:border-red-600"
+                      >
+                        <FileText className="h-4 w-4 mr-2" />
+                        View Form
+                      </Button>
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={() => setProcessForm(null)}
+                        className="rounded-lg border-slate-300 hover:bg-slate-100"
+                      >
+                        Close
+                      </Button>
+                    </>
                   ) : (
                     <>
                   <Button
@@ -1620,6 +1680,63 @@ export default function ReturnRequestsPage() {
                 </AppDialogChromeFooter>
               </>
             )}
+          </AppDialogFrame>
+        </Dialog>
+
+        <Dialog
+          open={showFormDetail}
+          onOpenChange={setShowFormDetail}
+        >
+          <AppDialogFrame className="max-w-3xl h-[min(90dvh,920px)] max-h-[calc(100dvh-1rem)] min-h-0 overflow-hidden !flex !flex-col">
+            <AppDialogGradientHeader
+              title={`${
+                formDetailBatch?.returns[0]?.assignment?.user
+                  ? `${formDetailBatch.returns[0].assignment.user.first_name || ''} ${formDetailBatch.returns[0].assignment.user.last_name || ''}`.trim() ||
+                    'Return'
+                  : 'Return'
+              } - ${
+                formDetailBatch?.form_number ??
+                `Return of ${formDetailBatch?.returns.length ?? 0} assets`
+              }`}
+              description="Asset Return Form Preview"
+            />
+            {formDetailBatch && (
+              <div className="min-h-0 flex-1 flex flex-col overflow-hidden bg-white px-4 sm:px-6">
+                <ReturnFormDetail
+                  key={
+                    formDetailBatch.formID ??
+                    formDetailBatch.return_batch_id ??
+                    'return-form'
+                  }
+                  returnFormBatch={formDetailBatch}
+                  onClose={() => {
+                    setShowFormDetail(false);
+                    setFormDetailBatch(null);
+                  }}
+                  onDownload={handleDownloadFormDetail}
+                  contentOnly
+                />
+              </div>
+            )}
+            <AppDialogChromeFooter className="flex-shrink-0 flex-row justify-end gap-3 sm:gap-3">
+              <Button
+                variant="outline"
+                onClick={() => {
+                  setShowFormDetail(false);
+                  setFormDetailBatch(null);
+                }}
+              >
+                Close
+              </Button>
+              <Button
+                size="sm"
+                onClick={handleDownloadFormDetail}
+                className="bg-green-600 hover:bg-green-700 text-white"
+              >
+                <Download className="h-4 w-4 mr-2" />
+                Download PDF
+              </Button>
+            </AppDialogChromeFooter>
           </AppDialogFrame>
         </Dialog>
 

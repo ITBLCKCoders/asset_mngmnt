@@ -1,15 +1,7 @@
 'use client';
 
-import { useEffect, useState } from 'react';
-import {
-  FileText,
-  GitBranch,
-  Eye,
-  Undo2,
-  ArrowRightLeft,
-  FileCheck2,
-  Package,
-} from 'lucide-react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
+import { FileText, GitBranch, Eye } from 'lucide-react';
 import { api } from '@/lib/api';
 import { toast } from 'sonner';
 import { Button } from '@/components/ui/button';
@@ -30,6 +22,11 @@ import {
   type AssetTransferFormBatch,
 } from '@/pages/profile/profileComponents/tabs/documentsTab';
 import { generateAssetReturnPDF, generateAssetTransferPDF } from '@/lib/pdfGenerator';
+import { MermaidOrgChart } from './components/MermaidOrgChart';
+import {
+  buildMermaidOrgModel,
+  type MovementInput,
+} from './mermaidOrgChartModel';
 
 interface MovementForm {
   id: string;
@@ -52,6 +49,7 @@ interface MovementAsset {
   returnForms: MovementForm[];
   transferForms: Array<
     MovementForm & {
+      returnFormId?: string | null;
       newAssignedUserId: string | null;
       newUserName: string;
     }
@@ -90,6 +88,7 @@ interface AssetMovementResponse {
     returnForms: MovementForm[];
     transferForms: Array<
       MovementForm & {
+        returnFormId?: string | null;
         newAssignedUserId: string | null;
         newUserName: string;
       }
@@ -114,15 +113,6 @@ const formStatusBadgeClass: Record<string, string> = {
   Declined: 'bg-red-500/15 text-red-700 border-red-500/30',
   Revoked: 'bg-gray-500/15 text-gray-700 border-gray-500/30',
 };
-
-function formatDate(dateString: string | null | undefined): string {
-  if (!dateString) return 'N/A';
-  return new Date(dateString).toLocaleDateString('en-US', {
-    year: 'numeric',
-    month: 'short',
-    day: 'numeric',
-  });
-}
 
 export function AssetMovementTab({
   formId,
@@ -194,7 +184,7 @@ export function AssetMovementTab({
 
   const hasMovement = formId ? formHasMovement : assetHasMovement;
 
-  const handleViewReturnForm = async (formIdToView: string) => {
+  const handleViewReturnForm = useCallback(async (formIdToView: string) => {
     try {
       const response = await api.get<{
         assetReturnForms?: AssetReturnFormBatch[];
@@ -230,9 +220,9 @@ export function AssetMovementTab({
     } catch {
       toast.error('Failed to load return form preview');
     }
-  };
+  }, []);
 
-  const handleViewTransferForm = async (formIdToView: string) => {
+  const handleViewTransferForm = useCallback(async (formIdToView: string) => {
     try {
       const response = await api.get<{
         assetTransferForms?: AssetTransferFormBatch[];
@@ -249,11 +239,54 @@ export function AssetMovementTab({
     } catch {
       toast.error('Failed to load transfer form preview');
     }
-  };
+  }, []);
 
-  const handleViewAccountabilityForm = (formIdToView: string) => {
+  const handleViewAccountabilityForm = useCallback((formIdToView: string) => {
     setAccountabilityPreviewId(formIdToView);
-  };
+  }, []);
+
+  const movementInput = useMemo<MovementInput | null>(() => {
+    if (formId && formData) {
+      return {
+        mode: 'form',
+        form: {
+          id: formData.form.id,
+          formNumber: formData.form.formNumber,
+          status: formData.form.status,
+        },
+        assets: formData.assets,
+      };
+    }
+    if (assetId && assetData) {
+      return {
+        mode: 'asset',
+        asset: {
+          id: assetData.asset.id,
+          code: assetData.asset.code,
+          name: assetData.asset.name,
+        },
+        forms: assetData.forms,
+      };
+    }
+    return null;
+  }, [formId, assetId, formData, assetData]);
+
+  const orgModel = useMemo(
+    () =>
+      movementInput
+        ? buildMermaidOrgModel(movementInput, {
+            onViewReturn: handleViewReturnForm,
+            onViewTransfer: handleViewTransferForm,
+            onViewNew: handleViewAccountabilityForm,
+          })
+        : null,
+    [
+      movementInput,
+      handleViewReturnForm,
+      handleViewTransferForm,
+      handleViewAccountabilityForm,
+    ]
+  );
 
   const handleDownloadReturn = async (batch: AssetReturnFormBatch) => {
     try {
@@ -297,8 +330,9 @@ export function AssetMovementTab({
 
   if (loading) {
     return (
-      <div className="flex h-64 items-center justify-center text-gray-500">
-        Loading asset movement...
+      <div className="flex h-64 flex-col items-center justify-center gap-3 text-gray-500">
+        <div className="h-10 w-10 animate-spin rounded-full border-4 border-gray-200 border-t-blue-600" />
+        <span className="text-sm">Loading asset movement...</span>
       </div>
     );
   }
@@ -324,82 +358,6 @@ export function AssetMovementTab({
     );
   }
 
-  let orgRoot: OrgChartNodeData | null = null;
-
-  if (formId && formData) {
-    const assetNodes = formData.assets
-      .map<OrgChartNodeData | null>(assetItem => {
-        const children = buildChildNodes(
-          assetItem.returnForms,
-          assetItem.transferForms,
-          assetItem.newAccountabilityForms,
-          handleViewReturnForm,
-          handleViewTransferForm,
-          handleViewAccountabilityForm
-        );
-        if (children.length === 0) return null;
-        return {
-          id: `a-${assetItem.asset.id}`,
-          icon: <Package className="h-4 w-4 text-slate-600" />,
-          iconClass: 'bg-slate-100 text-slate-600',
-          label: 'Asset',
-          title: assetItem.asset.code || 'Asset',
-          subtitle: assetItem.asset.name,
-          children,
-        };
-      })
-      .filter((n): n is OrgChartNodeData => n !== null);
-
-    if (assetNodes.length > 0) {
-      orgRoot = {
-        id: `form-${formData.form.id}`,
-        icon: <FileCheck2 className="h-4 w-4 text-green-600" />,
-        iconClass: 'bg-green-50 text-green-700',
-        label: 'Accountability Form',
-        title: formData.form.formNumber,
-        badge: formData.form.status,
-        children: assetNodes,
-      };
-    }
-  } else if (assetId && assetData) {
-    const formNodes = assetData.forms
-      .map<OrgChartNodeData | null>(formItem => {
-        const children = buildChildNodes(
-          formItem.returnForms,
-          formItem.transferForms,
-          formItem.newAccountabilityForms,
-          handleViewReturnForm,
-          handleViewTransferForm,
-          handleViewAccountabilityForm
-        );
-        if (children.length === 0) return null;
-        return {
-          id: `f-${formItem.form.id}`,
-          icon: <FileCheck2 className="h-4 w-4 text-green-600" />,
-          iconClass: 'bg-green-50 text-green-700',
-          label: 'Accountability Form',
-          title: formItem.form.formNumber,
-          subtitle: formItem.form.userName,
-          badge: formItem.form.status,
-          date: formItem.form.created_at,
-          children,
-        };
-      })
-      .filter((n): n is OrgChartNodeData => n !== null);
-
-    if (formNodes.length > 0) {
-      orgRoot = {
-        id: `asset-${assetData.asset.id}`,
-        icon: <Package className="h-4 w-4 text-slate-600" />,
-        iconClass: 'bg-slate-100 text-slate-600',
-        label: 'Asset',
-        title: assetData.asset.code || assetData.asset.name || 'Asset',
-        subtitle: assetData.asset.name,
-        children: formNodes,
-      };
-    }
-  }
-
   return (
     <div className="space-y-4">
       {formStatus && (
@@ -416,12 +374,11 @@ export function AssetMovementTab({
         </div>
       )}
 
-      {orgRoot && (
-        <div className="overflow-x-auto pb-4">
-          <div className="flex min-w-max justify-center py-2">
-            <OrgChartNode node={orgRoot} />
-          </div>
-        </div>
+      {orgModel && (
+        <MermaidOrgChart
+          model={orgModel}
+          title={formId ? 'Asset Movement - Accountability Form' : 'Asset Movement - Org Chart'}
+        />
       )}
 
       {/* Return form preview dialog */}
@@ -497,158 +454,6 @@ export function AssetMovementTab({
           onClose={() => setAccountabilityPreviewId(null)}
         />
       )}
-    </div>
-  );
-}
-
-interface OrgChartNodeData {
-  id: string;
-  icon?: React.ReactNode;
-  iconClass?: string;
-  label: string;
-  title: string;
-  subtitle?: string;
-  badge?: string;
-  date?: string;
-  action?: () => void;
-  children: OrgChartNodeData[];
-}
-
-function buildChildNodes(
-  returnForms: MovementForm[],
-  transferForms: Array<MovementForm & { newUserName: string }>,
-  newAccountabilityForms: Array<MovementForm & { status: string }>,
-  onViewReturn: (id: string) => void,
-  onViewTransfer: (id: string) => void,
-  onViewNew: (id: string) => void
-): OrgChartNodeData[] {
-  const nodes: OrgChartNodeData[] = [];
-
-  for (const form of returnForms) {
-    nodes.push({
-      id: `r-${form.id}`,
-      icon: <Undo2 className="h-4 w-4 text-amber-600" />,
-      iconClass: 'bg-amber-50 text-amber-700',
-      label: 'Return Form',
-      title: form.formNumber,
-      subtitle: form.userName,
-      date: form.created_at,
-      action: () => onViewReturn(form.id),
-      children: [],
-    });
-  }
-
-  for (const form of transferForms) {
-    nodes.push({
-      id: `t-${form.id}`,
-      icon: <ArrowRightLeft className="h-4 w-4 text-blue-600" />,
-      iconClass: 'bg-blue-50 text-blue-700',
-      label: 'Transfer Form',
-      title: form.formNumber,
-      subtitle: form.newUserName
-        ? `${form.userName} → ${form.newUserName}`
-        : form.userName,
-      date: form.created_at,
-      action: () => onViewTransfer(form.id),
-      children: [],
-    });
-  }
-
-  for (const form of newAccountabilityForms) {
-    nodes.push({
-      id: `n-${form.id}`,
-      icon: <FileCheck2 className="h-4 w-4 text-green-600" />,
-      iconClass: 'bg-green-50 text-green-700',
-      label: 'New Accountability Form',
-      title: form.formNumber,
-      subtitle: form.userName,
-      date: form.created_at,
-      badge: form.status,
-      action: () => onViewNew(form.id),
-      children: [],
-    });
-  }
-
-  return nodes;
-}
-
-/** Org-chart card: fixed-width, truncated, with optional badge/date and a View action. */
-function OrgCard({ node }: { node: OrgChartNodeData }) {
-  return (
-    <div className="flex w-[210px] flex-col gap-2 rounded-lg border border-slate-200 bg-white p-3 shadow-sm">
-      <div className="flex items-center gap-2">
-        <span
-          className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-md ${
-            node.iconClass ?? 'bg-slate-100 text-slate-600'
-          }`}
-        >
-          {node.icon ?? <Package className="h-4 w-4" />}
-        </span>
-        <div className="min-w-0">
-          <p className="truncate text-[11px] font-medium uppercase tracking-wide text-gray-400">
-            {node.label}
-          </p>
-          <p className="truncate font-mono text-sm font-semibold text-gray-800">
-            {node.title}
-          </p>
-        </div>
-      </div>
-      {node.subtitle ? (
-        <p className="truncate text-xs text-gray-500" title={node.subtitle}>
-          {node.subtitle}
-        </p>
-      ) : null}
-      <div className="flex items-center justify-between gap-2">
-        <div className="flex min-w-0 items-center gap-2">
-          {node.badge ? (
-            <Badge
-              className={
-                formStatusBadgeClass[node.badge] ||
-                'bg-gray-500/15 text-gray-700 border-gray-500/30'
-              }
-            >
-              {node.badge}
-            </Badge>
-          ) : null}
-          {node.date ? (
-            <span className="shrink-0 text-xs text-gray-400">
-              {formatDate(node.date)}
-            </span>
-          ) : null}
-        </div>
-        {node.action ? (
-          <Button variant="ghost" size="sm" onClick={node.action} className="gap-1">
-            <Eye className="h-3.5 w-3.5" />
-            View
-          </Button>
-        ) : null}
-      </div>
-    </div>
-  );
-}
-
-/** Recursive org-chart node: centered card with connector lines branching to children. */
-function OrgChartNode({ node }: { node: OrgChartNodeData }) {
-  const hasChildren = node.children.length > 0;
-  return (
-    <div className="flex flex-col items-center">
-      <OrgCard node={node} />
-      {hasChildren ? (
-        <div className="flex flex-col items-center">
-          <div className="h-6 w-px bg-slate-300" />
-          <div className="relative">
-            <div className="absolute inset-x-0 top-0 h-px bg-slate-300" />
-            <div className="flex items-start">
-              {node.children.map(child => (
-                <div key={child.id} className="flex flex-col items-center px-4">
-                  <div className="h-6 w-px bg-slate-300" />
-                  <OrgChartNode node={child} />
-                </div>
-              ))}
-            </div>
-          </div>
-        </div>
-      ) : null}
     </div>
   );
 }

@@ -46,8 +46,8 @@ import {
 } from '@/components/ui/select';
 import { matchesFormListSearch } from '@/utils/formListSearch';
 import { cn } from '@/lib/utils';
-import { classifyDepartmentScopeByName } from '@/lib/assetScope';
 import { getRoleAssetTypeScope } from '@/utils/roleAssetTypeScope';
+import { getAssetDisplayScope } from '@/pages/assets/accountability/accountabilityFormAssets';
 
 type StatusFilter = 'all' | 'active' | 'disabled';
 type AssetTypeFilter = 'all' | 'it' | 'admin';
@@ -217,17 +217,12 @@ export default function AccountabilityFormsPage() {
       effectiveAssetTypeFilter === 'it' ? 'IT' : 'Admin';
     
     return list.filter((f: AccountabilityForm) => {
-      // Check if any asset in the form matches the selected asset type
-      return f.assets.some(asset => {
-        const deptCandidate =
-          asset.categoryDepartment ||
-          f.department?.name ||
-          f.user?.department?.name ||
-          asset.category ||
-          '';
-        const assetScope = classifyDepartmentScopeByName(deptCandidate);
-        return assetScope === targetScope;
-      });
+      // Match the card badges: only assets displayed on the form determine the
+      // filter bucket. Intangibles are shown only on the form matching their
+      // scope, so the filter considers tangible assets only.
+      return (f.assets || [])
+        .filter(a => String(a.category ?? '').toLowerCase() !== 'intangible')
+        .some(asset => getAssetDisplayScope(asset, f) === targetScope);
     });
   };
 

@@ -10,6 +10,8 @@ import {
   CheckCircle2,
   PackageCheck,
   ClipboardCheck,
+  ChevronLeft,
+  ChevronRight,
 } from 'lucide-react';
 import { api } from '@/lib/api';
 import { toast } from 'sonner';
@@ -57,6 +59,8 @@ import { useRef } from 'react';
 import { useSearchParams } from 'react-router-dom';
 
 const APPROVAL_TABS = ['for-approval', 'receive', 'approved'] as const;
+
+const PAGE_SIZE = 6;
 
 type BorrowRequestBatch = BorrowRequestRow & {
   formType: 'borrow';
@@ -119,6 +123,11 @@ export default function ApprovalsPage() {
   const [receiveSearchQuery, setReceiveSearchQuery] = useState('');
   const [approvedSearchQuery, setApprovedSearchQuery] = useState('');
 
+  // ---------- Pagination (per-tab) ----------
+  const [forApprovalPage, setForApprovalPage] = useState(1);
+  const [receivePage, setReceivePage] = useState(1);
+  const [approvedPage, setApprovedPage] = useState(1);
+
   // ---------- Detail dialog ----------
   const [selectedBatch, setSelectedBatch] = useState<ApprovalBatch | null>(
     null
@@ -144,6 +153,12 @@ export default function ApprovalsPage() {
   const [checklistPreviewIndex, setChecklistPreviewIndex] = useState(0);
 
   // ---------- Permissions ----------
+  const normalizedRoleName = (currentUser?.role?.name ?? '')
+    .trim()
+    .toLowerCase();
+  const isAdminOrGlobalAdmin =
+    normalizedRoleName === 'admin' || normalizedRoleName === 'global admin';
+
   const canApprove =
     (hasPermission('Approvals', 'create') &&
       hasPermission('Approvals', 'edit')) ||
@@ -151,6 +166,7 @@ export default function ApprovalsPage() {
     roleCustodian?.managerApprover3 === true;
 
   const canReceive =
+    isAdminOrGlobalAdmin ||
     roleCustodian?.managerApprover2 === true ||
     roleCustodian?.subApprover2 === true;
 
@@ -412,6 +428,46 @@ export default function ApprovalsPage() {
     const q = approvedSearchQuery.toLowerCase();
     return approvedBatches.filter(b => searchFilter(b, q));
   }, [approvedBatches, approvedSearchQuery]);
+
+  // ---------- Pagination (per-tab) ----------
+  useEffect(() => {
+    setForApprovalPage(1);
+  }, [searchQuery]);
+
+  useEffect(() => {
+    setReceivePage(1);
+  }, [receiveSearchQuery]);
+
+  useEffect(() => {
+    setApprovedPage(1);
+  }, [approvedSearchQuery]);
+
+  const forApprovalPageCount = useMemo(
+    () => Math.max(1, Math.ceil(filteredBatches.length / PAGE_SIZE)),
+    [filteredBatches]
+  );
+
+  const receivePageCount = useMemo(
+    () => Math.max(1, Math.ceil(filteredReceiveBatches.length / PAGE_SIZE)),
+    [filteredReceiveBatches]
+  );
+
+  const approvedPageCount = useMemo(
+    () => Math.max(1, Math.ceil(filteredApprovedBatches.length / PAGE_SIZE)),
+    [filteredApprovedBatches]
+  );
+
+  useEffect(() => {
+    setForApprovalPage(p => Math.min(p, forApprovalPageCount));
+  }, [forApprovalPageCount]);
+
+  useEffect(() => {
+    setReceivePage(p => Math.min(p, receivePageCount));
+  }, [receivePageCount]);
+
+  useEffect(() => {
+    setApprovedPage(p => Math.min(p, approvedPageCount));
+  }, [approvedPageCount]);
 
   // ---------- Actions ----------
   const getChecklistAssetLabel = (c: ChecklistApprovalBatch['checklists'][0]) => {
@@ -945,10 +1001,13 @@ export default function ApprovalsPage() {
   // ---------- Reusable card grid renderer ----------
   const renderCardGrid = (
     list: ApprovalBatch[],
-    sourceTab: (typeof APPROVAL_TABS)[number]
+    sourceTab: (typeof APPROVAL_TABS)[number],
+    page: number
   ) => (
     <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-      {list.map(batch => {
+      {list
+        .slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE)
+        .map(batch => {
         const key =
           batch.formType === 'checklist'
             ? (batch as ChecklistApprovalBatch).batchKey
@@ -1019,6 +1078,39 @@ export default function ApprovalsPage() {
       })}
     </div>
   );
+
+  const renderPaginationControls = (
+    page: number,
+    pageCount: number,
+    setPage: React.Dispatch<React.SetStateAction<number>>
+  ) =>
+    pageCount > 1 ? (
+      <div className="flex items-center justify-center gap-4 pt-6">
+        <Button
+          variant="outline"
+          size="sm"
+          onClick={() => setPage(p => Math.max(1, p - 1))}
+          disabled={page <= 1}
+          className="gap-1.5"
+        >
+          <ChevronLeft className="h-4 w-4" />
+          Previous
+        </Button>
+        <span className="text-sm text-muted-foreground">
+          Page {Math.min(page, pageCount)} of {pageCount}
+        </span>
+        <Button
+          variant="outline"
+          size="sm"
+          onClick={() => setPage(p => Math.min(pageCount, p + 1))}
+          disabled={page >= pageCount}
+          className="gap-1.5"
+        >
+          Next
+          <ChevronRight className="h-4 w-4" />
+        </Button>
+      </div>
+    ) : null;
 
   const renderEmpty = (
     icon: React.ReactNode,
@@ -1111,7 +1203,12 @@ export default function ApprovalsPage() {
                     'Return, transfer, and asset checklist forms that need Department Head (Manager Approver 1) approval will appear here.',
                     searchQuery
                   )
-                : renderCardGrid(filteredBatches, 'for-approval')}
+                : (
+                    <div>
+                      {renderCardGrid(filteredBatches, 'for-approval', forApprovalPage)}
+                      {renderPaginationControls(forApprovalPage, forApprovalPageCount, setForApprovalPage)}
+                    </div>
+                  )}
           </TabsContent>
 
           {/* ──── Receive Approve Tab ──── */}
@@ -1137,7 +1234,12 @@ export default function ApprovalsPage() {
                       'Forms that need Department Head (IT/Admin Manager) signature will appear here.',
                       receiveSearchQuery
                     )
-                  : renderCardGrid(filteredReceiveBatches, 'receive')}
+                  : (
+                      <div>
+                        {renderCardGrid(filteredReceiveBatches, 'receive', receivePage)}
+                        {renderPaginationControls(receivePage, receivePageCount, setReceivePage)}
+                      </div>
+                    )}
             </TabsContent>
           )}
 
@@ -1163,7 +1265,12 @@ export default function ApprovalsPage() {
                     'Forms you approve will appear here.',
                     approvedSearchQuery
                   )
-                : renderCardGrid(filteredApprovedBatches, 'approved')}
+                : (
+                    <div>
+                      {renderCardGrid(filteredApprovedBatches, 'approved', approvedPage)}
+                      {renderPaginationControls(approvedPage, approvedPageCount, setApprovedPage)}
+                    </div>
+                  )}
           </TabsContent>
         </Tabs>
 

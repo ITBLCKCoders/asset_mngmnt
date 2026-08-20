@@ -5,6 +5,7 @@ export interface AssetScope {
   companyId: string | null;
   departmentIds: string[] | null; // null means all departments (no filter)
   isSuperAdmin: boolean;
+  isAdmin: boolean;
 }
 
 export type AssetScopeType = 'IT' | 'Admin' | 'Other';
@@ -23,13 +24,14 @@ export async function getAssetScope(
 
   const user = userRows[0];
   if (!user) {
-    return { companyId: null, departmentIds: null, isSuperAdmin: false };
+    return { companyId: null, departmentIds: null, isSuperAdmin: false, isAdmin: false };
   }
 
   const normalizedRoleName = String(user.role_name ?? '')
     .trim()
     .toLowerCase();
   const isSuperAdmin = normalizedRoleName === 'global admin';
+  const isAdmin = normalizedRoleName === 'admin';
   let companyId = user.company_id;
 
   if (isSuperAdmin) {
@@ -45,12 +47,12 @@ export async function getAssetScope(
 
   // For Global Admin, we show everything for the company
   if (isSuperAdmin) {
-    return { companyId, departmentIds: null, isSuperAdmin };
+    return { companyId, departmentIds: null, isSuperAdmin, isAdmin: false };
   }
 
   // Admin role: scoped to own company, sees ALL departments (both IT and Admin)
-  if (normalizedRoleName === 'admin') {
-    return { companyId: user.company_id, departmentIds: null, isSuperAdmin: false };
+  if (isAdmin) {
+    return { companyId: user.company_id, departmentIds: null, isSuperAdmin: false, isAdmin: true };
   }
 
   const managerRole = user.manager_role ?? 'none';
@@ -96,7 +98,7 @@ export async function getAssetScope(
     }
   }
 
-  return { companyId, departmentIds, isSuperAdmin };
+  return { companyId, departmentIds, isSuperAdmin, isAdmin };
 }
 
 /** For borrow-request queue: Global Admin / unscoped managers see all scopes in company; IT/Admin roles see only their scope. */

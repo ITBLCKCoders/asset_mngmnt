@@ -118,9 +118,10 @@ export async function getEligibleApproversForUser(
     LEFT JOIN asset_mngmnt_roles r ON u.role_id = r.roleID AND r.deleted_at IS NULL
     WHERE u.company_id = (SELECT company_id FROM users WHERE userID = ?)
       AND u.is_active = 1
+      AND u.userID <> ?
       AND (COALESCE(uc.${column}, 0) = 1 OR COALESCE(r.${column}, 0) = 1)
     ORDER BY u.first_name, u.last_name`,
-    [userId]
+    [userId, userId]
   );
   return rows as EligibleApprover[];
 }

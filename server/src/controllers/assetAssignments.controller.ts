@@ -676,14 +676,28 @@ export async function getMyAssignmentsHandler(req: AuthRequest, res: Response) {
       return res.json({ assignments: [] });
     }
 
+    // Accept optional scope query param for IT/Admin tab switching. Applied for
+    // every user so anyone can view both their IT and Admin assigned assets.
+    const scopeParam = req.query.scope as string | undefined;
+    const scopeOverride =
+      scopeParam === 'it' || scopeParam === 'admin' ? scopeParam : undefined;
+    let effectiveDepartmentIds = departmentIds;
+    if (scopeOverride) {
+      effectiveDepartmentIds = await getDepartmentIdsForScope(
+        pool,
+        scopeOverride,
+        companyId
+      );
+    }
+
     let where = `
       AND aa.status = 'Active'
       AND aa.user_id = ?
       AND a.company_id = ?`;
     const params: unknown[] = [currentUserId, companyId];
-    if (departmentIds && departmentIds.length > 0) {
-      where += ` AND ac.department_id IN (${departmentIds.map(() => '?').join(',')})`;
-      params.push(...departmentIds);
+    if (effectiveDepartmentIds && effectiveDepartmentIds.length > 0) {
+      where += ` AND ac.department_id IN (${effectiveDepartmentIds.map(() => '?').join(',')})`;
+      params.push(...effectiveDepartmentIds);
     }
 
     const rows = await repo.listAssignmentsRaw(

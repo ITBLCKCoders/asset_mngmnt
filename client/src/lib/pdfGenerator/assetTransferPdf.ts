@@ -77,6 +77,7 @@ export interface AssetTransferData {
   dept_head_signed_at?: string | null;
   dept_head_digital_signature?: string | null;
   dept_head_user_name?: string | null;
+  dept_head_position?: string | null;
   sub_approver_1_signed_at?: string | null;
   sub_approver_1_digital_signature?: string | null;
   sub_approver_1_user_name?: string | null;
@@ -84,6 +85,7 @@ export interface AssetTransferData {
   it_manager_signed_at?: string | null;
   it_manager_digital_signature?: string | null;
   it_manager_user_name?: string | null;
+  it_manager_position?: string | null;
   sub_approver_2_signed_at?: string | null;
   sub_approver_2_digital_signature?: string | null;
   sub_approver_2_user_name?: string | null;
@@ -503,7 +505,7 @@ export const generateAssetTransferPDF = async (
         ).trim();
         const itManagerPosition = isSubApprover2Signed
           ? (transferData.sub_approver_2_position || '').trim()
-          : '';
+          : (transferData.it_manager_position || '').trim();
         const itManagerSignature = isSubApprover2Signed
           ? transferData.sub_approver_2_digital_signature
           : transferData.it_manager_digital_signature;
@@ -662,7 +664,7 @@ export const generateAssetTransferPDF = async (
         ).trim();
         const deptHeadPosition = isSubApprover1Signed
           ? (transferData.sub_approver_1_position || '').trim()
-          : '';
+          : (transferData.dept_head_position || '').trim();
         const digitalSignature = isSubApprover1Signed
           ? transferData.sub_approver_1_digital_signature
           : transferData.dept_head_digital_signature;
@@ -825,12 +827,22 @@ export const generateAssetTransferPDF = async (
     doc.setFontSize(6.5);
     doc.setFont('helvetica', 'italic');
     doc.setTextColor(80, 80, 80);
-    doc.text(
-      'Stand-in approver note: This user is a stand-in approver since the department manager of the requestor is currently not present',
-      tableMargin.left,
-      (doc as any).lastAutoTable.finalY + 4,
-      { maxWidth: tableWidth }
-    );
+    const noteLines: string[] = [];
+    if (transferData.sub_approver_1_signed_at) {
+      noteLines.push(
+        'Stand-in approver note: The signee is a stand-in approver for the Department Head, who is currently not present.'
+      );
+    }
+    if (transferData.sub_approver_2_signed_at) {
+      noteLines.push(
+        'Stand-in approver note: The signee is a stand-in approver for the IT Manager, who is currently not present.'
+      );
+    }
+    let noteY = (doc as any).lastAutoTable.finalY + 4;
+    for (const line of noteLines) {
+      doc.text(line, tableMargin.left, noteY, { maxWidth: tableWidth });
+      noteY += 3;
+    }
     doc.setTextColor(0, 0, 0);
   }
   const docNoText = `Document No: ${transferData.form_number || 'TRF'} ver1 01Jan2026`;

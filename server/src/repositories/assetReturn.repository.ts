@@ -570,14 +570,70 @@ export async function resolveReturnFormCompanyId(
 }
 
 /**
- * Get return forms by asset ID. Since asset_return_forms doesn't have a direct
- * asset_id column and return_form_assignments table doesn't exist, return empty array.
- * This would need database schema changes to properly link return forms to assets.
+ * Get return forms linked to an asset. A return form is linked to an asset
+ * through `asset_returns.assignment_id` → `asset_assignments.asset_id`, and
+ * `asset_returns.form_id` → `asset_return_forms.formID`. One form can cover
+ * several returned assets, so rows are deduplicated by formID. Returns the
+ * camelCase `ReturnForm` DTO shape expected by the Asset details modal and the
+ * Asset Builder forms tab.
  */
 export async function getReturnFormsByAssetId(
   assetId: string
 ): Promise<any[]> {
-  // Return empty array since there's no way to link return forms to assets
-  // with the current database schema
-  return [];
+  const [rows] = (await pool.execute(
+    `SELECT DISTINCT arf.formID, arf.form_number, arf.user_id, arf.created_at, arf.signed_at,
+            arf.return_type, arf.received_by, arf.processor_wet_return_pdf_url,
+            arf.declined_at, arf.process_signed_at, arf.dept_head_signed_at, arf.processor_declined_at,
+            u.first_name, u.last_name, u.email,
+            d.name AS department_name, l.name AS location_name
+     FROM asset_returns ar
+     JOIN asset_return_forms arf ON ar.form_id = arf.formID AND arf.deleted_at IS NULL
+     JOIN asset_assignments aa ON ar.assignment_id = aa.assignmentID AND aa.deleted_at IS NULL
+     LEFT JOIN users u ON arf.user_id = u.userID
+     LEFT JOIN asset_mngmnt_departments d ON arf.department_id = d.departmentID
+     LEFT JOIN asset_mngmnt_locations l ON arf.location_id = l.locationID
+     WHERE aa.asset_id = ? AND ar.deleted_at IS NULL
+     ORDER BY arf.created_at DESC`,
+    [assetId]
+  )) as any[];
+
+  const seen = new Set<string>();
+  const forms: any[] = [];
+  for (const row of rows as any[]) {
+    const id = String(row.formID ?? '').trim();
+    if (!id || seen.has(id)) continue;
+    seen.add(id);
+
+    // Processor-initiated ("hold") forms set process_signed_at at creation, so
+    // they are only truly "Processed" once an approver has signed off.
+    const holdStyle = Boolean(row.received_by);
+    let status = 'Pending';
+    if (row.declined_at) status = 'Declined';
+    else if (row.processor_declined_at) status = 'Declined by processor';
+    else if (
+      row.process_signed_at &&
+      (!holdStyle || row.dept_head_signed_at)
+    ) status = 'Processed';
+    else if (row.dept_head_signed_at) status = 'Approved by dept head';
+
+    forms.push({
+      id,
+      formNumber: row.form_number ?? '',
+      status,
+      created_at: row.created_at,
+      signed_at: row.signed_at ?? null,
+      return_type: row.return_type ?? '',
+      received_by: row.received_by ?? '',
+      user: {
+        id: row.user_id ?? '',
+        first_name: row.first_name ?? '',
+        last_name: row.last_name ?? '',
+        email: row.email ?? '',
+      },
+      department_name: row.department_name ?? null,
+      location_name: row.location_name ?? null,
+      processor_wet_pdf_url: row.processor_wet_return_pdf_url ?? null,
+    });
+  }
+  return forms;
 }

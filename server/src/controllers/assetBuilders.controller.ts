@@ -232,7 +232,7 @@ export async function getAssetBuildersHandler(req: AuthRequest, res: Response) {
       scopeParam === 'it' || scopeParam === 'admin' ? scopeParam : undefined;
 
     // Get asset scope (company + optional department-based filtering)
-    const { companyId, departmentIds: scopeDeptIds, isSuperAdmin } = await getAssetScope(pool, userId);
+    const { companyId, departmentIds: scopeDeptIds } = await getAssetScope(pool, userId);
 
     logger.info(`User company ID from asset scope: ${companyId}`, {
       departmentIdsCount: scopeDeptIds?.length ?? 0,
@@ -245,19 +245,9 @@ export async function getAssetBuildersHandler(req: AuthRequest, res: Response) {
 
     let departmentIds = scopeDeptIds;
 
-    // For Global Admin, Admin, and overallManager: apply scope override if provided
+    // Apply scope override if provided so any user can toggle IT/Admin views.
     if (scopeOverride) {
-      const [userRows] = (await pool.execute(
-        `SELECT r.manager_role, r.name as role_name FROM users u
-         LEFT JOIN asset_mngmnt_roles r ON u.role_id = r.roleID AND r.deleted_at IS NULL
-         WHERE u.userID = ?`,
-        [userId]
-      )) as any[];
-      const managerRole = String(userRows?.[0]?.manager_role ?? '').trim();
-      const isAdmin = String(userRows?.[0]?.role_name ?? '').trim().toLowerCase() === 'admin';
-      if (isSuperAdmin || isAdmin || managerRole === 'overallManager') {
-        departmentIds = await getDepartmentIdsForScope(pool, scopeOverride, companyId);
-      }
+      departmentIds = await getDepartmentIdsForScope(pool, scopeOverride, companyId);
     }
 
     // Get asset builders for the company using stored procedure

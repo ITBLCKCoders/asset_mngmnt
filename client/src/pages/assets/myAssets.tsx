@@ -33,6 +33,7 @@ import { useCurrentUser } from '@/hooks/useCurrentUser';
 import { useUserPermissions } from '@/hooks/useUserPermissions';
 import { useCompanyContext } from '@/context/CompanyContext';
 import { Shimmer } from '@/components/ui/shimmer';
+import { Tabs, TabsList, TabsTrigger, segmentTabsListClassName, segmentTabsTriggerClassName } from '@/components/ui/tabs';
 
 function mapMyAssetDto(apiAsset: AssetResponseDto): Asset {
   const children = (apiAsset.children || []).map((child: any) => ({
@@ -161,6 +162,7 @@ export default function MyAssetsPage() {
   const [treeModalAsset, setTreeModalAsset] = useState<Asset | null>(null);
   const [searchTerm, setSearchTerm] = useState('');
   const [searchColumn, setSearchColumn] = useState('all');
+  const [scope, setScope] = useState<'it' | 'admin'>('it');
 
   const fetchMyAssets = async () => {
     if (!user) return;
@@ -169,7 +171,7 @@ export default function MyAssetsPage() {
       setLoading(true);
       // Use the dedicated endpoint for user's assets
       const response = await api.get<{ assets: AssetResponseDto[] }>(
-        '/assets/my-assets'
+        `/assets/my-assets?scope=${scope}`
       );
 
       console.log('My assets loaded:', response.assets.length, 'assets');
@@ -337,7 +339,7 @@ export default function MyAssetsPage() {
     if (user && !userLoading) {
       fetchMyAssets();
     }
-  }, [user, userLoading]);
+  }, [user, userLoading, scope]);
 
   const filteredAssets = useMemo(() => {
     const q = searchTerm.toLowerCase().trim();
@@ -1007,15 +1009,23 @@ export default function MyAssetsPage() {
           title="My Assets"
           description={`Assets assigned to ${user.name} • ${assets.length} items`}
         >
-          <Button
-            variant="header"
-            size="sm"
-            onClick={() => navigate('/profile?tab=documents')}
-            aria-label="View My Accountability Forms"
-          >
-            <FileText className="mr-2 h-4 w-4" />
-            My Accountability Forms
-          </Button>
+          <div className="flex flex-col sm:flex-row sm:items-center gap-3">
+            <Tabs value={scope} onValueChange={v => setScope(v as 'it' | 'admin')} className="w-full sm:w-auto">
+              <TabsList className={segmentTabsListClassName + ' grid grid-cols-2 max-w-full sm:max-w-[280px]'}>
+                <TabsTrigger value="it" className={segmentTabsTriggerClassName}>IT Asset</TabsTrigger>
+                <TabsTrigger value="admin" className={segmentTabsTriggerClassName}>Admin Asset</TabsTrigger>
+              </TabsList>
+            </Tabs>
+            <Button
+              variant="header"
+              size="sm"
+              onClick={() => navigate('/profile?tab=documents')}
+              aria-label="View My Accountability Forms"
+            >
+              <FileText className="mr-2 h-4 w-4" />
+              My Accountability Forms
+            </Button>
+          </div>
         </PageHeader>
 
         {/* Search Bar */}

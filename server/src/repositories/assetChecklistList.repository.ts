@@ -28,21 +28,25 @@ export async function getAssetChecklists(
     ? `ac.dept_head_signed_at,
       ac.dept_head_signed_by,
       ac.dept_head_digital_signature,
-      dh.name AS dept_head_name,`
+      dh.name AS dept_head_name,
+      dh.position AS dept_head_position,`
     : `NULL AS dept_head_signed_at,
       NULL AS dept_head_signed_by,
       NULL AS dept_head_digital_signature,
-      NULL AS dept_head_name,`;
+      NULL AS dept_head_name,
+      NULL AS dept_head_position,`;
 
   const itManagerSignFields = includeItManagerSign
     ? `ac.it_manager_signed_at,
       ac.it_manager_signed_by,
       ac.it_manager_digital_signature,
-      im.name AS it_manager_name,`
+      im.name AS it_manager_name,
+      im.position AS it_manager_position,`
     : `NULL AS it_manager_signed_at,
       NULL AS it_manager_signed_by,
       NULL AS it_manager_digital_signature,
-      NULL AS it_manager_name,`;
+      NULL AS it_manager_name,
+      NULL AS it_manager_position,`;
 
   const whereParts: string[] = [];
   const params: unknown[] = [];

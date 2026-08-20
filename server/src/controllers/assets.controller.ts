@@ -201,9 +201,33 @@ export async function getMyAssetsHandler(req: AuthRequest, res: Response) {
     const allAssets = await assetRepo.callGetAllAssets();
 
     // Filter to only include assets assigned to current user
-    const myAssets = allAssets.filter((asset: any) =>
+    let myAssets = allAssets.filter((asset: any) =>
       assetIds.includes(asset.assetID)
     );
+
+    // Accept optional scope query param for IT/Admin tab switching. Applied for
+    // every user so anyone can view both their IT and Admin assigned assets.
+    const scopeParam = req.query.scope as string | undefined;
+    const scopeOverride =
+      scopeParam === 'it' || scopeParam === 'admin' ? scopeParam : undefined;
+    if (scopeOverride) {
+      const { companyId } = await getAssetScope(pool, userId);
+      const departmentIds = await getDepartmentIdsForScope(
+        pool,
+        scopeOverride,
+        companyId ?? undefined
+      );
+      if (departmentIds.length > 0) {
+        const categoryIds = await assetRepo.getCategoryIdsByDepartmentIds(
+          departmentIds
+        );
+        const categorySet = new Set(categoryIds.map(String));
+        myAssets = myAssets.filter(
+          (asset: any) =>
+            !asset.category_id || categorySet.has(String(asset.category_id))
+        );
+      }
+    }
 
     logger.info(`Found ${myAssets.length} assets assigned to user ${userId}`);
 

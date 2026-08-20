@@ -25,6 +25,8 @@ import {
   HandHelping,
   Search,
   Download,
+  ChevronLeft,
+  ChevronRight,
 } from 'lucide-react';
 import { toast } from 'sonner';
 import { useCurrentUser } from '@/hooks/useCurrentUser';
@@ -39,6 +41,8 @@ import { classifyDepartmentScopeByName } from '@/lib/assetScope';
 import { getRoleAssetTypeScope } from '@/utils/roleAssetTypeScope';
 
 type AssetTypeFilter = 'all' | 'it' | 'admin';
+
+const PAGE_SIZE = 6;
 
 type ActiveCompany = {
   id: string;
@@ -81,6 +85,7 @@ export default function BorrowFormsPage() {
   const [selectedBatch, setSelectedBatch] =
     useState<AssetBorrowFormBatch | null>(null);
   const [showDetail, setShowDetail] = useState(false);
+  const [currentPage, setCurrentPage] = useState(1);
   const displayLoading = loading;
 
   const fetchBorrowForms = async () => {
@@ -185,6 +190,19 @@ export default function BorrowFormsPage() {
       matchesFormListSearch(batch, searchQuery)
     );
   }, [orgFilteredBatches, searchQuery]);
+
+  useEffect(() => {
+    setCurrentPage(1);
+  }, [searchQuery, companyFilterId, departmentFilterId, effectiveAssetTypeFilter]);
+
+  const pageCount = useMemo(
+    () => Math.max(1, Math.ceil(filteredBatches.length / PAGE_SIZE)),
+    [filteredBatches]
+  );
+
+  useEffect(() => {
+    setCurrentPage(p => Math.min(p, pageCount));
+  }, [pageCount]);
 
   const hasActiveOrgFilters = Boolean(companyFilterId || departmentFilterId);
 
@@ -378,18 +396,53 @@ export default function BorrowFormsPage() {
               )}
             </div>
           ) : (
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-              {filteredBatches.map(batch => (
-                <BorrowFormCard
-                  key={batch.borrow_request_id}
-                  batch={batch}
-                  onView={() => {
-                    setSelectedBatch(batch);
-                    setShowDetail(true);
-                  }}
-                  onDownload={() => void handleDownload(batch)}
-                />
-              ))}
+            <div>
+              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+                {filteredBatches
+                  .slice((currentPage - 1) * PAGE_SIZE, currentPage * PAGE_SIZE)
+                  .map(batch => (
+                    <BorrowFormCard
+                      key={batch.borrow_request_id}
+                      batch={batch}
+                      onView={() => {
+                        setSelectedBatch(batch);
+                        setShowDetail(true);
+                      }}
+                      onDownload={() => void handleDownload(batch)}
+                    />
+                  ))}
+              </div>
+              {filteredBatches.length > PAGE_SIZE && (
+                <div className="flex items-center justify-center gap-4 pt-6">
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() =>
+                      setCurrentPage(p => Math.max(1, p - 1))
+                    }
+                    disabled={currentPage <= 1}
+                    className="gap-1.5"
+                  >
+                    <ChevronLeft className="h-4 w-4" />
+                    Previous
+                  </Button>
+                  <span className="text-sm text-muted-foreground">
+                    Page {Math.min(currentPage, pageCount)} of {pageCount}
+                  </span>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() =>
+                      setCurrentPage(p => Math.min(pageCount, p + 1))
+                    }
+                    disabled={currentPage >= pageCount}
+                    className="gap-1.5"
+                  >
+                    Next
+                    <ChevronRight className="h-4 w-4" />
+                  </Button>
+                </div>
+              )}
             </div>
           )}
         </div>

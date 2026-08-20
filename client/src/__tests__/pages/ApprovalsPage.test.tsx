@@ -198,4 +198,84 @@ describe('ApprovalsPage', () => {
     expect(screen.queryByRole('button', { name: /^receive$/i })).toBeNull();
     expect(screen.queryByRole('button', { name: /^decline$/i })).toBeNull();
   });
+
+  it('should paginate the For Approval tab 6 per page', async () => {
+    mockPermissions.roleCustodian = null;
+    const makeReturnBatch = (i: number) => ({
+      formID: `f${i}`,
+      form_number: `RET-${i}`,
+      return_batch_id: `rb${i}`,
+      created_at: '2026-01-01T00:00:00Z',
+      user_id: 'u1',
+      returns: [
+        {
+          return_id: `r${i}`,
+          form_id: `f${i}`,
+          form_number: `RET-${i}`,
+          return_batch_id: `rb${i}`,
+          assignment_id: `a${i}`,
+          user_id: 'u1',
+          return_condition: 'Good',
+          return_notes: '',
+          created_at: '2026-01-01T00:00:00Z',
+          updated_at: '2026-01-01T00:00:00Z',
+          assignment: {
+            assignmentID: `a${i}`,
+            asset: {
+              id: `ast${i}`,
+              code: `AST-${i}`,
+              name: `Laptop ${i}`,
+              category_id: 'cat1',
+              type_id: 'type1',
+            },
+            user: {
+              id: 'u1',
+              first_name: 'Test',
+              last_name: 'User',
+              email: 'test@test.com',
+              employeeNumber: 'EMP001',
+              position: 'Staff',
+            },
+            department: { id: 'd1', name: 'IT' },
+            location: null,
+            assigned_date: '2025-01-01',
+            expected_return_date: null,
+            actual_return_date: null,
+            assignment_notes: null,
+            status: 'returned',
+            assigned_by: { id: 'u2', first_name: 'Admin', last_name: 'User' },
+          },
+        },
+      ],
+    });
+    const assetReturnForms = Array.from({ length: 7 }, (_, i) =>
+      makeReturnBatch(i + 1)
+    );
+    (api.get as any).mockImplementation(async (url: string) => {
+      if (url === '/asset-returns/forms/pending-approvals') {
+        return { assetReturnForms };
+      }
+      return {
+        assetReturnForms: [],
+        assetTransferForms: [],
+        checklistBatches: [],
+        success: true,
+        data: { borrowRequests: [] },
+      };
+    });
+    renderPage();
+    await waitFor(() => {
+      expect(screen.getAllByText(/^RET-\d+$/)).toHaveLength(6);
+    });
+    expect(screen.getByText('Page 1 of 2')).toBeDefined();
+    fireEvent.click(screen.getByRole('button', { name: /next/i }));
+    await waitFor(() => {
+      expect(screen.getAllByText(/^RET-\d+$/)).toHaveLength(1);
+    });
+    expect(screen.getByText('Page 2 of 2')).toBeDefined();
+    fireEvent.click(screen.getByRole('button', { name: /previous/i }));
+    await waitFor(() => {
+      expect(screen.getAllByText(/^RET-\d+$/)).toHaveLength(6);
+    });
+  });
 });

@@ -1,4 +1,4 @@
-import { render, screen, waitFor } from '@testing-library/react';
+import { render, screen, waitFor, fireEvent } from '@testing-library/react';
 import { vi, describe, it, expect, beforeEach } from 'vitest';
 import { BrowserRouter } from 'react-router-dom';
 import { api } from '@/lib/api';
@@ -85,6 +85,49 @@ describe('TransferRequestsPage', () => {
     renderPage();
     await waitFor(() => {
       expect(api.get).toHaveBeenCalled();
+    });
+  });
+
+  it('shows a View Form button on the processed tab', async () => {
+    const processedBatch = {
+      formID: 'tf-1',
+      form_number: 'TF-0001',
+      created_at: '2026-01-01T00:00:00Z',
+      user_id: 'u1',
+      processed_by: 'Processor Name',
+      transfer_type: 'Transfer',
+      returns: [
+        {
+          assignment_id: 'a1',
+          return_condition: 'Good',
+          return_notes: '',
+          assignment: {
+            asset: { id: 'ast-1', code: 'AST-001', name: 'Laptop' },
+            user: { id: 'u1', first_name: 'Test', last_name: 'User' },
+          },
+        },
+      ],
+    };
+    vi.mocked(api.get).mockImplementation(
+      (async (url: string) => {
+        if (String(url).includes('processed-by-me')) {
+          return { assetTransferForms: [processedBatch] };
+        }
+        return [];
+      }) as any
+    );
+
+    renderPage();
+    await waitFor(() => {
+      expect(
+        screen.getByRole('tab', { name: 'Processed' })
+      ).toBeInTheDocument();
+    });
+    const processedTab = screen.getByRole('tab', { name: 'Processed' });
+    fireEvent.mouseDown(processedTab);
+    fireEvent.click(processedTab);
+    await waitFor(() => {
+      expect(screen.getByText('View Form')).toBeInTheDocument();
     });
   });
 });

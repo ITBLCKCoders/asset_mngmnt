@@ -43,6 +43,7 @@ jest.mock('../../repositories/asset.repository.js', () => ({
   getLocationIdById: jest.fn(),
   getRoomIdByIdOrName: jest.fn(),
   getDepartmentIdByIdOrName: jest.fn(),
+  getCategoryIdsByDepartmentIds: jest.fn(),
 }));
 
 jest.mock('../../repositories/accountabilityForm.repository.js', () => ({ findFormsByAssetId: jest.fn() }));
@@ -101,6 +102,45 @@ describe('assets.controller', () => {
       assetRepo.callGetAllAssets.mockResolvedValue([]);
       await assetsController.getMyAssetsHandler(req, res);
       expect(res._json.assets).toEqual([]);
+    });
+
+    it('filters by IT/Admin scope when scope param is provided', async () => {
+      req.query = { scope: 'admin' };
+      const { getDepartmentIdsForScope } = jest.requireMock('../../utils/assetScope.js');
+      getAssetScope.mockResolvedValue({ companyId: 10, departmentIds: null, isSuperAdmin: false });
+      getDepartmentIdsForScope.mockResolvedValue(['d1']);
+      assetRepo.getCategoryIdsByDepartmentIds.mockResolvedValue(['c1']);
+      assetRepo.getActiveAssignmentAssetIdsForUser.mockResolvedValue(['a1']);
+      assetRepo.callGetAllAssets.mockResolvedValue([mockAsset]);
+      assetRepo.getAssetDocumentsForIds.mockResolvedValue([]);
+      assetRepo.getCurrentAssignmentsForAssetIds.mockResolvedValue([]);
+      assetRepo.getAssignmentHistoryForAssetIds.mockResolvedValue([]);
+      assetRepo.getBuilderByBuilderId.mockRejectedValue(new Error('not found'));
+      assetRepo.getAccountabilityFormsForAsset.mockRejectedValue(new Error('not found'));
+      await assetsController.getMyAssetsHandler(req, res);
+      expect(res._json.assets).toHaveLength(1);
+      expect(res._json.assets[0].asset_code).toBe('AST-001');
+    });
+
+    it('excludes assets whose category is outside the requested scope', async () => {
+      req.query = { scope: 'admin' };
+      const { getDepartmentIdsForScope } = jest.requireMock('../../utils/assetScope.js');
+      getAssetScope.mockResolvedValue({ companyId: 10, departmentIds: null, isSuperAdmin: false });
+      getDepartmentIdsForScope.mockResolvedValue(['d1']);
+      assetRepo.getCategoryIdsByDepartmentIds.mockResolvedValue(['c1']);
+      assetRepo.getActiveAssignmentAssetIdsForUser.mockResolvedValue(['a1', 'a2']);
+      assetRepo.callGetAllAssets.mockResolvedValue([
+        mockAsset,
+        { ...mockAsset, assetID: 'a2', asset_code: 'AST-002', category_id: 'c2' },
+      ]);
+      assetRepo.getAssetDocumentsForIds.mockResolvedValue([]);
+      assetRepo.getCurrentAssignmentsForAssetIds.mockResolvedValue([]);
+      assetRepo.getAssignmentHistoryForAssetIds.mockResolvedValue([]);
+      assetRepo.getBuilderByBuilderId.mockRejectedValue(new Error('not found'));
+      assetRepo.getAccountabilityFormsForAsset.mockRejectedValue(new Error('not found'));
+      await assetsController.getMyAssetsHandler(req, res);
+      expect(res._json.assets).toHaveLength(1);
+      expect(res._json.assets[0].asset_code).toBe('AST-001');
     });
   });
 
@@ -225,15 +265,23 @@ describe('assets.controller', () => {
       const accFormRepo = jest.requireMock('../../repositories/accountabilityForm.repository.js');
       accFormRepo.findFormsByAssetId.mockResolvedValue([mockAccForm]);
       const retRepo = jest.requireMock('../../repositories/assetReturn.repository.js');
-      retRepo.getReturnFormsByAssetId.mockResolvedValue([]);
+      retRepo.getReturnFormsByAssetId.mockResolvedValue([
+        { id: 'rf1', formNumber: 'RF-001', status: 'Processed' },
+      ]);
       const trfRepo = jest.requireMock('../../repositories/assetTransferForm.repository.js');
-      trfRepo.getTransferFormsByAssetId.mockResolvedValue([]);
+      trfRepo.getTransferFormsByAssetId.mockResolvedValue([
+        { id: 'tf1', formNumber: 'TF-001', status: 'Completed' },
+      ]);
       const brwRepo = jest.requireMock('../../repositories/assetBorrowRequests.repository.js');
       brwRepo.getBorrowFormsByAssetId.mockResolvedValue([]);
       await assetsController.getAllFormsByAssetIdHandler(req, res);
       expect(res._json.accountabilityForms).toHaveLength(1);
-      expect(res._json.returnForms).toEqual([]);
-      expect(res._json.transferForms).toEqual([]);
+      expect(res._json.returnForms).toEqual([
+        { id: 'rf1', formNumber: 'RF-001', status: 'Processed' },
+      ]);
+      expect(res._json.transferForms).toEqual([
+        { id: 'tf1', formNumber: 'TF-001', status: 'Completed' },
+      ]);
       expect(res._json.borrowForms).toEqual([]);
     });
 

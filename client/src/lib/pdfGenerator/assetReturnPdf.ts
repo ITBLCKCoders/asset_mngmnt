@@ -111,6 +111,8 @@ export interface AssetReturnData {
   dept_head_digital_signature?: string | null;
   /** Dept Head display name for PDF */
   dept_head_user_name?: string | null;
+  /** Dept Head position for PDF */
+  dept_head_position?: string | null;
   /** Sub Approver 1 (stand-in for dept head) signature date/time */
   sub_approver_1_signed_at?: string | null;
   /** Sub Approver 1 digital signature image (base64 data URL) */
@@ -125,6 +127,8 @@ export interface AssetReturnData {
   it_manager_digital_signature?: string | null;
   /** IT Manager display name for PDF */
   it_manager_user_name?: string | null;
+  /** IT Manager position for PDF */
+  it_manager_position?: string | null;
   /** Sub Approver 2 (stand-in for IT Manager) signature date/time */
   sub_approver_2_signed_at?: string | null;
   /** Sub Approver 2 digital signature image (base64 data URL) */
@@ -549,7 +553,7 @@ export const generateAssetReturnPDF = async (
         ).trim();
         const itManagerPosition = isSubApprover2Signed
           ? (returnData.sub_approver_2_position || '').trim()
-          : '';
+          : (returnData.it_manager_position || '').trim();
         const itManagerSignature = isSubApprover2Signed
           ? returnData.sub_approver_2_digital_signature
           : returnData.it_manager_digital_signature;
@@ -675,7 +679,7 @@ export const generateAssetReturnPDF = async (
         ).trim();
         const deptHeadPosition = isSubApprover1Signed
           ? (returnData.sub_approver_1_position || '').trim()
-          : '';
+          : (returnData.dept_head_position || '').trim();
         const deptHeadDigitalSignature = isSubApprover1Signed
           ? returnData.sub_approver_1_digital_signature
           : returnData.dept_head_digital_signature;
@@ -819,12 +823,22 @@ export const generateAssetReturnPDF = async (
     doc.setFontSize(6.5);
     doc.setFont('helvetica', 'italic');
     doc.setTextColor(80, 80, 80);
-    doc.text(
-      'Stand-in approver note: This user is a stand-in approver since the department manager of the requestor is currently not present',
-      tableMargin.left,
-      (doc as any).lastAutoTable.finalY + 4,
-      { maxWidth: tableWidth }
-    );
+    const noteLines: string[] = [];
+    if (returnData.sub_approver_1_signed_at) {
+      noteLines.push(
+        'Stand-in approver note: The signee is a stand-in approver for the Department Head, who is currently not present.'
+      );
+    }
+    if (returnData.sub_approver_2_signed_at) {
+      noteLines.push(
+        'Stand-in approver note: The signee is a stand-in approver for the IT Manager, who is currently not present.'
+      );
+    }
+    let noteY = (doc as any).lastAutoTable.finalY + 4;
+    for (const line of noteLines) {
+      doc.text(line, tableMargin.left, noteY, { maxWidth: tableWidth });
+      noteY += 3;
+    }
     doc.setTextColor(0, 0, 0);
   }
 

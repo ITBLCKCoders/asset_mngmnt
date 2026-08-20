@@ -4,6 +4,8 @@ import type { AuthRequest } from '../middleware/authenticate.js';
 import logger from '../logger.js';
 import { createAuditLog } from '../utils/audit.js';
 import * as repo from '../repositories/accountabilityForm.repository.js';
+import { getReturnFormsByAssetId as getAssetReturnFormsByAssetId } from '../repositories/assetReturn.repository.js';
+import { getTransferFormsByAssetId as getAssetTransferFormsByAssetId } from '../repositories/assetTransferForm.repository.js';
 import * as checklistRepo from '../repositories/assetChecklist.repository.js';
 import { declineAccountabilityFormBodySchema } from '../dtos/accountabilityForms/DeclineAccountabilityFormDto.js';
 import { applyReturnAssignmentSideEffectsOnConnection } from '../utils/returnAssignmentSideEffects.js';
@@ -2222,6 +2224,7 @@ export async function getAccountabilityFormMovementHandler(
           formNumber: t.form_number,
           userId: t.user_id,
           userName: t.user_name || '',
+          returnFormId: t.return_form_id ?? null,
           newAssignedUserId: t.new_assigned_user_id,
           newUserName: t.new_user_name || '',
           created_at: t.created_at,
@@ -2271,19 +2274,67 @@ export async function getAssetMovementHandler(
     }
 
     const rows = await repo.findFormsByAssetId(assetId);
-    if (rows.length === 0) {
-      return res.json({ asset: { id: assetId }, forms: [] });
-    }
-
-    const hrAccess = await userHasHrAccountabilityFullAccess(currentUserId);
-
     const result: any[] = [];
     let assetInfo: any = { id: assetId, code: '', name: '' };
+
+    // Resolve the asset's own return/transfer sheets directly. Used when the
+    // asset has no accessible accountability form but does have movement
+    // history (e.g. a fully returned asset with no current/past form).
+    const addDirectMovementResolver = async (): Promise<void> => {
+      if (result.length > 0) return;
+      const directReturnForms = await getAssetReturnFormsByAssetId(assetId);
+      const directTransferForms = await getAssetTransferFormsByAssetId(assetId);
+      if (directReturnForms.length > 0 || directTransferForms.length > 0) {
+        result.push({
+          form: {
+            id: 'asset-root',
+            formNumber: assetInfo.code || assetInfo.name || 'Asset',
+            status: 'Completed',
+            userId: '',
+            userName: assetInfo.name || '',
+            created_at: '',
+          },
+          returnForms: directReturnForms.map((r: any) => ({
+            id: r.id,
+            formNumber: r.formNumber,
+            userId: r.user?.id ?? '',
+            userName: `${r.user?.first_name ?? ''} ${r.user?.last_name ?? ''}`.trim(),
+            created_at: r.created_at,
+          })),
+          transferForms: directTransferForms.map((t: any) => ({
+            id: t.id,
+            formNumber: t.formNumber,
+            userId: t.user?.id ?? '',
+            userName: `${t.user?.first_name ?? ''} ${t.user?.last_name ?? ''}`.trim(),
+            returnFormId: null,
+            newAssignedUserId: null,
+            newUserName: t.new_user
+              ? `${t.new_user.first_name ?? ''} ${t.new_user.last_name ?? ''}`.trim()
+              : '',
+            created_at: t.created_at,
+          })),
+          newAccountabilityForms: [],
+        });
+      }
+    };
+
+    if (rows.length === 0) {
+      await addDirectMovementResolver();
+      return res.json({ asset: assetInfo, forms: result });
+    }
     for (const row of rows) {
+      // Only surface movement from accountability rows the current user may
+      // view, matching the same visibility the asset's Forms tab uses. A plain
+      // owner/creator/HR-full check made movement appear empty for users who
+      // could see the current/past forms but were not the owner/creator.
       if (
-        row.user_id !== currentUserId &&
-        row.created_by !== currentUserId &&
-        !hrAccess
+        !(await userCanViewAccountabilityFormRow(
+          {
+            user_id: String(row.user_id),
+            created_by: row.created_by != null ? String(row.created_by) : null,
+          },
+          currentUserId
+        ))
       ) {
         continue;
       }
@@ -2362,6 +2413,7 @@ export async function getAssetMovementHandler(
           formNumber: t.form_number,
           userId: t.user_id,
           userName: t.user_name || '',
+          returnFormId: t.return_form_id ?? null,
           newAssignedUserId: t.new_assigned_user_id,
           newUserName: t.new_user_name || '',
           created_at: t.created_at,
@@ -2376,6 +2428,12 @@ export async function getAssetMovementHandler(
         })),
       });
     }
+
+    // Fallback: when no accessible accountability form was able to surface
+    // movement, collect the asset's own return/transfer sheets directly so the
+    // Movement tab still reflects the asset's history even if those sheets are
+    // not linked to a visible assignment chain.
+    await addDirectMovementResolver();
 
     return res.json({ asset: assetInfo, forms: result });
   } catch (error: any) {

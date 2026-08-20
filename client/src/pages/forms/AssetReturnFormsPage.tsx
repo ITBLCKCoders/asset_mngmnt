@@ -5,7 +5,7 @@ import { useSearchParams } from 'react-router-dom';
 import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
 import { PageHeader } from '@/components/common/PageHeader';
-import { Search, FileDown, Download } from 'lucide-react';
+import { Search, FileDown, Download, ChevronLeft, ChevronRight } from 'lucide-react';
 import { api } from '@/lib/api';
 import { toast } from 'sonner';
 import { useCurrentUser } from '@/hooks/useCurrentUser';
@@ -42,6 +42,8 @@ import { getRoleAssetTypeScope } from '@/utils/roleAssetTypeScope';
 
 type AssetTypeFilter = 'all' | 'it' | 'admin';
 
+const PAGE_SIZE = 6;
+
 export default function AssetReturnFormsPage() {
   const [searchParams, setSearchParams] = useSearchParams();
   const { user: currentUser } = useCurrentUser();
@@ -72,6 +74,7 @@ export default function AssetReturnFormsPage() {
   const [selectedBatch, setSelectedBatch] =
     useState<AssetReturnFormBatch | null>(null);
   const [showDetail, setShowDetail] = useState(false);
+  const [currentPage, setCurrentPage] = useState(1);
   const displayLoading = loading;
 
   const fetchReturnForms = async () => {
@@ -182,6 +185,19 @@ export default function AssetReturnFormsPage() {
       matchesFormListSearch(b, searchQuery)
     );
   }, [orgFilteredBatches, searchQuery]);
+
+  useEffect(() => {
+    setCurrentPage(1);
+  }, [searchQuery, companyFilterId, departmentFilterId, effectiveAssetTypeFilter]);
+
+  const pageCount = useMemo(
+    () => Math.max(1, Math.ceil(filteredBatches.length / PAGE_SIZE)),
+    [filteredBatches]
+  );
+
+  useEffect(() => {
+    setCurrentPage(p => Math.min(p, pageCount));
+  }, [pageCount]);
 
   const hasActiveOrgFilters = Boolean(companyFilterId || departmentFilterId);
 
@@ -375,39 +391,74 @@ export default function AssetReturnFormsPage() {
               )}
             </div>
           ) : (
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-              {filteredBatches.map(batch => (
-                <ReturnFormCard
-                  key={
-                    batch.formID ??
-                    batch.return_batch_id ??
-                    batch.returns[0]?.return_id ??
-                    ''
-                  }
-                  batch={batch}
-                  onView={() => {
-                    setSelectedBatch(batch);
-                    setShowDetail(true);
-                  }}
-                  onDownload={async () => {
-                    try {
-                      const data = buildReturnDataForPDFFromBatch(batch);
-                      if (!data) return;
-                      const blob = await generateAssetReturnPDF(data);
-                      const url = URL.createObjectURL(blob);
-                      const a = document.createElement('a');
-                      a.href = url;
-                      a.download = `return-form-${batch.form_number ?? 'export'}.pdf`;
-                      a.click();
-                      URL.revokeObjectURL(url);
-                      toast.success('Download started');
-                    } catch (e) {
-                      toast.error('Failed to download PDF');
+            <div>
+              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+                {filteredBatches
+                  .slice((currentPage - 1) * PAGE_SIZE, currentPage * PAGE_SIZE)
+                  .map(batch => (
+                    <ReturnFormCard
+                      key={
+                        batch.formID ??
+                        batch.return_batch_id ??
+                        batch.returns[0]?.return_id ??
+                        ''
+                      }
+                      batch={batch}
+                      onView={() => {
+                        setSelectedBatch(batch);
+                        setShowDetail(true);
+                      }}
+                      onDownload={async () => {
+                        try {
+                          const data = buildReturnDataForPDFFromBatch(batch);
+                          if (!data) return;
+                          const blob = await generateAssetReturnPDF(data);
+                          const url = URL.createObjectURL(blob);
+                          const a = document.createElement('a');
+                          a.href = url;
+                          a.download = `return-form-${batch.form_number ?? 'export'}.pdf`;
+                          a.click();
+                          URL.revokeObjectURL(url);
+                          toast.success('Download started');
+                        } catch (e) {
+                          toast.error('Failed to download PDF');
+                        }
+                      }}
+                      viewOnly
+                    />
+                  ))}
+              </div>
+              {filteredBatches.length > PAGE_SIZE && (
+                <div className="flex items-center justify-center gap-4 pt-6">
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() =>
+                      setCurrentPage(p => Math.max(1, p - 1))
                     }
-                  }}
-                  viewOnly
-                />
-              ))}
+                    disabled={currentPage <= 1}
+                    className="gap-1.5"
+                  >
+                    <ChevronLeft className="h-4 w-4" />
+                    Previous
+                  </Button>
+                  <span className="text-sm text-muted-foreground">
+                    Page {Math.min(currentPage, pageCount)} of {pageCount}
+                  </span>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() =>
+                      setCurrentPage(p => Math.min(pageCount, p + 1))
+                    }
+                    disabled={currentPage >= pageCount}
+                    className="gap-1.5"
+                  >
+                    Next
+                    <ChevronRight className="h-4 w-4" />
+                  </Button>
+                </div>
+              )}
             </div>
           )}
         </div>

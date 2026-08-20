@@ -22,6 +22,7 @@ import {
   XCircle,
   Layers,
   Search,
+  Download,
 } from 'lucide-react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
@@ -53,7 +54,13 @@ import { Shimmer } from '@/components/ui/shimmer';
 import { useCurrentUser } from '@/hooks/useCurrentUser';
 import { useUserPermissions } from '@/hooks/useUserPermissions';
 import SmsOtpDialog from '@/components/auth/SmsOtpDialog';
-import { FormTimeline } from '@/pages/profile/profileComponents/tabs/documentsTab';
+import {
+  FormTimeline,
+  TransferFormDetail,
+  buildTransferDataForPDFFromBatch,
+  type AssetTransferFormBatch,
+} from '@/pages/profile/profileComponents/tabs/documentsTab';
+import { generateAssetTransferPDF, downloadPDF } from '@/lib/pdfGenerator';
 import { proxyCloudinaryUrl } from '@/utils/cloudinaryProxy';
 
 const MAX_CONDITION_IMAGES = 5;
@@ -317,6 +324,35 @@ export default function TransferRequestsPage() {
     setVerificationCondition(false);
     setVerificationConfirmSign(false);
     setShowConfirmDialog(true);
+  };
+
+  const [showFormDetail, setShowFormDetail] = useState(false);
+  const [formDetailBatch, setFormDetailBatch] =
+    useState<AssetTransferFormBatch | null>(null);
+
+  const handleViewForm = (batch: ApprovedBatch) => {
+    setFormDetailBatch(batch as unknown as AssetTransferFormBatch);
+    setShowFormDetail(true);
+  };
+
+  const handleDownloadFormDetail = async () => {
+    if (!formDetailBatch) return;
+    try {
+      const data = buildTransferDataForPDFFromBatch(formDetailBatch);
+      if (!data) {
+        toast.error('Cannot generate PDF for this form');
+        return;
+      }
+      const blob = await generateAssetTransferPDF(data);
+      const fileName = formDetailBatch.form_number
+        ? `Asset_Transfer_Form_${formDetailBatch.form_number}_${Date.now()}.pdf`
+        : `Asset_Transfer_Form_${Date.now()}.pdf`;
+      downloadPDF(blob, fileName);
+      toast.success('Transfer form downloaded successfully');
+    } catch (e) {
+      console.error(e);
+      toast.error('Failed to download PDF');
+    }
   };
 
   const handleExecuteTransfer = async () => {
@@ -853,6 +889,18 @@ export default function TransferRequestsPage() {
                     <span className="hidden sm:inline">{isProcessedTab ? 'View' : 'View & Transfer'}</span>
                     <span className="sm:hidden">{isProcessedTab ? 'View' : 'Transfer'}</span>
                   </Button>
+                  {isProcessedTab && (
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() => handleViewForm(batch)}
+                      className="w-full sm:flex-1 bg-white text-red-600 border-red-600 hover:bg-red-600 hover:text-white shadow-sm"
+                    >
+                      <FileText className="h-4 w-4 mr-2" />
+                      <span className="hidden sm:inline">View Form</span>
+                      <span className="sm:hidden">Form</span>
+                    </Button>
+                  )}
                 </div>
               </Card>
             );
@@ -1268,12 +1316,21 @@ export default function TransferRequestsPage() {
 
             <AppDialogChromeFooter className="justify-end">
               {readOnly ? (
-                <Button
-                  variant="outline"
-                  onClick={() => setShowConfirmDialog(false)}
-                >
-                  Close
-                </Button>
+                <>
+                  <Button
+                    variant="outline"
+                    onClick={() => selectedBatch && handleViewForm(selectedBatch)}
+                  >
+                    <FileText className="h-4 w-4 mr-2" />
+                    View Form
+                  </Button>
+                  <Button
+                    variant="outline"
+                    onClick={() => setShowConfirmDialog(false)}
+                  >
+                    Close
+                  </Button>
+                </>
               ) : (
                 <>
               <Button
@@ -1428,6 +1485,59 @@ export default function TransferRequestsPage() {
               </Button>
               </>
               )}
+            </AppDialogChromeFooter>
+          </AppDialogFrame>
+        </Dialog>
+
+        <Dialog
+          open={showFormDetail}
+          onOpenChange={setShowFormDetail}
+        >
+          <AppDialogFrame className="max-w-3xl h-[min(90dvh,920px)] max-h-[calc(100dvh-1rem)] min-h-0 overflow-hidden !flex !flex-col">
+            <AppDialogGradientHeader
+              title={`${
+                formDetailBatch?.returns[0]?.assignment?.user
+                  ? `${formDetailBatch.returns[0].assignment.user.first_name || ''} ${formDetailBatch.returns[0].assignment.user.last_name || ''}`.trim() ||
+                    'Transfer'
+                  : 'Transfer'
+              } - ${
+                formDetailBatch?.form_number ??
+                `Transfer of ${formDetailBatch?.returns.length ?? 0} assets`
+              }`}
+              description="Asset Transfer Form Preview"
+            />
+            {formDetailBatch && (
+              <div className="min-h-0 flex-1 flex flex-col overflow-hidden bg-white px-4 sm:px-6">
+                <TransferFormDetail
+                  key={formDetailBatch.formID}
+                  transferFormBatch={formDetailBatch}
+                  onClose={() => {
+                    setShowFormDetail(false);
+                    setFormDetailBatch(null);
+                  }}
+                  onDownload={handleDownloadFormDetail}
+                  contentOnly
+                />
+              </div>
+            )}
+            <AppDialogChromeFooter className="flex-shrink-0 flex-row justify-end gap-3 sm:gap-3">
+              <Button
+                variant="outline"
+                onClick={() => {
+                  setShowFormDetail(false);
+                  setFormDetailBatch(null);
+                }}
+              >
+                Close
+              </Button>
+              <Button
+                size="sm"
+                onClick={handleDownloadFormDetail}
+                className="bg-green-600 hover:bg-green-700 text-white"
+              >
+                <Download className="h-4 w-4 mr-2" />
+                Download PDF
+              </Button>
             </AppDialogChromeFooter>
           </AppDialogFrame>
         </Dialog>

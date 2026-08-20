@@ -173,9 +173,18 @@ export class AssetBorrowRequestsService {
     | { rows: Awaited<ReturnType<typeof findPendingDeptHeadBorrowRequests>> }
     | { error: string; status: number }
   > {
-    const { companyId } = await getAssetScope(pool, userId);
+    const { companyId, isSuperAdmin, isAdmin } = await getAssetScope(pool, userId);
     if (!companyId) {
       return { rows: [] };
+    }
+
+    // Global Admin / Local Admin: see all pending borrow requests in the company scope
+    if (isSuperAdmin || isAdmin) {
+      const allRows = await findPendingDeptHeadBorrowRequestsByCompany(
+        pool,
+        companyId
+      );
+      return { rows: allRows };
     }
 
     // User only sees pending requests for employees assigned to them as approver
@@ -219,7 +228,7 @@ export class AssetBorrowRequestsService {
     borrowRequestId: string,
     body: DeptHeadApproveBorrowRequestDto
   ): Promise<{ ok: true } | { error: string; status: number }> {
-    const { companyId } = await getAssetScope(pool, userId);
+    const { companyId, isSuperAdmin, isAdmin } = await getAssetScope(pool, userId);
     if (!companyId) {
       return { error: 'Company context required', status: 400 };
     }
@@ -238,7 +247,7 @@ export class AssetBorrowRequestsService {
     // Authorization is checked against the request owner's designated approver
     const isApprover = await isDesignatedApprover(userId, row.user_id);
     const isSubApprover = await isDesignatedSubApprover(userId, row.user_id);
-    if (!isApprover && !isSubApprover) {
+    if (!isApprover && !isSubApprover && !isSuperAdmin && !isAdmin) {
       return { error: 'Not authorized as department head approver', status: 403 };
     }
 
@@ -261,7 +270,7 @@ export class AssetBorrowRequestsService {
     userId: string,
     borrowRequestId: string
   ): Promise<{ ok: true } | { error: string; status: number }> {
-    const { companyId } = await getAssetScope(pool, userId);
+    const { companyId, isSuperAdmin, isAdmin } = await getAssetScope(pool, userId);
     if (!companyId) {
       return { error: 'Company context required', status: 400 };
     }
@@ -280,7 +289,7 @@ export class AssetBorrowRequestsService {
     // Authorization is checked against the request owner's designated approver
     const isApprover = await isDesignatedApprover(userId, row.user_id);
     const isSubApprover = await isDesignatedSubApprover(userId, row.user_id);
-    if (!isApprover && !isSubApprover) {
+    if (!isApprover && !isSubApprover && !isSuperAdmin && !isAdmin) {
       return { error: 'Not authorized as department head approver', status: 403 };
     }
 

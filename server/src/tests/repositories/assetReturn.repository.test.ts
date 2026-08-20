@@ -20,10 +20,72 @@ describe('assetReturn.repository', () => {
   });
 
   describe('getReturnFormsByAssetId', () => {
-    it('should return return forms for asset', async () => {
-      mockPool.execute.mockResolvedValue([[{ return_form_id: 'rf1' }], []]);
+    it('should map return-forms rows to the asset DTO shape with status', async () => {
+      mockPool.execute.mockResolvedValue([
+        [
+          {
+            formID: 'rf1', form_number: 'RF-001', user_id: 'u1',
+            created_at: '2024-01-01', signed_at: null,
+            return_type: 'Full', received_by: 'IT',
+            processor_wet_return_pdf_url: '/wet/rf1.pdf',
+            declined_at: null, process_signed_at: '2024-01-02',
+            dept_head_signed_at: '2024-01-01', processor_declined_at: null,
+            first_name: 'John', last_name: 'Doe', email: 'john@test.com',
+            department_name: 'IT', location_name: 'HQ',
+          },
+        ],
+        [],
+      ]);
       const result = await getReturnFormsByAssetId('a1');
-      expect(result).toEqual([{ return_form_id: 'rf1' }]);
+      expect(mockPool.execute).toHaveBeenCalledWith(
+        expect.stringContaining('JOIN asset_assignments aa ON ar.assignment_id = aa.assignmentID'),
+        ['a1']
+      );
+      expect(result).toEqual([
+        {
+          id: 'rf1',
+          formNumber: 'RF-001',
+          status: 'Processed',
+          created_at: '2024-01-01',
+          signed_at: null,
+          return_type: 'Full',
+          received_by: 'IT',
+          user: { id: 'u1', first_name: 'John', last_name: 'Doe', email: 'john@test.com' },
+          department_name: 'IT',
+          location_name: 'HQ',
+          processor_wet_pdf_url: '/wet/rf1.pdf',
+        },
+      ]);
+    });
+
+    it('should deduplicate a return form covering multiple assets', async () => {
+      mockPool.execute.mockResolvedValue([
+        [
+          {
+            formID: 'rf2', form_number: 'RF-002', user_id: 'u1',
+            created_at: '2024-01-03', signed_at: null, return_type: '', received_by: '',
+            processor_wet_return_pdf_url: null,
+            declined_at: null, process_signed_at: null,
+            dept_head_signed_at: null, processor_declined_at: null,
+            first_name: 'Jane', last_name: 'Roe', email: 'jane@test.com',
+            department_name: null, location_name: null,
+          },
+          {
+            formID: 'rf2', form_number: 'RF-002', user_id: 'u1',
+            created_at: '2024-01-03', signed_at: null, return_type: '', received_by: '',
+            processor_wet_return_pdf_url: null,
+            declined_at: null, process_signed_at: null,
+            dept_head_signed_at: null, processor_declined_at: null,
+            first_name: 'Jane', last_name: 'Roe', email: 'jane@test.com',
+            department_name: null, location_name: null,
+          },
+        ],
+        [],
+      ]);
+      const result = await getReturnFormsByAssetId('a1');
+      expect(result).toHaveLength(1);
+      expect(result[0].id).toBe('rf2');
+      expect(result[0].status).toBe('Pending');
     });
   });
 

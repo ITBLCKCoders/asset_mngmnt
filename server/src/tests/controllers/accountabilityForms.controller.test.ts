@@ -58,6 +58,8 @@ jest.mock('../../repositories/assetAssignment.repository.js', () => ({
 }));
 jest.mock('../../utils/accountabilityFormAssetsData.js', () => ({ resolveChecklistAssignmentIds: jest.fn() }));
 jest.mock('../../utils/computerTypeAsset.js', () => ({ isComputerTypeName: jest.fn() }));
+jest.mock('../../repositories/assetReturn.repository.js', () => ({ getReturnFormsByAssetId: jest.fn() }));
+jest.mock('../../repositories/assetTransferForm.repository.js', () => ({ getTransferFormsByAssetId: jest.fn() }));
 
 const { pool } = jest.requireMock('../../db.js');
 const repo = jest.requireMock('../../repositories/accountabilityForm.repository.js');
@@ -438,6 +440,38 @@ describe('accountabilityForms.controller', () => {
       repo.getFormById.mockResolvedValue({ ...mockFormRow, status: 'Signed' });
       await accountabilityFormsController.declineAccountabilityFormHandler(req, res);
       expect(res._status).toBe(400);
+    });
+  });
+
+  describe('getAssetMovementHandler', () => {
+    it('falls back to direct return/transfer sheets when no accountability forms exist', async () => {
+      req.params = { assetId: 'a1' };
+      repo.findFormsByAssetId.mockResolvedValue([]);
+      const returnRepo = jest.requireMock('../../repositories/assetReturn.repository.js');
+      returnRepo.getReturnFormsByAssetId.mockResolvedValue([
+        { id: 'rf1', formNumber: 'RF-001', created_at: '2024-01-01', user: { id: 'u1', first_name: 'John', last_name: 'Doe' } },
+      ]);
+      const transferRepo = jest.requireMock('../../repositories/assetTransferForm.repository.js');
+      transferRepo.getTransferFormsByAssetId.mockResolvedValue([
+        { id: 'tf1', formNumber: 'TF-001', created_at: '2024-01-02', user: { id: 'u1', first_name: 'John', last_name: 'Doe' }, new_user: { first_name: 'Ann', last_name: 'Lee' } },
+      ]);
+      await accountabilityFormsController.getAssetMovementHandler(req, res);
+      expect(res._json.forms).toHaveLength(1);
+      expect(res._json.forms[0].returnForms).toHaveLength(1);
+      expect(res._json.forms[0].returnForms[0].formNumber).toBe('RF-001');
+      expect(res._json.forms[0].transferForms).toHaveLength(1);
+      expect(res._json.forms[0].transferForms[0].newUserName).toBe('Ann Lee');
+    });
+
+    it('returns empty forms when no accountability forms and no direct sheets', async () => {
+      req.params = { assetId: 'a1' };
+      repo.findFormsByAssetId.mockResolvedValue([]);
+      const returnRepo = jest.requireMock('../../repositories/assetReturn.repository.js');
+      returnRepo.getReturnFormsByAssetId.mockResolvedValue([]);
+      const transferRepo = jest.requireMock('../../repositories/assetTransferForm.repository.js');
+      transferRepo.getTransferFormsByAssetId.mockResolvedValue([]);
+      await accountabilityFormsController.getAssetMovementHandler(req, res);
+      expect(res._json.forms).toEqual([]);
     });
   });
 });

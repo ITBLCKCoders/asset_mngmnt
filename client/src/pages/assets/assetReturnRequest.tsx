@@ -281,6 +281,7 @@ export default function AssetReturnRequest() {
   const [searchColumn, setSearchColumn] = useState('all');
   const [sortOrder] = useState<'asc' | 'desc'>('asc');
   const [viewMode, setViewMode] = useState<'list' | 'grid'>('list');
+  const [scope, setScope] = useState<'it' | 'admin'>('it');
   const [confirmDialogOpen, setConfirmDialogOpen] = useState(false);
   const [confirmReturnWhenApproved, setConfirmReturnWhenApproved] =
     useState(false);
@@ -308,7 +309,7 @@ export default function AssetReturnRequest() {
 
   const fetchAssignments = async () => {
     try {
-      const response = await api.get('/asset-assignments/me');
+      const response = await api.get(`/asset-assignments/me?scope=${scope}`);
       setAssignments(response.assignments || []);
     } catch (error) {
       console.error('Failed to fetch assignments:', error);
@@ -365,7 +366,7 @@ export default function AssetReturnRequest() {
   const fetchAssetBuilders = async () => {
     try {
       setBuildersLoading(true);
-      const response = await api.get('/asset-builders', {
+      const response = await api.get(`/asset-builders?scope=${scope}`, {
         headers: { 'Cache-Control': 'no-cache', Pragma: 'no-cache' },
       });
       if (response?.builders) {
@@ -405,7 +406,13 @@ export default function AssetReturnRequest() {
     if (currentUser) {
       fetchData();
     }
-  }, [currentUser]);
+  }, [currentUser, scope]);
+
+  useEffect(() => {
+    setSelectedAssignments([]);
+    setReturnConditions({});
+    setExpandedBuilderForSelect(null);
+  }, [scope]);
 
   /** Flatten return forms into one row per returned asset (mirrors Return History table). */
   const myReturnRows = useMemo((): MyReturnRow[] => {
@@ -901,16 +908,24 @@ export default function AssetReturnRequest() {
           title="Return asset"
           description="Request to return your assigned assets"
         >
-          <Link to="/assets/return">
-            <Button
-              variant="header"
-              size="sm"
-              className="flex items-center gap-2"
-            >
-              <ArrowLeft className="h-4 w-4" />
-              Back to Asset Return
-            </Button>
-          </Link>
+          <div className="flex flex-col sm:flex-row sm:items-center gap-3">
+            <Tabs value={scope} onValueChange={v => setScope(v as 'it' | 'admin')} className="w-full sm:w-auto">
+              <TabsList className={segmentTabsListClassName + ' grid grid-cols-2 max-w-full sm:max-w-[280px]'}>
+                <TabsTrigger value="it" className={segmentTabsTriggerClassName}>IT Asset</TabsTrigger>
+                <TabsTrigger value="admin" className={segmentTabsTriggerClassName}>Admin Asset</TabsTrigger>
+              </TabsList>
+            </Tabs>
+            <Link to="/assets/return">
+              <Button
+                variant="header"
+                size="sm"
+                className="flex items-center gap-2"
+              >
+                <ArrowLeft className="h-4 w-4" />
+                Back to Asset Return
+              </Button>
+            </Link>
+          </div>
         </PageHeader>
 
         <div className="grid grid-cols-1 xl:grid-cols-3 gap-8">

@@ -36,6 +36,7 @@ export interface AssetChecklistData {
   dept_head_signed_by?: string | null;
   dept_head_digital_signature?: string | null;
   dept_head_name?: string | null;
+  dept_head_position?: string | null;
   sub_approver_1_signed_at?: string | null;
   sub_approver_1_signed_by?: string | null;
   sub_approver_1_digital_signature?: string | null;
@@ -45,6 +46,7 @@ export interface AssetChecklistData {
   it_manager_signed_by?: string | null;
   it_manager_digital_signature?: string | null;
   it_manager_name?: string | null;
+  it_manager_position?: string | null;
   asset_label?: string;
   employee_company_logo_url?: string | null;
   asset?: {
@@ -478,7 +480,7 @@ export const generateAssetChecklistPDF = async (
     : deptHeadName;
   const displayDeptHeadPosition = subApprover1Signed
     ? (checklistData.sub_approver_1_position || '').trim()
-    : '';
+    : (checklistData.dept_head_position || '').trim();
   const displayDeptHeadDigitalSignature = subApprover1Signed
     ? (checklistData.sub_approver_1_digital_signature || '') ||
       deptHeadDigitalSignature
@@ -615,6 +617,16 @@ export const generateAssetChecklistPDF = async (
             nameMaxWidth
           );
           doc.text(nameLines, xMin, nameY);
+          // IT Manager position
+          const itManagerPosition = (checklistData.it_manager_position || '').trim();
+          if (itManagerPosition) {
+            doc.setFontSize(6.5);
+            const positionLines = doc.splitTextToSize(
+              itManagerPosition,
+              nameMaxWidth
+            );
+            doc.text(positionLines, xMin, nameY + 3.5);
+          }
         }
 
         if (itManagerSignedDate && itManagerSignedTime) {
@@ -784,7 +796,7 @@ export const generateAssetChecklistPDF = async (
     doc.setFont('helvetica', 'italic');
     doc.setTextColor(80, 80, 80);
     doc.text(
-      'Stand-in approver note: This user is a stand-in approver since the department manager of the requestor is currently not present',
+      'Stand-in approver note: The signee is a stand-in approver for the Department Head, who is currently not present.',
       tableMargin.left,
       (doc as any).lastAutoTable.finalY + 4,
       { maxWidth: tableWidth }

@@ -22,10 +22,59 @@ describe('assetTransferForm.repository', () => {
   });
 
   describe('getTransferFormsByAssetId', () => {
-    it('should return transfer forms for asset', async () => {
-      mockPool.execute.mockResolvedValue([[{ transfer_form_id: 'tf1' }], []]);
+    it('should map transfer-forms rows to the asset DTO shape with status', async () => {
+      mockPool.execute.mockResolvedValue([
+        [
+          {
+            formID: 'tf1', form_number: 'TF-001', user_id: 'u1', new_assigned_user_id: 'u2',
+            created_at: '2024-01-05', signed_at: '2024-01-06',
+            processor_wet_transfer_pdf_url: '/wet/tf1.pdf',
+            declined_at: null, executed_at: null, process_signed_at: null,
+            dept_head_signed_at: '2024-01-05', it_manager_signed_at: '2024-01-06',
+            first_name: 'Tom', last_name: 'Ross', email: 'tom@test.com',
+            new_first_name: 'Ann', new_last_name: 'Lee',
+            department_name: 'IT', location_name: 'HQ',
+          },
+        ],
+        [],
+      ]);
       const result = await getTransferFormsByAssetId('a1');
-      expect(result).toEqual([{ transfer_form_id: 'tf1' }]);
+      expect(mockPool.execute).toHaveBeenCalledWith(
+        expect.stringContaining('JOIN asset_assignments aa ON tfa.assignment_id = aa.assignmentID'),
+        ['a1']
+      );
+      expect(result).toEqual([
+        {
+          id: 'tf1',
+          formNumber: 'TF-001',
+          status: 'Approved',
+          created_at: '2024-01-05',
+          signed_at: '2024-01-06',
+          user: { id: 'u1', first_name: 'Tom', last_name: 'Ross', email: 'tom@test.com' },
+          new_user: { first_name: 'Ann', last_name: 'Lee' },
+          department_name: 'IT',
+          location_name: 'HQ',
+          processor_wet_pdf_url: '/wet/tf1.pdf',
+        },
+      ]);
+    });
+
+    it('should deduplicate a transfer form covering multiple assignments', async () => {
+      const row = {
+        formID: 'tf2', form_number: 'TF-002', user_id: 'u1', new_assigned_user_id: null,
+        created_at: '2024-01-07', signed_at: null,
+        processor_wet_transfer_pdf_url: null,
+        declined_at: null, executed_at: null, process_signed_at: null,
+        dept_head_signed_at: null, it_manager_signed_at: null,
+        first_name: 'Tom', last_name: 'Ross', email: 'tom@test.com',
+        new_first_name: null, new_last_name: null,
+        department_name: null, location_name: null,
+      };
+      mockPool.execute.mockResolvedValue([[row, row], []]);
+      const result = await getTransferFormsByAssetId('a1');
+      expect(result).toHaveLength(1);
+      expect(result[0].id).toBe('tf2');
+      expect(result[0].status).toBe('Pending');
     });
   });
 

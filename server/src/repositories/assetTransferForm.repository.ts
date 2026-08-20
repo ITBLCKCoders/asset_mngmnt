@@ -118,12 +118,12 @@ export async function getUserById(
 
 export async function getUserNamesById(
   userId: string
-): Promise<{ first_name: string | null; last_name: string | null } | null> {
+): Promise<{ first_name: string | null; last_name: string | null; position: string | null } | null> {
   const [rows] = await pool.execute<RowDataPacket[]>(
-    'SELECT first_name, last_name FROM users WHERE userID = ?',
+    'SELECT first_name, last_name, position FROM users WHERE userID = ?',
     [userId]
   );
-  return (rows[0] as { first_name: string | null; last_name: string | null } | null) ?? null;
+  return (rows[0] as { first_name: string | null; last_name: string | null; position: string | null } | null) ?? null;
 }
 
 export async function getReturnFormById(
@@ -462,17 +462,75 @@ export async function getTransferFormAssignments(
 }
 
 /**
- * Get transfer forms by asset ID. Since asset_transfer_forms doesn't have a direct
- * asset_id column and the linking through transfer_form_assignments is complex,
- * return empty array for now. This would need database schema changes to properly
- * link transfer forms to assets.
+ * Get transfer forms linked to an asset. A transfer form is linked to an asset
+ * through `transfer_form_assignments.assignment_id` →
+ * `asset_assignments.asset_id`. One form can cover several assignments, so rows
+ * are deduplicated by formID. Returns the camelCase `TransferForm` DTO shape
+ * expected by the Asset details modal and the Asset Builder forms tab.
  */
 export async function getTransferFormsByAssetId(
   assetId: string
 ): Promise<any[]> {
-  // Return empty array since there's no reliable way to link transfer forms to assets
-  // with the current database schema
-  return [];
+  const [rows] = (await pool.execute(
+    `SELECT DISTINCT atf.formID, atf.form_number, atf.user_id, atf.new_assigned_user_id,
+            atf.created_at, atf.signed_at, atf.processor_wet_transfer_pdf_url,
+            atf.declined_at, atf.executed_at, atf.process_signed_at,
+            atf.dept_head_signed_at, atf.it_manager_signed_at,
+            u.first_name, u.last_name, u.email,
+            nu.first_name AS new_first_name, nu.last_name AS new_last_name,
+            d.name AS department_name, l.name AS location_name
+     FROM transfer_form_assignments tfa
+     JOIN asset_transfer_forms atf ON tfa.form_id = atf.formID AND atf.deleted_at IS NULL
+     JOIN asset_assignments aa ON tfa.assignment_id = aa.assignmentID AND aa.deleted_at IS NULL
+     LEFT JOIN users u ON atf.user_id = u.userID
+     LEFT JOIN users nu ON atf.new_assigned_user_id = nu.userID
+     LEFT JOIN asset_mngmnt_departments d ON atf.department_id = d.departmentID
+     LEFT JOIN asset_mngmnt_locations l ON atf.location_id = l.locationID
+     WHERE aa.asset_id = ?
+     ORDER BY atf.created_at DESC`,
+    [assetId]
+  )) as any[];
+
+  const seen = new Set<string>();
+  const forms: any[] = [];
+  for (const row of rows as any[]) {
+    const id = String(row.formID ?? '').trim();
+    if (!id || seen.has(id)) continue;
+    seen.add(id);
+
+    let status = 'Pending';
+    if (row.declined_at) status = 'Declined';
+    else if (row.executed_at) status = 'Completed';
+    else if (row.it_manager_signed_at) status = 'Approved';
+    else if (row.dept_head_signed_at) status = 'Approved by dept head';
+    else if (row.process_signed_at) status = 'Processed';
+    else if (row.signed_at) status = 'Signed';
+
+    forms.push({
+      id,
+      formNumber: row.form_number ?? '',
+      status,
+      created_at: row.created_at,
+      signed_at: row.signed_at ?? null,
+      user: {
+        id: row.user_id ?? '',
+        first_name: row.first_name ?? '',
+        last_name: row.last_name ?? '',
+        email: row.email ?? '',
+      },
+      new_user:
+        row.new_assigned_user_id && (row.new_first_name || row.new_last_name)
+          ? {
+              first_name: row.new_first_name ?? '',
+              last_name: row.new_last_name ?? '',
+            }
+          : undefined,
+      department_name: row.department_name ?? null,
+      location_name: row.location_name ?? null,
+      processor_wet_pdf_url: row.processor_wet_transfer_pdf_url ?? null,
+    });
+  }
+  return forms;
 }
 
 export interface AccountabilityFormLookupRow extends RowDataPacket {

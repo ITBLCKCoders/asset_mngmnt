@@ -25,18 +25,21 @@ export interface AssetBorrowRequestRow extends RowDataPacket {
   requester_company_logo_url?: string | null;
   dept_head_signed_by?: string | null;
   dept_head_name?: string | null;
+  dept_head_position?: string | null;
   sub_approver_1_signed_at?: Date | string | null;
   sub_approver_1_digital_signature?: string | null;
   sub_approver_1_signed_by?: string | null;
   sub_approver_1_name?: string | null;
+  sub_approver_1_position?: string | null;
   approved_at?: Date | string | null;
   approved_by?: string | null;
+  approved_by_name?: string | null;
+  approved_by_position?: string | null;
   pre_usage_condition?: string | null;
   asset_code?: string | null;
   asset_id?: string | null;
   asset_name?: string | null;
   asset_serial?: string | null;
-  approved_by_name?: string | null;
   declined_at?: Date | string | null;
   requester_department_id?: string | null;
   processor_remarks?: string | null;
@@ -55,6 +58,7 @@ export interface AssetBorrowRequestRow extends RowDataPacket {
   processor_signed_at?: Date | string | null;
   received_by?: string | null;
   received_by_name?: string | null;
+  received_by_position?: string | null;
   received_by_signature?: string | null;
   received_at?: Date | string | null;
 }
@@ -141,12 +145,15 @@ export async function findBorrowRequestsForList(
       a.name AS asset_name,
       a.serial AS asset_serial,
       CONCAT(ap.first_name, ' ', ap.last_name) AS approved_by_name,
+      ap.position AS approved_by_position,
       IFNULL(CONCAT(dh.first_name, ' ', dh.last_name), NULL) AS dept_head_name,
+      dh.position AS dept_head_position,
       br.requested_by_signature,
       br.processor_signature,
       DATE_FORMAT(br.processor_signed_at, '%Y-%m-%d %H:%i:%s') AS processor_signed_at,
       br.received_by,
       CONCAT(rb.first_name, ' ', rb.last_name) AS received_by_name,
+      rb.position AS received_by_position,
       br.received_by_signature,
       DATE_FORMAT(br.received_at, '%Y-%m-%d %H:%i:%s') AS received_at
     FROM asset_borrow_requests br
@@ -222,12 +229,15 @@ export async function findBorrowRequestsForUser(
       a.name AS asset_name,
       a.serial AS asset_serial,
       CONCAT(ap.first_name, ' ', ap.last_name) AS approved_by_name,
+      ap.position AS approved_by_position,
       IFNULL(CONCAT(dh.first_name, ' ', dh.last_name), NULL) AS dept_head_name,
+      dh.position AS dept_head_position,
       br.requested_by_signature,
       br.processor_signature,
       DATE_FORMAT(br.processor_signed_at, '%Y-%m-%d %H:%i:%s') AS processor_signed_at,
       br.received_by,
       CONCAT(rb.first_name, ' ', rb.last_name) AS received_by_name,
+      rb.position AS received_by_position,
       br.received_by_signature,
       DATE_FORMAT(br.received_at, '%Y-%m-%d %H:%i:%s') AS received_at
     FROM asset_borrow_requests br
@@ -453,11 +463,14 @@ export async function getBorrowRequestById(
       a.name AS asset_name,
       a.serial AS asset_serial,
       CONCAT(ap.first_name, ' ', ap.last_name) AS approved_by_name,
+      ap.position AS approved_by_position,
       IFNULL(CONCAT(dh.first_name, ' ', dh.last_name), NULL) AS dept_head_name,
+      dh.position AS dept_head_position,
       DATE_FORMAT(br.sub_approver_1_signed_at, '%Y-%m-%d %H:%i:%s') AS sub_approver_1_signed_at,
       br.sub_approver_1_digital_signature,
       br.sub_approver_1_signed_by,
       IFNULL(CONCAT(sa1.first_name, ' ', sa1.last_name), NULL) AS sub_approver_1_name,
+      sa1.position AS sub_approver_1_position,
       br.requested_by_signature,
       br.processor_signature,
       DATE_FORMAT(br.processor_signed_at, '%Y-%m-%d %H:%i:%s') AS processor_signed_at
@@ -670,12 +683,15 @@ export async function findApprovedBorrowRequestsForReceive(
       a.name AS asset_name,
       a.serial AS asset_serial,
       CONCAT(ap.first_name, ' ', ap.last_name) AS approved_by_name,
+      ap.position AS approved_by_position,
       IFNULL(CONCAT(dh.first_name, ' ', dh.last_name), NULL) AS dept_head_name,
+      dh.position AS dept_head_position,
       br.requested_by_signature,
       br.processor_signature,
       DATE_FORMAT(br.processor_signed_at, '%Y-%m-%d %H:%i:%s') AS processor_signed_at,
       br.received_by,
       CONCAT(rb.first_name, ' ', rb.last_name) AS received_by_name,
+      rb.position AS received_by_position,
       br.received_by_signature,
       DATE_FORMAT(br.received_at, '%Y-%m-%d %H:%i:%s') AS received_at
     FROM asset_borrow_requests br
@@ -750,12 +766,15 @@ export async function findBorrowRequestsReceivedByMe(
       a.name AS asset_name,
       a.serial AS asset_serial,
       CONCAT(ap.first_name, ' ', ap.last_name) AS approved_by_name,
+      ap.position AS approved_by_position,
       IFNULL(CONCAT(dh.first_name, ' ', dh.last_name), NULL) AS dept_head_name,
+      dh.position AS dept_head_position,
       br.requested_by_signature,
       br.processor_signature,
       DATE_FORMAT(br.processor_signed_at, '%Y-%m-%d %H:%i:%s') AS processor_signed_at,
       br.received_by,
       CONCAT(rb.first_name, ' ', rb.last_name) AS received_by_name,
+      rb.position AS received_by_position,
       br.received_by_signature,
       DATE_FORMAT(br.received_at, '%Y-%m-%d %H:%i:%s') AS received_at
     FROM asset_borrow_requests br
@@ -992,7 +1011,9 @@ export async function getBorrowFormsByAssetId(
       a.name AS asset_name,
       a.serial AS asset_serial,
       CONCAT(ap.first_name, ' ', ap.last_name) AS approved_by_name,
+      ap.position AS approved_by_position,
       IFNULL(CONCAT(dh.first_name, ' ', dh.last_name), NULL) AS dept_head_name,
+      dh.position AS dept_head_position,
       br.requested_by_signature,
       br.processor_signature,
       DATE_FORMAT(br.processor_signed_at, '%Y-%m-%d %H:%i:%s') AS processor_signed_at

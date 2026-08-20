@@ -176,6 +176,16 @@ describe('assetAssignments.controller', () => {
       expect(res._json.assignments).toHaveLength(1);
     });
 
+    it('applies the IT/Admin scope override for any user', async () => {
+      getAssetScope.mockResolvedValue(defaultScope);
+      getDepartmentIdsForScope.mockResolvedValue(['d1', 'd2']);
+      repo.listAssignmentsRaw.mockResolvedValue([{ assignmentID: '1', asset_id: '10', asset_code: 'A001', asset_name: 'Asset 1', status: 'Active' }]);
+      req.query = { scope: 'admin' };
+      await assetAssignmentsController.getMyAssignmentsHandler(req, res);
+      expect(getDepartmentIdsForScope).toHaveBeenCalledWith(pool, 'admin', 10);
+      expect(res._json.assignments).toHaveLength(1);
+    });
+
     it('returns empty when no company scope', async () => {
       getAssetScope.mockResolvedValue({ companyId: null, departmentIds: null, isSuperAdmin: false });
       await assetAssignmentsController.getMyAssignmentsHandler(req, res);

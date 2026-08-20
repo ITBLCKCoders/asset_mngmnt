@@ -47,6 +47,8 @@ export interface AssetBorrowingData {
   deptHeadSignedBy?: string | null;
   /** Dept Head digital signature image (base64 data URL) */
   deptHeadSignature?: string | null;
+  /** Dept Head position for PDF */
+  deptHeadPosition?: string | null;
   /** Sub Approver 1 (stand-in for dept head) approval date/time */
   subApprover1SignedAt?: string | null;
   /** Sub Approver 1 display name for PDF */

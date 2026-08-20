@@ -1957,11 +1957,13 @@ async function buildTransferFormBatchesFromAssignments(
     ...new Set(forms.map((f: any) => f.dept_head_signed_by).filter(Boolean)),
   ] as string[];
   const deptHeadNames = new Map<string, string>();
+  const deptHeadPositions = new Map<string, string>();
   if (deptHeadSignedByIds.length > 0) {
     for (const userId of deptHeadSignedByIds) {
       const user = await getUserNamesById(userId);
       if (user) {
         deptHeadNames.set(userId, `${user.first_name} ${user.last_name}`);
+        if (user.position) deptHeadPositions.set(userId, String(user.position));
       }
     }
   }
@@ -2197,6 +2199,9 @@ const processed_by =
       dept_head_signed_by: form.dept_head_signed_by ?? null,
       dept_head_user_name: form.dept_head_signed_by
         ? (deptHeadNames.get(form.dept_head_signed_by) ?? null)
+        : null,
+      dept_head_position: form.dept_head_signed_by
+        ? (deptHeadPositions.get(form.dept_head_signed_by) ?? null)
         : null,
       sub_approver_1_signed_at: form.sub_approver_1_signed_at ?? null,
       sub_approver_1_digital_signature:
@@ -3910,10 +3915,11 @@ export async function getAssetTransferFormsByUserHandler(
       ...new Set(forms.map((f: any) => f.dept_head_signed_by).filter(Boolean)),
     ] as string[];
     const deptHeadNames = new Map<string, string>();
+    const deptHeadPositions = new Map<string, string>();
     if (deptHeadSignedByIds.length > 0) {
       const placeholders = deptHeadSignedByIds.map(() => '?').join(',');
       const [userRows] = (await pool.execute(
-        `SELECT userID, first_name, last_name FROM users WHERE userID IN (${placeholders})`,
+        `SELECT userID, first_name, last_name, position FROM users WHERE userID IN (${placeholders})`,
         deptHeadSignedByIds
       )) as any[];
       for (const u of userRows ?? []) {
@@ -3921,6 +3927,7 @@ export async function getAssetTransferFormsByUserHandler(
           u.userID,
           `${u.first_name || ''} ${u.last_name || ''}`.trim() || 'Unknown'
         );
+        if (u.position) deptHeadPositions.set(u.userID, String(u.position));
       }
     }
 
@@ -3928,10 +3935,11 @@ export async function getAssetTransferFormsByUserHandler(
       ...new Set(forms.map((f: any) => f.it_manager_signed_by).filter(Boolean)),
     ] as string[];
     const itManagerNames = new Map<string, string>();
+    const itManagerPositions = new Map<string, string>();
     if (itManagerSignedByIds.length > 0) {
       const placeholders = itManagerSignedByIds.map(() => '?').join(',');
       const [userRows] = (await pool.execute(
-        `SELECT userID, first_name, last_name FROM users WHERE userID IN (${placeholders})`,
+        `SELECT userID, first_name, last_name, position FROM users WHERE userID IN (${placeholders})`,
         itManagerSignedByIds
       )) as any[];
       for (const u of userRows ?? []) {
@@ -3939,6 +3947,7 @@ export async function getAssetTransferFormsByUserHandler(
           u.userID,
           `${u.first_name || ''} ${u.last_name || ''}`.trim() || 'Unknown'
         );
+        if (u.position) itManagerPositions.set(u.userID, String(u.position));
       }
     }
 
@@ -4197,12 +4206,18 @@ batches.push({
         dept_head_user_name: (form as any).dept_head_signed_by
           ? (deptHeadNames.get((form as any).dept_head_signed_by) ?? null)
           : null,
+        dept_head_position: (form as any).dept_head_signed_by
+          ? (deptHeadPositions.get((form as any).dept_head_signed_by) ?? null)
+          : null,
         it_manager_signed_at: (form as any).it_manager_signed_at ?? null,
         it_manager_digital_signature:
           (form as any).it_manager_digital_signature ?? null,
         it_manager_signed_by: (form as any).it_manager_signed_by ?? null,
         it_manager_user_name: (form as any).it_manager_signed_by
           ? (itManagerNames.get((form as any).it_manager_signed_by) ?? null)
+          : null,
+        it_manager_position: (form as any).it_manager_signed_by
+          ? (itManagerPositions.get((form as any).it_manager_signed_by) ?? null)
           : null,
         declined_at: (form as any).declined_at ?? null,
         executed_at: (form as any).executed_at ?? null,
@@ -4284,10 +4299,11 @@ async function buildTransferFormBatches(forms: any[]): Promise<any[]> {
     ...new Set(forms.map((f: any) => f.dept_head_signed_by).filter(Boolean)),
   ] as string[];
   const deptHeadNames = new Map<string, string>();
+  const deptHeadPositions = new Map<string, string>();
   if (deptHeadSignedByIds.length > 0) {
     const placeholders = deptHeadSignedByIds.map(() => '?').join(',');
     const [userRows] = (await pool.execute(
-      `SELECT userID, first_name, last_name FROM users WHERE userID IN (${placeholders})`,
+      `SELECT userID, first_name, last_name, position FROM users WHERE userID IN (${placeholders})`,
       deptHeadSignedByIds
     )) as any[];
     for (const u of userRows) {
@@ -4295,6 +4311,7 @@ async function buildTransferFormBatches(forms: any[]): Promise<any[]> {
         u.userID,
         `${u.first_name || ''} ${u.last_name || ''}`.trim() || 'Unknown'
       );
+      if (u.position) deptHeadPositions.set(u.userID, String(u.position));
     }
   }
 
@@ -4302,10 +4319,11 @@ async function buildTransferFormBatches(forms: any[]): Promise<any[]> {
     ...new Set(forms.map((f: any) => f.it_manager_signed_by).filter(Boolean)),
   ] as string[];
   const itManagerNames = new Map<string, string>();
+  const itManagerPositions = new Map<string, string>();
   if (itManagerSignedByIds.length > 0) {
     const placeholders = itManagerSignedByIds.map(() => '?').join(',');
     const [userRows] = (await pool.execute(
-      `SELECT userID, first_name, last_name FROM users WHERE userID IN (${placeholders})`,
+      `SELECT userID, first_name, last_name, position FROM users WHERE userID IN (${placeholders})`,
       itManagerSignedByIds
     )) as any[];
     for (const u of userRows) {
@@ -4313,6 +4331,7 @@ async function buildTransferFormBatches(forms: any[]): Promise<any[]> {
         u.userID,
         `${u.first_name || ''} ${u.last_name || ''}`.trim() || 'Unknown'
       );
+      if (u.position) itManagerPositions.set(u.userID, String(u.position));
     }
   }
 
@@ -4662,11 +4681,17 @@ async function buildTransferFormBatches(forms: any[]): Promise<any[]> {
       dept_head_user_name: form.dept_head_signed_by
         ? (deptHeadNames.get(form.dept_head_signed_by) ?? null)
         : null,
+      dept_head_position: form.dept_head_signed_by
+        ? (deptHeadPositions.get(form.dept_head_signed_by) ?? null)
+        : null,
       it_manager_signed_at: form.it_manager_signed_at ?? null,
       it_manager_digital_signature: form.it_manager_digital_signature ?? null,
       it_manager_signed_by: form.it_manager_signed_by ?? null,
       it_manager_user_name: form.it_manager_signed_by
         ? (itManagerNames.get(form.it_manager_signed_by) ?? null)
+        : null,
+      it_manager_position: form.it_manager_signed_by
+        ? (itManagerPositions.get(form.it_manager_signed_by) ?? null)
         : null,
       sub_approver_1_signed_at: form.sub_approver_1_signed_at ?? null,
       sub_approver_1_digital_signature:
@@ -4811,10 +4836,10 @@ export async function getTransferPendingApprovalsHandler(
 ) {
   try {
     const userId = req.user!.userID;
-    const { companyId, isSuperAdmin } = await getAssetScope(pool, userId);
+    const { companyId, isSuperAdmin, isAdmin } = await getAssetScope(pool, userId);
     if (!companyId) return res.json({ assetTransferForms: [] });
 
-    if (isSuperAdmin) {
+    if (isSuperAdmin || isAdmin) {
       let formRows: any[];
       try {
         const [rows] = (await pool.execute(
@@ -5031,12 +5056,26 @@ export async function approveTransferFormHandler(
     const form = await AssetTransferFormModel.findById(formId);
     if (!form)
       return res.status(404).json({ error: 'Transfer form not found' });
-    if (!form.signed_at) {
-      return res.status(400).json({
-        error: 'Transfer form must be signed by the transferrer first',
-      });
-    }
     const formAny = form as any;
+    if (!form.signed_at) {
+      // Processor-initiated (owner-absent) transfers skip the transferrer's
+      // signature, so allow approval when the linked return form marks the
+      // owner as absent.
+      const linkedReturnFormId = formAny.return_form_id ?? null;
+      let ownerAbsent = false;
+      if (linkedReturnFormId) {
+        const [rfRows] = (await pool.execute(
+          'SELECT owner_absent FROM asset_return_forms WHERE formID = ? AND deleted_at IS NULL LIMIT 1',
+          [linkedReturnFormId]
+        )) as any[];
+        ownerAbsent = Number(rfRows?.[0]?.owner_absent) === 1;
+      }
+      if (!ownerAbsent) {
+        return res.status(400).json({
+          error: 'Transfer form must be signed by the transferrer first',
+        });
+      }
+    }
     if (formAny.dept_head_signed_at || formAny.sub_approver_1_signed_at) {
       return res.status(400).json({
         error: 'This transfer form is already approved by the department head or sub approver',
@@ -5044,7 +5083,7 @@ export async function approveTransferFormHandler(
     }
     
     // Get the company ID from the form
-    const { companyId } = await getAssetScope(pool, userId);
+    const { companyId, isSuperAdmin, isAdmin } = await getAssetScope(pool, userId);
     if (!companyId) {
       return res.status(400).json({ error: 'Company context required' });
     }
@@ -5074,7 +5113,7 @@ export async function approveTransferFormHandler(
       ? await isDesignatedSubApprover(userId, form.user_id)
       : false;
     
-    if (!(hasCreate && hasEdit) && !isApprover && !isSubApprover) {
+    if (!(hasCreate && hasEdit) && !isApprover && !isSubApprover && !isSuperAdmin && !isAdmin) {
       return res
         .status(403)
         .json({ error: 'You do not have permission to approve this form' });
@@ -5378,7 +5417,7 @@ export async function declineTransferFormHandler(
     }
     
     // Get the company ID from the form
-    const { companyId } = await getAssetScope(pool, userId);
+    const { companyId, isSuperAdmin, isAdmin } = await getAssetScope(pool, userId);
     if (!companyId) {
       return res.status(400).json({ error: 'Company context required' });
     }
@@ -5408,7 +5447,7 @@ export async function declineTransferFormHandler(
       ? await isDesignatedSubApprover(userId, form.user_id)
       : false;
     
-    if (!(hasCreate && hasEdit) && !isApprover && !isSubApprover) {
+    if (!(hasCreate && hasEdit) && !isApprover && !isSubApprover && !isSuperAdmin && !isAdmin) {
       return res
         .status(403)
         .json({ error: 'You do not have permission to decline this form' });
@@ -5463,7 +5502,10 @@ export async function receiveTransferFormHandler(
     if (!formId) return res.status(400).json({ error: 'Form ID is required' });
     const isManagerApprover2 = await isUserManagerApprover2(userId);
     const isSubApprover2 = await isUserSubApprover2(userId);
-    if (!isManagerApprover2 && !isSubApprover2) {
+    const { isSuperAdmin: scopeIsSuperAdmin, isAdmin: scopeIsAdmin } =
+      await getAssetScope(pool, userId);
+    const isAdminRole = scopeIsSuperAdmin || scopeIsAdmin;
+    if (!isAdminRole && !isManagerApprover2 && !isSubApprover2) {
       return res
         .status(403)
         .json({ error: 'You do not have permission to receive this form' });

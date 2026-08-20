@@ -970,7 +970,9 @@ function UserPermissions() {
                                           : 'This user does not have MA1 custodian access — showing MA1-eligible approvers.'}
                                       </p>
                                     }
-                                    users={eligible.approver}
+                                    users={eligible.approver.filter(
+                                      u => u.userID !== selectedUser?.userID
+                                    )}
                                     value={approverChanges.approver || designated.approver || ''}
                                     onChange={v =>
                                       setApproverChanges(prev => ({
@@ -987,7 +989,9 @@ function UserPermissions() {
                                         Stand-in for the Approver when the primary approver is absent.
                                       </p>
                                     }
-                                    users={eligible.sub_approver}
+                                    users={eligible.sub_approver.filter(
+                                      u => u.userID !== selectedUser?.userID
+                                    )}
                                     value={approverChanges.sub_approver || designated.sub_approver || ''}
                                     onChange={v =>
                                       setApproverChanges(prev => ({

@@ -1,4 +1,4 @@
-import { render, screen, waitFor } from '@testing-library/react';
+import { render, screen, waitFor, fireEvent } from '@testing-library/react';
 import { vi, describe, it, expect, beforeEach } from 'vitest';
 import { BrowserRouter } from 'react-router-dom';
 import { api } from '@/lib/api';
@@ -18,6 +18,20 @@ vi.mock('@/hooks/useCurrentUser', () => ({
   useCurrentUser: () => ({ user: mockUser, loading: false }),
 }));
 
+vi.mock('@/hooks/useUserPermissions', () => ({
+  useUserPermissions: () => ({
+    permissions: {},
+    roleCustodian: null,
+    loading: false,
+    hasPermission: vi.fn(() => true),
+    refetch: vi.fn(),
+  }),
+}));
+
+vi.mock('@/components/auth/SmsOtpDialog', () => ({
+  default: vi.fn(() => null),
+}));
+
 vi.mock('@/lib/api', () => ({
   api: { get: vi.fn(), post: vi.fn(), patch: vi.fn(), put: vi.fn() },
 }));
@@ -25,6 +39,14 @@ vi.mock('@/lib/api', () => ({
 vi.mock('sonner', () => ({
   toast: { error: vi.fn(), success: vi.fn() },
 }));
+
+function renderPage() {
+  return render(
+    <BrowserRouter>
+      <ReturnRequestsPage />
+    </BrowserRouter>
+  );
+}
 
 describe('ReturnRequestsPage', () => {
   beforeEach(() => {
@@ -34,12 +56,12 @@ describe('ReturnRequestsPage', () => {
   });
 
   it('renders the page header title', async () => {
-    render(<BrowserRouter><ReturnRequestsPage /></BrowserRouter>);
+    renderPage();
     expect(screen.getByText('Return Requests')).toBeInTheDocument();
   });
 
   it('shows content after data loads', async () => {
-    render(<BrowserRouter><ReturnRequestsPage /></BrowserRouter>);
+    renderPage();
     await waitFor(() => {
       expect(api.get).toHaveBeenCalled();
     });
@@ -47,9 +69,57 @@ describe('ReturnRequestsPage', () => {
 
   it('handles API error gracefully', async () => {
     vi.mocked(api.get).mockRejectedValue(new Error('Network error'));
-    render(<BrowserRouter><ReturnRequestsPage /></BrowserRouter>);
+    renderPage();
     await waitFor(() => {
       expect(api.get).toHaveBeenCalled();
+    });
+  });
+
+  it('shows a View Form button on the processed tab', async () => {
+    const processedForm = {
+      formID: 'rf-1',
+      form_number: 'RF-0001',
+      created_at: '2026-01-01T00:00:00Z',
+      user_id: 'u1',
+      processed_by: 'Processor Name',
+      return_type: 'Returned',
+      returns: [
+        {
+          assignment_id: 'a1',
+          return_condition: 'Good',
+          return_notes: '',
+          assignment: {
+            assignmentID: 'a1',
+            asset: { id: 'ast-1', code: 'AST-001', name: 'Laptop' },
+            user: {
+              first_name: 'Test',
+              last_name: 'User',
+              position: 'Staff',
+            },
+          },
+        },
+      ],
+    };
+    vi.mocked(api.get).mockImplementation(
+      (async (url: string) => {
+        if (String(url).includes('processed-by-me')) {
+          return { assetReturnForms: [processedForm] };
+        }
+        return [];
+      }) as any
+    );
+
+    renderPage();
+    await waitFor(() => {
+      expect(
+        screen.getByRole('tab', { name: 'Processed' })
+      ).toBeInTheDocument();
+    });
+    const processedTab = screen.getByRole('tab', { name: 'Processed' });
+    fireEvent.mouseDown(processedTab);
+    fireEvent.click(processedTab);
+    await waitFor(() => {
+      expect(screen.getByText('View Form')).toBeInTheDocument();
     });
   });
 });
