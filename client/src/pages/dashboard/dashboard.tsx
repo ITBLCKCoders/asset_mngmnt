@@ -683,17 +683,12 @@ export default function Dashboard() {
     }
   }, [user, userLoading, securityCheckDone]);
 
-  const handleDigitalInitialsSkip = () => {
-    setShowDigitalInitialsDialog(false);
-    // Check if MFA is also missing
-    if (user && !user.mfaEnabled) {
-      setShowMFADialog(true);
-    }
-  };
-
   const handleDigitalInitialsGoToProfile = () => {
     setShowDigitalInitialsDialog(false);
-    navigate('/profile?tab=basic');
+    try {
+      localStorage.setItem('initials-tour-active', '1');
+    } catch {}
+    navigate('/profile?tab=basic&tour=initials');
   };
 
   const handleMFASkip = () => {
@@ -1132,7 +1127,6 @@ export default function Dashboard() {
         isOpen={showDigitalInitialsDialog}
         onOpenChange={setShowDigitalInitialsDialog}
         onGoToProfile={handleDigitalInitialsGoToProfile}
-        onSkip={handleDigitalInitialsSkip}
       />
 
       <MFARequiredDialog

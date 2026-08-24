@@ -9,24 +9,32 @@ import {
 } from '@/components/common/appDialogChrome';
 import { Button } from '@/components/ui/button';
 import { Alert, AlertDescription } from '@/components/ui/alert';
-import { PenTool } from 'lucide-react';
+import { BookOpen, PenTool } from 'lucide-react';
 
 interface DigitalInitialsRequiredDialogProps {
   isOpen: boolean;
   onOpenChange: (open: boolean) => void;
   onGoToProfile: () => void;
-  onSkip: () => void;
+  onSkip?: () => void;
 }
 
 export default function DigitalInitialsRequiredDialog({
   isOpen,
   onOpenChange,
   onGoToProfile,
-  onSkip,
 }: DigitalInitialsRequiredDialogProps) {
+  const handleOpenChange = (open: boolean) => {
+    // Block outside click / Esc from closing — only Go to Profile may close
+    if (!open && isOpen) return;
+    onOpenChange(open);
+  };
   return (
-    <Dialog open={isOpen} onOpenChange={onOpenChange}>
-      <AppDialogFrame className="sm:max-w-md">
+    <Dialog open={isOpen} onOpenChange={handleOpenChange} modal>
+      <AppDialogFrame
+        className="sm:max-w-md"
+        onInteractOutside={(e) => e.preventDefault()}
+        onEscapeKeyDown={(e) => e.preventDefault()}
+      >
         <AppDialogGradientHeader
           title={
             <span className="flex items-center gap-3">
@@ -55,14 +63,20 @@ export default function DigitalInitialsRequiredDialog({
               <li>Legally binding within this system</li>
             </ul>
           </div>
+          <a
+            href="/user-manual?section=digital-initials"
+            target="_blank"
+            rel="noopener noreferrer"
+            className="inline-flex items-center gap-1.5 text-sm font-medium text-red-600 hover:text-red-700 underline underline-offset-2"
+          >
+            <BookOpen className="h-4 w-4" />
+            Visit the user manual to follow the guide
+          </a>
         </AppDialogBody>
-        <AppDialogChromeFooter>
-          <Button variant="outline" onClick={onSkip}>
-            Skip for Now
-          </Button>
-          <Button 
-            onClick={onGoToProfile} 
-            className="bg-red-600 hover:bg-red-700 text-white"
+        <AppDialogChromeFooter className="justify-end">
+          <Button
+            onClick={onGoToProfile}
+            className="bg-red-600 hover:bg-red-700 text-white w-full sm:w-auto"
           >
             Go to Profile
           </Button>

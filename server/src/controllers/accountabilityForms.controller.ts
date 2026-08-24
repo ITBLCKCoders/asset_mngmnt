@@ -7,6 +7,7 @@ import * as repo from '../repositories/accountabilityForm.repository.js';
 import { getReturnFormsByAssetId as getAssetReturnFormsByAssetId } from '../repositories/assetReturn.repository.js';
 import { getTransferFormsByAssetId as getAssetTransferFormsByAssetId } from '../repositories/assetTransferForm.repository.js';
 import * as checklistRepo from '../repositories/assetChecklist.repository.js';
+import { resolveAssetIdByCodeOrId } from '../repositories/asset.repository.js';
 import { declineAccountabilityFormBodySchema } from '../dtos/accountabilityForms/DeclineAccountabilityFormDto.js';
 import { applyReturnAssignmentSideEffectsOnConnection } from '../utils/returnAssignmentSideEffects.js';
 import { signedRawUrlFromStoredSecureUrl } from '../utils/cloudinary.js';
@@ -2150,7 +2151,8 @@ export async function getAccountabilityFormMovementHandler(
     );
     const activeForms = await repo.getActiveAccountabilityFormsForAssetIds(
       uniqueAssetIds,
-      formId
+      formId,
+      (row as any).created_at ?? null
     );
 
     // Map active forms to the asset ids they cover (via their assets_data)
@@ -2273,17 +2275,21 @@ export async function getAssetMovementHandler(
       return res.status(400).json({ error: 'Asset ID is required' });
     }
 
-    const rows = await repo.findFormsByAssetId(assetId);
+    // Client sends `asset_code`; DB joins use `assetID`. Resolve first.
+    const resolvedAssetId =
+      (await resolveAssetIdByCodeOrId(assetId)) ?? assetId;
+
+    const rows = await repo.findFormsByAssetId(resolvedAssetId);
     const result: any[] = [];
-    let assetInfo: any = { id: assetId, code: '', name: '' };
+    let assetInfo: any = { id: resolvedAssetId, code: '', name: '' };
 
     // Resolve the asset's own return/transfer sheets directly. Used when the
     // asset has no accessible accountability form but does have movement
     // history (e.g. a fully returned asset with no current/past form).
     const addDirectMovementResolver = async (): Promise<void> => {
       if (result.length > 0) return;
-      const directReturnForms = await getAssetReturnFormsByAssetId(assetId);
-      const directTransferForms = await getAssetTransferFormsByAssetId(assetId);
+      const directReturnForms = await getAssetReturnFormsByAssetId(resolvedAssetId);
+      const directTransferForms = await getAssetTransferFormsByAssetId(resolvedAssetId);
       if (directReturnForms.length > 0 || directTransferForms.length > 0) {
         result.push({
           form: {
@@ -2322,75 +2328,97 @@ export async function getAssetMovementHandler(
       await addDirectMovementResolver();
       return res.json({ asset: assetInfo, forms: result });
     }
-    for (const row of rows) {
-      // Only surface movement from accountability rows the current user may
-      // view, matching the same visibility the asset's Forms tab uses. A plain
-      // owner/creator/HR-full check made movement appear empty for users who
-      // could see the current/past forms but were not the owner/creator.
+    // Visibility filter + sort oldest→latest for correct chronological attribution.
+    // Previously rows were DESC and per-form assignment matching caused all
+    // returns/transfers to collapse under the oldest AF (0069) when later AFs'
+    // assignmentIds failed to resolve.
+    const visibleRows: typeof rows = [];
+    for (const r of rows) {
       if (
-        !(await userCanViewAccountabilityFormRow(
+        await userCanViewAccountabilityFormRow(
           {
-            user_id: String(row.user_id),
-            created_by: row.created_by != null ? String(row.created_by) : null,
+            user_id: String(r.user_id),
+            created_by: r.created_by != null ? String(r.created_by) : null,
           },
           currentUserId
-        ))
+        )
       ) {
-        continue;
+        visibleRows.push(r);
       }
-      const formId = row.formID;
-      const parsed = parseAccountabilityAssetsData(row.assets_data);
-      const assignmentIds = parsed.assignmentIds;
-
+    }
+    if (visibleRows.length === 0) {
+      await addDirectMovementResolver();
+      return res.json({ asset: assetInfo, forms: result });
+    }
+    visibleRows.sort((a: any, b: any) => {
+      const da = a.created_at ? new Date(a.created_at).getTime() : 0;
+      const db = b.created_at ? new Date(b.created_at).getTime() : 0;
+      if (da !== db) return da - db;
+      return String(a.form_number).localeCompare(String(b.form_number));
+    });
+    // Derive assetInfo from the latest visible AF for header
+    const lastRow = visibleRows[visibleRows.length - 1] as any;
+    assetInfo = {
+      id: resolvedAssetId,
+      code: lastRow.asset_code ?? '',
+      name: lastRow.asset_name ?? '',
+      category: lastRow.category_name || lastRow.category_id || '',
+      type: lastRow.type_name || lastRow.type_id || '',
+      serialNo: lastRow.serial ?? '',
+      modelNo: lastRow.assetModelNo ?? '',
+    };
+    const inlineLast = parseAccountabilityAssetsData(lastRow.assets_data).assets.find(
+      (a: any) => String(a?.id ?? '').trim() === String(resolvedAssetId).trim()
+    );
+    if (inlineLast) {
       assetInfo = {
-        id: assetId,
-        code: row.asset_code ?? '',
-        name: row.asset_name ?? '',
-        category: row.category_name || row.category_id || '',
-        type: row.type_name || row.type_id || '',
-        serialNo: row.serial ?? '',
-        modelNo: row.assetModelNo ?? '',
+        id: String(inlineLast.id ?? resolvedAssetId).trim(),
+        code: inlineLast.code ?? assetInfo.code,
+        name: inlineLast.name ?? assetInfo.name,
+        category: inlineLast.category ?? assetInfo.category,
+        type: inlineLast.type ?? assetInfo.type,
+        serialNo: inlineLast.serialNo ?? assetInfo.serialNo,
+        modelNo: inlineLast.modelNo ?? assetInfo.modelNo,
       };
-      const inline = parsed.assets.find(
-        (a: any) => String(a?.id ?? '').trim() === String(assetId).trim()
-      );
-      if (inline) {
-        assetInfo = {
-          id: String(inline.id ?? assetId).trim(),
-          code: inline.code ?? assetInfo.code,
-          name: inline.name ?? assetInfo.name,
-          category: inline.category ?? assetInfo.category,
-          type: inline.type ?? assetInfo.type,
-          serialNo: inline.serialNo ?? assetInfo.serialNo,
-          modelNo: inline.modelNo ?? assetInfo.modelNo,
-        };
-      }
+    }
 
-      const assignmentMapping = await repo.getAssignmentAssetMapping(
-        assignmentIds
-      );
-      const assignmentToAssetId = new Map<string, string>();
-      for (const m of assignmentMapping) {
-        assignmentToAssetId.set(m.assignment_id, m.asset_id);
-      }
-      const matchingAssignments = assignmentIds.filter(
-        id => assignmentToAssetId.get(id) === assetId
-      );
+    // Fetch ALL returns/transfers for this asset once and distribute by date
+    // window [AF.created_at, nextAF.created_at). This fixes the bug where
+    // assignmentIds for newer AFs (0071/0072/0074) failed to resolve and all
+    // accessory forms collapsed under the oldest AF (0069).
+    const allAssetReturnForms = await getAssetReturnFormsByAssetId(resolvedAssetId);
+    const allAssetTransferForms = await getAssetTransferFormsByAssetId(resolvedAssetId);
 
-      const returnForms = await repo.getReturnFormsByAssignmentIds(
-        matchingAssignments
-      );
-      const returnFormIds = [
-        ...new Set(returnForms.map(r => r.formID).filter(Boolean)),
-      ];
-      const transferForms = await repo.getTransferFormsForMovement(
-        matchingAssignments,
-        returnFormIds
-      );
-      const activeForms = await repo.getActiveAccountabilityFormsForAssetIds(
-        [assetId],
-        formId
-      );
+    for (let idx = 0; idx < visibleRows.length; idx++) {
+      const row: any = visibleRows[idx];
+      const nextRow: any = visibleRows[idx + 1] ?? null;
+      const formId = row.formID;
+      const windowStart = row.created_at ? new Date(row.created_at).getTime() : 0;
+      const windowEnd = nextRow?.created_at ? new Date(nextRow.created_at).getTime() : Infinity;
+
+      const returnFormsForWindow = allAssetReturnForms.filter((r: any) => {
+        const t = r.created_at ? new Date(r.created_at).getTime() : 0;
+        return t >= windowStart && t < windowEnd;
+      });
+      const transferFormsForWindow = allAssetTransferForms.filter((t: any) => {
+        const c = t.created_at ? new Date(t.created_at).getTime() : 0;
+        return c >= windowStart && c < windowEnd;
+      });
+
+      const hasAccessory = returnFormsForWindow.length > 0 || transferFormsForWindow.length > 0;
+      const newAccountabilityForWindow =
+        hasAccessory && nextRow
+          ? [
+              {
+                id: nextRow.formID,
+                formNumber: nextRow.form_number,
+                userId: nextRow.user_id,
+                userName: `${nextRow.first_name ?? ''} ${nextRow.last_name ?? ''}`.trim(),
+                status: nextRow.status,
+                created_at: nextRow.created_at,
+              },
+            ]
+          : [];
 
       result.push({
         form: {
@@ -2401,31 +2429,28 @@ export async function getAssetMovementHandler(
           userName: `${row.first_name ?? ''} ${row.last_name ?? ''}`.trim(),
           created_at: row.created_at,
         },
-        returnForms: dedupeByFormId(returnForms).map(r => ({
-          id: r.formID,
-          formNumber: r.form_number,
-          userId: r.user_id,
-          userName: r.user_name || '',
+        returnForms: returnFormsForWindow.map((r: any) => ({
+          id: r.id,
+          formNumber: r.formNumber,
+          userId: r.user?.id ?? '',
+          userName: `${r.user?.first_name ?? ''} ${r.user?.last_name ?? ''}`.trim(),
           created_at: r.created_at,
         })),
-        transferForms: dedupeByFormId(transferForms).map(t => ({
-          id: t.formID,
-          formNumber: t.form_number,
-          userId: t.user_id,
-          userName: t.user_name || '',
-          returnFormId: t.return_form_id ?? null,
-          newAssignedUserId: t.new_assigned_user_id,
-          newUserName: t.new_user_name || '',
+        transferForms: transferFormsForWindow.map((t: any) => ({
+          id: t.id,
+          formNumber: t.formNumber,
+          userId: t.user?.id ?? '',
+          userName: `${t.user?.first_name ?? ''} ${t.user?.last_name ?? ''}`.trim(),
+          returnFormId: null,
+          newAssignedUserId: null,
+          newUserName: t.new_user ? `${t.new_user.first_name ?? ''} ${t.new_user.last_name ?? ''}`.trim() : '',
           created_at: t.created_at,
         })),
-        newAccountabilityForms: dedupeByFormId(activeForms).map(f => ({
-          id: f.formID,
-          formNumber: f.form_number,
-          userId: f.user_id,
-          userName: f.user_name || '',
-          status: f.status,
-          created_at: f.created_at,
-        })),
+        // Return/Transfer → New: link accessory forms to the immediate next AF
+        // (the "new created accountability form"). This fixes both:
+        // - all returns collapsing under 0069
+        // - all disabled linking to the same latest new
+        newAccountabilityForms: newAccountabilityForWindow,
       });
     }
 

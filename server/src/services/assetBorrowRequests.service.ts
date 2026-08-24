@@ -3,7 +3,6 @@ import type { Pool } from 'mysql2/promise';
 import { getScopedActiveCompany } from '../utils/activeCompany.js';
 import type { AssetBorrowRequestRow } from '../repositories/assetBorrowRequests.repository.js';
 import {
-  classifyDepartmentScopeByName,
   getAssetScope,
   getBorrowRequestListScope,
   getDepartmentIdsForScope,
@@ -26,8 +25,6 @@ import {
   getAssignmentForBorrowRequest,
   getAvailableAssetByCodeForBorrowStaffPool,
   getBorrowRequestById,
-  getCategoryDepartmentForCompany,
-  getTypeForCategoryAndCompany,
   insertAssetBorrowRequest,
   updateAssignmentStatusActive,
   updateBorrowRequestDeptHeadApprove,
@@ -67,48 +64,36 @@ export class AssetBorrowRequestsService {
       return { error: 'Invalid expected return date', status: 400 };
     }
 
-    const cat = await getCategoryDepartmentForCompany(
-      pool,
-      body.category_id,
-      company.id
-    );
-    if (!cat) {
-      return { error: 'Category not found', status: 400 };
+    const desc = body.description?.trim() ?? '';
+    if (desc.length < 10) {
+      return { error: 'Description must be at least 10 characters', status: 400 };
+    }
+    if (desc.length > 1000) {
+      return { error: 'Description max 1000 characters', status: 400 };
     }
 
-    const deptScope = classifyDepartmentScopeByName(cat.departmentName);
-    if (body.borrow_scope === 'it' && deptScope !== 'IT') {
-      return {
-        error: 'Selected category is not an IT asset category',
-        status: 400,
-      };
-    }
-    if (body.borrow_scope === 'admin' && deptScope !== 'Admin') {
-      return {
-        error: 'Selected category is not an Admin asset category',
-        status: 400,
-      };
-    }
-
-    const typeOk = await getTypeForCategoryAndCompany(
-      pool,
-      body.type_id,
-      body.category_id,
-      company.id
-    );
-    if (!typeOk) {
-      return { error: 'Type does not match category or company', status: 400 };
+    // Form number is based on company Forms settings (Asset Borrowing Form Number Settings)
+    // and the explicit borrow_scope (it/admin) — not category department.
+    // Fetch requestor department for settings.department_format handling.
+    let requestorDepartmentId: string | null = null;
+    try {
+      const [deptRows] = (await pool.execute(
+        'SELECT department_id FROM users WHERE userID = ? LIMIT 1',
+        [userId]
+      )) as [{ department_id?: string | null }[], unknown];
+      requestorDepartmentId = deptRows[0]?.department_id ?? null;
+    } catch {
+      requestorDepartmentId = null;
     }
 
     const id = randomUUID();
-    const formNumber = await generateBorrowFormNumber(company.id, cat.departmentId);
+    const formNumber = await generateBorrowFormNumber(company.id, requestorDepartmentId, body.borrow_scope);
     await insertAssetBorrowRequest(pool, {
       id,
       companyId: company.id,
       userId,
       borrowScope: body.borrow_scope,
-      categoryId: body.category_id,
-      typeId: body.type_id,
+      description: desc,
       formNumber,
       expectedReturnAt: expectedMysql,
       purpose: body.purpose.trim(),
@@ -348,8 +333,6 @@ export class AssetBorrowRequestsService {
     const assets = await findAvailableAssetsForBorrowStaffPool(pool, {
       companyId,
       departmentIds,
-      preferredCategoryId: row.category_id,
-      preferredTypeId: row.type_id,
     });
     return { assets };
   }

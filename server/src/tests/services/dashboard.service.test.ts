@@ -35,6 +35,9 @@ describe('dashboard.service', () => {
       expect(getAssetScope).toHaveBeenCalledWith(pool, 'user-1');
       expect(result.stats.totalAssets).toBe(0);
       expect(result.stats.activeAssignments).toBe(0);
+      expect(result.stats.transferedAssets).toBe(0);
+      expect(result.stats.returnedAssets).toBe(0);
+      expect(result.stats.underRepair).toBe(0);
       expect(result.assetByType).toEqual([]);
       expect(result.movement.weekly).toEqual([]);
       expect(result.movement.monthly).toEqual([]);
@@ -68,6 +71,11 @@ describe('dashboard.service', () => {
         assetReturnsCount: expect.any(Number),
         pendingReturnCount: expect.any(Number),
         pendingTransferCount: expect.any(Number),
+        underRepair: expect.any(Number),
+        transferedAssets: expect.any(Number),
+        returnedAssets: expect.any(Number),
+        forMaintenance: expect.any(Number),
+        forRepair: expect.any(Number),
       });
       expect(result.assetByType).toEqual(expect.any(Array));
       expect(result.movement).toHaveProperty('weekly');
@@ -123,6 +131,73 @@ describe('dashboard.service', () => {
         'it',
         null
       );
+    });
+
+    it('should count transferred/returned assets from completed forms with company filter', async () => {
+      (getAssetScope as jest.Mock).mockResolvedValue({
+        companyId: 'company-1',
+        departmentIds: null,
+        isSuperAdmin: false,
+      });
+      (getDepartmentIdsForScope as jest.Mock).mockResolvedValue([]);
+
+      // Mock sequence: total, active, assigned, deployed, underMaintenance, forDisposal, disposed, borrowed,
+      // assetReturnsCount (forms), borrowRequests, pendingReturn, pendingTransfer,
+      // underRepair, forMaintenance, forRepair, transferedAssets (asset_transfer), returnedAssets (asset_returns) + others
+      // Use implementation that returns distinct cnt for asset_transfer vs asset_return joins
+      (pool.execute as jest.Mock).mockImplementation((sql: string) => {
+        const s = String(sql);
+        if (s.includes('FROM asset_transfer at') && s.includes('process_signed_at')) {
+          return Promise.resolve([[{ cnt: 5 }], []] as any);
+        }
+        if (s.includes('FROM asset_returns ar') && s.includes('process_signed_at')) {
+          return Promise.resolve([[{ cnt: 3 }], []] as any);
+        }
+        if (s.includes('FROM asset_return_forms arf') && s.includes('COUNT(DISTINCT')) {
+          return Promise.resolve([[{ cnt: 2 }], []] as any);
+        }
+        if (s.includes("a.status = 'Under Repair'") || s.includes("a.status = 'For Maintenance'") || s.includes("a.status = 'For Repair'")) {
+          return Promise.resolve([[{ cnt: 1 }], []] as any);
+        }
+        // default for all other counts and movement/status queries
+        return Promise.resolve([[{ cnt: 0 }], []] as any);
+      });
+
+      const result = await getDashboardData(pool as any, 'user-1');
+
+      expect(result.stats.transferedAssets).toBe(5);
+      expect(result.stats.returnedAssets).toBe(3);
+      expect(result.stats.underRepair).toBe(1);
+      // verify company filter was passed to asset-level queries
+      const transferCall = (pool.execute as jest.Mock).mock.calls.find(
+        (call: unknown[]) => String(call[0]).includes('FROM asset_transfer at')
+      );
+      expect(transferCall?.[1]).toEqual(expect.arrayContaining(['company-1']));
+      const returnCall = (pool.execute as jest.Mock).mock.calls.find(
+        (call: unknown[]) => String(call[0]).includes('FROM asset_returns ar')
+      );
+      expect(returnCall?.[1]).toEqual(expect.arrayContaining(['company-1']));
+    });
+
+    it('should fallback returnedAssets to forms count when detail count is zero', async () => {
+      (getAssetScope as jest.Mock).mockResolvedValue({
+        companyId: 'company-1',
+        departmentIds: null,
+        isSuperAdmin: false,
+      });
+      (getDepartmentIdsForScope as jest.Mock).mockResolvedValue([]);
+      (pool.execute as jest.Mock).mockImplementation((sql: string) => {
+        const s = String(sql);
+        if (s.includes('FROM asset_returns ar') && s.includes('process_signed_at')) {
+          return Promise.resolve([[{ cnt: 0 }], []] as any);
+        }
+        if (s.includes('FROM asset_return_forms arf') && s.includes('COUNT(DISTINCT')) {
+          return Promise.resolve([[{ cnt: 4 }], []] as any);
+        }
+        return Promise.resolve([[{ cnt: 0 }], []] as any);
+      });
+      const result = await getDashboardData(pool as any, 'user-1');
+      expect(result.stats.returnedAssets).toBe(4);
     });
   });
 

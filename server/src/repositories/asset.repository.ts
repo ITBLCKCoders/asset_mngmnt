@@ -679,6 +679,29 @@ export async function getAssetForUpdateByCode(
   return rows[0] ?? null;
 }
 
+/**
+ * Resolve a client-supplied identifier (assetID, asset_code or tag_code) to the
+ * canonical `assets.assetID`. The client `Asset.id` is the human-readable
+ * `asset_code` (see `assetDetails.tsx` / `assetData.tsx`), while all
+ * return/transfer/borrow lookups join on `assetID`. Returning `null` means the
+ * asset does not exist.
+ */
+export async function resolveAssetIdByCodeOrId(
+  rawParam: string
+): Promise<string | null> {
+  const trimmed = String(rawParam ?? '').trim();
+  if (!trimmed) return null;
+  const upper = trimmed.toUpperCase();
+  const [rows] = await pool.execute<AssetIdMiniRow[]>(
+    `SELECT assetID FROM assets
+      WHERE deleted_at IS NULL
+        AND (assetID = ? OR UPPER(asset_code) = ? OR UPPER(tag_code) = ?)
+      LIMIT 1`,
+    [trimmed, upper, upper]
+  );
+  return rows[0]?.assetID ?? null;
+}
+
 export async function updateAssetCode(
   assetId: string,
   newCode: string

@@ -26,6 +26,8 @@ import {
 import { toast } from 'sonner';
 import { useCurrentUser } from '@/hooks/useCurrentUser';
 import { useAvatarPreview } from '@/hooks/avatarPreview';
+import { useDigitalInitialsTour } from '@/hooks/useDigitalInitialsTour';
+import 'driver.js/dist/driver.css';
 
 export default function ProfilePage() {
   const [searchParams] = useSearchParams();
@@ -45,6 +47,7 @@ export default function ProfilePage() {
 
   const { user, loading: userLoading, refetch } = useCurrentUser();
   const { clearPreview } = useAvatarPreview();
+  const { moveNext: tourMoveNext, destroyTour } = useDigitalInitialsTour();
 
   useEffect(() => {
     localStorage.setItem('profile-active-tab', activeTab);
@@ -78,6 +81,12 @@ export default function ProfilePage() {
 
   const handleStartEdit = () => {
     setIsEditing(true);
+    // Tour Step 1 -> Step 2 (Edit Profile clicked → highlight canvas)
+    window.setTimeout(() => {
+      const fn: any = (window as any).tourMoveNextWhenReady;
+      if (typeof fn === 'function') fn('#tour-step-2-canvas');
+      else tourMoveNext();
+    }, 450);
   };
 
   const handleCancel = () => {
@@ -97,10 +106,26 @@ export default function ProfilePage() {
   const handleSave = () => {
     if (isSaving) return;
     setShowSaveDialog(true);
+    // Tour Step 4 -> Step 5 (Save Profile → Yes, Save Changes) — wait for dialog element
+    window.setTimeout(() => {
+      const fn: any = (window as any).tourMoveNextWhenReady;
+      if (typeof fn === 'function') fn('#tour-step-5-confirm-save');
+      else tourMoveNext();
+    }, 450);
   };
 
   const handleConfirmSave = async () => {
     setShowSaveDialog(false);
+    // Tour Step 5 -> Step 6 is now driven by BasicInfoTab when consent dialog actually opens.
+    // Keep a fallback in case save doesn't trigger consent (no initials change)
+    window.setTimeout(() => {
+      const consentVisible = !!document.getElementById('tour-step-6-agree-save');
+      if (consentVisible) {
+        const fn: any = (window as any).tourMoveNextWhenReady;
+        if (typeof fn === 'function') fn('#tour-step-6-agree-save');
+        else tourMoveNext();
+      }
+    }, 700);
     setIsSaving(true);
     toast.loading('Saving profile...', { id: 'save-profile' });
 
@@ -207,6 +232,8 @@ export default function ProfilePage() {
             <AppAlertDialogChromeFooter>
               <AlertDialogCancel>Cancel</AlertDialogCancel>
               <AlertDialogAction
+                id="tour-step-5-confirm-save"
+                data-tour="step-5"
                 onClick={handleConfirmSave}
                 className="bg-green-600 text-white hover:bg-green-700"
               >

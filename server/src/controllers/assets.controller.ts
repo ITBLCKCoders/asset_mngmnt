@@ -1927,8 +1927,14 @@ export async function getAllFormsByAssetIdHandler(
     const transferFormsRepo = await import('../repositories/assetTransferForm.repository.js');
     const borrowFormsRepo = await import('../repositories/assetBorrowRequests.repository.js');
 
+    // Client sends `asset_code` (Asset.id) but DB joins use `assetID`.
+    // Resolve code/tag → canonical ID so return/transfer/borrow lookups work.
+    // Falls back to the raw param when not found to preserve 200-empty for unknown assets.
+    const resolvedAssetId =
+      (await assetRepo.resolveAssetIdByCodeOrId(assetId)) ?? assetId;
+
     // Fetch accountability forms with proper mapping
-    const accountabilityRows = await accountabilityFormsRepo.findFormsByAssetId(assetId);
+    const accountabilityRows = await accountabilityFormsRepo.findFormsByAssetId(resolvedAssetId);
     
     // Map accountability forms to match frontend expectations
     const accountabilityForms = accountabilityRows.map((row: any) => {
@@ -1958,9 +1964,9 @@ export async function getAllFormsByAssetIdHandler(
     });
 
     // Fetch other form types (return empty arrays for now due to schema limitations)
-    const returnForms = await returnFormsRepo.getReturnFormsByAssetId(assetId);
-    const transferForms = await transferFormsRepo.getTransferFormsByAssetId(assetId);
-    const borrowForms = await borrowFormsRepo.getBorrowFormsByAssetId(pool, assetId);
+    const returnForms = await returnFormsRepo.getReturnFormsByAssetId(resolvedAssetId);
+    const transferForms = await transferFormsRepo.getTransferFormsByAssetId(resolvedAssetId);
+    const borrowForms = await borrowFormsRepo.getBorrowFormsByAssetId(pool, resolvedAssetId);
 
     return res.json({
       accountabilityForms,

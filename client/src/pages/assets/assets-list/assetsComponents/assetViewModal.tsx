@@ -275,14 +275,14 @@ export function AssetViewModal({
 
             {activeTab === 'forms' && (
               <AssetFormsTab
-                assetId={asset.id}
+                assetId={asset.assetID ?? asset.id}
                 onPdfModalOpen={handlePdfModalOpen}
                 onPdfModalClose={handlePdfModalClose}
               />
             )}
 
             {activeTab === 'movement' && (
-              <AssetMovementTab assetId={asset.id} />
+              <AssetMovementTab assetId={asset.assetID ?? asset.id} />
             )}
           </CardContent>
 

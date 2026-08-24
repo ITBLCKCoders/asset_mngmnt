@@ -232,24 +232,30 @@ export function buildMermaidOrgModel(
       ),
       className: 'asset',
     });
-    const newAccFormIds = new Set<string>();
-    for (const f of input.forms) {
-      for (const n of f.newAccountabilityForms) {
-        newAccFormIds.add(String(n.id));
-      }
-    }
-    for (const f of input.forms) {
-      if (newAccFormIds.has(String(f.form.id))) continue;
-      // Direct-return/transfer root node (no accountability form behind it):
-      // attach the return/transfer sheets straight to the asset node instead
-      // of rendering a synthetic "Accountability Form" node.
+
+    // Chronological backbone: oldest → latest so forms appear "under each other"
+    const sortedForms = [...input.forms].sort((a, b) => {
+      const da = a.form.created_at ? new Date(a.form.created_at).getTime() : 0;
+      const db = b.form.created_at ? new Date(b.form.created_at).getTime() : 0;
+      if (da !== db) return da - db;
+      return String(a.form.formNumber).localeCompare(String(b.form.formNumber));
+    });
+
+    // Map form.id → mermaid node id for re-use when a form appears as a "new"
+    // accountability form under a previous form. This prevents the same number
+    // appearing twice (once as a standalone AF and once as a green "New" node).
+    const formIdToNodeId = new Map<string, string>();
+    const assetRootChildren: MovementAssetChildren[] = [];
+
+    for (const f of sortedForms) {
       if (String(f.form.id) === 'asset-root') {
-        addAssetChildren(f, rootId);
+        assetRootChildren.push(f);
         continue;
       }
-      const formId = nextId('af');
+      const nid = nextId('af');
+      formIdToNodeId.set(String(f.form.id), nid);
       addNode({
-        id: formId,
+        id: nid,
         label: nodeLabel(
           'Accountability Form',
           f.form.formNumber,
@@ -258,8 +264,88 @@ export function buildMermaidOrgModel(
         ),
         className: 'af',
       });
-      edges.push({ from: rootId, to: formId });
-      addAssetChildren(f, formId);
+    }
+
+    // Backbone edges: Asset → first AF, then AF(n) → AF(n+1) to force vertical stacking
+    const afNodeIds = sortedForms
+      .filter(f => String(f.form.id) !== 'asset-root')
+      .map(f => formIdToNodeId.get(String(f.form.id))!)
+      .filter(Boolean);
+    if (afNodeIds.length > 0) {
+      edges.push({ from: rootId, to: afNodeIds[0] });
+      for (let i = 1; i < afNodeIds.length; i++) {
+        edges.push({ from: afNodeIds[i - 1], to: afNodeIds[i] });
+      }
+    }
+
+    // Helper: same as addAssetChildren but reuses an existing AF node when the
+    // "new accountability" already exists as a standalone AF (prevents duplicate numbers).
+    const addAssetChildrenWithReuse = (item: MovementAssetChildren, parentId: string, _parentStatus?: string) => {
+      const returnIds: string[] = [];
+      for (const r of item.returnForms) {
+        const rid = nextId('ret');
+        addNode({
+          id: rid,
+          label: nodeLabel('Return Form', r.formNumber, escapeHtml(r.userName || '')),
+          className: 'ret',
+        });
+        edges.push({ from: parentId, to: rid });
+        nodeActions[rid] = () => actions.onViewReturn(r.id);
+        returnIds.push(rid);
+      }
+      const transferIds: string[] = [];
+      for (const t of item.transferForms) {
+        const tid = nextId('trf');
+        const subtitle = t.newUserName
+          ? `${escapeHtml(t.userName || '')} &rarr; ${escapeHtml(t.newUserName)}`
+          : escapeHtml(t.userName || '');
+        addNode({
+          id: tid,
+          label: nodeLabel('Transfer Form', t.formNumber, subtitle),
+          className: 'trf',
+        });
+        edges.push({ from: parentId, to: tid });
+        nodeActions[tid] = () => actions.onViewTransfer(t.id);
+        transferIds.push(tid);
+      }
+      for (const n of item.newAccountabilityForms) {
+        const key = String(n.id);
+        const existing = formIdToNodeId.get(key);
+        if (existing) {
+          // Link return/transfer sheets to the existing AF node instead of duplicating.
+          if (returnIds.length === 0 && transferIds.length === 0) {
+            edges.push({ from: parentId, to: existing });
+          }
+          for (const rid of returnIds) edges.push({ from: rid, to: existing });
+          for (const tid of transferIds) edges.push({ from: tid, to: existing });
+          // Make the reused AF node open the new-form preview as well (keeps click UX).
+          if (!nodeActions[existing]) nodeActions[existing] = () => actions.onViewNew(n.id);
+          continue;
+        }
+        const nid = nextId('newacc');
+        addNode({
+          id: nid,
+          label: nodeLabel('New Accountability Form', n.formNumber, `<b>New owner:</b> ${escapeHtml(n.userName || '')}`, n.status),
+          className: 'new',
+        });
+        nodeActions[nid] = () => actions.onViewNew(n.id);
+        if (returnIds.length === 0 && transferIds.length === 0) edges.push({ from: parentId, to: nid });
+        for (const rid of returnIds) edges.push({ from: rid, to: nid });
+        for (const tid of transferIds) edges.push({ from: tid, to: nid });
+      }
+    };
+
+    // Direct-return/transfer roots (no accountability behind them) attach to asset
+    for (const f of assetRootChildren) {
+      addAssetChildrenWithReuse(f, rootId, (f as any).form?.status);
+    }
+
+    // For each AF, attach its return/transfer sheets. "New" forms are linked to
+    // the existing AF node instead of creating a duplicate green node.
+    for (const f of sortedForms) {
+      if (String(f.form.id) === 'asset-root') continue;
+      const parentId = formIdToNodeId.get(String(f.form.id))!;
+      addAssetChildrenWithReuse(f, parentId, f.form.status);
     }
   }
 

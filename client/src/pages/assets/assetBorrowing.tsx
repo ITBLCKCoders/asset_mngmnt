@@ -31,10 +31,6 @@ import { useUserPermissions } from '@/hooks/useUserPermissions';
 import { useCurrentUser } from '@/hooks/useCurrentUser';
 import { downloadPDF, generateAssetBorrowingPDF } from '@/lib/pdfGenerator';
 import {
-  classifyDepartmentScopeByName,
-  parseCategoryDepartment,
-} from '@/lib/assetScope';
-import {
   borrowRequestStatusLabel,
   type BorrowRequestRow,
 } from './borrowRequestsPage';
@@ -43,20 +39,6 @@ import { Shimmer } from '@/components/ui/shimmer';
 import SmsOtpDialog from '@/components/auth/SmsOtpDialog';
 
 type BorrowScope = 'it' | 'admin';
-
-interface CategoryRow {
-  categoryID?: string;
-  id?: string;
-  name: string;
-  department?: unknown;
-}
-
-interface TypeRow {
-  typeID?: string;
-  id?: string;
-  name: string;
-  category_id: string;
-}
 
 const myBorrowRequestColumns: ColumnDef<BorrowRequestRow>[] = [
   {
@@ -78,18 +60,13 @@ const myBorrowRequestColumns: ColumnDef<BorrowRequestRow>[] = [
     ),
   },
   {
-    id: 'category_name',
-    header: 'Category',
-    accessorFn: row => row.category_name ?? '',
-    size: 160,
-    cell: ({ row }) => row.original.category_name ?? '—',
-  },
-  {
-    id: 'type_name',
-    header: 'Type',
-    accessorFn: row => row.type_name ?? '',
-    size: 160,
-    cell: ({ row }) => row.original.type_name ?? '—',
+    id: 'description',
+    header: 'Description',
+    accessorFn: row => (row as any).description ?? '',
+    size: 260,
+    cell: ({ row }) => (
+      <span className="line-clamp-2 max-w-[320px] text-sm">{(row.original as any).description ?? '—'}</span>
+    ),
   },
   {
     id: 'expected_return_at',
@@ -152,9 +129,6 @@ export default function AssetBorrowing() {
   const [formOpen, setFormOpen] = useState(false);
   const [termsOpen, setTermsOpen] = useState(false);
   const [showOtpDialog, setShowOtpDialog] = useState(false);
-  const [categories, setCategories] = useState<CategoryRow[]>([]);
-  const [types, setTypes] = useState<TypeRow[]>([]);
-  const [loadingMeta, setLoadingMeta] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [myRequests, setMyRequests] = useState<BorrowRequestRow[]>([]);
   const [loadingMyRequests, setLoadingMyRequests] = useState(true);
@@ -170,16 +144,15 @@ export default function AssetBorrowing() {
   const pendingActionRef = useRef<(() => Promise<void>) | null>(null);
 
   const [borrowScope, setBorrowScope] = useState<BorrowScope | ''>('');
-  const [categoryId, setCategoryId] = useState('');
-  const [typeId, setTypeId] = useState('');
+  const [description, setDescription] = useState('');
   const [expectedReturn, setExpectedReturn] = useState('');
   const [purpose, setPurpose] = useState('');
 
   const canCreate = hasPermission('Asset Borrowing', 'create');
   const isBorrowFormValid =
     Boolean(borrowScope) &&
-    Boolean(categoryId) &&
-    Boolean(typeId) &&
+    description.trim().length >= 10 &&
+    description.trim().length <= 1000 &&
     Boolean(expectedReturn.trim()) &&
     Boolean(purpose.trim()) &&
     (() => {
@@ -188,38 +161,7 @@ export default function AssetBorrowing() {
       return !Number.isNaN(selectedDate.getTime()) && selectedDate >= now;
     })();
 
-  const loadMeta = useCallback(async () => {
-    setLoadingMeta(true);
-    try {
-      const catRes = await api.get<unknown>('/categories');
-      const catRaw = Array.isArray(catRes)
-        ? catRes
-        : (catRes as { categories?: CategoryRow[] }).categories ?? [];
-      const normCats = (catRaw as CategoryRow[]).map(c => ({
-        ...c,
-        id: c.categoryID || c.id || '',
-      }));
-      setCategories(normCats.filter(c => c.id));
-
-      const typeRes = await api.get<unknown>('/types');
-      const typeRaw = Array.isArray(typeRes)
-        ? typeRes
-        : (typeRes as { types?: TypeRow[] }).types ?? [];
-      const normTypes = (typeRaw as TypeRow[]).map(t => ({
-        ...t,
-        id: t.typeID || t.id || '',
-      }));
-      setTypes(normTypes.filter(t => t.id));
-    } catch {
-      toast.error('Failed to load categories or types');
-      setCategories([]);
-      setTypes([]);
-    } finally {
-      setLoadingMeta(false);
-    }
-  }, []);
-
-  const loadMyRequests = useCallback(async () => {
+const loadMyRequests = useCallback(async () => {
     setLoadingMyRequests(true);
     try {
       const res = await api.get<unknown>('/asset-borrow-requests/mine');
@@ -246,30 +188,9 @@ export default function AssetBorrowing() {
     void loadMyRequests();
   }, [loadMyRequests]);
 
-  useEffect(() => {
-    if (formOpen) {
-      void loadMeta();
-    }
-  }, [formOpen, loadMeta]);
-
-  const filteredCategories = useMemo(() => {
-    if (!borrowScope) return [];
-    const want: 'IT' | 'Admin' = borrowScope === 'it' ? 'IT' : 'Admin';
-    return categories.filter(c => {
-      const dept = parseCategoryDepartment(c.department);
-      return classifyDepartmentScopeByName(dept?.name) === want;
-    });
-  }, [borrowScope, categories]);
-
-  const filteredTypes = useMemo(() => {
-    if (!categoryId) return [];
-    return types.filter(t => t.category_id === categoryId);
-  }, [categoryId, types]);
-
   const resetForm = () => {
     setBorrowScope('');
-    setCategoryId('');
-    setTypeId('');
+    setDescription('');
     setExpectedReturn('');
     setPurpose('');
   };
@@ -279,8 +200,12 @@ export default function AssetBorrowing() {
       toast.error('Select IT Asset or Admin Asset');
       return;
     }
-    if (!categoryId || !typeId) {
-      toast.error('Select category and type');
+    if (!description.trim() || description.trim().length < 10) {
+      toast.error('Description must be at least 10 characters');
+      return;
+    }
+    if (description.trim().length > 1000) {
+      toast.error('Description max 1000 characters');
       return;
     }
     if (!expectedReturn.trim()) {
@@ -312,8 +237,7 @@ export default function AssetBorrowing() {
         const digitalSignature = (currentUser as any)?.digitalSignature || '';
         await api.post<unknown>('/asset-borrow-requests', {
           borrow_scope: borrowScope,
-          category_id: categoryId,
-          type_id: typeId,
+          description: description.trim(),
           expected_return_at: iso.toISOString(),
           purpose: purpose.trim(),
           requested_by_signature: digitalSignature || undefined,
@@ -351,7 +275,7 @@ export default function AssetBorrowing() {
           row.requester_email ||
           '—',
         borrowerDepartment: row.requester_department_name || '—',
-        equipmentName: row.asset_name || row.type_name || row.category_name || '—',
+        equipmentName: (row as any).description || row.asset_name || '—',
         serialNumber: row.asset_serial || '',
         preUsageCondition: row.pre_usage_condition || '',
         borrowingDate: row.created_at || null,
@@ -422,7 +346,7 @@ export default function AssetBorrowing() {
                   data={[]}
                   columns={myBorrowRequestColumns}
                   isLoading={true}
-                  searchPlaceholder="Search scope, category, type, purpose, status…"
+                  searchPlaceholder="Search scope, description, purpose, status…"
                   title="My requests"
                   onRowClick={() => {}}
                   titleBadge={undefined}
@@ -464,7 +388,7 @@ export default function AssetBorrowing() {
         <PageHeader
           icon={HandHelping}
           title="Asset borrowing"
-          description="Request equipment by category and type. Your department head approves first; then IT or Admin processes the request."
+          description="Describe what you need. Your department head approves first; then IT or Admin processes the request."
         >
           <div className="flex items-center gap-2">
             <Button
@@ -499,7 +423,7 @@ export default function AssetBorrowing() {
                   data={myRequests}
                   columns={myBorrowRequestColumns}
                   isLoading={loadingMyRequests || viewSwitchingLoading}
-                  searchPlaceholder="Search scope, category, type, purpose, status…"
+                  searchPlaceholder="Search scope, description, purpose, status…"
                   title="My requests"
                   onRowClick={row => {
                     const request = row.original as BorrowRequestRow;
@@ -550,14 +474,9 @@ export default function AssetBorrowing() {
                       ),
                     },
                     {
-                      key: 'category_name',
-                      label: 'Category',
-                      render: row => row.category_name ?? '—',
-                    },
-                    {
-                      key: 'type_name',
-                      label: 'Type',
-                      render: row => row.type_name ?? '—',
+                      key: 'description',
+                      label: 'Description',
+                      render: row => (row as any).description ?? '—',
                     },
                     {
                       key: 'expected_return_at',
@@ -695,12 +614,7 @@ export default function AssetBorrowing() {
                                   <li className="flex items-center">
                                     <span className="w-1.5 h-1.5 bg-gray-400 rounded-full mr-2 flex-shrink-0" />
                                     <span className="truncate">
-                                      {request.category_name ?? '—'}
-                                      {request.type_name ? (
-                                        <span className="text-gray-400 ml-1">
-                                          — {request.type_name}
-                                        </span>
-                                      ) : null}
+                                      {(request as any).description ?? '—'}
                                     </span>
                                   </li>
                                 </ul>
@@ -788,7 +702,7 @@ export default function AssetBorrowing() {
                   Borrow assets
                 </span>
               }
-              description="Choose scope, category, type, and when you expect to return the equipment."
+              description="Describe what you need, set when you expect to return it, and explain the purpose."
             />
 
             <AppDialogBody className="min-h-0 flex-1 space-y-4 overflow-y-auto py-2">
@@ -799,8 +713,6 @@ export default function AssetBorrowing() {
                     value={borrowScope === '' ? undefined : borrowScope}
                     onValueChange={(v: BorrowScope) => {
                       setBorrowScope(v);
-                      setCategoryId('');
-                      setTypeId('');
                     }}
                     disabled={!canCreate}
                   >
@@ -815,46 +727,21 @@ export default function AssetBorrowing() {
                 </div>
 
                 <div className="space-y-1.5">
-                  <p className="text-[11px] font-bold uppercase tracking-widest text-slate-400">Category <span className="text-red-600">*</span></p>
-                  <Select
-                    value={categoryId}
-                    onValueChange={v => {
-                      setCategoryId(v);
-                      setTypeId('');
-                    }}
+                  <p className="text-[11px] font-bold uppercase tracking-widest text-slate-400">Description <span className="text-red-600">*</span></p>
+                  <Textarea
+                    id="description"
+                    value={description}
+                    onChange={e => setDescription(e.target.value)}
+                    rows={4}
+                    maxLength={1000}
                     disabled={!borrowScope || !canCreate}
-                  >
-                    <SelectTrigger className="h-10 w-full rounded-xl border-slate-200 bg-white text-slate-900 shadow-sm hover:bg-white focus:ring-2 focus:ring-red-500/20">
-                      <SelectValue placeholder="Select category" />
-                    </SelectTrigger>
-                    <SelectContent className="rounded-xl border-slate-200 bg-white shadow-lg z-[10000]">
-                      {filteredCategories.map(c => (
-                        <SelectItem key={c.id} value={c.id!} className="rounded-lg">
-                          {c.name}
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                </div>
-
-                <div className="space-y-1.5">
-                  <p className="text-[11px] font-bold uppercase tracking-widest text-slate-400">Type <span className="text-red-600">*</span></p>
-                  <Select
-                    value={typeId}
-                    onValueChange={setTypeId}
-                    disabled={!categoryId || !canCreate}
-                  >
-                    <SelectTrigger className="h-10 w-full rounded-xl border-slate-200 bg-white text-slate-900 shadow-sm hover:bg-white focus:ring-2 focus:ring-red-500/20">
-                      <SelectValue placeholder="Select type" />
-                    </SelectTrigger>
-                    <SelectContent className="rounded-xl border-slate-200 bg-white shadow-lg z-[10000]">
-                      {filteredTypes.map(t => (
-                        <SelectItem key={t.id} value={t.id!} className="rounded-lg">
-                          {t.name}
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
+                    placeholder="Describe what you want to borrow (e.g. Laptop Dell XPS 16GB RAM, Projector 3000 lumens for conference)"
+                    className="min-h-[96px] rounded-xl border-slate-200 bg-white"
+                  />
+                  <div className="flex justify-between text-xs text-muted-foreground">
+                    <span>Min 10 characters</span>
+                    <span>{description.length}/1000</span>
+                  </div>
                 </div>
 
                 <div className="space-y-1.5">
@@ -907,7 +794,7 @@ export default function AssetBorrowing() {
                 type="button"
                 className="bg-red-600 text-white hover:bg-white hover:text-red-600 hover:border-red-600 border-2 border-red-600"
                 onClick={openTermsFromForm}
-                disabled={!canCreate || loadingMeta || !isBorrowFormValid}
+                disabled={!canCreate || !isBorrowFormValid}
               >
                 Submit
               </Button>

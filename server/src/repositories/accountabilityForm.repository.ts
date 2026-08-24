@@ -817,7 +817,7 @@ export async function getReturnFormsByAssignmentIds(
  */
 export async function getTransferFormsForMovement(
   assignmentIds: string[],
-  returnFormIds: string[]
+  _returnFormIds: string[] = []
 ): Promise<
   Array<{
     formID: string;
@@ -831,19 +831,13 @@ export async function getTransferFormsForMovement(
     created_at: string;
   }>
 > {
-  const conditions: string[] = ['atf.deleted_at IS NULL'];
-  const params: unknown[] = [];
-  if (assignmentIds.length > 0) {
-    const ph = assignmentIds.map(() => '?').join(',');
-    conditions.push(`tfa.assignment_id IN (${ph})`);
-    params.push(...assignmentIds);
-  }
-  if (returnFormIds.length > 0) {
-    const ph = returnFormIds.map(() => '?').join(',');
-    conditions.push(`atf.return_form_id IN (${ph})`);
-    params.push(...returnFormIds);
-  }
-  if (conditions.length === 1) return [];
+  // Strictly filter by assignment – the previous OR with return_form_id caused
+  // transfers for *other* assets sharing the same return batch (and therefore
+  // transfers from other companies) to leak into this asset's movement chain.
+  // Every transfer created from a return also writes its assignment into
+  // transfer_form_assignments, so the assignment path is sufficient and precise.
+  if (assignmentIds.length === 0) return [];
+  const ph = assignmentIds.map(() => '?').join(',');
   const [rows] = (await pool.execute(
     `SELECT DISTINCT atf.formID, atf.form_number, tfa.assignment_id,
             atf.return_form_id, atf.user_id,
@@ -852,12 +846,13 @@ export async function getTransferFormsForMovement(
             CONCAT(nu.first_name, ' ', nu.last_name) AS new_user_name,
             DATE_FORMAT(atf.created_at, '%Y-%m-%d %H:%i:%s') AS created_at
      FROM asset_transfer_forms atf
-     LEFT JOIN transfer_form_assignments tfa ON atf.formID = tfa.form_id
+     JOIN transfer_form_assignments tfa ON atf.formID = tfa.form_id
      LEFT JOIN users u ON atf.user_id = u.userID
      LEFT JOIN users nu ON atf.new_assigned_user_id = nu.userID
-     WHERE ${conditions.join(' OR ')}
+     WHERE atf.deleted_at IS NULL
+       AND tfa.assignment_id IN (${ph})
      ORDER BY created_at DESC`,
-    params
+    [...assignmentIds]
   )) as any[];
   return rows as any[];
 }
@@ -869,7 +864,8 @@ export async function getTransferFormsForMovement(
  */
 export async function getActiveAccountabilityFormsForAssetIds(
   assetIds: string[],
-  excludeFormId: string
+  excludeFormId: string,
+  afterDate?: string | null
 ): Promise<
   Array<{
     formID: string;
@@ -883,6 +879,12 @@ export async function getActiveAccountabilityFormsForAssetIds(
 > {
   if (assetIds.length === 0) return [];
   const placeholders = assetIds.map(() => '?').join(',');
+  const params: unknown[] = [excludeFormId, ...assetIds, JSON.stringify(assetIds)];
+  let dateFilter = '';
+  if (afterDate) {
+    dateFilter = ' AND af.created_at > ? ';
+    params.push(afterDate);
+  }
   const [rows] = (await pool.execute(
     `SELECT af.formID, af.form_number, af.user_id, af.status,
             CONCAT(u.first_name, ' ', u.last_name) AS user_name,
@@ -891,13 +893,15 @@ export async function getActiveAccountabilityFormsForAssetIds(
      FROM accountability_forms af
      LEFT JOIN users u ON af.user_id = u.userID
      WHERE af.deleted_at IS NULL
-       AND af.formID != ?
-       AND af.status NOT IN ('Disabled', 'Revoked', 'Declined')
-       AND (af.asset_id IN (${placeholders})
-            OR (af.assets_data IS NOT NULL
-                AND JSON_OVERLAPS(JSON_EXTRACT(af.assets_data, '$.assets[*].id'), ?)))
-     ORDER BY af.created_at DESC`,
-    [excludeFormId, ...assetIds, JSON.stringify(assetIds)]
+        AND af.formID != ?
+        AND af.status NOT IN ('Disabled', 'Revoked', 'Declined')
+        AND (af.asset_id IN (${placeholders})
+             OR (af.assets_data IS NOT NULL
+                 AND JSON_OVERLAPS(JSON_EXTRACT(af.assets_data, '$.assets[*].id'), ?)))
+        ${dateFilter}
+     ORDER BY af.created_at ASC
+     LIMIT 1`,
+    params
   )) as any[];
   return rows as any[];
 }

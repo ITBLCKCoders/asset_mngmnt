@@ -44,6 +44,7 @@ jest.mock('../../repositories/asset.repository.js', () => ({
   getRoomIdByIdOrName: jest.fn(),
   getDepartmentIdByIdOrName: jest.fn(),
   getCategoryIdsByDepartmentIds: jest.fn(),
+  resolveAssetIdByCodeOrId: jest.fn(),
 }));
 
 jest.mock('../../repositories/accountabilityForm.repository.js', () => ({ findFormsByAssetId: jest.fn() }));
@@ -262,6 +263,7 @@ describe('assets.controller', () => {
 
     it('returns all forms for an asset', async () => {
       req.params = { assetId: 'a1' };
+      assetRepo.resolveAssetIdByCodeOrId.mockResolvedValue('a1');
       const accFormRepo = jest.requireMock('../../repositories/accountabilityForm.repository.js');
       accFormRepo.findFormsByAssetId.mockResolvedValue([mockAccForm]);
       const retRepo = jest.requireMock('../../repositories/assetReturn.repository.js');

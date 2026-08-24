@@ -14,10 +14,14 @@ export async function generateBorrowFormNumberFallback(): Promise<string> {
   return `${prefix}${String(nextSeq).padStart(4, '0')}`;
 }
 
-/** Generate borrow form number from asset_borrow_form_settings, or fallback to BRW-YYYYMMDD-XXXX. */
+/** Generate borrow form number from asset_borrow_form_settings, or fallback to BRW-YYYYMMDD-XXXX.
+ *  @param requestorDepartmentId - requestor's department (used only when settings.department_format != 'none')
+ *  @param borrowScope - 'it' | 'admin' drives which asset code from settings is used
+ */
 export async function generateBorrowFormNumber(
   companyId: string,
-  departmentId: string | null
+  requestorDepartmentId: string | null,
+  borrowScope?: 'it' | 'admin'
 ): Promise<string> {
   const [settingsRows] = (await pool.execute(
     `SELECT * FROM asset_borrow_form_settings WHERE company_id = ? AND deleted_at IS NULL`,
@@ -37,17 +41,21 @@ export async function generateBorrowFormNumber(
 
   let department: { code?: string; prefix?: string; name?: string } | null =
     null;
-  if (settings.department_format !== 'none' && departmentId) {
+  if (settings.department_format !== 'none' && requestorDepartmentId) {
     const [deptRows] = (await pool.execute(
       `SELECT code, prefix, name FROM asset_mngmnt_departments WHERE departmentID = ? AND deleted_at IS NULL`,
-      [departmentId]
+      [requestorDepartmentId]
     )) as any[];
     department = deptRows[0];
   }
 
+  // Preferred: explicit borrowScope from caller (company Forms settings: it/admin codes).
+  // Fallback to department-name inference for backward compat when borrowScope absent.
   const isIT =
-    department?.name?.toLowerCase().includes('it') ||
-    department?.code?.toLowerCase().includes('it');
+    borrowScope !== undefined
+      ? borrowScope === 'it'
+      : department?.name?.toLowerCase().includes('it') ||
+        department?.code?.toLowerCase().includes('it');
   const assetCode = isIT
     ? settings.it_asset_borrow_code
     : settings.admin_asset_borrow_code;

@@ -45,6 +45,8 @@ export const STEP_TITLES = [
   'My assets Page',
   'Asset accountability forms',
   'Adding of assets',
+  'Editing of asset',
+  'Editing of asset (Finance)',
   'Asset tagging',
   'Asset assignment',
   'Asset Return Request',
@@ -58,6 +60,9 @@ export const STEP_TITLES = [
   'Asset disposal',
   'Settings',
   'User',
+  'Assign role and custodian access',
+  'Assign module permission',
+  'Assign approver and sub-approver',
 ];
 
 /**
@@ -65,102 +70,118 @@ export const STEP_TITLES = [
  * the stepper sidebar and roll up under the most recent non-sub-step parent.
  */
 export const STEP_IS_SUB = [
-  false,
-  false,
-  false,
-  false,
-  false,
-  false,
-  false,
-  true, // Edit Profile
-  true, // Signing and forms
-  true, // Account tab
-  true, // Documents tab
-  true, // Accountability form (sub of Documents tab)
-  true, // Return form (sub of Documents tab)
-  true, // Transfer form (sub of Documents tab)
-  false,
-  true, // Asset accountability forms (sub of My assets Page)
+  false, // 0 Introduction
+  false, // 1 Getting Started
+  false, // 2 Overview
+  false, // 3 Registration
+  false, // 4 Log In
+  false, // 5 Forgot password
+  false, // 6 Profile page
+  true, // 7 Edit Profile
+  true, // 8 Digital Initials
+  true, // 9 Account tab
+  true, // 10 Documents tab
+  true, // 11 Accountability form (sub of Documents tab)
+  true, // 12 Return form (sub of Documents tab)
+  true, // 13 Transfer form (sub of Documents tab)
+  false, // 14 My assets Page
+  true, // 15 Asset accountability forms (sub of My assets Page)
   false, // 16 Adding of assets
-  false, // 17 Asset tagging
-  false, // 18 Asset assignment
-  false, // 19 Asset Return Request (main)
-  false, // 20 Asset return (main)
-  true, // 21 return request (sub of Asset return)
-  false, // 22 Asset transfer request (main)
-  false, // 23 Asset transfer (main)
-  true, // 24 transfer request (sub of Asset transfer)
-  false, // 25 Asset maintenance
-  false,
-  false,
-  false,
-  false,
+  true, // 17 Editing of asset (sub of Adding of assets)
+  true, // 18 Editing of asset (Finance) (sub of Adding of assets)
+  false, // 19 Asset tagging
+  false, // 20 Asset assignment
+  false, // 21 Asset Return Request (main)
+  false, // 22 Asset return (main)
+  true, // 23 return request (sub of Asset return)
+  false, // 24 Asset transfer request (main)
+  false, // 25 Asset transfer (main)
+  true, // 26 transfer request (sub of Asset transfer)
+  false, // 27 Asset maintenance
+  false, // 28 Asset repair
+  false, // 29 Asset disposal
+  false, // 30 Settings
+  false, // 31 User
+  true, // 32 Assign role and custodian access (sub of User)
+  true, // 33 Assign module permission (sub of User)
+  true, // 34 Assign approver and sub-approver (sub of User)
 ];
 
 /** Sub-sub-step flag — second-level indent (only the Documents-tab forms). */
 export const STEP_IS_SUB_SUB = [
-  false,
-  false,
-  false,
-  false,
-  false,
-  false,
-  false,
-  false,
-  false,
-  false,
-  false,
-  true, // Accountability form
-  true, // Return form
-  true, // Transfer form
-  false,
-  false,
-  false,
-  false,
-  false,
-  false,
-  false,
-  false,
-  false,
-  false,
-  false,
-  false,
-  false,
-  false,
-  false,
+  false, // 0
+  false, // 1
+  false, // 2
+  false, // 3
+  false, // 4
+  false, // 5
+  false, // 6
+  false, // 7
+  false, // 8
+  false, // 9
+  false, // 10
+  true, // 11 Accountability form
+  true, // 12 Return form
+  true, // 13 Transfer form
+  false, // 14
+  false, // 15
+  false, // 16
+  false, // 17
+  false, // 18
+  false, // 19
+  false, // 20
+  false, // 21
+  false, // 22
+  false, // 23
+  false, // 24
+  false, // 25
+  false, // 26
+  false, // 27
+  false, // 28
+  false, // 29
+  false, // 30
+  false, // 31
+  false, // 32
+  false, // 33
+  false, // 34
 ];
 
 export const STEP_ICONS = [
-  BookOpen,
-  FileText,
-  ListChecks,
-  UserPlus,
-  LogIn,
-  KeyRound,
-  User,
-  Pencil,
-  PenTool,
-  CreditCard,
-  FileText,
-  FileCheck,
-  ArrowDownToLine,
-  ArrowRightLeft,
-  Package,
-  FileCheck,
-  PlusCircle,
-  Tag,
-  UserCheck,
-  ArrowDownToLine,
-  RotateCcw,
-  ArrowDownToLine,
-  ArrowRightLeft,
-  ArrowRightLeft,
-  ArrowRightLeft,
-  Wrench,
-  Hammer,
-  Trash2,
-  Settings,
-  Users,
+  BookOpen, // 0 Introduction
+  FileText, // 1 Getting Started
+  ListChecks, // 2 Overview
+  UserPlus, // 3 Registration
+  LogIn, // 4 Log In
+  KeyRound, // 5 Forgot password
+  User, // 6 Profile page
+  Pencil, // 7 Edit Profile
+  PenTool, // 8 Digital Initials
+  CreditCard, // 9 Account tab
+  FileText, // 10 Documents tab
+  FileCheck, // 11 Accountability form
+  ArrowDownToLine, // 12 Return form
+  ArrowRightLeft, // 13 Transfer form
+  Package, // 14 My assets Page
+  FileCheck, // 15 Asset accountability forms
+  PlusCircle, // 16 Adding of assets
+  Pencil, // 17 Editing of asset
+  CreditCard, // 18 Editing of asset (Finance)
+  Tag, // 19 Asset tagging
+  UserCheck, // 20 Asset assignment
+  ArrowDownToLine, // 21 Asset Return Request
+  RotateCcw, // 22 Asset return
+  ArrowDownToLine, // 23 return request
+  ArrowRightLeft, // 24 Asset transfer request
+  ArrowRightLeft, // 25 Asset transfer
+  ArrowRightLeft, // 26 transfer request
+  Wrench, // 27 Asset maintenance
+  Hammer, // 28 Asset repair
+  Trash2, // 29 Asset disposal
+  Settings, // 30 Settings
+  Users, // 31 User
+  UserCheck, // 32 Assign role and custodian access
+  Settings, // 33 Assign module permission
+  Users, // 34 Assign approver and sub-approver
 ];
 
 export const STEPS = STEP_TITLES.length;
