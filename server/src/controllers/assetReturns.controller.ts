@@ -3964,13 +3964,14 @@ export async function getPendingStaffHandler(req: AuthRequest, res: Response) {
         DATE_FORMAT(arf.process_signed_at, '%Y-%m-%d %H:%i:%s') AS process_signed_at,
         arf.process_digital_signature, arf.process_signed_by, arf.return_type, arf.received_by,
         DATE_FORMAT(arf.dept_head_signed_at, '%Y-%m-%d %H:%i:%s') AS dept_head_signed_at,
+        DATE_FORMAT(arf.sub_approver_1_signed_at, '%Y-%m-%d %H:%i:%s') AS sub_approver_1_signed_at,
         arf.dept_head_digital_signature, arf.dept_head_signed_by,
         d.company_id AS form_company_id, d.name AS form_department_name
        FROM asset_return_forms arf
        LEFT JOIN asset_mngmnt_departments d ON arf.department_id = d.departmentID
        WHERE arf.deleted_at IS NULL
          AND arf.signed_at IS NOT NULL
-         AND arf.dept_head_signed_at IS NOT NULL
+         AND (arf.dept_head_signed_at IS NOT NULL OR arf.sub_approver_1_signed_at IS NOT NULL)
          AND arf.process_signed_at IS NULL
          AND (arf.processor_declined_at IS NULL)`
     )) as any[];
@@ -4033,6 +4034,7 @@ export async function getPendingStaffHandler(req: AuthRequest, res: Response) {
       return_type?: string | null;
       received_by?: string | null;
       dept_head_signed_at?: string | null;
+      sub_approver_1_signed_at?: string | null;
       dept_head_digital_signature?: string | null;
       dept_head_signed_by?: string | null;
       returns: (typeof returnsWithDetails)[0][];
@@ -4059,6 +4061,9 @@ export async function getPendingStaffHandler(req: AuthRequest, res: Response) {
         received_by: form.received_by ?? null,
         dept_head_signed_at: formatDeptHeadSignedAtForApi(
           form.dept_head_signed_at
+        ),
+        sub_approver_1_signed_at: formatDeptHeadSignedAtForApi(
+          form.sub_approver_1_signed_at
         ),
         dept_head_digital_signature: form.dept_head_digital_signature ?? null,
         dept_head_signed_by: form.dept_head_signed_by ?? null,

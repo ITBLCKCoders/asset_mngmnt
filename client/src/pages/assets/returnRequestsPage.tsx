@@ -22,6 +22,8 @@ import {
   Layers,
   Search,
   Download,
+  LayoutGrid,
+  List,
 } from 'lucide-react';
 import { PageHeader } from '@/components/common/PageHeader';
 import { isIntangibleAssignedToUser } from '@/utils/intangibleAssets';
@@ -29,6 +31,13 @@ import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Dialog } from '@/components/ui/dialog';
+import { DataTable } from '@/components/ui/dataTable';
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipProvider,
+  TooltipTrigger,
+} from '@/components/ui/tooltip';
 import {
   AppDialogFrame,
   AppDialogGradientHeader,
@@ -145,6 +154,8 @@ type PendingForm = {
   user_id: string;
   return_type?: string | null;
   processed_by?: string | null;
+  dept_head_signed_at?: string | null;
+  sub_approver_1_signed_at?: string | null;
   returns: PendingReturn[];
 };
 
@@ -160,6 +171,7 @@ export default function ReturnRequestsPage() {
   const [loading, setLoading] = useState(true);
   const [processedLoading, setProcessedLoading] = useState(false);
   const [activeTab, setActiveTab] = useState('request');
+  const [viewMode, setViewMode] = useState<'table' | 'card'>('card');
   const [readOnly, setReadOnly] = useState(false);
   const [scope, setScope] = useState<'it' | 'admin'>('it');
 
@@ -815,6 +827,125 @@ export default function ReturnRequestsPage() {
     ? "Returns you've processed will appear here."
     : 'Requests appear here after a Department Head approves a return request.';
 
+  // Table columns for DataTable view
+  const returnRequestColumns = [
+    {
+      accessorKey: 'form_number',
+      header: 'Form #',
+      cell: ({ row }: any) => (
+        <span className="font-mono text-sm font-medium">
+          {row.original.form_number ?? row.original.formID}
+        </span>
+      ),
+      size: 140,
+    },
+    {
+      accessorKey: 'status',
+      header: 'Status',
+      cell: ({ row }: any) => {
+        const form = row.original;
+        return (
+          <Badge
+            variant="secondary"
+            className={
+              isProcessedTab
+                ? 'bg-emerald-100 text-emerald-800'
+                : 'bg-amber-100 text-amber-800'
+            }
+          >
+            {isProcessedTab ? 'Processed' : 'Pending'}
+          </Badge>
+        );
+      },
+      size: 120,
+    },
+    {
+      accessorKey: 'returner',
+      header: 'Returner',
+      cell: ({ row }: any) => {
+        const form = row.original;
+        const u = form.returns[0]?.assignment?.user;
+        if (!u) return <span className="text-sm text-gray-500">Unknown</span>;
+        return (
+          <span className="text-sm">
+            {[u.first_name, u.last_name].filter(Boolean).join(' ') || 'Unknown'}
+          </span>
+        );
+      },
+      size: 180,
+    },
+    {
+      accessorKey: 'assets',
+      header: 'Assets',
+      cell: ({ row }: any) => {
+        const form = row.original;
+        return (
+          <span className="text-sm text-gray-600">
+            {form.returns.length === 0
+              ? 'No assets'
+              : `${form.returns.length} asset${form.returns.length === 1 ? '' : 's'}`}
+          </span>
+        );
+      },
+      size: 120,
+    },
+    {
+      accessorKey: 'created_at',
+      header: 'Created',
+      cell: ({ row }: any) => (
+        <span className="text-sm text-gray-500">
+          {new Date(row.original.created_at).toLocaleDateString()}
+        </span>
+      ),
+      size: 140,
+    },
+    {
+      accessorKey: 'return_type',
+      header: 'Return Type',
+      cell: ({ row }: any) => (
+        <span className="text-sm text-gray-600 capitalize">
+          {row.original.return_type ?? '—'}
+        </span>
+      ),
+      size: 140,
+    },
+    {
+      accessorKey: 'actions',
+      header: 'Actions',
+      cell: ({ row }: any) => (
+        <div className="flex items-center gap-2">
+          <Button
+            size="sm"
+            variant="outline"
+            className="bg-red-600 text-white border-red-600 hover:bg-white hover:text-red-600 hover:border-red-600 shadow-sm"
+            onClick={(e) => {
+              e.stopPropagation();
+              openProcessModal(row.original, isProcessedTab);
+            }}
+          >
+            <Eye className="h-4 w-4 mr-1" />
+            {isProcessedTab ? 'View' : 'Return'}
+          </Button>
+          {isProcessedTab && (
+            <Button
+              size="sm"
+              variant="outline"
+              className="bg-white text-red-600 border-red-600 hover:bg-red-600 hover:text-white shadow-sm"
+              onClick={(e) => {
+                e.stopPropagation();
+                handleViewForm(row.original);
+              }}
+            >
+              <FileText className="h-4 w-4 mr-1" />
+              Form
+            </Button>
+          )}
+        </div>
+      ),
+      size: isProcessedTab ? 200 : 140,
+    },
+  ];
+
   return (
     <div className="min-h-screen">
       <main className="flex-1 p-6 space-y-6">
@@ -862,6 +993,55 @@ export default function ReturnRequestsPage() {
             </TabsTrigger>
           </TabsList>
         </Tabs>
+
+        {/* View Mode Toggle */}
+        <div className="flex items-center justify-between mb-4">
+          <p className="text-sm text-slate-600">
+            {isProcessedTab ? 'Processed return requests' : 'Pending return requests'}
+          </p>
+          <div className="flex items-center gap-1 bg-slate-100 rounded-lg p-1 border border-slate-200">
+            <TooltipProvider delayDuration={200}>
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <Button
+                    variant={viewMode === 'card' ? 'default' : 'ghost'}
+                    size="sm"
+                    onClick={() => setViewMode('card')}
+                    aria-label="Card view"
+                    className={viewMode === 'card'
+                      ? 'bg-white text-red-600 shadow-sm border border-slate-200'
+                      : 'text-slate-500 hover:text-slate-700 hover:bg-slate-200'}
+                  >
+                    <LayoutGrid className="h-4 w-4" />
+                  </Button>
+                </TooltipTrigger>
+                <TooltipContent side="bottom" className="bg-slate-900 text-white text-xs px-2 py-1 rounded">
+                  Card View
+                </TooltipContent>
+              </Tooltip>
+            </TooltipProvider>
+            <TooltipProvider delayDuration={200}>
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <Button
+                    variant={viewMode === 'table' ? 'default' : 'ghost'}
+                    size="sm"
+                    onClick={() => setViewMode('table')}
+                    aria-label="Table view"
+                    className={viewMode === 'table'
+                      ? 'bg-white text-red-600 shadow-sm border border-slate-200'
+                      : 'text-slate-500 hover:text-slate-700 hover:bg-slate-200'}
+                  >
+                    <List className="h-4 w-4" />
+                  </Button>
+                </TooltipTrigger>
+                <TooltipContent side="bottom" className="bg-slate-900 text-white text-xs px-2 py-1 rounded">
+                  Table View
+                </TooltipContent>
+              </Tooltip>
+            </TooltipProvider>
+          </div>
+        </div>
 
         {listLoading ? (
           <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-3">
@@ -922,7 +1102,7 @@ export default function ReturnRequestsPage() {
               <p className="text-gray-500 text-sm">{emptyBody}</p>
             </CardContent>
           </Card>
-        ) : (
+        ) : viewMode === 'card' ? (
           <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-3">
             {listForms.map(form => {
               const formNumber = form.form_number ?? form.formID;
@@ -1054,6 +1234,58 @@ export default function ReturnRequestsPage() {
               );
             })}
           </div>
+        ) : (
+          <DataTable<PendingForm>
+            tableId="return-requests"
+            data={listForms}
+            columns={returnRequestColumns}
+            searchPlaceholder={isProcessedTab ? 'Search processed requests...' : 'Search pending requests...'}
+            title={isProcessedTab ? 'Processed Return Requests' : 'Pending Return Requests'}
+            titleBadge={`${listForms.length} requests`}
+            isLoading={listLoading}
+            onRowClick={(row) => {
+              openProcessModal(row.original, isProcessedTab);
+            }}
+            mobileCardFields={[
+              {
+                key: 'form_number',
+                label: 'Form #',
+                render: (row) => row.form_number ?? row.formID,
+              },
+              {
+                key: 'status',
+                label: 'Status',
+                render: () => (isProcessedTab ? 'Processed' : 'Pending'),
+              },
+              {
+                key: 'returner',
+                label: 'Returner',
+                render: (row) => {
+                  const u = row.returns[0]?.assignment?.user;
+                  if (!u) return 'Unknown';
+                  return [u.first_name, u.last_name].filter(Boolean).join(' ') || 'Unknown';
+                },
+              },
+              {
+                key: 'assets',
+                label: 'Assets',
+                render: (row) =>
+                  row.returns.length === 0
+                    ? 'No assets'
+                    : `${row.returns.length} asset${row.returns.length === 1 ? '' : 's'}`,
+              },
+              {
+                key: 'created_at',
+                label: 'Created',
+                render: (row) => new Date(row.created_at).toLocaleDateString(),
+              },
+              {
+                key: 'return_type',
+                label: 'Return Type',
+                render: (row) => row.return_type ?? '—',
+              },
+            ]}
+          />
         )}
 
         {/* Asset Return Confirmation – same as Asset Return page */}

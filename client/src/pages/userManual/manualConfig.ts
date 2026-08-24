@@ -22,6 +22,8 @@ import {
   Trash2,
   Settings,
   Users,
+  Bell,
+  CheckCircle2,
 } from 'lucide-react';
 
 /** Cover step is "step 1" — the logo + title slide before the numbered steps. */
@@ -50,6 +52,9 @@ export const STEP_TITLES = [
   'Asset tagging',
   'Asset assignment',
   'Asset Return Request',
+  'Create Asset Builder',
+  'Edit Asset Builder',
+  'Notification Settings',
   'Asset return',
   'return request',
   'Asset transfer request',
@@ -63,6 +68,8 @@ export const STEP_TITLES = [
   'Assign role and custodian access',
   'Assign module permission',
   'Assign approver and sub-approver',
+  'Approval Return',
+  'HR Accountability Copy',
 ];
 
 /**
@@ -92,22 +99,27 @@ export const STEP_IS_SUB = [
   false, // 19 Asset tagging
   false, // 20 Asset assignment
   false, // 21 Asset Return Request (main)
-  false, // 22 Asset return (main)
-  true, // 23 return request (sub of Asset return)
-  false, // 24 Asset transfer request (main)
-  false, // 25 Asset transfer (main)
-  true, // 26 transfer request (sub of Asset transfer)
-  false, // 27 Asset maintenance
-  false, // 28 Asset repair
-  false, // 29 Asset disposal
-  false, // 30 Settings
-  false, // 31 User
-  true, // 32 Assign role and custodian access (sub of User)
-  true, // 33 Assign module permission (sub of User)
-  true, // 34 Assign approver and sub-approver (sub of User)
+  false, // 22 Create Asset Builder (main)
+  true, // 23 Edit Asset Builder (sub of Create Asset Builder)
+  false, // 24 Notification Settings (main)
+  false, // 25 Asset return (main)
+  true, // 26 return request (sub of Asset return)
+  false, // 27 Asset transfer request (main)
+  false, // 28 Asset transfer (main)
+  true, // 29 transfer request (sub of Asset transfer)
+  false, // 30 Asset maintenance
+  false, // 31 Asset repair
+  false, // 32 Asset disposal
+  false, // 33 Settings
+  false, // 34 User
+  true, // 35 Assign role and custodian access (sub of User)
+  true, // 36 Assign module permission (sub of User)
+  true, // 37 Assign approver and sub-approver (sub of User)
+  false, // 38 Approval Return (main)
+  true, // 39 HR Accountability Copy (sub of Documents tab)
 ];
 
-/** Sub-sub-step flag — second-level indent (only the Documents-tab forms). */
+/** Sub-sub-step flag — second-level indent (only the Documents-tab forms and HR Accountability Copy). */
 export const STEP_IS_SUB_SUB = [
   false, // 0
   false, // 1
@@ -144,6 +156,11 @@ export const STEP_IS_SUB_SUB = [
   false, // 32
   false, // 33
   false, // 34
+  false, // 35
+  false, // 36
+  false, // 37
+  false, // 38
+  true, // 39 HR Accountability Copy (sub-sub of Documents tab)
 ];
 
 export const STEP_ICONS = [
@@ -169,19 +186,24 @@ export const STEP_ICONS = [
   Tag, // 19 Asset tagging
   UserCheck, // 20 Asset assignment
   ArrowDownToLine, // 21 Asset Return Request
-  RotateCcw, // 22 Asset return
-  ArrowDownToLine, // 23 return request
-  ArrowRightLeft, // 24 Asset transfer request
-  ArrowRightLeft, // 25 Asset transfer
-  ArrowRightLeft, // 26 transfer request
-  Wrench, // 27 Asset maintenance
-  Hammer, // 28 Asset repair
-  Trash2, // 29 Asset disposal
-  Settings, // 30 Settings
-  Users, // 31 User
-  UserCheck, // 32 Assign role and custodian access
-  Settings, // 33 Assign module permission
-  Users, // 34 Assign approver and sub-approver
+  Package, // 22 Create Asset Builder
+  Pencil, // 23 Edit Asset Builder
+  Bell, // 24 Notification Settings
+  RotateCcw, // 25 Asset return
+  ArrowDownToLine, // 26 return request
+  ArrowRightLeft, // 27 Asset transfer request
+  ArrowRightLeft, // 28 Asset transfer
+  ArrowRightLeft, // 29 transfer request
+  Wrench, // 30 Asset maintenance
+  Hammer, // 31 Asset repair
+  Trash2, // 32 Asset disposal
+  Settings, // 33 Settings
+  Users, // 34 User
+  UserCheck, // 35 Assign role and custodian access
+  Settings, // 36 Assign module permission
+  Users, // 37 Assign approver and sub-approver
+  CheckCircle2, // 38 Approval Return
+  FileCheck, // 39 HR Accountability Copy
 ];
 
 export const STEPS = STEP_TITLES.length;

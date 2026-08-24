@@ -353,6 +353,7 @@ export interface ApprovedTransferFormRow extends RowDataPacket {
   transfer_type: string | null;
   received_by: string | null;
   dept_head_signed_at: string | null;
+  sub_approver_1_signed_at: string | null;
   dept_head_signed_by: string | null;
   dept_head_digital_signature: string | null;
   form_company_id: string | null;
@@ -368,6 +369,7 @@ export async function getApprovedTransferFormsByCompanyId(
               DATE_FORMAT(atf.process_signed_at, '%Y-%m-%d %H:%i:%s') AS process_signed_at,
               atf.process_digital_signature, atf.transfer_type, atf.received_by,
               DATE_FORMAT(atf.dept_head_signed_at, '%Y-%m-%d %H:%i:%s') AS dept_head_signed_at,
+              DATE_FORMAT(atf.sub_approver_1_signed_at, '%Y-%m-%d %H:%i:%s') AS sub_approver_1_signed_at,
               atf.dept_head_signed_by,
               atf.dept_head_digital_signature, d.company_id AS form_company_id
        FROM asset_transfer_forms atf
@@ -375,10 +377,10 @@ export async function getApprovedTransferFormsByCompanyId(
        WHERE atf.deleted_at IS NULL
          AND (atf.declined_at IS NULL)
          AND atf.signed_at IS NOT NULL
-         AND atf.dept_head_signed_at IS NOT NULL
+         AND (atf.dept_head_signed_at IS NOT NULL OR atf.sub_approver_1_signed_at IS NOT NULL)
          AND atf.executed_at IS NULL
          AND d.company_id = ?
-       ORDER BY atf.dept_head_signed_at DESC`;
+       ORDER BY COALESCE(atf.dept_head_signed_at, atf.sub_approver_1_signed_at) DESC`;
   const [rows] = await pool.execute<ApprovedTransferFormRow[]>(sql, [companyId]);
   return rows;
 }

@@ -23,11 +23,20 @@ import {
   Layers,
   Search,
   Download,
+  LayoutGrid,
+  List,
 } from 'lucide-react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { PageHeader } from '@/components/common/PageHeader';
 import { Button } from '@/components/ui/button';
+import { DataTable } from '@/components/ui/dataTable';
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipProvider,
+  TooltipTrigger,
+} from '@/components/ui/tooltip';
 import {
   Tabs,
   TabsContent,
@@ -147,6 +156,7 @@ export default function TransferRequestsPage() {
   );
   const [processedLoading, setProcessedLoading] = useState(false);
   const [activeTab, setActiveTab] = useState('request');
+  const [viewMode, setViewMode] = useState<'table' | 'card'>('card');
   const [readOnly, setReadOnly] = useState(false);
   const [scope, setScope] = useState<'it' | 'admin'>('it');
 
@@ -597,6 +607,124 @@ export default function TransferRequestsPage() {
     ? "Transfers you've processed will appear here."
     : 'Requests appear here after a Department Head approves a transfer request.';
 
+  // Table columns for DataTable view
+  const transferRequestColumns = [
+    {
+      accessorKey: 'form_number',
+      header: 'Form #',
+      cell: ({ row }: any) => (
+        <span className="font-mono text-sm font-medium">
+          {row.original.form_number ?? row.original.formID}
+        </span>
+      ),
+      size: 140,
+    },
+    {
+      accessorKey: 'status',
+      header: 'Status',
+      cell: ({ row }: any) => (
+        <Badge className="bg-red-100 text-red-800">
+          {(row.original.returns || []).length} asset
+          {(row.original.returns || []).length !== 1 ? 's' : ''}
+        </Badge>
+      ),
+      size: 120,
+    },
+    {
+      accessorKey: 'transfer_to',
+      header: 'Transfer To',
+      cell: ({ row }: any) => {
+        const batch = row.original;
+        return (
+          <span className="text-sm">
+            {batch.new_assigned_user
+              ? `${batch.new_assigned_user.first_name} ${batch.new_assigned_user.last_name}`
+              : '—'}
+          </span>
+        );
+      },
+      size: 180,
+    },
+    {
+      accessorKey: 'transfer_from',
+      header: 'Transfer From',
+      cell: ({ row }: any) => (
+        <span className="text-sm text-gray-600">{formatTransferFromNames(row.original)}</span>
+      ),
+      size: 180,
+    },
+    {
+      accessorKey: 'assets',
+      header: 'Assets',
+      cell: ({ row }: any) => (
+        <span className="text-sm text-gray-600">
+          {(row.original.returns || []).length === 0
+            ? 'No assets'
+            : `${(row.original.returns || []).length} asset${(row.original.returns || []).length === 1 ? '' : 's'}`}
+        </span>
+      ),
+      size: 120,
+    },
+    {
+      accessorKey: 'created_at',
+      header: 'Created',
+      cell: ({ row }: any) => (
+        <span className="text-sm text-gray-500">
+          {row.original.created_at &&
+          !isNaN(new Date(row.original.created_at).getTime())
+            ? new Date(row.original.created_at).toLocaleDateString()
+            : '—'}
+        </span>
+      ),
+      size: 140,
+    },
+    {
+      accessorKey: 'transfer_type',
+      header: 'Transfer Type',
+      cell: ({ row }: any) => (
+        <span className="text-sm text-gray-600 capitalize">
+          {row.original.transfer_type ?? '—'}
+        </span>
+      ),
+      size: 140,
+    },
+    {
+      accessorKey: 'actions',
+      header: 'Actions',
+      cell: ({ row }: any) => (
+        <div className="flex items-center gap-2">
+          <Button
+            size="sm"
+            variant="outline"
+            className="bg-red-600 text-white border-red-600 hover:bg-white hover:text-red-600 hover:border-red-600 shadow-sm"
+            onClick={(e) => {
+              e.stopPropagation();
+              handleView(row.original, isProcessedTab);
+            }}
+          >
+            <Eye className="h-4 w-4 mr-1" />
+            {isProcessedTab ? 'View' : 'Transfer'}
+          </Button>
+          {isProcessedTab && (
+            <Button
+              size="sm"
+              variant="outline"
+              className="bg-white text-red-600 border-red-600 hover:bg-red-600 hover:text-white shadow-sm"
+              onClick={(e) => {
+                e.stopPropagation();
+                handleViewForm(row.original);
+              }}
+            >
+              <FileText className="h-4 w-4 mr-1" />
+              Form
+            </Button>
+          )}
+        </div>
+      ),
+      size: isProcessedTab ? 200 : 140,
+    },
+  ];
+
   return (
     <div className="min-h-screen">
       <main className="flex-1 p-6 space-y-6">
@@ -644,6 +772,55 @@ export default function TransferRequestsPage() {
             </TabsTrigger>
           </TabsList>
         </Tabs>
+
+        {/* View Mode Toggle */}
+        <div className="flex items-center justify-between mb-4">
+          <p className="text-sm text-slate-600">
+            {isProcessedTab ? 'Processed transfer requests' : 'Approved transfer requests'}
+          </p>
+          <div className="flex items-center gap-1 bg-slate-100 rounded-lg p-1 border border-slate-200">
+            <TooltipProvider delayDuration={200}>
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <Button
+                    variant={viewMode === 'card' ? 'default' : 'ghost'}
+                    size="sm"
+                    onClick={() => setViewMode('card')}
+                    aria-label="Card view"
+                    className={viewMode === 'card'
+                      ? 'bg-white text-red-600 shadow-sm border border-slate-200'
+                      : 'text-slate-500 hover:text-slate-700 hover:bg-slate-200'}
+                  >
+                    <LayoutGrid className="h-4 w-4" />
+                  </Button>
+                </TooltipTrigger>
+                <TooltipContent side="bottom" className="bg-slate-900 text-white text-xs px-2 py-1 rounded">
+                  Card View
+                </TooltipContent>
+              </Tooltip>
+            </TooltipProvider>
+            <TooltipProvider delayDuration={200}>
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <Button
+                    variant={viewMode === 'table' ? 'default' : 'ghost'}
+                    size="sm"
+                    onClick={() => setViewMode('table')}
+                    aria-label="Table view"
+                    className={viewMode === 'table'
+                      ? 'bg-white text-red-600 shadow-sm border border-slate-200'
+                      : 'text-slate-500 hover:text-slate-700 hover:bg-slate-200'}
+                  >
+                    <List className="h-4 w-4" />
+                  </Button>
+                </TooltipTrigger>
+                <TooltipContent side="bottom" className="bg-slate-900 text-white text-xs px-2 py-1 rounded">
+                  Table View
+                </TooltipContent>
+              </Tooltip>
+            </TooltipProvider>
+          </div>
+        </div>
 
         {listLoading ? (
           <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-3">
@@ -695,7 +872,7 @@ export default function TransferRequestsPage() {
               <p className="text-gray-500 text-sm">{emptyBody}</p>
             </CardContent>
           </Card>
-        ) : (
+        ) : viewMode === 'card' ? (
           <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-3">
             {listBatches.map(batch => {
               const transferrerName = formatTransferFromNames(batch);
@@ -904,6 +1081,65 @@ export default function TransferRequestsPage() {
             );
             })}
           </div>
+        ) : (
+          <DataTable<ApprovedBatch>
+            tableId="transfer-requests"
+            data={listBatches}
+            columns={transferRequestColumns}
+            searchPlaceholder={isProcessedTab ? 'Search processed requests...' : 'Search approved requests...'}
+            title={isProcessedTab ? 'Processed Transfer Requests' : 'Approved Transfer Requests'}
+            titleBadge={`${listBatches.length} requests`}
+            isLoading={listLoading}
+            onRowClick={(row) => {
+              handleView(row.original, isProcessedTab);
+            }}
+            mobileCardFields={[
+              {
+                key: 'form_number',
+                label: 'Form #',
+                render: (row) => row.form_number ?? row.formID,
+              },
+              {
+                key: 'status',
+                label: 'Status',
+                render: (row) => `${(row.returns || []).length} asset${(row.returns || []).length !== 1 ? 's' : ''}`,
+              },
+              {
+                key: 'transfer_to',
+                label: 'Transfer To',
+                render: (row) =>
+                  row.new_assigned_user
+                    ? `${row.new_assigned_user.first_name} ${row.new_assigned_user.last_name}`
+                    : '—',
+              },
+              {
+                key: 'transfer_from',
+                label: 'Transfer From',
+                render: (row) => formatTransferFromNames(row),
+              },
+              {
+                key: 'assets',
+                label: 'Assets',
+                render: (row) =>
+                  (row.returns || []).length === 0
+                    ? 'No assets'
+                    : `${(row.returns || []).length} asset${(row.returns || []).length === 1 ? '' : 's'}`,
+              },
+              {
+                key: 'created_at',
+                label: 'Created',
+                render: (row) =>
+                  row.created_at && !isNaN(new Date(row.created_at).getTime())
+                    ? new Date(row.created_at).toLocaleDateString()
+                    : '—',
+              },
+              {
+                key: 'transfer_type',
+                label: 'Transfer Type',
+                render: (row) => row.transfer_type ?? '—',
+              },
+            ]}
+          />
         )}
 
         <Dialog
