@@ -13,7 +13,6 @@ import {
   ChevronDown,
   ChevronUp,
   CheckCircle,
-  CheckCircle2,
   AlertTriangle,
   ImagePlus,
   XCircle,
@@ -145,7 +144,6 @@ type PendingForm = {
   created_at: string;
   user_id: string;
   return_type?: string | null;
-  processor_wet_return_pdf_url?: string | null;
   processed_by?: string | null;
   returns: PendingReturn[];
 };
@@ -1094,15 +1092,6 @@ export default function ReturnRequestsPage() {
                     {processForm.returns.length} asset
                     {processForm.returns.length !== 1 ? 's' : ''}
                   </div>
-
-                  {processForm.processor_wet_return_pdf_url?.trim() ? (
-                    <div className="flex flex-col gap-2 rounded-xl border border-emerald-200 bg-emerald-50/80 p-4 sm:flex-row sm:items-center sm:justify-between -mx-3">
-                      <span className="text-sm text-emerald-950 flex items-center gap-2">
-                        <CheckCircle2 className="h-5 w-5 text-emerald-600 shrink-0" />
-                        Return form ready for processing.
-                      </span>
-                    </div>
-                  ) : null}
 
                   {/* Return Type */}
                   <div className="rounded-xl border border-slate-200 bg-white p-5 shadow-sm -mx-3 transition-shadow hover:shadow-md">

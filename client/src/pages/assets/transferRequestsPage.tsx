@@ -76,8 +76,6 @@ interface ApprovedBatch {
   form_number: string;
   created_at: string;
   user_id: string;
-  /** Wet-signed scan on file (`local` or URL), same idea as return forms */
-  processor_wet_transfer_pdf_url?: string | null;
   new_assigned_user_id: string;
   new_assigned_user?: {
     first_name: string;

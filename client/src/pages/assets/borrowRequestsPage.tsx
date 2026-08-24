@@ -102,8 +102,11 @@ export interface BorrowRequestRow {
   status: string;
   created_at: string;
   form_number?: string | null;
-  category_name?: string;
-  type_name?: string;
+  description: string;
+  category_id?: string | null;
+  type_id?: string | null;
+  category_name?: string | null;
+  type_name?: string | null;
   requester_department_name?: string | null;
   requester_first_name?: string | null;
   requester_last_name?: string | null;
@@ -119,7 +122,6 @@ export interface BorrowRequestRow {
   asset_name?: string | null;
   asset_serial?: string | null;
   return_condition?: string | null;
-  processor_wet_borrow_pdf_url?: string | null;
   dept_head_signed_at?: string | null;
   dept_head_name?: string | null;
   dept_head_signed_by?: string | null;
@@ -240,11 +242,10 @@ export function ProcessBorrowRequestSummary({ row }: { row: BorrowRequestRow }) 
   const purpose = row.purpose?.trim() || '—';
   const borrower = requesterName(row);
   const department = row.requester_department_name?.trim() || '—';
-  const category = row.category_name?.trim() || '—';
-  const type = row.type_name?.trim() || '—';
+  const description = (row as any).description?.trim() || '—';
 
   // Check if we have meaningful data to display
-  const hasData = borrower !== '—' || department !== '—' || category !== '—' || type !== '—';
+  const hasData = borrower !== '—' || department !== '—' || description !== '—';
 
   if (!hasData) {
     return (
@@ -321,12 +322,7 @@ export function ProcessBorrowRequestSummary({ row }: { row: BorrowRequestRow }) 
         <div className="space-y-1.5">
           <SummarySectionTitle>Requested equipment</SummarySectionTitle>
           <div className="grid gap-2 sm:grid-cols-2">
-            <SummaryField
-              icon={Layers}
-              label="Category"
-              value={category}
-            />
-            <SummaryField icon={Package} label="Type" value={type} />
+            <SummaryField icon={AlignLeft} label="Description" value={description} className="sm:col-span-2" />
           </div>
         </div>
 
@@ -1605,7 +1601,7 @@ export default function BorrowRequestsPage() {
                     <div className="space-y-1.5">
                       <SummarySectionTitle>Asset selection <span className="text-red-600">*</span></SummarySectionTitle>
                       <p className="text-[11px] text-slate-500">
-                        Sorted with requested category &amp; type first, then by category and code.
+                        Sorted with requested description first, then by code.
                       </p>
                       <Select
                         value={selectedAssetCode || undefined}

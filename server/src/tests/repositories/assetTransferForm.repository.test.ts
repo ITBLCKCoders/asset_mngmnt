@@ -28,7 +28,6 @@ describe('assetTransferForm.repository', () => {
           {
             formID: 'tf1', form_number: 'TF-001', user_id: 'u1', new_assigned_user_id: 'u2',
             created_at: '2024-01-05', signed_at: '2024-01-06',
-            processor_wet_transfer_pdf_url: '/wet/tf1.pdf',
             declined_at: null, executed_at: null, process_signed_at: null,
             dept_head_signed_at: '2024-01-05', it_manager_signed_at: '2024-01-06',
             first_name: 'Tom', last_name: 'Ross', email: 'tom@test.com',
@@ -54,7 +53,6 @@ describe('assetTransferForm.repository', () => {
           new_user: { first_name: 'Ann', last_name: 'Lee' },
           department_name: 'IT',
           location_name: 'HQ',
-          processor_wet_pdf_url: '/wet/tf1.pdf',
         },
       ]);
     });
@@ -63,7 +61,6 @@ describe('assetTransferForm.repository', () => {
       const row = {
         formID: 'tf2', form_number: 'TF-002', user_id: 'u1', new_assigned_user_id: null,
         created_at: '2024-01-07', signed_at: null,
-        processor_wet_transfer_pdf_url: null,
         declined_at: null, executed_at: null, process_signed_at: null,
         dept_head_signed_at: null, it_manager_signed_at: null,
         first_name: 'Tom', last_name: 'Ross', email: 'tom@test.com',

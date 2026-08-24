@@ -473,21 +473,21 @@ export async function getTransferFormsByAssetId(
 ): Promise<any[]> {
   const [rows] = (await pool.execute(
     `SELECT DISTINCT atf.formID, atf.form_number, atf.user_id, atf.new_assigned_user_id,
-            atf.created_at, atf.signed_at, atf.processor_wet_transfer_pdf_url,
+            atf.created_at, atf.signed_at,
             atf.declined_at, atf.executed_at, atf.process_signed_at,
             atf.dept_head_signed_at, atf.it_manager_signed_at,
             u.first_name, u.last_name, u.email,
             nu.first_name AS new_first_name, nu.last_name AS new_last_name,
             d.name AS department_name, l.name AS location_name
      FROM transfer_form_assignments tfa
-     JOIN asset_transfer_forms atf ON tfa.form_id = atf.formID AND atf.deleted_at IS NULL
-     JOIN asset_assignments aa ON tfa.assignment_id = aa.assignmentID AND aa.deleted_at IS NULL
-     LEFT JOIN users u ON atf.user_id = u.userID
-     LEFT JOIN users nu ON atf.new_assigned_user_id = nu.userID
-     LEFT JOIN asset_mngmnt_departments d ON atf.department_id = d.departmentID
-     LEFT JOIN asset_mngmnt_locations l ON atf.location_id = l.locationID
-     WHERE aa.asset_id = ?
-     ORDER BY atf.created_at DESC`,
+      JOIN asset_transfer_forms atf ON tfa.form_id = atf.formID AND atf.deleted_at IS NULL
+      JOIN asset_assignments aa ON tfa.assignment_id = aa.assignmentID AND aa.deleted_at IS NULL
+      LEFT JOIN users u ON atf.user_id = u.userID
+      LEFT JOIN users nu ON atf.new_assigned_user_id = nu.userID
+      LEFT JOIN asset_mngmnt_departments d ON atf.department_id = d.departmentID
+      LEFT JOIN asset_mngmnt_locations l ON atf.location_id = l.locationID
+      WHERE aa.asset_id = ?
+      ORDER BY atf.created_at DESC`,
     [assetId]
   )) as any[];
 
@@ -527,7 +527,6 @@ export async function getTransferFormsByAssetId(
           : undefined,
       department_name: row.department_name ?? null,
       location_name: row.location_name ?? null,
-      processor_wet_pdf_url: row.processor_wet_transfer_pdf_url ?? null,
     });
   }
   return forms;

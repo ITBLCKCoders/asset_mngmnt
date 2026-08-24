@@ -278,7 +278,6 @@ export interface ReturnFormDto {
   };
   department_name?: string;
   location_name?: string;
-  processor_wet_pdf_url?: string | null;
 }
 
 export interface TransferFormDto {
@@ -299,7 +298,6 @@ export interface TransferFormDto {
   };
   department_name?: string;
   location_name?: string;
-  processor_wet_pdf_url?: string | null;
 }
 
 export interface BorrowFormDto {
@@ -317,7 +315,6 @@ export interface BorrowFormDto {
   department_name?: string;
   asset_code?: string;
   asset_name?: string;
-  processor_wet_borrow_pdf_url?: string | null;
 }
 
 // Location DTOs

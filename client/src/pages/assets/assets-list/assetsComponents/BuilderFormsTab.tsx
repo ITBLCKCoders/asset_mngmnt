@@ -49,7 +49,6 @@ interface ReturnForm {
   };
   department_name?: string;
   location_name?: string;
-  processor_wet_pdf_url?: string | null;
   asset_code: string;
 }
 
@@ -71,7 +70,6 @@ interface TransferForm {
   };
   department_name?: string;
   location_name?: string;
-  processor_wet_pdf_url?: string | null;
   asset_code: string;
 }
 
@@ -90,7 +88,6 @@ interface BorrowForm {
   department_name?: string;
   asset_code?: string;
   asset_name?: string;
-  processor_wet_borrow_pdf_url?: string | null;
 }
 
 interface BuilderFormsTabProps {
@@ -129,19 +126,6 @@ export function BuilderFormsTab({ builderId, onPdfModalOpen, onPdfModalClose }: 
       toast.error('Failed to load forms');
     } finally {
       setLoading(false);
-    }
-  };
-
-  const handleViewPdf = (pdfUrl: string | null | undefined, title: string) => {
-    if (pdfUrl) {
-      window.dispatchEvent(
-        new CustomEvent('openPdfPreview', {
-          detail: { pdfUrl, title },
-        })
-      );
-      onPdfModalOpen?.();
-    } else {
-      toast.error('PDF not available for this form');
     }
   };
 
@@ -362,15 +346,6 @@ export function BuilderFormsTab({ builderId, onPdfModalOpen, onPdfModalClose }: 
                   </div>
                   <div className="flex items-center gap-2">
                     {getStatusBadge(form.status)}
-                    {form.processor_wet_pdf_url && (
-                      <Button
-                        variant="ghost"
-                        size="sm"
-                        onClick={() => handleViewPdf(form.processor_wet_pdf_url, `Return Form ${form.formNumber}`)}
-                      >
-                        <Eye className="h-4 w-4" />
-                      </Button>
-                    )}
                   </div>
                 </div>
               ))}
@@ -415,15 +390,6 @@ export function BuilderFormsTab({ builderId, onPdfModalOpen, onPdfModalClose }: 
                   </div>
                   <div className="flex items-center gap-2">
                     {getStatusBadge(form.status)}
-                    {form.processor_wet_pdf_url && (
-                      <Button
-                        variant="ghost"
-                        size="sm"
-                        onClick={() => handleViewPdf(form.processor_wet_pdf_url, `Transfer Form ${form.formNumber}`)}
-                      >
-                        <Eye className="h-4 w-4" />
-                      </Button>
-                    )}
                   </div>
                 </div>
               ))}
@@ -474,15 +440,6 @@ export function BuilderFormsTab({ builderId, onPdfModalOpen, onPdfModalClose }: 
                   </div>
                   <div className="flex items-center gap-2">
                     {getStatusBadge(form.status)}
-                    {form.processor_wet_borrow_pdf_url && (
-                      <Button
-                        variant="ghost"
-                        size="sm"
-                        onClick={() => handleViewPdf(form.processor_wet_borrow_pdf_url, `Borrow Form ${form.formNumber}`)}
-                      >
-                        <Eye className="h-4 w-4" />
-                      </Button>
-                    )}
                   </div>
                 </div>
               ))}

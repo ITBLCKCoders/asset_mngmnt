@@ -27,7 +27,6 @@ describe('assetReturn.repository', () => {
             formID: 'rf1', form_number: 'RF-001', user_id: 'u1',
             created_at: '2024-01-01', signed_at: null,
             return_type: 'Full', received_by: 'IT',
-            processor_wet_return_pdf_url: '/wet/rf1.pdf',
             declined_at: null, process_signed_at: '2024-01-02',
             dept_head_signed_at: '2024-01-01', processor_declined_at: null,
             first_name: 'John', last_name: 'Doe', email: 'john@test.com',
@@ -53,7 +52,6 @@ describe('assetReturn.repository', () => {
           user: { id: 'u1', first_name: 'John', last_name: 'Doe', email: 'john@test.com' },
           department_name: 'IT',
           location_name: 'HQ',
-          processor_wet_pdf_url: '/wet/rf1.pdf',
         },
       ]);
     });
@@ -64,7 +62,6 @@ describe('assetReturn.repository', () => {
           {
             formID: 'rf2', form_number: 'RF-002', user_id: 'u1',
             created_at: '2024-01-03', signed_at: null, return_type: '', received_by: '',
-            processor_wet_return_pdf_url: null,
             declined_at: null, process_signed_at: null,
             dept_head_signed_at: null, processor_declined_at: null,
             first_name: 'Jane', last_name: 'Roe', email: 'jane@test.com',
@@ -73,7 +70,6 @@ describe('assetReturn.repository', () => {
           {
             formID: 'rf2', form_number: 'RF-002', user_id: 'u1',
             created_at: '2024-01-03', signed_at: null, return_type: '', received_by: '',
-            processor_wet_return_pdf_url: null,
             declined_at: null, process_signed_at: null,
             dept_head_signed_at: null, processor_declined_at: null,
             first_name: 'Jane', last_name: 'Roe', email: 'jane@test.com',

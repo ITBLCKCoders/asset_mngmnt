@@ -582,18 +582,18 @@ export async function getReturnFormsByAssetId(
 ): Promise<any[]> {
   const [rows] = (await pool.execute(
     `SELECT DISTINCT arf.formID, arf.form_number, arf.user_id, arf.created_at, arf.signed_at,
-            arf.return_type, arf.received_by, arf.processor_wet_return_pdf_url,
+            arf.return_type, arf.received_by,
             arf.declined_at, arf.process_signed_at, arf.dept_head_signed_at, arf.processor_declined_at,
             u.first_name, u.last_name, u.email,
             d.name AS department_name, l.name AS location_name
      FROM asset_returns ar
-     JOIN asset_return_forms arf ON ar.form_id = arf.formID AND arf.deleted_at IS NULL
-     JOIN asset_assignments aa ON ar.assignment_id = aa.assignmentID AND aa.deleted_at IS NULL
-     LEFT JOIN users u ON arf.user_id = u.userID
-     LEFT JOIN asset_mngmnt_departments d ON arf.department_id = d.departmentID
-     LEFT JOIN asset_mngmnt_locations l ON arf.location_id = l.locationID
-     WHERE aa.asset_id = ? AND ar.deleted_at IS NULL
-     ORDER BY arf.created_at DESC`,
+      JOIN asset_return_forms arf ON ar.form_id = arf.formID AND arf.deleted_at IS NULL
+      JOIN asset_assignments aa ON ar.assignment_id = aa.assignmentID AND aa.deleted_at IS NULL
+      LEFT JOIN users u ON arf.user_id = u.userID
+      LEFT JOIN asset_mngmnt_departments d ON arf.department_id = d.departmentID
+      LEFT JOIN asset_mngmnt_locations l ON arf.location_id = l.locationID
+      WHERE aa.asset_id = ? AND ar.deleted_at IS NULL
+      ORDER BY arf.created_at DESC`,
     [assetId]
   )) as any[];
 
@@ -632,7 +632,6 @@ export async function getReturnFormsByAssetId(
       },
       department_name: row.department_name ?? null,
       location_name: row.location_name ?? null,
-      processor_wet_pdf_url: row.processor_wet_return_pdf_url ?? null,
     });
   }
   return forms;
