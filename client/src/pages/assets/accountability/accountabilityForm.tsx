@@ -309,15 +309,41 @@ const getAssetScopeType = (
 };
 
 // Helper function to determine department label for header based on asset scopes
-const getDepartmentName = (form: AccountabilityForm) => {
+// Uses combined tangible + intangible classification (intangible via type_department)
+// so the 1st-page header matches the signatory "Copy for IT/Admin" and the
+// acknowledgment issuingDepartment logic (itAssets/itIntangibleAssets).
+const getDepartmentName = (
+  form: AccountabilityForm,
+  assignedIntangibleAssets: any[] = []
+) => {
   let hasIT = false;
   let hasAdmin = false;
 
+  // Classify embedded form assets via display scope (correct for intangibles)
   for (const asset of form.assets) {
-    const scope = getAssetScopeType(asset, form);
+    const scope = getAssetDisplayScope(asset as any, form);
     if (scope === 'IT') hasIT = true;
     if (scope === 'Admin') hasAdmin = true;
     if (hasIT && hasAdmin) break;
+  }
+
+  // Also consider resolved assigned intangibles (union used by PDF/content)
+  if (!(hasIT && hasAdmin)) {
+    for (const asset of assignedIntangibleAssets) {
+      const scope = getAssetDisplayScope(asset, form);
+      if (scope === 'IT') hasIT = true;
+      if (scope === 'Admin') hasAdmin = true;
+      if (hasIT && hasAdmin) break;
+    }
+  }
+
+  // Fallback when form has no classifiable assets: use form/user department
+  if (!hasIT && !hasAdmin) {
+    const fallback = classifyDepartmentScopeByName(
+      form.department?.name || form.user?.department?.name || ''
+    );
+    if (fallback === 'IT') hasIT = true;
+    if (fallback === 'Admin') hasAdmin = true;
   }
 
   if (hasIT && hasAdmin) {
@@ -566,10 +592,10 @@ export const generateAccountabilityFormPDF = async (
       : 'Asset Accountability Form';
   doc.text(title, 105, 40, { align: 'center' });
 
-  // Department - font size 12
+  // Department - font size 12 (uses combined tangible+intangible scope so IT header matches IT copy)
   doc.setFontSize(12);
   doc.setFont('helvetica', 'normal');
-  const departmentName = getDepartmentName(form);
+  const departmentName = getDepartmentName(form, assignedIntangibleAssets);
   doc.text(departmentName, 105, 50, { align: 'center' });
 
   // Employee Information - font size 12 bold
@@ -1242,8 +1268,9 @@ I agree that if any of the items are damaged or lost due to my negligence, I sha
     doc.text('Signature over Printed Name', 130, signatureY + 35);
   }
 
-  // Determine which copy label to use based on asset types
-  const copyLabel = itAssets.length > 0 ? 'Copy for IT:' : 'Copy for Admin:';
+  // Determine which copy label to use based on asset types (must match header/issuingDepartment: IT if any IT asset/intangible, else Admin)
+  const hasITForCopy = itAssets.length > 0 || itIntangibleAssets.length > 0;
+  const copyLabel = hasITForCopy ? 'Copy for IT:' : 'Copy for Admin:';
   doc.text(copyLabel, 20, signatureY + 60);
 
   const itCopyDate = form.created_at ? new Date(form.created_at) : new Date();
