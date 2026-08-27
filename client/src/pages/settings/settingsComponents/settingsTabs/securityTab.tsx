@@ -34,6 +34,7 @@ export function SecurityTab({ isActive }: { isActive?: boolean }) {
     passwordExpirationDays: '90',
     maxLoginAttempts: '5',
     lockoutDurationMinutes: '30',
+    failedAttemptResetMinutes: '15',
     sessionTimeoutMinutes: '60',
     enableTwoFactor: false,
     enableAuditLogging: true,
@@ -67,6 +68,7 @@ export function SecurityTab({ isActive }: { isActive?: boolean }) {
             passwordExpirationDays: s.passwordExpirationDays?.toString() || '90',
             maxLoginAttempts: s.maxLoginAttempts?.toString() || '5',
             lockoutDurationMinutes: s.lockoutDurationMinutes?.toString() || '30',
+            failedAttemptResetMinutes: s.failedAttemptResetMinutes?.toString() || '15',
             sessionTimeoutMinutes: s.sessionTimeoutMinutes?.toString() || '60',
             enableTwoFactor: false,
             enableAuditLogging: s.auditLoggingEnabled ?? true,
@@ -106,6 +108,7 @@ export function SecurityTab({ isActive }: { isActive?: boolean }) {
         passwordExpirationDays: parseInt(settings.passwordExpirationDays),
         maxLoginAttempts: parseInt(settings.maxLoginAttempts),
         lockoutDurationMinutes: parseInt(settings.lockoutDurationMinutes),
+        failedAttemptResetMinutes: parseInt(settings.failedAttemptResetMinutes),
         sessionTimeoutMinutes: parseInt(settings.sessionTimeoutMinutes),
         auditLoggingEnabled: settings.enableAuditLogging,
         otpExpirySeconds: parseInt(settings.otpExpirySeconds),
@@ -523,6 +526,34 @@ export function SecurityTab({ isActive }: { isActive?: boolean }) {
                     <SelectItem value="900">15 minutes</SelectItem>
                   </SelectContent>
                 </Select>
+              </div>
+
+              <div className="space-y-2">
+                <Label className="text-base font-medium">
+                  Failed Attempt Reset (minutes)
+                </Label>
+                <Select
+                  value={settings.failedAttemptResetMinutes}
+                  onValueChange={value =>
+                    setSettings({ ...settings, failedAttemptResetMinutes: value })
+                  }
+                >
+                  <SelectTrigger className="text-base">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="5">5 minutes</SelectItem>
+                    <SelectItem value="10">10 minutes</SelectItem>
+                    <SelectItem value="15">15 minutes</SelectItem>
+                    <SelectItem value="30">30 minutes</SelectItem>
+                    <SelectItem value="60">1 hour</SelectItem>
+                    <SelectItem value="0">Never resets</SelectItem>
+                  </SelectContent>
+                </Select>
+                <p className="text-sm text-muted-foreground">
+                  Failed attempts are cleared after this window, preventing old
+                  attempts from locking first-time logins
+                </p>
               </div>
             </div>
 

@@ -9,6 +9,7 @@ import {
   getMyAssetsHandler,
   getAllFormsByAssetIdHandler,
 } from '../controllers/assets.controller.js';
+import { getAssetMovementHandler } from '../controllers/accountabilityForms.controller.js';
 import { importAssetsHandler } from '../controllers/assetImport.controller.js';
 import { authenticate } from '../middleware/authenticate.js';
 
@@ -208,5 +209,22 @@ router.post('/:assetId/assign', assignAssetHandler);
  *       404: { description: Asset not found }
  */
 router.get('/:assetId/forms', getAllFormsByAssetIdHandler);
+
+/**
+ * @swagger
+ * /api/assets/{assetId}/movement:
+ *   get:
+ *     tags: [Assets]
+ *     summary: Get asset movement chain (accountability forms + return/transfer/replacement links)
+ *     parameters:
+ *       - in: path
+ *         name: assetId
+ *         required: true
+ *         schema: { type: string }
+ *     responses:
+ *       200: { description: Asset movement data }
+ *       401: { description: Unauthorized }
+ */
+router.get('/:assetId/movement', getAssetMovementHandler);
 
 export default router;

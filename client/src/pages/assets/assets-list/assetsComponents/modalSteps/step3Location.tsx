@@ -366,6 +366,7 @@ export function Step3Location({
                       onChange={e =>
                         updateForm('departmentSearch', e.target.value)
                       }
+                      onKeyDown={e => e.stopPropagation()}
                       className="pl-8 border-gray-300 focus:border-indigo-500"
                     />
                   </div>

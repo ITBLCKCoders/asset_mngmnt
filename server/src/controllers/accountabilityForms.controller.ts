@@ -4,10 +4,14 @@ import type { AuthRequest } from '../middleware/authenticate.js';
 import logger from '../logger.js';
 import { createAuditLog } from '../utils/audit.js';
 import * as repo from '../repositories/accountabilityForm.repository.js';
+import { getReturnFormsByAssetId as getAssetReturnFormsByAssetId } from '../repositories/assetReturn.repository.js';
+import { getTransferFormsByAssetId as getAssetTransferFormsByAssetId } from '../repositories/assetTransferForm.repository.js';
 import * as checklistRepo from '../repositories/assetChecklist.repository.js';
+import { resolveAssetIdByCodeOrId } from '../repositories/asset.repository.js';
 import { declineAccountabilityFormBodySchema } from '../dtos/accountabilityForms/DeclineAccountabilityFormDto.js';
 import { applyReturnAssignmentSideEffectsOnConnection } from '../utils/returnAssignmentSideEffects.js';
 import { signedRawUrlFromStoredSecureUrl } from '../utils/cloudinary.js';
+import { getAssetScope } from '../utils/assetScope.js';
 import { emitNotification } from '../sockets/socketHandlers.js';
 import { createNotificationForApi } from '../utils/notificationsApi.js';
 import { getHrAccountabilityReceiverUserIds } from '../utils/approverNotifications.js';
@@ -17,7 +21,13 @@ import { randomUUID } from 'crypto';
 import { resolveChecklistAssignmentIds } from '../utils/accountabilityFormAssetsData.js';
 import { isComputerTypeName } from '../utils/computerTypeAsset.js';
 import * as assignmentRepo from '../repositories/assetAssignment.repository.js';
-import { getManagerApprover1UserIdsInDepartmentAndCompany } from '../utils/approverNotifications.js';
+import {
+  isDesignatedApprover,
+  isDesignatedSubApprover,
+  getDesignatedApproverUserIdForRequester,
+  getDesignatedSubApproverUserIdForRequester,
+  getRequestorMA1Status,
+} from '../utils/approverNotifications.js';
 
 async function userHasHrAccountabilityReceiverAccess(
   userId: string
@@ -141,24 +151,26 @@ async function notifyChecklistApproversAfterEmployeeSign(params: {
     unknown,
   ];
   const emp = empRows[0];
-  const departmentId = emp?.department_id ?? null;
   const companyId = emp?.company_id ?? null;
 
-  if (!departmentId || !companyId) {
+  if (!companyId) {
     return;
   }
 
-  const approverIds = await getManagerApprover1UserIdsInDepartmentAndCompany(
-    departmentId,
-    companyId
-  );
+  // Check if employee has MA1 custodian access
+  const employeeHasMA1 = await getRequestorMA1Status(employeeId);
+  // Use the employee's designated approver (user-level, local-admin fallback)
+  const approverUserId = await getDesignatedApproverUserIdForRequester(employeeId);
+  const subApproverUserId = await getDesignatedSubApproverUserIdForRequester(employeeId);
+  
   const employeeName =
     [emp?.first_name, emp?.last_name].filter(Boolean).join(' ').trim() ||
     emp?.name ||
     'An employee';
 
-  for (const approverUserId of approverIds) {
-    if (approverUserId === employeeId) continue;
+  const notifyUsers = [approverUserId, subApproverUserId].filter((id): id is string => id !== null && id !== employeeId);
+  
+  for (const approverUserId of notifyUsers) {
     await createNotificationForApi({
       user_id: approverUserId,
       title: 'Asset Checklist Approval Needed',
@@ -460,6 +472,7 @@ export async function createAccountabilityFormHandler(
       form_origin: formOriginSnake,
       previousFormId,
       previousFormOriginalStatus,
+      skipNotification,
     } = req.body;
     const formOriginRaw = formOriginBody ?? formOriginSnake;
     const formOriginStored: AccountabilityFormOrigin | undefined =
@@ -470,6 +483,47 @@ export async function createAccountabilityFormHandler(
     if (assets && Array.isArray(assets) && assets.length > 0) {
       if (!userId) {
         return res.status(400).json({ error: 'User ID is required' });
+      }
+
+      // Merge the user's currently-active intangible asset assignments so every
+      // generated accountability form lists all of the user's held assets.
+      if (departmentId) {
+        try {
+          const activeIntangibles =
+            await repo.getActiveIntangibleAssetsByUserAndDepartment(
+              userId,
+              departmentId
+            );
+          if (activeIntangibles.length > 0) {
+            const seenIds = new Set(
+              assets
+                .map((a: any) => String(a?.id ?? a?.assetID ?? '').trim())
+                .filter(Boolean)
+            );
+            for (const row of activeIntangibles) {
+              const id = String(row.id ?? '').trim();
+              if (!id || seenIds.has(id)) continue;
+              seenIds.add(id);
+              assets.push({
+                id,
+                code: row.name || id,
+                name: row.name || '',
+                description: row.description || '',
+                category: 'Intangible',
+                type: row.type || 'Intangible',
+                department: row.department_name,
+                serialNo: '',
+                modelNo: '',
+                brand: '',
+              });
+            }
+          }
+        } catch (mergeErr) {
+          logger.error(
+            'Failed to merge intangible assets into accountability form:',
+            mergeErr
+          );
+        }
       }
 
       // Get company ID and user details from department or user
@@ -607,52 +661,56 @@ export async function createAccountabilityFormHandler(
       });
 
       // Emit WebSocket notification to the form user
-      try {
-        const createdByRow = await repo.getUserNameById(createdBy);
-        const assignerName = createdByRow
-          ? `${createdByRow.first_name ?? ''} ${createdByRow.last_name ?? ''}`.trim() || createdBy
-          : createdBy;
+      if (!skipNotification) {
+        try {
+          const createdByRow = await repo.getUserNameById(createdBy);
+          const assignerName = createdByRow
+            ? `${createdByRow.first_name ?? ''} ${createdByRow.last_name ?? ''}`.trim() || createdBy
+            : createdBy;
 
-        // Create database notification entry
-        await NotificationService.createNotification(
-          {
-            user_id: userId,
-            title: 'New accountability form has been issued',
-            message: `by ${assignerName}. Review it and check your assets and sign the form`,
-            type: 'accountability_form',
-            status: 'unread',
-            data: JSON.stringify({
+          // Create database notification entry
+          await NotificationService.createNotification(
+            {
+              user_id: userId,
+              title: 'New accountability form has been issued',
+              message: `by ${assignerName}. Review it and check your assets and sign the form`,
+              type: 'accountability_form',
+              status: 'unread',
+              data: JSON.stringify({
+                description: `by ${assignerName}. Review it and check your assets and sign the form`,
+                route: '/profile?tab=documents',
+                actionTarget: 'profile_documents',
+                formId: resolvedFormId,
+                formNumber: formNumber,
+                assignedBy: assignerName,
+                timestamp: new Date().toISOString(),
+              }),
+            },
+            createdBy,
+            req.ip,
+            req.get('User-Agent')
+          );
+
+          const io = getIoInstance();
+          if (!io) {
+            logger.error('[NOTIFICATION] Socket.IO instance not available');
+          } else {
+            emitNotification(io, userId, 'notification', {
+              title: 'New accountability form has been issued',
               description: `by ${assignerName}. Review it and check your assets and sign the form`,
+              type: 'accountability_form',
               route: '/profile?tab=documents',
               actionTarget: 'profile_documents',
               formId: resolvedFormId,
               formNumber: formNumber,
               assignedBy: assignerName,
               timestamp: new Date().toISOString(),
-            }),
-          },
-          createdBy
-        );
-
-        const io = getIoInstance();
-        if (!io) {
-          logger.error('[NOTIFICATION] Socket.IO instance not available');
-        } else {
-          emitNotification(io, userId, 'notification', {
-            title: 'New accountability form has been issued',
-            description: `by ${assignerName}. Review it and check your assets and sign the form`,
-            type: 'accountability_form',
-            route: '/profile?tab=documents',
-            actionTarget: 'profile_documents',
-            formId: resolvedFormId,
-            formNumber: formNumber,
-            assignedBy: assignerName,
-            timestamp: new Date().toISOString(),
-          });
+            });
+          }
+        } catch (socketError) {
+          logger.error('Failed to send WebSocket notification:', socketError);
+          // Don't fail the form creation if notification fails
         }
-      } catch (socketError) {
-        logger.error('Failed to send WebSocket notification:', socketError);
-        // Don't fail the form creation if notification fails
       }
 
       return res.status(201).json({
@@ -794,53 +852,57 @@ export async function createAccountabilityFormHandler(
       userAgent: req.get ? req.get('User-Agent') : 'Unknown',
     });
 
-    // Emit WebSocket notification to the form user
-    try {
-      const createdByRow = await repo.getUserNameById(createdBy);
-      const assignerName = createdByRow
-        ? `${createdByRow.first_name ?? ''} ${createdByRow.last_name ?? ''}`.trim() || createdBy
-        : createdBy;
+// Emit WebSocket notification to the form user
+    if (!skipNotification) {
+      try {
+        const createdByRow = await repo.getUserNameById(createdBy);
+        const assignerName = createdByRow
+          ? `${createdByRow.first_name ?? ''} ${createdByRow.last_name ?? ''}`.trim() || createdBy
+          : createdBy;
 
-      // Create database notification entry
-      await NotificationService.createNotification(
-        {
-          user_id: userId,
-          title: 'New accountability form has been issued',
-          message: `by ${assignerName}. Review it and check your assets and sign the form`,
-          type: 'accountability_form',
-          status: 'unread',
-          data: JSON.stringify({
+        // Create database notification entry
+        await NotificationService.createNotification(
+          {
+            user_id: userId,
+            title: 'New accountability form has been issued',
+            message: `by ${assignerName}. Review it and check your assets and sign the form`,
+            type: 'accountability_form',
+            status: 'unread',
+            data: JSON.stringify({
+              description: `by ${assignerName}. Review it and check your assets and sign the form`,
+              route: '/profile?tab=documents',
+              actionTarget: 'profile_documents',
+              formId: resolvedFormIdSingle,
+              formNumber: formNumber,
+              assignedBy: assignerName,
+              timestamp: new Date().toISOString(),
+            }),
+          },
+          createdBy,
+          req.ip,
+          req.get('User-Agent')
+        );
+
+        const io = getIoInstance();
+        if (!io) {
+          logger.error('[NOTIFICATION] Socket.IO instance not available');
+        } else {
+          emitNotification(io, userId, 'notification', {
+            title: 'New accountability form has been issued',
             description: `by ${assignerName}. Review it and check your assets and sign the form`,
+            type: 'accountability_form',
             route: '/profile?tab=documents',
             actionTarget: 'profile_documents',
             formId: resolvedFormIdSingle,
             formNumber: formNumber,
             assignedBy: assignerName,
             timestamp: new Date().toISOString(),
-          }),
-        },
-        createdBy
-      );
-
-      const io = getIoInstance();
-      if (!io) {
-        logger.error('[NOTIFICATION] Socket.IO instance not available');
-      } else {
-        emitNotification(io, userId, 'notification', {
-          title: 'New accountability form has been issued',
-          description: `by ${assignerName}. Review it and check your assets and sign the form`,
-          type: 'accountability_form',
-          route: '/profile?tab=documents',
-          actionTarget: 'profile_documents',
-          formId: resolvedFormIdSingle,
-          formNumber: formNumber,
-          assignedBy: assignerName,
-          timestamp: new Date().toISOString(),
-        });
+          });
+        }
+      } catch (socketError) {
+        logger.error('Failed to send WebSocket notification:', socketError);
+        // Don't fail the form creation if notification fails
       }
-    } catch (socketError) {
-      logger.error('Failed to send WebSocket notification:', socketError);
-      // Don't fail the form creation if notification fails
     }
 
     return res.status(201).json({
@@ -1005,9 +1067,29 @@ export async function getAccountabilityFormsHandler(
   try {
     const { userId, status } = req.query;
 
+    // Scope list by company and by the user's IT/Admin department scope.
+    // HR accountability receivers are exempt so they can keep handling
+    // 201-file copies across companies (client drives the company filter).
+    const scope = await getAssetScope(pool, req.user!.userID);
+    const isHrReceiver = await userHasHrAccountabilityReceiverAccess(
+      req.user!.userID
+    );
+    const companyId = isHrReceiver ? undefined : (scope.companyId ?? undefined);
+    // IT/Admin department scope applies to the general listing only; a
+    // specific userId query (documents tab, return flow) stays company-scoped
+    // so an employee's own forms are never hidden by their asset scope.
+    const departmentIds =
+      isHrReceiver || typeof userId === 'string'
+        ? undefined
+        : scope.departmentIds?.length
+          ? scope.departmentIds
+          : undefined;
+
     const rows = await repo.listAccountabilityForms({
       userId: typeof userId === 'string' ? userId : undefined,
       status: typeof status === 'string' ? status : undefined,
+      companyId,
+      departmentIds,
     });
 
     const forms = rows.map((row: any) => {
@@ -1183,7 +1265,13 @@ export async function signAccountabilityFormHandler(
         : null
     );
 
-  // Sign linked asset checklists before marking the accountability form signed
+    // Persist the resolved signature so the stored acknowledgments always
+    // contain it, even when the client omits it from the request body.
+    if (digitalSignature) {
+      updatedAcknowledgments.digitalSignature = digitalSignature;
+    }
+
+    // Sign linked asset checklists before marking the accountability form signed
     try {
       await signLinkedChecklistsForAccountabilityForm({
         formId,
@@ -1237,17 +1325,30 @@ export async function signAccountabilityFormHandler(
     // Notify HR accountability receivers
     try {
       const hrReceiverIds = await getHrAccountabilityReceiverUserIds();
+      const io = getIoInstance();
       for (const receiverId of hrReceiverIds) {
+        const message = `An Accountability form (${form.form_number}) is ready for you to receive for HR Copy of 201 file`;
+        const notificationPayload = {
+          title: 'Accountability Form Ready for HR Copy',
+          description: message,
+          type: 'accountability_form' as const,
+          route: '/forms/accountability?tab=hrCopy',
+          actionTarget: 'accountability_form_hr_copy',
+          formId: formId,
+          formNumber: form.form_number,
+          timestamp: new Date().toISOString(),
+        };
         await createNotificationForApi({
           user_id: receiverId,
-          title: 'Accountability Form Ready for HR Copy',
-          message: `An Accountability form (${form.form_number}) is ready for you to receive for HR Copy of 201 file`,
-          type: 'accountability_form',
-          data: {
-            formId: formId,
-            formNumber: form.form_number,
-          },
+          title: notificationPayload.title,
+          message,
+          type: notificationPayload.type,
+          data: notificationPayload,
         });
+
+        if (io) {
+          emitNotification(io, receiverId, 'notification', notificationPayload);
+        }
       }
       logger.info(`Sent HR copy notifications to ${hrReceiverIds.length} receivers`);
     } catch (notifError) {
@@ -1962,6 +2063,411 @@ export async function getAccountabilityFormByIdHandler(
 }
 
 /**
+ * GET /api/accountability-forms/:formId/movement
+ * Build the per-asset movement tree for a form: for each asset in the form,
+ * resolve the linked return form, transfer form, and the current
+ * (new) accountability form that covers the asset — i.e. where the asset went.
+ */
+export async function getAccountabilityFormMovementHandler(
+  req: AuthRequest,
+  res: Response
+) {
+  try {
+    const { formId } = req.params;
+    const currentUserId = req.user!.userID;
+
+    if (!formId) {
+      return res.status(400).json({ error: 'Form ID is required' });
+    }
+
+    const row = await repo.getFormFullDetailById(formId);
+    if (!row) {
+      return res.status(404).json({ error: 'Accountability form not found' });
+    }
+
+    const hrAccess = await userHasHrAccountabilityFullAccess(currentUserId);
+    if (
+      row.user_id !== currentUserId &&
+      row.created_by !== currentUserId &&
+      !hrAccess
+    ) {
+      return res.status(403).json({
+        error: 'You can only view forms assigned to you or that you issued',
+      });
+    }
+
+    const parsed = parseAccountabilityAssetsData(row.assets_data);
+    const assets = parsed.assets;
+    const assignmentIds = parsed.assignmentIds;
+
+    const assetList: any[] = [];
+    if (assets.length === 0 && row.asset_id) {
+      assetList.push({
+        id: row.asset_id,
+        code: row.asset_code,
+        name: row.asset_name,
+        category: row.category_name || row.category_id,
+        type: row.type_name || row.type_id,
+        serialNo: row.serial,
+        modelNo: row.assetModelNo,
+      });
+    } else {
+      assetList.push(...assets);
+    }
+
+    const assetIds = assetList
+      .map((a: any) => String(a?.id ?? '').trim())
+      .filter(Boolean);
+    const uniqueAssetIds = [...new Set(assetIds)];
+
+    // Resolve assignment → asset mapping so return/transfer forms can be
+    // attributed to the correct asset in the tree.
+    const assignmentMapping = await repo.getAssignmentAssetMapping(
+      assignmentIds
+    );
+    const assignmentToAssetId = new Map<string, string>();
+    for (const m of assignmentMapping) {
+      assignmentToAssetId.set(m.assignment_id, m.asset_id);
+    }
+    // Fallback: derive assignment→asset from the form assets if not resolved.
+    for (const a of assetList) {
+      const id = String(a?.id ?? '');
+      if (id && ![...assignmentToAssetId.values()].includes(id)) {
+        // assets_data may also store assignment_ids inline per asset
+        const inline = a?.assignmentId || a?.assignment_id;
+        if (inline) assignmentToAssetId.set(String(inline), id);
+      }
+    }
+
+    const returnForms = await repo.getReturnFormsByAssignmentIds(
+      assignmentIds
+    );
+    const returnFormIds = [
+      ...new Set(returnForms.map(r => r.formID).filter(Boolean)),
+    ];
+    const transferForms = await repo.getTransferFormsForMovement(
+      assignmentIds,
+      returnFormIds
+    );
+    const activeForms = await repo.getActiveAccountabilityFormsForAssetIds(
+      uniqueAssetIds,
+      formId,
+      (row as any).created_at ?? null
+    );
+
+    // Map active forms to the asset ids they cover (via their assets_data)
+    const activeFormAssetIds = new Map<string, Set<string>>();
+    for (const f of activeForms) {
+      const covered = new Set<string>();
+      const raw = f.assets_data;
+      if (raw != null) {
+        try {
+          const data =
+            typeof raw === 'string' ? JSON.parse(raw) : raw;
+          const fa = data?.assets;
+          if (Array.isArray(fa)) {
+            for (const a of fa) {
+              if (a?.id != null && String(a.id).trim()) {
+                covered.add(String(a.id));
+              }
+            }
+          }
+        } catch {
+          /* ignore malformed assets_data */
+        }
+      }
+      activeFormAssetIds.set(f.formID, covered);
+    }
+
+    const assetsResult = assetList.map((a: any) => {
+      const assetId = String(a?.id ?? '').trim();
+      const matchingAssignments = assignmentIds.filter(
+        id => assignmentToAssetId.get(id) === assetId
+      );
+
+      const assetReturnForms = dedupeByFormId(
+        returnForms.filter(r => matchingAssignments.includes(r.assignment_id))
+      );
+      const assetTransferForms = dedupeByFormId(
+        transferForms.filter(
+          t =>
+            (t.assignment_id &&
+              matchingAssignments.includes(t.assignment_id)) ||
+            (t.return_form_id &&
+              assetReturnForms.some(r => r.formID === t.return_form_id))
+        )
+      );
+      const assetNewForms = dedupeByFormId(
+        activeForms.filter(f => {
+          const covered = activeFormAssetIds.get(f.formID);
+          return covered ? covered.has(assetId) : false;
+        })
+      );
+
+      return {
+        asset: {
+          id: assetId,
+          code: a?.code ?? '',
+          name: a?.name ?? a?.code ?? '',
+          category: a?.category ?? '',
+          type: a?.type ?? '',
+          serialNo: a?.serialNo ?? '',
+          modelNo: a?.modelNo ?? '',
+        },
+        returnForms: assetReturnForms.map(r => ({
+          id: r.formID,
+          formNumber: r.form_number,
+          userId: r.user_id,
+          userName: r.user_name || '',
+          created_at: r.created_at,
+        })),
+        transferForms: assetTransferForms.map(t => ({
+          id: t.formID,
+          formNumber: t.form_number,
+          userId: t.user_id,
+          userName: t.user_name || '',
+          returnFormId: t.return_form_id ?? null,
+          newAssignedUserId: t.new_assigned_user_id,
+          newUserName: t.new_user_name || '',
+          created_at: t.created_at,
+        })),
+        newAccountabilityForms: assetNewForms.map(f => ({
+          id: f.formID,
+          formNumber: f.form_number,
+          userId: f.user_id,
+          userName: f.user_name || '',
+          status: f.status,
+          created_at: f.created_at,
+        })),
+      };
+    });
+
+    return res.json({
+      form: {
+        id: row.formID,
+        formNumber: row.form_number,
+        status: row.status,
+      },
+      assets: assetsResult,
+    });
+  } catch (error: any) {
+    logger.error('Get accountability form movement failed:', error);
+    return res
+      .status(500)
+      .json({ error: 'Failed to fetch accountability form movement' });
+  }
+}
+
+/**
+ * Asset-level movement: for a single asset, resolve the accountability forms it
+ * has appeared on and, for each, the return / transfer / new accountability
+ * chain showing where the asset went. Returns a per-form tree for the asset.
+ */
+export async function getAssetMovementHandler(
+  req: AuthRequest,
+  res: Response
+) {
+  try {
+    const { assetId } = req.params;
+    const currentUserId = req.user!.userID;
+
+    if (!assetId) {
+      return res.status(400).json({ error: 'Asset ID is required' });
+    }
+
+    // Client sends `asset_code`; DB joins use `assetID`. Resolve first.
+    const resolvedAssetId =
+      (await resolveAssetIdByCodeOrId(assetId)) ?? assetId;
+
+    const rows = await repo.findFormsByAssetId(resolvedAssetId);
+    const result: any[] = [];
+    let assetInfo: any = { id: resolvedAssetId, code: '', name: '' };
+
+    // Resolve the asset's own return/transfer sheets directly. Used when the
+    // asset has no accessible accountability form but does have movement
+    // history (e.g. a fully returned asset with no current/past form).
+    const addDirectMovementResolver = async (): Promise<void> => {
+      if (result.length > 0) return;
+      const directReturnForms = await getAssetReturnFormsByAssetId(resolvedAssetId);
+      const directTransferForms = await getAssetTransferFormsByAssetId(resolvedAssetId);
+      if (directReturnForms.length > 0 || directTransferForms.length > 0) {
+        result.push({
+          form: {
+            id: 'asset-root',
+            formNumber: assetInfo.code || assetInfo.name || 'Asset',
+            status: 'Completed',
+            userId: '',
+            userName: assetInfo.name || '',
+            created_at: '',
+          },
+          returnForms: directReturnForms.map((r: any) => ({
+            id: r.id,
+            formNumber: r.formNumber,
+            userId: r.user?.id ?? '',
+            userName: `${r.user?.first_name ?? ''} ${r.user?.last_name ?? ''}`.trim(),
+            created_at: r.created_at,
+          })),
+          transferForms: directTransferForms.map((t: any) => ({
+            id: t.id,
+            formNumber: t.formNumber,
+            userId: t.user?.id ?? '',
+            userName: `${t.user?.first_name ?? ''} ${t.user?.last_name ?? ''}`.trim(),
+            returnFormId: null,
+            newAssignedUserId: null,
+            newUserName: t.new_user
+              ? `${t.new_user.first_name ?? ''} ${t.new_user.last_name ?? ''}`.trim()
+              : '',
+            created_at: t.created_at,
+          })),
+          newAccountabilityForms: [],
+        });
+      }
+    };
+
+    if (rows.length === 0) {
+      await addDirectMovementResolver();
+      return res.json({ asset: assetInfo, forms: result });
+    }
+    // Visibility filter + sort oldest→latest for correct chronological attribution.
+    // Previously rows were DESC and per-form assignment matching caused all
+    // returns/transfers to collapse under the oldest AF (0069) when later AFs'
+    // assignmentIds failed to resolve.
+    const visibleRows: typeof rows = [];
+    for (const r of rows) {
+      if (
+        await userCanViewAccountabilityFormRow(
+          {
+            user_id: String(r.user_id),
+            created_by: r.created_by != null ? String(r.created_by) : null,
+          },
+          currentUserId
+        )
+      ) {
+        visibleRows.push(r);
+      }
+    }
+    if (visibleRows.length === 0) {
+      await addDirectMovementResolver();
+      return res.json({ asset: assetInfo, forms: result });
+    }
+    visibleRows.sort((a: any, b: any) => {
+      const da = a.created_at ? new Date(a.created_at).getTime() : 0;
+      const db = b.created_at ? new Date(b.created_at).getTime() : 0;
+      if (da !== db) return da - db;
+      return String(a.form_number).localeCompare(String(b.form_number));
+    });
+    // Derive assetInfo from the latest visible AF for header
+    const lastRow = visibleRows[visibleRows.length - 1] as any;
+    assetInfo = {
+      id: resolvedAssetId,
+      code: lastRow.asset_code ?? '',
+      name: lastRow.asset_name ?? '',
+      category: lastRow.category_name || lastRow.category_id || '',
+      type: lastRow.type_name || lastRow.type_id || '',
+      serialNo: lastRow.serial ?? '',
+      modelNo: lastRow.assetModelNo ?? '',
+    };
+    const inlineLast = parseAccountabilityAssetsData(lastRow.assets_data).assets.find(
+      (a: any) => String(a?.id ?? '').trim() === String(resolvedAssetId).trim()
+    );
+    if (inlineLast) {
+      assetInfo = {
+        id: String(inlineLast.id ?? resolvedAssetId).trim(),
+        code: inlineLast.code ?? assetInfo.code,
+        name: inlineLast.name ?? assetInfo.name,
+        category: inlineLast.category ?? assetInfo.category,
+        type: inlineLast.type ?? assetInfo.type,
+        serialNo: inlineLast.serialNo ?? assetInfo.serialNo,
+        modelNo: inlineLast.modelNo ?? assetInfo.modelNo,
+      };
+    }
+
+    // Fetch ALL returns/transfers for this asset once and distribute by date
+    // window [AF.created_at, nextAF.created_at). This fixes the bug where
+    // assignmentIds for newer AFs (0071/0072/0074) failed to resolve and all
+    // accessory forms collapsed under the oldest AF (0069).
+    const allAssetReturnForms = await getAssetReturnFormsByAssetId(resolvedAssetId);
+    const allAssetTransferForms = await getAssetTransferFormsByAssetId(resolvedAssetId);
+
+    for (let idx = 0; idx < visibleRows.length; idx++) {
+      const row: any = visibleRows[idx];
+      const nextRow: any = visibleRows[idx + 1] ?? null;
+      const formId = row.formID;
+      const windowStart = row.created_at ? new Date(row.created_at).getTime() : 0;
+      const windowEnd = nextRow?.created_at ? new Date(nextRow.created_at).getTime() : Infinity;
+
+      const returnFormsForWindow = allAssetReturnForms.filter((r: any) => {
+        const t = r.created_at ? new Date(r.created_at).getTime() : 0;
+        return t >= windowStart && t < windowEnd;
+      });
+      const transferFormsForWindow = allAssetTransferForms.filter((t: any) => {
+        const c = t.created_at ? new Date(t.created_at).getTime() : 0;
+        return c >= windowStart && c < windowEnd;
+      });
+
+      const hasAccessory = returnFormsForWindow.length > 0 || transferFormsForWindow.length > 0;
+      const newAccountabilityForWindow =
+        hasAccessory && nextRow
+          ? [
+              {
+                id: nextRow.formID,
+                formNumber: nextRow.form_number,
+                userId: nextRow.user_id,
+                userName: `${nextRow.first_name ?? ''} ${nextRow.last_name ?? ''}`.trim(),
+                status: nextRow.status,
+                created_at: nextRow.created_at,
+              },
+            ]
+          : [];
+
+      result.push({
+        form: {
+          id: formId,
+          formNumber: row.form_number,
+          status: row.status,
+          userId: row.user_id,
+          userName: `${row.first_name ?? ''} ${row.last_name ?? ''}`.trim(),
+          created_at: row.created_at,
+        },
+        returnForms: returnFormsForWindow.map((r: any) => ({
+          id: r.id,
+          formNumber: r.formNumber,
+          userId: r.user?.id ?? '',
+          userName: `${r.user?.first_name ?? ''} ${r.user?.last_name ?? ''}`.trim(),
+          created_at: r.created_at,
+        })),
+        transferForms: transferFormsForWindow.map((t: any) => ({
+          id: t.id,
+          formNumber: t.formNumber,
+          userId: t.user?.id ?? '',
+          userName: `${t.user?.first_name ?? ''} ${t.user?.last_name ?? ''}`.trim(),
+          returnFormId: null,
+          newAssignedUserId: null,
+          newUserName: t.new_user ? `${t.new_user.first_name ?? ''} ${t.new_user.last_name ?? ''}`.trim() : '',
+          created_at: t.created_at,
+        })),
+        // Return/Transfer → New: link accessory forms to the immediate next AF
+        // (the "new created accountability form"). This fixes both:
+        // - all returns collapsing under 0069
+        // - all disabled linking to the same latest new
+        newAccountabilityForms: newAccountabilityForWindow,
+      });
+    }
+
+    // Fallback: when no accessible accountability form was able to surface
+    // movement, collect the asset's own return/transfer sheets directly so the
+    // Movement tab still reflects the asset's history even if those sheets are
+    // not linked to a visible assignment chain.
+    await addDirectMovementResolver();
+
+    return res.json({ asset: assetInfo, forms: result });
+  } catch (error: any) {
+    logger.error('Get asset movement failed:', error);
+    return res.status(500).json({ error: 'Failed to fetch asset movement' });
+  }
+}
+
+/**
  * Check if a user has unsigned accountability forms
  * Returns list of unsigned forms for the specified user
  */
@@ -1999,4 +2505,19 @@ export async function checkUnsignedAccountabilityFormsHandler(
       .status(500)
       .json({ error: 'Failed to check unsigned accountability forms' });
   }
+}
+
+/** Deduplicate rows by their formID (transfer/return forms can yield one row per assignment). */
+function dedupeByFormId<T extends { formID?: string | null }>(
+  rows: T[]
+): T[] {
+  const seen = new Set<string>();
+  const out: T[] = [];
+  for (const r of rows) {
+    const key = String(r.formID ?? '').trim();
+    if (!key || seen.has(key)) continue;
+    seen.add(key);
+    out.push(r);
+  }
+  return out;
 }

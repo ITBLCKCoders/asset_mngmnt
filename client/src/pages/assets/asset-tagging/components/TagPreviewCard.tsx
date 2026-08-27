@@ -11,6 +11,7 @@ interface TagPreviewCardProps {
     name: string;
     company_logo?: string;
     company_name?: string;
+    tagCode?: string;
   };
   qrData: string;
   tagType: 'qr' | 'barcode' | 'both';
@@ -121,7 +122,7 @@ const TagPreviewCard = memo(function TagPreviewCard({
           <>
             <LogoSection asset={asset} showLogo={showCompanyLogo} showName={showCompanyName} />
             <div className="flex justify-center w-full">
-              <Barcode value={asset.id} width={barcodeWidth} format={barcodeFormat} />
+              <Barcode value={asset.tagCode || asset.id} width={barcodeWidth} format={barcodeFormat} />
             </div>
             <AssetInfo name={asset.name} id={asset.id} showName={showAssetName} showCode={showAssetCode} />
           </>
@@ -138,7 +139,7 @@ const TagPreviewCard = memo(function TagPreviewCard({
               </div>
             </div>
             <div className="flex justify-center w-full">
-              <Barcode value={asset.id} width={barcodeWidth} format={barcodeFormat} />
+              <Barcode value={asset.tagCode || asset.id} width={barcodeWidth} format={barcodeFormat} />
             </div>
             <AssetInfo name={asset.name} id={asset.id} showName={showAssetName} showCode={showAssetCode} />
           </>

@@ -88,7 +88,8 @@ describe('Auth User (register/login)', () => {
     const makeUser = (overrides = {}) => ({
       userID: 'u1', email: 'user@test.com', password: '',
       is_active: 1, verified: 1, mfa_enabled: 0, failed_login_attempts: 0,
-      lockout_until: null, lockout_count: 0, must_change_password: 0,
+      lockout_until: null, lockout_count: 0, lockout_ip: null,
+      last_failed_attempt_at: null, must_change_password: 0,
       password_last_changed: new Date().toISOString(),
       username: 'testuser',
       ...overrides,
@@ -127,10 +128,11 @@ describe('Auth User (register/login)', () => {
 
     it('should lock account after max attempts', async () => {
       const hashed = await bcrypt.hash('correct-pass', 4);
-      const user = makeUser({ password: hashed, failed_login_attempts: 4 });
+      const user = makeUser({ password: hashed, failed_login_attempts: 4, last_failed_attempt_at: new Date().toISOString() });
       mockSettingGetValue.mockImplementation((key: string) => {
         if (key === 'max_login_attempts') return 5;
         if (key === 'lockout_duration_minutes') return 30;
+        if (key === 'failed_attempt_reset_minutes') return 15;
         return null;
       });
       (mockPool.execute as jest.Mock).mockResolvedValueOnce([[user], []]);
@@ -139,6 +141,56 @@ describe('Auth User (register/login)', () => {
       mockGetIoInstance.mockReturnValue({});
 
       const result = await login('user@test.com', 'wrong-pass', mockReq);
+      expect(result.error).toContain('locked');
+    });
+
+    it('should reset stale failed attempts and not lock on first real login', async () => {
+      const hashed = await bcrypt.hash('correct-pass', 4);
+      // 4 stale failures from an hour ago, outside the 15-minute reset window
+      const user = makeUser({
+        password: hashed,
+        failed_login_attempts: 4,
+        last_failed_attempt_at: new Date(Date.now() - 60 * 60 * 1000).toISOString(),
+      });
+      mockSettingGetValue.mockImplementation((key: string) => {
+        if (key === 'max_login_attempts') return 5;
+        if (key === 'lockout_duration_minutes') return 30;
+        if (key === 'failed_attempt_reset_minutes') return 15;
+        return null;
+      });
+      (mockPool.execute as jest.Mock).mockResolvedValueOnce([[user], []]);
+      (mockPool.execute as jest.Mock).mockResolvedValue([[], []]);
+
+      const result = await login('user@test.com', 'wrong-pass', mockReq);
+      expect(result).toBeNull();
+      const updateCall = (mockPool.execute as jest.Mock).mock.calls.find(
+        (c: any[]) => String(c[0]).includes('failed_login_attempts')
+      );
+      expect(String(updateCall?.[0])).not.toContain('lockout_until');
+    });
+
+    it('should block only the IP that triggered the lockout', async () => {
+      const hashed = await bcrypt.hash('correct-pass', 4);
+      const future = new Date(Date.now() + 30 * 60 * 1000);
+      const user = makeUser({
+        password: hashed,
+        lockout_until: future.toISOString(),
+        lockout_ip: '203.0.113.5',
+      });
+      (mockPool.execute as jest.Mock).mockResolvedValueOnce([[user], []]);
+      (mockPool.execute as jest.Mock).mockResolvedValue([[], []]);
+
+      // Different IP (mockReq remoteAddress is 127.0.0.1) can still log in
+      const result = await login('user@test.com', 'correct-pass', mockReq);
+      expect(result.accessToken).toBe('at');
+      expect(result.refreshToken).toBe('rt');
+    });
+
+    it('should still block login when lockout IP matches the request IP', async () => {
+      const future = new Date(Date.now() + 30 * 60 * 1000);
+      const user = makeUser({ lockout_until: future.toISOString(), lockout_ip: '127.0.0.1' });
+      (mockPool.execute as jest.Mock).mockResolvedValueOnce([[user], []]);
+      const result = await login('user@test.com', 'pass', mockReq);
       expect(result.error).toContain('locked');
     });
 

@@ -36,10 +36,17 @@ export interface AssetChecklistData {
   dept_head_signed_by?: string | null;
   dept_head_digital_signature?: string | null;
   dept_head_name?: string | null;
+  dept_head_position?: string | null;
+  sub_approver_1_signed_at?: string | null;
+  sub_approver_1_signed_by?: string | null;
+  sub_approver_1_digital_signature?: string | null;
+  sub_approver_1_name?: string | null;
+  sub_approver_1_position?: string | null;
   it_manager_signed_at?: string | null;
   it_manager_signed_by?: string | null;
   it_manager_digital_signature?: string | null;
   it_manager_name?: string | null;
+  it_manager_position?: string | null;
   asset_label?: string;
   employee_company_logo_url?: string | null;
   asset?: {
@@ -467,15 +474,29 @@ export const generateAssetChecklistPDF = async (
   const deptHeadInitial = deptHeadName
     ? deptHeadName.charAt(0).toUpperCase()
     : '';
-  const deptHeadSignedDate = checklistData.dept_head_signed_at
-    ? new Date(checklistData.dept_head_signed_at).toLocaleDateString('en-US', {
+  const subApprover1Signed = !!checklistData.sub_approver_1_signed_at;
+  const displayDeptHeadName = subApprover1Signed
+    ? (checklistData.sub_approver_1_name || '') || deptHeadName
+    : deptHeadName;
+  const displayDeptHeadPosition = subApprover1Signed
+    ? (checklistData.sub_approver_1_position || '').trim()
+    : (checklistData.dept_head_position || '').trim();
+  const displayDeptHeadDigitalSignature = subApprover1Signed
+    ? (checklistData.sub_approver_1_digital_signature || '') ||
+      deptHeadDigitalSignature
+    : deptHeadDigitalSignature;
+  const displayDeptHeadSignedAt = subApprover1Signed
+    ? checklistData.sub_approver_1_signed_at
+    : checklistData.dept_head_signed_at;
+  const deptHeadSignedDate = displayDeptHeadSignedAt
+    ? new Date(displayDeptHeadSignedAt).toLocaleDateString('en-US', {
         year: 'numeric',
         month: '2-digit',
         day: '2-digit',
       })
     : '';
-  const deptHeadSignedTime = checklistData.dept_head_signed_at
-    ? new Date(checklistData.dept_head_signed_at).toLocaleTimeString('en-US', {
+  const deptHeadSignedTime = displayDeptHeadSignedAt
+    ? new Date(displayDeptHeadSignedAt).toLocaleTimeString('en-US', {
         hour: '2-digit',
         minute: '2-digit',
         hour12: true,
@@ -596,6 +617,16 @@ export const generateAssetChecklistPDF = async (
             nameMaxWidth
           );
           doc.text(nameLines, xMin, nameY);
+          // IT Manager position
+          const itManagerPosition = (checklistData.it_manager_position || '').trim();
+          if (itManagerPosition) {
+            doc.setFontSize(6.5);
+            const positionLines = doc.splitTextToSize(
+              itManagerPosition,
+              nameMaxWidth
+            );
+            doc.text(positionLines, xMin, nameY + 3.5);
+          }
         }
 
         if (itManagerSignedDate && itManagerSignedTime) {
@@ -656,15 +687,14 @@ export const generateAssetChecklistPDF = async (
         const sigHeight = Math.min(50, Math.max(28, contentHeight - 2));
         const dateTimeX = xMax - dateTimeReserved;
         const nameY = yTop + sigHeight - 6;
-        const displayDeptHeadName = deptHeadName || '';
 
         doc.setFontSize(8);
         doc.setFont('helvetica', 'normal');
         doc.setTextColor(0, 0, 0);
 
-        if (deptHeadDigitalSignature) {
+        if (displayDeptHeadDigitalSignature) {
           pendingSignatures.push({
-            data: deptHeadDigitalSignature,
+            data: displayDeptHeadDigitalSignature,
             x: cell.x + 1 - 30,
             y: yTop + 25,
             anchorBottomY: signatureAnchorBottomY(nameY),
@@ -683,6 +713,20 @@ export const generateAssetChecklistPDF = async (
           const nameMaxWidth = Math.max(15, contentWidth - 6);
           const nameLines = doc.splitTextToSize(displayDeptHeadName, nameMaxWidth);
           doc.text(nameLines, xMin, nameY);
+          if (displayDeptHeadPosition) {
+            doc.setFontSize(6.5);
+            const positionLines = doc.splitTextToSize(
+              displayDeptHeadPosition,
+              nameMaxWidth
+            );
+            doc.text(positionLines, xMin, nameY + 3.5);
+          }
+        }
+
+        if (subApprover1Signed) {
+          doc.setFontSize(6.5);
+          doc.setFont('helvetica', 'italic');
+          doc.text('(Stand-in approver)', xMin, nameY + 7);
         }
 
         if (deptHeadSignedDate && deptHeadSignedTime) {
@@ -745,6 +789,20 @@ export const generateAssetChecklistPDF = async (
       }
     },
   });
+
+  // Stand-in approver note under the table
+  if (checklistData.sub_approver_1_signed_at) {
+    doc.setFontSize(6.5);
+    doc.setFont('helvetica', 'italic');
+    doc.setTextColor(80, 80, 80);
+    doc.text(
+      'Stand-in approver note: The signee is a stand-in approver for the Department Head, who is currently not present.',
+      tableMargin.left,
+      (doc as any).lastAutoTable.finalY + 4,
+      { maxWidth: tableWidth }
+    );
+    doc.setTextColor(0, 0, 0);
+  }
 
   // Document No
   const docNoY = (doc as any).lastAutoTable.finalY + 8;

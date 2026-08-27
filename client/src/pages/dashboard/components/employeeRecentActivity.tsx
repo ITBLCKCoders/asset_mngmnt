@@ -1,7 +1,7 @@
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
-import { Clock, Activity } from 'lucide-react';
-import { formatDistanceToNow } from 'date-fns';
+import { Clock, Activity, FileText, Settings, User, Shield } from 'lucide-react';
+import { format, formatDistanceToNow } from 'date-fns';
 
 interface ActivityItem {
   id: string;
@@ -9,6 +9,21 @@ interface ActivityItem {
   action: string;
   resource: string;
   resourceType: string;
+}
+
+function getActionIcon(action: string) {
+  const lower = action.toLowerCase();
+  if (lower.includes('create') || lower.includes('add'))
+    return <FileText className="h-4 w-4 text-green-600" />;
+  if (lower.includes('update') || lower.includes('edit'))
+    return <Settings className="h-4 w-4 text-blue-600" />;
+  if (lower.includes('delete') || lower.includes('remove'))
+    return <FileText className="h-4 w-4 text-red-600" />;
+  if (lower.includes('login'))
+    return <Shield className="h-4 w-4 text-purple-600" />;
+  if (lower.includes('assign'))
+    return <User className="h-4 w-4 text-indigo-600" />;
+  return <Activity className="h-4 w-4 text-gray-600" />;
 }
 
 export default function EmployeeRecentActivity({
@@ -64,6 +79,9 @@ export default function EmployeeRecentActivity({
         <CardTitle className="flex items-center gap-2">
           <Activity className="h-5 w-5" />
           My Recent Activity
+          <span className="ml-2 text-sm font-normal text-muted-foreground">
+            ({activities.length} total)
+          </span>
         </CardTitle>
         <CardDescription>Your latest asset interactions</CardDescription>
       </CardHeader>
@@ -72,16 +90,19 @@ export default function EmployeeRecentActivity({
           {activities.slice(0, 10).map(item => (
             <div
               key={item.id}
-              className="flex items-start justify-between border-b last:border-0 pb-2 last:pb-0"
+              className="flex items-start gap-3 border-b last:border-0 pb-3 last:pb-0"
             >
+              <div className="mt-0.5 shrink-0">
+                {getActionIcon(item.action)}
+              </div>
               <div className="flex-1 min-w-0">
-                <p className="text-sm font-medium truncate">{item.action}</p>
+                <p className="text-sm font-medium capitalize truncate">{item.action}</p>
                 <p className="text-xs text-muted-foreground truncate">
                   {item.resourceType} — {item.resource}
                 </p>
               </div>
-              <div className="flex items-center gap-2 shrink-0 ml-2">
-                <Badge variant="outline" className="text-xs">
+              <div className="shrink-0 ml-2">
+                <Badge variant="outline" className="text-xs whitespace-nowrap" title={format(new Date(item.timestamp), 'MMM dd, yyyy HH:mm:ss')}>
                   <Clock className="h-3 w-3 mr-1" />
                   {formatDistanceToNow(new Date(item.timestamp), { addSuffix: true })}
                 </Badge>

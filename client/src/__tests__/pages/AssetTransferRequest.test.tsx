@@ -62,7 +62,7 @@ function renderPage() {
 }
 
 const emptyApiMock = vi.fn().mockImplementation(async (url: string) => {
-  if (url === '/asset-assignments/me') return { assignments: [] };
+  if (url.startsWith('/asset-assignments/me')) return { assignments: [] };
   if (url === '/departments') return { departments: [] };
   if (url === '/asset-transfers/user/u1') return { assetTransferForms: [] };
   if (url === '/asset-returns/user/u1') return { assetReturnForms: [] };
@@ -83,6 +83,15 @@ describe('AssetTransferRequest', () => {
     renderPage();
     await waitFor(() => {
       expect(screen.getByText('Transfer asset')).toBeDefined();
+    });
+  });
+
+  it('should render the IT Asset and Admin Asset scope tabs', async () => {
+    (api.get as any).mockImplementation(emptyApiMock);
+    renderPage();
+    await waitFor(() => {
+      expect(screen.getByRole('tab', { name: 'IT Asset' })).toBeDefined();
+      expect(screen.getByRole('tab', { name: 'Admin Asset' })).toBeDefined();
     });
   });
 

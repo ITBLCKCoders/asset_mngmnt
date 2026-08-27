@@ -41,6 +41,7 @@ const mockUsers = vi.hoisted(() => [
     created_at: '2024-01-01', updated_at: '2024-01-01',
     hr_accountability_receiver: false,
     manager_approver_1: false, manager_approver_2: false, manager_approver_3: false,
+    finance_approver: false, sub_approver_2: false,
   },
   {
     userID: 'u2', first_name: 'Bob', last_name: 'Jones',
@@ -50,6 +51,7 @@ const mockUsers = vi.hoisted(() => [
     created_at: '2024-01-01', updated_at: '2024-01-01',
     hr_accountability_receiver: false,
     manager_approver_1: false, manager_approver_2: false, manager_approver_3: false,
+    finance_approver: false, sub_approver_2: false,
   },
   {
     userID: 'u3', first_name: 'Charlie', last_name: 'Brown',
@@ -58,6 +60,7 @@ const mockUsers = vi.hoisted(() => [
     created_at: '2024-01-01', updated_at: '2024-01-01',
     hr_accountability_receiver: false,
     manager_approver_1: false, manager_approver_2: false, manager_approver_3: false,
+    finance_approver: false, sub_approver_2: false,
   },
 ]);
 

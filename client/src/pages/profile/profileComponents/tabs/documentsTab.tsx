@@ -183,10 +183,23 @@ export function buildReturnDataForPDFFromBatch(
     dept_head_signed_at: batch.dept_head_signed_at ?? undefined,
     dept_head_digital_signature: batch.dept_head_digital_signature ?? undefined,
     dept_head_user_name: batch.dept_head_user_name ?? undefined,
+    dept_head_position: batch.dept_head_position ?? undefined,
+    sub_approver_1_signed_at: batch.sub_approver_1_signed_at ?? undefined,
+    sub_approver_1_digital_signature:
+      batch.sub_approver_1_digital_signature ?? undefined,
+    sub_approver_1_user_name: batch.sub_approver_1_user_name ?? undefined,
+    sub_approver_1_position: batch.sub_approver_1_position ?? undefined,
     it_manager_signed_at: batch.it_manager_signed_at ?? undefined,
     it_manager_digital_signature:
       batch.it_manager_digital_signature ?? undefined,
     it_manager_user_name: batch.it_manager_user_name ?? undefined,
+    it_manager_position: batch.it_manager_position ?? undefined,
+    sub_approver_2_signed_at: batch.sub_approver_2_signed_at ?? undefined,
+    sub_approver_2_digital_signature:
+      batch.sub_approver_2_digital_signature ?? undefined,
+    sub_approver_2_user_name: batch.sub_approver_2_user_name ?? undefined,
+    sub_approver_2_position: batch.sub_approver_2_position ?? undefined,
+    ownerAbsent: batch.owner_absent === true,
   };
 }
 
@@ -307,10 +320,22 @@ export function buildTransferDataForPDFFromBatch(
     dept_head_signed_at: batch.dept_head_signed_at ?? undefined,
     dept_head_digital_signature: batch.dept_head_digital_signature ?? undefined,
     dept_head_user_name: batch.dept_head_user_name ?? undefined,
+    dept_head_position: batch.dept_head_position ?? undefined,
+    sub_approver_1_signed_at: batch.sub_approver_1_signed_at ?? undefined,
+    sub_approver_1_digital_signature:
+      batch.sub_approver_1_digital_signature ?? undefined,
+    sub_approver_1_user_name: batch.sub_approver_1_user_name ?? undefined,
+    sub_approver_1_position: batch.sub_approver_1_position ?? undefined,
     it_manager_signed_at: batch.it_manager_signed_at ?? undefined,
     it_manager_digital_signature:
       batch.it_manager_digital_signature ?? undefined,
     it_manager_user_name: batch.it_manager_user_name ?? undefined,
+    it_manager_position: batch.it_manager_position ?? undefined,
+    sub_approver_2_signed_at: batch.sub_approver_2_signed_at ?? undefined,
+    sub_approver_2_digital_signature:
+      batch.sub_approver_2_digital_signature ?? undefined,
+    sub_approver_2_user_name: batch.sub_approver_2_user_name ?? undefined,
+    sub_approver_2_position: batch.sub_approver_2_position ?? undefined,
   };
 }
 
@@ -381,6 +406,7 @@ export const ReturnFormDetail: React.FC<{
   const [pdfUrl, setPdfUrl] = useState<string>('');
   const [pdfLoading, setPdfLoading] = useState(true);
   const [pdfError, setPdfError] = useState<string | null>(null);
+  const [iframeLoaded, setIframeLoaded] = useState(false);
   const pdfUrlRef = useRef<string>('');
   const cacheKey = formNumber
     ? formNumber +
@@ -465,28 +491,42 @@ export const ReturnFormDetail: React.FC<{
     currentUser?.id,
   ]);
 
+  useEffect(() => {
+    if (!pdfUrl) return;
+    setIframeLoaded(false);
+    const timer = window.setTimeout(() => setIframeLoaded(true), 15000);
+    return () => window.clearTimeout(timer);
+  }, [pdfUrl]);
+
   const pdfBody = (
     <div className="flex-1 min-h-0 flex flex-col py-2 overflow-hidden">
       <div className="w-full flex-1 min-h-0 border rounded-lg overflow-hidden bg-gray-50">
-        {pdfUrl ? (
-          <iframe
-            src={pdfUrl}
-            className="w-full h-full min-h-0"
-            title="PDF Preview"
-            style={{
-              width: '100%',
-              height: '100%',
-              border: 'none',
-              display: 'block',
-            }}
-          />
-        ) : pdfLoading ? (
-          <div className="w-full h-full min-h-[200px] flex items-center justify-center text-gray-500">
-            Generating PDF preview...
-          </div>
-        ) : (
+        {pdfError && !pdfLoading && !pdfUrl ? (
           <div className="w-full h-full min-h-[200px] flex items-center justify-center text-red-500">
             {pdfError}
+          </div>
+        ) : (
+          <div className="relative w-full h-full min-h-[200px]">
+            {(pdfLoading || !iframeLoaded) && (
+              <div className="absolute inset-0 z-10 flex items-center justify-center bg-white/80">
+                <div className="flex flex-col items-center gap-3 text-gray-500">
+                  <div className="h-10 w-10 animate-spin rounded-full border-4 border-gray-200 border-t-blue-600" />
+                  <p className="text-sm">Loading PDF preview...</p>
+                </div>
+              </div>
+            )}
+            <iframe
+              src={pdfUrl}
+              onLoad={() => setIframeLoaded(true)}
+              className="w-full h-full min-h-0"
+              title="PDF Preview"
+              style={{
+                width: '100%',
+                height: '100%',
+                border: 'none',
+                display: 'block',
+              }}
+            />
           </div>
         )}
       </div>
@@ -549,6 +589,7 @@ export const TransferFormDetail: React.FC<{
   const [pdfUrl, setPdfUrl] = useState<string>('');
   const [pdfLoading, setPdfLoading] = useState(true);
   const [pdfError, setPdfError] = useState<string | null>(null);
+  const [iframeLoaded, setIframeLoaded] = useState(false);
   const pdfUrlRef = useRef<string>('');
 
   useEffect(() => {
@@ -595,28 +636,42 @@ export const TransferFormDetail: React.FC<{
     };
   }, [transferFormBatch]);
 
+  useEffect(() => {
+    if (!pdfUrl) return;
+    setIframeLoaded(false);
+    const timer = window.setTimeout(() => setIframeLoaded(true), 15000);
+    return () => window.clearTimeout(timer);
+  }, [pdfUrl]);
+
   const pdfBody = (
     <div className="flex-1 min-h-0 flex flex-col py-2 overflow-hidden">
       <div className="w-full flex-1 min-h-0 border rounded-lg overflow-hidden bg-gray-50">
-        {pdfUrl ? (
-          <iframe
-            src={pdfUrl}
-            className="w-full h-full min-h-0"
-            title="Transfer Form PDF Preview"
-            style={{
-              width: '100%',
-              height: '100%',
-              border: 'none',
-              display: 'block',
-            }}
-          />
-        ) : pdfLoading ? (
-          <div className="w-full h-full min-h-[200px] flex items-center justify-center text-gray-500">
-            Generating PDF preview...
-          </div>
-        ) : (
+        {pdfError && !pdfLoading && !pdfUrl ? (
           <div className="w-full h-full min-h-[200px] flex items-center justify-center text-red-500">
             {pdfError}
+          </div>
+        ) : (
+          <div className="relative w-full h-full min-h-[200px]">
+            {(pdfLoading || !iframeLoaded) && (
+              <div className="absolute inset-0 z-10 flex items-center justify-center bg-white/80">
+                <div className="flex flex-col items-center gap-3 text-gray-500">
+                  <div className="h-10 w-10 animate-spin rounded-full border-4 border-gray-200 border-t-blue-600" />
+                  <p className="text-sm">Loading PDF preview...</p>
+                </div>
+              </div>
+            )}
+            <iframe
+              src={pdfUrl}
+              onLoad={() => setIframeLoaded(true)}
+              className="w-full h-full min-h-0"
+              title="Transfer Form PDF Preview"
+              style={{
+                width: '100%',
+                height: '100%',
+                border: 'none',
+                display: 'block',
+              }}
+            />
           </div>
         )}
       </div>
@@ -661,21 +716,36 @@ export const TransferFormDetail: React.FC<{
   );
 };
 
-/** Shared timeline for return/transfer forms: Submitted → Approved by dept head → Completed */
+/** Shared timeline for return/transfer forms: Submitted/Initiated → Approved by dept head → Completed */
 export function FormTimeline({
   type,
   created_at,
   signerName,
   dept_head_signed_at,
   dept_head_user_name,
+  sub_approver_1_signed_at,
+  sub_approver_1_user_name,
+  sub_approver_1_position,
   process_signed_at,
+  executed_at,
+  owner_absent,
+  processorName,
 }: {
   type: 'return' | 'transfer';
   created_at: string;
   signerName: string;
   dept_head_signed_at?: string | null;
   dept_head_user_name?: string | null;
+  sub_approver_1_signed_at?: string | null;
+  sub_approver_1_user_name?: string | null;
+  sub_approver_1_position?: string | null;
   process_signed_at?: string | null;
+  /** Transfer execution timestamp (transfer completion signal). Optional: pages without it fall back to process_signed_at. */
+  executed_at?: string | null;
+  /** True when the processor (IT/Admin) initiated on behalf of an absent owner. */
+  owner_absent?: boolean;
+  /** Name of the processor who initiated a held (owner absent) form. */
+  processorName?: string;
 }) {
   const formatDate = (d: string | null | undefined) =>
     d && !isNaN(new Date(d).getTime())
@@ -684,8 +754,28 @@ export function FormTimeline({
         new Date(d).toLocaleTimeString()
       : null;
   const step1Done = true;
-  const step2Done = !!dept_head_signed_at;
-  const step3Done = !!process_signed_at;
+  const ownerAbsent = !!owner_absent;
+  const approvedBySub = !!sub_approver_1_signed_at;
+  const step2Done = !!dept_head_signed_at || approvedBySub;
+  const step3Done =
+    type === 'transfer'
+      ? executed_at === undefined
+        ? !!process_signed_at
+        : !!executed_at
+      : ownerAbsent
+        ? step2Done
+        : !!process_signed_at;
+  const step1Date = ownerAbsent
+    ? formatDate(process_signed_at ?? created_at) ?? '—'
+    : formatDate(created_at) ?? '—';
+  const step3Date =
+    type === 'transfer'
+      ? formatDate(executed_at ?? process_signed_at)
+      : ownerAbsent
+        ? formatDate(
+            sub_approver_1_signed_at ?? dept_head_signed_at ?? process_signed_at
+          )
+        : formatDate(process_signed_at);
   const completedLabel =
     type === 'return'
       ? 'Your return is completed'
@@ -735,57 +825,83 @@ export function FormTimeline({
 
   return (
     <div className="relative py-1">
-      {/* Vertical line behind nodes */}
-      <div
-        className="absolute left-[18px] top-2 bottom-2 w-0.5 rounded-full bg-gradient-to-b from-green-500 via-border to-muted-foreground/20"
-        aria-hidden
-      />
-      <div className="relative space-y-4">
-        {/* Step 1: Submitted */}
-        <div className="flex gap-4">
-          <div className="relative z-10 flex flex-col items-center">
-            {stepNode(step1Done, 1)}
-          </div>
-          <div className="flex-1 min-w-0 pb-1">
-            {stepContent(
-              'Submitted',
-              formatDate(created_at) ?? '—',
+      {/* Step 1: Submitted / Initiated by IT/Admin */}
+      <div className="flex gap-4">
+        <div className="flex flex-col items-center">
+          {stepNode(step1Done, 1)}
+          <div
+            className={`w-0.5 flex-1 rounded-full ${
+              step2Done ? 'bg-green-500' : 'bg-muted-foreground/20'
+            }`}
+            aria-hidden
+          />
+        </div>
+        <div className="flex-1 min-w-0 pb-4">
+          {stepContent(
+            ownerAbsent ? 'Initiated by IT / Admin' : 'Submitted',
+            step1Date,
+            ownerAbsent ? (
+              <>
+                The asset owner is marked absent.{' '}
+                {processorName || 'IT/Admin'} initiated this{' '}
+                {type === 'return' ? 'return' : 'transfer'} on the owner's
+                behalf. Has been pending for approval of the department head.
+              </>
+            ) : (
               <>
                 Signed by {signerName || '—'}. Has been pending for approval of
                 your department head.
               </>
-            )}
-          </div>
+            )
+          )}
         </div>
-        {/* Step 2: Approved by department head */}
-        <div className="flex gap-4">
-          <div className="relative z-10 flex flex-col items-center">
-            {stepNode(step2Done, 2)}
-          </div>
-          <div className="flex-1 min-w-0 pb-1">
-            {stepContent(
-              'Approved by the department head',
-              step2Done ? (formatDate(dept_head_signed_at) ?? '—') : 'Pending',
-              undefined,
-              step2Done && dept_head_user_name ? (
-                <p className="mt-1.5 text-xs text-muted-foreground">
-                  — {dept_head_user_name}
-                </p>
-              ) : undefined
-            )}
-          </div>
+      </div>
+      {/* Step 2: Approved by department head */}
+      <div className="flex gap-4">
+        <div className="flex flex-col items-center">
+          {stepNode(step2Done, 2)}
+          <div
+            className={`w-0.5 flex-1 rounded-full ${
+              step3Done ? 'bg-green-500' : 'bg-muted-foreground/20'
+            }`}
+            aria-hidden
+          />
         </div>
-        {/* Step 3: Completed */}
-        <div className="flex gap-4">
-          <div className="relative z-10 flex flex-col items-center">
-            {stepNode(step3Done, 3)}
-          </div>
-          <div className="flex-1 min-w-0">
-            {stepContent(
-              completedLabel,
-              step3Done ? (formatDate(process_signed_at) ?? '—') : 'Pending'
-            )}
-          </div>
+        <div className="flex-1 min-w-0 pb-4">
+          {stepContent(
+            'Approved by the department head',
+            step2Done
+              ? (formatDate(
+                  sub_approver_1_signed_at ?? dept_head_signed_at
+                ) ?? '—')
+              : 'Pending',
+            approvedBySub ? (
+              <span className="mt-1 inline-block rounded bg-blue-100 px-2 py-0.5 text-xs font-medium text-blue-700">
+                Stand-in approver
+              </span>
+            ) : undefined,
+            step2Done && (dept_head_user_name || sub_approver_1_user_name) ? (
+              <p className="mt-1.5 text-xs text-muted-foreground">
+                —{' '}
+                {sub_approver_1_user_name ?? dept_head_user_name}
+                {approvedBySub && sub_approver_1_position
+                  ? ` (${sub_approver_1_position})`
+                  : ''}
+              </p>
+            ) : undefined
+          )}
+        </div>
+      </div>
+      {/* Step 3: Completed */}
+      <div className="flex gap-4">
+        <div className="flex flex-col items-center">
+          {stepNode(step3Done, 3)}
+        </div>
+        <div className="flex-1 min-w-0">
+          {stepContent(
+            completedLabel,
+            step3Done ? (step3Date ?? '—') : 'Pending'
+          )}
         </div>
       </div>
     </div>
@@ -819,8 +935,16 @@ export const ReturnFormCard: React.FC<{
   const [showOtpDialog, setShowOtpDialog] = useState(false);
   const [agreeReturn, setAgreeReturn] = useState(false);
   const [signDialogPdfUrl, setSignDialogPdfUrl] = useState<string>('');
+  const [signDialogIframeLoaded, setSignDialogIframeLoaded] = useState(false);
   const signDialogPdfUrlRef = useRef<string>('');
   const pendingSignActionRef = useRef<(() => Promise<void>) | null>(null);
+
+  useEffect(() => {
+    if (!signDialogPdfUrl) return;
+    setSignDialogIframeLoaded(false);
+    const timer = window.setTimeout(() => setSignDialogIframeLoaded(true), 15000);
+    return () => window.clearTimeout(timer);
+  }, [signDialogPdfUrl]);
 
   useEffect(() => {
     if (!showConfirmDialog || !canSign) return;
@@ -951,6 +1075,9 @@ export const ReturnFormCard: React.FC<{
               <FileSignature className="h-5 w-5 text-white" />
             </div>
             <div>
+              <p className="text-[11px] font-semibold uppercase tracking-wider text-red-600">
+                Return Form
+              </p>
               <CardTitle className="text-lg">{formNumber}</CardTitle>
               <p className="text-sm text-gray-500">
                 Created {new Date(batch.created_at).toLocaleDateString()}
@@ -1052,6 +1179,18 @@ export const ReturnFormCard: React.FC<{
               </div>
             )}
 
+            {/* Received by (IT Manager / IT Department Head) */}
+            {batch.it_manager_signed_at && (
+              <div className="flex items-start gap-3">
+                <User className="h-4 w-4 text-gray-400 mt-0.5 flex-shrink-0" />
+                <div className="flex-1 min-w-0">
+                  <p className="font-medium text-sm">
+                    Received by: {batch.it_manager_user_name ?? '—'}
+                  </p>
+                </div>
+              </div>
+            )}
+
             {/* Return date */}
             <div className="flex items-start gap-3">
               <Calendar className="h-4 w-4 text-gray-400 mt-0.5 flex-shrink-0" />
@@ -1097,7 +1236,12 @@ export const ReturnFormCard: React.FC<{
               signerName={returnedBy ?? ''}
               dept_head_signed_at={batch.dept_head_signed_at}
               dept_head_user_name={batch.dept_head_user_name}
+              sub_approver_1_signed_at={batch.sub_approver_1_signed_at}
+              sub_approver_1_user_name={batch.sub_approver_1_user_name}
+              sub_approver_1_position={batch.sub_approver_1_position}
               process_signed_at={batch.process_signed_at}
+              owner_absent={batch.owner_absent}
+              processorName={batch.processed_by ?? ''}
             />
           </CardContent>
         </TabsContent>
@@ -1117,7 +1261,7 @@ export const ReturnFormCard: React.FC<{
         </TabsContent>
       </Tabs>
 
-      <div className="flex gap-2 p-4 mt-auto border-t border-slate-100">
+      <div className="flex flex-col sm:flex-row gap-2 p-4 mt-auto border-t border-slate-100">
         <Button
           variant="outline"
           size="sm"
@@ -1138,10 +1282,11 @@ export const ReturnFormCard: React.FC<{
               onView();
             }
           }}
-          className="flex-1 bg-red-600 text-white border-red-600 hover:bg-white hover:text-red-600 hover:border-red-600 shadow-sm"
+          className="w-full sm:flex-1 bg-red-600 text-white border-red-600 hover:bg-white hover:text-red-600 hover:border-red-600 shadow-sm"
         >
           <Eye className="h-4 w-4 mr-2" />
-          View
+          <span className="hidden sm:inline">View</span>
+          <span className="sm:hidden">View</span>
         </Button>
         {canSign && !viewOnly && (
           <>
@@ -1149,10 +1294,11 @@ export const ReturnFormCard: React.FC<{
               variant="outline"
               size="sm"
               onClick={() => setShowConfirmDialog(true)}
-              className="flex-1 bg-red-600 text-white border-red-600 hover:bg-white hover:text-red-600 hover:border-red-600 shadow-sm"
+              className="w-full sm:flex-1 bg-red-600 text-white border-red-600 hover:bg-white hover:text-red-600 hover:border-red-600 shadow-sm"
             >
               <CheckCircle2 className="h-4 w-4 mr-2" />
-              Sign Form
+              <span className="hidden sm:inline">Sign Form</span>
+              <span className="sm:hidden">Sign</span>
             </Button>
             <AlertDialog
               open={showConfirmDialog}
@@ -1168,9 +1314,18 @@ export const ReturnFormCard: React.FC<{
                 </AppAlertDialogMessage>
                 <div className="min-h-0 flex-1 overflow-auto px-6">
                   <div className="my-4 h-[50vh] w-full overflow-hidden rounded-lg border sm:h-[600px]">
-                    {signDialogPdfUrl ? (
+                    <div className="relative w-full h-full">
+                      {!signDialogIframeLoaded && (
+                        <div className="absolute inset-0 z-10 flex items-center justify-center bg-white/80">
+                          <div className="flex flex-col items-center gap-3 text-gray-500">
+                            <div className="h-10 w-10 animate-spin rounded-full border-4 border-gray-200 border-t-blue-600" />
+                            <p className="text-sm">Loading PDF preview...</p>
+                          </div>
+                        </div>
+                      )}
                       <iframe
                         src={signDialogPdfUrl}
+                        onLoad={() => setSignDialogIframeLoaded(true)}
                         className="h-full w-full"
                         title="Return form preview"
                         style={{
@@ -1180,11 +1335,7 @@ export const ReturnFormCard: React.FC<{
                           maxWidth: 'none',
                         }}
                       />
-                    ) : (
-                      <div className="flex h-full w-full items-center justify-center text-gray-500">
-                        Loading form preview...
-                      </div>
-                    )}
+                    </div>
                   </div>
                   <div className="space-y-4 py-4">
                     <div className="flex items-start space-x-3">
@@ -1277,10 +1428,11 @@ export const ReturnFormCard: React.FC<{
               onDownload();
             }
           }}
-          className="flex-1 bg-white text-red-600 border-red-600 hover:bg-red-600 hover:text-white shadow-sm"
+          className="w-full sm:flex-1 bg-white text-red-600 border-red-600 hover:bg-red-600 hover:text-white shadow-sm"
         >
           <Download className="h-4 w-4 mr-2" />
-          Download
+          <span className="hidden sm:inline">Download</span>
+          <span className="sm:hidden">DL</span>
         </Button>
       </div>
     </Card>
@@ -1300,13 +1452,7 @@ export const ReturnFormCard: React.FC<{
         />
         <AppDialogBody className="min-h-0 flex-1 overflow-auto !p-0">
           <div className="mx-4 my-4 h-[620px] overflow-hidden rounded-lg border border-slate-200 bg-slate-50 sm:mx-6">
-            {checklistPreviewUrl ? (
-              <PDFViewer pdfUrl={checklistPreviewUrl} className="h-full w-full" />
-            ) : (
-              <div className="flex h-full w-full items-center justify-center text-gray-500">
-                Generating checklist PDF preview...
-              </div>
-            )}
+            <PDFViewer pdfUrl={checklistPreviewUrl} className="h-full w-full" />
           </div>
         </AppDialogBody>
         <AppDialogChromeFooter className="justify-end gap-3">
@@ -1360,6 +1506,9 @@ export const BorrowRequestCard: React.FC<{
             <HandHelping className="h-5 w-5 text-red-700" />
           </div>
           <div>
+            <p className="text-[11px] font-semibold uppercase tracking-wider text-red-600">
+              Borrow Form
+            </p>
             <p className="text-lg font-semibold">
               {formNumber}
             </p>
@@ -1465,13 +1614,22 @@ export const TransferFormCard: React.FC<{
     !!currentUser?.id &&
     currentUser.id === batch.user_id &&
     !!batch.formID &&
-    !batch.signed_at;
+    !batch.signed_at &&
+    !batch.owner_absent;
   const [showConfirmDialog, setShowConfirmDialog] = useState(false);
   const [showOtpDialog, setShowOtpDialog] = useState(false);
   const [agreeTransfer, setAgreeTransfer] = useState(false);
   const [signDialogPdfUrl, setSignDialogPdfUrl] = useState<string>('');
+  const [signDialogIframeLoaded, setSignDialogIframeLoaded] = useState(false);
   const signDialogPdfUrlRef = useRef<string>('');
   const pendingSignActionRef = useRef<(() => Promise<void>) | null>(null);
+
+  useEffect(() => {
+    if (!signDialogPdfUrl) return;
+    setSignDialogIframeLoaded(false);
+    const timer = window.setTimeout(() => setSignDialogIframeLoaded(true), 15000);
+    return () => window.clearTimeout(timer);
+  }, [signDialogPdfUrl]);
 
   useEffect(() => {
     if (!showConfirmDialog || !canSign) return;
@@ -1528,6 +1686,9 @@ export const TransferFormCard: React.FC<{
               <ArrowRightLeft className="h-5 w-5 text-white" />
             </div>
             <div>
+              <p className="text-[11px] font-semibold uppercase tracking-wider text-red-600">
+                Transfer Form
+              </p>
               <CardTitle className="text-lg">{formNumber}</CardTitle>
               <p className="text-sm text-gray-500">
                 Created {new Date(batch.created_at).toLocaleDateString()}
@@ -1614,7 +1775,7 @@ export const TransferFormCard: React.FC<{
                 <User className="h-4 w-4 text-gray-400 mt-0.5 flex-shrink-0" />
                 <div className="flex-1 min-w-0">
                   <p className="font-medium text-sm">
-                    Transferrer: {transferrerName}
+                    Transferred by: {transferrerName}
                   </p>
                 </div>
               </div>
@@ -1630,6 +1791,18 @@ export const TransferFormCard: React.FC<{
                         ? `Processed by: ${batch.processed_by ?? '—'}`
                         : `Processor: ${batch.processed_by ?? '—'} (pending sign)`
                       : 'Processor: Pending manager approval'}
+                  </p>
+                </div>
+              </div>
+            )}
+
+            {/* Received by (IT Manager) */}
+            {batch.it_manager_signed_at && (
+              <div className="flex items-start gap-3">
+                <User className="h-4 w-4 text-gray-400 mt-0.5 flex-shrink-0" />
+                <div className="flex-1 min-w-0">
+                  <p className="font-medium text-sm">
+                    Received by: {batch.it_manager_user_name ?? '—'}
                   </p>
                 </div>
               </div>
@@ -1668,20 +1841,27 @@ export const TransferFormCard: React.FC<{
               signerName={transferrerName ?? ''}
               dept_head_signed_at={batch.dept_head_signed_at}
               dept_head_user_name={batch.dept_head_user_name}
+              sub_approver_1_signed_at={batch.sub_approver_1_signed_at}
+              sub_approver_1_user_name={batch.sub_approver_1_user_name}
+              sub_approver_1_position={batch.sub_approver_1_position}
               process_signed_at={batch.process_signed_at}
+              executed_at={batch.executed_at}
+              owner_absent={batch.owner_absent}
+              processorName={batch.processed_by ?? ''}
             />
           </CardContent>
         </TabsContent>
       </Tabs>
-      <div className="flex gap-2 p-4 mt-auto border-t border-slate-100">
+      <div className="flex flex-col sm:flex-row gap-2 p-4 mt-auto border-t border-slate-100">
         <Button
           variant="outline"
           size="sm"
           onClick={onView}
-          className="flex-1 bg-red-600 text-white border-red-600 hover:bg-white hover:text-red-600 hover:border-red-600 shadow-sm"
+          className="w-full sm:flex-1 bg-red-600 text-white border-red-600 hover:bg-white hover:text-red-600 hover:border-red-600 shadow-sm"
         >
           <Eye className="h-4 w-4 mr-2" />
-          View
+          <span className="hidden sm:inline">View</span>
+          <span className="sm:hidden">View</span>
         </Button>
         {canSign && !viewOnly && (
           <>
@@ -1689,10 +1869,11 @@ export const TransferFormCard: React.FC<{
               variant="outline"
               size="sm"
               onClick={() => setShowConfirmDialog(true)}
-              className="flex-1 bg-red-600 text-white border-red-600 hover:bg-white hover:text-red-600 hover:border-red-600 shadow-sm"
+              className="w-full sm:flex-1 bg-red-600 text-white border-red-600 hover:bg-white hover:text-red-600 hover:border-red-600 shadow-sm"
             >
               <CheckCircle2 className="h-4 w-4 mr-2" />
-              Sign Form
+              <span className="hidden sm:inline">Sign Form</span>
+              <span className="sm:hidden">Sign</span>
             </Button>
             <AlertDialog
               open={showConfirmDialog}
@@ -1708,9 +1889,18 @@ export const TransferFormCard: React.FC<{
                 </AppAlertDialogMessage>
                 <div className="min-h-0 flex-1 overflow-auto px-6">
                   <div className="my-4 h-[50vh] w-full overflow-hidden rounded-lg border sm:h-[600px]">
-                    {signDialogPdfUrl ? (
+                    <div className="relative w-full h-full">
+                      {!signDialogIframeLoaded && (
+                        <div className="absolute inset-0 z-10 flex items-center justify-center bg-white/80">
+                          <div className="flex flex-col items-center gap-3 text-gray-500">
+                            <div className="h-10 w-10 animate-spin rounded-full border-4 border-gray-200 border-t-blue-600" />
+                            <p className="text-sm">Loading PDF preview...</p>
+                          </div>
+                        </div>
+                      )}
                       <iframe
                         src={signDialogPdfUrl}
+                        onLoad={() => setSignDialogIframeLoaded(true)}
                         className="h-full w-full"
                         title="Transfer form preview"
                         style={{
@@ -1720,11 +1910,7 @@ export const TransferFormCard: React.FC<{
                           maxWidth: 'none',
                         }}
                       />
-                    ) : (
-                      <div className="flex h-full w-full items-center justify-center text-gray-500">
-                        Loading form preview...
-                      </div>
-                    )}
+                    </div>
                   </div>
                   <div className="space-y-4 py-4">
                     <label className="flex cursor-pointer items-center gap-3">
@@ -1794,10 +1980,11 @@ export const TransferFormCard: React.FC<{
           variant="outline"
           size="sm"
           onClick={onDownload}
-          className="flex-1 bg-white text-red-600 border-red-600 hover:bg-red-600 hover:text-white shadow-sm"
+          className="w-full sm:flex-1 bg-white text-red-600 border-red-600 hover:bg-red-600 hover:text-white shadow-sm"
         >
           <Download className="h-4 w-4 mr-2" />
-          Download
+          <span className="hidden sm:inline">Download</span>
+          <span className="sm:hidden">DL</span>
         </Button>
       </div>
     </Card>
@@ -1823,11 +2010,20 @@ export interface AssetBorrowFormBatch {
   requester_company_logo_url?: string | null;
   dept_head_signed_at?: string | null;
   dept_head_name?: string | null;
+  dept_head_signed_by?: string | null;
+  dept_head_digital_signature?: string | null;
+  dept_head_position?: string | null;
+  sub_approver_1_signed_at?: string | null;
+  sub_approver_1_signed_by?: string | null;
+  sub_approver_1_digital_signature?: string | null;
+  sub_approver_1_name?: string | null;
+  sub_approver_1_position?: string | null;
   approved_at?: string | null;
   pre_usage_condition?: string | null;
   asset_name?: string | null;
   asset_serial?: string | null;
   approved_by_name?: string | null;
+  approved_by_position?: string | null;
   /** From API — used for badges / timeline (e.g. processor decline). */
   status?: string | null;
   declined_at?: string | null;
@@ -1844,6 +2040,7 @@ export interface AssetBorrowFormBatch {
   /** Manager Approver 2 who received the borrow request */
   received_by?: string | null;
   received_by_name?: string | null;
+  received_by_position?: string | null;
   /** Manager Approver 2's digital signature when receiving */
   received_by_signature?: string | null;
   received_at?: string | null;
@@ -1929,6 +2126,17 @@ export function buildBorrowDataForPDFFromBatch(
     borrowerCompanyLogoUrl: batch.requester_company_logo_url ?? null,
     requestedBySignature: batch.requested_by_signature ?? null,
     requestedAt: batch.created_at ?? null,
+    deptHeadSignedAt: batch.sub_approver_1_signed_at ?? batch.dept_head_signed_at ?? null,
+    deptHeadSignedBy: batch.sub_approver_1_name ?? batch.dept_head_name ?? null,
+    deptHeadSignature:
+      batch.sub_approver_1_digital_signature ?? batch.dept_head_digital_signature ?? null,
+    deptHeadPosition: batch.dept_head_position ?? batch.sub_approver_1_position ?? null,
+    subApprover1SignedAt: batch.sub_approver_1_signed_at ?? null,
+    subApprover1SignedBy: batch.sub_approver_1_name ?? null,
+    subApprover1Position: batch.sub_approver_1_position ?? null,
+    subApprover1Signature: batch.sub_approver_1_digital_signature ?? null,
+    itReceivedByPosition: batch.approved_by_position ?? null,
+    itApprovedByPosition: batch.received_by_position ?? null,
   };
 }
 
@@ -2280,24 +2488,26 @@ export const BorrowFormCard: React.FC<{
         </TabsContent>
       </Tabs>
 
-      <div className="flex gap-2 p-4 mt-auto border-t border-slate-100">
+      <div className="flex flex-col sm:flex-row gap-2 p-4 mt-auto border-t border-slate-100">
         <Button
           variant="outline"
           size="sm"
           onClick={onView}
-          className="flex-1 bg-red-600 text-white border-red-600 hover:bg-white hover:text-red-600 hover:border-red-600 shadow-sm"
+          className="w-full sm:flex-1 bg-red-600 text-white border-red-600 hover:bg-white hover:text-red-600 hover:border-red-600 shadow-sm"
         >
           <Eye className="h-4 w-4 mr-2" />
-          View
+          <span className="hidden sm:inline">View</span>
+          <span className="sm:hidden">View</span>
         </Button>
         <Button
           variant="outline"
           size="sm"
           onClick={onDownload}
-          className="flex-1 bg-white text-red-600 border-red-600 hover:bg-red-600 hover:text-white shadow-sm"
+          className="w-full sm:flex-1 bg-white text-red-600 border-red-600 hover:bg-red-600 hover:text-white shadow-sm"
         >
           <Download className="h-4 w-4 mr-2" />
-          Download
+          <span className="hidden sm:inline">Download</span>
+          <span className="sm:hidden">DL</span>
         </Button>
       </div>
     </Card>
@@ -2314,6 +2524,7 @@ export const BorrowFormDetail: React.FC<{
   const [pdfUrl, setPdfUrl] = useState<string>('');
   const [pdfLoading, setPdfLoading] = useState(true);
   const [pdfError, setPdfError] = useState<string | null>(null);
+  const [iframeLoaded, setIframeLoaded] = useState(false);
   const pdfUrlRef = useRef<string>('');
 
   useEffect(() => {
@@ -2366,26 +2577,40 @@ export const BorrowFormDetail: React.FC<{
     borrowFormBatch.received_by_signature,
   ]);
 
+  useEffect(() => {
+    if (!pdfUrl) return;
+    setIframeLoaded(false);
+    const timer = window.setTimeout(() => setIframeLoaded(true), 15000);
+    return () => window.clearTimeout(timer);
+  }, [pdfUrl]);
+
   const pdfBody = (
     <div className="flex-1 min-h-0 flex flex-col py-2 overflow-hidden">
       <div className="w-full flex-1 min-h-0 border rounded-lg overflow-hidden bg-gray-50 relative">
-        {pdfUrl ? (
-          <iframe
-            src={pdfUrl}
-            className="absolute inset-0 w-full h-full"
-            title="Equipment Borrowing Form PDF Preview"
-            style={{
-              border: 'none',
-              display: 'block',
-            }}
-          />
-        ) : pdfLoading ? (
-          <div className="w-full h-full min-h-[200px] flex items-center justify-center text-gray-500">
-            Generating PDF preview...
-          </div>
-        ) : (
+        {pdfError && !pdfLoading && !pdfUrl ? (
           <div className="w-full h-full min-h-[200px] flex items-center justify-center text-red-500">
             {pdfError}
+          </div>
+        ) : (
+          <div className="absolute inset-0 w-full h-full">
+            {(pdfLoading || !iframeLoaded) && (
+              <div className="absolute inset-0 z-10 flex items-center justify-center bg-white/80">
+                <div className="flex flex-col items-center gap-3 text-gray-500">
+                  <div className="h-10 w-10 animate-spin rounded-full border-4 border-gray-200 border-t-blue-600" />
+                  <p className="text-sm">Loading PDF preview...</p>
+                </div>
+              </div>
+            )}
+            <iframe
+              src={pdfUrl}
+              onLoad={() => setIframeLoaded(true)}
+              className="absolute inset-0 w-full h-full"
+              title="Equipment Borrowing Form PDF Preview"
+              style={{
+                border: 'none',
+                display: 'block',
+              }}
+            />
           </div>
         )}
       </div>
@@ -2440,6 +2665,7 @@ export interface AssetTransferFormBatch {
   declined_at?: string | null;
   executed_at?: string | null;
   processed_by?: string | null;
+  form_department?: { id: string; name: string } | null;
   new_assigned_user_id?: string | null;
   new_assigned_user?: {
     first_name: string;
@@ -2461,9 +2687,30 @@ export interface AssetTransferFormBatch {
   dept_head_signed_at?: string | null;
   dept_head_digital_signature?: string | null;
   dept_head_user_name?: string | null;
+  dept_head_position?: string | null;
+  sub_approver_1_signed_at?: string | null;
+  sub_approver_1_digital_signature?: string | null;
+  sub_approver_1_user_name?: string | null;
+  sub_approver_1_position?: string | null;
   it_manager_signed_at?: string | null;
   it_manager_digital_signature?: string | null;
   it_manager_user_name?: string | null;
+  it_manager_position?: string | null;
+  sub_approver_2_signed_at?: string | null;
+  sub_approver_2_digital_signature?: string | null;
+  sub_approver_2_signed_by?: string | null;
+  sub_approver_2_user_name?: string | null;
+  sub_approver_2_position?: string | null;
+  /** True when the asset owner is marked absent (processor-initiated hold transfer) */
+  owner_absent?: boolean;
+  /** Intangible assets linked to this transfer form (persisted at creation) */
+  intangibleAssets?: Array<{
+    id: string;
+    name: string;
+    type: string;
+    description: string | null;
+    notes: string | null;
+  }>;
   returns: AssetReturnForm[];
 }
 
@@ -2551,12 +2798,26 @@ export interface AssetReturnFormBatch {
   dept_head_digital_signature?: string | null;
   dept_head_signed_by?: string | null;
   dept_head_user_name?: string | null;
+  dept_head_position?: string | null;
+  sub_approver_1_signed_at?: string | null;
+  sub_approver_1_digital_signature?: string | null;
+  sub_approver_1_signed_by?: string | null;
+  sub_approver_1_user_name?: string | null;
+  sub_approver_1_position?: string | null;
   it_manager_signed_at?: string | null;
   it_manager_digital_signature?: string | null;
   it_manager_signed_by?: string | null;
   it_manager_user_name?: string | null;
+  it_manager_position?: string | null;
+  sub_approver_2_signed_at?: string | null;
+  sub_approver_2_digital_signature?: string | null;
+  sub_approver_2_signed_by?: string | null;
+  sub_approver_2_user_name?: string | null;
+  sub_approver_2_position?: string | null;
   /** Form's owning department (IT/Admin) for PDF header and scope; from category department */
   form_department?: { id: string; name: string } | null;
+  /** True when the asset owner is marked absent (processor-initiated hold return) */
+  owner_absent?: boolean;
   returns: AssetReturnForm[];
 }
 
@@ -2781,8 +3042,10 @@ function ReturnChecklistCard({
 
 export default function DocumentsTab({
   setActiveTab,
+  initialSubTab,
 }: {
   setActiveTab: (tab: string) => void;
+  initialSubTab?: string;
 }) {
   const { user: currentUser, loading: userLoading } = useCurrentUser();
   
@@ -2840,11 +3103,18 @@ export default function DocumentsTab({
     useState<AssetBorrowFormBatch | null>(null);
   const [showBorrowFormDetail, setShowBorrowFormDetail] = useState(false);
   const [activeSubTab, setActiveSubTab] = useState<string>(
-    'accountability'
+    initialSubTab || 'accountability'
   );
   const [statusFilter, setStatusFilter] = useState<
     'all' | 'active' | 'disabled'
   >('active');
+
+  useEffect(() => {
+    if (initialSubTab && initialSubTab !== activeSubTab) {
+      setActiveSubTab(initialSubTab);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [initialSubTab]);
 
   const [isTabLoading, setIsTabLoading] = useState(true);
   const isLoading = userLoading;
@@ -3887,22 +4157,26 @@ export default function DocumentsTab({
                         </div>
                       </CardContent>
 
-                      <div className="flex gap-2 border-t border-slate-100 p-4">
+                      <div className="flex flex-col sm:flex-row gap-2 border-t border-slate-100 p-4">
                         <Button
                           variant="outline"
                           size="sm"
-                          className="flex-1 bg-red-600 text-white border-red-600 hover:bg-white hover:text-red-600 hover:border-red-600 shadow-sm"
+                          className="w-full sm:flex-1 bg-red-600 text-white border-red-600 hover:bg-white hover:text-red-600 hover:border-red-600 shadow-sm"
                           onClick={() => handleViewChecklist(row)}
                         >
-                          <Eye className="mr-2 h-4 w-4" /> View
+                          <Eye className="mr-2 h-4 w-4" />
+                          <span className="hidden sm:inline">View</span>
+                          <span className="sm:hidden">View</span>
                         </Button>
                         <Button
                           variant="outline"
                           size="sm"
-                          className="flex-1 bg-white text-red-600 border-red-600 hover:bg-red-600 hover:text-white shadow-sm"
+                          className="w-full sm:flex-1 bg-white text-red-600 border-red-600 hover:bg-red-600 hover:text-white shadow-sm"
                           onClick={() => handleDownloadChecklist(row)}
                         >
-                          <Download className="mr-2 h-4 w-4" /> Download
+                          <Download className="mr-2 h-4 w-4" />
+                          <span className="hidden sm:inline">Download</span>
+                          <span className="sm:hidden">DL</span>
                         </Button>
                       </div>
                     </Card>
@@ -3928,13 +4202,7 @@ export default function DocumentsTab({
                 description="Asset Accountability Form Preview"
               />
               <AppDialogBody className="min-h-0 flex-1 overflow-auto !p-0">
-                {formPdfUrl ? (
-                  <PDFViewer pdfUrl={formPdfUrl} className="h-full w-full" />
-                ) : (
-                  <div className="flex h-full w-full items-center justify-center text-gray-500">
-                    Loading form preview...
-                  </div>
-                )}
+                <PDFViewer pdfUrl={formPdfUrl} className="h-full w-full" />
               </AppDialogBody>
               <AppDialogChromeFooter className="justify-end gap-3">
                 <Button
@@ -4181,13 +4449,7 @@ export default function DocumentsTab({
                 description="Asset Checklist Form Preview"
               />
               <AppDialogBody className="min-h-0 flex-1 overflow-auto !p-0">
-                {checklistPdfUrl ? (
-                  <PDFViewer pdfUrl={checklistPdfUrl} className="h-full w-full" />
-                ) : (
-                  <div className="flex h-full w-full items-center justify-center text-gray-500">
-                    Generating checklist PDF preview...
-                  </div>
-                )}
+                <PDFViewer pdfUrl={checklistPdfUrl} className="h-full w-full" />
               </AppDialogBody>
               <AppDialogChromeFooter className="justify-end gap-3">
                 {selectedChecklist && (

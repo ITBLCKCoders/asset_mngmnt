@@ -376,6 +376,85 @@ export async function insertDeclineNotification(
 }
 
 // ---------------------------------------------------------------------------
+// Intangible asset helpers (update snapshot in form assets_data)
+// ---------------------------------------------------------------------------
+
+export interface FormAssetsDataRow extends RowDataPacket {
+  formID: string;
+  assets_data: unknown;
+  status: string;
+}
+
+export async function findActiveFormsByIntangibleAssetId(
+  intangibleAssetId: string
+): Promise<FormAssetsDataRow[]> {
+  const [rows] = await pool.execute<FormAssetsDataRow[]>(
+    `SELECT formID, assets_data, status FROM accountability_forms
+     WHERE deleted_at IS NULL
+       AND status IN ('Pending', 'Signed')
+       AND JSON_SEARCH(assets_data, 'one', ?) IS NOT NULL`,
+    [intangibleAssetId]
+  );
+  return rows;
+}
+
+export async function updateFormAssetsDataById(
+  formId: string,
+  assetsDataJson: string
+): Promise<void> {
+  await pool.execute(
+    `UPDATE accountability_forms SET assets_data = ?, updated_at = NOW() WHERE formID = ?`,
+    [assetsDataJson, formId]
+  );
+}
+
+export interface ActiveIntangibleAssetForFormRow extends RowDataPacket {
+  id: string;
+  name: string;
+  description: string | null;
+  type: string | null;
+  department_id: string | null;
+  department_name: string | null;
+  type_department_id: string | null;
+  type_department_name: string | null;
+}
+
+export async function getActiveIntangibleAssetsByUserAndDepartment(
+  userId: string,
+  departmentId: string
+): Promise<ActiveIntangibleAssetForFormRow[]> {
+  const [rows] = await pool.execute<ActiveIntangibleAssetForFormRow[]>(
+    `SELECT
+       ia.id,
+       ia.name,
+       ia.description,
+       ia.type,
+       iaa.department_id,
+       d.name AS department_name,
+       td.departmentID AS type_department_id,
+       td.name AS type_department_name
+     FROM intangible_asset_assignments iaa
+     INNER JOIN intangible_assets ia ON iaa.intangible_asset_id = ia.id
+     LEFT JOIN intangible_asset_types iat
+       ON ia.type = iat.name
+       AND iat.company_id = ia.company_id
+       AND iat.deleted_at IS NULL
+     LEFT JOIN asset_mngmnt_departments td
+       ON iat.department_id = td.departmentID
+       AND td.deleted_at IS NULL
+     LEFT JOIN asset_mngmnt_departments d
+       ON iaa.department_id = d.departmentID
+       AND d.deleted_at IS NULL
+     WHERE iaa.user_id = ?
+       AND iaa.department_id = ?
+       AND iaa.status = 'Active'
+       AND iaa.deleted_at IS NULL`,
+    [userId, departmentId]
+  );
+  return rows;
+}
+
+// ---------------------------------------------------------------------------
 // Form lookups (single)
 // ---------------------------------------------------------------------------
 
@@ -463,9 +542,25 @@ export async function findFormsByAssetId(
 ): Promise<RowDataPacket[]> {
   const [rows] = await pool.execute<RowDataPacket[]>(
     `${FORM_FULL_SELECT_AND_JOINS}
-     WHERE af.deleted_at IS NULL AND (af.asset_id = ? OR af.assets_data LIKE ?)
+     WHERE af.deleted_at IS NULL
+       AND (
+         af.asset_id = ?
+         OR af.assets_data LIKE ?
+         OR af.formID IN (
+           SELECT af2.formID
+           FROM accountability_forms af2
+           JOIN intangible_asset_assignments iaa
+             ON af2.user_id = iaa.user_id
+            AND af2.department_id = iaa.department_id
+           WHERE iaa.intangible_asset_id = ?
+             AND iaa.status = 'Active'
+             AND iaa.deleted_at IS NULL
+             AND af2.deleted_at IS NULL
+             AND af2.status IN ('Pending', 'Signed')
+         )
+       )
      ORDER BY af.created_at DESC`,
-    [assetId, `%${assetId}%`]
+    [assetId, `%${assetId}%`, assetId]
   );
   return rows;
 }
@@ -473,6 +568,8 @@ export async function findFormsByAssetId(
 export async function listAccountabilityForms(filters: {
   userId?: string | undefined;
   status?: string | undefined;
+  companyId?: string | undefined;
+  departmentIds?: string[] | undefined;
 }): Promise<RowDataPacket[]> {
   const where: string[] = ['af.deleted_at IS NULL'];
   const params: unknown[] = [];
@@ -483,6 +580,17 @@ export async function listAccountabilityForms(filters: {
   if (filters.status) {
     where.push('af.status = ?');
     params.push(filters.status);
+  }
+  if (filters.companyId) {
+    where.push('u.company_id = ?');
+    params.push(filters.companyId);
+  }
+  if (filters.departmentIds && filters.departmentIds.length > 0) {
+    const ph = filters.departmentIds.map(() => '?').join(',');
+    where.push(
+      `(ud.departmentID IN (${ph}) OR d.departmentID IN (${ph}))`
+    );
+    params.push(...filters.departmentIds, ...filters.departmentIds);
   }
   const [rows] = await pool.execute<RowDataPacket[]>(
     `${FORM_FULL_SELECT_AND_JOINS}
@@ -643,4 +751,157 @@ export async function updateFormStatusTx(
     'UPDATE accountability_forms SET status = ?, updated_at = NOW() WHERE formID = ?',
     [status, formId]
   );
+}
+
+// ---------------------------------------------------------------------------
+// Asset Movement (disabled form lineage)
+// ---------------------------------------------------------------------------
+
+/**
+ * Resolve the assignment → asset mapping for the assignment ids stored in a
+ * form's assets_data. Used by the movement resolver to attribute return /
+ * transfer forms to the correct asset.
+ */
+export async function getAssignmentAssetMapping(
+  assignmentIds: string[]
+): Promise<Array<{ assignment_id: string; asset_id: string }>> {
+  if (assignmentIds.length === 0) return [];
+  const placeholders = assignmentIds.map(() => '?').join(',');
+  const [rows] = (await pool.execute(
+    `SELECT assignmentID AS assignment_id, asset_id
+     FROM asset_assignments
+     WHERE assignmentID IN (${placeholders}) AND deleted_at IS NULL`,
+    assignmentIds
+  )) as any[];
+  return rows as any[];
+}
+
+/**
+ * Find return forms linked to the given assignment ids. A return form groups
+ * one or more returned assignments (`asset_returns.assignment_id` →
+ * `asset_return_forms.formID`).
+ */
+export async function getReturnFormsByAssignmentIds(
+  assignmentIds: string[]
+): Promise<
+  Array<{
+    formID: string;
+    form_number: string;
+    assignment_id: string;
+    user_id: string;
+    user_name: string;
+    created_at: string;
+  }>
+> {
+  if (assignmentIds.length === 0) return [];
+  const placeholders = assignmentIds.map(() => '?').join(',');
+  const [rows] = (await pool.execute(
+    `SELECT arf.formID, arf.form_number, ar.assignment_id, arf.user_id,
+            CONCAT(u.first_name, ' ', u.last_name) AS user_name,
+            DATE_FORMAT(arf.created_at, '%Y-%m-%d %H:%i:%s') AS created_at
+     FROM asset_returns ar
+     JOIN asset_return_forms arf
+       ON ar.form_id = arf.formID AND arf.deleted_at IS NULL
+     LEFT JOIN users u ON arf.user_id = u.userID
+     WHERE ar.assignment_id IN (${placeholders}) AND ar.deleted_at IS NULL
+     ORDER BY arf.created_at DESC`,
+    assignmentIds
+  )) as any[];
+  return rows as any[];
+}
+
+/**
+ * Find transfer forms linked to the given assignments (via
+ * `transfer_form_assignments.assignment_id`) or to the given return forms
+ * (via `asset_transfer_forms.return_form_id`).
+ */
+export async function getTransferFormsForMovement(
+  assignmentIds: string[],
+  _returnFormIds: string[] = []
+): Promise<
+  Array<{
+    formID: string;
+    form_number: string;
+    assignment_id: string | null;
+    return_form_id: string | null;
+    user_id: string;
+    user_name: string;
+    new_assigned_user_id: string | null;
+    new_user_name: string;
+    created_at: string;
+  }>
+> {
+  // Strictly filter by assignment – the previous OR with return_form_id caused
+  // transfers for *other* assets sharing the same return batch (and therefore
+  // transfers from other companies) to leak into this asset's movement chain.
+  // Every transfer created from a return also writes its assignment into
+  // transfer_form_assignments, so the assignment path is sufficient and precise.
+  if (assignmentIds.length === 0) return [];
+  const ph = assignmentIds.map(() => '?').join(',');
+  const [rows] = (await pool.execute(
+    `SELECT DISTINCT atf.formID, atf.form_number, tfa.assignment_id,
+            atf.return_form_id, atf.user_id,
+            CONCAT(u.first_name, ' ', u.last_name) AS user_name,
+            atf.new_assigned_user_id,
+            CONCAT(nu.first_name, ' ', nu.last_name) AS new_user_name,
+            DATE_FORMAT(atf.created_at, '%Y-%m-%d %H:%i:%s') AS created_at
+     FROM asset_transfer_forms atf
+     JOIN transfer_form_assignments tfa ON atf.formID = tfa.form_id
+     LEFT JOIN users u ON atf.user_id = u.userID
+     LEFT JOIN users nu ON atf.new_assigned_user_id = nu.userID
+     WHERE atf.deleted_at IS NULL
+       AND tfa.assignment_id IN (${ph})
+     ORDER BY created_at DESC`,
+    [...assignmentIds]
+  )) as any[];
+  return rows as any[];
+}
+
+/**
+ * Find the currently-active accountability forms that still cover the given
+ * asset ids (i.e. where each asset went after this form was disabled). Excludes
+ * the form itself and disabled/declined/revoked forms.
+ */
+export async function getActiveAccountabilityFormsForAssetIds(
+  assetIds: string[],
+  excludeFormId: string,
+  afterDate?: string | null
+): Promise<
+  Array<{
+    formID: string;
+    form_number: string;
+    user_id: string;
+    user_name: string;
+    status: string;
+    created_at: string;
+    assets_data: unknown;
+  }>
+> {
+  if (assetIds.length === 0) return [];
+  const placeholders = assetIds.map(() => '?').join(',');
+  const params: unknown[] = [excludeFormId, ...assetIds, JSON.stringify(assetIds)];
+  let dateFilter = '';
+  if (afterDate) {
+    dateFilter = ' AND af.created_at > ? ';
+    params.push(afterDate);
+  }
+  const [rows] = (await pool.execute(
+    `SELECT af.formID, af.form_number, af.user_id, af.status,
+            CONCAT(u.first_name, ' ', u.last_name) AS user_name,
+            DATE_FORMAT(af.created_at, '%Y-%m-%d %H:%i:%s') AS created_at,
+            af.assets_data
+     FROM accountability_forms af
+     LEFT JOIN users u ON af.user_id = u.userID
+     WHERE af.deleted_at IS NULL
+        AND af.formID != ?
+        AND af.status NOT IN ('Disabled', 'Revoked', 'Declined')
+        AND (af.asset_id IN (${placeholders})
+             OR (af.assets_data IS NOT NULL
+                 AND JSON_OVERLAPS(JSON_EXTRACT(af.assets_data, '$.assets[*].id'), ?)))
+        ${dateFilter}
+     ORDER BY af.created_at ASC
+     LIMIT 1`,
+    params
+  )) as any[];
+  return rows as any[];
 }

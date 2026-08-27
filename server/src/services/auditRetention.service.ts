@@ -12,7 +12,7 @@ export class AuditRetentionService {
     return AuditRetentionModel.getSystemDefaults();
   }
 
-  static async updateSystemDefaults(defaultMonths: number, minimumMonths: number, userId: string): Promise<void> {
+  static async updateSystemDefaults(defaultMonths: number, minimumMonths: number, userId: string, ipAddress?: string, userAgent?: string): Promise<void> {
     await AuditRetentionModel.updateSystemDefaults(defaultMonths, minimumMonths);
 
     await createAuditLog({
@@ -23,13 +23,17 @@ export class AuditRetentionService {
       details: `Updated system defaults: ${defaultMonths} months default, ${minimumMonths} months minimum`,
       status: 'success',
       severity: 'info',
+      ipAddress: ipAddress ?? null,
+      userAgent: userAgent ?? null,
     });
   }
 
   static async upsertRetentionSetting(
     companyId: string,
     data: AuditRetentionSettingInput,
-    userId: string
+    userId: string,
+    ipAddress?: string,
+    userAgent?: string
   ): Promise<AuditRetentionSetting> {
     const existing = await AuditRetentionModel.getByCompanyId(companyId);
 
@@ -54,6 +58,8 @@ export class AuditRetentionService {
         companyId,
         status: 'success',
         severity: 'info',
+        ipAddress: ipAddress ?? null,
+        userAgent: userAgent ?? null,
       });
 
       return (await AuditRetentionModel.getByCompanyId(companyId))!;
@@ -80,13 +86,15 @@ export class AuditRetentionService {
         companyId,
         status: 'success',
         severity: 'info',
+        ipAddress: ipAddress ?? null,
+        userAgent: userAgent ?? null,
       });
 
       return (await AuditRetentionModel.getByCompanyId(companyId))!;
     }
   }
 
-  static async archiveOldLogs(companyId: string, userId: string): Promise<{ archivedCount: number }> {
+  static async archiveOldLogs(companyId: string, userId: string, ipAddress?: string, userAgent?: string): Promise<{ archivedCount: number }> {
     const setting = await AuditRetentionModel.getByCompanyId(companyId);
     
     if (!setting || !setting.is_active) {
@@ -117,6 +125,8 @@ export class AuditRetentionService {
       companyId,
       status: 'success',
       severity: 'info',
+      ipAddress: ipAddress ?? null,
+      userAgent: userAgent ?? null,
     });
 
     return { archivedCount };

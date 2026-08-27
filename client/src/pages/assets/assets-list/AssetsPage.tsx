@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useMemo, useState, useCallback } from 'react';
+import { useEffect, useMemo, useState, useCallback, useRef } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
 import {
   Package,
@@ -14,10 +14,12 @@ import {
   User,
   Building,
   Crown,
-  Layers,
   Edit,
   Loader2,
   Upload,
+  Info,
+  AlertTriangle,
+  CheckCircle2,
 } from 'lucide-react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { PageHeader } from '@/components/common/PageHeader';
@@ -52,6 +54,7 @@ import { AssetFormData } from './assetsComponents/assetTypes/assetFormTypes';
 import { Asset } from './assetsComponents/assetTable/assetData';
 import type { AssetResponseDto } from '@/types/assetsDTOs';
 import IntangibleAssetDialog from '../components/IntangibleAssetDialog';
+import IntangibleAssetViewModal from '../components/IntangibleAssetViewModal';
 import type { ColumnDef } from '@tanstack/react-table';
 import { Badge } from '@/components/ui/badge';
 import { api } from '@/lib/api';
@@ -60,6 +63,7 @@ import { useUserPermissions } from '@/hooks/useUserPermissions';
 import { useCurrentUser } from '@/hooks/useCurrentUser';
 import { useCompanyContext } from '@/context/CompanyContext';
 import { useAssetsData } from './useAssetsData';
+import { groupAssetsByBuilder } from './groupAssetsByBuilder';
 import { useAssetExport, EXPORT_SUMMARY_CONDITIONS } from './useAssetExport';
 import { useAssetImport } from '@/hooks/useAssetImport';
 import { ImportDialog } from './assetsComponents/ImportDialog';
@@ -74,7 +78,9 @@ import {
 import { useBarcodeAssetOrBuilderScan } from '@/hooks/useBarcodeAssetOrBuilderScan';
 import type { AssetBuilderRecord } from '@/utils/builderScan';
 import { PDFViewer } from '@/components/PDFViewer';
-import { ASSET_SEARCH_COLUMNS } from '@/utils/assetSearchColumns';
+import { ASSET_SEARCH_COLUMNS, INTANGIBLE_ASSET_SEARCH_COLUMNS } from '@/utils/assetSearchColumns';
+import jsPDF from 'jspdf';
+import autoTable from 'jspdf-autotable';
 
 const logger = createLogger('AssetsPage');
 
@@ -89,6 +95,7 @@ export function AssetsPage() {
   const [isEditModalOpen, setIsEditModalOpen] = useState(false);
   const [selectedAsset, setSelectedAsset] = useState<Asset | null>(null);
   const [selectedAssetForEdit, setSelectedAssetForEdit] = useState<Asset | null>(null);
+  const [editModalInstance, setEditModalInstance] = useState(0);
   const [isAccessDeniedDialogOpen, setIsAccessDeniedDialogOpen] = useState(false);
   const [pdfModalOpen, setPdfModalOpen] = useState(false);
   const [currentPdfUrl, setCurrentPdfUrl] = useState<string | null>(null);
@@ -134,7 +141,26 @@ export function AssetsPage() {
   const isSuperAdmin = user?.role?.name?.toLowerCase() === 'global admin';
   const isAdmin = user?.role?.name?.toLowerCase() === 'admin';
   const isOverallManager = roleCustodian?.managerRole === 'overallManager';
+  const isFinanceApprover = Boolean(roleCustodian?.financeApprover);
   const showScopeTabs = isSuperAdmin || isAdmin || isOverallManager;
+  // Resolve correct company for export display.
+  // Global Admin uses activeCompany (company switcher); all other roles are scoped to their own company by the server.
+  const exportCompany = useMemo(() => {
+    if (isSuperAdmin) return activeCompany;
+    if (user?.company_id) {
+      if (activeCompany?.id === user.company_id) return activeCompany;
+      return {
+        id: user.company_id,
+        name: user.company ?? 'Company',
+        email: '',
+        code: '',
+        prefix: '',
+        created_at: '',
+        updated_at: '',
+      };
+    }
+    return activeCompany;
+  }, [isSuperAdmin, activeCompany, user]);
   const [scope, setScope] = useState<'it' | 'admin'>('it');
   const [pageIndex, setPageIndex] = useState(0);
   const [pageSize, setPageSize] = useState(10);
@@ -172,6 +198,21 @@ export function AssetsPage() {
   const [intangibleDialogOpen, setIntangibleDialogOpen] = useState(false);
   const [editingIntangibleAsset, setEditingIntangibleAsset] = useState<any | null>(null);
   const [intangibleDialogMode, setIntangibleDialogMode] = useState<'create' | 'edit'>('create');
+  const [intangibleImportPreview, setIntangibleImportPreview] = useState<any[] | null>(null);
+  const [intangibleImportOpen, setIntangibleImportOpen] = useState(false);
+  const [intangibleImportFileName, setIntangibleImportFileName] = useState<string | null>(null);
+  const [intangibleImportErrors, setIntangibleImportErrors] = useState<{ row: number; field: string; message: string }[]>([]);
+  const [intangibleImporting, setIntangibleImporting] = useState(false);
+  const [intangibleImportStep, setIntangibleImportStep] = useState<'guide' | 'preview'>('guide');
+  const [intangibleExportOpen, setIntangibleExportOpen] = useState(false);
+  const [intangibleExportDateFrom, setIntangibleExportDateFrom] = useState('');
+  const [intangibleExportDateTo, setIntangibleExportDateTo] = useState('');
+  const [intangibleExportType, setIntangibleExportType] = useState('');
+  const [intangibleExportRiskLevel, setIntangibleExportRiskLevel] = useState('');
+  const [intangibleExportAssignedTo, setIntangibleExportAssignedTo] = useState('');
+  const [intangibleExportStatus, setIntangibleExportStatus] = useState('');
+  const [selectedIntangibleAsset, setSelectedIntangibleAsset] = useState<any>(null);
+  const [isIntangibleViewModalOpen, setIsIntangibleViewModalOpen] = useState(false);
 
   const fetchIntangibleAssets = async () => {
     try {
@@ -267,6 +308,11 @@ export function AssetsPage() {
   const canEditAsset = (_asset: any) => {
     if (_asset?.transferred_out) {
       return false;
+    }
+
+    // Finance approvers can edit any asset (restricted to Step 2 in modal)
+    if (isFinanceApprover) {
+      return true;
     }
 
     // If user doesn't have asset management access, return false
@@ -372,9 +418,55 @@ export function AssetsPage() {
         },
       },
       {
-        accessorKey: 'assigned_to',
+        accessorKey: 'risk_level',
+        header: 'Risk Level',
+        size: 140,
+        accessorFn: (row: any) => row.risk_level?.name ?? '',
+        cell: ({ row }) => {
+          const riskLevel = row.original.risk_level;
+          if (!riskLevel?.id) {
+            return <span className="text-sm text-gray-400">—</span>;
+          }
+          const color = riskLevel.color || '#6b7280';
+          const hexToRgba = (hex: string, alpha: number) => {
+            const clean = hex.replace('#', '');
+            const full =
+              clean.length === 3
+                ? clean
+                    .split('')
+                    .map(c => c + c)
+                    .join('')
+                : clean;
+            const num = parseInt(full, 16);
+            const r = (num >> 16) & 255;
+            const g = (num >> 8) & 255;
+            const b = num & 255;
+            return `rgba(${r}, ${g}, ${b}, ${alpha})`;
+          };
+          return (
+            <Badge
+              variant="outline"
+              className="text-sm px-3 py-1 font-medium border transition-all duration-200"
+              style={{
+                backgroundColor: hexToRgba(color, 0.12),
+                color,
+                borderColor: hexToRgba(color, 0.35),
+              }}
+            >
+              {riskLevel.name}
+            </Badge>
+          );
+        },
+      },
+      {
+        id: 'assigned_to',
         header: 'Assigned To',
         size: 220,
+        accessorFn: (row: any) =>
+          (row.assignees || [])
+            .map((as: any) => [as.firstName, as.lastName].filter(Boolean).join(' '))
+            .filter(Boolean)
+            .join(', '),
         cell: ({ row }) => {
           const assignees: Array<{
             firstName?: string;
@@ -472,7 +564,10 @@ export function AssetsPage() {
           <Button
             variant="ghost"
             size="sm"
-            onClick={() => handleEditIntangibleAsset(row.original)}
+            onClick={e => {
+              e.stopPropagation();
+              handleEditIntangibleAsset(row.original);
+            }}
             className="text-blue-600 hover:text-blue-700 hover:bg-blue-50 rounded-lg"
           >
             <Edit className="h-4 w-4" />
@@ -566,7 +661,10 @@ export function AssetsPage() {
   } = useAssetImport();
 
   // Server handles filtering by active company (Global Admin) or user company + asset type (other roles)
-  const displayAssets = filteredAssets;
+  const displayAssets = useMemo(
+    () => groupAssetsByBuilder(filteredAssets, assetBuilders),
+    [filteredAssets, assetBuilders]
+  );
 
   const availableBuilders = useMemo(() => {
     logger.debug('Calculating available builders...', {
@@ -735,6 +833,15 @@ export function AssetsPage() {
         'annualDepreciation',
         data.annualDepreciation?.toString() || ''
       );
+      formData.append('bookValue', data.bookValue?.toString() || '');
+      formData.append(
+        'accumulatedDepreciation',
+        data.accumulatedDepreciation?.toString() || ''
+      );
+      formData.append(
+        'monthlyDepreciation',
+        data.monthlyDepreciation?.toString() || ''
+      );
       formData.append(
         'depreciationStartDate',
         data.depreciationStartDate || ''
@@ -778,6 +885,28 @@ export function AssetsPage() {
     setSelectedAsset(row.original);
     setIsViewModalOpen(true);
   };
+
+  const getRowCanExpand = useCallback((row: any) => {
+    return row.original?.children && row.original.children.length > 0;
+  }, []);
+
+  const getSubRows = useCallback((row: Asset) => {
+    return row.children ?? [];
+  }, []);
+
+  const getRowClassName = useCallback((row: any) => {
+    if (row.depth > 0) {
+      return 'bg-red-50 hover:bg-red-50';
+    }
+    if (
+      row.original?.isAssetBuilder &&
+      row.original?.children?.length &&
+      row.getIsExpanded()
+    ) {
+      return 'bg-red-50 hover:bg-red-50';
+    }
+    return undefined;
+  }, []);
 
   const mapScannedAssetDto = useCallback((apiAsset: AssetResponseDto): Asset => {
     return (
@@ -826,13 +955,18 @@ export function AssetsPage() {
   });
 
   const handleEditAsset = (asset: Asset) => {
-    if (!hasAssetManagementAccess()) {
+    // Finance approvers skip the full asset management access check
+    if (!isFinanceApprover && !hasAssetManagementAccess()) {
       setIsAccessDeniedDialogOpen(true);
       return;
     }
 
-    if (canEditAsset(asset)) {
-      setSelectedAssetForEdit(asset);
+    // Always resolve from the current table data so we pick up post-save server state.
+    const freshAsset =
+      displayAssets.find(item => item.id === asset.id) || asset;
+    if (canEditAsset(freshAsset)) {
+      setSelectedAssetForEdit(freshAsset);
+      setEditModalInstance(prev => prev + 1);
       setIsEditModalOpen(true);
     }
   };
@@ -867,6 +1001,584 @@ export function AssetsPage() {
   const handleIntangibleDialogSuccess = () => {
     fetchIntangibleAssets();
     handleIntangibleDialogClose();
+  };
+
+  const handleIntangibleRowClick = (row: any) => {
+    setSelectedIntangibleAsset(row.original);
+    setIsIntangibleViewModalOpen(true);
+  };
+
+  const handleIntangibleImportFile = async (file: File) => {
+    try {
+      const ExcelJS = await import('exceljs');
+      const buf = await file.arrayBuffer();
+      const workbook = await new ExcelJS.Workbook().xlsx.load(buf);
+      const sheet = workbook.worksheets[0];
+      if (!sheet) {
+        toast.error('Excel file is empty or has no worksheet');
+        return;
+      }
+
+      const rows: any[] = [];
+      const errors: { row: number; field: string; message: string }[] = [];
+
+      sheet.eachRow((row, rowNumber) => {
+        if (rowNumber === 1) return;
+        const name = (row.getCell(1).value?.toString() || '').trim();
+        const description = (row.getCell(2).value?.toString() || '').trim();
+        const remarks = (row.getCell(3).value?.toString() || '').trim();
+        const type = (row.getCell(4).value?.toString() || '').trim();
+
+        if (!name) errors.push({ row: rowNumber, field: 'Name', message: 'Name is required' });
+        if (!type) errors.push({ row: rowNumber, field: 'Type', message: 'Type is required' });
+
+        rows.push({ name, description, remarks, type });
+      });
+
+      if (rows.length === 0) {
+        toast.error('No data rows found in the file');
+        return;
+      }
+
+      setIntangibleImportPreview(rows);
+      setIntangibleImportFileName(file.name);
+      setIntangibleImportErrors(errors);
+      setIntangibleImportOpen(true);
+    } catch (err: any) {
+      toast.error('Failed to parse Excel file: ' + (err.message || 'Invalid format'));
+    }
+  };
+
+  const handleIntangibleImportConfirm = async () => {
+    if (!intangibleImportPreview || intangibleImportPreview.length === 0) return;
+    try {
+      setIntangibleImporting(true);
+      await api.post('/intangible-assets/bulk', { assets: intangibleImportPreview });
+      toast.success(`${intangibleImportPreview.length} intangible asset(s) imported successfully`);
+      setIntangibleImportOpen(false);
+      setIntangibleImportPreview(null);
+      setIntangibleImportFileName(null);
+      setIntangibleImportErrors([]);
+      fetchIntangibleAssets();
+    } catch (err: any) {
+      toast.error(err.message || 'Failed to import intangible assets');
+    } finally {
+      setIntangibleImporting(false);
+    }
+  };
+
+  const handleIntangibleImportCancel = () => {
+    setIntangibleImportOpen(false);
+    setIntangibleImportPreview(null);
+    setIntangibleImportFileName(null);
+    setIntangibleImportErrors([]);
+    setIntangibleImportStep('guide');
+  };
+
+  const downloadIntangibleImportTemplate = async () => {
+    const ExcelJS = await import('exceljs');
+    const workbook = new ExcelJS.Workbook();
+    const sheet = workbook.addWorksheet('Intangible Assets');
+    sheet.columns = [
+      { header: 'name', key: 'name', width: 30 },
+      { header: 'description', key: 'description', width: 40 },
+      { header: 'remarks', key: 'remarks', width: 30 },
+      { header: 'type', key: 'type', width: 20 },
+    ];
+    const headerRow = sheet.getRow(1);
+    headerRow.font = { bold: true, color: { argb: 'FFFFFFFF' } };
+    headerRow.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF1E40AF' } };
+    sheet.addRow({ name: 'Sample Software License', description: 'Annual subscription', remarks: 'Renews in Dec', type: 'IT scope' });
+    sheet.addRow({ name: 'Admin Tool', description: 'Admin dashboard', remarks: '', type: 'Admin scope' });
+    const buf = await workbook.xlsx.writeBuffer();
+    const blob = new Blob([buf], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = 'intangible-assets-template.xlsx';
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+  };
+
+  const getIntangibleAssetsForExport = async () => {
+    const data = intangibleAssets.length > 0 ? intangibleAssets : await api.get('/intangible-assets');
+    return Array.isArray(data) ? data : data?.data ?? [];
+  };
+
+  // Filter option arrays derived from loaded intangible assets
+  const intangibleExportTypeOptions = useMemo(
+    () => Array.from(new Set(intangibleAssets.map((a: any) => a.type).filter(Boolean))),
+    [intangibleAssets]
+  );
+  const [intangibleExportRiskLevelOptions, setIntangibleExportRiskLevelOptions] = useState<string[]>([]);
+  const intangibleExportEmployeeOptions = useMemo(
+    () => Array.from(new Set(
+      intangibleAssets.flatMap((a: any) => (a.assignees || []).map((as: any) => [as.firstName, as.lastName].filter(Boolean).join(' ')) || [])
+        .filter(Boolean)
+    )).sort((a, b) => a.localeCompare(b)),
+    [intangibleAssets]
+  );
+
+  const resetIntangibleExportFilters = () => {
+    setIntangibleExportDateFrom('');
+    setIntangibleExportDateTo('');
+    setIntangibleExportType('');
+    setIntangibleExportRiskLevel('');
+    setIntangibleExportAssignedTo('');
+    setIntangibleExportStatus('');
+  };
+
+  const openIntangibleExport = async () => {
+    try {
+      const riskData = await api.get<any>('/risk-levels');
+      const levels = (Array.isArray(riskData) ? riskData : riskData?.data ?? [])
+        .map((r: any) => r.name)
+        .filter(Boolean);
+      setIntangibleExportRiskLevelOptions(Array.from(new Set(levels)));
+    } catch {
+      setIntangibleExportRiskLevelOptions([]);
+    }
+    setIntangibleExportOpen(true);
+  };
+
+  const applyIntangibleExportFilters = (assets: any[]) => {
+    return assets.filter((asset: any) => {
+      if (intangibleExportType && asset.type !== intangibleExportType) return false;
+      if (intangibleExportRiskLevel && asset.risk_level?.name !== intangibleExportRiskLevel) return false;
+      if (intangibleExportStatus && (intangibleExportStatus === 'assigned') !== (asset.status === 'assigned')) return false;
+      if (intangibleExportAssignedTo) {
+        const assigneeNames = (asset.assignees || []).map((as: any) => [as.firstName, as.lastName].filter(Boolean).join(' '));
+        if (!assigneeNames.includes(intangibleExportAssignedTo)) return false;
+      }
+      if (intangibleExportDateFrom || intangibleExportDateTo) {
+        const created = new Date(asset.created_at);
+        if (!isNaN(created.getTime())) {
+          if (intangibleExportDateFrom && created < new Date(intangibleExportDateFrom)) return false;
+          if (intangibleExportDateTo) {
+            const toDate = new Date(intangibleExportDateTo);
+            toDate.setHours(23, 59, 59, 999);
+            if (created > toDate) return false;
+          }
+        }
+      }
+      return true;
+    });
+  };
+
+  const getFilteredIntangibleAssetsForExport = async () => {
+    const assets = await getIntangibleAssetsForExport();
+    return applyIntangibleExportFilters(assets);
+  };
+
+  const handleIntangibleExportExcel = async () => {
+    try {
+      const assets = await getFilteredIntangibleAssetsForExport();
+      if (assets.length === 0) { toast.error('No intangible assets match the selected filters'); return; }
+
+      // Prefer the asset's owning company from the DB (companies join in sp_GetAllIntangibleAssets),
+      // fall back to activeCompany when the SP does not return company data
+      const companyName = assets[0]?.company_name || activeCompany?.name || '';
+      const companyLogoUrl = assets[0]?.company_logo || activeCompany?.logo_url || '';
+      console.log('[Intangible Export Excel] companyName:', companyName);
+
+      const ExcelJS = await import('exceljs');
+      const workbook = new ExcelJS.Workbook();
+      const sheet = workbook.addWorksheet('Intangible Assets');
+
+      const lastCol = 9;
+      // Company logo — use the asset's company logo (if available from SP)
+      if (companyLogoUrl) {
+        try {
+          const proxiedUrl = companyLogoUrl;
+          const resolvedUrl = proxiedUrl.startsWith('/') && typeof window !== 'undefined'
+            ? `${window.location.origin}${proxiedUrl}`
+            : proxiedUrl;
+          const resp = await fetch(resolvedUrl);
+          if (resp.ok) {
+            const blob = await resp.blob();
+            const dataUrl = await new Promise<string>((resolve, reject) => {
+              const reader = new FileReader();
+              reader.onload = () => resolve(reader.result as string);
+              reader.onerror = reject;
+              reader.readAsDataURL(blob);
+            });
+            sheet.getColumn(1).width = 15;
+            sheet.getColumn(2).width = 15;
+            sheet.getColumn(3).width = 15;
+            const imageId = workbook.addImage({
+              base64: dataUrl.split(',')[1],
+              extension: dataUrl.includes('jpeg') || dataUrl.includes('jpg') ? 'jpeg' : 'png',
+            });
+            sheet.addImage(imageId, {
+              tl: { col: 0, row: 0 },
+              ext: { width: 360, height: 60 },
+              editAs: 'oneCell',
+            });
+          }
+        } catch (_) { /* logo optional */ }
+      }
+
+      if (companyName) {
+        const nameRow = sheet.addRow([companyName]);
+        nameRow.font = { bold: true, size: 14, color: { argb: 'FF333333' } };
+        sheet.mergeCells(nameRow.number, 1, nameRow.number, lastCol);
+        nameRow.alignment = { horizontal: 'center', vertical: 'middle' };
+      }
+
+      const titleRow = sheet.addRow(['Intangible Assets Report']);
+      titleRow.font = { bold: true, size: 12, color: { argb: 'FF333333' } };
+      sheet.mergeCells(titleRow.number, 1, titleRow.number, lastCol);
+      titleRow.alignment = { horizontal: 'center', vertical: 'middle' };
+
+      const totalRow = sheet.addRow([`Total Intangible Assets: ${assets.length}`]);
+      totalRow.font = { size: 11, color: { argb: 'FF666666' } };
+      sheet.mergeCells(totalRow.number, 1, totalRow.number, lastCol);
+      totalRow.alignment = { horizontal: 'center', vertical: 'middle' };
+
+      const now = new Date();
+      const generatedBy = user?.name || `${user?.firstName || ''} ${user?.lastName || ''}`.trim() || 'Unknown';
+      const genRow = sheet.addRow([]);
+      const genCell = genRow.getCell(Math.max(1, lastCol - 2));
+      genCell.value = `Generated on: ${now.toLocaleDateString()} ${now.toLocaleTimeString()} by ${generatedBy}`;
+      genCell.font = { size: 9, color: { argb: 'FF999999' }, italic: true };
+      sheet.mergeCells(genRow.number, Math.max(1, lastCol - 2), genRow.number, lastCol);
+      genRow.alignment = { horizontal: 'right', vertical: 'middle' };
+
+      sheet.addRow([]);
+
+      const { getCompanyAccentColor } = await import('@/lib/pdfGenerator/shared');
+      const accentColor = getCompanyAccentColor(companyName);
+      const headerArgb = `FF${accentColor.r.toString(16).padStart(2, '0')}${accentColor.g.toString(16).padStart(2, '0')}${accentColor.b.toString(16).padStart(2, '0')}`;
+
+      // ── Summary Section: Total by Scope ──
+      const scopeSummaryTitle = sheet.addRow(['Summary by Scope']);
+      scopeSummaryTitle.font = { bold: true, size: 11, color: { argb: 'FF333333' } };
+      sheet.mergeCells(scopeSummaryTitle.number, 1, scopeSummaryTitle.number, lastCol);
+      scopeSummaryTitle.alignment = { horizontal: 'left', vertical: 'middle' };
+
+      const scopeHeaderRow = sheet.addRow(['Scope', 'Total Assets', 'Assigned', 'Available']);
+      scopeHeaderRow.font = { bold: true, color: { argb: 'FFFFFFFF' } };
+      scopeHeaderRow.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: headerArgb } };
+      scopeHeaderRow.alignment = { vertical: 'middle', horizontal: 'center', wrapText: true };
+
+      const scopeCounts: Record<string, { total: number; assigned: number; available: number }> = {};
+      for (const asset of assets) {
+        const scope = asset.type || 'Unknown';
+        if (!scopeCounts[scope]) scopeCounts[scope] = { total: 0, assigned: 0, available: 0 };
+        scopeCounts[scope].total++;
+        if (asset.status === 'assigned') scopeCounts[scope].assigned++;
+        else scopeCounts[scope].available++;
+      }
+      for (const [scope, counts] of Object.entries(scopeCounts)) {
+        const row = sheet.addRow([scope, counts.total, counts.assigned, counts.available]);
+        row.alignment = { vertical: 'middle', wrapText: true };
+      }
+      const scopeTotalRow = sheet.addRow(['Total', assets.length,
+        assets.filter((a: any) => a.status === 'assigned').length,
+        assets.filter((a: any) => a.status !== 'assigned').length]);
+      scopeTotalRow.font = { bold: true };
+      scopeTotalRow.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFF0F0F0' } };
+      scopeTotalRow.alignment = { vertical: 'middle', wrapText: true };
+
+      sheet.addRow([]); // spacer
+
+      // ── Summary Section: Total by Department ──
+      const deptSummaryTitle = sheet.addRow(['Summary by Department (based on assigned user)']);
+      deptSummaryTitle.font = { bold: true, size: 11, color: { argb: 'FF333333' } };
+      sheet.mergeCells(deptSummaryTitle.number, 1, deptSummaryTitle.number, lastCol);
+      deptSummaryTitle.alignment = { horizontal: 'left', vertical: 'middle' };
+
+      const deptHeaderRow = sheet.addRow(['Department', 'Total Assigned Assets']);
+      deptHeaderRow.font = { bold: true, color: { argb: 'FFFFFFFF' } };
+      deptHeaderRow.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: headerArgb } };
+      deptHeaderRow.alignment = { vertical: 'middle', horizontal: 'center', wrapText: true };
+
+      const deptCounts: Record<string, number> = {};
+      for (const asset of assets) {
+        if (asset.assignees?.length) {
+          for (const assignee of asset.assignees) {
+            const dept = assignee.departmentName || 'Unassigned';
+            deptCounts[dept] = (deptCounts[dept] || 0) + 1;
+          }
+        }
+      }
+      for (const [dept, count] of Object.entries(deptCounts).sort((a, b) => b[1] - a[1])) {
+        const row = sheet.addRow([dept, count]);
+        row.alignment = { vertical: 'middle', wrapText: true };
+      }
+      const deptTotalRow = sheet.addRow(['Total Assigned', Object.values(deptCounts).reduce((a, b) => a + b, 0)]);
+      deptTotalRow.font = { bold: true };
+      deptTotalRow.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFF0F0F0' } };
+      deptTotalRow.alignment = { vertical: 'middle', wrapText: true };
+
+      sheet.addRow([]); // spacer
+
+      // ── Summary Section: Total by Employee ──
+      const empSummaryTitle = sheet.addRow(['Summary by Employee']);
+      empSummaryTitle.font = { bold: true, size: 11, color: { argb: 'FF333333' } };
+      sheet.mergeCells(empSummaryTitle.number, 1, empSummaryTitle.number, lastCol);
+      empSummaryTitle.alignment = { horizontal: 'left', vertical: 'middle' };
+
+      const empHeaderRow = sheet.addRow(['Employee Name', 'Department', 'Accountability Form #', 'Total Assigned Assets']);
+      empHeaderRow.font = { bold: true, color: { argb: 'FFFFFFFF' } };
+      empHeaderRow.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: headerArgb } };
+      empHeaderRow.alignment = { vertical: 'middle', horizontal: 'center', wrapText: true };
+
+      const empCounts: Record<string, { name: string; department: string; formNumber: string; count: number }> = {};
+      for (const asset of assets) {
+        if (asset.assignees?.length) {
+          for (const assignee of asset.assignees) {
+            const empKey = assignee.userId || `${assignee.firstName}_${assignee.lastName}`;
+            if (!empCounts[empKey]) {
+              empCounts[empKey] = {
+                name: `${assignee.firstName || ''} ${assignee.lastName || ''}`.trim() || 'Unknown',
+                department: assignee.departmentName || 'Unassigned',
+                formNumber: asset.accountability_form_number || '',
+                count: 0,
+              };
+            }
+            empCounts[empKey].count++;
+          }
+        }
+      }
+      for (const emp of Object.values(empCounts).sort((a, b) => b.count - a.count)) {
+        const row = sheet.addRow([emp.name, emp.department, emp.formNumber, emp.count]);
+        row.alignment = { vertical: 'middle', wrapText: true };
+      }
+      const empTotalRow = sheet.addRow(['Total', '', '', Object.values(empCounts).reduce((a, e) => a + e.count, 0)]);
+      empTotalRow.font = { bold: true };
+      empTotalRow.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFF0F0F0' } };
+      empTotalRow.alignment = { vertical: 'middle', wrapText: true };
+
+      sheet.addRow([]); // spacer
+
+      // ── Detailed Asset List ──
+      const detailTitle = sheet.addRow(['Detailed Asset List']);
+      detailTitle.font = { bold: true, size: 11, color: { argb: 'FF333333' } };
+      sheet.mergeCells(detailTitle.number, 1, detailTitle.number, lastCol);
+      detailTitle.alignment = { horizontal: 'left', vertical: 'middle' };
+
+      const dataStartRow = sheet.rowCount + 1;
+      const headerRow = sheet.addRow(['Name', 'Company', 'Description', 'Remarks', 'Type', 'Risk Level', 'Status', 'Assigned To', 'Accountability Form #']);
+      headerRow.font = { bold: true, color: { argb: 'FFFFFFFF' } };
+      headerRow.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: headerArgb } };
+      headerRow.alignment = { vertical: 'middle', horizontal: 'center', wrapText: true };
+
+      for (const asset of assets) {
+        const assigneeNames = asset.assignees?.length
+          ? asset.assignees.map((a: any) => `${a.firstName} ${a.lastName}`.trim()).join('\n')
+          : '';
+        const formNumbers = Array.isArray(asset.accountability_forms) && asset.accountability_forms.length > 0
+          ? asset.accountability_forms.map((f: any) => f.formNumber || '').filter(Boolean).join('\n')
+          : (asset.accountability_form_number || '');
+        const row = sheet.addRow([
+          asset.name || '',
+          companyName || '',
+          asset.description || '',
+          asset.remarks || '',
+          asset.type || '',
+          asset.risk_level?.name || '—',
+          asset.status || '',
+          assigneeNames,
+          formNumbers,
+        ]);
+        row.alignment = { vertical: 'middle', wrapText: true };
+      }
+
+      // Set column widths (wider to fit headers and allow text wrapping)
+      const colWidthsMap = { 1: 28, 2: 20, 3: 35, 4: 22, 5: 14, 6: 14, 7: 14, 8: 25, 9: 24 };
+      for (const [col, width] of Object.entries(colWidthsMap)) {
+        sheet.getColumn(Number(col)).width = width;
+      }
+
+      const buf = await workbook.xlsx.writeBuffer();
+      const blob = new Blob([buf], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      const dateStr = now.toISOString().slice(0, 10);
+      const prefix = companyName ? `${companyName}_` : '';
+      a.download = `${prefix}intangible-assets-${dateStr}.xlsx`;
+      document.body.appendChild(a); a.click(); document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+      toast.success('Intangible assets exported successfully');
+    } catch (err: any) {
+      toast.error(err.message || 'Failed to export intangible assets');
+    }
+  };
+
+  const handleIntangibleExportPdf = async () => {
+    try {
+      const assets = await getFilteredIntangibleAssetsForExport();
+      if (assets.length === 0) { toast.error('No intangible assets match the selected filters'); return; }
+
+      const { addCompanyLogoToPDF, getCompanyAccentColor, isBlackCoders } = await import('@/lib/pdfGenerator/shared');
+
+      // Prefer the asset's owning company from the DB (companies join in sp_GetAllIntangibleAssets),
+      // fall back to activeCompany when the SP does not return company data
+      const companyName = assets[0]?.company_name || activeCompany?.name || '';
+      const companyLogoUrl = assets[0]?.company_logo || activeCompany?.logo_url || '';
+
+      const doc = new jsPDF('landscape', 'mm', 'a4');
+      const pageWidth = doc.internal.pageSize.getWidth();
+
+      await addCompanyLogoToPDF(doc, companyLogoUrl, 14, 12);
+
+      console.log('[Intangible Export PDF] companyName:', companyName);
+      if (companyName) {
+        doc.setFontSize(14);
+        doc.setFont('helvetica', 'normal');
+        doc.text(companyName, pageWidth / 2, 22, { align: 'center' });
+      }
+
+      doc.setFontSize(18);
+      doc.setFont('helvetica', 'bold');
+      doc.text('Intangible Assets Report', pageWidth / 2, 30, { align: 'center' });
+
+      doc.setFontSize(10);
+      doc.setFont('helvetica', 'normal');
+      doc.text(`Total Intangible Assets: ${assets.length}`, pageWidth / 2, 36, { align: 'center' });
+
+      const now = new Date();
+      const generatedBy = user?.name || `${user?.firstName || ''} ${user?.lastName || ''}`.trim() || 'Unknown';
+      doc.setFontSize(8);
+      doc.setFont('helvetica', 'italic');
+      doc.text(`Generated on: ${now.toLocaleDateString()} ${now.toLocaleTimeString()} by ${generatedBy}`, pageWidth / 2, 41, { align: 'center' });
+
+      const accentColor = getCompanyAccentColor(companyName);
+      const isBlackCodersCompany = isBlackCoders(companyName);
+      const headerFill: [number, number, number] = isBlackCodersCompany
+        ? [0, 0, 0]
+        : [accentColor.r, accentColor.g, accentColor.b];
+
+      const pageWidthLandscape = doc.internal.pageSize.getWidth();
+      const marginLeftRight = 10;
+      const usableWidth = pageWidthLandscape - marginLeftRight * 2;
+
+      // ── Summary by Scope ──
+      const scopeCounts: Record<string, { total: number; assigned: number; available: number }> = {};
+      for (const asset of assets) {
+        const scope = asset.type || 'Unknown';
+        if (!scopeCounts[scope]) scopeCounts[scope] = { total: 0, assigned: 0, available: 0 };
+        scopeCounts[scope].total++;
+        if (asset.status === 'assigned') scopeCounts[scope].assigned++;
+        else scopeCounts[scope].available++;
+      }
+      const scopeRows = Object.entries(scopeCounts).map(([scope, counts]) => [scope, counts.total, counts.assigned, counts.available]);
+      scopeRows.push(['Total', assets.length,
+        assets.filter((a: any) => a.status === 'assigned').length,
+        assets.filter((a: any) => a.status !== 'assigned').length]);
+
+      autoTable(doc, {
+        startY: 46,
+        head: [['Scope', 'Total Assets', 'Assigned', 'Available']],
+        body: scopeRows,
+        styles: { fontSize: 8, cellPadding: 1.5 },
+        headStyles: { fillColor: headerFill, textColor: [255, 255, 255], fontSize: 8, fontStyle: 'bold' },
+        columnStyles: { 0: { cellWidth: usableWidth * 0.3 }, 1: { cellWidth: usableWidth * 0.23 }, 2: { cellWidth: usableWidth * 0.23 }, 3: { cellWidth: usableWidth * 0.24 } },
+        margin: { left: marginLeftRight, right: marginLeftRight },
+      });
+
+      // ── Summary by Department ──
+      const deptCounts: Record<string, number> = {};
+      for (const asset of assets) {
+        if (asset.assignees?.length) {
+          for (const assignee of asset.assignees) {
+            const dept = assignee.departmentName || 'Unassigned';
+            deptCounts[dept] = (deptCounts[dept] || 0) + 1;
+          }
+        }
+      }
+      const deptRows = Object.entries(deptCounts).sort((a, b) => b[1] - a[1]).map(([dept, count]) => [dept, count]);
+      deptRows.push(['Total Assigned', Object.values(deptCounts).reduce((a, b) => a + b, 0)]);
+
+      autoTable(doc, {
+        startY: (doc as any).lastAutoTable.finalY + 6,
+        head: [['Department', 'Total Assigned Assets']],
+        body: deptRows,
+        styles: { fontSize: 8, cellPadding: 1.5 },
+        headStyles: { fillColor: headerFill, textColor: [255, 255, 255], fontSize: 8, fontStyle: 'bold' },
+        columnStyles: { 0: { cellWidth: usableWidth * 0.6 }, 1: { cellWidth: usableWidth * 0.4 } },
+        margin: { left: marginLeftRight, right: marginLeftRight },
+      });
+
+      // ── Summary by Employee ──
+      const empCounts: Record<string, { name: string; department: string; formNumber: string; count: number }> = {};
+      for (const asset of assets) {
+        if (asset.assignees?.length) {
+          for (const assignee of asset.assignees) {
+            const empKey = assignee.userId || `${assignee.firstName}_${assignee.lastName}`;
+            if (!empCounts[empKey]) {
+              empCounts[empKey] = {
+                name: `${assignee.firstName || ''} ${assignee.lastName || ''}`.trim() || 'Unknown',
+                department: assignee.departmentName || 'Unassigned',
+                formNumber: asset.accountability_form_number || '',
+                count: 0,
+              };
+            }
+            empCounts[empKey].count++;
+          }
+        }
+      }
+      const empRows = Object.values(empCounts).sort((a, b) => b.count - a.count).map(e => [e.name, e.department, e.formNumber, e.count]);
+      empRows.push(['Total', '', '', Object.values(empCounts).reduce((a, e) => a + e.count, 0)]);
+
+      autoTable(doc, {
+        startY: (doc as any).lastAutoTable.finalY + 6,
+        head: [['Employee Name', 'Department', 'Accountability Form #', 'Total Assigned Assets']],
+        body: empRows,
+        styles: { fontSize: 8, cellPadding: 1.5 },
+        headStyles: { fillColor: headerFill, textColor: [255, 255, 255], fontSize: 8, fontStyle: 'bold' },
+        columnStyles: { 0: { cellWidth: usableWidth * 0.25 }, 1: { cellWidth: usableWidth * 0.25 }, 2: { cellWidth: usableWidth * 0.25 }, 3: { cellWidth: usableWidth * 0.25 } },
+        margin: { left: marginLeftRight, right: marginLeftRight },
+      });
+
+      // ── Detailed Asset List ──
+      const rows = assets.map((a: any) => {
+        const assigneeNames = a.assignees?.length
+          ? a.assignees.map((as: any) => `${as.firstName} ${as.lastName}`.trim()).join('\n')
+          : '—';
+        const formNumbers = Array.isArray(a.accountability_forms) && a.accountability_forms.length > 0
+          ? a.accountability_forms.map((f: any) => f.formNumber || '').filter(Boolean).join('\n')
+          : (a.accountability_form_number || '');
+        return [
+          a.name || '',
+          companyName || '',
+          a.description || '',
+          a.remarks || '',
+          a.type || '',
+          a.risk_level?.name || '—',
+          a.status || '',
+          assigneeNames,
+          formNumbers,
+        ];
+      });
+
+      // 9 columns: Name, Company, Description, Remarks, Type, Risk Level, Status, Assigned To, Accountability Form #
+      const colWidths = [usableWidth * 0.14, usableWidth * 0.09, usableWidth * 0.16, usableWidth * 0.11, usableWidth * 0.07, usableWidth * 0.08, usableWidth * 0.07, usableWidth * 0.14, usableWidth * 0.14];
+      const colStyles: any = {};
+      colWidths.forEach((w, i) => { colStyles[i] = { cellWidth: w }; });
+
+      autoTable(doc, {
+        startY: (doc as any).lastAutoTable.finalY + 8,
+        head: [['Name', 'Company', 'Description', 'Remarks', 'Type', 'Risk Level', 'Status', 'Assigned To', 'Accountability Form #']],
+        body: rows,
+        styles: { fontSize: 7, cellPadding: 1.5 },
+        headStyles: { fillColor: headerFill, textColor: [255, 255, 255], fontSize: 7, fontStyle: 'bold' },
+        columnStyles: colStyles,
+        alternateRowStyles: { fillColor: [245, 247, 250] },
+        margin: { left: marginLeftRight, right: marginLeftRight },
+      });
+
+      const dateStr = now.toISOString().slice(0, 10);
+      const prefix = companyName ? `${companyName}_` : '';
+      doc.save(`${prefix}intangible-assets-${dateStr}.pdf`);
+      toast.success('Intangible assets exported successfully');
+    } catch (err: any) {
+      toast.error(err.message || 'Failed to export intangible assets as PDF');
+    }
   };
 
   // Access Denied Dialog
@@ -944,6 +1656,15 @@ export function AssetsPage() {
       apiFormData.append(
         'annualDepreciation',
         formData.annualDepreciation?.toString() || ''
+      );
+      apiFormData.append('bookValue', formData.bookValue?.toString() || '');
+      apiFormData.append(
+        'accumulatedDepreciation',
+        formData.accumulatedDepreciation?.toString() || ''
+      );
+      apiFormData.append(
+        'monthlyDepreciation',
+        formData.monthlyDepreciation?.toString() || ''
       );
       apiFormData.append(
         'depreciationStartDate',
@@ -1064,7 +1785,7 @@ export function AssetsPage() {
               if (!hasAssetManagementAccess()) {
                 setIsAccessDeniedDialogOpen(true);
               } else {
-                navigate('/assets/builder');
+                navigate('/assets/builder', { state: { scope } });
               }
             }}
             disabled={!hasPermission('Asset List', 'create')}
@@ -1080,6 +1801,8 @@ export function AssetsPage() {
           loading={isInitialLoading}
           totalCount={meta.unfilteredTotal}
           summary={meta.summary}
+          activeTab={activeTab}
+          intangibleAssets={intangibleAssets}
         />
 
         <Tabs value={activeTab} onValueChange={(value) => { setActiveTab(value); setTabLoading(true); setTimeout(() => setTabLoading(false), 300); }} className="w-full">
@@ -1131,6 +1854,9 @@ export function AssetsPage() {
                       : undefined
                   }
                   onRowClick={handleRowClick}
+                  getRowCanExpand={getRowCanExpand}
+                  getSubRows={getSubRows}
+                  getRowClassName={getRowClassName}
                   isLoading={isInitialLoading || tabLoading}
                   searchColumnOptions={ASSET_SEARCH_COLUMNS}
                   serverPagination={true}
@@ -1471,50 +2197,48 @@ export function AssetsPage() {
             </div>
           </TabsContent>
 
-          <TabsContent value="intangible-assets" className="mt-6 space-y-4">
-            <Card className="rounded-xl border shadow-sm overflow-hidden">
-              <CardHeader className="pb-4">
-                <div className="flex items-center justify-between">
-                  <div className="flex items-center gap-3">
-                    <div className="p-2 bg-blue-100 rounded-lg">
-                      <Layers className="h-5 w-5 text-blue-600" />
-                    </div>
-                    <div>
-                      <CardTitle className="text-xl">All Intangible Assets</CardTitle>
-                      <p className="text-sm text-gray-600 mt-1">{intangibleAssets.length} intangible assets</p>
-                    </div>
-                  </div>
-                  <Button
-                    onClick={handleAddIntangibleAssetClick}
-                    className="bg-red-600 hover:bg-red-700 text-white rounded-xl shadow-md hover:shadow-lg transition-all"
-                  >
-                    <Plus className="h-4 w-4 mr-2" />
-                    Add Intangible Asset
-                  </Button>
-                </div>
-              </CardHeader>
-              <CardContent className="pt-0">
-                {intangibleLoading ? (
-                  <div className="text-center py-12">
-                    <div className="inline-flex items-center justify-center w-20 h-20 rounded-full bg-gradient-to-br from-blue-100 to-blue-200 mb-4">
-                      <Layers className="h-10 w-10 text-blue-600" />
-                    </div>
-                    <h3 className="text-lg font-semibold text-gray-900 mb-2">
-                      Loading intangible assets...
-                    </h3>
-                  </div>
-                ) : (
-                  <DataTable
-                    columns={intangibleAssetColumns}
-                    data={intangibleAssets}
-                    searchPlaceholder="Search intangible assets..."
-                    title="Intangible Assets"
-                    titleBadge={`${intangibleAssets.length} assets`}
-                    isLoading={intangibleLoading}
-                  />
-                )}
-              </CardContent>
-            </Card>
+          <TabsContent value="intangible-assets" className="mt-6">
+            <DataTable
+              columns={intangibleAssetColumns}
+              data={intangibleAssets}
+              searchPlaceholder="Search intangible assets..."
+              title="Intangible Assets"
+              titleBadge={`${intangibleAssets.length} assets`}
+              isLoading={intangibleLoading}
+              onRowClick={handleIntangibleRowClick}
+              searchColumnOptions={INTANGIBLE_ASSET_SEARCH_COLUMNS}
+            >
+              <div className="flex items-center gap-2">
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => {
+                    setIntangibleImportStep('guide');
+                    setIntangibleImportOpen(true);
+                  }}
+                  className="flex items-center gap-2"
+                >
+                  <Upload className="h-4 w-4" />
+                  Import
+                </Button>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={openIntangibleExport}
+                  className="flex items-center gap-2"
+                >
+                  <Download className="h-4 w-4" />
+                  Export
+                </Button>
+                <Button
+                  onClick={handleAddIntangibleAssetClick}
+                  className="bg-red-600 hover:bg-red-700 text-white rounded-xl shadow-md hover:shadow-lg transition-all"
+                >
+                  <Plus className="h-4 w-4 mr-2" />
+                  Add Intangible Asset
+                </Button>
+              </div>
+            </DataTable>
           </TabsContent>
         </Tabs>
       </main>
@@ -1530,7 +2254,14 @@ export function AssetsPage() {
         asset={selectedAsset}
         onEdit={handleEditAsset}
       />
+      <IntangibleAssetViewModal
+        isOpen={isIntangibleViewModalOpen}
+        onClose={() => setIsIntangibleViewModalOpen(false)}
+        onEdit={handleEditIntangibleAsset}
+        asset={selectedIntangibleAsset}
+      />
       <EditAssetModal
+        key={editModalInstance}
         isOpen={isEditModalOpen}
         onClose={() => {
           setIsEditModalOpen(false);
@@ -1538,6 +2269,7 @@ export function AssetsPage() {
         }}
         onSubmit={handleUpdateAsset}
         asset={selectedAssetForEdit}
+        isFinanceApprover={isFinanceApprover}
       />
 
       {/* PDF Preview Modal */}
@@ -1552,13 +2284,7 @@ export function AssetsPage() {
             description="Asset Accountability Form Preview"
           />
           <AppDialogBody className="min-h-0 flex-1 overflow-auto !p-0">
-            {currentPdfUrl ? (
-              <PDFViewer pdfUrl={currentPdfUrl} className="h-full w-full" />
-            ) : (
-              <div className="flex h-full w-full items-center justify-center text-gray-500">
-                Loading form preview...
-              </div>
-            )}
+            <PDFViewer pdfUrl={currentPdfUrl} className="h-full w-full" />
           </AppDialogBody>
           <AppDialogChromeFooter className="justify-end gap-3">
             <Button
@@ -1869,7 +2595,7 @@ export function AssetsPage() {
               </Button>
             ) : (
               <Button
-                onClick={() => handleExportConfirm(displayAssets, activeCompany, user, assetBuilders, activeCompany?.id, showScopeTabs ? scope : null, searchTerm)}
+                onClick={() => handleExportConfirm(displayAssets, exportCompany, user, assetBuilders, exportCompany?.id, showScopeTabs ? scope : null, searchTerm)}
                 disabled={selectedColumns.size === 0}
                 className="bg-red-600 hover:bg-red-700 text-white"
               >
@@ -1948,7 +2674,7 @@ export function AssetsPage() {
                   <div className="flex gap-3">
                     <button
                       type="button"
-                      onClick={() => handleSummaryScopeChange('it', activeCompany?.id)}
+                      onClick={() => handleSummaryScopeChange('it', exportCompany?.id)}
                       className={`flex-1 rounded-lg border-2 p-3 text-center transition cursor-pointer ${
                         summaryScope === 'it'
                           ? 'border-blue-500 bg-blue-50'
@@ -1959,7 +2685,7 @@ export function AssetsPage() {
                     </button>
                     <button
                       type="button"
-                      onClick={() => handleSummaryScopeChange('admin', activeCompany?.id)}
+                      onClick={() => handleSummaryScopeChange('admin', exportCompany?.id)}
                       className={`flex-1 rounded-lg border-2 p-3 text-center transition cursor-pointer ${
                         summaryScope === 'admin'
                           ? 'border-purple-500 bg-purple-50'
@@ -1970,7 +2696,7 @@ export function AssetsPage() {
                     </button>
                     <button
                       type="button"
-                      onClick={() => handleSummaryScopeChange('all', activeCompany?.id)}
+                      onClick={() => handleSummaryScopeChange('all', exportCompany?.id)}
                       className={`flex-1 rounded-lg border-2 p-3 text-center transition cursor-pointer ${
                         summaryScope === 'all'
                           ? 'border-gray-700 bg-gray-100'
@@ -2280,7 +3006,7 @@ export function AssetsPage() {
             </div>
             {summaryStep === 1 ? (
               <Button
-                onClick={() => handleSummaryNextStep(summaryScope, activeCompany?.id)}
+                onClick={() => handleSummaryNextStep(summaryScope, exportCompany?.id)}
                 disabled={summarySelectedColumns.size === 0}
                 className="bg-red-600 hover:bg-red-700 text-white"
               >
@@ -2288,11 +3014,355 @@ export function AssetsPage() {
               </Button>
             ) : (
               <Button
-                onClick={() => handleSummaryExportConfirm(activeCompany, user, assetBuilders, activeCompany?.id, showScopeTabs ? scope : null, searchTerm)}
+                onClick={() => handleSummaryExportConfirm(exportCompany, user, assetBuilders, exportCompany?.id, showScopeTabs ? scope : null, searchTerm)}
                 disabled={summarySelectedColumns.size === 0}
                 className="bg-red-600 hover:bg-red-700 text-white"
               >
                 Export
+              </Button>
+            )}
+          </AppDialogChromeFooter>
+        </AppDialogFrame>
+      </Dialog>
+
+      <Dialog open={intangibleExportOpen} onOpenChange={o => { setIntangibleExportOpen(o); if (!o) resetIntangibleExportFilters(); }}>
+        <AppDialogFrame className="max-w-2xl max-h-[80vh] overflow-hidden !flex !flex-col">
+          <AppDialogGradientHeader
+            title="Export Intangible Assets"
+            description="Apply optional filters and choose the export format."
+          />
+          <AppDialogBody className="max-h-[50vh] overflow-y-auto py-4">
+            <div className="space-y-5">
+              {/* Filters */}
+              <div className="border rounded-lg p-4 space-y-4">
+                <div className="flex items-center justify-between">
+                  <Label className="text-base font-semibold">Filters</Label>
+                  <Button type="button" variant="ghost" size="sm" onClick={resetIntangibleExportFilters} className="gap-1 text-xs">
+                    <RefreshCw className="h-3.5 w-3.5" />
+                    Reset
+                  </Button>
+                </div>
+
+                {/* Date Created */}
+                <div className="grid grid-cols-2 gap-4">
+                  <div>
+                    <Label className="text-xs font-medium">Date Created From</Label>
+                    <Input
+                      type="date"
+                      value={intangibleExportDateFrom}
+                      onChange={e => setIntangibleExportDateFrom(e.target.value)}
+                      className="mt-1 h-9 text-sm"
+                    />
+                  </div>
+                  <div>
+                    <Label className="text-xs font-medium">Date Created To</Label>
+                    <Input
+                      type="date"
+                      value={intangibleExportDateTo}
+                      onChange={e => setIntangibleExportDateTo(e.target.value)}
+                      className="mt-1 h-9 text-sm"
+                    />
+                  </div>
+                </div>
+
+                {/* Type / Scope */}
+                <div>
+                  <Label className="text-xs font-medium">Type</Label>
+                  <Select value={intangibleExportType} onValueChange={v => setIntangibleExportType(v === 'all' ? '' : v)}>
+                    <SelectTrigger className="mt-1 h-9 text-sm">
+                      <SelectValue placeholder="All types" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="all">All types</SelectItem>
+                      {intangibleExportTypeOptions.map(opt => (
+                        <SelectItem key={opt} value={opt}>{opt}</SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+
+                {/* Risk Level */}
+                <div>
+                  <Label className="text-xs font-medium">Risk Level</Label>
+                  <Select value={intangibleExportRiskLevel} onValueChange={v => setIntangibleExportRiskLevel(v === 'all' ? '' : v)}>
+                    <SelectTrigger className="mt-1 h-9 text-sm">
+                      <SelectValue placeholder="All risk levels" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="all">All risk levels</SelectItem>
+                      {intangibleExportRiskLevelOptions.map(opt => (
+                        <SelectItem key={opt} value={opt}>{opt}</SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+
+                {/* Assigned To */}
+                <div>
+                  <Label className="text-xs font-medium">Assigned To</Label>
+                  <Select value={intangibleExportAssignedTo} onValueChange={v => setIntangibleExportAssignedTo(v === 'all' ? '' : v)}>
+                    <SelectTrigger className="mt-1 h-9 text-sm">
+                      <SelectValue placeholder="All employees" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="all">All employees</SelectItem>
+                      {intangibleExportEmployeeOptions.map(opt => (
+                        <SelectItem key={opt} value={opt}>{opt}</SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+
+                {/* Status */}
+                <div>
+                  <Label className="text-xs font-medium">Status</Label>
+                  <Select value={intangibleExportStatus} onValueChange={v => setIntangibleExportStatus(v === 'all' ? '' : v)}>
+                    <SelectTrigger className="mt-1 h-9 text-sm">
+                      <SelectValue placeholder="All statuses" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="all">All statuses</SelectItem>
+                      <SelectItem value="assigned">Assigned</SelectItem>
+                      <SelectItem value="available">Available</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+              </div>
+
+              {/* Format */}
+              <div className="grid grid-cols-2 gap-4">
+                <button
+                  type="button"
+                  onClick={() => { setIntangibleExportOpen(false); handleIntangibleExportPdf(); }}
+                  className="flex h-full flex-col items-center gap-3 rounded-xl border border-gray-200 bg-white p-5 transition hover:border-red-300 hover:shadow-md cursor-pointer"
+                >
+                  <Eye className="h-8 w-8 text-red-600" />
+                  <span className="text-sm font-semibold text-gray-800">Export PDF</span>
+                  <span className="text-xs text-gray-500 text-center">Intangible asset list in PDF format</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => { setIntangibleExportOpen(false); handleIntangibleExportExcel(); }}
+                  className="flex h-full flex-col items-center gap-3 rounded-xl border border-gray-200 bg-white p-5 transition hover:border-green-300 hover:shadow-md cursor-pointer"
+                >
+                  <FileSpreadsheet className="h-8 w-8 text-green-600" />
+                  <span className="text-sm font-semibold text-gray-800">Export Excel</span>
+                  <span className="text-xs text-gray-500 text-center">Intangible asset list in Excel format</span>
+                </button>
+              </div>
+            </div>
+          </AppDialogBody>
+          <AppDialogChromeFooter>
+            <Button variant="outline" onClick={() => setIntangibleExportOpen(false)}>
+              Cancel
+            </Button>
+          </AppDialogChromeFooter>
+        </AppDialogFrame>
+      </Dialog>
+
+      <Dialog open={intangibleImportOpen} onOpenChange={o => { if (!o) handleIntangibleImportCancel(); }}>
+        <AppDialogFrame className="sm:max-w-3xl max-h-[90vh] overflow-hidden !flex !flex-col !border-0 !shadow-2xl">
+          <AppDialogGradientHeader
+            title={intangibleImportStep === 'guide' ? 'Import Intangible Assets from Excel' : 'Preview & Import'}
+            description={
+              intangibleImportStep === 'guide'
+                ? 'Upload an Excel file to bulk import intangible assets.'
+                : `${intangibleImportPreview?.length ?? 0} asset(s) found in "${intangibleImportFileName ?? 'uploaded file'}"`
+            }
+          />
+          <AppDialogBody className="overflow-y-auto py-5 sm:py-6">
+            {intangibleImportStep === 'guide' && (
+              <div className="space-y-6">
+                <div
+                  onDragOver={e => e.preventDefault()}
+                  onDrop={async (e) => {
+                    e.preventDefault();
+                    const file = e.dataTransfer.files?.[0];
+                    if (file) {
+                      setIntangibleImportStep('preview');
+                      await handleIntangibleImportFile(file);
+                    }
+                  }}
+                  onClick={() => {
+                    const input = document.createElement('input');
+                    input.type = 'file';
+                    input.accept = '.xlsx,.xls';
+                    input.onchange = async (ev) => {
+                      const f = (ev.target as HTMLInputElement).files?.[0];
+                      if (f) {
+                        setIntangibleImportStep('preview');
+                        await handleIntangibleImportFile(f);
+                      }
+                    };
+                    input.click();
+                  }}
+                  className="relative border-2 border-dashed rounded-2xl p-10 sm:p-12 text-center cursor-pointer transition-all duration-200 border-gray-300 hover:border-blue-400 hover:bg-blue-50/30 hover:shadow-md"
+                >
+                  <div className="mx-auto w-16 h-16 rounded-2xl bg-gray-100 flex items-center justify-center mb-4">
+                    <Upload className="h-8 w-8 text-gray-400" />
+                  </div>
+                  <p className="text-base font-semibold text-gray-800 mb-1">Click to select or drag & drop</p>
+                  <p className="text-sm text-gray-500">Excel file (.xlsx) with columns: name, description, remarks, type</p>
+                </div>
+
+                <div className="flex items-center justify-center gap-3">
+                  <div className="h-px flex-1 bg-gradient-to-r from-transparent via-gray-200 to-transparent" />
+                  <Button variant="outline" size="sm" onClick={downloadIntangibleImportTemplate} className="rounded-xl gap-2 px-5 shadow-sm hover:shadow-md">
+                    <Download className="h-4 w-4" />
+                    Download Sample Template
+                  </Button>
+                  <div className="h-px flex-1 bg-gradient-to-r from-transparent via-gray-200 to-transparent" />
+                </div>
+
+                <div className="bg-white rounded-2xl border border-gray-200 p-5 sm:p-6 shadow-sm">
+                  <div className="flex items-center gap-3 mb-4">
+                    <div className="shrink-0 w-9 h-9 rounded-xl bg-gradient-to-br from-red-50 to-red-100 flex items-center justify-center">
+                      <Info className="h-4 w-4 text-red-600" />
+                    </div>
+                    <div>
+                      <h3 className="text-sm font-bold text-gray-900">Column Guide</h3>
+                      <p className="text-xs text-gray-500 mt-0.5">Required fields for importing intangible assets</p>
+                    </div>
+                  </div>
+                  <div className="overflow-x-auto rounded-xl border border-gray-200 shadow-sm">
+                    <table className="w-full text-left text-sm">
+                      <thead>
+                        <tr className="bg-gradient-to-r from-gray-50 to-gray-100 border-b border-gray-200">
+                          <th className="px-4 py-3 font-semibold text-gray-700 text-xs uppercase tracking-wider">Column</th>
+                          <th className="px-4 py-3 font-semibold text-gray-700 text-xs uppercase tracking-wider">Required</th>
+                          <th className="px-4 py-3 font-semibold text-gray-700 text-xs uppercase tracking-wider">Type</th>
+                          <th className="px-4 py-3 font-semibold text-gray-700 text-xs uppercase tracking-wider">Example</th>
+                          <th className="px-4 py-3 font-semibold text-gray-700 text-xs uppercase tracking-wider">Description</th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-gray-100">
+                        {[
+                          { field: 'name', required: true, type: 'Text', example: 'Software License XYZ', desc: 'Intangible asset name' },
+                          { field: 'description', required: false, type: 'Text', example: 'Annual subscription', desc: 'Asset description' },
+                          { field: 'remarks', required: false, type: 'Text', example: 'Renews annually', desc: 'Additional notes' },
+                          { field: 'type', required: true, type: 'Select', example: 'IT scope', desc: 'IT scope, Admin scope, or HR scope' },
+                        ].map((col, i) => (
+                          <tr key={col.field} className="hover:bg-gray-50/80 transition-colors">
+                            <td className="px-4 py-2.5">
+                              <code className="text-xs font-mono font-semibold text-gray-800 bg-gray-100 px-1.5 py-0.5 rounded">{col.field}</code>
+                            </td>
+                            <td className="px-4 py-2.5">
+                              {col.required ? (
+                                <Badge variant="destructive" className="text-[10px] px-2 py-0.5 font-semibold uppercase tracking-wide">Required</Badge>
+                              ) : (
+                                <span className="text-xs text-gray-400 font-medium">Optional</span>
+                              )}
+                            </td>
+                            <td className="px-4 py-2.5">
+                              <Badge variant="secondary" className="text-[10px] px-2 py-0.5 font-medium">{col.type}</Badge>
+                            </td>
+                            <td className="px-4 py-2.5">
+                              <code className="text-xs text-gray-500 font-mono bg-gray-50 px-1.5 py-0.5 rounded border border-gray-100">{col.example}</code>
+                            </td>
+                            <td className="px-4 py-2.5 text-xs text-gray-600 leading-relaxed">{col.desc}</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {intangibleImportStep === 'preview' && (
+              <div className="space-y-5">
+                <div className="flex items-center gap-3 bg-gray-50 rounded-xl border border-gray-200 px-4 py-3">
+                  <Upload className="h-5 w-5 text-blue-500 shrink-0" />
+                  <div className="min-w-0 flex-1">
+                    <p className="text-sm font-medium text-gray-800 truncate">{intangibleImportFileName}</p>
+                    <p className="text-xs text-gray-500">{intangibleImportPreview?.length ?? 0} asset(s) parsed</p>
+                  </div>
+                  <Button variant="ghost" size="sm" onClick={() => { setIntangibleImportStep('guide'); setIntangibleImportPreview(null); setIntangibleImportErrors([]); }} className="shrink-0 rounded-lg text-xs gap-1">
+                    Change File
+                  </Button>
+                </div>
+
+                {intangibleImportErrors.length > 0 && (
+                  <div className="bg-red-50 border-2 border-red-200 rounded-2xl p-5">
+                    <div className="flex items-center gap-2.5 mb-3">
+                      <div className="shrink-0 w-8 h-8 rounded-full bg-red-200 flex items-center justify-center">
+                        <AlertTriangle className="h-4 w-4 text-red-700" />
+                      </div>
+                      <div>
+                        <p className="text-sm font-bold text-red-800">Validation Errors</p>
+                        <p className="text-xs text-red-600">{intangibleImportErrors.length} issue(s) found</p>
+                      </div>
+                    </div>
+                    <div className="space-y-1.5 max-h-32 overflow-y-auto">
+                      {intangibleImportErrors.map((e, i) => (
+                        <div key={i} className="flex items-start gap-2 text-xs text-red-700 bg-red-100/50 rounded-lg px-3 py-2">
+                          <span className="shrink-0 font-semibold">Row {e.row}:</span>
+                          <span>{e.field} — {e.message}</span>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+
+                {intangibleImportPreview && intangibleImportPreview.length > 0 && (
+                  <div className="bg-white rounded-2xl border border-gray-200 p-5 sm:p-6 shadow-sm">
+                    <div className="flex items-center gap-3 mb-4">
+                      <div className="shrink-0 w-9 h-9 rounded-xl bg-gradient-to-br from-green-50 to-green-100 flex items-center justify-center">
+                        <CheckCircle2 className="h-4 w-4 text-green-600" />
+                      </div>
+                      <div>
+                        <h3 className="text-sm font-bold text-gray-900">Asset Data</h3>
+                        <p className="text-xs text-gray-500 mt-0.5">{intangibleImportPreview.length} row(s) parsed</p>
+                      </div>
+                    </div>
+                    <div className="max-h-52 overflow-y-auto rounded-xl border border-gray-200">
+                      <table className="w-full text-left text-xs">
+                        <thead className="bg-gradient-to-r from-gray-50 to-gray-100 border-b border-gray-200 sticky top-0 z-10">
+                          <tr>
+                            <th className="px-3 py-2.5 font-semibold text-gray-600 uppercase tracking-wider">#</th>
+                            <th className="px-3 py-2.5 font-semibold text-gray-600 uppercase tracking-wider">Name</th>
+                            <th className="px-3 py-2.5 font-semibold text-gray-600 uppercase tracking-wider">Description</th>
+                            <th className="px-3 py-2.5 font-semibold text-gray-600 uppercase tracking-wider">Remarks</th>
+                            <th className="px-3 py-2.5 font-semibold text-gray-600 uppercase tracking-wider">Type</th>
+                          </tr>
+                        </thead>
+                        <tbody className="divide-y divide-gray-100">
+                          {intangibleImportPreview.map((row, i) => (
+                            <tr key={i} className="hover:bg-gray-50/80 transition-colors">
+                              <td className="px-3 py-2 text-gray-400 font-mono">{i + 1}</td>
+                              <td className="px-3 py-2 font-medium text-gray-900">{row.name}</td>
+                              <td className="px-3 py-2 text-gray-600">{row.description}</td>
+                              <td className="px-3 py-2 text-gray-600">{row.remarks}</td>
+                              <td className="px-3 py-2">
+                                <Badge variant="outline" className="text-[10px] font-medium">{row.type}</Badge>
+                              </td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                  </div>
+                )}
+              </div>
+            )}
+          </AppDialogBody>
+          <AppDialogChromeFooter>
+            <Button variant="outline" size="lg" onClick={handleIntangibleImportCancel} className="rounded-xl px-6">
+              Cancel
+            </Button>
+            {intangibleImportStep === 'preview' && (
+              <Button
+                size="lg"
+                onClick={handleIntangibleImportConfirm}
+                disabled={intangibleImporting || intangibleImportErrors.length > 0 || !intangibleImportPreview || intangibleImportPreview.length === 0}
+                className="bg-red-600 hover:bg-red-700 text-white rounded-xl px-8 shadow-md hover:shadow-lg gap-2 transition-all"
+              >
+                {intangibleImporting ? (
+                  <Loader2 className="h-5 w-5 animate-spin" />
+                ) : (
+                  <Upload className="h-5 w-5" />
+                )}
+                {intangibleImporting ? 'Importing...' : `Import ${intangibleImportPreview?.length ?? 0} Asset(s)`}
               </Button>
             )}
           </AppDialogChromeFooter>

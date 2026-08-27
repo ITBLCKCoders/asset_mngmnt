@@ -13,7 +13,13 @@ import {
 import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
 import { PageHeader } from '@/components/common/PageHeader';
-import { Search, FileCheck, ClipboardList } from 'lucide-react';
+import {
+  Search,
+  FileCheck,
+  ClipboardList,
+  ChevronLeft,
+  ChevronRight,
+} from 'lucide-react';
 import { api } from '@/lib/api';
 import { toast } from 'sonner';
 import { useUserPermissions } from '@/hooks/useUserPermissions';
@@ -40,10 +46,13 @@ import {
 } from '@/components/ui/select';
 import { matchesFormListSearch } from '@/utils/formListSearch';
 import { cn } from '@/lib/utils';
-import { classifyDepartmentScopeByName } from '@/lib/assetScope';
+import { getRoleAssetTypeScope } from '@/utils/roleAssetTypeScope';
+import { getAssetDisplayScope } from '@/pages/assets/accountability/accountabilityFormAssets';
 
 type StatusFilter = 'all' | 'active' | 'disabled';
 type AssetTypeFilter = 'all' | 'it' | 'admin';
+
+const PAGE_SIZE = 6;
 
 export default function AccountabilityFormsPage() {
   const { hasPermission } = useUserPermissions();
@@ -64,6 +73,7 @@ export default function AccountabilityFormsPage() {
   const [companyFilterId, setCompanyFilterId] = useState('');
   const [departmentFilterId, setDepartmentFilterId] = useState('');
   const [assetTypeFilter, setAssetTypeFilter] = useState<AssetTypeFilter>('all');
+  const [currentPage, setCurrentPage] = useState(1);
   
   // Auto-set company filter to user's company if they have one
   const userCompanyScope = currentUser?.company_id || '';
@@ -73,13 +83,22 @@ export default function AccountabilityFormsPage() {
   const showCompanyFilter = !userCompanyScope || isSuperAdminOrAdmin || hasHrAccountabilityReceiver;
   
   useEffect(() => {
-    if (userCompanyScope && companyFilterId !== userCompanyScope) {
+    if (
+      userCompanyScope &&
+      !isSuperAdminOrAdmin &&
+      !hasHrAccountabilityReceiver &&
+      companyFilterId !== userCompanyScope
+    ) {
       setCompanyFilterId(userCompanyScope);
     }
-  }, [userCompanyScope]);
+  }, [userCompanyScope, isSuperAdminOrAdmin, hasHrAccountabilityReceiver]);
   
   // Get user's role asset type for scoping
-  const userRoleAssetType = currentUser?.role?.asset_type || 'none';
+  const { roleScope: userRoleScope, isRoleScoped: isAssetTypeRoleScoped } =
+    getRoleAssetTypeScope(currentUser?.role?.asset_type);
+  const effectiveAssetTypeFilter: AssetTypeFilter = isAssetTypeRoleScoped
+    ? userRoleScope
+    : assetTypeFilter;
   const [selectedForm, setSelectedForm] = useState<AccountabilityForm | null>(
     null
   );
@@ -90,11 +109,19 @@ export default function AccountabilityFormsPage() {
   );
   const displayLoading = loading;
 
+  const trailingSeq = (form: AccountabilityForm): number => {
+    const match = form.formNumber.match(/(\d+)\s*$/);
+    return match ? parseInt(match[1], 10) : 0;
+  };
+
+  const sortFormsBySeqDesc = (list: AccountabilityForm[]): AccountabilityForm[] =>
+    [...list].sort((a, b) => trailingSeq(b) - trailingSeq(a));
+
   const fetchForms = async (): Promise<AccountabilityForm[]> => {
     try {
       setLoading(true);
       const data = await api.get('/accountability-forms');
-      const list = data.forms || [];
+      const list = sortFormsBySeqDesc(data.forms || []);
       setForms(list);
       return list;
     } catch (error) {
@@ -121,6 +148,17 @@ export default function AccountabilityFormsPage() {
   useEffect(() => {
     setDepartmentFilterId('');
   }, [companyFilterId]);
+
+  useEffect(() => {
+    setCurrentPage(1);
+  }, [
+    searchQuery,
+    statusFilter,
+    companyFilterId,
+    departmentFilterId,
+    assetTypeFilter,
+    activeTab,
+  ]);
 
 
   const hrCopyForms = useMemo(
@@ -173,22 +211,18 @@ export default function AccountabilityFormsPage() {
   };
   
   const filterByAssetType = (list: AccountabilityForm[]) => {
-    if (assetTypeFilter === 'all') return list;
+    if (effectiveAssetTypeFilter === 'all') return list;
     
-    const targetScope = assetTypeFilter === 'it' ? 'IT' : 'Admin';
+    const targetScope =
+      effectiveAssetTypeFilter === 'it' ? 'IT' : 'Admin';
     
     return list.filter((f: AccountabilityForm) => {
-      // Check if any asset in the form matches the selected asset type
-      return f.assets.some(asset => {
-        const deptCandidate =
-          asset.categoryDepartment ||
-          f.department?.name ||
-          f.user?.department?.name ||
-          asset.category ||
-          '';
-        const assetScope = classifyDepartmentScopeByName(deptCandidate);
-        return assetScope === targetScope;
-      });
+      // Match the card badges: only assets displayed on the form determine the
+      // filter bucket. Intangibles are shown only on the form matching their
+      // scope, so the filter considers tangible assets only.
+      return (f.assets || [])
+        .filter(a => String(a.category ?? '').toLowerCase() !== 'intangible')
+        .some(asset => getAssetDisplayScope(asset, f) === targetScope);
     });
   };
 
@@ -246,21 +280,34 @@ export default function AccountabilityFormsPage() {
           filterByAssetType(filterByCompanyAndDepartment(forms))
         )
       ),
-    [forms, searchQuery, statusFilter, companyFilterId, departmentFilterId, assetTypeFilter]
+    [forms, searchQuery, statusFilter, companyFilterId, departmentFilterId, effectiveAssetTypeFilter]
   );
   const filteredHrCopy = useMemo(
     () =>
       applyStatusFilter(
         filterBySearch(filterByAssetType(filterByCompanyAndDepartment(hrCopyForms)))
       ),
-    [hrCopyForms, searchQuery, statusFilter, companyFilterId, departmentFilterId, assetTypeFilter]
+    [hrCopyForms, searchQuery, statusFilter, companyFilterId, departmentFilterId, effectiveAssetTypeFilter]
   );
+
+  const pageCount = useMemo(() => {
+    const list = activeTab === 'hrCopy' ? filteredHrCopy : filteredAll;
+    return Math.max(1, Math.ceil(list.length / PAGE_SIZE));
+  }, [activeTab, filteredAll, filteredHrCopy]);
+
+  useEffect(() => {
+    setCurrentPage(p => Math.min(p, pageCount));
+  }, [pageCount]);
 
   const hasActiveOrgFilters = Boolean(companyFilterId || departmentFilterId);
 
   const handleSignForm = async (formId: string) => {
     try {
-      await api.post(`/accountability-forms/${formId}/sign`, {});
+      await api.post(`/accountability-forms/${formId}/sign`, {
+        acknowledgments: currentUser?.digitalSignature
+          ? { digitalSignature: currentUser.digitalSignature }
+          : undefined,
+      });
       await fetchForms();
       toast.success('Form signed successfully');
     } catch (error: unknown) {
@@ -359,21 +406,56 @@ export default function AccountabilityFormsPage() {
       );
     }
     return (
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-        {formList.map((form: AccountabilityForm) => (
-          <AccountabilityFormCard
-            key={form.id}
-            form={form}
-            onView={handleViewForm}
-            showSignButton={false}
-            lazyLoadDetails
-            statusPillVariant={isHrList ? 'toReceive' : 'activeDisabled'}
-            showReceiveButton={isHrList && hasHrCopyAccess}
-            onReceive={handleReceiveCopy}
-            showDownloadButton={!isHrList}
-            showPendingReceiverSignatureBadge
-          />
-        ))}
+      <div>
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+          {formList
+            .slice((currentPage - 1) * PAGE_SIZE, currentPage * PAGE_SIZE)
+            .map((form: AccountabilityForm) => (
+              <AccountabilityFormCard
+                key={form.id}
+                form={form}
+                onView={handleViewForm}
+                showSignButton={false}
+                lazyLoadDetails
+                statusPillVariant={isHrList ? 'toReceive' : 'activeDisabled'}
+                showReceiveButton={isHrList && hasHrCopyAccess}
+                onReceive={handleReceiveCopy}
+                showDownloadButton={!isHrList}
+                showPendingReceiverSignatureBadge
+              />
+            ))}
+        </div>
+        {formList.length > PAGE_SIZE && (
+          <div className="flex items-center justify-center gap-4 pt-6">
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() =>
+                setCurrentPage(p => Math.max(1, p - 1))
+              }
+              disabled={currentPage <= 1}
+              className="gap-1.5"
+            >
+              <ChevronLeft className="h-4 w-4" />
+              Previous
+            </Button>
+            <span className="text-sm text-muted-foreground">
+              Page {Math.min(currentPage, pageCount)} of {pageCount}
+            </span>
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() =>
+                setCurrentPage(p => Math.min(pageCount, p + 1))
+              }
+              disabled={currentPage >= pageCount}
+              className="gap-1.5"
+            >
+              Next
+              <ChevronRight className="h-4 w-4" />
+            </Button>
+          </div>
+        )}
       </div>
     );
   };
@@ -532,44 +614,46 @@ export default function AccountabilityFormsPage() {
                     Disabled
                   </Button>
                 </div>
-                <div className="flex gap-2 flex-wrap">
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    onClick={() => setAssetTypeFilter('all')}
-                    className={
-                      assetTypeFilter === 'all'
-                        ? 'bg-red-600 text-white hover:bg-red-700 hover:text-white border-red-600'
-                        : ''
+                {!isAssetTypeRoleScoped && (
+                  <div className="flex gap-2 flex-wrap">
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() => setAssetTypeFilter('all')}
+                      className={
+                        effectiveAssetTypeFilter === 'all'
+                          ? 'bg-red-600 text-white hover:bg-red-700 hover:text-white border-red-600'
+                          : ''
                     }
-                  >
-                    All Assets
-                  </Button>
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    onClick={() => setAssetTypeFilter('it')}
-                    className={
-                      assetTypeFilter === 'it'
-                        ? 'bg-red-600 text-white hover:bg-red-700 hover:text-white border-red-600'
-                        : ''
+                    >
+                      All Assets
+                    </Button>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() => setAssetTypeFilter('it')}
+                      className={
+                        effectiveAssetTypeFilter === 'it'
+                          ? 'bg-red-600 text-white hover:bg-red-700 hover:text-white border-red-600'
+                          : ''
                     }
-                  >
-                    IT Assets
-                  </Button>
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    onClick={() => setAssetTypeFilter('admin')}
-                    className={
-                      assetTypeFilter === 'admin'
-                        ? 'bg-red-600 text-white hover:bg-red-700 hover:text-white border-red-600'
-                        : ''
+                    >
+                      IT Assets
+                    </Button>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() => setAssetTypeFilter('admin')}
+                      className={
+                        effectiveAssetTypeFilter === 'admin'
+                          ? 'bg-red-600 text-white hover:bg-red-700 hover:text-white border-red-600'
+                          : ''
                     }
-                  >
-                    Admin Assets
-                  </Button>
-                </div>
+                    >
+                      Admin Assets
+                    </Button>
+                  </div>
+                )}
               </div>
 
               <TabsContent value="all" className="mt-0">
@@ -698,44 +782,46 @@ export default function AccountabilityFormsPage() {
                     Disabled
                   </Button>
                 </div>
-                <div className="flex gap-2 flex-wrap">
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    onClick={() => setAssetTypeFilter('all')}
-                    className={
-                      assetTypeFilter === 'all'
-                        ? 'bg-red-600 text-white hover:bg-red-700 hover:text-white border-red-600'
-                        : ''
+                {!isAssetTypeRoleScoped && (
+                  <div className="flex gap-2 flex-wrap">
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() => setAssetTypeFilter('all')}
+                      className={
+                        effectiveAssetTypeFilter === 'all'
+                          ? 'bg-red-600 text-white hover:bg-red-700 hover:text-white border-red-600'
+                          : ''
                     }
-                  >
-                    All Assets
-                  </Button>
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    onClick={() => setAssetTypeFilter('it')}
-                    className={
-                      assetTypeFilter === 'it'
-                        ? 'bg-red-600 text-white hover:bg-red-700 hover:text-white border-red-600'
-                        : ''
+                    >
+                      All Assets
+                    </Button>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() => setAssetTypeFilter('it')}
+                      className={
+                        effectiveAssetTypeFilter === 'it'
+                          ? 'bg-red-600 text-white hover:bg-red-700 hover:text-white border-red-600'
+                          : ''
                     }
-                  >
-                    IT Assets
-                  </Button>
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    onClick={() => setAssetTypeFilter('admin')}
-                    className={
-                      assetTypeFilter === 'admin'
-                        ? 'bg-red-600 text-white hover:bg-red-700 hover:text-white border-red-600'
-                        : ''
+                    >
+                      IT Assets
+                    </Button>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() => setAssetTypeFilter('admin')}
+                      className={
+                        effectiveAssetTypeFilter === 'admin'
+                          ? 'bg-red-600 text-white hover:bg-red-700 hover:text-white border-red-600'
+                          : ''
                     }
-                  >
-                    Admin Assets
-                  </Button>
-                </div>
+                    >
+                      Admin Assets
+                    </Button>
+                  </div>
+                )}
               </div>
 
               <div className="flex items-center gap-2 mb-4">
@@ -779,6 +865,7 @@ export default function AccountabilityFormsPage() {
                   headerInParentChrome
                   viewContext={viewDetailContext}
                   hrViewMode
+                  showAssetMovement
                   onReceiveCompleted={async () => {
                     await fetchForms();
                   }}

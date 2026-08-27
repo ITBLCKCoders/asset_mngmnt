@@ -95,6 +95,81 @@ export async function handleAccountabilityFormOnAssetReturn(
   )) as any[];
 
   if (activeAssignments.length === 0) {
+    // No tangible assets remain. Intangible assets are tracked in a separate
+    // table, so the user may still hold intangibles even after returning all
+    // of their physical assets. Those existing forms were already disabled in
+    // step 1, so create a replacement form from the remaining intangibles.
+    const [activeIntangibles] = (await pool.execute(
+      `SELECT iaa.intangible_asset_id, ia.name, ia.description, ia.type,
+              iaa.department_id, iaa.location_id, iaa.location_room_id,
+              d.name AS department_name
+       FROM intangible_asset_assignments iaa
+       INNER JOIN intangible_assets ia
+         ON iaa.intangible_asset_id = ia.id AND ia.deleted_at IS NULL
+       LEFT JOIN asset_mngmnt_departments d
+         ON iaa.department_id = d.departmentID AND d.deleted_at IS NULL
+       WHERE iaa.user_id = ? AND iaa.status = 'Active' AND iaa.deleted_at IS NULL`,
+      [userId]
+    )) as any[];
+
+    if (activeIntangibles.length === 0) return;
+
+    // Group by department so each department gets its own form (mirrors the
+    // tangible grouping above and the form's per-department flow).
+    const intangByDept = new Map<string, any[]>();
+    for (const row of activeIntangibles) {
+      const key = String(row.department_id ?? 'None');
+      const group = intangByDept.get(key) ?? [];
+      group.push(row);
+      intangByDept.set(key, group);
+    }
+
+    for (const [, rows] of intangByDept.entries()) {
+      const first = rows[0];
+      const departmentAssets = rows.map((row) => ({
+        id: row.intangible_asset_id,
+        code: row.name || row.intangible_asset_id,
+        name: row.name || '',
+        description: row.description || '',
+        category: 'Intangible',
+        type: row.type || 'Intangible',
+        department: row.department_name,
+        serialNo: '',
+        modelNo: '',
+        brand: '',
+      }));
+
+      const intangibleFormReq = {
+        ...req,
+        user: { userID: createdBy },
+        body: {
+          assets: departmentAssets,
+          userId,
+          departmentId: first.department_id ?? null,
+          locationId: first.location_id ?? null,
+          locationRoomId: first.location_room_id ?? null,
+          issuerSignature: processorDigitalSignature,
+          itCopySignature: processorDigitalSignature,
+        },
+      } as AuthRequest;
+
+      const intangibleFormRes = {
+        status: () => ({ json: () => ({}) }),
+      } as unknown as Response;
+
+      try {
+        await createAccountabilityFormHandler(intangibleFormReq, intangibleFormRes);
+        logger.info(
+          `Created intangible-only accountability form on return: user ${userId}, dept ${first.department_id ?? 'None'}, ${departmentAssets.length} assets`
+        );
+      } catch (err) {
+        logger.error(
+          'Failed to create intangible-only accountability form on return:',
+          err
+        );
+      }
+    }
+
     return;
   }
 

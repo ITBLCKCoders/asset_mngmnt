@@ -10,6 +10,7 @@ import {
   AppDialogBody,
   AppDialogChromeFooter,
 } from '@/components/common/appDialogChrome';
+import { getRoleDisplayName } from '@/lib/roleUtils';
 import {
   Select,
   SelectContent,
@@ -200,7 +201,7 @@ export function UserFormDialog({
                       value={role.roleID}
                       className="hover:bg-gray-200"
                     >
-                      {role.name}
+                      {getRoleDisplayName(role.name)}
                     </SelectItem>
                   ))
                 )}

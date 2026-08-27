@@ -1,20 +1,20 @@
 import { pool } from '../db.js';
 
-/** Fallback form number when no settings: TRF-YYYYMMDD-XXXX (sequence per day). */
+/** Fallback form number when no settings: TRF-MMYYYY-XXXX (sequence resets per year). */
 export async function generateTransferFormNumberFallback(): Promise<string> {
   const now = new Date();
-  const dateStr = `${now.getFullYear()}${String(now.getMonth() + 1).padStart(2, '0')}${String(now.getDate()).padStart(2, '0')}`;
-  const prefix = `TRF-${dateStr}-`;
+  const dateStr = `${String(now.getMonth() + 1).padStart(2, '0')}${now.getFullYear()}`;
+  const year = now.getFullYear();
   const [seqRows] = (await pool.execute(
     `SELECT COALESCE(MAX(CAST(SUBSTRING_INDEX(form_number, '-', -1) AS UNSIGNED)), 0) + 1 AS next_seq
      FROM asset_transfer_forms WHERE form_number LIKE ? AND deleted_at IS NULL`,
-    [`${prefix}%`]
+    [`TRF-%${year}-%`]
   )) as any[];
   const nextSeq = seqRows[0]?.next_seq ?? 1;
-  return `${prefix}${String(nextSeq).padStart(4, '0')}`;
+  return `TRF-${dateStr}-${String(nextSeq).padStart(4, '0')}`;
 }
 
-/** Generate transfer form number from asset_transfer_form_settings, or fallback to TRF-YYYYMMDD-XXXX. */
+/** Generate transfer form number from asset_transfer_form_settings, or fallback to TRF-MMYYYY-XXXX. */
 export async function generateTransferFormNumber(
   companyId: string,
   departmentId: string | null
@@ -83,10 +83,11 @@ export async function generateTransferFormNumber(
   const basePattern = parts
     .slice(0, settings.include_date ? -1 : undefined)
     .join('-');
-  // For MMYYYY: sequence resets per year, so match any month in same year
+  // For month-inclusive date formats (MMYYYY): sequence resets per year, so
+  // match any month in the same year. Only daily YYYYMMDD scopes per day.
   const year = settings.include_date ? new Date().getFullYear() : null;
   const likePrefix =
-    settings.include_date && settings.date_format === 'MMYYYY'
+    settings.include_date && settings.date_format !== 'YYYYMMDD'
       ? `${basePattern}-%${year}-`
       : `${basePattern}${dateFilter ? `-${dateFilter}` : ''}-`;
 

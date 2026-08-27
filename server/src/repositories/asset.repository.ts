@@ -1,5 +1,6 @@
 import type { RowDataPacket, ResultSetHeader } from 'mysql2/promise';
 import { pool } from '../db.js';
+import { computeAssetDepreciationFields } from '../utils/depreciation.js';
 
 /**
  * Asset repository: every SQL touching `assets`, `asset_documents`,
@@ -154,6 +155,20 @@ export interface BuilderChildBatchRow extends RowDataPacket {
   name: string | null;
 }
 
+export interface BuilderLinkBatchRow extends RowDataPacket {
+  asset_id: string;
+  builder_id: string;
+}
+
+export interface BuilderItemBatchRow extends RowDataPacket {
+  builder_id: string;
+  asset_id: string;
+  asset_code: string;
+  name: string | null;
+  is_parent: number;
+  builder_status: string;
+}
+
 export interface AccountabilityFormBatchRow extends RowDataPacket {
   asset_id: string;
   formID: string;
@@ -182,6 +197,9 @@ export interface AssetForUpdateRow extends RowDataPacket {
   depreciation_method: string | null;
   useful_life_years: number | null;
   annual_depreciation: number | null;
+  book_value: number | null;
+  accumulated_depreciation: number | null;
+  monthly_depreciation: number | null;
   depreciation_start_date: string | null;
   company_id: string | null;
   location_id: string | null;
@@ -212,7 +230,14 @@ export interface AssetForUpdateRow extends RowDataPacket {
 export async function callGetAllAssets(): Promise<RowDataPacket[]> {
   const [rowsResult] = await pool.execute<RowDataPacket[]>('CALL sp_get_assets()');
   const r = rowsResult as unknown as RowDataPacket[][];
-  return Array.isArray(r[0]) ? r[0] : (rowsResult as RowDataPacket[]);
+  const rows = Array.isArray(r[0]) ? r[0] : (rowsResult as RowDataPacket[]);
+  // Compute depreciation fields on read so book value / accumulated
+  // depreciation / monthly depreciation stay current as time passes
+  // (stored columns are only refreshed on edit). Old units keep stored values.
+  return (rows as any[]).map(row => ({
+    ...row,
+    ...computeAssetDepreciationFields(row),
+  })) as RowDataPacket[];
 }
 
 // ---------------------------------------------------------------------------
@@ -652,6 +677,39 @@ export async function getAssetForUpdateById(
   return rows[0] ?? null;
 }
 
+export async function getAssetForUpdateByCode(
+  assetCode: string
+): Promise<AssetForUpdateRow | null> {
+  const [rows] = await pool.execute<AssetForUpdateRow[]>(
+    'SELECT * FROM assets WHERE asset_code = ? AND deleted_at IS NULL',
+    [assetCode]
+  );
+  return rows[0] ?? null;
+}
+
+/**
+ * Resolve a client-supplied identifier (assetID, asset_code or tag_code) to the
+ * canonical `assets.assetID`. The client `Asset.id` is the human-readable
+ * `asset_code` (see `assetDetails.tsx` / `assetData.tsx`), while all
+ * return/transfer/borrow lookups join on `assetID`. Returning `null` means the
+ * asset does not exist.
+ */
+export async function resolveAssetIdByCodeOrId(
+  rawParam: string
+): Promise<string | null> {
+  const trimmed = String(rawParam ?? '').trim();
+  if (!trimmed) return null;
+  const upper = trimmed.toUpperCase();
+  const [rows] = await pool.execute<AssetIdMiniRow[]>(
+    `SELECT assetID FROM assets
+      WHERE deleted_at IS NULL
+        AND (assetID = ? OR UPPER(asset_code) = ? OR UPPER(tag_code) = ?)
+      LIMIT 1`,
+    [trimmed, upper, upper]
+  );
+  return rows[0]?.assetID ?? null;
+}
+
 export async function updateAssetCode(
   assetId: string,
   newCode: string
@@ -749,6 +807,42 @@ export async function getBuilderChildrenForBuilderIds(
      JOIN assets a ON abi.asset_id = a.assetID
      WHERE abi.builder_id IN (${placeholders}) AND a.deleted_at IS NULL
      ORDER BY abi.builder_id, abi.created_at`,
+    builderIds
+  );
+  return rows;
+}
+
+export async function getBuilderLinksForAssetIds(
+  assetIds: string[]
+): Promise<BuilderLinkBatchRow[]> {
+  if (assetIds.length === 0) return [];
+  const placeholders = assetIds.map(() => '?').join(',');
+  const [rows] = await pool.execute<BuilderLinkBatchRow[]>(
+    `SELECT abi.asset_id, abi.builder_id
+     FROM asset_builder_items abi
+     JOIN asset_builders ab ON abi.builder_id = ab.builderID
+     WHERE abi.asset_id IN (${placeholders}) AND ab.deleted_at IS NULL`,
+    assetIds
+  );
+  return rows;
+}
+
+export async function getBuilderItemsForBuilderIds(
+  builderIds: string[]
+): Promise<BuilderItemBatchRow[]> {
+  if (builderIds.length === 0) return [];
+  const placeholders = builderIds.map(() => '?').join(',');
+  const [rows] = await pool.execute<BuilderItemBatchRow[]>(
+    `SELECT abi.builder_id, abi.asset_id, abi.is_parent,
+            ab.status AS builder_status,
+            a.asset_code, a.name
+     FROM asset_builder_items abi
+     JOIN asset_builders ab ON abi.builder_id = ab.builderID
+     JOIN assets a ON abi.asset_id = a.assetID
+     WHERE abi.builder_id IN (${placeholders})
+       AND ab.deleted_at IS NULL
+       AND a.deleted_at IS NULL
+     ORDER BY abi.builder_id, abi.is_parent DESC, abi.created_at`,
     builderIds
   );
   return rows;

@@ -27,17 +27,65 @@ function parseAssignees(raw: unknown): IntangibleAssetAssignee[] {
   return [];
 }
 
+function buildAssigneesFromFlatColumns(asset: any): IntangibleAssetAssignee[] | null {
+  if (asset.assigned_first_name || asset.assigned_last_name || asset.assigned_email) {
+    return [
+      {
+        userId: asset.assigned_to || '',
+        firstName: asset.assigned_first_name || '',
+        lastName: asset.assigned_last_name || '',
+        email: asset.assigned_email || '',
+        assignedDate: asset.assigned_date || undefined,
+      },
+    ];
+  }
+  return null;
+}
+
 export async function getAllIntangibleAssets(companyId: string): Promise<any[]> {
   const [rows] = (await pool.query('CALL sp_GetAllIntangibleAssets(?)', [
     companyId,
   ])) as any[];
-  const assets = rows[0] ?? [];
-  return assets.map((asset: any) => ({
-    ...asset,
-    assignees: parseAssignees(asset.assignees),
-    created_by_name: (asset.created_by_name || '').trim() || null,
-    updated_by_name: (asset.updated_by_name || '').trim() || null,
-  }));
+  const assets = (rows[0] ?? []) as any[];
+  return assets.map((asset: any) => {
+    const parsed = parseAssignees(asset.assignees);
+    return {
+      ...asset,
+      assignees: parsed.length > 0 ? parsed : (buildAssigneesFromFlatColumns(asset) ?? parsed),
+      created_by_name: (asset.created_by_name || '').trim() || null,
+      updated_by_name: (asset.updated_by_name || '').trim() || null,
+      risk_level: parseRiskLevel(asset.risk_level),
+      type_department: parseTypeDepartment(asset.type_department),
+    };
+  });
+}
+
+function parseRiskLevel(raw: unknown): { id: string; name: string; color?: string } | null {
+  if (!raw) return null;
+  if (typeof raw === 'object') return raw as { id: string; name: string; color?: string };
+  if (typeof raw === 'string') {
+    try {
+      const parsed = JSON.parse(raw);
+      return parsed && typeof parsed === 'object' ? parsed : null;
+    } catch {
+      return null;
+    }
+  }
+  return null;
+}
+
+function parseTypeDepartment(raw: unknown): { id: string; name: string; code?: string } | null {
+  if (!raw) return null;
+  if (typeof raw === 'object') return raw as { id: string; name: string; code?: string };
+  if (typeof raw === 'string') {
+    try {
+      const parsed = JSON.parse(raw);
+      return parsed && typeof parsed === 'object' ? parsed : null;
+    } catch {
+      return null;
+    }
+  }
+  return null;
 }
 
 export async function createIntangibleAsset(data: {
@@ -45,17 +93,19 @@ export async function createIntangibleAsset(data: {
   description: string | null;
   remarks: string | null;
   type: string;
+  riskLevelId?: string | null;
   status: string;
   companyId: string;
   createdBy: string;
 }): Promise<any> {
   const [result] = (await pool.query(
-    `CALL sp_CreateIntangibleAsset(?, ?, ?, ?, ?, ?, ?)`,
+    `CALL sp_CreateIntangibleAsset(?, ?, ?, ?, ?, ?, ?, ?)`,
     [
       data.name,
       data.description,
       data.remarks,
       data.type,
+      data.riskLevelId ?? null,
       data.status,
       data.companyId,
       data.createdBy,
@@ -70,6 +120,7 @@ export async function createIntangibleAssetsBulk(
     description: string | null;
     remarks: string | null;
     type: string;
+    riskLevelId?: string | null;
     status: string;
   }>,
   companyId: string,
@@ -99,19 +150,24 @@ export async function updateIntangibleAsset(
     description?: string | null;
     remarks?: string | null;
     type?: string;
+    riskLevelId?: string | null;
     status?: string;
     companyId: string;
     updatedBy: string;
+    assignedTo?: string | null;
+    assignedDate?: string | null;
+    assignmentId?: string | null;
   }
 ): Promise<any> {
   const [result] = (await pool.query(
-    `CALL sp_UpdateIntangibleAsset(?, ?, ?, ?, ?, ?, ?, ?)`,
+    `CALL sp_UpdateIntangibleAsset(?, ?, ?, ?, ?, ?, ?, ?, ?)`,
     [
       id,
       data.name,
       data.description,
       data.remarks,
       data.type,
+      data.riskLevelId ?? null,
       data.status,
       data.companyId,
       data.updatedBy,

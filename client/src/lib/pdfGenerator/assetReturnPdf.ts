@@ -11,12 +11,32 @@ import {
   getBlackCodersFooterGradient,
   isBlackCoders,
   pdfLogger as logger,
-  resolveCompanyBranding,
   fetchActiveCompanyForAssetReturnForm,
+  fetchCompanyBrandingByName,
   sortAssetsByLast5Digits,
   PDF_SIGNATURE_MAX_HEIGHT_MM,
   PDF_SIGNATURE_MAX_WIDTH_MM,
 } from './shared';
+
+/** Format signed timestamp date (e.g. 02/15/2026). Returns '' when null/invalid. */
+export const formatSignedDate = (iso?: string | null): string =>
+  iso && !Number.isNaN(new Date(iso).getTime())
+    ? new Date(iso).toLocaleDateString('en-US', {
+        year: 'numeric',
+        month: '2-digit',
+        day: '2-digit',
+      })
+    : '';
+
+/** Format signed timestamp time (12-hour, e.g. 03:45 PM). Returns '' when null/invalid. */
+export const formatSignedTime = (iso?: string | null): string =>
+  iso && !Number.isNaN(new Date(iso).getTime())
+    ? new Date(iso).toLocaleTimeString('en-US', {
+        hour: '2-digit',
+        minute: '2-digit',
+        hour12: true,
+      })
+    : '';
 
 export interface AssetReturnData {
   assignmentID: string;
@@ -91,14 +111,36 @@ export interface AssetReturnData {
   dept_head_digital_signature?: string | null;
   /** Dept Head display name for PDF */
   dept_head_user_name?: string | null;
+  /** Dept Head position for PDF */
+  dept_head_position?: string | null;
+  /** Sub Approver 1 (stand-in for dept head) signature date/time */
+  sub_approver_1_signed_at?: string | null;
+  /** Sub Approver 1 digital signature image (base64 data URL) */
+  sub_approver_1_digital_signature?: string | null;
+  /** Sub Approver 1 display name for PDF */
+  sub_approver_1_user_name?: string | null;
+  /** Sub Approver 1 position for PDF */
+  sub_approver_1_position?: string | null;
   /** IT Manager / IT Department Head signature date/time */
   it_manager_signed_at?: string | null;
   /** IT Manager digital signature image (base64 data URL) */
   it_manager_digital_signature?: string | null;
   /** IT Manager display name for PDF */
   it_manager_user_name?: string | null;
+  /** IT Manager position for PDF */
+  it_manager_position?: string | null;
+  /** Sub Approver 2 (stand-in for IT Manager) signature date/time */
+  sub_approver_2_signed_at?: string | null;
+  /** Sub Approver 2 digital signature image (base64 data URL) */
+  sub_approver_2_digital_signature?: string | null;
+  /** Sub Approver 2 display name for PDF */
+  sub_approver_2_user_name?: string | null;
+  /** Sub Approver 2 position for PDF */
+  sub_approver_2_position?: string | null;
   /** When true, show the processor (IT Staff) block; when false, hide it until Dept Head has signed */
   showProcessorSignatureBlock?: boolean;
+  /** When true, the asset owner is not in office anymore; the Returner cell shows a note instead of a signature */
+  ownerAbsent?: boolean;
 }
 
 export const generateAssetReturnPDF = async (
@@ -119,19 +161,20 @@ export const generateAssetReturnPDF = async (
     creator: 'Asset Management System',
   });
 
-  let companyBranding = await resolveCompanyBranding({
-    name: returnData.user.companyName,
-    logo_url: returnData.user.companyLogoUrl,
-  });
-  if (!companyBranding?.logo_url) {
-    const myCompany = await fetchActiveCompanyForAssetReturnForm();
-    companyBranding = await resolveCompanyBranding({
-      name: myCompany?.name ?? returnData.user.companyName ?? null,
-      logo_url: myCompany?.logo_url ?? null,
-    });
+  const companyName = returnData.user.companyName;
+  let companyLogo = returnData.user.companyLogoUrl;
+  if (companyName) {
+    const matchedBranding = await fetchCompanyBrandingByName(companyName);
+    if (matchedBranding?.logo_url) {
+      companyLogo = matchedBranding.logo_url;
+    }
   }
-  const accentColor = getCompanyAccentColor(companyBranding?.name);
-  const isBlackCodersCompany = isBlackCoders(companyBranding?.name);
+  if (!companyLogo) {
+    const myCompany = await fetchActiveCompanyForAssetReturnForm();
+    companyLogo = myCompany?.logo_url ?? null;
+  }
+  const accentColor = getCompanyAccentColor(companyName);
+  const isBlackCodersCompany = isBlackCoders(companyName);
   const headerFillColor: [number, number, number] = isBlackCodersCompany ? [0, 0, 0] : [accentColor.r, accentColor.g, accentColor.b];
   const headerTextColor: [number, number, number] = [255, 255, 255];
 
@@ -151,7 +194,7 @@ export const generateAssetReturnPDF = async (
 
   await addCompanyLogoToPDF(
     doc,
-    companyBranding?.logo_url,
+    companyLogo,
     pageMargin,
     headerBoxY + 2
   );
@@ -412,8 +455,11 @@ export const generateAssetReturnPDF = async (
   const sectionBStartY = (doc as any).lastAutoTable.finalY;
   const sectionBHalfWidth = tableWidth / 2;
   const hasReturnerSignature = !!returnData.signed_at;
-  const hasDeptHeadSignature = !!returnData.dept_head_signed_at;
-  const hasItManagerSignature = !!returnData.it_manager_signed_at;
+  const hasDeptHeadSignature =
+    !!returnData.dept_head_signed_at || !!returnData.sub_approver_1_signed_at;
+  const hasItManagerSignature =
+    !!returnData.it_manager_signed_at ||
+    !!returnData.sub_approver_2_signed_at;
   const showProcessorSignatureBlock = !!returnData.showProcessorSignatureBlock;
   const processUserNameForCell = (returnData.process_user_name ?? '').trim();
   const approvalSignatureRowHeight = 40;
@@ -499,10 +545,21 @@ export const generateAssetReturnPDF = async (
         doc.setFont('helvetica', 'normal');
         doc.setTextColor(0, 0, 0);
 
-        const itManagerName = (returnData.it_manager_user_name || '').trim();
-        if (returnData.it_manager_digital_signature) {
+        const isSubApprover2Signed = !!returnData.sub_approver_2_signed_at;
+        const itManagerName = (
+          (isSubApprover2Signed
+            ? returnData.sub_approver_2_user_name
+            : returnData.it_manager_user_name) || ''
+        ).trim();
+        const itManagerPosition = isSubApprover2Signed
+          ? (returnData.sub_approver_2_position || '').trim()
+          : (returnData.it_manager_position || '').trim();
+        const itManagerSignature = isSubApprover2Signed
+          ? returnData.sub_approver_2_digital_signature
+          : returnData.it_manager_digital_signature;
+        if (itManagerSignature) {
           pendingReturnSignatures.push({
-            data: returnData.it_manager_digital_signature,
+            data: itManagerSignature,
             x: cell.x + 1 - 30,
             y: yTop + 25,
             anchorBottomY: signatureAnchorBottomY(nameY),
@@ -516,6 +573,37 @@ export const generateAssetReturnPDF = async (
           const nameMaxWidth = Math.max(15, contentWidth - 6);
           const nameLines = doc.splitTextToSize(itManagerName, nameMaxWidth);
           doc.text(nameLines, xMin, nameY);
+          if (itManagerPosition) {
+            doc.setFontSize(6.5);
+            const positionLines = doc.splitTextToSize(
+              itManagerPosition,
+              nameMaxWidth
+            );
+            doc.text(positionLines, xMin, nameY + 3.5);
+          }
+        }
+
+        if (isSubApprover2Signed) {
+          doc.setFontSize(6.5);
+          doc.setFont('helvetica', 'italic');
+          doc.text('(Stand-in approver)', xMin, nameY + 7);
+        }
+
+        const itManagerSignedDate = formatSignedDate(
+          isSubApprover2Signed
+            ? returnData.sub_approver_2_signed_at
+            : returnData.it_manager_signed_at
+        );
+        const itManagerSignedTime = formatSignedTime(
+          isSubApprover2Signed
+            ? returnData.sub_approver_2_signed_at
+            : returnData.it_manager_signed_at
+        );
+        if (itManagerSignedDate && itManagerSignedTime) {
+          doc.setFontSize(7);
+          doc.setFont('helvetica', 'normal');
+          doc.text(itManagerSignedDate, xMax - 20, yTop + 4);
+          doc.text(itManagerSignedTime, xMax - 20, yTop + 9);
         }
       }
 
@@ -554,6 +642,19 @@ export const generateAssetReturnPDF = async (
           nameMaxWidth
         );
         doc.text(nameLines, xMin, nameY);
+
+        const processSignedDate = formatSignedDate(
+          returnData.process_signed_at
+        );
+        const processSignedTime = formatSignedTime(
+          returnData.process_signed_at
+        );
+        if (processSignedDate && processSignedTime) {
+          doc.setFontSize(7);
+          doc.setFont('helvetica', 'normal');
+          doc.text(processSignedDate, xMax - 20, yTop + 4);
+          doc.text(processSignedTime, xMax - 20, yTop + 9);
+        }
       }
 
       // Row 3, column 0: Returner's Department Head (matches checklist dept-head cell)
@@ -570,10 +671,21 @@ export const generateAssetReturnPDF = async (
         doc.setFont('helvetica', 'normal');
         doc.setTextColor(0, 0, 0);
 
-        const deptHeadName = (returnData.dept_head_user_name || '').trim();
-        if (returnData.dept_head_digital_signature) {
+        const isSubApprover1Signed = !!returnData.sub_approver_1_signed_at;
+        const deptHeadName = (
+          (isSubApprover1Signed
+            ? returnData.sub_approver_1_user_name
+            : returnData.dept_head_user_name) || ''
+        ).trim();
+        const deptHeadPosition = isSubApprover1Signed
+          ? (returnData.sub_approver_1_position || '').trim()
+          : (returnData.dept_head_position || '').trim();
+        const deptHeadDigitalSignature = isSubApprover1Signed
+          ? returnData.sub_approver_1_digital_signature
+          : returnData.dept_head_digital_signature;
+        if (deptHeadDigitalSignature) {
           pendingReturnSignatures.push({
-            data: returnData.dept_head_digital_signature,
+            data: deptHeadDigitalSignature,
             x: cell.x + 1 - 30,
             y: yTop + 25,
             anchorBottomY: signatureAnchorBottomY(nameY),
@@ -587,6 +699,37 @@ export const generateAssetReturnPDF = async (
           const nameMaxWidth = Math.max(15, contentWidth - 6);
           const nameLines = doc.splitTextToSize(deptHeadName, nameMaxWidth);
           doc.text(nameLines, xMin, nameY);
+          if (deptHeadPosition) {
+            doc.setFontSize(6.5);
+            const positionLines = doc.splitTextToSize(
+              deptHeadPosition,
+              nameMaxWidth
+            );
+            doc.text(positionLines, xMin, nameY + 3.5);
+          }
+        }
+
+        if (isSubApprover1Signed) {
+          doc.setFontSize(6.5);
+          doc.setFont('helvetica', 'italic');
+          doc.text('(Stand-in approver)', xMin, nameY + 7);
+        }
+
+        const deptHeadSignedDate = formatSignedDate(
+          isSubApprover1Signed
+            ? returnData.sub_approver_1_signed_at
+            : returnData.dept_head_signed_at
+        );
+        const deptHeadSignedTime = formatSignedTime(
+          isSubApprover1Signed
+            ? returnData.sub_approver_1_signed_at
+            : returnData.dept_head_signed_at
+        );
+        if (deptHeadSignedDate && deptHeadSignedTime) {
+          doc.setFontSize(7);
+          doc.setFont('helvetica', 'normal');
+          doc.text(deptHeadSignedDate, xMax - 20, yTop + 4);
+          doc.text(deptHeadSignedTime, xMax - 20, yTop + 9);
         }
       }
 
@@ -624,6 +767,36 @@ export const generateAssetReturnPDF = async (
           const nameLines = doc.splitTextToSize(fullName, nameMaxWidth);
           doc.text(nameLines, xMin, nameY);
         }
+
+        const returnerSignedDate = formatSignedDate(returnData.signed_at);
+        const returnerSignedTime = formatSignedTime(returnData.signed_at);
+        if (returnerSignedDate && returnerSignedTime) {
+          doc.setFontSize(7);
+          doc.setFont('helvetica', 'normal');
+          doc.text(returnerSignedDate, xMax - 20, yTop + 4);
+          doc.text(returnerSignedTime, xMax - 20, yTop + 9);
+        }
+      }
+
+      // Row 3, column 1: owner-absent note (no returner signature available)
+      if (
+        !hasReturnerSignature &&
+        returnData.ownerAbsent &&
+        data.row.index === 3 &&
+        data.column.index === 1
+      ) {
+        const yTop = yMin;
+        doc.setFontSize(8);
+        doc.setFont('helvetica', 'italic');
+        doc.setTextColor(90, 90, 90);
+        const noteMaxWidth = Math.max(15, contentWidth - 6);
+        const noteLines = doc.splitTextToSize(
+          'Asset owner is not in office anymore',
+          noteMaxWidth
+        );
+        doc.text(noteLines, xMin, yTop + 12);
+        doc.setFont('helvetica', 'normal');
+        doc.setTextColor(0, 0, 0);
       }
     },
   });
@@ -641,6 +814,33 @@ export const generateAssetReturnPDF = async (
     );
   }
   doc.setPage(1);
+
+  // Stand-in approver note under the table
+  if (
+    returnData.sub_approver_1_signed_at ||
+    returnData.sub_approver_2_signed_at
+  ) {
+    doc.setFontSize(6.5);
+    doc.setFont('helvetica', 'italic');
+    doc.setTextColor(80, 80, 80);
+    const noteLines: string[] = [];
+    if (returnData.sub_approver_1_signed_at) {
+      noteLines.push(
+        'Stand-in approver note: The signee is a stand-in approver for the Department Head, who is currently not present.'
+      );
+    }
+    if (returnData.sub_approver_2_signed_at) {
+      noteLines.push(
+        'Stand-in approver note: The signee is a stand-in approver for the IT Manager, who is currently not present.'
+      );
+    }
+    let noteY = (doc as any).lastAutoTable.finalY + 4;
+    for (const line of noteLines) {
+      doc.text(line, tableMargin.left, noteY, { maxWidth: tableWidth });
+      noteY += 3;
+    }
+    doc.setTextColor(0, 0, 0);
+  }
 
   // Document No under the table
   const docNoY = (doc as any).lastAutoTable.finalY + 8;

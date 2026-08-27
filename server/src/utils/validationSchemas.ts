@@ -29,6 +29,14 @@ import {
   UpdateBrandDtoSchema,
 } from '../dtos/brands/BrandDto.js';
 import {
+  CreateIntangibleAssetTypeDtoSchema,
+  UpdateIntangibleAssetTypeDtoSchema,
+} from '../dtos/intangibleAssetTypes/IntangibleAssetTypeDto.js';
+import {
+  CreateRiskLevelDtoSchema,
+  UpdateRiskLevelDtoSchema,
+} from '../dtos/riskLevels/RiskLevelDto.js';
+import {
   CreatePositionDtoSchema,
   UpdatePositionDtoSchema,
 } from '../dtos/positions/PositionDto.js';
@@ -69,6 +77,14 @@ export {
   UpdateBrandDtoSchema,
 } from '../dtos/brands/BrandDto.js';
 export {
+  CreateIntangibleAssetTypeDtoSchema,
+  UpdateIntangibleAssetTypeDtoSchema,
+} from '../dtos/intangibleAssetTypes/IntangibleAssetTypeDto.js';
+export {
+  CreateRiskLevelDtoSchema,
+  UpdateRiskLevelDtoSchema,
+} from '../dtos/riskLevels/RiskLevelDto.js';
+export {
   CreatePositionDtoSchema,
   UpdatePositionDtoSchema,
 } from '../dtos/positions/PositionDto.js';
@@ -104,6 +120,14 @@ export type {
   CreateBrandDto,
   UpdateBrandDto,
 } from '../dtos/brands/BrandDto.js';
+export type {
+  CreateIntangibleAssetTypeDto,
+  UpdateIntangibleAssetTypeDto,
+} from '../dtos/intangibleAssetTypes/IntangibleAssetTypeDto.js';
+export type {
+  CreateRiskLevelDto,
+  UpdateRiskLevelDto,
+} from '../dtos/riskLevels/RiskLevelDto.js';
 export type {
   CreatePositionDto,
   UpdatePositionDto,
@@ -208,6 +232,10 @@ export const validationSchemas = {
   UpdateSupplierDto: UpdateSupplierDtoSchema,
   CreateBrandDto: CreateBrandDtoSchema,
   UpdateBrandDto: UpdateBrandDtoSchema,
+  CreateIntangibleAssetTypeDto: CreateIntangibleAssetTypeDtoSchema,
+  UpdateIntangibleAssetTypeDto: UpdateIntangibleAssetTypeDtoSchema,
+  CreateRiskLevelDto: CreateRiskLevelDtoSchema,
+  UpdateRiskLevelDto: UpdateRiskLevelDtoSchema,
   CreatePositionDto: CreatePositionDtoSchema,
   UpdatePositionDto: UpdatePositionDtoSchema,
   LoginDto: LoginDtoSchema,

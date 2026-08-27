@@ -20,6 +20,7 @@ jest.mock('../../services/assetBorrowRequests.service.js', () => {
     listAvailableAssetsForStaffProcessing: jest.fn(),
     staffApprove: jest.fn(),
     getApprovedBorrowRequestsForReceive: jest.fn(),
+    listReceivedByMe: jest.fn(),
     staffDecline: jest.fn(),
     processBorrowReturn: jest.fn(),
     receiveBorrowRequest: jest.fn(),
@@ -155,6 +156,26 @@ describe('assetBorrowRequests.controller', () => {
       AssetBorrowRequestsService.getApprovedBorrowRequestsForReceive.mockResolvedValue({ borrowRequests: [{ id: 'br-1' }] });
       await borrowController.getApprovedBorrowRequestsForReceive(req, res);
       expect(res._json).toEqual({ success: true, data: { borrowRequests: [{ id: 'br-1' }] } });
+    });
+  });
+
+  describe('listReceivedByMeBorrowRequests', () => {
+    it('returns borrow requests received by me', async () => {
+      AssetBorrowRequestsService.listReceivedByMe.mockResolvedValue({ borrowRequests: [{ id: 'br-1', received_at: '2024-01-01 10:00:00' }] });
+      await borrowController.listReceivedByMeBorrowRequests(req, res);
+      expect(res._json).toEqual({ success: true, data: { borrowRequests: [{ id: 'br-1', received_at: '2024-01-01 10:00:00' }] } });
+    });
+
+    it('returns 401 when no user', async () => {
+      req.user = undefined;
+      await borrowController.listReceivedByMeBorrowRequests(req, res);
+      expect(res._status).toBe(401);
+    });
+
+    it('returns error from service', async () => {
+      AssetBorrowRequestsService.listReceivedByMe.mockResolvedValue({ error: 'Failed', status: 500 });
+      await borrowController.listReceivedByMeBorrowRequests(req, res);
+      expect(res._status).toBe(500);
     });
   });
 

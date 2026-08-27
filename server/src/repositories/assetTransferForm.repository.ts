@@ -118,12 +118,12 @@ export async function getUserById(
 
 export async function getUserNamesById(
   userId: string
-): Promise<{ first_name: string | null; last_name: string | null } | null> {
+): Promise<{ first_name: string | null; last_name: string | null; position: string | null } | null> {
   const [rows] = await pool.execute<RowDataPacket[]>(
-    'SELECT first_name, last_name FROM users WHERE userID = ?',
+    'SELECT first_name, last_name, position FROM users WHERE userID = ?',
     [userId]
   );
-  return (rows[0] as { first_name: string | null; last_name: string | null } | null) ?? null;
+  return (rows[0] as { first_name: string | null; last_name: string | null; position: string | null } | null) ?? null;
 }
 
 export async function getReturnFormById(
@@ -148,14 +148,14 @@ export async function getUserDepartmentId(
 
 export async function getUserNamesByIds(
   userIds: string[]
-): Promise<Array<{ userID: string; first_name: string | null; last_name: string | null }>> {
+): Promise<Array<{ userID: string; first_name: string | null; last_name: string | null; position?: string | null }>> {
   if (userIds.length === 0) return [];
   const placeholders = userIds.map(() => '?').join(',');
   const [rows] = await pool.execute<RowDataPacket[]>(
-    `SELECT userID, first_name, last_name FROM users WHERE userID IN (${placeholders})`,
+    `SELECT userID, first_name, last_name, position FROM users WHERE userID IN (${placeholders})`,
     userIds
   );
-  return rows as Array<{ userID: string; first_name: string | null; last_name: string | null }>;
+  return rows as Array<{ userID: string; first_name: string | null; last_name: string | null; position?: string | null }>;
 }
 
 export async function getCategoryDepartmentsByAssetIds(
@@ -343,10 +343,17 @@ export interface ApprovedTransferFormRow extends RowDataPacket {
   department_id: string | null;
   location_id: string | null;
   location_room_id: string | null;
+  created_at: string | null;
+  created_by: string | null;
   signed_at: string | null;
   signed_by: string | null;
   signed_digital_signature: string | null;
+  process_signed_at: string | null;
+  process_digital_signature: string | null;
+  transfer_type: string | null;
+  received_by: string | null;
   dept_head_signed_at: string | null;
+  sub_approver_1_signed_at: string | null;
   dept_head_signed_by: string | null;
   dept_head_digital_signature: string | null;
   form_company_id: string | null;
@@ -357,18 +364,23 @@ export async function getApprovedTransferFormsByCompanyId(
 ): Promise<ApprovedTransferFormRow[]> {
   const sql = `SELECT atf.formID, atf.form_number, atf.user_id, atf.new_assigned_user_id,
               atf.department_id, atf.location_id, atf.location_room_id,
+              atf.created_at, atf.created_by,
               atf.signed_at, atf.signed_by, atf.signed_digital_signature,
-              atf.dept_head_signed_at, atf.dept_head_signed_by,
+              DATE_FORMAT(atf.process_signed_at, '%Y-%m-%d %H:%i:%s') AS process_signed_at,
+              atf.process_digital_signature, atf.transfer_type, atf.received_by,
+              DATE_FORMAT(atf.dept_head_signed_at, '%Y-%m-%d %H:%i:%s') AS dept_head_signed_at,
+              DATE_FORMAT(atf.sub_approver_1_signed_at, '%Y-%m-%d %H:%i:%s') AS sub_approver_1_signed_at,
+              atf.dept_head_signed_by,
               atf.dept_head_digital_signature, d.company_id AS form_company_id
        FROM asset_transfer_forms atf
        LEFT JOIN asset_mngmnt_departments d ON atf.department_id = d.departmentID
        WHERE atf.deleted_at IS NULL
          AND (atf.declined_at IS NULL)
          AND atf.signed_at IS NOT NULL
-         AND atf.dept_head_signed_at IS NOT NULL
+         AND (atf.dept_head_signed_at IS NOT NULL OR atf.sub_approver_1_signed_at IS NOT NULL)
          AND atf.executed_at IS NULL
          AND d.company_id = ?
-       ORDER BY atf.dept_head_signed_at DESC`;
+       ORDER BY COALESCE(atf.dept_head_signed_at, atf.sub_approver_1_signed_at) DESC`;
   const [rows] = await pool.execute<ApprovedTransferFormRow[]>(sql, [companyId]);
   return rows;
 }
@@ -409,6 +421,24 @@ export async function getTransferFormByReturnFormId(
   return (rows as any[])[0] ?? null;
 }
 
+/**
+ * Fetch the linked return form ID for a transfer form. Independent of the
+ * sp_get_asset_transfer_form_by_id stored procedure (which may not select
+ * return_form_id depending on the deployed migration).
+ */
+export async function getReturnFormIdByTransferFormId(
+  transferFormId: string
+): Promise<string | null> {
+  const [rows] = (await pool.execute(
+    `SELECT return_form_id
+     FROM asset_transfer_forms
+     WHERE formID = ? AND deleted_at IS NULL
+     LIMIT 1`,
+    [transferFormId]
+  )) as any[];
+  return (rows as any[])[0]?.return_form_id ?? null;
+}
+
 /** Fetch transfer-form IDs linked to a given return form. */
 export async function getTransferFormIdsByReturnFormId(
   returnFormId: string
@@ -434,15 +464,154 @@ export async function getTransferFormAssignments(
 }
 
 /**
- * Get transfer forms by asset ID. Since asset_transfer_forms doesn't have a direct
- * asset_id column and the linking through transfer_form_assignments is complex,
- * return empty array for now. This would need database schema changes to properly
- * link transfer forms to assets.
+ * Get transfer forms linked to an asset. A transfer form is linked to an asset
+ * through `transfer_form_assignments.assignment_id` →
+ * `asset_assignments.asset_id`. One form can cover several assignments, so rows
+ * are deduplicated by formID. Returns the camelCase `TransferForm` DTO shape
+ * expected by the Asset details modal and the Asset Builder forms tab.
  */
 export async function getTransferFormsByAssetId(
   assetId: string
 ): Promise<any[]> {
-  // Return empty array since there's no reliable way to link transfer forms to assets
-  // with the current database schema
-  return [];
+  const [rows] = (await pool.execute(
+    `SELECT DISTINCT atf.formID, atf.form_number, atf.user_id, atf.new_assigned_user_id,
+            atf.created_at, atf.signed_at,
+            atf.declined_at, atf.executed_at, atf.process_signed_at,
+            atf.dept_head_signed_at, atf.it_manager_signed_at,
+            u.first_name, u.last_name, u.email,
+            nu.first_name AS new_first_name, nu.last_name AS new_last_name,
+            d.name AS department_name, l.name AS location_name
+     FROM transfer_form_assignments tfa
+      JOIN asset_transfer_forms atf ON tfa.form_id = atf.formID AND atf.deleted_at IS NULL
+      JOIN asset_assignments aa ON tfa.assignment_id = aa.assignmentID AND aa.deleted_at IS NULL
+      LEFT JOIN users u ON atf.user_id = u.userID
+      LEFT JOIN users nu ON atf.new_assigned_user_id = nu.userID
+      LEFT JOIN asset_mngmnt_departments d ON atf.department_id = d.departmentID
+      LEFT JOIN asset_mngmnt_locations l ON atf.location_id = l.locationID
+      WHERE aa.asset_id = ?
+      ORDER BY atf.created_at DESC`,
+    [assetId]
+  )) as any[];
+
+  const seen = new Set<string>();
+  const forms: any[] = [];
+  for (const row of rows as any[]) {
+    const id = String(row.formID ?? '').trim();
+    if (!id || seen.has(id)) continue;
+    seen.add(id);
+
+    let status = 'Pending';
+    if (row.declined_at) status = 'Declined';
+    else if (row.executed_at) status = 'Completed';
+    else if (row.it_manager_signed_at) status = 'Approved';
+    else if (row.dept_head_signed_at) status = 'Approved by dept head';
+    else if (row.process_signed_at) status = 'Processed';
+    else if (row.signed_at) status = 'Signed';
+
+    forms.push({
+      id,
+      formNumber: row.form_number ?? '',
+      status,
+      created_at: row.created_at,
+      signed_at: row.signed_at ?? null,
+      user: {
+        id: row.user_id ?? '',
+        first_name: row.first_name ?? '',
+        last_name: row.last_name ?? '',
+        email: row.email ?? '',
+      },
+      new_user:
+        row.new_assigned_user_id && (row.new_first_name || row.new_last_name)
+          ? {
+              first_name: row.new_first_name ?? '',
+              last_name: row.new_last_name ?? '',
+            }
+          : undefined,
+      department_name: row.department_name ?? null,
+      location_name: row.location_name ?? null,
+    });
+  }
+  return forms;
+}
+
+export interface AccountabilityFormLookupRow extends RowDataPacket {
+  form_number: string | null;
+  created_at: string | null;
+  user_id: string | null;
+  owner_first_name: string | null;
+  owner_last_name: string | null;
+}
+
+/**
+ * Find the most relevant accountability form that contains an asset for a given
+ * owner, constrained by a `created_at` boundary. Used to surface "from / new"
+ * accountability form numbers on transfer and return history rows.
+ *
+ * - `direction: 'before'` (default) returns the latest form created at or before
+ *   `dateBoundary` (the form the asset belonged to before the event).
+ * - `direction: 'after'` returns the earliest form created at or after
+ *   `dateBoundary` (the form created by the event).
+ * - Pass `formOrigin: 'processor_return'` to restrict to temporary
+ *   accountability forms held by a return processor.
+ */
+export async function findAccountabilityFormForAsset(params: {
+  assetId: string;
+  userId?: string | null;
+  dateBoundary?: string | null;
+  direction?: 'before' | 'after';
+  formOrigin?: 'processor_return';
+}): Promise<AccountabilityFormLookupRow | null> {
+  const {
+    assetId,
+    userId,
+    dateBoundary,
+    direction = 'before',
+    formOrigin,
+  } = params;
+  const buildWhere = (withOrigin: boolean): [string[], unknown[]] => {
+    const where: string[] = ['af.deleted_at IS NULL'];
+    const bind: unknown[] = [];
+    if (userId) {
+      where.push('af.user_id = ?');
+      bind.push(userId);
+    }
+    if (withOrigin && formOrigin) {
+      where.push(
+        "JSON_UNQUOTE(JSON_EXTRACT(af.assets_data, '$.form_origin')) = ?"
+      );
+      bind.push(formOrigin);
+    }
+    if (dateBoundary) {
+      where.push(
+        direction === 'before' ? 'af.created_at <= ?' : 'af.created_at >= ?'
+      );
+      bind.push(dateBoundary);
+    }
+    return [where, bind];
+  };
+  const order = direction === 'before' ? 'DESC' : 'ASC';
+  const lookup = async (withOrigin: boolean) => {
+    const [where, bind] = buildWhere(withOrigin);
+    const [rows] = await pool.execute<AccountabilityFormLookupRow[]>(
+      `SELECT af.form_number, af.created_at, af.user_id,
+              u.first_name as owner_first_name, u.last_name as owner_last_name
+       FROM accountability_forms af
+       LEFT JOIN users u ON af.user_id = u.userID
+       WHERE ${where.join(' AND ')}
+         AND (af.asset_id = ? OR af.assets_data LIKE ?)
+       ORDER BY af.created_at ${order}
+       LIMIT 1`,
+      [...bind, assetId, `%${assetId}%`]
+    );
+    return rows[0] ?? null;
+  };
+
+  const matched = await lookup(true);
+  if (matched) return matched;
+
+  // Fallback: when restricted to a form origin (e.g. processor_return temp
+  // forms) but no matching form exists, retry without the origin filter so
+  // older records still resolve to the next form the asset belongs to.
+  if (formOrigin) return lookup(false);
+  return null;
 }

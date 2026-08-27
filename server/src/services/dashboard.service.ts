@@ -17,6 +17,11 @@ export interface DashboardStats {
   pendingTransferCount: number;
   disposedAssets: number;
   borrowedAssets: number;
+  underRepair: number;
+  transferedAssets: number;
+  returnedAssets: number;
+  forMaintenance: number;
+  forRepair: number;
 }
 
 export interface AssetByTypeItem {
@@ -383,6 +388,96 @@ async function getStats(
     pendingTransferCount = 0;
   }
 
+  let underRepair = 0;
+  let forMaintenance = 0;
+  let forRepair = 0;
+  let transferedAssets = 0;
+  let returnedAssets = 0;
+
+  try {
+    const [underRepairRows] = (await pool.execute(
+      `SELECT COUNT(*) as cnt FROM assets a WHERE ${whereClause} AND a.status = 'Under Repair'`,
+      params
+    )) as any[];
+    underRepair = Number(underRepairRows[0]?.cnt ?? 0);
+  } catch {
+    underRepair = 0;
+  }
+  try {
+    const [forMaintenanceRows] = (await pool.execute(
+      `SELECT COUNT(*) as cnt FROM assets a WHERE ${whereClause} AND a.status = 'For Maintenance'`,
+      params
+    )) as any[];
+    forMaintenance = Number(forMaintenanceRows[0]?.cnt ?? 0);
+  } catch {
+    forMaintenance = 0;
+  }
+  try {
+    const [forRepairRows] = (await pool.execute(
+      `SELECT COUNT(*) as cnt FROM assets a WHERE ${whereClause} AND a.status = 'For Repair'`,
+      params
+    )) as any[];
+    forRepair = Number(forRepairRows[0]?.cnt ?? 0);
+  } catch {
+    forRepair = 0;
+  }
+
+  // Transferred / Returned: count assets in completed forms (process_signed_at IS NOT NULL) — asset-level count per user request "the forms and the number of asset in it"
+  try {
+    const transferedParams: (string | number)[] = [];
+    let transferedWhere =
+      'at.deleted_at IS NULL AND atf.deleted_at IS NULL AND atf.process_signed_at IS NOT NULL';
+    if (companyId) {
+      transferedWhere += ' AND d.company_id = ?';
+      transferedParams.push(companyId);
+    }
+    if (departmentIds && departmentIds.length > 0) {
+      transferedWhere += ` AND atf.department_id IN (${departmentIds.map(() => '?').join(',')})`;
+      transferedParams.push(...departmentIds);
+    }
+    const [transferedRows] = (await pool.execute(
+      `SELECT COUNT(*) as cnt FROM asset_transfer at
+       INNER JOIN asset_transfer_forms atf ON at.form_id = atf.formID
+       LEFT JOIN asset_mngmnt_departments d ON atf.department_id = d.departmentID
+       WHERE ${transferedWhere}`,
+      transferedParams
+    )) as any[];
+    transferedAssets = Number(transferedRows[0]?.cnt ?? 0);
+  } catch {
+    transferedAssets = 0;
+  }
+
+  try {
+    const returnedAssetParams: (string | number)[] = [];
+    let returnedAssetWhere =
+      'ar.deleted_at IS NULL AND arf.deleted_at IS NULL AND arf.process_signed_at IS NOT NULL';
+    if (companyId) {
+      returnedAssetWhere += ' AND d.company_id = ?';
+      returnedAssetParams.push(companyId);
+    }
+    if (departmentIds && departmentIds.length > 0) {
+      returnedAssetWhere += ` AND arf.department_id IN (${departmentIds.map(() => '?').join(',')})`;
+      returnedAssetParams.push(...departmentIds);
+    }
+    const [returnedAssetRows] = (await pool.execute(
+      `SELECT COUNT(*) as cnt FROM asset_returns ar
+       INNER JOIN asset_return_forms arf ON ar.form_id = arf.formID
+       LEFT JOIN asset_mngmnt_departments d ON arf.department_id = d.departmentID
+       WHERE ${returnedAssetWhere}`,
+      returnedAssetParams
+    )) as any[];
+    const detailCount = Number(returnedAssetRows[0]?.cnt ?? 0);
+    // Fallback: if no detail rows (older data), count completed return forms as proxy so dashboard never stays 0 when forms exist
+    if (detailCount === 0 && assetReturnsCount > 0) {
+      returnedAssets = assetReturnsCount;
+    } else {
+      returnedAssets = detailCount;
+    }
+  } catch {
+    // Fallback to forms count if join fails (e.g., missing form_id column in older DB)
+    returnedAssets = assetReturnsCount;
+  }
+
   return {
     totalAssets,
     activeAssignments,
@@ -396,6 +491,11 @@ async function getStats(
     pendingTransferCount,
     disposedAssets,
     borrowedAssets,
+    underRepair,
+    transferedAssets,
+    returnedAssets,
+    forMaintenance,
+    forRepair,
   };
 }
 
@@ -405,14 +505,15 @@ async function getAssetByType(
   params: (string | number)[]
 ): Promise<AssetByTypeItem[]> {
   const [rows] = (await pool.execute(
-    `SELECT at.typeID as typeId, COALESCE(at.name, 'Uncategorized') as typeName,
+    `SELECT MIN(at.typeID) as typeId,
+            COALESCE(at.name, 'Uncategorized') as typeName,
             COALESCE(at.prefix, '') as typeCode,
             COUNT(a.assetID) as total,
             SUM(CASE WHEN a.status IN ('In Use', 'Assigned') THEN 1 ELSE 0 END) as inUse
      FROM assets a
      LEFT JOIN asset_types at ON a.type_id = at.typeID AND at.deleted_at IS NULL
      WHERE ${whereClause}
-     GROUP BY at.typeID, at.name, at.prefix
+     GROUP BY COALESCE(at.name, 'Uncategorized'), COALESCE(at.prefix, '')
      ORDER BY total DESC`,
     params
   )) as any[];
@@ -456,14 +557,20 @@ async function getAssetsByLocation(
 ): Promise<NamedCountItem[]> {
   const [rows] = (await pool.execute(
     `SELECT COALESCE(
-        NULLIF(TRIM(CONCAT_WS(' — ', NULLIF(TRIM(l.building), ''), NULLIF(TRIM(l.name), ''))), ''),
+        NULLIF(TRIM(
+          CONCAT_WS(' - ',
+            NULLIF(TRIM(l.name), ''),
+            NULLIF(TRIM(lr.room_name), '')
+          )
+        ), ''),
         'Unassigned'
       ) as name,
       COUNT(*) as total
      FROM assets a
      LEFT JOIN asset_mngmnt_locations l ON a.location_id = l.locationID AND l.deleted_at IS NULL
+     LEFT JOIN asset_mngmnt_location_rooms lr ON a.location_room_id = lr.roomID AND lr.deleted_at IS NULL
      WHERE ${whereClause}
-     GROUP BY a.location_id, l.building, l.name
+     GROUP BY a.location_id, a.location_room_id, l.name, lr.room_name
      ORDER BY total DESC
      LIMIT 12`,
     params
@@ -1102,6 +1209,11 @@ function getEmptyDashboard(): DashboardData {
       pendingTransferCount: 0,
       disposedAssets: 0,
       borrowedAssets: 0,
+      underRepair: 0,
+      transferedAssets: 0,
+      returnedAssets: 0,
+      forMaintenance: 0,
+      forRepair: 0,
     },
     assetByType: [],
     movement: { weekly: [], monthly: [] },

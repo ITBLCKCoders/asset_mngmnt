@@ -3,25 +3,28 @@ import type { Pool } from 'mysql2/promise';
 import { getScopedActiveCompany } from '../utils/activeCompany.js';
 import type { AssetBorrowRequestRow } from '../repositories/assetBorrowRequests.repository.js';
 import {
-  classifyDepartmentScopeByName,
   getAssetScope,
   getBorrowRequestListScope,
   getDepartmentIdsForScope,
 } from '../utils/assetScope.js';
-import { isUserManagerApprover1 } from '../utils/approverNotifications.js';
+import {
+  isDesignatedApprover,
+  isDesignatedSubApprover,
+} from '../utils/approverNotifications.js';
+import { getRequestersAssignedToApprover } from './userApprovers.service.js';
 import { generateBorrowFormNumber } from '../utils/borrowFormNumber.js';
 import {
   findApprovedBorrowRequestsForReceive,
   findBorrowRequestsApprovedByDeptHeadMe,
+  findBorrowRequestsReceivedByMe,
   findAvailableAssetsForBorrowStaffPool,
   findBorrowRequestsForList,
   findBorrowRequestsForUser,
   findPendingDeptHeadBorrowRequests,
+  findPendingDeptHeadBorrowRequestsByCompany,
   getAssignmentForBorrowRequest,
   getAvailableAssetByCodeForBorrowStaffPool,
   getBorrowRequestById,
-  getCategoryDepartmentForCompany,
-  getTypeForCategoryAndCompany,
   insertAssetBorrowRequest,
   updateAssignmentStatusActive,
   updateBorrowRequestDeptHeadApprove,
@@ -61,48 +64,36 @@ export class AssetBorrowRequestsService {
       return { error: 'Invalid expected return date', status: 400 };
     }
 
-    const cat = await getCategoryDepartmentForCompany(
-      pool,
-      body.category_id,
-      company.id
-    );
-    if (!cat) {
-      return { error: 'Category not found', status: 400 };
+    const desc = body.description?.trim() ?? '';
+    if (desc.length < 10) {
+      return { error: 'Description must be at least 10 characters', status: 400 };
+    }
+    if (desc.length > 1000) {
+      return { error: 'Description max 1000 characters', status: 400 };
     }
 
-    const deptScope = classifyDepartmentScopeByName(cat.departmentName);
-    if (body.borrow_scope === 'it' && deptScope !== 'IT') {
-      return {
-        error: 'Selected category is not an IT asset category',
-        status: 400,
-      };
-    }
-    if (body.borrow_scope === 'admin' && deptScope !== 'Admin') {
-      return {
-        error: 'Selected category is not an Admin asset category',
-        status: 400,
-      };
-    }
-
-    const typeOk = await getTypeForCategoryAndCompany(
-      pool,
-      body.type_id,
-      body.category_id,
-      company.id
-    );
-    if (!typeOk) {
-      return { error: 'Type does not match category or company', status: 400 };
+    // Form number is based on company Forms settings (Asset Borrowing Form Number Settings)
+    // and the explicit borrow_scope (it/admin) — not category department.
+    // Fetch requestor department for settings.department_format handling.
+    let requestorDepartmentId: string | null = null;
+    try {
+      const [deptRows] = (await pool.execute(
+        'SELECT department_id FROM users WHERE userID = ? LIMIT 1',
+        [userId]
+      )) as [{ department_id?: string | null }[], unknown];
+      requestorDepartmentId = deptRows[0]?.department_id ?? null;
+    } catch {
+      requestorDepartmentId = null;
     }
 
     const id = randomUUID();
-    const formNumber = await generateBorrowFormNumber(company.id, cat.departmentId);
+    const formNumber = await generateBorrowFormNumber(company.id, requestorDepartmentId, body.borrow_scope);
     await insertAssetBorrowRequest(pool, {
       id,
       companyId: company.id,
       userId,
       borrowScope: body.borrow_scope,
-      categoryId: body.category_id,
-      typeId: body.type_id,
+      description: desc,
       formNumber,
       expectedReturnAt: expectedMysql,
       purpose: body.purpose.trim(),
@@ -167,30 +158,32 @@ export class AssetBorrowRequestsService {
     | { rows: Awaited<ReturnType<typeof findPendingDeptHeadBorrowRequests>> }
     | { error: string; status: number }
   > {
-    const { companyId } = await getAssetScope(pool, userId);
+    const { companyId, isSuperAdmin, isAdmin } = await getAssetScope(pool, userId);
     if (!companyId) {
       return { rows: [] };
     }
 
-    const isManager1 = await isUserManagerApprover1(userId);
-    if (!isManager1) {
-      return { rows: [] };
+    // Global Admin / Local Admin: see all pending borrow requests in the company scope
+    if (isSuperAdmin || isAdmin) {
+      const allRows = await findPendingDeptHeadBorrowRequestsByCompany(
+        pool,
+        companyId
+      );
+      return { rows: allRows };
     }
 
-    const [approverRows] = (await pool.execute(
-      'SELECT department_id FROM users WHERE userID = ?',
-      [userId]
-    )) as [{ department_id: string | null }[], unknown];
-    const approverDepartmentId = approverRows[0]?.department_id ?? null;
-    if (approverDepartmentId == null) {
+    // User only sees pending requests for employees assigned to them as approver
+    const requesterIds = await getRequestersAssignedToApprover(userId, companyId);
+    if (requesterIds.length === 0) {
       return { rows: [] };
     }
+    const requesterSet = new Set(requesterIds);
 
-    const rows = await findPendingDeptHeadBorrowRequests(
+    const allRows = await findPendingDeptHeadBorrowRequestsByCompany(
       pool,
-      approverDepartmentId,
       companyId
     );
+    const rows = allRows.filter(r => requesterSet.has(String(r.user_id)));
     return { rows };
   }
 
@@ -220,22 +213,9 @@ export class AssetBorrowRequestsService {
     borrowRequestId: string,
     body: DeptHeadApproveBorrowRequestDto
   ): Promise<{ ok: true } | { error: string; status: number }> {
-    if (!(await isUserManagerApprover1(userId))) {
-      return { error: 'Not authorized as department head approver', status: 403 };
-    }
-
-    const { companyId } = await getAssetScope(pool, userId);
+    const { companyId, isSuperAdmin, isAdmin } = await getAssetScope(pool, userId);
     if (!companyId) {
       return { error: 'Company context required', status: 400 };
-    }
-
-    const [approverRows] = (await pool.execute(
-      'SELECT department_id FROM users WHERE userID = ?',
-      [userId]
-    )) as [{ department_id: string | null }[], unknown];
-    const approverDepartmentId = approverRows[0]?.department_id ?? null;
-    if (approverDepartmentId == null) {
-      return { error: 'Approver has no department', status: 400 };
     }
 
     const row = await getBorrowRequestById(pool, borrowRequestId);
@@ -245,19 +225,23 @@ export class AssetBorrowRequestsService {
     if (row.company_id !== companyId) {
       return { error: 'Borrow request not in your company', status: 403 };
     }
-    if (row.dept_head_signed_at || row.declined_at) {
+    if (row.dept_head_signed_at || row.sub_approver_1_signed_at || row.declined_at) {
       return { error: 'Borrow request is no longer pending approval', status: 400 };
     }
 
-    const requesterDept = row.requester_department_id ?? null;
-    if (requesterDept !== approverDepartmentId) {
-      return { error: 'Not authorized for this requester department', status: 403 };
+    // Authorization is checked against the request owner's designated approver
+    const isApprover = await isDesignatedApprover(userId, row.user_id);
+    const isSubApprover = await isDesignatedSubApprover(userId, row.user_id);
+    if (!isApprover && !isSubApprover && !isSuperAdmin && !isAdmin) {
+      return { error: 'Not authorized as department head approver', status: 403 };
     }
 
+    const isSubApproverAction = isSubApprover && !isApprover;
     const updated = await updateBorrowRequestDeptHeadApprove(
       pool,
       borrowRequestId,
-      userId
+      userId,
+      isSubApproverAction
     );
     if (!updated) {
       return { error: 'Could not approve borrow request', status: 409 };
@@ -271,22 +255,9 @@ export class AssetBorrowRequestsService {
     userId: string,
     borrowRequestId: string
   ): Promise<{ ok: true } | { error: string; status: number }> {
-    if (!(await isUserManagerApprover1(userId))) {
-      return { error: 'Not authorized as department head approver', status: 403 };
-    }
-
-    const { companyId } = await getAssetScope(pool, userId);
+    const { companyId, isSuperAdmin, isAdmin } = await getAssetScope(pool, userId);
     if (!companyId) {
       return { error: 'Company context required', status: 400 };
-    }
-
-    const [approverRows] = (await pool.execute(
-      'SELECT department_id FROM users WHERE userID = ?',
-      [userId]
-    )) as [{ department_id: string | null }[], unknown];
-    const approverDepartmentId = approverRows[0]?.department_id ?? null;
-    if (approverDepartmentId == null) {
-      return { error: 'Approver has no department', status: 400 };
     }
 
     const row = await getBorrowRequestById(pool, borrowRequestId);
@@ -296,13 +267,15 @@ export class AssetBorrowRequestsService {
     if (row.company_id !== companyId) {
       return { error: 'Borrow request not in your company', status: 403 };
     }
-    if (row.dept_head_signed_at || row.declined_at) {
+    if (row.dept_head_signed_at || row.sub_approver_1_signed_at || row.declined_at) {
       return { error: 'Borrow request is no longer pending approval', status: 400 };
     }
 
-    const requesterDept = row.requester_department_id ?? null;
-    if (requesterDept !== approverDepartmentId) {
-      return { error: 'Not authorized for this requester department', status: 403 };
+    // Authorization is checked against the request owner's designated approver
+    const isApprover = await isDesignatedApprover(userId, row.user_id);
+    const isSubApprover = await isDesignatedSubApprover(userId, row.user_id);
+    if (!isApprover && !isSubApprover && !isSuperAdmin && !isAdmin) {
+      return { error: 'Not authorized as department head approver', status: 403 };
     }
 
     const updated = await updateBorrowRequestDeptHeadDecline(
@@ -346,6 +319,12 @@ export class AssetBorrowRequestsService {
     ) {
       return { error: 'This borrow request is not open for asset selection', status: 400 };
     }
+    if (!row.dept_head_signed_at && !row.sub_approver_1_signed_at) {
+      return {
+        error: 'This borrow request still requires department head approval',
+        status: 400,
+      };
+    }
     const departmentIds = await getDepartmentIdsForScope(
       pool,
       row.borrow_scope,
@@ -354,8 +333,6 @@ export class AssetBorrowRequestsService {
     const assets = await findAvailableAssetsForBorrowStaffPool(pool, {
       companyId,
       departmentIds,
-      preferredCategoryId: row.category_id,
-      preferredTypeId: row.type_id,
     });
     return { assets };
   }
@@ -394,6 +371,12 @@ export class AssetBorrowRequestsService {
     }
     if (row.approved_at) {
       return { error: 'Borrow request is already processed', status: 400 };
+    }
+    if (!row.dept_head_signed_at && !row.sub_approver_1_signed_at) {
+      return {
+        error: 'Borrow request still requires department head approval',
+        status: 400,
+      };
     }
 
     const departmentIds = await getDepartmentIdsForScope(
@@ -463,6 +446,12 @@ export class AssetBorrowRequestsService {
     if (row.processor_declined_at || row.declined_at || row.status === 'declined') {
       return { error: 'Borrow request is already closed', status: 400 };
     }
+    if (!row.dept_head_signed_at && !row.sub_approver_1_signed_at) {
+      return {
+        error: 'Borrow request still requires department head approval',
+        status: 400,
+      };
+    }
     const updated = await updateBorrowRequestStaffDecline(pool, {
       borrowRequestId: params.borrowRequestId,
       reason: params.reason,
@@ -480,6 +469,14 @@ export class AssetBorrowRequestsService {
     if (!companyId) return { error: 'Company context required', status: 400 };
 
     const borrowRequests = await findApprovedBorrowRequestsForReceive(pool, companyId, borrowScope);
+    return { borrowRequests };
+  }
+
+  static async listReceivedByMe(
+    pool: Pool,
+    userId: string
+  ): Promise<{ borrowRequests: AssetBorrowRequestRow[] } | { error: string; status: number }> {
+    const borrowRequests = await findBorrowRequestsReceivedByMe(pool, userId);
     return { borrowRequests };
   }
 
@@ -631,7 +628,15 @@ export class AssetBorrowRequestsService {
         this.borrowDueRemindersSchemaOk = false;
         return;
       }
-      logger.error('[borrow reminders] processDueReminders failed', err);
+      logger.error('[borrow reminders] processDueReminders failed', {
+        message: err instanceof Error ? err.message : String(err),
+        code: (err as { code?: string })?.code,
+        errno: (err as { errno?: number })?.errno,
+        sqlState: (err as { sqlState?: string })?.sqlState,
+        sqlMessage: (err as { sqlMessage?: string })?.sqlMessage,
+        sql: (err as { sql?: string })?.sql,
+        stack: err instanceof Error ? err.stack : undefined,
+      });
     }
   }
 }

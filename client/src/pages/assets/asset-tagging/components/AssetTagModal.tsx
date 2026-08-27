@@ -14,7 +14,7 @@ import { TagPreviewCard } from './TagPreviewCard';
 
 const BARCODE_WIDTH_MAP: Record<number, number> = { 2: 520, 3: 460 };
 
-interface TagAssetData { id: string; name: string; company_logo?: string; company_name?: string }
+interface TagAssetData { id: string; name: string; company_logo?: string; company_name?: string; tagCode?: string }
 
 interface AssetTagModalProps {
   isOpen: boolean;
@@ -136,7 +136,7 @@ export function AssetTagModal({
             style={{ gridTemplateColumns: `repeat(${columns}, minmax(0, 1fr))` }}
           >
             {selectedAssetsData.map(asset => {
-              const qrData = `${window.location.origin}/assets/details/${asset.id}`;
+              const qrData = `${window.location.origin}/assets/details/${asset.tagCode || asset.id}`;
 
               return (
                   <TagPreviewCard

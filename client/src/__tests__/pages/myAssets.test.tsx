@@ -49,6 +49,10 @@ vi.mock('sonner', () => ({
   toast: { error: vi.fn(), success: vi.fn() },
 }));
 
+vi.mock('@/context/CompanyContext', () => ({
+  useCompanyContext: () => ({ activeCompany: { id: 'c1', name: 'Test Company' }, loading: false, companies: [], fetchCompanies: vi.fn(), fetchActiveCompany: vi.fn(), setActiveCompany: vi.fn() }),
+}));
+
 function renderPage() {
   return render(
     <BrowserRouter>
@@ -68,6 +72,15 @@ describe('MyAssetsPage', () => {
     renderPage();
     await waitFor(() => {
       expect(screen.getByText('My Assets')).toBeDefined();
+    });
+  });
+
+  it('should render the IT Asset and Admin Asset scope tabs', async () => {
+    (api.get as any).mockResolvedValue({ assets: [] });
+    renderPage();
+    await waitFor(() => {
+      expect(screen.getByRole('tab', { name: 'IT Asset' })).toBeDefined();
+      expect(screen.getByRole('tab', { name: 'Admin Asset' })).toBeDefined();
     });
   });
 

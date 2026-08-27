@@ -24,6 +24,8 @@ import {
   ImageIcon,
   Crown,
   Layers,
+  Download,
+  FileText,
 } from 'lucide-react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { PageHeader } from '@/components/common/PageHeader';
@@ -44,12 +46,20 @@ import { Checkbox } from '@/components/ui/checkbox';
 import { Switch } from '@/components/ui/switch';
 import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
+import { Combobox } from '@/components/ui/combobox';
 import { api } from '@/lib/api';
 import { cn } from '@/lib/utils';
 import { toast } from 'sonner';
 import { useCurrentUser } from '@/hooks/useCurrentUser';
 import { useUserPermissions } from '@/hooks/useUserPermissions';
-import { Dialog } from '@/components/ui/dialog';
+import { useAssetMovementExport } from '@/hooks/useAssetMovementExport';
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogDescription,
+} from '@/components/ui/dialog';
 import {
   AppDialogFrame,
   AppDialogGradientHeader,
@@ -124,7 +134,10 @@ interface ReturnHistoryRow {
   id: string;
   assetName: string;
   assetCode: string;
+  formNumber: string;
   returnedBy: string;
+  fromDepartment: string;
+  toDepartment: string;
   processedBy: string;
   condition: string;
   returnLocation: string;
@@ -133,6 +146,9 @@ interface ReturnHistoryRow {
   conditionImages?: string[];
   status?: string;
   viaAssetTransfer?: boolean;
+  fromAccountabilityFormNumber?: string | null;
+  toAccountabilityFormNumber?: string | null;
+  newOwnerName?: string | null;
 }
 
 export default function AssetsReturn() {
@@ -140,6 +156,9 @@ export default function AssetsReturn() {
   const { hasPermission, roleCustodian } = useUserPermissions();
   const { activeCompany } = useCompanyContext();
   const [assignments, setAssignments] = useState<AssetAssignment[]>([]);
+  const [inFlightReturnAssignmentIds, setInFlightReturnAssignmentIds] = useState<
+    string[]
+  >([]);
   const [departments, setDepartments] = useState<any[]>([]);
   const [users, setUsers] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
@@ -183,6 +202,11 @@ export default function AssetsReturn() {
   const [selectedIntangibleAssetIds, setSelectedIntangibleAssetIds] = useState<string[]>([]);
   const [smsOtpDialogOpen, setSmsOtpDialogOpen] = useState(false);
   const pendingReturnActionRef = useRef<(() => Promise<void>) | null>(null);
+  // Export filter departments and users
+  const [exportDepartments, setExportDepartments] = useState<any[]>([]);
+  const [exportUsers, setExportUsers] = useState<any[]>([]);
+  // Export filter accountability form options
+  const [exportAccountabilityForms, setExportAccountabilityForms] = useState<string[]>([]);
 
   // Checklist dialog state for return flow
   const [checklistDialogOpen, setChecklistDialogOpen] = useState(false);
@@ -211,6 +235,39 @@ export default function AssetsReturn() {
     : currentUser?.company_id || undefined;
   const [scope, setScope] = useState<'it' | 'admin'>('it');
   const displayLoading = loading;
+
+  // Return History Export & Search
+  const {
+    isExportDialogOpen: isReturnHistoryExportOpen,
+    setIsExportDialogOpen: setIsReturnHistoryExportOpen,
+    exportType: returnHistoryExportType,
+    setExportType: setReturnHistoryExportType,
+    exportStep: returnHistoryExportStep,
+    setExportStep: setReturnHistoryExportStep,
+    filters: returnHistoryFilters,
+    setFilters: setReturnHistoryFilters,
+    handleExportClick: handleReturnHistoryExportClick,
+    handleExportConfirm: handleReturnHistoryExportConfirm,
+    handleFilterChange: handleReturnHistoryFilterChange,
+    handlePrevStep: handleReturnHistoryPrevStep,
+    resetDialog: resetReturnHistoryExportDialog,
+  } = useAssetMovementExport();
+
+  // Return history search column options
+  const returnHistorySearchColumns = [
+    { label: 'All Columns', value: 'all' },
+    { label: 'Asset', value: 'asset' },
+    { label: 'Return Form #', value: 'formNumber' },
+    { label: 'From Accountability', value: 'fromAccountabilityFormNumber' },
+    { label: 'To Accountability', value: 'toAccountabilityFormNumber' },
+    { label: 'Returned By', value: 'returnedBy' },
+    { label: 'From Department', value: 'fromDepartment' },
+    { label: 'To Department', value: 'toDepartment' },
+    { label: 'Processed By', value: 'processedBy' },
+    { label: 'Status', value: 'status' },
+    { label: 'Return Location', value: 'returnLocation' },
+    { label: 'Return Date', value: 'returnDate' },
+  ];
 
   const flattenedReturnHistory = useMemo((): ReturnHistoryRow[] => {
     return returnHistory.map((returnRecord: any) => {
@@ -262,6 +319,14 @@ export default function AssetsReturn() {
           : returnRecord.viaAssetTransfer
             ? 'Via asset transfer.'
             : notes;
+      const fromDepartment = assignment?.department?.name ?? 'Unknown';
+      let toDepartmentName = fromDepartment;
+      if (returnRecord.return_department_id) {
+        const toDept = departments.find(
+          (d: any) => d.departmentID === returnRecord.return_department_id
+        );
+        toDepartmentName = toDept ? toDept.name : returnRecord.return_department_id;
+      }
 
       return {
         id:
@@ -269,10 +334,13 @@ export default function AssetsReturn() {
           `synthetic-${returnRecord.form_id}-${returnRecord.assignment_id}`,
         assetName: asset?.name || 'Unknown Asset',
         assetCode: asset?.code || 'No Code',
+        formNumber: returnRecord.form_number ?? 'N/A',
         returnedBy:
           user?.first_name && user?.last_name
             ? `${user.first_name} ${user.last_name}`
             : 'Unknown User',
+        fromDepartment,
+        toDepartment: toDepartmentName,
         processedBy: returnRecord.processed_by || 'Unknown',
         condition: returnRecord.return_condition || 'Not Specified',
         returnLocation,
@@ -284,6 +352,11 @@ export default function AssetsReturn() {
           conditionImages.length > 0 ? conditionImages : undefined,
         status: returnRecord.status ?? 'Processed',
         viaAssetTransfer: returnRecord.viaAssetTransfer ?? false,
+        fromAccountabilityFormNumber:
+          returnRecord.fromAccountabilityFormNumber ?? null,
+        toAccountabilityFormNumber:
+          returnRecord.toAccountabilityFormNumber ?? null,
+        newOwnerName: returnRecord.newOwnerName ?? null,
       };
     });
   }, [returnHistory, locations]);
@@ -307,10 +380,61 @@ export default function AssetsReturn() {
         ),
       },
       {
+        id: 'formNumber',
+        header: 'Return Form #',
+        accessorKey: 'formNumber',
+        size: 140,
+      },
+      {
+        id: 'fromAccountability',
+        header: 'From Asset Accountability',
+        accessorKey: 'fromAccountabilityFormNumber',
+        size: 170,
+        cell: ({ row }) => (
+          <span className="text-sm text-gray-900">
+            {row.original.fromAccountabilityFormNumber ?? '—'}
+          </span>
+        ),
+      },
+      {
+        id: 'toAccountability',
+        header: 'New Asset Accountability',
+        accessorKey: 'toAccountabilityFormNumber',
+        size: 170,
+        cell: ({ row }) => (
+          <span className="text-sm text-gray-900">
+            {row.original.toAccountabilityFormNumber ?? '—'}
+          </span>
+        ),
+      },
+      {
+        id: 'newOwner',
+        header: 'New Owner',
+        accessorKey: 'newOwnerName',
+        size: 160,
+        cell: ({ row }) => (
+          <span className="text-sm text-gray-900">
+            {row.original.newOwnerName ?? '—'}
+          </span>
+        ),
+      },
+      {
         id: 'returnedBy',
         header: 'Returned By',
         accessorKey: 'returnedBy',
         size: 160,
+      },
+      {
+        id: 'fromDepartment',
+        header: 'From Department',
+        accessorKey: 'fromDepartment',
+        size: 150,
+      },
+      {
+        id: 'toDepartment',
+        header: 'To Department',
+        accessorKey: 'toDepartment',
+        size: 150,
       },
       {
         id: 'processedBy',
@@ -374,7 +498,7 @@ export default function AssetsReturn() {
         cell: ({ row }) => {
           const imgs = row.original.conditionImages ?? [];
           if (imgs.length === 0)
-            return <span className="text-slate-400">â€”</span>;
+            return <span className="text-slate-400">—</span>;
           return (
             <Button
               variant="outline"
@@ -418,6 +542,46 @@ export default function AssetsReturn() {
     }
   };
 
+  const fetchExportDepartments = async () => {
+    try {
+      const url = effectiveCompanyId ? `/departments?companyId=${effectiveCompanyId}` : '/departments';
+      const response = await api.get(url);
+      setExportDepartments(response.departments || []);
+    } catch (error) {
+      console.error('Failed to fetch export departments:', error);
+      setExportDepartments([]);
+    }
+  };
+
+  const fetchExportUsers = async () => {
+    try {
+      const url = effectiveCompanyId ? `/users?companyId=${effectiveCompanyId}` : '/users';
+      const response = await api.get(url);
+      setExportUsers(response.users || []);
+    } catch (error) {
+      console.error('Failed to fetch export users:', error);
+      setExportUsers([]);
+    }
+  };
+
+  const fetchExportAccountabilityForms = async () => {
+    try {
+      const response = await api.get('/accountability-forms');
+      const forms = response.forms || [];
+      const formNumbers = Array.from(
+        new Set<string>(
+          forms
+            .map((f: any) => f.formNumber)
+            .filter((n: unknown): n is string => typeof n === 'string' && n.trim() !== '')
+        )
+      ).sort((a: string, b: string) => a.localeCompare(b));
+      setExportAccountabilityForms(formNumbers);
+    } catch (error) {
+      console.error('Failed to fetch export accountability forms:', error);
+      setExportAccountabilityForms([]);
+    }
+  };
+
 
   const fetchCategories = async () => {
     try {
@@ -458,6 +622,7 @@ export default function AssetsReturn() {
 
       const queryParams = new URLSearchParams();
       queryParams.append('limit', '-1');
+      queryParams.append('includeInFlightReturns', '1');
       if (companyId) {
         queryParams.append('companyId', companyId);
       }
@@ -466,6 +631,7 @@ export default function AssetsReturn() {
       }
       const response = await api.get(`/asset-assignments/filtered?${queryParams.toString()}`);
       setAssignments(response.assignments || []);
+      setInFlightReturnAssignmentIds(response.inFlightReturnAssignmentIds || []);
     } catch (error) {
       console.error('Failed to fetch assignments:', error);
       setAssignments([]);
@@ -519,7 +685,7 @@ export default function AssetsReturn() {
       setLoading(false);
     };
     fetchData();
-  }, [activeCompany?.id, scope]);
+  }, [activeCompany?.id, scope, currentUser]);
 
   useEffect(() => {
     if (!showScopeTabs) return;
@@ -527,11 +693,27 @@ export default function AssetsReturn() {
     setExpandedBuilderForSelect(null);
   }, [scope, showScopeTabs]);
 
+  // Fetch export departments and users when export dialog opens
+  useEffect(() => {
+    if (isReturnHistoryExportOpen) {
+      fetchExportDepartments();
+      fetchExportUsers();
+      fetchExportAccountabilityForms();
+    }
+  }, [isReturnHistoryExportOpen]);
+
   // Fetch return history
   const fetchReturnHistory = async () => {
     try {
       setReturnHistoryLoading(true);
-      const response = await api.get('/asset-returns');
+      const queryParams = new URLSearchParams();
+      if (showScopeTabs) {
+        queryParams.append('scope', scope);
+      }
+      const url = queryParams.toString()
+        ? `/asset-returns?${queryParams.toString()}`
+        : '/asset-returns';
+      const response = await api.get(url);
       setReturnHistory(response.assetReturns || []);
     } catch (error) {
       console.error('Failed to fetch return history:', error);
@@ -543,14 +725,16 @@ export default function AssetsReturn() {
 
   useEffect(() => {
     fetchReturnHistory();
-  }, []);
+  }, [scope, showScopeTabs]);
 
   const handleBuilderReturnWhole = (builderId: string) => {
     const entry = buildersWithAssignments.find(
       ({ builder }: { builder: any }) => builder.builderID === builderId
     );
     if (!entry) return;
-    const ids = entry.assignments.map((a: AssetAssignment) => a.assignmentID);
+    const ids = entry.assignments
+      .map((a: AssetAssignment) => a.assignmentID)
+      .filter(id => !isInFlightReturn(id));
     setSelectedAssignments(prev => [...new Set([...prev, ...ids])]);
   };
 
@@ -558,6 +742,7 @@ export default function AssetsReturn() {
     assignmentId: string,
     checked: boolean | string
   ) => {
+    if (isInFlightReturn(assignmentId)) return;
     const isChecked = Boolean(checked);
     if (isChecked) {
       setSelectedAssignments(prev => [...prev, assignmentId]);
@@ -582,15 +767,21 @@ export default function AssetsReturn() {
       ({ builder }: { builder: any }) => builder.builderID === builderId
     );
     if (!entry || entry.assignments.length === 0) return false;
-    return entry.assignments.every((a: AssetAssignment) =>
-      selectedAssignments.includes(a.assignmentID)
-    );
+    const selectableIds = entry.assignments
+      .map((a: AssetAssignment) => a.assignmentID)
+      .filter(id => !isInFlightReturn(id));
+    if (selectableIds.length === 0) return false;
+    return selectableIds.every(id => selectedAssignments.includes(id));
   };
+
+  const isInFlightReturn = (assignmentId: string) =>
+    inFlightReturnAssignmentIds.includes(assignmentId);
 
   const handleAssignmentSelection = (
     assignmentId: string,
     checked: boolean | string
   ) => {
+    if (isInFlightReturn(assignmentId)) return;
     const isChecked = Boolean(checked);
     if (isChecked) {
       setSelectedAssignments(prev => [...prev, assignmentId]);
@@ -782,7 +973,7 @@ export default function AssetsReturn() {
     );
     const locDisplayName =
       returnLoc && room?.room_name
-        ? `${returnLoc.name} â€” ${room.room_name}`
+        ? `${returnLoc.name} — ${room.room_name}`
         : returnLoc?.name ?? '';
     const returnTypeParts: string[] = [];
     if (returnTypeReturned) returnTypeParts.push('Returned');
@@ -869,6 +1060,7 @@ export default function AssetsReturn() {
         : null,
       returnType: returnTypeStr || null,
       showProcessorSignatureBlock: !!verificationConfirmSign,
+      ownerAbsent: ownerAbsent && assignAllToMe,
     };
   };
 
@@ -931,7 +1123,7 @@ export default function AssetsReturn() {
               'Return request created. Obtain the department head signature on the downloaded form.'
           : assignAllToMe
             ? serverMsg ??
-                'Return request created. The returner must sign the form in Profile â†’ Documents, then the department head must approve before assets are assigned to you.'
+                'Return has been initialized. The returner must sign the form in Profile â†’ Documents, then the department head must approve before assets are assigned to you.'
             : serverMsg ||
                 `Successfully returned ${totalAssets} asset(s)`
       );
@@ -1311,6 +1503,39 @@ export default function AssetsReturn() {
                       onSearchColumnChange={setSearchColumn}
                       className="mt-4"
                     />
+                    {filteredAssignments.length > 0 && (
+                      <div className="mt-3 flex justify-end">
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          onClick={() => {
+                            const allVisibleIds = filteredAssignments
+                              .map(a => a.assignmentID)
+                              .filter(id => !isInFlightReturn(id));
+                            const allSelected =
+                              allVisibleIds.length > 0 &&
+                              allVisibleIds.every(id =>
+                                selectedAssignments.includes(id)
+                              );
+                            if (allSelected) {
+                              setSelectedAssignments(prev =>
+                                prev.filter(id => !allVisibleIds.includes(id))
+                              );
+                            } else {
+                              setSelectedAssignments(prev => [
+                                ...new Set([...prev, ...allVisibleIds]),
+                              ]);
+                            }
+                          }}
+                          className="text-red-600 border-red-300 hover:bg-red-50 whitespace-nowrap"
+                        >
+                          {filteredAssignments.length > 0 &&
+                          filteredAssignments.every(a => selectedAssignments.includes(a.assignmentID))
+                            ? 'Deselect All'
+                            : 'Select All'}
+                        </Button>
+                      </div>
+                    )}
                   </CardHeader>
 
                   <CardContent className="pt-0">
@@ -1350,7 +1575,8 @@ export default function AssetsReturn() {
                             key={assignment.assignmentID}
                             className={`group relative p-4 border-2 rounded-xl transition-all duration-200 ${
                               hasPermission('Asset Return', 'create') &&
-                              hasPermission('Asset Return', 'edit')
+                              hasPermission('Asset Return', 'edit') &&
+                              !isInFlightReturn(assignment.assignmentID)
                                 ? 'cursor-pointer'
                                 : 'cursor-not-allowed opacity-50'
                             } ${
@@ -1363,6 +1589,7 @@ export default function AssetsReturn() {
                             onClick={() =>
                               hasPermission('Asset Return', 'create') &&
                               hasPermission('Asset Return', 'edit') &&
+                              !isInFlightReturn(assignment.assignmentID) &&
                               handleAssignmentSelection(
                                 assignment.assignmentID,
                                 !selectedAssignments.includes(
@@ -1389,7 +1616,8 @@ export default function AssetsReturn() {
                                   className="pointer-events-none"
                                   disabled={
                                     !hasPermission('Asset Return', 'create') ||
-                                    !hasPermission('Asset Return', 'edit')
+                                    !hasPermission('Asset Return', 'edit') ||
+                                    isInFlightReturn(assignment.assignmentID)
                                   }
                                 />
                               </div>
@@ -1449,6 +1677,14 @@ export default function AssetsReturn() {
                                   >
                                     {assignment.status}
                                   </Badge>
+                                  {isInFlightReturn(assignment.assignmentID) && (
+                                    <Badge
+                                      variant="outline"
+                                      className="text-xs border-blue-300 text-blue-700"
+                                    >
+                                      Return in progress
+                                    </Badge>
+                                  )}
                                   <Badge
                                     variant="outline"
                                     className="text-xs border-gray-300"
@@ -1723,9 +1959,13 @@ export default function AssetsReturn() {
                                                 key={a.assignmentID}
                                                 className={cn(
                                                   'flex items-center gap-3 p-3 rounded-lg border-2 transition-all cursor-pointer min-w-0 pl-4 relative before:content-["â€¢"] before:absolute before:left-2 before:font-bold before:text-gray-500',
-                                                  selectedAssignments.includes(
+                                                  isInFlightReturn(
                                                     a.assignmentID
                                                   )
+                                                    ? 'cursor-not-allowed opacity-50 border-gray-200'
+                                                    : selectedAssignments.includes(
+                                                        a.assignmentID
+                                                      )
                                                     ? 'border-red-500 bg-red-50'
                                                     : 'border-gray-200 hover:border-gray-300'
                                                 )}
@@ -1737,6 +1977,9 @@ export default function AssetsReturn() {
                                                   hasPermission(
                                                     'Asset Return',
                                                     'edit'
+                                                  ) &&
+                                                  !isInFlightReturn(
+                                                    a.assignmentID
                                                   ) &&
                                                   handleBuilderAssetToggle(
                                                     a.assignmentID,
@@ -1766,6 +2009,9 @@ export default function AssetsReturn() {
                                                     !hasPermission(
                                                       'Asset Return',
                                                       'edit'
+                                                    ) ||
+                                                    isInFlightReturn(
+                                                      a.assignmentID
                                                     )
                                                   }
                                                   className="flex-shrink-0"
@@ -1782,6 +2028,16 @@ export default function AssetsReturn() {
                                                   {a.user?.first_name}{' '}
                                                   {a.user?.last_name}
                                                 </span>
+                                                {isInFlightReturn(
+                                                  a.assignmentID
+                                                ) && (
+                                                  <Badge
+                                                    variant="outline"
+                                                    className="text-xs border-blue-300 text-blue-700 flex-shrink-0"
+                                                  >
+                                                    Return in progress
+                                                  </Badge>
+                                                )}
                                               </li>
                                             )
                                           )}
@@ -1858,15 +2114,37 @@ export default function AssetsReturn() {
         {/* Return History Table */}
         <Card className="shadow-xl border-0 bg-white/80 backdrop-blur-sm">
           <CardHeader>
-            <CardTitle className="flex items-center gap-3 text-xl">
-              <div className="p-2 bg-red-100 rounded-lg">
-                <RotateCcw className="h-5 w-5 text-red-600" />
+            <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 w-full">
+              <CardTitle className="flex items-center gap-3 text-xl">
+                <div className="p-2 bg-red-100 rounded-lg">
+                  <RotateCcw className="h-5 w-5 text-red-600" />
+                </div>
+                Return History
+                <Badge variant="secondary" className="ml-auto">
+                  {flattenedReturnHistory.length} returns
+                </Badge>
+              </CardTitle>
+              <div className="flex items-center gap-2">
+                <Button
+                  variant="header"
+                  size="sm"
+                  onClick={() => handleReturnHistoryExportClick('pdf')}
+                  className="flex items-center gap-2"
+                >
+                  <Download className="h-4 w-4" />
+                  Export PDF
+                </Button>
+                <Button
+                  variant="header"
+                  size="sm"
+                  onClick={() => handleReturnHistoryExportClick('excel')}
+                  className="flex items-center gap-2"
+                >
+                  <Download className="h-4 w-4" />
+                  Export Excel
+                </Button>
               </div>
-              Return History
-              <Badge variant="secondary" className="ml-auto">
-                {returnHistory.length} returns
-              </Badge>
-            </CardTitle>
+            </div>
           </CardHeader>
 
           <CardContent>
@@ -1901,7 +2179,7 @@ export default function AssetsReturn() {
                   </div>
                 ))}
               </div>
-            ) : returnHistory.length === 0 ? (
+            ) : flattenedReturnHistory.length === 0 ? (
               <div className="text-center py-12">
                 <div className="inline-flex items-center justify-center w-20 h-20 rounded-full bg-gradient-to-br from-red-100 to-red-200 mb-4">
                   <RotateCcw className="h-10 w-10 text-red-600" />
@@ -1919,6 +2197,7 @@ export default function AssetsReturn() {
                 data={flattenedReturnHistory}
                 columns={returnHistoryColumns}
                 searchPlaceholder="Search return history..."
+                searchColumnOptions={returnHistorySearchColumns}
                 emptyState={
                   <div className="text-center py-8">
                     <p className="text-gray-500">No matching returns</p>
@@ -2325,7 +2604,7 @@ export default function AssetsReturn() {
                 <p className="text-sm text-slate-700">
                   {currentUser?.position?.trim()
                     ? currentUser.position
-                    : 'â€” (add a position on your profile if missing)'}
+                    : '— (add a position on your profile if missing)'}
                 </p>
                 <p className="text-xs text-slate-500">
                   Shown on the return form PDF after processing.
@@ -2574,6 +2853,179 @@ export default function AssetsReturn() {
           </AppDialogFrame>
         </Dialog>
 
+        {/* Return History Export Dialog */}
+        <Dialog open={isReturnHistoryExportOpen} onOpenChange={setIsReturnHistoryExportOpen}>
+          <DialogContent className="max-w-xl sm:max-w-2xl">
+            <DialogHeader>
+              <DialogTitle>
+                {returnHistoryExportStep === 1
+                  ? `Export ${returnHistoryExportType?.toUpperCase() ?? ''} — Step 1: Format`
+                  : `Export ${returnHistoryExportType?.toUpperCase() ?? ''} — Step 2: Filters`}
+              </DialogTitle>
+              <DialogDescription>
+                {returnHistoryExportStep === 1
+                  ? 'Choose the export format.'
+                  : 'Apply optional filters to narrow down the exported data.'}
+              </DialogDescription>
+            </DialogHeader>
+            <div className="py-4 space-y-6">
+              {returnHistoryExportStep === 1 && (
+                <div className="grid grid-cols-2 gap-4">
+                  <Button
+                    variant="outline"
+                    className="h-24 flex-col gap-3"
+                    onClick={() => {
+                      setReturnHistoryExportType('pdf');
+                      setReturnHistoryExportStep(2);
+                    }}
+                  >
+                    <FileText className="h-8 w-8 text-red-600" />
+                    <span className="font-semibold">PDF</span>
+                    <span className="text-xs text-gray-500">Document format</span>
+                  </Button>
+                  <Button
+                    variant="outline"
+                    className="h-24 flex-col gap-3"
+                    onClick={() => {
+                      setReturnHistoryExportType('excel');
+                      setReturnHistoryExportStep(2);
+                    }}
+                  >
+                    <FileText className="h-8 w-8 text-green-600" />
+                    <span className="font-semibold">Excel</span>
+                    <span className="text-xs text-gray-500">Spreadsheet format</span>
+                  </Button>
+                </div>
+              )}
+              {returnHistoryExportStep === 2 && (
+                <div className="space-y-4">
+                  <div className="grid grid-cols-2 gap-4">
+                    <div>
+                      <Label className="text-sm font-medium">From Date</Label>
+                      <Input
+                        type="date"
+                        value={returnHistoryFilters.fromDate}
+                        onChange={e => handleReturnHistoryFilterChange('fromDate', e.target.value)}
+                        className="mt-1 h-9 text-sm"
+                      />
+                    </div>
+                    <div>
+                      <Label className="text-sm font-medium">To Date</Label>
+                      <Input
+                        type="date"
+                        value={returnHistoryFilters.toDate}
+                        onChange={e => handleReturnHistoryFilterChange('toDate', e.target.value)}
+                        className="mt-1 h-9 text-sm"
+                      />
+                    </div>
+                  </div>
+                  <div className="grid grid-cols-2 gap-4">
+                    <div>
+                      <Label className="text-sm font-medium">Accountability Form No (All)</Label>
+                      <Input
+                        type="text"
+                        placeholder="e.g. AF-001"
+                        value={returnHistoryFilters.accountabilityFormNo}
+                        onChange={e => handleReturnHistoryFilterChange('accountabilityFormNo', e.target.value)}
+                        className="mt-1 h-9 text-sm"
+                      />
+                    </div>
+                    <div>
+                      <Label className="text-sm font-medium">Asset Code</Label>
+                      <Input
+                        type="text"
+                        placeholder="e.g. AST-001"
+                        value={returnHistoryFilters.assetCode}
+                        onChange={e => handleReturnHistoryFilterChange('assetCode', e.target.value)}
+                        className="mt-1 h-9 text-sm"
+                      />
+                    </div>
+                  </div>
+                  <div className="grid grid-cols-2 gap-4">
+                    <div>
+                      <Label className="text-sm font-medium">From Asset Accountability</Label>
+                      <Combobox
+                        options={[
+                          { value: '', label: 'All Forms' },
+                          ...exportAccountabilityForms.map(n => ({ value: n, label: n })),
+                        ]}
+                        value={returnHistoryFilters.oldAccountabilityFormNo}
+                        onChange={v => handleReturnHistoryFilterChange('oldAccountabilityFormNo', v)}
+                        placeholder="Search from accountability"
+                        className="mt-1 h-9 text-sm"
+                      />
+                    </div>
+                    <div>
+                      <Label className="text-sm font-medium">To Asset Accountability</Label>
+                      <Combobox
+                        options={[
+                          { value: '', label: 'All Forms' },
+                          ...exportAccountabilityForms.map(n => ({ value: n, label: n })),
+                        ]}
+                        value={returnHistoryFilters.newAccountabilityFormNo}
+                        onChange={v => handleReturnHistoryFilterChange('newAccountabilityFormNo', v)}
+                        placeholder="Search to accountability"
+                        className="mt-1 h-9 text-sm"
+                      />
+                    </div>
+                  </div>
+                  <div className="grid grid-cols-2 gap-4">
+                    <div>
+                      <Label className="text-sm font-medium">Department</Label>
+                      <Combobox
+                        options={[
+                          { value: '', label: 'All Departments' },
+                          ...exportDepartments.map((dept: any) => ({ value: dept.departmentID, label: dept.name })),
+                        ]}
+                        value={returnHistoryFilters.departmentId}
+                        onChange={v => handleReturnHistoryFilterChange('departmentId', v)}
+                        placeholder="Search department"
+                        className="mt-1 h-9 text-sm"
+                      />
+                    </div>
+                    <div>
+                      <Label className="text-sm font-medium">User</Label>
+                      <Combobox
+                        options={[
+                          { value: '', label: 'All Users' },
+                          ...exportUsers
+                            .filter(
+                              (u: any) =>
+                                !returnHistoryFilters.departmentId ||
+                                u.department_id === returnHistoryFilters.departmentId
+                            )
+                            .map((user: any) => ({
+                              value: user.userID,
+                              label: `${user.first_name} ${user.last_name} (${user.email})`,
+                            })),
+                        ]}
+                        value={returnHistoryFilters.userId}
+                        onChange={v => handleReturnHistoryFilterChange('userId', v)}
+                        placeholder="Search user"
+                        className="mt-1 h-9 text-sm"
+                      />
+                    </div>
+                  </div>
+                </div>
+              )}
+            </div>
+            <div className="flex justify-between pt-4 border-t">
+              {returnHistoryExportStep === 2 && (
+                <Button variant="outline" onClick={handleReturnHistoryPrevStep}>
+                  Back
+                </Button>
+              )}
+              <div className="flex gap-2">
+                <Button variant="outline" onClick={resetReturnHistoryExportDialog}>
+                  Cancel
+                </Button>
+                <Button onClick={handleReturnHistoryExportConfirm} disabled={!returnHistoryExportType}>
+                  {returnHistoryExportStep === 1 ? 'Next' : `Export ${returnHistoryExportType?.toUpperCase()}`}
+                </Button>
+              </div>
+            </div>
+          </DialogContent>
+        </Dialog>
       </main>
     </div>
   );

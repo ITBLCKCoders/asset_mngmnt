@@ -407,6 +407,33 @@ export async function getApprovedBorrowRequestsForReceive(
   }
 }
 
+export async function listReceivedByMeBorrowRequests(
+  req: AuthRequest,
+  res: Response
+): Promise<Response> {
+  try {
+    const userId = req.user?.userID;
+    if (!userId) {
+      return createErrorResponse(res, 'UNAUTHORIZED', [], 401);
+    }
+
+    const result = await AssetBorrowRequestsService.listReceivedByMe(pool, userId);
+    if ('error' in result) {
+      return createErrorResponse(res, result.error, [], result.status);
+    }
+
+    return createSuccessResponse(res, { borrowRequests: result.borrowRequests });
+  } catch (err) {
+    logger.error('[assetBorrowRequests] received-by-me list failed', err);
+    return createErrorResponse(
+      res,
+      'Failed to list received borrow requests',
+      [],
+      500
+    );
+  }
+}
+
 export async function staffDeclineBorrowRequest(
   req: AuthRequest,
   res: Response

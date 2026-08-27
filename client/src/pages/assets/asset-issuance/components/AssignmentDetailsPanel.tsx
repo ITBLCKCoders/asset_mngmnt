@@ -203,6 +203,7 @@ export function AssignmentDetailsPanel({
                     type="text"
                     placeholder="Search departments..."
                     value={departmentSearchTerm}
+                    onKeyDown={e => e.stopPropagation()}
                     onChange={e => onDepartmentSearchChange?.(e.target.value)}
                     className="w-full h-9 pl-8 pr-3 rounded-md border border-gray-200 bg-white text-sm focus:outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500"
                   />
@@ -396,6 +397,7 @@ export function AssignmentDetailsPanel({
                     type="text"
                     placeholder="Search users..."
                     value={userSearchTerm}
+                    onKeyDown={e => e.stopPropagation()}
                     onChange={e => onUserSearchChange?.(e.target.value)}
                     className="w-full h-9 pl-8 pr-3 rounded-md border border-gray-200 bg-white text-sm focus:outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500"
                   />

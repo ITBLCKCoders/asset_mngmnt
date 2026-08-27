@@ -72,4 +72,27 @@ describe('AssetTransferFormsPage', () => {
       expect(screen.getByText('Asset Transfer Forms')).toBeDefined();
     });
   });
+
+  it('should render the newest transfer form first regardless of API order', async () => {
+    (api.get as any).mockResolvedValue({
+      assetTransferForms: [
+        {
+          formID: 'tf1', form_number: 'TF-001',
+          returns: [{ return_id: 'r1', assignment: { user: { first_name: 'John', last_name: 'Doe', company: { id: 'c1', name: 'Test Corp' } }, asset: { name: 'Laptop', code: 'LT-001' } } }],
+          created_at: '2024-01-01', new_assigned_user: { first_name: 'Jane', last_name: 'Smith' },
+        },
+        {
+          formID: 'tf2', form_number: 'TF-002',
+          returns: [{ return_id: 'r2', assignment: { user: { first_name: 'Jane', last_name: 'Doe', company: { id: 'c1', name: 'Test Corp' } }, asset: { name: 'PC', code: 'PC-001' } } }],
+          created_at: '2024-06-01', new_assigned_user: { first_name: 'John', last_name: 'Smith' },
+        },
+      ],
+    });
+    renderPage();
+    await waitFor(() => {
+      const titles = screen.getAllByText(/TF-00[12]/);
+      expect(titles[0].textContent).toBe('TF-002');
+      expect(titles[1].textContent).toBe('TF-001');
+    });
+  });
 });

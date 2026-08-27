@@ -323,6 +323,46 @@ export const api = {
       }),
     });
   },
+
+  // Company Approvers API
+  async getCompanyApprovers<T = any>(companyId: string) {
+    return fetchApi<T>(`/companies/${companyId}/approvers`, { method: 'GET' });
+  },
+  async setCompanyApprover<T = any>(companyId: string, data: { approverType: string; userId: string }) {
+    return fetchApi<T>(`/companies/${companyId}/approvers`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(data),
+    });
+  },
+  async removeCompanyApprover<T = any>(companyId: string, approverType: string) {
+    return fetchApi<T>(`/companies/${companyId}/approvers/${approverType}`, {
+      method: 'DELETE',
+    });
+  },
+  async getCompanyEligibleApprovers<T = any>(companyId: string, approverType: string) {
+    return fetchApi<T>(`/companies/${companyId}/approvers/eligible/${approverType}`, { method: 'GET' });
+  },
+
+  // User Approvers API (per-user designated approvers)
+  async getUserApprovers<T = any>(userId: string) {
+    return fetchApi<T>(`/users/${userId}/approvers`, { method: 'GET' });
+  },
+  async setUserApprover<T = any>(userId: string, data: { approverType: string; approverUserId: string }) {
+    return fetchApi<T>(`/users/${userId}/approvers`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(data),
+    });
+  },
+  async removeUserApprover<T = any>(userId: string, approverType: string) {
+    return fetchApi<T>(`/users/${userId}/approvers/${approverType}`, {
+      method: 'DELETE',
+    });
+  },
+  async getUserEligibleApprovers<T = any>(userId: string, approverType: string) {
+    return fetchApi<T>(`/users/${userId}/approvers/eligible/${approverType}`, { method: 'GET' });
+  },
 };
 
 export default api;

@@ -3,15 +3,20 @@ import { pool } from '../db.js';
 import type { AuthRequest } from '../middleware/authenticate.js';
 import logger from '../logger.js';
 import * as checklistRepo from '../repositories/assetChecklist.repository.js';
-import { getAssetScope } from '../utils/assetScope.js';
+import { getAssetScope, getDepartmentIdsForScope } from '../utils/assetScope.js';
 import { createNotificationForApi } from '../utils/notificationsApi.js';
 import {
-  getManagerApprover2UserIdsInItDepartmentAndCompany,
-  isUserInItDepartmentForCompany,
-  isUserManagerApprover1,
+  getManagerApprover2UserIdsInItAndAdminDepartmentsAndCompany,
+  getSubApprover2UserIdsInItAndAdminDepartmentsAndCompany,
+  isUserInItOrAdminDepartmentForCompany,
   isUserManagerApprover2,
+  isUserSubApprover2,
+  isDesignatedApprover,
+  isDesignatedSubApprover,
+  getRequestorMA1Status,
 } from '../utils/approverNotifications.js';
 import { createAuditLog } from '../utils/audit.js';
+import { getRequestersAssignedToApprover } from '../services/userApprovers.service.js';
 
 function groupChecklistsIntoBatches(checklists: Record<string, unknown>[]) {
   const byEmployee = new Map<string, Record<string, unknown>[]>();
@@ -51,28 +56,31 @@ export async function getPendingChecklistApprovalsHandler(
 ) {
   try {
     const userId = req.user!.userID;
-    const { companyId } = await getAssetScope(pool, userId);
+    const { companyId, isSuperAdmin, isAdmin } = await getAssetScope(pool, userId);
     if (!companyId) {
       return res.status(200).json({ checklistBatches: [] });
     }
 
-    if (!(await isUserManagerApprover1(userId))) {
-      return res.status(200).json({ checklistBatches: [] });
+    // Global Admin / Local Admin: see all pending checklists in the company scope
+    if (isSuperAdmin || isAdmin) {
+      const allRows =
+        await checklistRepo.findPendingDeptHeadApprovalChecklistsByCompany(companyId);
+      return res
+        .status(200)
+        .json({ checklistBatches: groupChecklistsIntoBatches(allRows) });
     }
 
-    const [approverRows] = (await pool.query(
-      'SELECT department_id FROM users WHERE userID = ? LIMIT 1',
-      [userId]
-    )) as [{ department_id: string | null }[], unknown];
-    const approverDepartmentId = approverRows[0]?.department_id ?? null;
-    if (approverDepartmentId == null) {
+    // Check if user is a designated approver or sub-approver for any employee
+    const requesterIds = await getRequestersAssignedToApprover(userId, companyId);
+    if (requesterIds.length === 0) {
       return res.status(200).json({ checklistBatches: [] });
     }
+    const requesterSet = new Set(requesterIds);
 
-    const rows = await checklistRepo.findPendingDeptHeadApprovalChecklists(
-      approverDepartmentId,
-      companyId
-    );
+    // Designated approvers only see pending checklists for their assigned employees
+    const rows = (
+      await checklistRepo.findPendingDeptHeadApprovalChecklistsByCompany(companyId)
+    ).filter(row => requesterSet.has(String((row as { employee_id?: string }).employee_id)));
     const checklistBatches = groupChecklistsIntoBatches(rows);
 
     return res.status(200).json({ checklistBatches });
@@ -116,6 +124,12 @@ export async function approveChecklistsDeptHeadHandler(
 ) {
   try {
     const userId = req.user!.userID;
+    const { companyId, isSuperAdmin, isAdmin } = await getAssetScope(pool, userId);
+    if (!companyId) {
+      return res.status(400).json({ error: 'Company context required' });
+    }
+    const isAdminRole = isSuperAdmin || isAdmin;
+
     const bodyIds = req.body?.checklistIds;
     const checklistIds = Array.isArray(bodyIds)
       ? bodyIds.map((id: unknown) => String(id).trim()).filter(Boolean)
@@ -129,16 +143,51 @@ export async function approveChecklistsDeptHeadHandler(
       return res.status(400).json({ error: 'checklistIds is required' });
     }
 
-    if (!(await isUserManagerApprover1(userId))) {
+    // Designated approvers may only approve checklists for employees assigned to them
+    const placeholders = checklistIds.map(() => '?').join(',');
+    const [employeeRows] = (await pool.execute(
+      `SELECT DISTINCT employee_id
+       FROM asset_checklists
+       WHERE id IN (${placeholders}) AND deleted_at IS NULL`,
+      checklistIds
+    )) as [{ employee_id: string }[], unknown];
+    const employeeIds = employeeRows
+      .map(r => String(r.employee_id))
+      .filter(Boolean);
+    if (employeeIds.length === 0) {
+      return res.status(400).json({ error: 'No matching checklists found' });
+    }
+    let authorized = true;
+    const approvalRoles = new Set<'approver' | 'sub'>();
+    if (isAdminRole) {
+      // Global Admin / Local Admin may approve any checklists in the company scope
+      approvalRoles.add('approver');
+    } else {
+      for (const empId of employeeIds) {
+        if (await isDesignatedApprover(userId, empId)) {
+          approvalRoles.add('approver');
+          continue;
+        }
+        if (await isDesignatedSubApprover(userId, empId)) {
+          approvalRoles.add('sub');
+          continue;
+        }
+        authorized = false;
+        break;
+      }
+    }
+    if (!authorized) {
       return res
         .status(403)
         .json({ error: 'Not authorized as department head approver' });
     }
-
-    const { companyId } = await getAssetScope(pool, userId);
-    if (!companyId) {
-      return res.status(400).json({ error: 'Company context required' });
+    if (approvalRoles.size !== 1) {
+      return res.status(403).json({
+        error:
+          'Cannot approve a mixed batch of approver and sub-approver checklists at once',
+      });
     }
+    const isSubApprover = approvalRoles.has('sub');
 
     const [approverRows] = (await pool.query(
       'SELECT department_id, digital_signature FROM users WHERE userID = ? LIMIT 1',
@@ -147,7 +196,17 @@ export async function approveChecklistsDeptHeadHandler(
       { department_id: string | null; digital_signature?: string | null }[],
       unknown,
     ];
-    const approverDepartmentId = approverRows[0]?.department_id ?? null;
+    let approverDepartmentId = approverRows[0]?.department_id ?? null;
+    if (approverDepartmentId == null && isAdminRole) {
+      const adminDeptIds = await getDepartmentIdsForScope(pool, 'it', companyId);
+      const adminDeptIds2 = await getDepartmentIdsForScope(
+        pool,
+        'admin',
+        companyId
+      );
+      const fallbackIds = [...adminDeptIds, ...adminDeptIds2];
+      approverDepartmentId = fallbackIds[0] ?? null;
+    }
     if (approverDepartmentId == null) {
       return res.status(400).json({ error: 'Approver has no department' });
     }
@@ -167,6 +226,7 @@ export async function approveChecklistsDeptHeadHandler(
       approverDepartmentId,
       companyId,
       digitalSignature,
+      isSubApprover,
     });
 
     if (approvedCount === 0) {
@@ -178,10 +238,14 @@ export async function approveChecklistsDeptHeadHandler(
 
     await createAuditLog({
       userId,
-      action: 'Approved Asset Checklists',
+      action: isSubApprover
+        ? 'Approved Asset Checklists (Sub Approver 1)'
+        : 'Approved Asset Checklists',
       resourceType: 'asset_checklist',
-      resourceId: checklistIds.join(','),
-      details: `Department head approved ${approvedCount} asset checklist(s)`,
+      resourceId: checklistIds[0] ?? '',
+      details: isSubApprover
+        ? `Sub Approver 1 approved ${approvedCount} asset checklist(s) as stand-in for the requestor's department head`
+        : `Department head approved ${approvedCount} asset checklist(s)`,
       newValues: { approved_count: approvedCount, checklist_ids: checklistIds },
       ipAddress: req.ip,
       userAgent: req.get ? req.get('User-Agent') : 'Unknown',
@@ -189,7 +253,14 @@ export async function approveChecklistsDeptHeadHandler(
 
     try {
       const itApproverIds =
-        await getManagerApprover2UserIdsInItDepartmentAndCompany(companyId);
+        await getManagerApprover2UserIdsInItAndAdminDepartmentsAndCompany(
+          companyId
+        );
+      const sub2ApproverIds =
+        await getSubApprover2UserIdsInItAndAdminDepartmentsAndCompany(companyId);
+      const receiveApproverIds = [
+        ...new Set([...itApproverIds, ...sub2ApproverIds]),
+      ];
       const [approverNameRows] = (await pool.query(
         `SELECT name, first_name, last_name FROM users WHERE userID = ? LIMIT 1`,
         [userId]
@@ -208,23 +279,23 @@ export async function approveChecklistsDeptHeadHandler(
           .join(' ')
           .trim() ||
         approverRow?.name ||
-        'Department head';
-      for (const itUserId of itApproverIds) {
-        if (itUserId === userId) continue;
+        (isSubApprover ? 'Sub approver' : 'Department head');
+      for (const receiveUserId of receiveApproverIds) {
+        if (receiveUserId === userId) continue;
         await createNotificationForApi({
-          user_id: itUserId,
+          user_id: receiveUserId,
           title: 'Asset Checklist Receive Approval Needed',
-          message: `${deptHeadName} approved ${approvedCount} asset checklist${approvedCount !== 1 ? 's' : ''} — IT receive approval required.`,
+          message: `${deptHeadName} approved ${approvedCount} asset checklist${approvedCount !== 1 ? 's' : ''} — receive approval required.`,
           type: 'system',
           data: {
-            route: '/approvals',
+            route: '/approvals?tab=receive',
             actionTarget: 'checklist_receive',
             checklist_count: approvedCount,
           },
         });
       }
     } catch (notifError) {
-      logger.error('Failed to notify IT checklist receivers:', notifError);
+      logger.error('Failed to notify checklist receivers:', notifError);
     }
 
     return res.status(200).json({
@@ -254,16 +325,22 @@ export async function getReceivePendingChecklistApprovalsHandler(
 ) {
   try {
     const userId = req.user!.userID;
-    if (!(await isUserManagerApprover2(userId))) {
+    const isManager2 = await isUserManagerApprover2(userId);
+    const isSub2 = await isUserSubApprover2(userId);
+    const { companyId, isSuperAdmin, isAdmin } = await getAssetScope(pool, userId);
+    if (!isSuperAdmin && !isAdmin && !isManager2 && !isSub2) {
       return res.status(200).json({ checklistBatches: [] });
     }
 
-    const { companyId } = await getAssetScope(pool, userId);
     if (!companyId) {
       return res.status(200).json({ checklistBatches: [] });
     }
 
-    if (!(await isUserInItDepartmentForCompany(userId, companyId))) {
+    if (
+      !isSuperAdmin &&
+      !isAdmin &&
+      !(await isUserInItOrAdminDepartmentForCompany(userId, companyId))
+    ) {
       return res.status(200).json({ checklistBatches: [] });
     }
 
@@ -274,6 +351,10 @@ export async function getReceivePendingChecklistApprovalsHandler(
       ...batch,
       dept_head_signed_at: batch.checklists[0]?.dept_head_signed_at ?? null,
       it_manager_signed_at: batch.checklists[0]?.it_manager_signed_at ?? null,
+      sub_approver_1_signed_at:
+        batch.checklists[0]?.sub_approver_1_signed_at ?? null,
+      sub_approver_2_signed_at:
+        batch.checklists[0]?.sub_approver_2_signed_at ?? null,
     }));
 
     return res.status(200).json({ checklistBatches });
@@ -304,21 +385,27 @@ export async function receiveChecklistsItManagerHandler(
       return res.status(400).json({ error: 'checklistIds is required' });
     }
 
-    if (!(await isUserManagerApprover2(userId))) {
+    const isManager2 = await isUserManagerApprover2(userId);
+    const isSub2 = await isUserSubApprover2(userId);
+    const { companyId, isSuperAdmin, isAdmin } = await getAssetScope(pool, userId);
+    const isAdminRole = isSuperAdmin || isAdmin;
+    if (!isAdminRole && !isManager2 && !isSub2) {
       return res
         .status(403)
-        .json({ error: 'Not authorized as IT manager approver' });
+        .json({ error: 'Not authorized as receive approver' });
     }
 
-    const { companyId } = await getAssetScope(pool, userId);
     if (!companyId) {
       return res.status(400).json({ error: 'Company context required' });
     }
 
-    if (!(await isUserInItDepartmentForCompany(userId, companyId))) {
+    if (
+      !isAdminRole &&
+      !(await isUserInItOrAdminDepartmentForCompany(userId, companyId))
+    ) {
       return res
         .status(403)
-        .json({ error: 'Only IT department Manager Approver 2 can receive' });
+        .json({ error: 'Only IT/Admin department receive approvers can receive' });
     }
 
     const [approverRows] = (await pool.query(
@@ -339,6 +426,7 @@ export async function receiveChecklistsItManagerHandler(
       approverUserId: userId,
       companyId,
       digitalSignature,
+      isSubApprover: isSub2 && !isManager2,
     });
 
     if (receivedCount === 0) {
@@ -348,12 +436,13 @@ export async function receiveChecklistsItManagerHandler(
       });
     }
 
+    const actionLabel = isSub2 && !isManager2 ? ' (Sub Approver 2)' : '';
     await createAuditLog({
       userId,
-      action: 'Received Asset Checklists (IT)',
+      action: `Received Asset Checklists${actionLabel}`,
       resourceType: 'asset_checklist',
-      resourceId: checklistIds.join(','),
-      details: `IT manager received ${receivedCount} asset checklist(s)`,
+      resourceId: checklistIds[0] ?? '',
+      details: `Receive approver received ${receivedCount} asset checklist(s)`,
       newValues: { received_count: receivedCount, checklist_ids: checklistIds },
       ipAddress: req.ip,
       userAgent: req.get ? req.get('User-Agent') : 'Unknown',

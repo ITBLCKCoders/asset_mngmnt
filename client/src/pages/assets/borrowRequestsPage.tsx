@@ -102,8 +102,11 @@ export interface BorrowRequestRow {
   status: string;
   created_at: string;
   form_number?: string | null;
-  category_name?: string;
-  type_name?: string;
+  description: string;
+  category_id?: string | null;
+  type_id?: string | null;
+  category_name?: string | null;
+  type_name?: string | null;
   requester_department_name?: string | null;
   requester_first_name?: string | null;
   requester_last_name?: string | null;
@@ -119,9 +122,15 @@ export interface BorrowRequestRow {
   asset_name?: string | null;
   asset_serial?: string | null;
   return_condition?: string | null;
-  processor_wet_borrow_pdf_url?: string | null;
   dept_head_signed_at?: string | null;
   dept_head_name?: string | null;
+  dept_head_signed_by?: string | null;
+  dept_head_digital_signature?: string | null;
+  sub_approver_1_signed_at?: string | null;
+  sub_approver_1_name?: string | null;
+  sub_approver_1_signed_by?: string | null;
+  sub_approver_1_position?: string | null;
+  sub_approver_1_digital_signature?: string | null;
   processor_declined_at?: string | null;
   /** Staff decline remarks (processor), when applicable */
   processor_decline_reason?: string | null;
@@ -233,11 +242,10 @@ export function ProcessBorrowRequestSummary({ row }: { row: BorrowRequestRow }) 
   const purpose = row.purpose?.trim() || '—';
   const borrower = requesterName(row);
   const department = row.requester_department_name?.trim() || '—';
-  const category = row.category_name?.trim() || '—';
-  const type = row.type_name?.trim() || '—';
+  const description = (row as any).description?.trim() || '—';
 
   // Check if we have meaningful data to display
-  const hasData = borrower !== '—' || department !== '—' || category !== '—' || type !== '—';
+  const hasData = borrower !== '—' || department !== '—' || description !== '—';
 
   if (!hasData) {
     return (
@@ -314,12 +322,7 @@ export function ProcessBorrowRequestSummary({ row }: { row: BorrowRequestRow }) 
         <div className="space-y-1.5">
           <SummarySectionTitle>Requested equipment</SummarySectionTitle>
           <div className="grid gap-2 sm:grid-cols-2">
-            <SummaryField
-              icon={Layers}
-              label="Category"
-              value={category}
-            />
-            <SummaryField icon={Package} label="Type" value={type} />
+            <SummaryField icon={AlignLeft} label="Description" value={description} className="sm:col-span-2" />
           </div>
         </div>
 
@@ -419,6 +422,7 @@ export default function BorrowRequestsPage() {
   const [declineOpen, setDeclineOpen] = useState(false);
   const [pdfPreviewOpen, setPdfPreviewOpen] = useState(false);
   const [pdfPreviewUrl, setPdfPreviewUrl] = useState<string | null>(null);
+  const [pdfIframeLoaded, setPdfIframeLoaded] = useState(false);
   const [assetsLoading, setAssetsLoading] = useState(false);
   const [availableAssets, setAvailableAssets] = useState<BorrowStaffPoolAsset[]>([]);
   const [selectedAssetCode, setSelectedAssetCode] = useState('');
@@ -730,6 +734,13 @@ export default function BorrowRequestsPage() {
     a.click();
     document.body.removeChild(a);
   };
+
+  useEffect(() => {
+    if (!pdfPreviewUrl) return;
+    setPdfIframeLoaded(false);
+    const timer = window.setTimeout(() => setPdfIframeLoaded(true), 15000);
+    return () => window.clearTimeout(timer);
+  }, [pdfPreviewUrl]);
 
   const borrowHistoryColumns: ColumnDef<BorrowRequestRow>[] = useMemo(
     () => [
@@ -1087,9 +1098,9 @@ export default function BorrowRequestsPage() {
             </div>
           </div>
 
-          <div className="flex gap-2 mt-4">
+          <div className="flex flex-col sm:flex-row gap-2 mt-4">
             <Button
-              className="flex-1 bg-red-600 text-white hover:bg-white hover:text-red-600 hover:border-red-600 border-2 border-red-600"
+              className="w-full sm:flex-1 bg-red-600 text-white hover:bg-white hover:text-red-600 hover:border-red-600 border-2 border-red-600"
               onClick={() => {
                 // For approved and declined tabs, always show details dialog
                 if (activeTab === 'approved' || activeTab === 'declined') {
@@ -1106,16 +1117,24 @@ export default function BorrowRequestsPage() {
               }}
             >
               <Eye className="h-4 w-4 mr-2" />
-              {activeTab === 'approved' || activeTab === 'declined'
+              <span className="hidden sm:inline">{activeTab === 'approved' || activeTab === 'declined'
                 ? 'View details'
                 : isBorrowRequestStaffReadOnly(r)
                   ? 'View details'
                   : r.status === 'approved'
                     ? 'Process Return'
-                    : 'View / Process'}
+                    : 'View / Process'}</span>
+              <span className="sm:hidden">{activeTab === 'approved' || activeTab === 'declined'
+                ? 'View'
+                : isBorrowRequestStaffReadOnly(r)
+                  ? 'View'
+                  : r.status === 'approved'
+                    ? 'Return'
+                    : 'View'}</span>
             </Button>
-            <Button variant="outline" className="flex-1 hover:bg-red-600 hover:text-white hover:border-red-600" onClick={() => void handleDownload(r)}>
-              Download PDF
+            <Button variant="outline" className="w-full sm:flex-1 hover:bg-red-600 hover:text-white hover:border-red-600" onClick={() => void handleDownload(r)}>
+              <span className="hidden sm:inline">Download PDF</span>
+              <span className="sm:hidden">Download</span>
             </Button>
           </div>
         </div>
@@ -1582,7 +1601,7 @@ export default function BorrowRequestsPage() {
                     <div className="space-y-1.5">
                       <SummarySectionTitle>Asset selection <span className="text-red-600">*</span></SummarySectionTitle>
                       <p className="text-[11px] text-slate-500">
-                        Sorted with requested category &amp; type first, then by category and code.
+                        Sorted with requested description first, then by code.
                       </p>
                       <Select
                         value={selectedAssetCode || undefined}
@@ -1979,17 +1998,22 @@ export default function BorrowRequestsPage() {
               description="Preview of the borrow form PDF"
             />
             <AppDialogBody className="flex-1 overflow-hidden p-0">
-              {pdfPreviewUrl ? (
+              <div className="relative w-full h-full">
+                {!pdfIframeLoaded && (
+                  <div className="absolute inset-0 z-10 flex items-center justify-center bg-white/80">
+                    <div className="flex flex-col items-center gap-3 text-slate-500">
+                      <div className="h-10 w-10 animate-spin rounded-full border-4 border-gray-200 border-t-blue-600" />
+                      <p className="text-sm">Loading PDF...</p>
+                    </div>
+                  </div>
+                )}
                 <iframe
-                  src={pdfPreviewUrl}
+                  src={pdfPreviewUrl ?? undefined}
+                  onLoad={() => setPdfIframeLoaded(true)}
                   className="w-full h-full border-0"
                   title="PDF Preview"
                 />
-              ) : (
-                <div className="flex items-center justify-center h-full">
-                  <p className="text-slate-500">Loading PDF...</p>
-                </div>
-              )}
+              </div>
             </AppDialogBody>
             <AppDialogChromeFooter className="justify-end gap-2">
               <Button className="bg-white hover:bg-red-600 hover:text-white text-slate-900" onClick={() => setPdfPreviewOpen(false)}>Close</Button>

@@ -120,3 +120,17 @@ export function prefetchRoutes(paths: readonly string[]): void {
 
 /** All route paths available for prefetching, used to eagerly warm-load chunks. */
 export const SIDEBAR_ROUTE_PATHS = Object.keys(ROUTE_IMPORTERS);
+
+/**
+ * Small set of the most commonly visited routes that are warm-loaded on mount.
+ * Prefetching every route at once floods the main thread with module-graph
+ * evaluation (especially in dev, where Vite transforms raw ESM), which delays
+ * the first clicks. The remaining routes are still warmed by the sidebar's
+ * hover/focus prefetch before the user clicks them.
+ */
+export const EAGER_PREFETCH_PATHS = [
+  '/dashboard',
+  '/assets',
+  '/my-assets',
+  '/reports',
+] as const;

@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useMemo, useEffect } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useLocation } from 'react-router-dom';
 import { Package, X, Check, ArrowLeft, Trash2, Crown } from 'lucide-react';
 import {
   Card,
@@ -33,6 +33,7 @@ const logger = createLogger('AssetBuilder');
 
 export default function AssetBuilderPage() {
   const navigate = useNavigate();
+  const location = useLocation();
   const { activeCompany } = useCompanyContext();
   const { hasPermission, roleCustodian } = useUserPermissions();
   const { user: currentUser } = useCurrentUser();
@@ -41,7 +42,8 @@ export default function AssetBuilderPage() {
   const isAdmin = currentUser?.role?.name?.toLowerCase() === 'admin';
   const isOverallManager = roleCustodian?.managerRole === 'overallManager';
   const showScopeTabs = isSuperAdmin || isAdmin || isOverallManager;
-  const [scope, setScope] = useState<'it' | 'admin'>('it');
+  const initialScope = (location.state as { scope?: 'it' | 'admin' })?.scope || 'it';
+  const [scope, setScope] = useState<'it' | 'admin'>(initialScope);
   const [builderName, setBuilderName] = useState('');
   const [builderDescription, setBuilderDescription] = useState('');
   const [selectedAssetIds, setSelectedAssetIds] = useState<Set<string>>(
@@ -64,7 +66,7 @@ export default function AssetBuilderPage() {
     []
   );
 
-  const { assets, loading } = useAssetsData(activeCompany?.id, showScopeTabs ? scope : null);
+  const { assets, loading } = useAssetsData(activeCompany?.id, showScopeTabs ? scope : null, 1, -1);
 
   useEffect(() => {
     const fetchGroupedAssets = async () => {
@@ -128,7 +130,6 @@ export default function AssetBuilderPage() {
     if (!groupedAssetIds) return [];
     return assets.filter(
       asset =>
-        asset.status === 'Available' &&
         !groupedAssetIds.has(asset.id.trim()) &&
         (!asset.builderHistory || asset.builderHistory.length === 0)
     );
@@ -150,6 +151,14 @@ export default function AssetBuilderPage() {
       }
     }
     setSelectedAssetIds(newSelected);
+  };
+
+  const handleSetParentOnCreate = (
+    e: React.MouseEvent,
+    assetId: string
+  ) => {
+    e.stopPropagation();
+    setSelectedParentAssetId(assetId);
   };
 
   const handleSave = async () => {
@@ -228,6 +237,17 @@ export default function AssetBuilderPage() {
     if (assetToAdd) {
       setEditingSelectableAssets(prev => [...prev, assetToAdd]);
     }
+  };
+
+  const handleSetParent = (assetCode: string) => {
+    if (!selectedBuilder) return;
+
+    // Set the clicked asset as parent, clear all others
+    const updatedItems = selectedBuilder.items.map((item: any) => ({
+      ...item,
+      is_parent: item.asset_code === assetCode,
+    }));
+    setSelectedBuilder({ ...selectedBuilder, items: updatedItems });
   };
 
   const handleAddAssetToggle = (assetId: string) => {
@@ -337,6 +357,24 @@ export default function AssetBuilderPage() {
         ) : null
       ),
     },
+    {
+      id: 'actions',
+      header: '',
+      size: 140,
+      cell: ({ row }: any) =>
+        selectedAssetIds.has(row.original.id) &&
+        selectedParentAssetId !== row.original.id ? (
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={(e) => handleSetParentOnCreate(e, row.original.id)}
+            className="text-amber-600 hover:text-amber-700"
+          >
+            <Crown className="h-3.5 w-3.5 mr-1" />
+            Set as Parent
+          </Button>
+        ) : null,
+    },
     ...assetColumns,
   ];
 
@@ -393,13 +431,26 @@ export default function AssetBuilderPage() {
       id: 'actions',
       header: '',
       cell: ({ row }: any) => (
-        <Button
-          variant="outline"
-          size="sm"
-          onClick={() => handleRemoveAsset(row.original.asset_code)}
-        >
-          Remove
-        </Button>
+        <div className="flex items-center gap-2">
+          {!row.original.is_parent && (
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => handleSetParent(row.original.asset_code)}
+              className="text-amber-600 hover:text-amber-700"
+            >
+              <Crown className="h-3.5 w-3.5 mr-1" />
+              Set as Parent
+            </Button>
+          )}
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() => handleRemoveAsset(row.original.asset_code)}
+          >
+            Remove
+          </Button>
+        </div>
       ),
     },
   ];
@@ -682,7 +733,10 @@ export default function AssetBuilderPage() {
                     <Button
                       variant="outline"
                       size="sm"
-                      onClick={() => setSelectedAssetIds(new Set())}
+                      onClick={() => {
+                        setSelectedAssetIds(new Set());
+                        setSelectedParentAssetId(null);
+                      }}
                     >
                       Clear Selection
                     </Button>

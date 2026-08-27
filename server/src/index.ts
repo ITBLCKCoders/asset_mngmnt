@@ -19,6 +19,7 @@ import assetAssignmentsRoutes from './routes/assetAssignments.routes.js';
 import assetChecklistsRoutes from './routes/assetChecklists.routes.js';
 import assetReturnsRoutes from './routes/assetReturns.routes.js';
 import assetTransfersRoutes from './routes/assetTransfers.routes.js';
+import assetMovementsRoutes from './routes/assetMovements.routes.js';
 import accountabilityFormsRoutes from './routes/accountabilityForms.routes.js';
 import suppliersRoutes from './routes/suppliers.routes.js';
 import brandsRoutes from './routes/brands.routes.js';
@@ -31,7 +32,11 @@ import notificationsRoutes from './routes/notifications.routes.js';
 import assetRequestsRoutes from './routes/assetRequests.routes.js';
 import assetBorrowRequestsRoutes from './routes/assetBorrowRequests.routes.js';
 import gatePassRoutes from './routes/gatePass.routes.js';
+import companyApproversRoutes from './routes/companyApprovers.routes.js';
+import userApproversRoutes from './routes/userApprovers.routes.js';
 import intangibleAssetsRoutes from './routes/intangibleAssets.routes.js';
+import intangibleAssetTypesRoutes from './routes/intangibleAssetTypes.routes.js';
+import riskLevelsRoutes from './routes/riskLevels.routes.js';
 import dashboardRoutes from './routes/dashboard.routes.js';
 import reportsRoutes from './routes/reports.routes.js';
 import proxyRoutes from './routes/proxy.routes.js';
@@ -148,6 +153,7 @@ app.get('/api-docs.json', (_req: Request, res: Response) => res.json(specs));
 // ROUTES
 app.use('/api/auth', authRoutes);
 app.use('/api/users', usersRoutes); // NEW: Users routes mounted
+app.use('/api/users', userApproversRoutes); // NEW: User approvers routes mounted
 app.use('/api/companies', companyRoutes); // NEW: Company routes mounted
 app.use('/api/categories', categoriesRoutes); // NEW: Categories routes mounted
 app.use('/api/types', typesRoutes); // NEW: Types routes mounted
@@ -159,6 +165,7 @@ app.use('/api/asset-assignments', assetAssignmentsRoutes); // NEW: Asset assignm
 app.use('/api/asset-checklists', assetChecklistsRoutes);
 app.use('/api/asset-returns', assetReturnsRoutes);
 app.use('/api/asset-transfers', assetTransfersRoutes); // NEW: Asset returns routes mounted
+app.use('/api/asset-movements', assetMovementsRoutes);
 app.use('/api/accountability-forms', accountabilityFormsRoutes); // NEW: Accountability forms routes mounted
 app.use('/api/suppliers', suppliersRoutes); // NEW: Suppliers routes mounted
 app.use('/api/brands', brandsRoutes); // NEW: Brands routes mounted
@@ -170,7 +177,10 @@ app.use('/api/asset-builders', assetBuildersRoutes); // NEW: Asset builders rout
 app.use('/api/notifications', notificationsRoutes); // NEW: Notifications routes mounted
 app.use('/api/asset-requests', assetRequestsRoutes); // NEW: Asset requests routes mounted
 app.use('/api/asset-borrow-requests', assetBorrowRequestsRoutes);
+app.use('/api/companies', companyApproversRoutes);
 app.use('/api/intangible-assets', intangibleAssetsRoutes);
+app.use('/api/intangible-asset-types', intangibleAssetTypesRoutes);
+app.use('/api/risk-levels', riskLevelsRoutes);
 app.use('/api/gate-passes', gatePassRoutes);
 app.use('/api/dashboard', dashboardRoutes);
 app.use('/api/reports', reportsRoutes);

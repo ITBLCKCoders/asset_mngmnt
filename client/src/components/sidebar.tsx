@@ -40,13 +40,14 @@ import { Badge } from '@/components/ui/badge';
 import { useAvatarPreview } from '@/hooks/avatarPreview';
 import { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { cn } from '@/lib/utils';
+import { getRoleDisplayName } from '@/lib/roleUtils';
 import { api, setToken } from '@/lib/api';
 import { ASSET_SIDEBAR_ENTRIES } from '@/components/sidebar/sidebarConfig';
 import { SidebarHoverItem } from '@/components/sidebar/SidebarHoverItem';
 import {
   prefetchRoute,
   prefetchRoutes,
-  SIDEBAR_ROUTE_PATHS,
+  EAGER_PREFETCH_PATHS,
 } from '@/components/sidebar/routePrefetch';
 
 interface SidebarProps {
@@ -110,25 +111,34 @@ const Sidebar = memo(function Sidebar({ onLogout, currentPath = '', currentSearc
       p === '/approvals'
     );
   }, [currentPath]);
-  const formsOpen = userFormsOpen || formsOpenMatch;
+  const formsOpen = userFormsOpen;
 
   const reportsOpenMatch = useMemo(() => {
     const p = currentPath;
     return p.startsWith('/reports') || p.startsWith('/history/');
   }, [currentPath]);
-  const reportsOpen = userReportsOpen || reportsOpenMatch;
+  const reportsOpen = userReportsOpen;
 
   const manualOpenMatch = useMemo(() => {
     const p = currentPath;
     return p === '/user-manual' || p === '/flow-diagrams';
   }, [currentPath]);
-  const manualOpen = userManualOpen || manualOpenMatch;
+  const manualOpen = userManualOpen;
 
   const assetsOpenMatch = useMemo(() => {
     const p = currentPath;
     return p.startsWith('/assets') && p !== '/assets/my-assets';
   }, [currentPath]);
-  const assetsOpen = userAssetsOpen || assetsOpenMatch;
+  const assetsOpen = userAssetsOpen;
+
+  // Auto-expand each collapsible section when navigating to one of its routes.
+  // The manual toggle still wins, so users can collapse a section while on it.
+  useEffect(() => {
+    if (formsOpenMatch) setUserFormsOpen(true);
+    if (reportsOpenMatch) setUserReportsOpen(true);
+    if (manualOpenMatch) setUserManualOpen(true);
+    if (assetsOpenMatch) setUserAssetsOpen(true);
+  }, [formsOpenMatch, reportsOpenMatch, manualOpenMatch, assetsOpenMatch]);
 
   const assetNestedOpen = useMemo(() => {
     const path = currentPath;
@@ -186,9 +196,10 @@ const Sidebar = memo(function Sidebar({ onLogout, currentPath = '', currentSearc
   );
   const reportSection = new URLSearchParams(currentSearch).get('section');
 
-  // Eagerly warm-load all lazy route chunks so navigation feels instant
+  // Eagerly warm-load the most common route chunks so navigation feels instant.
+  // The full set is warmed on hover/focus as the user moves through the menu.
   useEffect(() => {
-    prefetchRoutes(SIDEBAR_ROUTE_PATHS);
+    prefetchRoutes(EAGER_PREFETCH_PATHS);
   }, []);
 
   const handleLogout = useCallback(async () => {
@@ -277,7 +288,7 @@ const Sidebar = memo(function Sidebar({ onLogout, currentPath = '', currentSearc
                   }}
                   variant="secondary"
                 >
-                  {user.role?.name || 'No role'}
+                  {getRoleDisplayName(user.role?.name) || 'No role'}
                 </Badge>
               </>
             ) : (
@@ -505,8 +516,6 @@ const Sidebar = memo(function Sidebar({ onLogout, currentPath = '', currentSearc
               {(hasPermission('Assets', 'view') ||
                 hasPermission('Asset List', 'view') ||
                 hasPermission('Asset Assignment', 'view') ||
-                hasPermission('Asset Request', 'view') ||
-                hasPermission('Request Management', 'view') ||
                 hasPermission('Asset Tagging', 'view') ||
                 hasPermission('Asset Transfer', 'view') ||
                 hasPermission('Asset Maintenance', 'view') ||

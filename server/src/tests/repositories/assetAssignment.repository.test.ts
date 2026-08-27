@@ -1,96 +1,43 @@
 import { describe, it, expect, jest, beforeEach } from '@jest/globals';
 
-const mockPool = { execute: jest.fn(), query: jest.fn() };
+const mockPool = { execute: jest.fn() };
 
 jest.mock('../../db.js', () => ({ pool: mockPool }));
-jest.mock('../../logger.js', () => ({ __esModule: true, default: { info: jest.fn(), warn: jest.fn(), error: jest.fn(), debug: jest.fn() } }));
+jest.mock('../../logger.js', () => ({
+  __esModule: true,
+  default: {
+    info: jest.fn(),
+    warn: jest.fn(),
+    error: jest.fn(),
+    debug: jest.fn(),
+  },
+}));
 
-const {
-  findUserById,
-  findAssetByCode,
-  findActiveAssignmentByAssetId,
-  softDeleteAssignment,
-  findBuilderByAssetId,
-  getAssetChildrenForUser,
-  getAllActiveAssignmentsForUserId,
-  findNonDeletedAssignmentById,
-} = require('../../repositories/assetAssignment.repository.js');
+const { getIntangibleAssignments } = require('../../repositories/assetAssignment.repository.js');
 
 describe('assetAssignment.repository', () => {
   beforeEach(() => {
     jest.clearAllMocks();
   });
 
-  describe('findUserById', () => {
-    it('should return user basic info', async () => {
-      mockPool.execute.mockResolvedValue([[{ userID: 'u1', first_name: 'John' }], []]);
-      const result = await findUserById('u1');
-      expect(result).toEqual({ userID: 'u1', first_name: 'John' });
+  describe('getIntangibleAssignments', () => {
+    it('should fetch intangible assignments for a specific company', async () => {
+      mockPool.execute.mockResolvedValue([[{ assignmentID: 'ia-1' }], []]);
+      const result = await getIntangibleAssignments('c1');
+      expect(result).toEqual([{ assignmentID: 'ia-1' }]);
+      expect(mockPool.execute).toHaveBeenCalledTimes(1);
+      const [sql, params] = mockPool.execute.mock.calls[0];
+      expect(sql).toContain('AND ia.company_id = ?');
+      expect(params).toEqual(['c1']);
     });
 
-    it('should return undefined when not found', async () => {
-      mockPool.execute.mockResolvedValue([[[]], []]);
-      const result = await findUserById('nonexistent');
-      expect(result).toBeUndefined();
-    });
-  });
-
-  describe('findAssetByCode', () => {
-    it('should return asset with status', async () => {
-      mockPool.execute.mockResolvedValue([[{ assetID: 'a1', status: 'Available' }], []]);
-      const result = await findAssetByCode('A001');
-      expect(result).toEqual({ assetID: 'a1', status: 'Available' });
-    });
-  });
-
-  describe('findActiveAssignmentByAssetId', () => {
-    it('should return active assignment', async () => {
-      mockPool.execute.mockResolvedValue([[{ assignmentID: 'as1', user_id: 'u1' }], []]);
-      const result = await findActiveAssignmentByAssetId('a1');
-      expect(result).toEqual({ assignmentID: 'as1', user_id: 'u1' });
-    });
-  });
-
-  describe('softDeleteAssignment', () => {
-    it('should update deleted_at', async () => {
-      mockPool.execute.mockResolvedValue([[{}], []]);
-      await softDeleteAssignment('as1', 'admin');
-      expect(mockPool.execute).toHaveBeenCalledWith(
-        expect.stringContaining('UPDATE asset_assignments'),
-        expect.arrayContaining(['admin', 'as1'])
-      );
-    });
-  });
-
-  describe('findBuilderByAssetId', () => {
-    it('should return builder for asset', async () => {
-      mockPool.execute.mockResolvedValue([[{ builderID: 'b1', name: 'Builder A', builder_status: 'Assigned' }], []]);
-      const result = await findBuilderByAssetId('a1');
-      expect(result).toEqual([{ builderID: 'b1', name: 'Builder A', builder_status: 'Assigned' }]);
-    });
-  });
-
-  describe('getAssetChildrenForUser', () => {
-    it('should return children assets for user assignments', async () => {
-      mockPool.execute.mockResolvedValue([[{ assetID: 'child-1', name: 'Monitor' }], []]);
-      const result = await getAssetChildrenForUser('u1');
-      expect(result).toBeDefined();
-    });
-  });
-
-  describe('getAllActiveAssignmentsForUserId', () => {
-    it('should return active assignments', async () => {
-      mockPool.execute.mockResolvedValue([[{ assignmentID: 'as1' }], []]);
-      const result = await getAllActiveAssignmentsForUserId('u1');
-      expect(result).toEqual([{ assignmentID: 'as1' }]);
-    });
-  });
-
-  describe('findNonDeletedAssignmentById', () => {
-    it('should return non-deleted assignment', async () => {
-      mockPool.execute.mockResolvedValue([[{ assignmentID: 'as1' }], []]);
-      const result = await findNonDeletedAssignmentById('as1');
-      expect(result).toEqual({ assignmentID: 'as1' });
+    it('should fetch intangible assignments across all companies when companyId is null', async () => {
+      mockPool.execute.mockResolvedValue([[{ assignmentID: 'ia-1' }, { assignmentID: 'ia-2' }], []]);
+      const result = await getIntangibleAssignments(null);
+      expect(result).toEqual([{ assignmentID: 'ia-1' }, { assignmentID: 'ia-2' }]);
+      const [sql, params] = mockPool.execute.mock.calls[0];
+      expect(sql).not.toContain('ia.company_id = ?');
+      expect(params).toEqual([]);
     });
   });
 });

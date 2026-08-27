@@ -10,7 +10,9 @@ import {
   AlertCircle,
   Wrench,
   FileText,
-  RefreshCw,
+  ChevronDown,
+  Layers,
+  X,
 } from 'lucide-react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { PageHeader } from '@/components/common/PageHeader';
@@ -31,8 +33,50 @@ import { useCurrentUser } from '@/hooks/useCurrentUser';
 import { useUserPermissions } from '@/hooks/useUserPermissions';
 import { useCompanyContext } from '@/context/CompanyContext';
 import { Shimmer } from '@/components/ui/shimmer';
+import { Tabs, TabsList, TabsTrigger, segmentTabsListClassName, segmentTabsTriggerClassName } from '@/components/ui/tabs';
 
 function mapMyAssetDto(apiAsset: AssetResponseDto): Asset {
+  const children = (apiAsset.children || []).map((child: any) => ({
+    id: child.asset_code || child.id,
+    name: child.name || child.asset_name || '',
+    image: '',
+    description: '',
+    category: '',
+    type: '',
+    serialNo: '',
+    modelNo: '',
+    brand: '',
+    status: 'Available' as const,
+    assignedTo: '',
+    department: '',
+    location: '',
+    purchaseDate: null,
+    purchasePrice: 0,
+    supplier: '',
+    warranty: null,
+    warranty_months: null,
+    documents: [],
+    maintenanceSchedule: 'None',
+    lastMaintenanceDate: null,
+    nextMaintenanceDate: null,
+    condition: 'Good' as const,
+    usefulLifeYears: 0,
+    salvageValue: 0,
+    depreciationMethod: '',
+    annualDepreciation: 0,
+    depreciationStartDate: null,
+    company: '',
+    building: '',
+    createdAt: new Date(),
+    createdBy: '',
+    updatedAt: new Date(),
+    updatedBy: '',
+    specifications: [],
+    isAssetBuilder: false,
+    isBuilderChild: true,
+    expanded: false,
+  }));
+
   return {
     id: apiAsset.asset_code,
     name: apiAsset.name,
@@ -95,6 +139,11 @@ function mapMyAssetDto(apiAsset: AssetResponseDto): Asset {
       : new Date(apiAsset.created_at),
     updatedBy: apiAsset.updated_by_name || apiAsset.updated_by || '',
     specifications: apiAsset.specifications || [],
+    isAssetBuilder: apiAsset.isAssetBuilder || false,
+    builderStatus: apiAsset.builderStatus || undefined,
+    isBuilderChild: apiAsset.isBuilderChild || false,
+    children,
+    expanded: false,
   } as Asset;
 }
 
@@ -110,8 +159,10 @@ export default function MyAssetsPage() {
   const [selectedBuilderForView, setSelectedBuilderForView] =
     useState<AssetBuilderRecord | null>(null);
   const [isBuilderViewModalOpen, setIsBuilderViewModalOpen] = useState(false);
+  const [treeModalAsset, setTreeModalAsset] = useState<Asset | null>(null);
   const [searchTerm, setSearchTerm] = useState('');
   const [searchColumn, setSearchColumn] = useState('all');
+  const [scope, setScope] = useState<'it' | 'admin'>('it');
 
   const fetchMyAssets = async () => {
     if (!user) return;
@@ -120,12 +171,13 @@ export default function MyAssetsPage() {
       setLoading(true);
       // Use the dedicated endpoint for user's assets
       const response = await api.get<{ assets: AssetResponseDto[] }>(
-        '/assets/my-assets'
+        `/assets/my-assets?scope=${scope}`
       );
 
       console.log('My assets loaded:', response.assets.length, 'assets');
 
-      // Transform API data to match the expected format with error handling
+      // First pass: transform all assets without children
+      const assetMap = new Map<string, Asset>();
       const transformedAssets = response.assets.map((asset: AssetResponseDto) => {
         // Safely parse department data if it exists
         let departmentName = '';
@@ -143,7 +195,7 @@ export default function MyAssetsPage() {
           }
         }
 
-        return {
+        const mappedAsset: Asset = {
           id: asset.asset_code,
           name: asset.name,
           image: asset.image_url || '',
@@ -207,7 +259,70 @@ export default function MyAssetsPage() {
             : new Date(asset.created_at),
           updatedBy: asset.updated_by_name || asset.updated_by || '',
           specifications: asset.specifications || [],
+          isAssetBuilder: asset.isAssetBuilder || false,
+          builderStatus: asset.builderStatus || undefined,
+          isBuilderChild: asset.isBuilderChild || false,
+          children: [],
+          expanded: false,
         };
+        assetMap.set(mappedAsset.id, mappedAsset);
+        return mappedAsset;
+      });
+
+      // Second pass: populate children using the asset map
+      transformedAssets.forEach((asset) => {
+        const apiAsset = response.assets.find((a) => a.asset_code === asset.id);
+        if (apiAsset?.children && apiAsset.children.length > 0) {
+          asset.children = (apiAsset.children || []).map((child: any) => {
+            const childId = child.asset_code || child.id;
+            const fullChild = assetMap.get(childId);
+            if (fullChild) {
+              // Return a copy with isBuilderChild flag
+              return { ...fullChild, isBuilderChild: true };
+            }
+            // Fallback: minimal child data
+            return {
+              id: childId,
+              name: child.name || child.asset_name || '',
+              image: '',
+              description: '',
+              category: '',
+              type: '',
+              serialNo: '',
+              modelNo: '',
+              brand: '',
+              status: 'Available' as const,
+              assignedTo: '',
+              department: '',
+              location: '',
+              purchaseDate: null,
+              purchasePrice: 0,
+              supplier: '',
+              warranty: null,
+              warranty_months: null,
+              documents: [],
+              maintenanceSchedule: 'None',
+              lastMaintenanceDate: null,
+              nextMaintenanceDate: null,
+              condition: 'Good' as const,
+              usefulLifeYears: 0,
+              salvageValue: 0,
+              depreciationMethod: '',
+              annualDepreciation: 0,
+              depreciationStartDate: null,
+              company: '',
+              building: '',
+              createdAt: new Date(),
+              createdBy: '',
+              updatedAt: new Date(),
+              updatedBy: '',
+              specifications: [],
+              isAssetBuilder: false,
+              isBuilderChild: true,
+              expanded: false,
+            };
+          });
+        }
       });
 
       console.log('Transformed assets:', transformedAssets.length);
@@ -224,14 +339,16 @@ export default function MyAssetsPage() {
     if (user && !userLoading) {
       fetchMyAssets();
     }
-  }, [user, userLoading]);
+  }, [user, userLoading, scope]);
 
   const filteredAssets = useMemo(() => {
     const q = searchTerm.toLowerCase().trim();
     if (!q) return assets;
-    return assets.filter(asset => {
+    
+    // Filter function that checks asset and its children recursively
+    const matchesSearch = (asset: Asset): boolean => {
       if (searchColumn === 'all') {
-        return (
+        if (
           asset.name.toLowerCase().includes(q) ||
           asset.id.toLowerCase().includes(q) ||
           asset.category.toLowerCase().includes(q) ||
@@ -244,11 +361,23 @@ export default function MyAssetsPage() {
           asset.location.toLowerCase().includes(q) ||
           asset.assignedTo.toLowerCase().includes(q) ||
           asset.supplier.toLowerCase().includes(q)
-        );
+        ) {
+          return true;
+        }
+      } else {
+        const val = (asset as any)[searchColumn];
+        if (val != null && String(val).toLowerCase().includes(q)) {
+          return true;
+        }
       }
-      const val = (asset as any)[searchColumn];
-      return val != null && String(val).toLowerCase().includes(q);
-    });
+      // Check children recursively
+      if (asset.children && asset.children.length > 0) {
+        return asset.children.some(matchesSearch);
+      }
+      return false;
+    };
+
+    return assets.filter(matchesSearch);
   }, [assets, searchTerm, searchColumn]);
 
   const handleAssetClick = (asset: Asset) => {
@@ -308,6 +437,446 @@ export default function MyAssetsPage() {
       minimumFractionDigits: 0,
       maximumFractionDigits: 0,
     }).format(amount);
+  };
+
+  // Card component for builder assets - chevron opens the tree modal
+  const AssetTreeCard = ({
+    asset,
+    onClick,
+    searchTerm,
+    searchColumn,
+  }: {
+    asset: Asset;
+    onClick: (asset: Asset) => void;
+    searchTerm: string;
+    searchColumn: string;
+  }) => {
+    const isBuilderParent = asset.isAssetBuilder && asset.children && asset.children.length > 0;
+    const childCount = asset.children?.length ?? 0;
+
+    // Check if this asset or any of its children match the search
+    const matchesSearch = (a: Asset): boolean => {
+      const q = searchTerm.toLowerCase().trim();
+      if (!q) return true;
+      if (searchColumn === 'all') {
+        if (
+          a.name.toLowerCase().includes(q) ||
+          a.id.toLowerCase().includes(q) ||
+          a.category.toLowerCase().includes(q) ||
+          a.type.toLowerCase().includes(q) ||
+          a.serialNo.toLowerCase().includes(q) ||
+          a.description.toLowerCase().includes(q) ||
+          a.modelNo.toLowerCase().includes(q) ||
+          a.brand.toLowerCase().includes(q) ||
+          a.department.toLowerCase().includes(q) ||
+          a.location.toLowerCase().includes(q) ||
+          a.assignedTo.toLowerCase().includes(q) ||
+          a.supplier.toLowerCase().includes(q)
+        ) {
+          return true;
+        }
+      } else {
+        const val = (a as any)[searchColumn];
+        if (val != null && String(val).toLowerCase().includes(q)) {
+          return true;
+        }
+      }
+      if (a.children && a.children.length > 0) {
+        return a.children.some(matchesSearch);
+      }
+      return false;
+    };
+
+    if (!matchesSearch(asset)) {
+      return null;
+    }
+
+    const statusColor = getStatusColor(asset.status);
+    const conditionColor = getConditionColor(asset.condition);
+    const displayStatus =
+      asset.isAssetBuilder && asset.builderStatus
+        ? asset.builderStatus
+        : asset.status;
+
+    const handleOpenTree = (e: React.MouseEvent) => {
+      e.stopPropagation();
+      e.preventDefault();
+      setTreeModalAsset(asset);
+    };
+
+    const handleCardClick = (e: React.MouseEvent) => {
+      e.stopPropagation();
+      onClick(asset);
+    };
+
+    return (
+      <Card
+        className="border border-gray-200 shadow-sm hover:shadow-md transition-shadow cursor-pointer min-h-[420px] flex flex-col rounded-lg"
+        onClick={handleCardClick}
+      >
+        <CardHeader className="pb-3">
+          <div className="flex items-start justify-between gap-2">
+            <div className="flex-1 min-w-0">
+              <div className="flex items-center gap-2 mb-1">
+                {isBuilderParent ? (
+                  <button
+                    onClick={handleOpenTree}
+                    className="p-1 text-amber-600 hover:text-amber-800 hover:bg-amber-50 rounded transition-colors"
+                    aria-label="View asset tree"
+                    title="View asset tree"
+                  >
+                    <ChevronDown className="h-4 w-4" />
+                  </button>
+                ) : (
+                  <div className="w-6" />
+                )}
+                <Badge
+                  variant="outline"
+                  className="text-xs font-mono bg-blue-50 text-blue-700 border-blue-200"
+                >
+                  {asset.id}
+                </Badge>
+                <Badge className={`text-xs ${statusColor}`}>
+                  {displayStatus}
+                </Badge>
+              </div>
+              <CardTitle className="text-lg font-semibold text-gray-900 line-clamp-2">
+                {asset.name}
+              </CardTitle>
+            </div>
+          </div>
+          <p className="text-sm text-gray-500 line-clamp-2">
+            {asset.description}
+          </p>
+        </CardHeader>
+
+        <CardContent className="flex-1 flex flex-col justify-between space-y-4 bg-white rounded-lg">
+          {asset.image ? (
+            <div className="w-full h-32 bg-gray-100 rounded-lg overflow-hidden">
+              <img
+                src={proxyCloudinaryUrl(asset.image)}
+                alt={asset.name}
+                className="w-full h-full object-cover"
+                onError={e => {
+                  const target = e.target as HTMLImageElement;
+                  target.style.display = 'none';
+                }}
+              />
+            </div>
+          ) : (
+            <div className="w-full h-32 bg-gray-100 rounded-lg flex items-center justify-center">
+              <Package className="h-12 w-12 text-gray-400" />
+            </div>
+          )}
+
+          <div className="space-y-2">
+            <div className="flex items-center gap-2 text-sm text-gray-600">
+              <User className="h-4 w-4" />
+              <span className="truncate">
+                {asset.category} • {asset.brand}
+              </span>
+            </div>
+
+            {asset.serialNo && (
+              <div className="text-xs text-gray-500">
+                Serial: {asset.serialNo}
+              </div>
+            )}
+
+            <div className="flex items-center gap-2 text-sm text-gray-600">
+              <MapPin className="h-4 w-4" />
+              <span className="truncate">{asset.location}</span>
+            </div>
+
+            {asset.purchasePrice > 0 && (
+              <div className="text-sm font-medium text-green-600">
+                {formatCurrency(asset.purchasePrice)}
+              </div>
+            )}
+
+            <div className="flex items-center gap-2">
+              <Badge className={`text-xs ${conditionColor}`}>
+                {asset.condition}
+              </Badge>
+              {asset.status === 'In Maintenance' && (
+                <Badge className="text-xs bg-yellow-100 text-yellow-800">
+                  <Wrench className="h-3 w-3 mr-1" />
+                  Maintenance
+                </Badge>
+              )}
+            </div>
+
+            {asset.warranty && (
+              <div className="flex items-center gap-2 text-sm text-gray-600">
+                <Calendar className="h-4 w-4" />
+                <span>{asset.warranty} warranty</span>
+              </div>
+            )}
+          </div>
+
+          {isBuilderParent && (
+            <Button
+              variant="outline"
+              size="sm"
+              className="w-full"
+              onClick={handleOpenTree}
+            >
+              <Layers className="h-4 w-4 mr-1" />
+              View {childCount} Component{childCount === 1 ? '' : 's'}
+            </Button>
+          )}
+
+          <Button
+            variant="outline"
+            size="sm"
+            className="w-full"
+            onClick={e => {
+              e.stopPropagation();
+              onClick(asset);
+            }}
+          >
+            View Details
+          </Button>
+        </CardContent>
+      </Card>
+    );
+  };
+
+  const AssetTreeModal = ({
+    isOpen,
+    asset,
+    onClose,
+    onAssetSelect,
+  }: {
+    isOpen: boolean;
+    asset: Asset | null;
+    onClose: () => void;
+    onAssetSelect: (asset: Asset) => void;
+  }) => {
+    const [treeChildren, setTreeChildren] = useState<Asset[]>([]);
+    const [loadingChildren, setLoadingChildren] = useState(false);
+
+    useEffect(() => {
+      if (!isOpen || !asset) {
+        setTreeChildren([]);
+        return;
+      }
+
+      const children = asset.children ?? [];
+      const missingChildren = children.filter(child => !child.image);
+      if (missingChildren.length === 0) {
+        setTreeChildren(children);
+        return;
+      }
+
+      let cancelled = false;
+      setLoadingChildren(true);
+
+      const fetchChild = async (child: Asset): Promise<Asset> => {
+        try {
+          const response = await api.get<{ assets: AssetResponseDto[] }>(
+            `/assets/${encodeURIComponent(child.id)}`
+          );
+          const apiAsset = response.assets?.[0];
+          if (apiAsset) {
+            return mapMyAssetDto(apiAsset);
+          }
+        } catch (error) {
+          console.warn(`Failed to fetch child asset ${child.id}:`, error);
+        }
+        return child;
+      };
+
+      Promise.all(children.map(fetchChild)).then(result => {
+        if (!cancelled) {
+          setTreeChildren(result);
+          setLoadingChildren(false);
+        }
+      });
+
+      return () => {
+        cancelled = true;
+      };
+    }, [isOpen, asset]);
+
+    if (!isOpen || !asset) return null;
+
+    const children = treeChildren.length > 0 ? treeChildren : (asset.children ?? []);
+    const parentStatusColor = getStatusColor(
+      asset.isAssetBuilder && asset.builderStatus
+        ? asset.builderStatus
+        : asset.status
+    );
+
+    const handleAssetOpen = (e: React.MouseEvent, target: Asset) => {
+      e.stopPropagation();
+      onAssetSelect(target);
+    };
+
+    return (
+      <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm">
+        <div className="absolute inset-0" onClick={onClose} />
+
+        <Card className="relative z-10 w-full max-w-3xl bg-white rounded-2xl overflow-hidden flex flex-col h-[85dvh] max-h-[800px] min-h-[500px] mx-2 sm:mx-4 border-none shadow-2xl">
+          <CardHeader className="bg-gradient-to-r from-red-600 to-rose-600 text-white pb-8 sm:pb-12 pt-6 sm:pt-8 px-4 sm:px-6">
+            <div className="flex justify-between items-start">
+              <div>
+                <h2 className="text-xl sm:text-2xl font-bold">Asset Builder Tree</h2>
+                <p className="text-red-100 mt-2 text-sm sm:text-base">
+                  Parent asset and its components
+                </p>
+              </div>
+              <Button
+                variant="ghost"
+                size="icon"
+                onClick={onClose}
+                className="text-white hover:bg-white/20 rounded-full"
+              >
+                <X className="h-6 w-6" />
+              </Button>
+            </div>
+          </CardHeader>
+
+          <CardContent className="flex-1 overflow-y-auto px-4 sm:px-6 pt-5 sm:pt-6 pb-4 min-h-0">
+            <div className="space-y-3">
+              {/* Parent node */}
+              <button
+                type="button"
+                onClick={e => handleAssetOpen(e, asset)}
+                className="w-full text-left border border-amber-200 bg-amber-50 rounded-lg p-4 hover:bg-amber-100/70 transition-colors cursor-pointer flex items-center gap-4"
+              >
+                <div className="w-16 h-16 flex-shrink-0 rounded-lg overflow-hidden bg-amber-100 flex items-center justify-center">
+                  {asset.image ? (
+                    <img
+                      src={proxyCloudinaryUrl(asset.image)}
+                      alt={asset.name}
+                      className="w-full h-full object-cover"
+                      onError={e => {
+                        const target = e.target as HTMLImageElement;
+                        target.style.display = 'none';
+                      }}
+                    />
+                  ) : (
+                    <Package className="h-7 w-7 text-amber-500" />
+                  )}
+                </div>
+                <div className="min-w-0 flex-1">
+                  <div className="flex items-center gap-2 mb-1">
+                    <span className="text-[11px] font-medium uppercase tracking-wide text-amber-700">
+                      Parent Asset
+                    </span>
+                    <Badge
+                      variant="outline"
+                      className="text-xs font-mono bg-white text-amber-800 border-amber-300"
+                    >
+                      {asset.id}
+                    </Badge>
+                    <Badge className={`text-xs ${parentStatusColor}`}>
+                      {asset.builderStatus || asset.status}
+                    </Badge>
+                  </div>
+                  <p className="text-base font-semibold text-gray-900">
+                    {asset.name}
+                  </p>
+                  <p className="text-sm text-gray-600 mt-0.5 line-clamp-2">
+                    {asset.description || 'No description'}
+                  </p>
+                  <p className="text-xs text-gray-500 mt-1">
+                    {asset.category}
+                    {asset.serialNo ? ` • Serial: ${asset.serialNo}` : ''}
+                  </p>
+                </div>
+                <ChevronDown className="h-5 w-5 text-amber-500 flex-shrink-0 -rotate-90" />
+              </button>
+
+              {/* Connector to children */}
+              {children.length > 0 && (
+                <>
+                  <div className="flex items-center gap-2 pl-4">
+                    <div className="w-0.5 h-6 bg-amber-300" />
+                  </div>
+                  <div className="ml-4 border-l-2 border-amber-200 pl-4 space-y-3">
+                    <div className="flex items-center gap-2">
+                      <Layers className="h-4 w-4 text-gray-400" />
+                      <span className="text-xs font-medium text-gray-500">
+                        Components ({children.length})
+                      </span>
+                      {loadingChildren && (
+                        <span className="text-xs text-gray-400">
+                          Loading details...
+                        </span>
+                      )}
+                    </div>
+
+                    {children.map((child: Asset) => {
+                      const childStatusColor = getStatusColor(child.status);
+                      return (
+                        <button
+                          key={child.id}
+                          type="button"
+                          onClick={e => handleAssetOpen(e, child)}
+                          className="w-full text-left border border-gray-200 bg-white rounded-lg p-3 hover:bg-gray-50 transition-colors cursor-pointer flex items-center gap-3"
+                        >
+                          <div className="w-12 h-12 flex-shrink-0 rounded-lg overflow-hidden bg-gray-100 flex items-center justify-center">
+                            {child.image ? (
+                              <img
+                                src={proxyCloudinaryUrl(child.image)}
+                                alt={child.name}
+                                className="w-full h-full object-cover"
+                                onError={e => {
+                                  const target = e.target as HTMLImageElement;
+                                  target.style.display = 'none';
+                                }}
+                              />
+                            ) : (
+                              <Package className="h-5 w-5 text-gray-400" />
+                            )}
+                          </div>
+                          <div className="min-w-0 flex-1">
+                            <div className="flex items-center gap-2 mb-1">
+                              <Badge
+                                variant="outline"
+                                className="text-xs font-mono bg-blue-50 text-blue-700 border-blue-200"
+                              >
+                                {child.id}
+                              </Badge>
+                              <Badge className={`text-xs ${childStatusColor}`}>
+                                {child.status}
+                              </Badge>
+                            </div>
+                            <p className="text-sm font-medium text-gray-800 truncate">
+                              {child.name}
+                            </p>
+                            <p className="text-xs text-gray-500 truncate">
+                              {child.category}
+                              {child.brand ? ` • ${child.brand}` : ''}
+                            </p>
+                          </div>
+                          <div className="flex-shrink-0 flex items-center gap-2">
+                            {child.location && (
+                              <span className="text-xs text-gray-500 hidden sm:inline truncate max-w-[120px]">
+                                {child.location}
+                              </span>
+                            )}
+                            <ChevronDown className="h-4 w-4 text-gray-400 -rotate-90" />
+                          </div>
+                        </button>
+                      );
+                    })}
+                  </div>
+                </>
+              )}
+            </div>
+          </CardContent>
+
+          <div className="flex justify-end px-4 sm:px-6 py-4 sm:py-5 bg-gray-50 border-t">
+            <Button variant="outline" size="lg" onClick={onClose} className="w-full sm:w-auto">
+              Close
+            </Button>
+          </div>
+        </Card>
+      </div>
+    );
   };
 
   const displayLoading = userLoading || loading;
@@ -440,15 +1009,23 @@ export default function MyAssetsPage() {
           title="My Assets"
           description={`Assets assigned to ${user.name} • ${assets.length} items`}
         >
-          <Button
-            variant="header"
-            size="sm"
-            onClick={() => navigate('/profile?tab=documents')}
-            aria-label="View My Accountability Forms"
-          >
-            <FileText className="mr-2 h-4 w-4" />
-            My Accountability Forms
-          </Button>
+          <div className="flex flex-col sm:flex-row sm:items-center gap-3">
+            <Tabs value={scope} onValueChange={v => setScope(v as 'it' | 'admin')} className="w-full sm:w-auto">
+              <TabsList className={segmentTabsListClassName + ' grid grid-cols-2 max-w-full sm:max-w-[280px]'}>
+                <TabsTrigger value="it" className={segmentTabsTriggerClassName}>IT Asset</TabsTrigger>
+                <TabsTrigger value="admin" className={segmentTabsTriggerClassName}>Admin Asset</TabsTrigger>
+              </TabsList>
+            </Tabs>
+            <Button
+              variant="header"
+              size="sm"
+              onClick={() => navigate('/profile?tab=documents')}
+              aria-label="View My Accountability Forms"
+            >
+              <FileText className="mr-2 h-4 w-4" />
+              My Accountability Forms
+            </Button>
+          </div>
         </PageHeader>
 
         {/* Search Bar */}
@@ -500,118 +1077,18 @@ export default function MyAssetsPage() {
           </div>
         ) : (
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
-            {filteredAssets.map((asset: Asset) => (
-              <Card
-                key={asset.id}
-                className="border border-gray-200 shadow-sm hover:shadow-md transition-shadow cursor-pointer min-h-[420px] flex flex-col rounded-lg"
-                onClick={() => handleAssetClick(asset)}
-              >
-                <CardHeader className="pb-3">
-                  <div className="flex items-start justify-between gap-2">
-                    <div className="flex-1 min-w-0">
-                      <div className="flex items-center gap-2 mb-1">
-                        <Badge
-                          variant="outline"
-                          className="text-xs font-mono bg-blue-50 text-blue-700 border-blue-200"
-                        >
-                          {asset.id}
-                        </Badge>
-                        <Badge
-                          className={`text-xs ${getStatusColor(asset.status)}`}
-                        >
-                          {asset.status}
-                        </Badge>
-                      </div>
-                      <CardTitle className="text-lg font-semibold text-gray-900 line-clamp-2">
-                        {asset.name}
-                      </CardTitle>
-                    </div>
-                  </div>
-                  <p className="text-sm text-gray-500 line-clamp-2">
-                    {asset.description}
-                  </p>
-                </CardHeader>
-
-                <CardContent className="flex-1 flex flex-col justify-between space-y-4 bg-white rounded-lg">
-                  {asset.image ? (
-                    <div className="w-full h-32 bg-gray-100 rounded-lg overflow-hidden">
-                      <img
-                        src={proxyCloudinaryUrl(asset.image)}
-                        alt={asset.name}
-                        className="w-full h-full object-cover"
-                        onError={e => {
-                          const target = e.target as HTMLImageElement;
-                          target.style.display = 'none';
-                        }}
-                      />
-                    </div>
-                  ) : (
-                    <div className="w-full h-32 bg-gray-100 rounded-lg flex items-center justify-center">
-                      <Package className="h-12 w-12 text-gray-400" />
-                    </div>
-                  )}
-
-                  <div className="space-y-2">
-                    <div className="flex items-center gap-2 text-sm text-gray-600">
-                      <User className="h-4 w-4" />
-                      <span className="truncate">
-                        {asset.category} • {asset.brand}
-                      </span>
-                    </div>
-
-                    {asset.serialNo && (
-                      <div className="text-xs text-gray-500">
-                        Serial: {asset.serialNo}
-                      </div>
-                    )}
-
-                    <div className="flex items-center gap-2 text-sm text-gray-600">
-                      <MapPin className="h-4 w-4" />
-                      <span className="truncate">{asset.location}</span>
-                    </div>
-
-                    {asset.purchasePrice > 0 && (
-                      <div className="text-sm font-medium text-green-600">
-                        {formatCurrency(asset.purchasePrice)}
-                      </div>
-                    )}
-
-                    <div className="flex items-center gap-2">
-                      <Badge
-                        className={`text-xs ${getConditionColor(asset.condition)}`}
-                      >
-                        {asset.condition}
-                      </Badge>
-                      {asset.status === 'In Maintenance' && (
-                        <Badge className="text-xs bg-yellow-100 text-yellow-800">
-                          <Wrench className="h-3 w-3 mr-1" />
-                          Maintenance
-                        </Badge>
-                      )}
-                    </div>
-
-                    {asset.warranty && (
-                      <div className="flex items-center gap-2 text-sm text-gray-600">
-                        <Calendar className="h-4 w-4" />
-                        <span>{asset.warranty} warranty</span>
-                      </div>
-                    )}
-                  </div>
-
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    className="w-full"
-                    onClick={e => {
-                      e.stopPropagation();
-                      handleAssetClick(asset);
-                    }}
-                  >
-                    View Details
-                  </Button>
-                </CardContent>
-              </Card>
-            ))}
+            {/* Get top-level assets (not builder children) */}
+            {filteredAssets
+              .filter(asset => !asset.isBuilderChild)
+              .map((asset: Asset) => (
+                <AssetTreeCard
+                  key={asset.id}
+                  asset={asset}
+                  onClick={handleAssetClick}
+                  searchTerm={searchTerm}
+                  searchColumn={searchColumn}
+                />
+              ))}
           </div>
         )}
       </main>
@@ -635,6 +1112,17 @@ export default function MyAssetsPage() {
         builder={selectedBuilderForView}
         assets={assets}
         onAssetSelect={asset => {
+          setSelectedAsset(asset);
+          setIsViewModalOpen(true);
+        }}
+      />
+
+      <AssetTreeModal
+        isOpen={!!treeModalAsset}
+        asset={treeModalAsset}
+        onClose={() => setTreeModalAsset(null)}
+        onAssetSelect={asset => {
+          setTreeModalAsset(null);
           setSelectedAsset(asset);
           setIsViewModalOpen(true);
         }}

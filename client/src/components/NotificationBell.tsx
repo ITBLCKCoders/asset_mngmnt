@@ -133,32 +133,47 @@ export default function NotificationBell({ className }: NotificationBellProps) {
       return;
     }
 
-    // Handle accountability form notifications - open preview dialog
+    // Handle HR "ready for HR copy" accountability notifications - navigate to forms/accountability HR copy tab
+    if (
+      notif.actionTarget === 'accountability_form_hr_copy' &&
+      notif.formId
+    ) {
+      navigate('/forms/accountability?tab=hrCopy');
+      markAsRead(notif.id);
+      setIsOpen(false);
+      return;
+    }
+
+    // Handle accountability form notifications - navigate to profile documents Accountability sub-tab
     if (notif.type === 'accountability_form' && notif.formId) {
-      console.log('[NOTIFICATION CLICK] Opening accountability form preview:', notif.formId);
-      try {
-        const response = await api.get(`/accountability-forms/${notif.formId}`);
-        const form = (response as { form?: AccountabilityForm }).form;
-        console.log('[NOTIFICATION CLICK] Form data fetched:', form);
-        if (form) {
-          // Navigate to profile documents tab first
-          navigate('/profile?tab=documents');
-          // Then open the preview dialog
-          setAccountabilityFormPreview(form);
-        } else {
-          console.error('[NOTIFICATION CLICK] Form data is missing in response');
-          // Fallback to navigation
-          navigate(`/profile?tab=documents#accountability-form-${notif.formId}`);
-        }
-        markAsRead(notif.id);
-        setIsOpen(false);
-      } catch (error) {
-        console.error('[NOTIFICATION CLICK] Failed to fetch accountability form:', error);
-        // Fallback to navigation if fetch fails
-        navigate(`/profile?tab=documents#accountability-form-${notif.formId}`);
-        markAsRead(notif.id);
-        setIsOpen(false);
-      }
+      navigate('/profile?tab=documents&docTab=accountability');
+      markAsRead(notif.id);
+      setIsOpen(false);
+      return;
+    }
+
+    // Handle asset return notifications - navigate to profile documents Returns sub-tab
+    if (
+      notif.actionTarget === 'return_request_approved' ||
+      notif.actionTarget === 'my_return_requests'
+    ) {
+      navigate('/profile?tab=documents&docTab=returns');
+      markAsRead(notif.id);
+      setIsOpen(false);
+      return;
+    }
+
+    // Handle processed-return "checked and verified" and checklist receive
+    // notifications - navigate to the Approvals Receive Approve tab.
+    // Matched on actionTarget so it also works for legacy notifications whose
+    // route predates the ?tab=receive deep-link.
+    if (
+      notif.actionTarget === 'approvals' ||
+      notif.actionTarget === 'checklist_receive'
+    ) {
+      navigate('/approvals?tab=receive');
+      markAsRead(notif.id);
+      setIsOpen(false);
       return;
     }
 
@@ -176,8 +191,12 @@ export default function NotificationBell({ className }: NotificationBellProps) {
       navigate('/profile?tab=documents#asset-return-forms');
     } else if (target === 'asset_return_requests') {
       navigate('/assets/return-requests');
+    } else if (target === 'asset_transfer_requests') {
+      navigate('/assets/transfer-requests');
+    } else if (target === 'my_transfer_requests') {
+      navigate('/profile?tab=documents&docTab=transfers');
     } else if (target === 'my_return_requests') {
-      navigate('/assets/return-request/my-requests');
+      navigate('/profile?tab=documents&docTab=returns');
     } else if (target === 'asset_return_wet_upload') {
       // Typically routed from server notification after DH approval.
       // Prefer explicit route if provided, else open the return forms page.

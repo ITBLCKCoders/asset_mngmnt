@@ -20,6 +20,30 @@
   }
 }
 
+/* Ensure proper text rendering at high DPI */
+html {
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  text-rendering: optimizeLegibility;
+}
+
+/* Responsive base sizing - scales naturally with viewport and user preferences */
+:root {
+  font-size: 16px;
+}
+
+@media (max-width: 640px) {
+  :root {
+    font-size: 14px;
+  }
+}
+
+@media (max-width: 1024px) {
+  :root {
+    font-size: 15px;
+  }
+}
+
 [data-slot='chart'] .recharts-responsive-container,
 [data-slot='chart'] .recharts-wrapper {
   width: 100%;
@@ -77,4 +101,36 @@ nav::-webkit-scrollbar-thumb {
 }
 nav::-webkit-scrollbar-thumb:hover {
   background: rgba(255, 255, 255, 0.5);
+}
+
+/* High DPI image rendering */
+img {
+  image-rendering: auto;
+  image-rendering: crisp-edges;
+}
+
+/* Ensure crisp rendering for canvas elements */
+canvas {
+  image-rendering: pixelated;
+}
+
+/* driver.js tour overrides — ensure above dialogs/alert-dialogs */
+.driver-popover.digital-initials-tour-popover {
+  max-width: 360px;
+  border-radius: 0.75rem;
+  border: 1px solid #e5e7eb;
+  box-shadow: 0 20px 40px rgba(0,0,0,0.18);
+}
+.driver-popover.digital-initials-tour-popover .driver-popover-title {
+  font-weight: 700;
+  color: #b91c1c;
+}
+.driver-popover.digital-initials-tour-popover .driver-popover-description a {
+  color: #dc2626;
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+.driver-popover.digital-initials-tour-popover .driver-popover-progress-text {
+  color: #6b7280;
+  font-size: 12px;
 }

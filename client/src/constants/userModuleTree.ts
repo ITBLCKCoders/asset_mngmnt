@@ -25,8 +25,6 @@ export const USER_MODULE_TREE: ModuleTreeNode[] = [
     children: [
       'Asset List',
       'Asset Assignment',
-      'Asset Request',
-      'Request Management',
       {
         name: 'Asset Borrowing',
         children: ['Borrow Request Management'],
@@ -67,6 +65,8 @@ export const USER_MODULE_TREE: ModuleTreeNode[] = [
       'Asset Types',
       'Asset Brands',
       'Suppliers',
+      'Intangible Asset Types',
+      'Risk Levels',
       'Departments',
       'Locations',
       'Roles',

@@ -41,6 +41,33 @@ function getConditionExcelArgb(condition: string): string | null {
   }
 }
 
+/**
+ * Compute column widths based on the longest content in each column.
+ * Uses the base width as a floor and caps at 50 to avoid overly wide columns.
+ */
+function calculateColumnWidths(
+  selectedCols: { key: string; label: string }[],
+  rows: { cells: string[] }[],
+  baseWidths: Record<string, number>,
+): Record<string, number> {
+  const widths: Record<string, number> = {};
+  selectedCols.forEach((col, idx) => {
+    const headerLen = col.label.length;
+    let maxLen = headerLen;
+    rows.forEach(row => {
+      const cell = row.cells[idx];
+      if (cell) {
+        const len = String(cell).length;
+        if (len > maxLen) maxLen = len;
+      }
+    });
+    const base = baseWidths[col.key] || 20;
+    const computed = Math.min(Math.max(maxLen + 2, base), 50);
+    widths[col.key] = computed;
+  });
+  return widths;
+}
+
 export const EXPORT_SUMMARY_CONDITIONS = SUMMARY_CONDITIONS;
 
 /**
@@ -59,15 +86,41 @@ async function fetchAllAssets(
   const apiUrl = `/assets?${params.toString()}`;
   const res = await api.get<{ assets: AssetResponseDto[] }>(apiUrl);
 
+  const mapped = (res.assets ?? []).map(mapDtoToAsset);
+  const flattened: Asset[] = [];
+  const seen = new Set<string>();
+
+  for (const asset of mapped) {
+    if (!seen.has(asset.id)) {
+      flattened.push(asset);
+      seen.add(asset.id);
+    }
+    // The server hides builder component assets from the top-level response but
+    // nests them under the parent's `children`. Flatten them so export lookups
+    // (assets.find(a => a.id === item.asset_code)) can resolve builder items and
+    // summary counts include the components. This only affects the export path:
+    // the on-screen Asset List table reads from a separate data hook.
+    if (asset.children?.length) {
+      for (const child of asset.children) {
+        if (!seen.has(child.id)) {
+          flattened.push(child);
+          seen.add(child.id);
+        }
+      }
+    }
+  }
+
   console.log(
     '[AssetExport fetchAllAssets]',
     apiUrl,
     '→',
     res.assets?.length ?? 0,
-    'assets returned',
+    'assets returned,',
+    flattened.length,
+    'after flattening builder children',
   );
 
-  return (res.assets ?? []).map(mapDtoToAsset);
+  return flattened;
 }
 
 function formatScopeLabel(scope: string): string {
@@ -163,7 +216,10 @@ function mapDtoToAsset(dto: AssetResponseDto): Asset {
       : new Date(dto.created_at),
     updatedBy: dto.updated_by_name || dto.updated_by || '',
     accountabilityForm: (() => {
-      const form = dto.accountabilityForms?.[0];
+      const activeStatuses = ['Pending', 'Signed', 'Completed'];
+      const form = dto.accountabilityForms?.find(
+        (f: any) => activeStatuses.includes(f.status)
+      );
       if (!form) return undefined;
       const assetsArray = form.assets_data?.assets || [{
         id: dto.assetID || dto.asset_code,
@@ -184,6 +240,66 @@ function mapDtoToAsset(dto: AssetResponseDto): Asset {
       }];
       return { ...form, assets: assetsArray } as AccountabilityForm;
     })(),
+    isAssetBuilder: Boolean(dto.isAssetBuilder),
+    builderStatus: dto.builderStatus ?? undefined,
+    children: Array.isArray(dto.children)
+      ? dto.children.map((child: unknown) => {
+        // Handles both a full AssetResponseDto (has asset_code) and the
+        // server's minimal fallback { asset_code, name }.
+        return 'asset_code' in (child as any) && (child as any).asset_code
+          ? mapDtoToAsset(child as AssetResponseDto)
+          : mapChildToAsset(child, dto.builderStatus);
+      })
+      : undefined,
+  };
+}
+
+/**
+ * Convert a builder child entry into an Asset. The server may send a full
+ * asset DTO inside `children`, or a minimal fallback like { asset_code, name }
+ * when the child isn't part of the current result set. Mirrors the child
+ * resolution in the asset list data hook so export lookup + summary counts see
+ * the same component assets the parent shows when expanded on screen.
+ */
+function mapChildToAsset(child: unknown, builderStatus?: string | null): Asset {
+  const c = (child ?? {}) as Record<string, string>;
+  const code = c.asset_code || c.id || '';
+  return {
+    id: code,
+    assetID: c.assetID,
+    name: c.name || code,
+    image: '',
+    description: '',
+    category: c.category_name || '',
+    type: c.type_name || '',
+    serialNo: c.serial || '',
+    modelNo: c.model || '',
+    brand: c.brand || '',
+    status: (builderStatus as Asset['status']) || 'Partial',
+    assignedTo: '',
+    department: '',
+    location: '',
+    purchaseDate: null,
+    purchasePrice: 0,
+    supplier: '',
+    warranty: null,
+    warranty_months: null,
+    documents: [],
+    maintenanceSchedule: 'None',
+    lastMaintenanceDate: null,
+    nextMaintenanceDate: null,
+    condition: 'Good',
+    usefulLifeYears: 0,
+    salvageValue: 0,
+    depreciationMethod: '',
+    annualDepreciation: 0,
+    depreciationStartDate: null,
+    company: '',
+    building: '',
+    createdAt: new Date(0),
+    createdBy: '',
+    updatedAt: new Date(0),
+    updatedBy: '',
   };
 }
 
@@ -230,6 +346,14 @@ export const useAssetExport = () => {
       'location',
       'purchasePrice',
       'purchaseDate',
+      'usefulLifeYears',
+      'salvageValue',
+      'depreciationMethod',
+      'depreciationStartDate',
+      'annualDepreciation',
+      'bookValue',
+      'accumulatedDepreciation',
+      'monthlyDepreciation',
     ])
   );
 
@@ -259,8 +383,11 @@ export const useAssetExport = () => {
     { key: 'usefulLifeYears', label: 'Useful Life (Years)' },
     { key: 'salvageValue', label: 'Salvage Value' },
     { key: 'depreciationMethod', label: 'Depreciation Method' },
-    { key: 'annualDepreciation', label: 'Annual Depreciation' },
     { key: 'depreciationStartDate', label: 'Depreciation Start Date' },
+    { key: 'annualDepreciation', label: 'Annual Depreciation' },
+    { key: 'bookValue', label: 'Book Value' },
+    { key: 'accumulatedDepreciation', label: 'Accumulated Depreciation' },
+    { key: 'monthlyDepreciation', label: 'Depreciation / Month' },
     { key: 'company', label: 'Company' },
     { key: 'building', label: 'Building' },
     { key: 'createdBy', label: 'Created By' },
@@ -302,6 +429,12 @@ export const useAssetExport = () => {
     if (colKey === 'salvageValue' && value)
       return formatCurrency(value);
     if (colKey === 'annualDepreciation' && value)
+      return formatCurrency(value);
+    if (colKey === 'bookValue' && value)
+      return formatCurrency(value);
+    if (colKey === 'accumulatedDepreciation' && value)
+      return formatCurrency(value);
+    if (colKey === 'monthlyDepreciation' && value)
       return formatCurrency(value);
     return value ?? '';
   };
@@ -441,6 +574,12 @@ builderGroups.forEach(group => {
 
     let currentY = filterLabel ? 37 : 32;
 
+    // Add "Asset List" section header (matches Excel export naming)
+    doc.setFontSize(12);
+    doc.setFont('helvetica', 'bold');
+    doc.text('Asset List', 165, currentY, { align: 'center' });
+    currentY += 5;
+
     // Prepare table data with selected columns
     // Process assets with builder grouping (items go right after parent, no separator rows)
     const flattenedAssets: (Asset & { isChild?: boolean; builderName?: string })[] = [];
@@ -572,8 +711,11 @@ builderGroups.forEach(group => {
       usefulLifeYears: 20,
       salvageValue: 18,
       depreciationMethod: 25,
-      annualDepreciation: 20,
       depreciationStartDate: 22,
+      annualDepreciation: 20,
+      bookValue: 18,
+      accumulatedDepreciation: 20,
+      monthlyDepreciation: 18,
       company: 25,
       building: 20,
       createdBy: 25,
@@ -620,6 +762,7 @@ builderGroups.forEach(group => {
       columnStyles,
       margin: { left: 5, right: 5 },
       didParseCell: data => {
+        if (data.section !== 'body') return;
         const row = bodyRows[data.row.index];
         const colKey = selectedCols[data.column.index]?.key;
         if (row.isSeparator) {
@@ -703,8 +846,54 @@ filterLabel?: string
     // Assets sheet — header row + data rows derived from selected columns.
     const assetsSheet = workbook.addWorksheet('Assets');
 
-    const lastCol = (selectedCols.length || 5) + 1; // 1-based column index for last data column
+    const lastCol = selectedCols.length || 5; // 1-based column index for last data column
     const logoEndCol = 3; // Logo spans columns A-C (1-3)
+
+    // Define base column widths (used as floor for auto-sizing)
+    const baseColumnWidths: Record<string, number> = {
+      id: 15,
+      name: 25,
+      description: 40,
+      category: 20,
+      type: 20,
+      serialNo: 18,
+      brand: 18,
+      modelNo: 18,
+      status: 15,
+      assignedTo: 30,
+      accountabilityForm: 25,
+      department: 25,
+      location: 25,
+      purchasePrice: 18,
+      purchaseDate: 18,
+      supplier: 25,
+      warranty: 18,
+      documents: 18,
+      maintenanceSchedule: 25,
+      lastMaintenanceDate: 20,
+      nextMaintenanceDate: 20,
+      condition: 18,
+      usefulLifeYears: 20,
+      salvageValue: 18,
+      depreciationMethod: 25,
+      depreciationStartDate: 22,
+      annualDepreciation: 20,
+      bookValue: 18,
+      accumulatedDepreciation: 20,
+      monthlyDepreciation: 18,
+      company: 25,
+      building: 20,
+      createdBy: 25,
+      createdAt: 18,
+      updatedBy: 25,
+      updatedAt: 18,
+    };
+
+    // Set column definitions BEFORE adding any rows so merges align correctly
+    assetsSheet.columns = selectedCols.map(col => ({
+      key: col.key,
+      width: baseColumnWidths[col.key] || 20,
+    }));
 
     // Add company logo if available - place in columns A-C, rows 1-3
     if (activeCompany?.logo_url) {
@@ -780,48 +969,6 @@ filterLabel?: string
 
     // Row 6: empty spacer before header
     assetsSheet.addRow([]);
-
-    // Define column widths based on content type
-    const columnWidths: Record<string, number> = {
-      id: 15,
-      name: 25,
-      description: 40,
-      category: 20,
-      type: 20,
-      serialNo: 18,
-      brand: 18,
-      modelNo: 18,
-      status: 15,
-      assignedTo: 30,
-      accountabilityForm: 25,
-      department: 25,
-      location: 25,
-      purchasePrice: 18,
-      purchaseDate: 18,
-      supplier: 25,
-      warranty: 18,
-      documents: 18,
-      maintenanceSchedule: 25,
-      lastMaintenanceDate: 20,
-      nextMaintenanceDate: 20,
-      condition: 18,
-      usefulLifeYears: 20,
-      salvageValue: 18,
-      depreciationMethod: 25,
-      annualDepreciation: 20,
-      depreciationStartDate: 22,
-      company: 25,
-      building: 20,
-      createdBy: 25,
-      createdAt: 18,
-      updatedBy: 25,
-      updatedAt: 18,
-    };
-
-    assetsSheet.columns = selectedCols.map(col => ({
-      key: col.key,
-      width: columnWidths[col.key] || 20,
-    }));
 
     // Process assets with builder grouping logic
     const flattenedAssets: (Asset & { isChild?: boolean; builderName?: string })[] = [];
@@ -990,6 +1137,13 @@ filterLabel?: string
       }
     }
 
+    // Auto-size column widths based on content
+    const allRows = buildGroupedAssetListRows(assets, selectedCols, assetBuilders);
+    const autoWidths = calculateColumnWidths(selectedCols, allRows, baseColumnWidths);
+    selectedCols.forEach((col, i) => {
+      assetsSheet.getColumn(i + 1).width = autoWidths[col.key] || baseColumnWidths[col.key] || 20;
+    });
+
     // Generate filename with company name
     const fileName = activeCompany 
       ? `${activeCompany.name}_asset_list.xlsx` 
@@ -1039,6 +1193,14 @@ filterLabel?: string
       'location',
       'purchasePrice',
       'purchaseDate',
+      'usefulLifeYears',
+      'salvageValue',
+      'depreciationMethod',
+      'depreciationStartDate',
+      'annualDepreciation',
+      'bookValue',
+      'accumulatedDepreciation',
+      'monthlyDepreciation',
     ])
   );
 
@@ -1451,6 +1613,7 @@ const exportSummaryToPDF = async (
       headStyles: { fillColor: headerFill, textColor: [255, 255, 255], fontSize: listFontSize, fontStyle: 'bold' },
       columnStyles: colStyles,
       didParseCell: data => {
+        if (data.section !== 'body') return;
         const row = listRows[data.row.index];
         const colKey = summaryAssetColumns[data.column.index]?.key;
         if (row?.isSeparator) {
@@ -1943,8 +2106,10 @@ const exportSummaryToPDF = async (
       annualDepreciation: 20, depreciationStartDate: 22, company: 25,
       building: 20, createdBy: 25, createdAt: 18, updatedBy: 25, updatedAt: 18,
     };
+    // Auto-size column widths based on content
+    const summaryAutoWidths = calculateColumnWidths(summaryAssetColumns, listRows, excelColumnWidths);
     summaryAssetColumns.forEach((col, i) => {
-      wsAssets.getColumn(i + 1).width = excelColumnWidths[col.key] || 20;
+      wsAssets.getColumn(i + 1).width = summaryAutoWidths[col.key] || excelColumnWidths[col.key] || 20;
     });
 
     const fileName = activeCompany

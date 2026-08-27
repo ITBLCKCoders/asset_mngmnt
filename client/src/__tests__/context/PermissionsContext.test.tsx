@@ -32,7 +32,7 @@ describe('PermissionsContext', () => {
     });
     (api.get as any).mockResolvedValue({
       permissions: { assets: { view: true, create: false } },
-      roleCustodian: { assetType: 'it', managerRole: 'none', managerApprover1: false },
+      roleCustodian: { assetType: 'it', managerRole: 'none', managerApprover1: false, managerApprover2: false, managerApprover3: false, financeApprover: false, subApprover2: false },
     });
 
     const { result } = renderHook(() => usePermissionsContext()!, { wrapper });

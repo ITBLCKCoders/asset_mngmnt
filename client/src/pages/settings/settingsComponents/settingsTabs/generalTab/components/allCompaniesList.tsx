@@ -1,6 +1,7 @@
 import { Card, CardHeader, CardTitle, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { proxyCloudinaryUrl } from '@/utils/cloudinaryProxy';
+import { useCurrentUser } from '@/hooks/useCurrentUser';
 
 import { Badge } from '@/components/ui/badge';
 import {
@@ -38,6 +39,10 @@ export function AllCompaniesList({
   onDelete,
 }: AllCompaniesListProps) {
   const { hasPermission } = useUserPermissions();
+  const { user } = useCurrentUser();
+  
+  // Only Global Admin can switch active company
+  const isGlobalAdmin = (user?.role?.name ?? '').trim().toLowerCase() === 'global admin';
   return (
     <Card>
       <CardHeader className=" bg-red-600 rounded-t-2xl">
@@ -206,7 +211,7 @@ export function AllCompaniesList({
                           )}
                         </Button>
                       )}
-                      {!isActive && companies.length > 1 && (
+                      {!isActive && companies.length > 1 && isGlobalAdmin && (
                         <Button
                           size="lg"
                           onClick={() => onSetActive(company)}

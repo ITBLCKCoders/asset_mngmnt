@@ -57,7 +57,7 @@ describe('roles.controller', () => {
     it('creates role successfully', async () => {
       req.body = { name: 'Manager' };
       mockPool.pool.execute.mockResolvedValueOnce([[{ roleID: 'r-1' }]]);
-      mockPool.pool.execute.mockResolvedValueOnce([[{ roleID: 'r-1', name: 'Manager', description: null, created_at: null, created_by: null, updated_at: null, updated_by: null, deleted_at: null, deleted_by: null, asset_type: null, manager_role: null, hr_accountability_receiver: 0, manager_approver_1: 0, manager_approver_2: 0, manager_approver_3: 0 }]]);
+      mockPool.pool.execute.mockResolvedValueOnce([[{ roleID: 'r-1', name: 'Manager', description: null, created_at: null, created_by: null, updated_at: null, updated_by: null, deleted_at: null, deleted_by: null, asset_type: null, manager_role: null, hr_accountability_receiver: 0, manager_approver_1: 0, manager_approver_2: 0, manager_approver_3: 0, finance_approver: 0, sub_approver_2: 0 }]]);
       await rolesController.createRoleHandler(req, res);
       expect(res._status).toBe(201);
     });
@@ -75,7 +75,7 @@ describe('roles.controller', () => {
       req.params = { roleID: 'r-1' };
       req.body = { name: 'Updated Role' };
       mockPool.pool.execute.mockResolvedValueOnce([[{ affected_rows: 1 }]]);
-      mockPool.pool.execute.mockResolvedValueOnce([[{ roleID: 'r-1', name: 'Updated Role', description: null, created_at: null, created_by: null, updated_at: null, updated_by: null, deleted_at: null, deleted_by: null, asset_type: null, manager_role: null, hr_accountability_receiver: 0, manager_approver_1: 0, manager_approver_2: 0, manager_approver_3: 0 }]]);
+      mockPool.pool.execute.mockResolvedValueOnce([[{ roleID: 'r-1', name: 'Updated Role', description: null, created_at: null, created_by: null, updated_at: null, updated_by: null, deleted_at: null, deleted_by: null, asset_type: null, manager_role: null, hr_accountability_receiver: 0, manager_approver_1: 0, manager_approver_2: 0, manager_approver_3: 0, finance_approver: 0, sub_approver_2: 0 }]]);
       await rolesController.updateRoleHandler(req, res);
       expect(res._json.message).toBe('Role updated successfully');
     });

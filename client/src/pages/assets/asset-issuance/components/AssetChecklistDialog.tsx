@@ -435,7 +435,7 @@ export function AssetChecklistDialog({
               <CheckCircle2 className="h-5 w-5 text-blue-600" />
               Checklist
             </h4>
-            <ScrollArea className="h-[400px] pr-4">
+            <ScrollArea className="h-[400px] pr-4" alwaysShowScrollbar>
               <div className="space-y-6">
                 {isOffboarding ? (
                   <>

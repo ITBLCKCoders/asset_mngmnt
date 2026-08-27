@@ -1895,8 +1895,9 @@ CREATE PROCEDURE `sp_cleanup_expired_auth_data`()
 BEGIN
   DELETE FROM sessions WHERE expires < NOW();
   DELETE FROM sessions WHERE last_activity < DATE_SUB(NOW(), INTERVAL 5 MINUTE);
-  DELETE FROM verification_tokens WHERE expires < NOW();
+  DELETE FROM verification_tokens WHERE expires < UTC_TIMESTAMP();
   DELETE FROM password_reset_tokens WHERE expires < NOW();
+  DELETE FROM mfa_recovery_tokens WHERE expires < UTC_TIMESTAMP();
   SELECT 1 AS success;
 END ;;
 DELIMITER ;
@@ -2377,15 +2378,16 @@ CREATE DEFINER=`root`@`localhost` PROCEDURE `sp_upsert_user_custodian_settings`(
     IN p_hr_accountability_receiver TINYINT,
     IN p_manager_approver_1 TINYINT,
     IN p_manager_approver_2 TINYINT,
-    IN p_manager_approver_3 TINYINT
+    IN p_manager_approver_3 TINYINT,
+    IN p_finance_approver TINYINT
 )
 BEGIN
     INSERT INTO user_custodian_settings (
         user_id, access_add_edit, access_assignment, access_return,
-        hr_accountability_receiver, manager_approver_1, manager_approver_2, manager_approver_3
+        hr_accountability_receiver, manager_approver_1, manager_approver_2, manager_approver_3, finance_approver
     ) VALUES (
         p_user_id, p_access_add_edit, p_access_assignment, p_access_return,
-        p_hr_accountability_receiver, p_manager_approver_1, p_manager_approver_2, p_manager_approver_3
+        p_hr_accountability_receiver, p_manager_approver_1, p_manager_approver_2, p_manager_approver_3, p_finance_approver
     )
     ON DUPLICATE KEY UPDATE
         access_add_edit = p_access_add_edit,
@@ -2395,6 +2397,7 @@ BEGIN
         manager_approver_1 = p_manager_approver_1,
         manager_approver_2 = p_manager_approver_2,
         manager_approver_3 = p_manager_approver_3,
+        finance_approver = p_finance_approver,
         updated_at = CURRENT_TIMESTAMP;
 END ;;
 DELIMITER ;
@@ -2406,7 +2409,7 @@ CREATE DEFINER=`root`@`localhost` PROCEDURE `sp_get_user_custodian_settings`(IN 
 BEGIN
     SELECT
         access_add_edit, access_assignment, access_return,
-        hr_accountability_receiver, manager_approver_1, manager_approver_2, manager_approver_3
+        hr_accountability_receiver, manager_approver_1, manager_approver_2, manager_approver_3, finance_approver
     FROM user_custodian_settings
     WHERE user_id = p_user_id
     LIMIT 1;
@@ -2752,6 +2755,38 @@ ALTER TABLE asset_return_forms
   ADD COLUMN process_digital_signature LONGTEXT DEFAULT NULL AFTER process_signed_at;
 -- End of migration_add_process_signature_asset_return_forms.sql
 
+-- Migration: add process_signed_by to asset_return_forms
+-- Records which IT/Admin staff user process-signed the return form so the
+-- "Processed by" shown on return form cards resolves to the actual processor
+-- instead of the user who created the form.
+-- Run this on your asset_mngmnt database. Safe to run multiple times (idempotent).
+
+SET @dbname = DATABASE();
+
+SET @add_process_signed_by = (
+  SELECT COUNT(*) FROM information_schema.COLUMNS
+  WHERE TABLE_SCHEMA = @dbname AND TABLE_NAME = 'asset_return_forms' AND COLUMN_NAME = 'process_signed_by'
+);
+SET @sql = IF(@add_process_signed_by = 0,
+  'ALTER TABLE asset_return_forms ADD COLUMN process_signed_by CHAR(36) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci DEFAULT NULL AFTER process_signed_at',
+  'SELECT 1');
+PREPARE stmt FROM @sql;
+EXECUTE stmt;
+DEALLOCATE PREPARE stmt;
+
+SET @fk_exists = (
+  SELECT COUNT(*) FROM information_schema.TABLE_CONSTRAINTS
+  WHERE TABLE_SCHEMA = @dbname AND TABLE_NAME = 'asset_return_forms'
+  AND CONSTRAINT_NAME = 'fk_asset_return_forms_process_signed_by' AND CONSTRAINT_TYPE = 'FOREIGN KEY'
+);
+SET @sql = IF(@fk_exists = 0,
+  'ALTER TABLE asset_return_forms ADD CONSTRAINT fk_asset_return_forms_process_signed_by FOREIGN KEY (process_signed_by) REFERENCES users (userID) ON DELETE SET NULL',
+  'SELECT 1');
+PREPARE stmt FROM @sql;
+EXECUTE stmt;
+DEALLOCATE PREPARE stmt;
+-- End of migration_add_process_signed_by_asset_return_forms.sql
+
 -- Migration: add signed_digital_signature to asset_return_forms (returner's signature image for PDF)
 -- Run this on your asset_mngmnt database.
 -- Allows the returner's signature to show on the PDF when viewed by others (e.g. Approvals, Asset Return Forms page).
@@ -2972,6 +3007,7 @@ BEGIN
     atf.signed_at, atf.signed_by, atf.signed_digital_signature,
     DATE_FORMAT(atf.process_signed_at, '%Y-%m-%d %H:%i:%s') AS process_signed_at,
     atf.process_digital_signature, atf.transfer_type, atf.received_by,
+    atf.return_form_id,
     DATE_FORMAT(atf.dept_head_signed_at, '%Y-%m-%d %H:%i:%s') AS dept_head_signed_at,
     atf.dept_head_digital_signature,
     atf.dept_head_signed_by,

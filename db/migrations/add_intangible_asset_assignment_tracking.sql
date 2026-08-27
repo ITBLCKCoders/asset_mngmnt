@@ -101,9 +101,13 @@ BEGIN
     ia.`assignment_id`,
     u.`first_name` AS assigned_first_name,
     u.`last_name` AS assigned_last_name,
-    u.`email` AS assigned_email
+    u.`email` AS assigned_email,
+    CONCAT(COALESCE(uc.first_name, ''), ' ', COALESCE(uc.last_name, '')) AS created_by_name,
+    CONCAT(COALESCE(uu.first_name, ''), ' ', COALESCE(uu.last_name, '')) AS updated_by_name
   FROM `intangible_assets` ia
   LEFT JOIN `users` u ON ia.`assigned_to` = u.`userID`
+  LEFT JOIN `users` uc ON ia.`created_by` = uc.`userID`
+  LEFT JOIN `users` uu ON ia.`updated_by` = uu.`userID`
   WHERE ia.`company_id` = p_company_id
   ORDER BY ia.`created_at` DESC;
 END$$

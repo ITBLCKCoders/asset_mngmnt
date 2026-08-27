@@ -59,10 +59,10 @@ vi.mock('@/lib/pdfGenerator', () => ({
 }));
 
 const emptyApiMock = vi.fn().mockImplementation(async (url: string) => {
-  if (url === '/asset-assignments/me') return { assignments: [] };
+  if (url.startsWith('/asset-assignments/me')) return { assignments: [] };
   if (url.startsWith('/asset-returns/user/')) return { assetReturns: [], assetReturnForms: [] };
   if (url.startsWith('/asset-transfers/user/')) return { assetTransferForms: [] };
-  if (url === '/asset-builders') return { builders: [] };
+  if (url.startsWith('/asset-builders')) return { builders: [] };
   if (url === '/intangible-assets') return [];
   return {};
 });
@@ -87,6 +87,15 @@ describe('AssetReturnRequest', () => {
     renderPage();
     await waitFor(() => {
       expect(screen.getByText('Return asset')).toBeDefined();
+    });
+  });
+
+  it('should render the IT Asset and Admin Asset scope tabs', async () => {
+    (api.get as any).mockImplementation(emptyApiMock);
+    renderPage();
+    await waitFor(() => {
+      expect(screen.getByRole('tab', { name: 'IT Asset' })).toBeDefined();
+      expect(screen.getByRole('tab', { name: 'Admin Asset' })).toBeDefined();
     });
   });
 

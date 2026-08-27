@@ -1,16 +1,21 @@
 'use client';
 
 import { useEffect, useState, useMemo, useRef } from 'react';
+import { Link } from 'react-router-dom';
 import {
   Package,
   Search,
   User,
   CheckCircle2,
   AlertTriangle,
+  ImageIcon,
   ArrowRightLeft,
   Boxes,
   Crown,
   Layers,
+  Download,
+  FileText,
+  ArrowLeft,
 } from 'lucide-react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { PageHeader } from '@/components/common/PageHeader';
@@ -40,6 +45,7 @@ import {
 } from '@/components/common/appDialogChrome';
 import { api } from '@/lib/api';
 import { cn } from '@/lib/utils';
+import { proxyCloudinaryUrl } from '@/utils/cloudinaryProxy';
 import { toast } from 'sonner';
 import { useCurrentUser } from '@/hooks/useCurrentUser';
 import { useUserPermissions } from '@/hooks/useUserPermissions';
@@ -56,6 +62,14 @@ import SmsOtpDialog from '@/components/auth/SmsOtpDialog';
 import { DataTable } from '@/components/ui/dataTable';
 import type { ColumnDef } from '@tanstack/react-table';
 import { Shimmer } from '@/components/ui/shimmer';
+import { useAssetMovementExport } from '@/hooks/useAssetMovementExport';
+import {
+  Dialog as UIDialog,
+  DialogContent,
+  DialogDescription,
+  DialogHeader,
+  DialogTitle,
+} from '@/components/ui/dialog';
 
 interface AssetAssignment {
   assignmentID: string;
@@ -97,15 +111,23 @@ interface AssetAssignment {
   };
 }
 
+/** One row = one asset within a transfer form (mirrors Transfer History table). */
 interface TransferRequestRow {
+  id: string;
   formID: string;
   form_number: string;
   request_date: string;
   status: TransferFormUiStatus;
   target_user?: string;
-  asset_count: number;
-  /** Comma-separated asset names (same pattern as My return requests). */
-  assets_label: string;
+  assetName: string;
+  assetCode: string;
+  fromDepartment: string;
+  toDepartment: string;
+  processedBy: string;
+  transferDate: string;
+  condition: string;
+  notes: string;
+  conditionImages: string[];
 }
 
 interface SubmitTransferRequestResponse {
@@ -126,7 +148,14 @@ function isTransferBatchInProgress(batch: AssetTransferFormBatch): boolean {
 function isReturnBatchInProgress(batch: AssetReturnFormBatch): boolean {
   if (!batch.formID) return false;
   if (batch.processor_declined_at) return false;
-  if (batch.process_signed_at) return false;
+  // A processor-initiated (hold) form sets process_signed_at at creation, so it
+  // stays in progress until the dept head approves (which executes the return).
+  // Owner-submitted returns only set process_signed_at after dept approval.
+  if (
+    batch.process_signed_at &&
+    (batch.dept_head_signed_at || batch.sub_approver_1_signed_at)
+  )
+    return false;
   if (
     batch.returns?.some(
       r => (r as { status?: string }).status === 'Declined by dept head'
@@ -145,93 +174,26 @@ function getTransferStatusBadgeClass(status: string): string {
   return 'bg-amber-100 text-amber-800 border-amber-200';
 }
 
-function getMyTransferAssetSummary(
-  returns: AssetTransferFormBatch['returns']
-): string {
-  if (!returns?.length) return '-';
-  const names = returns
-    .map(r => r.assignment?.asset?.name)
-    .filter((n): n is string => Boolean(n));
-  if (names.length === 0) return '-';
-  return (
-    names.slice(0, 3).join(', ') +
-    (names.length > 3 ? ` +${names.length - 3} more` : '')
-  );
-}
-
-const myTransferRequestColumns: ColumnDef<TransferRequestRow>[] = [
-  {
-    id: 'form_number',
-    header: 'Form / Request',
-    accessorFn: row =>
-      row.form_number !== '-'
-        ? row.form_number
-        : `Transfer ${new Date(row.request_date).toLocaleDateString()}`,
-    size: 220,
-    cell: ({ row }) => {
-      const r = row.original;
-      const label =
-        r.form_number !== '-'
-          ? r.form_number
-          : `Transfer ${new Date(r.request_date).toLocaleDateString()}`;
-      return <span className="font-medium">{label}</span>;
-    },
-  },
-  {
-    id: 'created',
-    header: 'Created',
-    accessorFn: row => new Date(row.request_date).toLocaleDateString(),
-    size: 130,
-    cell: ({ row }) => (
-      <span className="text-muted-foreground">
-        {new Date(row.original.request_date).toLocaleDateString()}
-      </span>
-    ),
-  },
-  {
-    id: 'status',
-    header: 'Status',
-    accessorFn: row => formatTransferFormUiStatus(row.status),
-    size: 140,
-    cell: ({ row }) => (
-      <Badge
-        variant="outline"
-        className={`text-xs ${getTransferStatusBadgeClass(row.original.status)}`}
-      >
-        {formatTransferFormUiStatus(row.original.status)}
-      </Badge>
-    ),
-  },
-  {
-    id: 'transfer_to',
-    header: 'Transfer To',
-    accessorFn: row => row.target_user ?? '',
-    size: 200,
-    cell: ({ row }) => (
-      <span className="text-muted-foreground">
-        {row.original.target_user ?? '-'}
-      </span>
-    ),
-  },
-  {
-    id: 'assets',
-    header: 'Assets',
-    accessorFn: row => row.assets_label,
-    size: 320,
-    cell: ({ row }) => (
-      <span
-        className="text-muted-foreground"
-        title={row.original.assets_label}
-      >
-        {row.original.assets_label}
-      </span>
-    ),
-  },
-];
-
 export default function AssetTransferRequest() {
   const { user: currentUser } = useCurrentUser();
   const { hasPermission } = useUserPermissions();
+
+  const {
+    isExportDialogOpen,
+    setIsExportDialogOpen,
+    exportType,
+    setExportType,
+    exportStep,
+    setExportStep,
+    filters,
+    setFilters,
+    handleExportClick,
+    handleExportConfirm,
+    handleFilterChange,
+    handlePrevStep,
+    resetDialog,
+  } = useAssetMovementExport();
+
   const [assignments, setAssignments] = useState<AssetAssignment[]>([]);
   const [transferRequests, setTransferRequests] = useState<
     TransferRequestRow[]
@@ -260,6 +222,7 @@ export default function AssetTransferRequest() {
   const [searchColumn, setSearchColumn] = useState('all');
   const [sortOrder, setSortOrder] = useState<'asc' | 'desc'>('asc');
   const [viewMode, setViewMode] = useState<'list' | 'grid'>('list');
+  const [scope, setScope] = useState<'it' | 'admin'>('it');
   const [targetUser, setTargetUser] = useState<string>('');
   const [users, setUsers] = useState<any[]>([]);
   const [userSearchTerm, setUserSearchTerm] = useState('');
@@ -271,6 +234,7 @@ export default function AssetTransferRequest() {
   >(null);
   const [intangibleAssets, setIntangibleAssets] = useState<any[]>([]);
   const [selectedIntangibleAssetIds, setSelectedIntangibleAssetIds] = useState<string[]>([]);
+  const [intangibleSearchTerm, setIntangibleSearchTerm] = useState('');
   const [showOtpDialog, setShowOtpDialog] = useState(false);
   const pendingSubmitActionRef = useRef<(() => Promise<void>) | null>(null);
   const [confirmTransferWhenApproved, setConfirmTransferWhenApproved] =
@@ -296,6 +260,36 @@ export default function AssetTransferRequest() {
     [intangibleAssets, selectedIntangibleAssetIds]
   );
 
+  const myIntangibleAssets = useMemo(
+    () =>
+      intangibleAssets.filter(a => isIntangibleAssignedToUser(a, currentUser?.id)),
+    [intangibleAssets, currentUser]
+  );
+
+  const filteredIntangibleAssets = useMemo(() => {
+    if (!intangibleSearchTerm.trim()) return myIntangibleAssets;
+    const q = intangibleSearchTerm.toLowerCase();
+    return myIntangibleAssets.filter((asset: any) =>
+      (asset.name?.toLowerCase().includes(q)) ||
+      (asset.description?.toLowerCase().includes(q)) ||
+      (asset.remarks?.toLowerCase().includes(q)) ||
+      (asset.type?.toLowerCase().includes(q)) ||
+      (asset.code?.toLowerCase().includes(q))
+    );
+  }, [myIntangibleAssets, intangibleSearchTerm]);
+
+  const handleIntangibleAssetSelection = (
+    id: string,
+    checked: boolean | string
+  ) => {
+    const isChecked = Boolean(checked);
+    if (isChecked) {
+      setSelectedIntangibleAssetIds(prev => [...prev, id]);
+    } else {
+      setSelectedIntangibleAssetIds(prev => prev.filter(x => x !== id));
+    }
+  };
+
   const confirmTransferMessage = `You are about to submit a transfer request for ${selectedAssignments.length} asset(s)${selectedIntangibleAssetIds.length > 0 ? ` and ${selectedIntangibleAssetIds.length} intangible asset(s)` : ''} to ${targetUserName}. The form will be sent to your department head for approval. Do you want to continue?`;
 
   const selectedAssignmentsForConfirm = useMemo(
@@ -308,7 +302,7 @@ export default function AssetTransferRequest() {
 
   const fetchAssignments = async () => {
     try {
-      const response = await api.get('/asset-assignments/me');
+      const response = await api.get(`/asset-assignments/me?scope=${scope}`);
       const list = response.assignments || [];
       const activeOnly = list.filter(
         (a: AssetAssignment) => a.status === 'Active'
@@ -409,7 +403,7 @@ export default function AssetTransferRequest() {
   const fetchAssetBuilders = async () => {
     try {
       setBuildersLoading(true);
-      const response = await api.get('/asset-builders', {
+      const response = await api.get(`/asset-builders?scope=${scope}`, {
         headers: { 'Cache-Control': 'no-cache', Pragma: 'no-cache' },
       });
       if (response?.builders) {
@@ -451,7 +445,13 @@ export default function AssetTransferRequest() {
     if (currentUser) {
       fetchData();
     }
-  }, [currentUser]);
+  }, [currentUser, scope]);
+
+  useEffect(() => {
+    setSelectedAssignments([]);
+    setSelectedIntangibleAssetIds([]);
+    setExpandedBuilderForSelect(null);
+  }, [scope]);
 
   const assignmentIdsPendingTransferRequest = useMemo(() => {
     const ids = new Set<string>();
@@ -506,8 +506,8 @@ export default function AssetTransferRequest() {
   };
 
   const handleRequestSubmitClick = () => {
-    if (selectedAssignments.length === 0) {
-      toast.error('Please select at least one asset to request transfer');
+    if (selectedAssignments.length === 0 && selectedIntangibleAssetIds.length === 0) {
+      toast.error('Please select at least one asset or intangible asset to request transfer');
       return;
     }
     if (!selectedDepartmentId) {
@@ -539,6 +539,9 @@ export default function AssetTransferRequest() {
 
       toast.success(
         `Transfer request submitted for ${selectedAssignments.length} asset(s)${selectedIntangibleAssetIds.length > 0 ? ` and ${selectedIntangibleAssetIds.length} intangible asset(s)` : ''}. It will be sent to your department head for approval.`
+      );
+      toast.success(
+        `Return request submitted for ${selectedAssignments.length} asset(s)${selectedIntangibleAssetIds.length > 0 ? ` and ${selectedIntangibleAssetIds.length} intangible asset(s)` : ''}. It will also be sent to your department head for approval.`
       );
       setShowConfirmDialog(false);
       setConfirmTransferWhenApproved(false);
@@ -730,12 +733,30 @@ export default function AssetTransferRequest() {
           title="Transfer asset"
           description="Request to transfer your assigned assets to another user"
         >
+          <div className="flex flex-col sm:flex-row sm:items-center gap-3">
+            <Tabs value={scope} onValueChange={v => setScope(v as 'it' | 'admin')} className="w-full sm:w-auto">
+              <TabsList className={segmentTabsListClassName + ' grid grid-cols-2 max-w-full sm:max-w-[280px]'}>
+                <TabsTrigger value="it" className={segmentTabsTriggerClassName}>IT Asset</TabsTrigger>
+                <TabsTrigger value="admin" className={segmentTabsTriggerClassName}>Admin Asset</TabsTrigger>
+              </TabsList>
+            </Tabs>
+            <Link to="/assets/transfer">
+              <Button
+                variant="header"
+                size="sm"
+                className="flex items-center gap-2"
+              >
+                <ArrowLeft className="h-4 w-4" />
+                Back to Asset Transfer
+              </Button>
+            </Link>
+          </div>
         </PageHeader>
 
         <div className="grid grid-cols-1 xl:grid-cols-3 gap-8">
           <div className="xl:col-span-2">
             <Tabs defaultValue="select-assets" className="w-full">
-              <TabsList className={segmentTabsListClassName + ' grid grid-cols-2 mb-4'}>
+              <TabsList className={segmentTabsListClassName + ' grid grid-cols-3 mb-4'}>
                 <TabsTrigger
                   value="select-assets"
                   className={segmentTabsTriggerClassName + ' flex items-center gap-2'}
@@ -754,6 +775,16 @@ export default function AssetTransferRequest() {
                   Asset Built
                   <Badge variant="secondary" className="ml-1 text-xs">
                     {filteredAssignedBuilders.length}
+                  </Badge>
+                </TabsTrigger>
+                <TabsTrigger
+                  value="intangible-assets"
+                  className={segmentTabsTriggerClassName + ' flex items-center gap-2'}
+                >
+                  <Layers className="h-4 w-4" />
+                  Intangible Assets
+                  <Badge variant="secondary" className="ml-1 text-xs">
+                    {myIntangibleAssets.length}
                   </Badge>
                 </TabsTrigger>
               </TabsList>
@@ -1502,6 +1533,169 @@ export default function AssetTransferRequest() {
                 )}
               </TabsContent>
 
+              <TabsContent value="intangible-assets" className="mt-0">
+                <Card className="shadow-xl border-0 bg-white/80 backdrop-blur-sm min-h-[500px]">
+                  <CardHeader className="pb-4">
+                    <CardTitle className="flex items-center gap-3 text-xl">
+                      <div className="p-2 bg-red-100 rounded-lg">
+                        <Layers className="h-5 w-5 text-red-600" />
+                      </div>
+                      Select Intangible Assets to Request Transfer
+                      <Badge variant="secondary" className="ml-auto">
+                        {myIntangibleAssets.length} assigned to you
+                      </Badge>
+                    </CardTitle>
+                    <div className="flex flex-col sm:flex-row sm:items-center gap-4 mt-4">
+                      <div className="relative flex-1">
+                        <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-gray-400" />
+                        <Input
+                          placeholder="Search intangible assets..."
+                          value={intangibleSearchTerm}
+                          onChange={e => setIntangibleSearchTerm(e.target.value)}
+                          className="pl-10 w-full border-gray-200 focus:border-red-500 focus:ring-red-500"
+                        />
+                      </div>
+                      {myIntangibleAssets.length > 0 && (
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          onClick={() => {
+                            const allVisibleIds = myIntangibleAssets.map(a => a.id);
+                            const allSelected = allVisibleIds.every(id => selectedIntangibleAssetIds.includes(id));
+                            if (allSelected) {
+                              setSelectedIntangibleAssetIds(prev => prev.filter(id => !allVisibleIds.includes(id)));
+                            } else {
+                              setSelectedIntangibleAssetIds(prev => [...new Set([...prev, ...allVisibleIds])]);
+                            }
+                          }}
+                          className="text-red-600 border-red-300 hover:bg-red-50 whitespace-nowrap"
+                        >
+                          {myIntangibleAssets.length > 0 &&
+                          myIntangibleAssets.every(a => selectedIntangibleAssetIds.includes(a.id))
+                            ? 'Deselect All'
+                            : 'Select All'}
+                        </Button>
+                      )}
+                    </div>
+                  </CardHeader>
+                  <CardContent className="pt-0">
+                    <div className="space-y-3 max-h-96 overflow-y-auto scrollbar-thin scrollbar-thumb-gray-300 scrollbar-track-gray-100">
+                      {loading ? (
+                        <div className="space-y-3">
+                          {[1, 2, 3, 4, 5].map(i => (
+                            <div key={i} className="p-4 border-2 rounded-xl border-gray-200">
+                              <div className="flex items-start gap-4">
+                                <Shimmer className="h-5 w-5 rounded" />
+                                <div className="flex-1 space-y-2">
+                                  <Shimmer className="h-5 w-48 rounded" />
+                                  <Shimmer className="h-5 w-28 rounded-full" />
+                                  <Shimmer className="h-4 w-32 rounded" />
+                                </div>
+                              </div>
+                            </div>
+                          ))}
+                        </div>
+                      ) : filteredIntangibleAssets.length === 0 ? (
+                        <div className="text-center py-12">
+                          <Layers className="h-16 w-16 text-gray-300 mx-auto mb-4" />
+                          <p className="text-gray-500 text-lg">
+                            {intangibleSearchTerm
+                              ? 'No Results Found'
+                              : 'No intangible assets assigned to you'}
+                          </p>
+                          <p className="text-gray-400 text-sm mt-1">
+                            {intangibleSearchTerm
+                              ? 'Try adjusting your search criteria'
+                              : 'Intangible assets assigned to you will appear here'}
+                          </p>
+                        </div>
+                      ) : (
+                        filteredIntangibleAssets.map(asset => (
+                          <div
+                            key={asset.id}
+                            className={cn(
+                              'group relative p-4 border-2 rounded-xl transition-all duration-200 cursor-pointer',
+                              selectedIntangibleAssetIds.includes(asset.id)
+                                ? 'border-red-500 bg-red-50 shadow-md'
+                                : 'border-gray-200 hover:border-gray-300 hover:shadow-sm'
+                            )}
+                            onClick={() =>
+                              handleIntangibleAssetSelection(
+                                asset.id,
+                                !selectedIntangibleAssetIds.includes(asset.id)
+                              )
+                            }
+                          >
+                            <div className="flex items-start gap-4">
+                              <div className="flex-shrink-0 mt-1">
+                                <Checkbox
+                                  id={asset.id}
+                                  checked={selectedIntangibleAssetIds.includes(asset.id)}
+                                  onCheckedChange={(checked: boolean | string) =>
+                                    handleIntangibleAssetSelection(asset.id, checked)
+                                  }
+                                  className="pointer-events-none"
+                                />
+                              </div>
+
+                              <div className="flex-1 min-w-0">
+                                <div className="mb-2">
+                                  <div className="flex items-center justify-between">
+                                    <h3 className="font-semibold text-lg text-gray-900 truncate">
+                                      {asset.name}
+                                    </h3>
+                                    {selectedIntangibleAssetIds.includes(asset.id) && (
+                                      <CheckCircle2 className="h-5 w-5 text-red-600 flex-shrink-0" />
+                                    )}
+                                  </div>
+                                </div>
+
+                                {asset.type && (
+                                  <Badge
+                                    variant="outline"
+                                    className="text-xs border-blue-300 bg-blue-50 text-blue-800"
+                                  >
+                                    {asset.type}
+                                  </Badge>
+                                )}
+
+                                {asset.description && (
+                                  <p className="text-sm text-gray-600 mt-2 line-clamp-2">
+                                    {asset.description}
+                                  </p>
+                                )}
+                              </div>
+                            </div>
+                          </div>
+                        ))
+                      )}
+                    </div>
+
+                    {selectedIntangibleAssetIds.length > 0 && (
+                      <div className="mt-6 p-4 bg-gradient-to-r from-red-50 to-red-50/80 border border-red-200 rounded-xl">
+                        <div className="flex items-center justify-between">
+                          <div className="flex items-center gap-2">
+                            <CheckCircle2 className="h-5 w-5 text-red-600" />
+                            <span className="font-semibold text-red-900">
+                              {selectedIntangibleAssetIds.length} intangible asset
+                              {selectedIntangibleAssetIds.length !== 1 ? 's' : ''} selected for transfer request
+                            </span>
+                          </div>
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            onClick={() => setSelectedIntangibleAssetIds([])}
+                            className="text-red-600 border-red-300 hover:bg-red-50"
+                          >
+                            Clear All
+                          </Button>
+                        </div>
+                      </div>
+                    )}
+                  </CardContent>
+                </Card>
+              </TabsContent>
+
             </Tabs>
           </div>
 
@@ -1577,6 +1771,7 @@ export default function AssetTransferRequest() {
                             placeholder="Search users..."
                             value={userSearchTerm}
                             onChange={e => setUserSearchTerm(e.target.value)}
+                            onKeyDown={e => e.stopPropagation()}
                             className="pl-10 border-gray-200 focus:border-red-500 focus:ring-red-500 w-full"
                           />
                         </div>
@@ -1655,7 +1850,7 @@ export default function AssetTransferRequest() {
                   onClick={handleRequestSubmitClick}
                   disabled={
                     submitting ||
-                    selectedAssignments.length === 0 ||
+                    (selectedAssignments.length === 0 && selectedIntangibleAssetIds.length === 0) ||
                     !hasPermission('Transfer Request', 'create') ||
                     !selectedDepartmentId ||
                     !targetUser
@@ -1675,14 +1870,14 @@ export default function AssetTransferRequest() {
                   )}
                 </Button>
 
-                {(selectedAssignments.length === 0 ||
+                {(selectedAssignments.length === 0 && selectedIntangibleAssetIds.length === 0) ||
                   !selectedDepartmentId ||
-                  !targetUser) && (
+                  !targetUser ? (
                   <p className="text-sm text-gray-500 text-center">
                     Select assets, department, and transfer-to user to enable
                     submission
                   </p>
-                )}
+                ) : null}
               </CardContent>
             </Card>
           </div>
@@ -1907,6 +2102,28 @@ export default function AssetTransferRequest() {
                       </p>
                     </div>
                   }
+                  children={
+                    <div className="flex items-center gap-2">
+                      <Button
+                        variant="header"
+                        size="sm"
+                        onClick={() => handleExportClick('pdf')}
+                        className="flex items-center gap-2"
+                      >
+                        <Download className="h-4 w-4" />
+                        Export PDF
+                      </Button>
+                      <Button
+                        variant="header"
+                        size="sm"
+                        onClick={() => handleExportClick('excel')}
+                        className="flex items-center gap-2"
+                      >
+                        <Download className="h-4 w-4" />
+                        Export Excel
+                      </Button>
+                    </div>
+                  }
                   mobileCardFields={[
                     {
                       key: 'assets',
@@ -1955,6 +2172,114 @@ export default function AssetTransferRequest() {
           </Card>
         </div>
       </main>
+
+      <UIDialog open={isExportDialogOpen} onOpenChange={setIsExportDialogOpen}>
+        <DialogContent className="max-w-xl sm:max-w-2xl">
+          <DialogHeader>
+            <DialogTitle>
+              {exportStep === 1
+                ? `Export ${exportType?.toUpperCase() ?? ''} — Step 1: Format`
+                : `Export ${exportType?.toUpperCase() ?? ''} — Step 2: Filters`}
+            </DialogTitle>
+            <DialogDescription>
+              {exportStep === 1
+                ? 'Choose the export format.'
+                : 'Apply optional filters to narrow down the exported data.'}
+            </DialogDescription>
+          </DialogHeader>
+          <div className="py-4 space-y-6">
+            {exportStep === 1 && (
+              <div className="grid grid-cols-2 gap-4">
+                <Button
+                  variant="outline"
+                  className="h-24 flex-col gap-3"
+                  onClick={() => {
+                    setExportType('pdf');
+                    setExportStep(2);
+                  }}
+                >
+                  <FileText className="h-8 w-8 text-red-600" />
+                  <span className="font-semibold">PDF</span>
+                  <span className="text-xs text-gray-500">Document format</span>
+                </Button>
+                <Button
+                  variant="outline"
+                  className="h-24 flex-col gap-3"
+                  onClick={() => {
+                    setExportType('excel');
+                    setExportStep(2);
+                  }}
+                >
+                  <FileText className="h-8 w-8 text-green-600" />
+                  <span className="font-semibold">Excel</span>
+                  <span className="text-xs text-gray-500">Spreadsheet format</span>
+                </Button>
+              </div>
+            )}
+            {exportStep === 2 && (
+              <div className="space-y-4">
+                <div className="grid grid-cols-2 gap-4">
+                  <div>
+                    <Label className="text-sm font-medium">From Date</Label>
+                    <Input
+                      type="date"
+                      value={filters.fromDate}
+                      onChange={e => handleFilterChange('fromDate', e.target.value)}
+                      className="mt-1 h-9 text-sm"
+                    />
+                  </div>
+                  <div>
+                    <Label className="text-sm font-medium">To Date</Label>
+                    <Input
+                      type="date"
+                      value={filters.toDate}
+                      onChange={e => handleFilterChange('toDate', e.target.value)}
+                      className="mt-1 h-9 text-sm"
+                    />
+                  </div>
+                </div>
+                <div className="grid grid-cols-2 gap-4">
+                  <div>
+                    <Label className="text-sm font-medium">Accountability Form No</Label>
+                    <Input
+                      type="text"
+                      placeholder="e.g. AF-001"
+                      value={filters.accountabilityFormNo}
+                      onChange={e => handleFilterChange('accountabilityFormNo', e.target.value)}
+                      className="mt-1 h-9 text-sm"
+                    />
+                  </div>
+                  <div>
+                    <Label className="text-sm font-medium">Asset Code</Label>
+                    <Input
+                      type="text"
+                      placeholder="e.g. AST-001"
+                      value={filters.assetCode}
+                      onChange={e => handleFilterChange('assetCode', e.target.value)}
+                      className="mt-1 h-9 text-sm"
+                    />
+                  </div>
+                </div>
+              </div>
+            )}
+          </div>
+          <div className="flex justify-between pt-4 border-t">
+            {exportStep === 2 && (
+              <Button variant="outline" onClick={handlePrevStep}>
+                Back
+              </Button>
+            )}
+            <div className="flex gap-2">
+              <Button variant="outline" onClick={resetDialog}>
+                Cancel
+              </Button>
+              <Button onClick={handleExportConfirm} disabled={!exportType}>
+                {exportStep === 1 ? 'Next' : `Export ${exportType?.toUpperCase()}`}
+              </Button>
+            </div>
+          </div>
+        </DialogContent>
+      </UIDialog>
     </div>
   );
 }

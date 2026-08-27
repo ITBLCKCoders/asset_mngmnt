@@ -1,0 +1,9 @@
+﻿-- This file is superseded by db/migration_add_user_approvers.sql (the canonical
+-- migration for user-level designated approvers). Run that file instead.
+--
+-- This file originally also created stored procedures (sp_get_user_designated_approver,
+-- sp_get_user_approvers, sp_set_user_approver, sp_remove_user_approver,
+-- sp_get_eligible_approvers_for_user). Those procedures are not used anywhere:
+-- the server repositories query the user_approvers table directly, so they were
+-- left out of the canonical migration to avoid dead database code. If they were
+-- already created in an environment, leaving them in the database is harmless.

@@ -180,6 +180,8 @@ export default function ProfileHeader({
             <div className="flex w-full flex-col gap-3 sm:w-auto sm:flex-row">
               {!isEditing ? (
                 <Button
+                  id="tour-step-1-edit-profile"
+                  data-tour="step-1"
                   variant="header"
                   size="lg"
                   onClick={onStartEdit}
@@ -202,6 +204,8 @@ export default function ProfileHeader({
                   </Button>
 
                   <Button
+                    id="tour-step-4-save-profile"
+                    data-tour="step-4"
                     variant="header"
                     size="lg"
                     onClick={onSave}

@@ -68,6 +68,7 @@ export interface AssetBuilderHistory {
 export interface Asset {
   id: string;
   assetID?: string; // Database ID for matching with builders
+  tagCode?: string; // Stable tag identifier (original asset code), used in barcodes/QRs
   name: string;
   company_id?: string;
   company_logo?: string;
@@ -100,6 +101,9 @@ export interface Asset {
   salvageValue: number;
   depreciationMethod: string;
   annualDepreciation: number;
+  bookValue?: number;
+  accumulatedDepreciation?: number;
+  monthlyDepreciation?: number;
   depreciationStartDate: Date | null;
   company: string;
   building: string;
@@ -116,6 +120,7 @@ export interface Asset {
   builderStatus?: string;
   children?: Asset[];
   expanded?: boolean;
+  isBuilderChild?: boolean;
   isOldUnit?: boolean;
   is_old_unit?: boolean;
 }

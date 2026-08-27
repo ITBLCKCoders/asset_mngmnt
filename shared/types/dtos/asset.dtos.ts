@@ -24,6 +24,9 @@ export interface CreateAssetDto {
   depreciationMethod?: DepreciationMethod | null;
   usefulLifeYears?: number | null;
   annualDepreciation?: number | null;
+  bookValue?: number | null;
+  accumulatedDepreciation?: number | null;
+  monthlyDepreciation?: number | null;
   depreciationStartDate?: string | null;
   companyId?: string | null;
   locationId?: string | null;
@@ -45,6 +48,7 @@ export interface UpdateAssetDto extends Partial<CreateAssetDto> {
 export interface AssetResponseDto {
   assetID: string;
   asset_code: string;
+  tag_code: string | null;
   name: string;
   description: string | null;
   category_id: string;
@@ -62,6 +66,9 @@ export interface AssetResponseDto {
   depreciation_method: string | null;
   useful_life_years: number | null;
   annual_depreciation: number | null;
+  book_value?: number | null;
+  accumulated_depreciation?: number | null;
+  monthly_depreciation?: number | null;
   depreciation_start_date: string | null;
   company_id: string | null;
   company_name: string | null;
@@ -113,6 +120,7 @@ export interface AssetResponseDto {
   assignmentHistory: AssetAssignmentDto[];
   accountabilityForms: AccountabilityFormDto[];
   isAssetBuilder: boolean;
+  isBuilderChild?: boolean;
   builderStatus: string | null;
   children: AssetChildDto[];
 }
@@ -270,7 +278,6 @@ export interface ReturnFormDto {
   };
   department_name?: string;
   location_name?: string;
-  processor_wet_pdf_url?: string | null;
 }
 
 export interface TransferFormDto {
@@ -291,7 +298,6 @@ export interface TransferFormDto {
   };
   department_name?: string;
   location_name?: string;
-  processor_wet_pdf_url?: string | null;
 }
 
 export interface BorrowFormDto {
@@ -309,7 +315,6 @@ export interface BorrowFormDto {
   department_name?: string;
   asset_code?: string;
   asset_name?: string;
-  processor_wet_borrow_pdf_url?: string | null;
 }
 
 // Location DTOs
@@ -629,6 +634,11 @@ export interface IntangibleAssetListItemDto {
   remarks: string | null;
   type: string;
   status: string;
+  risk_level?: {
+    id: string;
+    name: string;
+    color?: string;
+  } | null;
   created_at: string;
   created_by: string | null;
   created_by_name: string | null;

@@ -10,7 +10,8 @@ import {
   getCompanyAccentColor,
   getBlackCodersFooterGradient,
   isBlackCoders,
-  resolveCompanyBranding,
+  fetchActiveCompanyForAssetReturnForm,
+  fetchCompanyBrandingByName,
   sortAssetsByLast5Digits,
   PDF_SIGNATURE_MAX_HEIGHT_MM,
   PDF_SIGNATURE_MAX_WIDTH_MM,
@@ -38,6 +39,13 @@ export interface AssetTransferData {
     transferCondition?: string;
     transferNotes?: string;
     imageUrls?: string[];
+  }>;
+  intangibleAssets?: Array<{
+    id?: string;
+    name: string;
+    type: string;
+    description?: string | null;
+    notes?: string | null;
   }>;
   department: { id: string; name: string } | null;
   location: {
@@ -69,9 +77,19 @@ export interface AssetTransferData {
   dept_head_signed_at?: string | null;
   dept_head_digital_signature?: string | null;
   dept_head_user_name?: string | null;
+  dept_head_position?: string | null;
+  sub_approver_1_signed_at?: string | null;
+  sub_approver_1_digital_signature?: string | null;
+  sub_approver_1_user_name?: string | null;
+  sub_approver_1_position?: string | null;
   it_manager_signed_at?: string | null;
   it_manager_digital_signature?: string | null;
   it_manager_user_name?: string | null;
+  it_manager_position?: string | null;
+  sub_approver_2_signed_at?: string | null;
+  sub_approver_2_digital_signature?: string | null;
+  sub_approver_2_user_name?: string | null;
+  sub_approver_2_position?: string | null;
 }
 
 export const generateAssetTransferPDF = async (
@@ -90,12 +108,20 @@ export const generateAssetTransferPDF = async (
     creator: 'Asset Management System',
   });
 
-  const companyBranding = await resolveCompanyBranding({
-    name: transferData.user.companyName,
-    logo_url: transferData.user.companyLogoUrl,
-  });
-  const accentColor = getCompanyAccentColor(companyBranding?.name);
-  const isBlackCodersCompany = isBlackCoders(companyBranding?.name);
+  const companyName = transferData.user.companyName;
+  let companyLogo = transferData.user.companyLogoUrl;
+  if (companyName) {
+    const matchedBranding = await fetchCompanyBrandingByName(companyName);
+    if (matchedBranding?.logo_url) {
+      companyLogo = matchedBranding.logo_url;
+    }
+  }
+  if (!companyLogo) {
+    const myCompany = await fetchActiveCompanyForAssetReturnForm();
+    companyLogo = myCompany?.logo_url ?? null;
+  }
+  const accentColor = getCompanyAccentColor(companyName);
+  const isBlackCodersCompany = isBlackCoders(companyName);
   const headerFillColor: [number, number, number] = isBlackCodersCompany ? [0, 0, 0] : [accentColor.r, accentColor.g, accentColor.b];
   const headerTextColor: [number, number, number] = [255, 255, 255];
   const formNumber = transferData.form_number || 'Transfer Form';
@@ -112,7 +138,7 @@ export const generateAssetTransferPDF = async (
 
   await addCompanyLogoToPDF(
     doc,
-    companyBranding?.logo_url,
+    companyLogo,
     pageMargin,
     headerBoxY + 2
   );
@@ -326,12 +352,61 @@ export const generateAssetTransferPDF = async (
     },
   });
 
+  // Intangible Assets table (Section A) — shown only when intangible assets are selected
+  const intangibleItems = transferData.intangibleAssets ?? [];
+  if (intangibleItems.length > 0) {
+    const intangibleStartY = (doc as any).lastAutoTable.finalY;
+    const intangibleHalfWidth = (tableWidth - conditionWidth) / 2;
+    const intangibleTableBody: (
+      | string
+      | { content: string; colSpan: number }
+    )[][] = [
+      [{ content: 'Intangible Assets', colSpan: 3 }],
+      ['Item', 'Type', 'Description'],
+      ...intangibleItems.map(ia => [
+        ia.name || '—',
+        ia.type || '—',
+        ia.description || '—',
+      ]),
+    ];
+    autoTable(doc, {
+      startY: intangibleStartY,
+      margin: tableMargin,
+      body: intangibleTableBody,
+      theme: 'grid',
+      styles: { fontSize: 8, cellPadding: 2 },
+      columnStyles: {
+        0: { cellWidth: intangibleHalfWidth },
+        1: { cellWidth: intangibleHalfWidth },
+        2: { cellWidth: conditionWidth },
+      },
+      didParseCell: data => {
+        if (data.row.index === 0 || data.row.index === 1) {
+          data.cell.styles.fillColor = headerFillColor;
+          data.cell.styles.textColor = headerTextColor;
+          data.cell.styles.fontStyle = 'bold';
+        }
+        if (data.row.index === 0) {
+          data.cell.styles.halign = 'center';
+        }
+      },
+      willDrawCell: () => {
+        doc.setDrawColor(0, 0, 0);
+        doc.setLineWidth(tableLineWidth);
+      },
+    });
+  }
+
   const sectionBStartY = (doc as any).lastAutoTable.finalY;
   const sectionBHalfWidth = tableWidth / 2;
   const hasTransferrerSignature = !!transferData.signed_at;
   const hasProcessSignature = !!transferData.process_signed_at;
-  const hasDeptHeadSignature = !!transferData.dept_head_signed_at;
-  const hasItManagerSignature = !!transferData.it_manager_signed_at;
+  const hasDeptHeadSignature =
+    !!transferData.dept_head_signed_at ||
+    !!transferData.sub_approver_1_signed_at;
+  const hasItManagerSignature =
+    !!transferData.it_manager_signed_at ||
+    !!transferData.sub_approver_2_signed_at;
   const showProcessorSignatureBlock =
     !!transferData.showProcessorSignatureBlock;
   const processUserNameForCell = (transferData.process_user_name ?? '').trim();
@@ -422,10 +497,21 @@ export const generateAssetTransferPDF = async (
         doc.setFont('helvetica', 'normal');
         doc.setTextColor(0, 0, 0);
 
-        const itManagerName = (transferData.it_manager_user_name || '').trim();
-        if (transferData.it_manager_digital_signature) {
+        const isSubApprover2Signed = !!transferData.sub_approver_2_signed_at;
+        const itManagerName = (
+          (isSubApprover2Signed
+            ? transferData.sub_approver_2_user_name
+            : transferData.it_manager_user_name) || ''
+        ).trim();
+        const itManagerPosition = isSubApprover2Signed
+          ? (transferData.sub_approver_2_position || '').trim()
+          : (transferData.it_manager_position || '').trim();
+        const itManagerSignature = isSubApprover2Signed
+          ? transferData.sub_approver_2_digital_signature
+          : transferData.it_manager_digital_signature;
+        if (itManagerSignature) {
           pendingTransferSignatures.push({
-            data: transferData.it_manager_digital_signature,
+            data: itManagerSignature,
             x: cell.x + 1 - 30,
             y: yTop + 25,
             anchorBottomY: signatureAnchorBottomY(nameY),
@@ -439,9 +525,26 @@ export const generateAssetTransferPDF = async (
           const nameMaxWidth = Math.max(15, contentWidth - 6);
           const nameLines = doc.splitTextToSize(itManagerName, nameMaxWidth);
           doc.text(nameLines, xMin, nameY);
+          if (itManagerPosition) {
+            doc.setFontSize(6.5);
+            const positionLines = doc.splitTextToSize(
+              itManagerPosition,
+              nameMaxWidth
+            );
+            doc.text(positionLines, xMin, nameY + 3.5);
+          }
         }
 
-        const rawIt = transferData.it_manager_signed_at?.trim() ?? '';
+        if (isSubApprover2Signed) {
+          doc.setFontSize(6.5);
+          doc.setFont('helvetica', 'italic');
+          doc.text('(Stand-in approver)', xMin, nameY + 7);
+        }
+
+        const rawIt = (isSubApprover2Signed
+          ? transferData.sub_approver_2_signed_at
+          : transferData.it_manager_signed_at
+        )?.trim() ?? '';
         const itSignedDate = rawIt
           ? new Date(
               rawIt.endsWith('Z') || /[+-]\d{2}:?\d{2}$/.test(rawIt)
@@ -553,10 +656,21 @@ export const generateAssetTransferPDF = async (
         doc.setFont('helvetica', 'normal');
         doc.setTextColor(0, 0, 0);
 
-        const deptHeadName = (transferData.dept_head_user_name || '').trim();
-        if (transferData.dept_head_digital_signature) {
+        const isSubApprover1Signed = !!transferData.sub_approver_1_signed_at;
+        const deptHeadName = (
+          (isSubApprover1Signed
+            ? transferData.sub_approver_1_user_name
+            : transferData.dept_head_user_name) || ''
+        ).trim();
+        const deptHeadPosition = isSubApprover1Signed
+          ? (transferData.sub_approver_1_position || '').trim()
+          : (transferData.dept_head_position || '').trim();
+        const digitalSignature = isSubApprover1Signed
+          ? transferData.sub_approver_1_digital_signature
+          : transferData.dept_head_digital_signature;
+        if (digitalSignature) {
           pendingTransferSignatures.push({
-            data: transferData.dept_head_digital_signature,
+            data: digitalSignature,
             x: cell.x + 1 - 30,
             y: yTop + 25,
             anchorBottomY: signatureAnchorBottomY(nameY),
@@ -570,9 +684,26 @@ export const generateAssetTransferPDF = async (
           const nameMaxWidth = Math.max(15, contentWidth - 6);
           const nameLines = doc.splitTextToSize(deptHeadName, nameMaxWidth);
           doc.text(nameLines, xMin, nameY);
+          if (deptHeadPosition) {
+            doc.setFontSize(6.5);
+            const positionLines = doc.splitTextToSize(
+              deptHeadPosition,
+              nameMaxWidth
+            );
+            doc.text(positionLines, xMin, nameY + 3.5);
+          }
         }
 
-        const rawDept = transferData.dept_head_signed_at?.trim() ?? '';
+        if (isSubApprover1Signed) {
+          doc.setFontSize(6.5);
+          doc.setFont('helvetica', 'italic');
+          doc.text('(Stand-in approver)', xMin, nameY + 7);
+        }
+
+        const rawDept = (isSubApprover1Signed
+          ? transferData.sub_approver_1_signed_at
+          : transferData.dept_head_signed_at
+        )?.trim() ?? '';
         const deptSignedDate = rawDept
           ? new Date(
               rawDept.endsWith('Z') || /[+-]\d{2}:?\d{2}$/.test(rawDept)
@@ -689,6 +820,31 @@ export const generateAssetTransferPDF = async (
   doc.setPage(1);
 
   const docNoY = (doc as any).lastAutoTable.finalY + 8;
+  if (
+    transferData.sub_approver_1_signed_at ||
+    transferData.sub_approver_2_signed_at
+  ) {
+    doc.setFontSize(6.5);
+    doc.setFont('helvetica', 'italic');
+    doc.setTextColor(80, 80, 80);
+    const noteLines: string[] = [];
+    if (transferData.sub_approver_1_signed_at) {
+      noteLines.push(
+        'Stand-in approver note: The signee is a stand-in approver for the Department Head, who is currently not present.'
+      );
+    }
+    if (transferData.sub_approver_2_signed_at) {
+      noteLines.push(
+        'Stand-in approver note: The signee is a stand-in approver for the IT Manager, who is currently not present.'
+      );
+    }
+    let noteY = (doc as any).lastAutoTable.finalY + 4;
+    for (const line of noteLines) {
+      doc.text(line, tableMargin.left, noteY, { maxWidth: tableWidth });
+      noteY += 3;
+    }
+    doc.setTextColor(0, 0, 0);
+  }
   const docNoText = `Document No: ${transferData.form_number || 'TRF'} ver1 01Jan2026`;
   doc.setFontSize(10);
   doc.setFont('helvetica', 'normal');

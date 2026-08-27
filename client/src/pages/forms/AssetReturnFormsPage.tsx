@@ -5,7 +5,7 @@ import { useSearchParams } from 'react-router-dom';
 import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
 import { PageHeader } from '@/components/common/PageHeader';
-import { Search, FileDown, Download } from 'lucide-react';
+import { Search, FileDown, Download, ChevronLeft, ChevronRight } from 'lucide-react';
 import { api } from '@/lib/api';
 import { toast } from 'sonner';
 import { useCurrentUser } from '@/hooks/useCurrentUser';
@@ -36,10 +36,13 @@ import {
   collectCompanyOptionsFromReturnBatches,
   collectDepartmentOptionsFromReturnBatches,
   returnBatchMatchesOrgFilters,
+  returnBatchMatchesAssetType,
 } from '@/utils/formBatchOrgFilters';
-import { classifyDepartmentScopeByName } from '@/lib/assetScope';
+import { getRoleAssetTypeScope } from '@/utils/roleAssetTypeScope';
 
 type AssetTypeFilter = 'all' | 'it' | 'admin';
+
+const PAGE_SIZE = 6;
 
 export default function AssetReturnFormsPage() {
   const [searchParams, setSearchParams] = useSearchParams();
@@ -50,6 +53,11 @@ export default function AssetReturnFormsPage() {
   const [companyFilterId, setCompanyFilterId] = useState('');
   const [departmentFilterId, setDepartmentFilterId] = useState('');
   const [assetTypeFilter, setAssetTypeFilter] = useState<AssetTypeFilter>('all');
+  const { roleScope: userRoleScope, isRoleScoped: isAssetTypeRoleScoped } =
+    getRoleAssetTypeScope(currentUser?.role?.asset_type);
+  const effectiveAssetTypeFilter: AssetTypeFilter = isAssetTypeRoleScoped
+    ? userRoleScope
+    : assetTypeFilter;
   
   // Auto-set company filter to user's company if they have one
   const userCompanyScope = currentUser?.company_id || '';
@@ -66,6 +74,7 @@ export default function AssetReturnFormsPage() {
   const [selectedBatch, setSelectedBatch] =
     useState<AssetReturnFormBatch | null>(null);
   const [showDetail, setShowDetail] = useState(false);
+  const [currentPage, setCurrentPage] = useState(1);
   const displayLoading = loading;
 
   const fetchReturnForms = async () => {
@@ -95,7 +104,12 @@ export default function AssetReturnFormsPage() {
             new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
         );
       }
-      setBatches(list);
+      setBatches(
+        (Array.isArray(list) ? list : []).sort(
+          (a, b) =>
+            new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
+        )
+      );
     } catch (error) {
       console.error('Failed to fetch asset return forms:', error);
       toast.error('Failed to load asset return forms');
@@ -153,18 +167,16 @@ export default function AssetReturnFormsPage() {
       );
 
       // Apply asset type filter
-      if (assetTypeFilter !== 'all') {
-        const targetScope = assetTypeFilter === 'it' ? 'IT' : 'Admin';
-        result = result.filter(batch => {
-          const deptCandidate = batch.form_department?.name || '';
-          const assetScope = classifyDepartmentScopeByName(deptCandidate);
-          return assetScope === targetScope;
-        });
+      if (effectiveAssetTypeFilter !== 'all') {
+        const targetScope = effectiveAssetTypeFilter === 'it' ? 'IT' : 'Admin';
+        result = result.filter(batch =>
+          returnBatchMatchesAssetType(batch, targetScope)
+        );
       }
 
       return result;
     },
-    [batches, companyFilterId, departmentFilterId, assetTypeFilter]
+    [batches, companyFilterId, departmentFilterId, effectiveAssetTypeFilter]
   );
 
   const filteredBatches = useMemo(() => {
@@ -173,6 +185,19 @@ export default function AssetReturnFormsPage() {
       matchesFormListSearch(b, searchQuery)
     );
   }, [orgFilteredBatches, searchQuery]);
+
+  useEffect(() => {
+    setCurrentPage(1);
+  }, [searchQuery, companyFilterId, departmentFilterId, effectiveAssetTypeFilter]);
+
+  const pageCount = useMemo(
+    () => Math.max(1, Math.ceil(filteredBatches.length / PAGE_SIZE)),
+    [filteredBatches]
+  );
+
+  useEffect(() => {
+    setCurrentPage(p => Math.min(p, pageCount));
+  }, [pageCount]);
 
   const hasActiveOrgFilters = Boolean(companyFilterId || departmentFilterId);
 
@@ -276,13 +301,14 @@ export default function AssetReturnFormsPage() {
                 </div>
               </div>
             </div>
+            {!isAssetTypeRoleScoped && (
             <div className="flex gap-2 flex-wrap">
               <Button
                 variant="outline"
                 size="sm"
                 onClick={() => setAssetTypeFilter('all')}
                 className={
-                  assetTypeFilter === 'all'
+                  effectiveAssetTypeFilter === 'all'
                     ? 'bg-red-600 text-white hover:bg-red-700 hover:text-white border-red-600'
                     : ''
                 }
@@ -294,7 +320,7 @@ export default function AssetReturnFormsPage() {
                 size="sm"
                 onClick={() => setAssetTypeFilter('it')}
                 className={
-                  assetTypeFilter === 'it'
+                  effectiveAssetTypeFilter === 'it'
                     ? 'bg-red-600 text-white hover:bg-red-700 hover:text-white border-red-600'
                     : ''
                 }
@@ -306,7 +332,7 @@ export default function AssetReturnFormsPage() {
                 size="sm"
                 onClick={() => setAssetTypeFilter('admin')}
                 className={
-                  assetTypeFilter === 'admin'
+                  effectiveAssetTypeFilter === 'admin'
                     ? 'bg-red-600 text-white hover:bg-red-700 hover:text-white border-red-600'
                     : ''
                 }
@@ -314,6 +340,7 @@ export default function AssetReturnFormsPage() {
                 Admin Assets
               </Button>
             </div>
+            )}
           </div>
 
           <div className="flex items-center gap-2 mb-4">
@@ -364,39 +391,74 @@ export default function AssetReturnFormsPage() {
               )}
             </div>
           ) : (
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-              {filteredBatches.map(batch => (
-                <ReturnFormCard
-                  key={
-                    batch.formID ??
-                    batch.return_batch_id ??
-                    batch.returns[0]?.return_id ??
-                    ''
-                  }
-                  batch={batch}
-                  onView={() => {
-                    setSelectedBatch(batch);
-                    setShowDetail(true);
-                  }}
-                  onDownload={async () => {
-                    try {
-                      const data = buildReturnDataForPDFFromBatch(batch);
-                      if (!data) return;
-                      const blob = await generateAssetReturnPDF(data);
-                      const url = URL.createObjectURL(blob);
-                      const a = document.createElement('a');
-                      a.href = url;
-                      a.download = `return-form-${batch.form_number ?? 'export'}.pdf`;
-                      a.click();
-                      URL.revokeObjectURL(url);
-                      toast.success('Download started');
-                    } catch (e) {
-                      toast.error('Failed to download PDF');
+            <div>
+              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+                {filteredBatches
+                  .slice((currentPage - 1) * PAGE_SIZE, currentPage * PAGE_SIZE)
+                  .map(batch => (
+                    <ReturnFormCard
+                      key={
+                        batch.formID ??
+                        batch.return_batch_id ??
+                        batch.returns[0]?.return_id ??
+                        ''
+                      }
+                      batch={batch}
+                      onView={() => {
+                        setSelectedBatch(batch);
+                        setShowDetail(true);
+                      }}
+                      onDownload={async () => {
+                        try {
+                          const data = buildReturnDataForPDFFromBatch(batch);
+                          if (!data) return;
+                          const blob = await generateAssetReturnPDF(data);
+                          const url = URL.createObjectURL(blob);
+                          const a = document.createElement('a');
+                          a.href = url;
+                          a.download = `return-form-${batch.form_number ?? 'export'}.pdf`;
+                          a.click();
+                          URL.revokeObjectURL(url);
+                          toast.success('Download started');
+                        } catch (e) {
+                          toast.error('Failed to download PDF');
+                        }
+                      }}
+                      viewOnly
+                    />
+                  ))}
+              </div>
+              {filteredBatches.length > PAGE_SIZE && (
+                <div className="flex items-center justify-center gap-4 pt-6">
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() =>
+                      setCurrentPage(p => Math.max(1, p - 1))
                     }
-                  }}
-                  viewOnly
-                />
-              ))}
+                    disabled={currentPage <= 1}
+                    className="gap-1.5"
+                  >
+                    <ChevronLeft className="h-4 w-4" />
+                    Previous
+                  </Button>
+                  <span className="text-sm text-muted-foreground">
+                    Page {Math.min(currentPage, pageCount)} of {pageCount}
+                  </span>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() =>
+                      setCurrentPage(p => Math.min(pageCount, p + 1))
+                    }
+                    disabled={currentPage >= pageCount}
+                    className="gap-1.5"
+                  >
+                    Next
+                    <ChevronRight className="h-4 w-4" />
+                  </Button>
+                </div>
+              )}
             </div>
           )}
         </div>

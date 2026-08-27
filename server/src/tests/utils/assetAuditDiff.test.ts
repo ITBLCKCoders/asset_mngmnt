@@ -1,5 +1,6 @@
 import {
   buildAssetUpdateAuditDiff,
+  mergeAssignmentIntoDiff,
   ASSET_AUDIT_DIFF_KEYS,
 } from '../../utils/assetAuditDiff.js';
 
@@ -81,5 +82,50 @@ describe('buildAssetUpdateAuditDiff', () => {
     const diff = buildAssetUpdateAuditDiff(oldRow, newRow);
     expect(diff.changeCount).toBe(1);
     expect(diff.newValues.is_old_unit).toBe(1);
+  });
+});
+
+describe('mergeAssignmentIntoDiff', () => {
+  it('adds assigned_to old → new when assignee changes', () => {
+    const diff = { oldValues: {}, newValues: {}, changeCount: 0 };
+    const merged = mergeAssignmentIntoDiff(
+      diff,
+      'Jane Doe',
+      'John Smith'
+    );
+    expect(merged.changeCount).toBe(1);
+    expect(merged.oldValues.assigned_to).toBe('Jane Doe');
+    expect(merged.newValues.assigned_to).toBe('John Smith');
+  });
+
+  it('does not mutate the input diff', () => {
+    const diff = { oldValues: { name: 'Old' }, newValues: { name: 'New' }, changeCount: 1 };
+    const merged = mergeAssignmentIntoDiff(diff, 'Jane Doe', 'John Smith');
+    expect(diff.oldValues.assigned_to).toBeUndefined();
+    expect(diff.newValues.assigned_to).toBeUndefined();
+    expect(diff.changeCount).toBe(1);
+    expect(merged.oldValues.name).toBe('Old');
+    expect(merged.changeCount).toBe(2);
+  });
+
+  it('returns diff unchanged when assignee is the same', () => {
+    const diff = { oldValues: {}, newValues: {}, changeCount: 0 };
+    const merged = mergeAssignmentIntoDiff(diff, 'Jane Doe', 'Jane Doe');
+    expect(merged).toBe(diff);
+    expect(merged.changeCount).toBe(0);
+  });
+
+  it('maps a cleared assignment to null', () => {
+    const diff = { oldValues: {}, newValues: {}, changeCount: 0 };
+    const merged = mergeAssignmentIntoDiff(diff, 'Jane Doe', '');
+    expect(merged.changeCount).toBe(1);
+    expect(merged.oldValues.assigned_to).toBe('Jane Doe');
+    expect(merged.newValues.assigned_to).toBeNull();
+  });
+
+  it('normalizes surrounding whitespace in names', () => {
+    const diff = { oldValues: {}, newValues: {}, changeCount: 0 };
+    const merged = mergeAssignmentIntoDiff(diff, ' Jane Doe ', 'John Smith');
+    expect(merged.oldValues.assigned_to).toBe('Jane Doe');
   });
 });

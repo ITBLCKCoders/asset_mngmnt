@@ -6,6 +6,7 @@ import { Shimmer } from '@/components/ui/shimmer';
 import { useMemo } from 'react';
 import { useUserPermissions } from '@/hooks/useUserPermissions';
 import { DataTable } from '@/components/ui/dataTable';
+import { getRoleDisplayName } from '@/lib/roleUtils';
 import type { ColumnDef } from '@tanstack/react-table';
 
 function formatAssetType(v: string | null | undefined): string {
@@ -50,7 +51,7 @@ export function RoleTable({
         size: 160,
         cell: ({ row }) => (
           <span className="font-semibold text-foreground/90 text-base">
-            {row.original.name}
+            {getRoleDisplayName(row.original.name)}
           </span>
         ),
       },
@@ -95,7 +96,9 @@ export function RoleTable({
             row.hr_accountability_receiver && 'HR Receiver',
             row.manager_approver_1 && 'Approver 1',
             row.manager_approver_2 && 'Approver 2',
-            row.manager_approver_3 && 'Approver 3',
+            row.manager_approver_3 && 'Sub Approver 1',
+            row.sub_approver_2 && 'Sub Approver 2',
+            row.finance_approver && 'Finance',
           ]
             .filter(Boolean)
             .join(', '),
@@ -119,13 +122,25 @@ export function RoleTable({
             )}
             {row.original.manager_approver_3 && (
               <Badge variant="secondary" className="text-xs font-normal">
-                Approver 3
+                Sub Approver 1
+              </Badge>
+            )}
+            {row.original.sub_approver_2 && (
+              <Badge variant="secondary" className="text-xs font-normal">
+                Sub Approver 2
+              </Badge>
+            )}
+            {row.original.finance_approver && (
+              <Badge variant="secondary" className="text-xs font-normal bg-emerald-100 text-emerald-800 hover:bg-emerald-100">
+                Finance
               </Badge>
             )}
             {!row.original.hr_accountability_receiver &&
               !row.original.manager_approver_1 &&
               !row.original.manager_approver_2 &&
-              !row.original.manager_approver_3 && (
+              !row.original.manager_approver_3 &&
+              !row.original.sub_approver_2 &&
+              !row.original.finance_approver && (
                 <span className="text-muted-foreground text-sm">—</span>
               )}
           </div>

@@ -530,6 +530,24 @@ const FORGOT_PASSWORD_CONTENT = (
 
 const PROFILE_CONTENT = (
   <article className={manualArticle}>
+    <div className="mb-6 flex flex-col items-center gap-2">
+      <div className="flex items-center gap-3">
+        <span className="h-px w-8 bg-red-400/60" />
+        <span className="text-xs font-bold text-red-600 tracking-[0.15em] uppercase">
+          Video Guide
+        </span>
+        <span className="h-px w-8 bg-red-400/60" />
+      </div>
+      <video
+        src="/videos/goingtoprofile.mp4"
+        controls
+        muted
+        playsInline
+        className="w-full max-w-2xl rounded-xl border border-border/60 shadow-lg"
+      >
+        Your browser does not support the video tag.
+      </video>
+    </div>
     <ol className={manualListGap}>
       <li className={manualListItem}>
         <span className={manualListNumber}>1</span>
@@ -629,6 +647,24 @@ const EDIT_PROFILE_CONTENT = (
 
 const DIGITAL_SIGNATURE_CONTENT = (
   <article className={manualArticle}>
+    <div className="mb-6 flex flex-col items-center gap-2">
+      <div className="flex items-center gap-3">
+        <span className="h-px w-8 bg-red-400/60" />
+        <span className="text-xs font-bold text-red-600 tracking-[0.15em] uppercase">
+          Video Guide
+        </span>
+        <span className="h-px w-8 bg-red-400/60" />
+      </div>
+      <video
+        src="/videos/adding_editing e signiture.mp4"
+        controls
+        muted
+        playsInline
+        className="w-full max-w-2xl rounded-xl border border-border/60 shadow-lg"
+      >
+        Your browser does not support the video tag.
+      </video>
+    </div>
     <p className="mb-4 text-muted-foreground">
       Your <strong>digital initials</strong> serve as your official electronic
       signature on all forms generated and processed within this system. Once
@@ -666,6 +702,24 @@ const DIGITAL_SIGNATURE_CONTENT = (
 
 const ACCOUNT_TAB_CONTENT = (
   <article className={manualArticle}>
+    <div className="mb-6 flex flex-col items-center gap-2">
+      <div className="flex items-center gap-3">
+        <span className="h-px w-8 bg-red-400/60" />
+        <span className="text-xs font-bold text-red-600 tracking-[0.15em] uppercase">
+          Video Guide
+        </span>
+        <span className="h-px w-8 bg-red-400/60" />
+      </div>
+      <video
+        src="/videos/changepassword.mp4"
+        controls
+        muted
+        playsInline
+        className="w-full max-w-2xl rounded-xl border border-border/60 shadow-lg"
+      >
+        Your browser does not support the video tag.
+      </video>
+    </div>
     <ol className={manualListGap}>
       <li className={manualListItem}>
         <span className={manualListNumber}>1</span>
@@ -849,6 +903,24 @@ const TRANSFER_FORM_CONTENT = (
 
 const MY_ASSETS_CONTENT = (
   <article className={manualArticle}>
+    <div className="mb-6 flex flex-col items-center gap-2">
+      <div className="flex items-center gap-3">
+        <span className="h-px w-8 bg-red-400/60" />
+        <span className="text-xs font-bold text-red-600 tracking-[0.15em] uppercase">
+          Video Guide
+        </span>
+        <span className="h-px w-8 bg-red-400/60" />
+      </div>
+      <video
+        src="/videos/my assets.mp4"
+        controls
+        muted
+        playsInline
+        className="w-full max-w-2xl rounded-xl border border-border/60 shadow-lg"
+      >
+        Your browser does not support the video tag.
+      </video>
+    </div>
     <ol className={manualListGap}>
       <li className={manualListItem}>
         <span className={manualListNumber}>1</span>
@@ -884,6 +956,24 @@ const MY_ASSETS_CONTENT = (
 
 const ASSET_ACCOUNTABILITY_FORMS_CONTENT = (
   <article className={manualArticle}>
+    <div className="mb-6 flex flex-col items-center gap-2">
+      <div className="flex items-center gap-3">
+        <span className="h-px w-8 bg-red-400/60" />
+        <span className="text-xs font-bold text-red-600 tracking-[0.15em] uppercase">
+          Video Guide
+        </span>
+        <span className="h-px w-8 bg-red-400/60" />
+      </div>
+      <video
+        src="/videos/sign accountability.mp4"
+        controls
+        muted
+        playsInline
+        className="w-full max-w-2xl rounded-xl border border-border/60 shadow-lg"
+      >
+        Your browser does not support the video tag.
+      </video>
+    </div>
     <ol className={manualListGap}>
       <li className={manualListItem}>
         <span className={manualListNumber}>1</span>
@@ -1148,8 +1238,121 @@ const ADDING_ASSETS_CONTENT = (
   </article>
 );
 
+const EDITING_ASSET_CONTENT = (
+  <article className={manualArticle}>
+    <div className="mb-6 flex flex-col items-center gap-2">
+      <div className="flex items-center gap-3">
+        <span className="h-px w-8 bg-red-400/60" />
+        <span className="text-xs font-bold text-red-600 tracking-[0.15em] uppercase">
+          Video Guide
+        </span>
+        <span className="h-px w-8 bg-red-400/60" />
+      </div>
+      <video
+        src="/videos/editiing asset.mp4"
+        controls
+        muted
+        playsInline
+        className="w-full max-w-2xl rounded-xl border border-border/60 shadow-lg"
+      >
+        Your browser does not support the video tag.
+      </video>
+    </div>
+    <p className={manualPara}>
+      After an asset is added, you can update its details at any time. The
+      editing flow reuses the same steps as adding an asset.
+    </p>
+    <ol className={manualListGap}>
+      <li className={manualListItem}>
+        <span className={manualListNumber}>1</span>
+        <span>
+          In <strong>Asset list</strong>, locate the asset and click{' '}
+          <strong>Edit</strong>.
+        </span>
+      </li>
+      <li className={manualListItem}>
+        <span className={manualListNumber}>2</span>
+        <span>Update the fields in each step (1–3) and review in Step 4.</span>
+      </li>
+      <li className={manualListItem}>
+        <span className={manualListNumber}>3</span>
+        <span>
+          Click <strong>Save</strong> to apply the changes.
+        </span>
+      </li>
+    </ol>
+  </article>
+);
+
+const EDITING_ASSET_FINANCE_CONTENT = (
+  <article className={manualArticle}>
+    <div className="mb-6 flex flex-col items-center gap-2">
+      <div className="flex items-center gap-3">
+        <span className="h-px w-8 bg-red-400/60" />
+        <span className="text-xs font-bold text-red-600 tracking-[0.15em] uppercase">
+          Video Guide
+        </span>
+        <span className="h-px w-8 bg-red-400/60" />
+      </div>
+      <video
+        src="/videos/financeasset editing.mp4"
+        controls
+        muted
+        playsInline
+        className="w-full max-w-2xl rounded-xl border border-border/60 shadow-lg"
+      >
+        Your browser does not support the video tag.
+      </video>
+    </div>
+    <p className={manualPara}>
+      Finance-level editing covers value, depreciation, and lifecycle fields
+      that are restricted to users with finance permissions.
+    </p>
+    <ol className={manualListGap}>
+      <li className={manualListItem}>
+        <span className={manualListNumber}>1</span>
+        <span>
+          Open the asset and go to the <strong>Finance / Lifecycle</strong>{' '}
+          section.
+        </span>
+      </li>
+      <li className={manualListItem}>
+        <span className={manualListNumber}>2</span>
+        <span>
+          Update purchase date, asset value, depreciation, or related finance
+          fields.
+        </span>
+      </li>
+      <li className={manualListItem}>
+        <span className={manualListNumber}>3</span>
+        <span>
+          Click <strong>Save</strong> and verify the updated finance details.
+        </span>
+      </li>
+    </ol>
+  </article>
+);
+
 const ASSET_TAGGING_CONTENT = (
   <article className={manualArticle}>
+    <div className="mb-6 flex flex-col items-center gap-2">
+      <div className="flex items-center gap-3">
+        <span className="h-px w-8 bg-red-400/60" />
+        <span className="text-xs font-bold text-red-600 tracking-[0.15em] uppercase">
+          Video Guide
+        </span>
+        <span className="h-px w-8 bg-red-400/60" />
+      </div>
+      <video
+        src="/videos/assettagging.mp4"
+        controls
+        muted
+        playsInline
+        className="w-full max-w-2xl rounded-xl border border-border/60 shadow-lg"
+      >
+        Your browser does not support the video tag.
+      </video>
+    </div>
     <ol className={manualListGap}>
       <li className={manualListItem}>
         <span className={manualListNumber}>1</span>
@@ -1199,6 +1402,24 @@ const ASSET_TAGGING_CONTENT = (
 
 const ASSET_ASSIGNMENT_CONTENT = (
   <article className={manualArticle}>
+    <div className="mb-6 flex flex-col items-center gap-2">
+      <div className="flex items-center gap-3">
+        <span className="h-px w-8 bg-red-400/60" />
+        <span className="text-xs font-bold text-red-600 tracking-[0.15em] uppercase">
+          Video Guide
+        </span>
+        <span className="h-px w-8 bg-red-400/60" />
+      </div>
+      <video
+        src="/videos/asset assignment.mp4"
+        controls
+        muted
+        playsInline
+        className="w-full max-w-2xl rounded-xl border border-border/60 shadow-lg"
+      >
+        Your browser does not support the video tag.
+      </video>
+    </div>
     <ol className={manualListGap}>
       <li className={manualListItem}>
         <span className={manualListNumber}>1</span>
@@ -1251,6 +1472,24 @@ const ASSET_ASSIGNMENT_CONTENT = (
 
 const ASSET_RETURN_REQUEST_CONTENT = (
   <article className={manualArticle}>
+    <div className="mb-6 flex flex-col items-center gap-2">
+      <div className="flex items-center gap-3">
+        <span className="h-px w-8 bg-red-400/60" />
+        <span className="text-xs font-bold text-red-600 tracking-[0.15em] uppercase">
+          Video Guide
+        </span>
+        <span className="h-px w-8 bg-red-400/60" />
+      </div>
+      <video
+        src="/videos/returnrequest.mp4"
+        controls
+        muted
+        playsInline
+        className="w-full max-w-2xl rounded-xl border border-border/60 shadow-lg"
+      >
+        Your browser does not support the video tag.
+      </video>
+    </div>
     <p className={manualPara}>
       In this section, the user will request to return the asset assigned to
       him/her.
@@ -1596,7 +1835,484 @@ const TRANSFER_REQUEST_CONTENT = (
   </article>
 );
 
+const ASSIGN_ROLE_CUSTODIAN_CONTENT = (
+  <article className={manualArticle}>
+    <div className="mb-6 flex flex-col items-center gap-2">
+      <div className="flex items-center gap-3">
+        <span className="h-px w-8 bg-red-400/60" />
+        <span className="text-xs font-bold text-red-600 tracking-[0.15em] uppercase">
+          Video Guide
+        </span>
+        <span className="h-px w-8 bg-red-400/60" />
+      </div>
+      <video
+        src="/videos/assignrole and custodian access.mp4"
+        controls
+        muted
+        playsInline
+        className="w-full max-w-2xl rounded-xl border border-border/60 shadow-lg"
+      >
+        Your browser does not support the video tag.
+      </video>
+    </div>
+    <p className={manualPara}>
+      Assigning a role and custodian access controls what a user can see and
+      manage within their assigned scope.
+    </p>
+    <ol className={manualListGap}>
+      <li className={manualListItem}>
+        <span className={manualListNumber}>1</span>
+        <span>
+          Go to <strong>Settings → User</strong> and open the user record.
+        </span>
+      </li>
+      <li className={manualListItem}>
+        <span className={manualListNumber}>2</span>
+        <span>
+          In <strong>Assign role and custodian access</strong>, select the role
+          and enable custodian access for the target scope.
+        </span>
+      </li>
+      <li className={manualListItem}>
+        <span className={manualListNumber}>3</span>
+        <span>
+          Click <strong>Save</strong> to apply the role and custodian settings.
+        </span>
+      </li>
+    </ol>
+  </article>
+);
 
+const ASSIGN_MODULE_PERMISSION_CONTENT = (
+  <article className={manualArticle}>
+    <div className="mb-6 flex flex-col items-center gap-2">
+      <div className="flex items-center gap-3">
+        <span className="h-px w-8 bg-red-400/60" />
+        <span className="text-xs font-bold text-red-600 tracking-[0.15em] uppercase">
+          Video Guide
+        </span>
+        <span className="h-px w-8 bg-red-400/60" />
+      </div>
+      <video
+        src="/videos/assignmodulepermission.mp4"
+        controls
+        muted
+        playsInline
+        className="w-full max-w-2xl rounded-xl border border-border/60 shadow-lg"
+      >
+        Your browser does not support the video tag.
+      </video>
+    </div>
+    <p className={manualPara}>
+      Module permissions define which pages and actions a user can access.
+    </p>
+    <ol className={manualListGap}>
+      <li className={manualListItem}>
+        <span className={manualListNumber}>1</span>
+        <span>
+          In the user record, open <strong>Assign module permission</strong>.
+        </span>
+      </li>
+      <li className={manualListItem}>
+        <span className={manualListNumber}>2</span>
+        <span>
+          Check the modules to grant (e.g., Asset List, Tagging, Assignment) and
+          uncheck those to revoke.
+        </span>
+      </li>
+      <li className={manualListItem}>
+        <span className={manualListNumber}>3</span>
+        <span>
+          Click <strong>Save</strong> to update module access.
+        </span>
+      </li>
+    </ol>
+  </article>
+);
+
+const ASSIGN_APPROVER_CONTENT = (
+  <article className={manualArticle}>
+    <div className="mb-6 flex flex-col items-center gap-2">
+      <div className="flex items-center gap-3">
+        <span className="h-px w-8 bg-red-400/60" />
+        <span className="text-xs font-bold text-red-600 tracking-[0.15em] uppercase">
+          Video Guide
+        </span>
+        <span className="h-px w-8 bg-red-400/60" />
+      </div>
+      <video
+        src="/videos/assignapproverandsubapprover for a user.mp4"
+        controls
+        muted
+        playsInline
+        className="w-full max-w-2xl rounded-xl border border-border/60 shadow-lg"
+      >
+        Your browser does not support the video tag.
+      </video>
+    </div>
+    <p className={manualPara}>
+      Approvers and sub-approvers are required for return, transfer, and
+      disposal workflows.
+    </p>
+    <ol className={manualListGap}>
+      <li className={manualListItem}>
+        <span className={manualListNumber}>1</span>
+        <span>
+          In the user record, open <strong>Assign approver and sub-approver</strong>.
+        </span>
+      </li>
+      <li className={manualListItem}>
+        <span className={manualListNumber}>2</span>
+        <span>
+          Select the approver and, if needed, a sub-approver for the user’s
+          department or scope.
+        </span>
+      </li>
+      <li className={manualListItem}>
+        <span className={manualListNumber}>3</span>
+        <span>
+          Click <strong>Save</strong> to link the approver chain to the user.
+        </span>
+      </li>
+    </ol>
+  </article>
+);
+ 
+const CREATE_ASSET_BUILDER_CONTENT = (
+  <article className={manualArticle}>
+    <div className="mb-6 flex flex-col items-center gap-2">
+      <div className="flex items-center gap-3">
+        <span className="h-px w-8 bg-red-400/60" />
+        <span className="text-xs font-bold text-red-600 tracking-[0.15em] uppercase">
+          Video Guide
+        </span>
+        <span className="h-px w-8 bg-red-400/60" />
+      </div>
+      <video
+        src="/videos/create asset builde.mp4"
+        controls
+        muted
+        playsInline
+        className="w-full max-w-2xl rounded-xl border border-border/60 shadow-lg"
+      >
+        Your browser does not support the video tag.
+      </video>
+    </div>
+    <p className={manualPara}>
+      Asset Builder allows you to group multiple individual assets into a single
+      builder for easier assignment and tracking.
+    </p>
+    <ol className={manualListGap}>
+      <li className={manualListItem}>
+        <span className={manualListNumber}>1</span>
+        <span>
+          In the sidebar, click <strong>Asset list</strong>, then click the
+          <strong>Create Asset Builder</strong> button.
+        </span>
+      </li>
+    </ol>
+    <figure className="mb-6 flex justify-center">
+      <img
+        src={add1Img}
+        alt="Asset list in sidebar"
+        className="w-full max-w-2xl rounded-lg border border-border object-contain"
+      />
+    </figure>
+    <ol start={2} className={manualListGap}>
+      <li className={manualListItem}>
+        <span className={manualListNumber}>2</span>
+        <span>
+          Enter a name for the asset builder and optionally add a description.
+        </span>
+      </li>
+    </ol>
+    <ol start={3} className={manualListGap}>
+      <li className={manualListItem}>
+        <span className={manualListNumber}>3</span>
+        <span>
+          Select the assets you want to include in this builder from the available
+          assets list.
+        </span>
+      </li>
+    </ol>
+    <ol start={4} className={manualListGap}>
+      <li className={manualListItem}>
+        <span className={manualListNumber}>4</span>
+        <span>
+          Designate one asset as the <strong>Parent</strong> asset by clicking
+          the crown icon.
+        </span>
+      </li>
+    </ol>
+    <ol start={5} className={manualListGap}>
+      <li className={manualListItem}>
+        <span className={manualListNumber}>5</span>
+        <span>
+          Click <strong>Create Asset Builder</strong> to save the grouped asset.
+        </span>
+      </li>
+    </ol>
+  </article>
+);
+ 
+const EDIT_ASSET_BUILDER_CONTENT = (
+  <article className={manualArticle}>
+    <div className="mb-6 flex flex-col items-center gap-2">
+      <div className="flex items-center gap-3">
+        <span className="h-px w-8 bg-red-400/60" />
+        <span className="text-xs font-bold text-red-600 tracking-[0.15em] uppercase">
+          Video Guide
+        </span>
+        <span className="h-px w-8 bg-red-400/60" />
+      </div>
+      <video
+        src="/videos/edit asset builder.mp4"
+        controls
+        muted
+        playsInline
+        className="w-full max-w-2xl rounded-xl border border-border/60 shadow-lg"
+      >
+        Your browser does not support the video tag.
+      </video>
+    </div>
+    <p className={manualPara}>
+      After an asset builder is created, you can update its details, add or remove
+      assets, and change the parent asset at any time.
+    </p>
+    <ol className={manualListGap}>
+      <li className={manualListItem}>
+        <span className={manualListNumber}>1</span>
+        <span>
+          In <strong>Asset list</strong>, locate the asset builder and click
+          <strong>Edit</strong> on the builder card.
+        </span>
+      </li>
+      <li className={manualListItem}>
+        <span className={manualListNumber}>2</span>
+        <span>
+          Update the builder name and description as needed.
+        </span>
+      </li>
+      <li className={manualListItem}>
+        <span className={manualListNumber}>3</span>
+        <span>
+          Add or remove assets from the builder using the available assets list.
+        </span>
+      </li>
+      <li className={manualListItem}>
+        <span className={manualListNumber}>4</span>
+        <span>
+          Change the parent asset by clicking the crown icon on a different asset.
+        </span>
+      </li>
+      <li className={manualListItem}>
+        <span className={manualListNumber}>5</span>
+        <span>
+          Click <strong>Save Changes</strong> to apply the updates.
+        </span>
+      </li>
+    </ol>
+  </article>
+);
+ 
+const NOTIFICATION_SETTINGS_CONTENT = (
+  <article className={manualArticle}>
+    <div className="mb-6 flex flex-col items-center gap-2">
+      <div className="flex items-center gap-3">
+        <span className="h-px w-8 bg-red-400/60" />
+        <span className="text-xs font-bold text-red-600 tracking-[0.15em] uppercase">
+          Video Guide
+        </span>
+        <span className="h-px w-8 bg-red-400/60" />
+      </div>
+      <video
+        src="/videos/notification.mp4"
+        controls
+        muted
+        playsInline
+        className="w-full max-w-2xl rounded-xl border border-border/60 shadow-lg"
+      >
+        Your browser does not support the video tag.
+      </video>
+    </div>
+    <p className={manualPara}>
+      Notification settings allow you to configure how and when you receive
+      system alerts and email notifications.
+    </p>
+    <ol className={manualListGap}>
+      <li className={manualListItem}>
+        <span className={manualListNumber}>1</span>
+        <span>
+          Go to <strong>Settings</strong> in the sidebar, then click the
+          <strong>Notifications</strong> tab.
+        </span>
+      </li>
+    </ol>
+    <ol start={2} className={manualListGap}>
+      <li className={manualListItem}>
+        <span className={manualListNumber}>2</span>
+        <span>
+          Toggle on/off the notification types you want to receive:
+          <strong>Email Notifications</strong>, <strong>System Alerts</strong>,
+          <strong>Asset Requests</strong>, <strong>Maintenance Reminders</strong>,
+          and <strong>Low Stock Alerts</strong>.
+        </span>
+      </li>
+    </ol>
+    <ol start={3} className={manualListGap}>
+      <li className={manualListItem}>
+        <span className={manualListNumber}>3</span>
+        <span>
+          Configure SMTP settings for email delivery:
+          <strong>SMTP Host</strong>, <strong>SMTP Port</strong>,
+          <strong>SMTP Username</strong>, <strong>SMTP Password</strong>,
+          and <strong>Admin Email</strong>.
+        </span>
+      </li>
+    </ol>
+    <ol start={4} className={manualListGap}>
+      <li className={manualListItem}>
+        <span className={manualListNumber}>4</span>
+        <span>
+          Click <strong>Save Settings</strong> to apply the configuration.
+        </span>
+      </li>
+    </ol>
+  </article>
+);
+ 
+const HR_ACCOUNTABILITY_COPY_CONTENT = (
+  <article className={manualArticle}>
+    <div className="mb-6 flex flex-col items-center gap-2">
+      <div className="flex items-center gap-3">
+        <span className="h-px w-8 bg-red-400/60" />
+        <span className="text-xs font-bold text-red-600 tracking-[0.15em] uppercase">
+          Video Guide
+        </span>
+        <span className="h-px w-8 bg-red-400/60" />
+      </div>
+      <video
+        src="/videos/hr receieve copy acc.mp4"
+        controls
+        muted
+        playsInline
+        className="w-full max-w-2xl rounded-xl border border-border/60 shadow-lg"
+      >
+        Your browser does not support the video tag.
+      </video>
+    </div>
+    <p className={manualPara}>
+      HR Accountability Copy allows HR to receive and manage the 201 file copy
+      of signed accountability forms.
+    </p>
+    <ol className={manualListGap}>
+      <li className={manualListItem}>
+        <span className={manualListNumber}>1</span>
+        <span>
+          Go to <strong>Accountability Forms</strong> in the sidebar.
+        </span>
+      </li>
+    </ol>
+    <ol start={2} className={manualListGap}>
+      <li className={manualListItem}>
+        <span className={manualListNumber}>2</span>
+        <span>
+          Click the <strong>HR copy — 201 file</strong> tab to see forms
+          pending HR receipt.
+        </span>
+      </li>
+    </ol>
+    <ol start={3} className={manualListGap}>
+      <li className={manualListItem}>
+        <span className={manualListNumber}>3</span>
+        <span>
+          Click <strong>Receive</strong> on a form to acknowledge receipt of the
+          wet-signed PDF for the 201 file.
+        </span>
+      </li>
+    </ol>
+    <ol start={4} className={manualListGap}>
+      <li className={manualListItem}>
+        <span className={manualListNumber}>4</span>
+        <span>
+          The form will be marked as received and moved to the received forms list.
+        </span>
+      </li>
+    </ol>
+  </article>
+);
+ 
+const APPROVAL_RETURN_CONTENT = (
+  <article className={manualArticle}>
+    <div className="mb-6 flex flex-col items-center gap-2">
+      <div className="flex items-center gap-3">
+        <span className="h-px w-8 bg-red-400/60" />
+        <span className="text-xs font-bold text-red-600 tracking-[0.15em] uppercase">
+          Video Guide
+        </span>
+        <span className="h-px w-8 bg-red-400/60" />
+      </div>
+      <video
+        src="/videos/aprovalreturn.mp4"
+        controls
+        muted
+        playsInline
+        className="w-full max-w-2xl rounded-xl border border-border/60 shadow-lg"
+      >
+        Your browser does not support the video tag.
+      </video>
+    </div>
+    <p className={manualPara}>
+      The Approvals page allows department heads and IT/Admin managers to
+      approve, decline, or receive return and transfer forms.
+    </p>
+    <ol className={manualListGap}>
+      <li className={manualListItem}>
+        <span className={manualListNumber}>1</span>
+        <span>
+          Click <strong>Approvals</strong> in the sidebar.
+        </span>
+      </li>
+    </ol>
+    <ol start={2} className={manualListGap}>
+      <li className={manualListItem}>
+        <span className={manualListNumber}>2</span>
+        <span>
+          In the <strong>For Approval</strong> tab, review pending forms.
+          Click <strong>View</strong> to see form details.
+        </span>
+      </li>
+    </ol>
+    <ol start={3} className={manualListGap}>
+      <li className={manualListItem}>
+        <span className={manualListNumber}>3</span>
+        <span>
+          Click <strong>Approve</strong> to approve the form, or
+          <strong>Decline</strong> to reject with a reason.
+        </span>
+      </li>
+    </ol>
+    <ol start={4} className={manualListGap}>
+      <li className={manualListItem}>
+        <span className={manualListNumber}>4</span>
+        <span>
+          In the <strong>Receive Approve</strong> tab (IT/Admin managers),
+          click <strong>Receive</strong> to complete the return/transfer.
+        </span>
+      </li>
+    </ol>
+    <ol start={5} className={manualListGap}>
+      <li className={manualListItem}>
+        <span className={manualListNumber}>5</span>
+        <span>
+          Approved forms appear in the <strong>Approved</strong> tab for
+          reference.
+        </span>
+      </li>
+    </ol>
+  </article>
+);
+ 
 export default function UserManual() {
   const [searchParams] = useSearchParams();
   const [currentStep, setCurrentStep] = useState(COVER_STEP);
@@ -1610,6 +2326,18 @@ export default function UserManual() {
 
   useEffect(() => {
     const section = searchParams.get('section');
+    const stepParam = searchParams.get('step');
+    if (section === 'digital-initials' || section === 'digital_initials' || section === 'digitalInitials') {
+      setCurrentStep(COVER_STEP + 9);
+      return;
+    }
+    if (stepParam) {
+      const n = Number(stepParam);
+      if (!Number.isNaN(n) && n >= COVER_STEP && n <= MAX_STEP) {
+        setCurrentStep(n);
+        return;
+      }
+    }
     if (section === 'login') {
       setCurrentStep(COVER_STEP + 5);
     } else if (section === 'register') {
@@ -1796,21 +2524,87 @@ export default function UserManual() {
                     ) : null;
                   })()}
                 </div>
-                <CardTitle className="text-sm sm:text-base font-bold text-white leading-tight truncate">
+<CardTitle className="text-sm sm:text-base font-bold text-white leading-tight truncate">
                   {currentStep === COVER_STEP + 1
                     ? 'Asset Management'
                     : currentStep === COVER_STEP + 2
-                      ? 'Getting Started'
-                      : currentStep === COVER_STEP + 3
-                        ? 'System Overview'
-                        : currentStep === COVER_STEP + 4
-                          ? 'Registration'
-                          : currentStep === COVER_STEP + 5
-                            ? 'Log In'
-                            : currentStep === COVER_STEP + 6
-                              ? 'Forgot password'
-                              : (STEP_TITLES[currentStep - COVER_STEP - 1] ??
-                                'Asset Management Complete User Manual')}
+                    ? 'Getting Started'
+                    : currentStep === COVER_STEP + 3
+                    ? 'System Overview'
+                    : currentStep === COVER_STEP + 4
+                    ? 'Registration'
+                    : currentStep === COVER_STEP + 5
+                    ? 'Log In'
+                    : currentStep === COVER_STEP + 6
+                    ? 'Forgot password'
+                    : currentStep === COVER_STEP + 7
+                    ? 'Profile page'
+                    : currentStep === COVER_STEP + 8
+                    ? 'Edit Profile'
+                    : currentStep === COVER_STEP + 9
+                    ? 'Digital Initials'
+                    : currentStep === COVER_STEP + 10
+                    ? 'Account tab'
+                    : currentStep === COVER_STEP + 11
+                    ? 'Documents tab'
+                    : currentStep === COVER_STEP + 12
+                    ? 'Accountability form'
+                    : currentStep === COVER_STEP + 13
+                    ? 'Return form'
+                    : currentStep === COVER_STEP + 14
+                    ? 'Transfer form'
+                    : currentStep === COVER_STEP + 15
+                    ? 'My assets Page'
+                    : currentStep === COVER_STEP + 16
+                    ? 'Asset accountability forms'
+                    : currentStep === COVER_STEP + 17
+                    ? 'Adding of assets'
+                    : currentStep === COVER_STEP + 18
+                    ? 'Editing of asset'
+                    : currentStep === COVER_STEP + 19
+                    ? 'Editing of asset (Finance)'
+                    : currentStep === COVER_STEP + 20
+                    ? 'Asset tagging'
+                    : currentStep === COVER_STEP + 21
+                    ? 'Asset assignment'
+                    : currentStep === COVER_STEP + 22
+                    ? 'Asset Return Request'
+                    : currentStep === COVER_STEP + 23
+                    ? 'Create Asset Builder'
+                    : currentStep === COVER_STEP + 24
+                    ? 'Edit Asset Builder'
+                    : currentStep === COVER_STEP + 25
+                    ? 'Notification Settings'
+                    : currentStep === COVER_STEP + 26
+                    ? 'Asset return'
+                    : currentStep === COVER_STEP + 27
+                    ? 'Asset transfer request'
+                    : currentStep === COVER_STEP + 28
+                    ? 'Asset transfer'
+                    : currentStep === COVER_STEP + 29
+                    ? 'transfer request'
+                    : currentStep === COVER_STEP + 30
+                    ? 'Asset maintenance'
+                    : currentStep === COVER_STEP + 31
+                    ? 'Asset repair'
+                    : currentStep === COVER_STEP + 32
+                    ? 'Asset disposal'
+                    : currentStep === COVER_STEP + 33
+                    ? 'Settings'
+                    : currentStep === COVER_STEP + 34
+                    ? 'User'
+                    : currentStep === COVER_STEP + 35
+                    ? 'Assign role and custodian access'
+                    : currentStep === COVER_STEP + 36
+                    ? 'Assign module permission'
+                    : currentStep === COVER_STEP + 37
+                    ? 'Assign approver and sub-approver'
+                    : currentStep === COVER_STEP + 38
+                    ? 'Approval Return'
+                    : currentStep === COVER_STEP + 39
+                    ? 'HR Accountability Copy'
+                    : (STEP_TITLES[currentStep - COVER_STEP - 1] ??
+                        'Asset Management Complete User Manual')}
                 </CardTitle>
               </div>
               {currentStep > COVER_STEP && (
@@ -1867,25 +2661,51 @@ export default function UserManual() {
               ) : currentStep === COVER_STEP + 17 ? (
                 <div className="w-full text-left">{ADDING_ASSETS_CONTENT}</div>
               ) : currentStep === COVER_STEP + 18 ? (
-                <div className="w-full text-left">{ASSET_TAGGING_CONTENT}</div>
+                <div className="w-full text-left">{EDITING_ASSET_CONTENT}</div>
               ) : currentStep === COVER_STEP + 19 ? (
+                <div className="w-full text-left">
+                  {EDITING_ASSET_FINANCE_CONTENT}
+                </div>
+              ) : currentStep === COVER_STEP + 20 ? (
+                <div className="w-full text-left">{ASSET_TAGGING_CONTENT}</div>
+              ) : currentStep === COVER_STEP + 21 ? (
                 <div className="w-full text-left">
                   {ASSET_ASSIGNMENT_CONTENT}
                 </div>
-              ) : currentStep === COVER_STEP + 20 ? (
+              ) : currentStep === COVER_STEP + 22 ? (
                 <div className="w-full text-left">
                   {ASSET_RETURN_REQUEST_CONTENT}
                 </div>
-              ) : currentStep === COVER_STEP + 22 ? (
-                <div className="w-full text-left">{RETURN_REQUEST_CONTENT}</div>
               ) : currentStep === COVER_STEP + 23 ? (
+                <div className="w-full text-left">{CREATE_ASSET_BUILDER_CONTENT}</div>
+              ) : currentStep === COVER_STEP + 24 ? (
+                <div className="w-full text-left">{EDIT_ASSET_BUILDER_CONTENT}</div>
+              ) : currentStep === COVER_STEP + 25 ? (
+                <div className="w-full text-left">{NOTIFICATION_SETTINGS_CONTENT}</div>
+              ) : currentStep === COVER_STEP + 26 ? (
+                <div className="w-full text-left">{RETURN_REQUEST_CONTENT}</div>
+              ) : currentStep === COVER_STEP + 27 ? (
                 <div className="w-full text-left">
                   {ASSET_TRANSFER_REQUEST_CONTENT}
                 </div>
-              ) : currentStep === COVER_STEP + 25 ? (
+              ) : currentStep === COVER_STEP + 28 ? (
+                <div className="w-full text-left">{TRANSFER_REQUEST_CONTENT}</div>
+              ) : currentStep === COVER_STEP + 33 ? (
                 <div className="w-full text-left">
-                  {TRANSFER_REQUEST_CONTENT}
+                  {ASSIGN_ROLE_CUSTODIAN_CONTENT}
                 </div>
+              ) : currentStep === COVER_STEP + 34 ? (
+                <div className="w-full text-left">
+                  {ASSIGN_MODULE_PERMISSION_CONTENT}
+                </div>
+              ) : currentStep === COVER_STEP + 35 ? (
+                <div className="w-full text-left">
+                  {ASSIGN_APPROVER_CONTENT}
+                </div>
+              ) : currentStep === COVER_STEP + 36 ? (
+                <div className="w-full text-left">{APPROVAL_RETURN_CONTENT}</div>
+              ) : currentStep === COVER_STEP + 37 ? (
+                <div className="w-full text-left">{HR_ACCOUNTABILITY_COPY_CONTENT}</div>
               ) : currentStep === COVER_STEP ? (
                 <div className="flex-1 flex flex-col items-center justify-center w-full gap-4">
                   <img

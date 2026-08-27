@@ -29,13 +29,10 @@ export function CompanyFilter() {
     }
   }, [isOpen]);
 
-  // Check if user has Global Admin or Admin role
+  // Only Global Admin can switch active company
   const normalizedRoleName = user?.role?.name?.trim().toLowerCase() || '';
-  const isSuperAdmin = normalizedRoleName === 'global admin';
-  const isAdmin = normalizedRoleName === 'admin';
-  const canShowFilter = isSuperAdmin || isAdmin;
+  const canShowFilter = normalizedRoleName === 'global admin';
 
-  // Don't render if user doesn't have permission
   if (!canShowFilter) {
     return null;
   }

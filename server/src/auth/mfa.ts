@@ -296,19 +296,21 @@ export async function sendMFARecoveryOTP(
   );
 
   const { sendEmail } = await import('../email.js');
+  const { buildEmailHtml } = await import('../email-templates.js');
+  const { config } = await import('../config/validation.js');
   await sendEmail(
     email,
-    'MFA Recovery Code – Asset Management',
-    `
-    <div style="font-family: Arial, sans-serif; max-width: 600px; margin: auto; padding: 20px; border: 1px solid #eee; border-radius: 10px; text-align: center;">
-      <h2 style="color: #c00;">MFA Recovery Code</h2>
-      <p>You requested to recover access to your account using email verification.</p>
-      <p>Your 6-digit recovery code is:</p>
-      <div style="font-size: 36px; font-weight: bold; letter-spacing: 8px; color: #c00; margin: 20px 0;">${otp}</div>
-      <p style="font-size: 12px; color: #666;">Expires in <strong>10 minutes</strong>.</p>
-      <p style="font-size: 12px; color: #999; margin-top: 20px;">If you didn't request this code, please secure your account immediately.</p>
-    </div>
-    `
+    'MFA recovery code – Asset Management',
+    buildEmailHtml({
+      title: 'MFA recovery code',
+      body: `
+        <p style="margin: 0 0 16px 0;">You requested to recover access to your account using email verification. Enter the code below to complete the process.</p>
+        <div style="background: #f4f6f9; border-radius: 8px; padding: 16px; text-align: center; margin-bottom: 20px; letter-spacing: 10px; font-size: 32px; font-weight: 700; color: #1a2933;">${otp}</div>
+        <p style="margin: 0; font-size: 13px; color: #8899a8;">This code expires in <strong>10 minutes</strong>.</p>
+      `,
+      footerNote: 'If you didn\'t request this code, please secure your account immediately.',
+      siteUrl: config.FRONTEND_URL,
+    }),
   );
 
   logger.info(`[MFA Recovery] OTP sent to user: ${userId}`);

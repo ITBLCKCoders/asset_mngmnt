@@ -9,7 +9,10 @@ import { createAuditLog, buildAuditContext } from '../utils/audit.js';
 
 export async function getUsersHandler(req: AuthRequest, res: Response) {
   try {
-    const [rows] = (await pool.execute('CALL sp_get_users()')) as any[];
+    const includeInactive = (req as any).query?.includeInactive === 'true';
+    const [rows] = (await pool.execute('CALL sp_get_users(?)', [
+      includeInactive ? 1 : 0,
+    ])) as any[];
     const rawUsers: any[] = Array.isArray(rows?.[0]) ? rows[0] : [];
 
     // Ensure digital signatures are available even when sp_get_users doesn't include that column.
@@ -17,7 +20,7 @@ export async function getUsersHandler(req: AuthRequest, res: Response) {
       .map((u: any) => String(u?.id ?? '').trim())
       .filter((id: string) => id.length > 0);
     const signaturesById = new Map<string, string | null>();
-    const lockoutDataById = new Map<string, { lockout_until: string | null; failed_login_attempts: number }>();
+    const lockoutDataById = new Map<string, { lockout_until: string | null; failed_login_attempts: number; lockout_ip: string | null }>();
     
     if (userIds.length > 0) {
       const placeholders = userIds.map(() => '?').join(', ');
@@ -39,7 +42,7 @@ export async function getUsersHandler(req: AuthRequest, res: Response) {
       
       // Fetch lockout data
       const [lockoutRows] = (await pool.query(
-        `SELECT userID, lockout_until, failed_login_attempts FROM users WHERE userID IN (${placeholders})`,
+        `SELECT userID, lockout_until, failed_login_attempts, lockout_ip FROM users WHERE userID IN (${placeholders})`,
         userIds
       )) as any[];
       for (const row of lockoutRows as any[]) {
@@ -47,14 +50,15 @@ export async function getUsersHandler(req: AuthRequest, res: Response) {
         if (!id) continue;
         lockoutDataById.set(id, {
           lockout_until: row.lockout_until || null,
-          failed_login_attempts: row.failed_login_attempts || 0
+          failed_login_attempts: row.failed_login_attempts || 0,
+          lockout_ip: row.lockout_ip || null
         });
       }
     }
 
     // Transform to match the expected User interface (includes approver flags from user_custodian_settings via sp_get_users LEFT JOIN)
     const users = rawUsers.map((user: any) => {
-      const lockoutData = lockoutDataById.get(String(user.id)) || { lockout_until: null, failed_login_attempts: 0 };
+      const lockoutData = lockoutDataById.get(String(user.id)) || { lockout_until: null, failed_login_attempts: 0, lockout_ip: null };
       return {
         userID: user.id, // This is actually userID from the stored procedure
         email: user.email,
@@ -85,8 +89,12 @@ export async function getUsersHandler(req: AuthRequest, res: Response) {
         manager_approver_1: Boolean(user.manager_approver_1),
         manager_approver_2: Boolean(user.manager_approver_2),
         manager_approver_3: Boolean(user.manager_approver_3),
+        finance_approver: Boolean(user.finance_approver),
+        sub_approver_2: Boolean(user.sub_approver_2),
+        sub_approver_1: Boolean(user.sub_approver_1),
         lockout_until: lockoutData.lockout_until,
         failed_login_attempts: lockoutData.failed_login_attempts,
+        lockout_ip: lockoutData.lockout_ip,
       };
     });
 
@@ -193,6 +201,9 @@ export async function updateUserHandler(req: AuthRequest, res: Response) {
     manager_approver_1,
     manager_approver_2,
     manager_approver_3,
+    finance_approver,
+    sub_approver_2,
+    sub_approver_1,
   } = req.body;
   const userId = req.user!.userID;
 
@@ -231,10 +242,13 @@ export async function updateUserHandler(req: AuthRequest, res: Response) {
       hr_accountability_receiver !== undefined ||
       manager_approver_1 !== undefined ||
       manager_approver_2 !== undefined ||
-      manager_approver_3 !== undefined;
+      manager_approver_3 !== undefined ||
+      finance_approver !== undefined ||
+      sub_approver_2 !== undefined ||
+      sub_approver_1 !== undefined;
     if (hasCustodianPayload) {
       await pool.execute(
-        'CALL sp_upsert_user_custodian_settings(?, ?, ?, ?, ?, ?, ?, ?)',
+        'CALL sp_upsert_user_custodian_settings(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
         [
           id,
           0,
@@ -244,6 +258,9 @@ export async function updateUserHandler(req: AuthRequest, res: Response) {
           manager_approver_1 ? 1 : 0,
           manager_approver_2 ? 1 : 0,
           manager_approver_3 ? 1 : 0,
+          finance_approver ? 1 : 0,
+          sub_approver_2 ? 1 : 0,
+          sub_approver_1 ? 1 : 0,
         ]
       );
     }
@@ -322,7 +339,7 @@ export async function removeUserLockoutHandler(
 
   try {
     const [rows] = (await pool.execute(
-      'UPDATE users SET failed_login_attempts = 0, lockout_until = NULL, lockout_count = 0 WHERE userID = ?',
+      'UPDATE users SET failed_login_attempts = 0, lockout_until = NULL, lockout_count = 0, lockout_ip = NULL, last_failed_attempt_at = NULL WHERE userID = ?',
       [id]
     )) as any[];
 

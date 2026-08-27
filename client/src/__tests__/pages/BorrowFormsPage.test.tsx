@@ -1,4 +1,4 @@
-import { render, screen, waitFor } from '@testing-library/react';
+import { render, screen, waitFor, fireEvent } from '@testing-library/react';
 import { vi, describe, it, expect, beforeEach } from 'vitest';
 import { MemoryRouter } from 'react-router-dom';
 import { api } from '@/lib/api';
@@ -66,6 +66,38 @@ describe('BorrowFormsPage', () => {
     renderPage();
     await waitFor(() => {
       expect(screen.getByText('Borrow Forms')).toBeDefined();
+    });
+  });
+
+  it('should paginate borrow forms 6 per page', async () => {
+    const borrowRequests = Array.from({ length: 7 }, (_, i) => ({
+      borrow_request_id: `br-${i + 1}`,
+      form_number: `BF-${String(i + 1).padStart(3, '0')}`,
+      requester_first_name: 'John',
+      requester_last_name: 'Doe',
+      requester_email: 'j@t.com',
+      borrow_scope: 'it',
+      created_at: '2024-01-01',
+      items: [],
+    }));
+    (api.get as any).mockImplementation(async (url: string) => {
+      if (url === '/asset-borrow-requests') return { borrowRequests };
+      if (url === '/companies/active') return { data: [{ id: 'c1', name: 'Company A' }] };
+      return {};
+    });
+    renderPage();
+    await waitFor(() => {
+      expect(screen.getAllByText(/^BF-\d+$/)).toHaveLength(6);
+    });
+    expect(screen.getByText('Page 1 of 2')).toBeDefined();
+    fireEvent.click(screen.getByRole('button', { name: /next/i }));
+    await waitFor(() => {
+      expect(screen.getAllByText(/^BF-\d+$/)).toHaveLength(1);
+    });
+    expect(screen.getByText('Page 2 of 2')).toBeDefined();
+    fireEvent.click(screen.getByRole('button', { name: /previous/i }));
+    await waitFor(() => {
+      expect(screen.getAllByText(/^BF-\d+$/)).toHaveLength(6);
     });
   });
 });

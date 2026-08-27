@@ -8,7 +8,6 @@ import {
   ClipboardList,
   Hammer,
   Tag,
-  PlusCircle,
   FileText,
   HandHelping,
   DoorOpen,
@@ -49,18 +48,6 @@ export const ASSET_SIDEBAR_ENTRIES: AssetSidebarEntry[] = [
     label: 'Asset Assignment',
     perm: 'Asset Assignment',
     path: '/assets/assignment',
-    icon: ClipboardList,
-  },
-  {
-    label: 'Asset Request',
-    perm: 'Asset Request',
-    path: '/assets/request',
-    icon: PlusCircle,
-  },
-  {
-    label: 'Request Management',
-    perm: 'Request Management',
-    path: '/assets/request-admin',
     icon: ClipboardList,
   },
   {

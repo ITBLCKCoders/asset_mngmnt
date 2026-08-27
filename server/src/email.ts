@@ -32,7 +32,9 @@ export const sendEmail = async (
 
   try {
     const response = await resend.emails.send({
-      from: emailConfig.fromEmail || 'Asset Management <onboarding@resend.dev>',
+      from: emailConfig.fromEmail
+        ? `Asset Management <${emailConfig.fromEmail}>`
+        : 'Asset Management <onboarding@resend.dev>',
       to,
       subject,
       html,

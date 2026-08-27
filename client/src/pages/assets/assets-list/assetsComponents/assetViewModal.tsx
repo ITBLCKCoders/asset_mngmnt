@@ -1,13 +1,14 @@
 'use client';
 
 import { useState } from 'react';
-import { Package, X, Clock, CheckCircle2, FileText } from 'lucide-react';
+import { Package, X, Clock, CheckCircle2, FileText, GitBranch } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader } from '@/components/ui/card';
 
 import { Step4Review } from './modalSteps/step4AssetsReview';
 import { AssetTimeline } from './assetTimeline';
 import { AssetFormsTab } from '../../components/AssetFormsTab';
+import { AssetMovementTab } from '../../accountability/AssetMovementTab';
 
 import {
   AssetFormData,
@@ -25,6 +26,7 @@ interface AssetViewModalProps {
   hideFinancialInfo?: boolean;
   hideTimeline?: boolean;
   hideForms?: boolean;
+  hideMovement?: boolean;
 }
 
 const viewTabs = [
@@ -46,6 +48,12 @@ const viewTabs = [
     value: 'forms',
     description: 'Accountability & Transaction Forms',
   },
+  {
+    title: 'Movement',
+    icon: GitBranch,
+    value: 'movement',
+    description: 'Asset Movement',
+  },
 ] as const;
 
 export function AssetViewModal({
@@ -58,12 +66,14 @@ export function AssetViewModal({
   hideFinancialInfo = false,
   hideTimeline = false,
   hideForms = false,
+  hideMovement = false,
 }: AssetViewModalProps) {
   const [activeTab, setActiveTab] = useState('details');
 
   const visibleTabs = viewTabs.filter(tab => {
     if (tab.value === 'timeline' && hideTimeline) return false;
     if (tab.value === 'forms' && hideForms) return false;
+    if (tab.value === 'movement' && hideMovement) return false;
     return true;
   });
 
@@ -265,10 +275,14 @@ export function AssetViewModal({
 
             {activeTab === 'forms' && (
               <AssetFormsTab
-                assetId={asset.id}
+                assetId={asset.assetID ?? asset.id}
                 onPdfModalOpen={handlePdfModalOpen}
                 onPdfModalClose={handlePdfModalClose}
               />
+            )}
+
+            {activeTab === 'movement' && (
+              <AssetMovementTab assetId={asset.assetID ?? asset.id} />
             )}
           </CardContent>
 

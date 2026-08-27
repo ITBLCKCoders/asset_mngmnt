@@ -13,6 +13,7 @@ import { RoleFormDialog } from './components/roleFormDialog';
 import { RoleTable } from './components/roleTable';
 import { AlertDialogs } from './components/alertDialogs';
 import { FileText, FileSpreadsheet, Search } from 'lucide-react';
+import { getRoleDisplayName } from '@/lib/roleUtils';
 import jsPDF from 'jspdf';
 import autoTable from 'jspdf-autotable';
 import ExcelJS from 'exceljs';
@@ -85,7 +86,7 @@ export function UsersTab({ isActive }: { isActive?: boolean }) {
       user.company?.name || '',
       user.department?.name || '',
       user.position || '',
-      user.role?.name || '',
+      getRoleDisplayName(user.role?.name) || '',
       user.is_active ? 'Active' : 'Inactive',
     ]);
     autoTable(doc, {
@@ -119,7 +120,7 @@ export function UsersTab({ isActive }: { isActive?: boolean }) {
         company: user.company?.name || '',
         department: user.department?.name || '',
         position: user.position || '',
-        role: user.role?.name || '',
+        role: getRoleDisplayName(user.role?.name) || '',
         status: user.is_active ? 'Active' : 'Inactive',
       });
     });
