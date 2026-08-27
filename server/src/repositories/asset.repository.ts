@@ -1,5 +1,6 @@
 import type { RowDataPacket, ResultSetHeader } from 'mysql2/promise';
 import { pool } from '../db.js';
+import { computeAssetDepreciationFields } from '../utils/depreciation.js';
 
 /**
  * Asset repository: every SQL touching `assets`, `asset_documents`,
@@ -229,7 +230,14 @@ export interface AssetForUpdateRow extends RowDataPacket {
 export async function callGetAllAssets(): Promise<RowDataPacket[]> {
   const [rowsResult] = await pool.execute<RowDataPacket[]>('CALL sp_get_assets()');
   const r = rowsResult as unknown as RowDataPacket[][];
-  return Array.isArray(r[0]) ? r[0] : (rowsResult as RowDataPacket[]);
+  const rows = Array.isArray(r[0]) ? r[0] : (rowsResult as RowDataPacket[]);
+  // Compute depreciation fields on read so book value / accumulated
+  // depreciation / monthly depreciation stay current as time passes
+  // (stored columns are only refreshed on edit). Old units keep stored values.
+  return (rows as any[]).map(row => ({
+    ...row,
+    ...computeAssetDepreciationFields(row),
+  })) as RowDataPacket[];
 }
 
 // ---------------------------------------------------------------------------

@@ -207,7 +207,7 @@ export async function markAllAsReadHandler(req: AuthRequest, res: Response) {
     const userId = req.user!.userID;
 
     const [result] = (await pool.execute(
-      "UPDATE notifications SET read_at = NOW(), status = 'read' WHERE user_id = ? AND status = 'unread' AND deleted_at IS NULL",
+      "UPDATE notifications SET updated_at = NOW(), status = 'read' WHERE user_id = ? AND status = 'unread' AND deleted_at IS NULL",
       [userId]
     )) as any[];
 

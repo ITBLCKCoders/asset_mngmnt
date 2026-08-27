@@ -1,5 +1,10 @@
 import type { Pool } from 'mysql2/promise';
 import { getAssetScope, getDepartmentIdsForScope } from '../utils/assetScope.js';
+import {
+  calculateAccumulatedDepreciation,
+  calculateYearsDepreciated,
+  toNumber,
+} from '../utils/depreciation.js';
 import logger from '../logger.js';
 
 export type ReportsAuditHistoryRow = {
@@ -395,45 +400,25 @@ export class ReportsService {
     };
   }
 
-  private static calculateAccumulatedDepreciation(asset: FinanceAssetRow): number {
-    const assetValue = this.toFinanceNumber(asset.asset_value);
-    const salvageValue = this.toFinanceNumber(asset.salvage_value);
-    const annualDepreciation = this.toFinanceNumber(asset.annual_depreciation);
-    const usefulLifeYears = this.toFinanceNumber(asset.useful_life_years);
-
-    if (!assetValue || asset.is_old_unit === 1) {
-      return 0;
-    }
-
-    if (!asset.depreciation_start_date || !annualDepreciation) {
-      return 0;
-    }
-
-    const startDate = new Date(asset.depreciation_start_date);
-    const today = new Date();
-    const yearsDiff = (today.getTime() - startDate.getTime()) / (1000 * 60 * 60 * 24 * 365.25);
-
-    const depreciableValue = Math.max(0, assetValue - salvageValue);
-
-    if (usefulLifeYears && yearsDiff >= usefulLifeYears) {
-      return depreciableValue;
-    }
-
-    return Math.min(annualDepreciation * yearsDiff, depreciableValue);
+  /**
+   * Delegates to the shared depreciation util so reports always agree with
+   * the compute-on-read values shown in the asset list.
+   */
+  private static calculateAccumulatedDepreciation(
+    asset: FinanceAssetRow,
+    asOf: Date = new Date()
+  ): number {
+    return calculateAccumulatedDepreciation(asset, asOf);
   }
 
-  private static calculateYearsDepreciated(asset: FinanceAssetRow): number {
-    if (!asset.depreciation_start_date) {
-      return 0;
-    }
-
-    const startDate = new Date(asset.depreciation_start_date);
-    const today = new Date();
-    return (today.getTime() - startDate.getTime()) / (1000 * 60 * 60 * 24 * 365.25);
+  private static calculateYearsDepreciated(
+    asset: Pick<FinanceAssetRow, 'depreciation_start_date'>,
+    asOf: Date = new Date()
+  ): number {
+    return calculateYearsDepreciated(asset.depreciation_start_date, asOf);
   }
 
   private static toFinanceNumber(value: unknown): number {
-    const parsed = Number.parseFloat(String(value ?? 0));
-    return Number.isFinite(parsed) ? parsed : 0;
+    return toNumber(value);
   }
 }

@@ -153,24 +153,6 @@ export function NotificationProvider({ children }: NotificationProviderProps) {
     }
   }, []);
 
-  const markAsRead = useCallback(async (id: string) => {
-    dispatch({ type: 'MARK_AS_READ', payload: id });
-    try {
-      await api.patch(`/notifications/${id}/read`);
-    } catch (error) {
-      handleApiError(error, 'Mark notification as read');
-    }
-  }, []);
-
-  const markAllAsRead = useCallback(async () => {
-    dispatch({ type: 'MARK_ALL_AS_READ' });
-    try {
-      await api.patch('/notifications/mark-all-read');
-    } catch (error) {
-      handleApiError(error, 'Mark all notifications as read');
-    }
-  }, []);
-
   const fetchNotifications = useCallback(async () => {
     try {
       logger.info('Fetching notifications from API');
@@ -217,6 +199,26 @@ export function NotificationProvider({ children }: NotificationProviderProps) {
       }
     }
   }, []);
+
+  const markAsRead = useCallback(async (id: string) => {
+    dispatch({ type: 'MARK_AS_READ', payload: id });
+    try {
+      await api.patch(`/notifications/${id}/read`);
+    } catch (error) {
+      handleApiError(error, 'Mark notification as read');
+      void fetchNotifications();
+    }
+  }, [fetchNotifications]);
+
+  const markAllAsRead = useCallback(async () => {
+    dispatch({ type: 'MARK_ALL_AS_READ' });
+    try {
+      await api.patch('/notifications/mark-all-read');
+    } catch (error) {
+      handleApiError(error, 'Mark all notifications as read');
+      void fetchNotifications();
+    }
+  }, [fetchNotifications]);
 
   const clearNotifications = useCallback(async () => {
     dispatch({ type: 'CLEAR_NOTIFICATIONS' });
