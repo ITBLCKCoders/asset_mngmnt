@@ -34,6 +34,9 @@ describe('useUserPermissions', () => {
         managerRole: 'none',
         managerApprover1: false,
         managerApprover2: false,
+        managerApprover3: false,
+        financeApprover: false,
+        subApprover2: false,
       },
     });
 

@@ -195,7 +195,7 @@ export function RoleFormDialog({
                         {
                           key: 'hr',
                           label: 'HR asset accountability Receiver',
-                          desc: 'Sign accountability to receive the accountability of each user for copy for 201 file.',
+                          desc: 'HR accountability receiver of employees.',
                           checked: form.hr_accountability_receiver,
                           set: (v: boolean) =>
                             setForm(prev => ({
@@ -206,6 +206,7 @@ export function RoleFormDialog({
                         {
                           key: 'm1',
                           label: 'Manager Approver 1',
+                          desc: 'Approver of request — dept head or manager of the requestor.',
                           checked: form.manager_approver_1,
                           set: (v: boolean) =>
                             setForm(prev => ({
@@ -216,6 +217,7 @@ export function RoleFormDialog({
                         {
                           key: 'm2',
                           label: 'Manager Approver 2',
+                          desc: 'Department head / manager of IT department / admin department for verifying all requests and transactions in the system.',
                           checked: form.manager_approver_2,
                           set: (v: boolean) =>
                             setForm(prev => ({
@@ -225,12 +227,46 @@ export function RoleFormDialog({
                         },
                         {
                           key: 'm3',
-                          label: 'Manager Approver 3',
+                          label: 'Sub Approver 1',
+                          desc: 'Stand-in for Manager Approver 1. Approves the request when the dept head / manager of the requestor is absent. If the primary is also set, only one of them signs.',
                           checked: form.manager_approver_3,
                           set: (v: boolean) =>
                             setForm(prev => ({
                               ...prev,
                               manager_approver_3: v,
+                            })),
+                        },
+                        {
+                          key: 's2',
+                          label: 'Sub Approver 2',
+                          desc: 'Stand-in for Manager Approver 2. Verifies all requests and transactions in both IT and Admin departments when the dept head / manager is absent. If the primary is also set, only one of them signs.',
+                          checked: form.sub_approver_2,
+                          set: (v: boolean) =>
+                            setForm(prev => ({
+                              ...prev,
+                              sub_approver_2: v,
+                            })),
+                        },
+                        {
+                          key: 'fa',
+                          label: 'Finance Approver',
+                          desc: 'For finance employee to edit asset finance and life cycle.',
+                          checked: form.finance_approver,
+                          set: (v: boolean) =>
+                            setForm(prev => ({
+                              ...prev,
+                              finance_approver: v,
+                            })),
+                        },
+                        {
+                          key: 's1',
+                          label: 'Sub Approver 1',
+                          desc: 'Stand-in for Manager Approver 1. Approves the request when the dept head / manager of the requestor is absent.',
+                          checked: form.sub_approver_1,
+                          set: (v: boolean) =>
+                            setForm(prev => ({
+                              ...prev,
+                              sub_approver_1: v,
                             })),
                         },
                       ] satisfies ReadonlyArray<{

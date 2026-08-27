@@ -153,24 +153,6 @@ export function NotificationProvider({ children }: NotificationProviderProps) {
     }
   }, []);
 
-  const markAsRead = useCallback(async (id: string) => {
-    dispatch({ type: 'MARK_AS_READ', payload: id });
-    try {
-      await api.patch(`/notifications/${id}/read`);
-    } catch (error) {
-      handleApiError(error, 'Mark notification as read');
-    }
-  }, []);
-
-  const markAllAsRead = useCallback(async () => {
-    dispatch({ type: 'MARK_ALL_AS_READ' });
-    try {
-      await api.patch('/notifications/mark-all-read');
-    } catch (error) {
-      handleApiError(error, 'Mark all notifications as read');
-    }
-  }, []);
-
   const fetchNotifications = useCallback(async () => {
     try {
       logger.info('Fetching notifications from API');
@@ -217,6 +199,26 @@ export function NotificationProvider({ children }: NotificationProviderProps) {
       }
     }
   }, []);
+
+  const markAsRead = useCallback(async (id: string) => {
+    dispatch({ type: 'MARK_AS_READ', payload: id });
+    try {
+      await api.patch(`/notifications/${id}/read`);
+    } catch (error) {
+      handleApiError(error, 'Mark notification as read');
+      void fetchNotifications();
+    }
+  }, [fetchNotifications]);
+
+  const markAllAsRead = useCallback(async () => {
+    dispatch({ type: 'MARK_ALL_AS_READ' });
+    try {
+      await api.patch('/notifications/mark-all-read');
+    } catch (error) {
+      handleApiError(error, 'Mark all notifications as read');
+      void fetchNotifications();
+    }
+  }, [fetchNotifications]);
 
   const clearNotifications = useCallback(async () => {
     dispatch({ type: 'CLEAR_NOTIFICATIONS' });
@@ -389,25 +391,31 @@ export function NotificationProvider({ children }: NotificationProviderProps) {
     });
 
     // Listen for general notifications (real-time from server)
-    socket.on('notification', (data: any) => {
+    socket.on('notification', (raw: any) => {
+      // Server emissions are inconsistent: some put payload fields at the top
+      // level and others nest them under `data`. Merge both shapes.
+      const d =
+        raw && raw.data && typeof raw.data === 'object'
+          ? { ...raw, ...raw.data }
+          : raw;
       addNotification({
-        title: data.title || 'New Notification',
-        description: data.description || 'You have a new notification',
-        time: 'Just now',
+        title: d.title || 'New Notification',
+        description: d.description || d.message || 'You have a new notification',
+        time: d.time || 'Just now',
         read: false,
-        type: data.type || 'other',
-        assetId: data.assetId,
-        assetName: data.assetName,
-        assignedBy: data.assignedBy,
-        requestId: data.requestId,
-        status: data.status,
-        assetType: data.assetType,
-        actionTarget: data.actionTarget,
-        route: data.route,
-        formId: data.formId,
-        declineReason: data.declineReason,
-        formNumber: data.formNumber,
-        assigneeName: data.assigneeName,
+        type: d.type || 'other',
+        assetId: d.assetId,
+        assetName: d.assetName,
+        assignedBy: d.assignedBy,
+        requestId: d.requestId,
+        status: d.status,
+        assetType: d.assetType,
+        actionTarget: d.actionTarget,
+        route: d.route,
+        formId: d.formId,
+        declineReason: d.declineReason,
+        formNumber: d.formNumber,
+        assigneeName: d.assigneeName,
       });
     });
 

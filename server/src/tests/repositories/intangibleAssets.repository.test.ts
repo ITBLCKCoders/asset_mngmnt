@@ -23,15 +23,16 @@ describe('intangibleAssets.repository', () => {
 
   describe('getAllIntangibleAssets', () => {
     it('should call SP with company id and parse assignees', async () => {
-      mockPool.query.mockResolvedValue([[
+      mockPool.query.mockResolvedValue([[[
         {
           id: 'ia-1',
           name: 'Software License',
           assignees: JSON.stringify([{ userId: 'u1', firstName: 'Jane', lastName: 'Doe', email: 'jane@example.com' }]),
           created_by_name: 'Admin User',
           updated_by_name: 'Admin User',
+          risk_level: JSON.stringify({ id: 'rl-1', name: 'High', color: '#dc2626' }),
         },
-      ], []]);
+      ]], []]);
       const result = await getAllIntangibleAssets('c1');
       expect(result).toEqual([
         {
@@ -40,6 +41,7 @@ describe('intangibleAssets.repository', () => {
           assignees: [{ userId: 'u1', firstName: 'Jane', lastName: 'Doe', email: 'jane@example.com' }],
           created_by_name: 'Admin User',
           updated_by_name: 'Admin User',
+          risk_level: { id: 'rl-1', name: 'High', color: '#dc2626' },
         },
       ]);
       expect(mockPool.query).toHaveBeenCalledWith('CALL sp_GetAllIntangibleAssets(?)', ['c1']);
@@ -54,11 +56,11 @@ describe('intangibleAssets.repository', () => {
 
   describe('createIntangibleAsset', () => {
     it('should call SP with asset data', async () => {
-      const data = { name: 'License', description: 'Annual', remarks: null, type: 'software', status: 'Active', companyId: 'c1', createdBy: 'u1' };
+      const data = { name: 'License', description: 'Annual', remarks: null, type: 'software', riskLevelId: null, status: 'Active', companyId: 'c1', createdBy: 'u1' };
       mockPool.query.mockResolvedValue([[{ insertId: 'new-ia' }], []]);
       const result = await createIntangibleAsset(data);
       expect(result).toBeDefined();
-      expect(mockPool.query).toHaveBeenCalledWith('CALL sp_CreateIntangibleAsset(?, ?, ?, ?, ?, ?, ?)', expect.any(Array));
+      expect(mockPool.query).toHaveBeenCalledWith('CALL sp_CreateIntangibleAsset(?, ?, ?, ?, ?, ?, ?, ?)', expect.any(Array));
     });
   });
 
@@ -87,6 +89,26 @@ describe('intangibleAssets.repository', () => {
       const results = await createIntangibleAssetsBulk(assets, 'c1', 'u1');
       expect(results).toHaveLength(2);
       expect(results[1]).toEqual({ error: true, asset: assets[1] });
+    });
+  });
+
+  describe('updateIntangibleAsset', () => {
+    it('should call SP with update data', async () => {
+      mockPool.query.mockResolvedValue([[{}], []]);
+      await updateIntangibleAsset('ia-1', {
+        name: 'License',
+        description: 'Annual',
+        remarks: null,
+        type: 'software',
+        riskLevelId: 'rl-2',
+        status: 'Active',
+        companyId: 'c1',
+        updatedBy: 'u1',
+      });
+      expect(mockPool.query).toHaveBeenCalledWith(
+        'CALL sp_UpdateIntangibleAsset(?, ?, ?, ?, ?, ?, ?, ?, ?)',
+        ['ia-1', 'License', 'Annual', null, 'software', 'rl-2', 'Active', 'c1', 'u1']
+      );
     });
   });
 

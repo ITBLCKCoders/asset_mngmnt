@@ -16,6 +16,9 @@ jest.mock('../../services/audit.service.js', () => ({
     verifyChain: jest.fn(),
   },
 }));
+jest.mock('../../utils/audit.js', () => ({
+  createAuditLog: jest.fn(async () => {}),
+}));
 
 const mockPool = jest.requireMock('../../db.js') as { pool: { query: jest.Mock; execute: jest.Mock } };
 const AuditService = jest.requireMock('../../services/audit.service.js').default as {
@@ -24,6 +27,7 @@ const AuditService = jest.requireMock('../../services/audit.service.js').default
   getByBuilderId: jest.Mock;
   verifyChain: jest.Mock;
 };
+const createAuditLog = jest.requireMock('../../utils/audit.js').createAuditLog as jest.Mock;
 
 describe('audit.controller', () => {
   let req: any;
@@ -31,7 +35,16 @@ describe('audit.controller', () => {
 
   beforeEach(() => {
     jest.resetAllMocks();
-    req = { user: { userID: '1' }, body: {}, params: {}, query: {} };
+    req = {
+      user: { userID: '1' },
+      body: {},
+      params: {},
+      query: {},
+      ip: '127.0.0.1',
+      method: 'POST',
+      originalUrl: '/api/audit/export',
+      get: jest.fn(() => undefined),
+    };
     res = createMockRes();
   });
 
@@ -99,6 +112,37 @@ describe('audit.controller', () => {
       await auditController.getAuditLogsHandler(req, res);
       expect(res._json.auditLogs).toEqual([]);
     });
+
+    it('normalizes date-only dateTo to end of day for same-date ranges', async () => {
+      req.query = { dateFrom: '2026-08-17', dateTo: '2026-08-17' };
+      mockPool.pool.query
+        .mockResolvedValueOnce([[{ company_id: 'c-1', role_name: 'Global Admin' }]])
+        .mockResolvedValueOnce([[]]);
+      AuditService.getAll.mockResolvedValue({
+        logs: [], page: 1, limit: 20, total: 0, totalPages: 1,
+      });
+      await auditController.getAuditLogsHandler(req, res);
+      expect(AuditService.getAll).toHaveBeenCalledWith(
+        expect.objectContaining({
+          dateFrom: '2026-08-17',
+          dateTo: '2026-08-17 23:59:59',
+        })
+      );
+    });
+
+    it('keeps dateTo unchanged when it already includes a time', async () => {
+      req.query = { dateTo: '2026-08-17 10:30:00' };
+      mockPool.pool.query
+        .mockResolvedValueOnce([[{ company_id: 'c-1', role_name: 'Global Admin' }]])
+        .mockResolvedValueOnce([[]]);
+      AuditService.getAll.mockResolvedValue({
+        logs: [], page: 1, limit: 20, total: 0, totalPages: 1,
+      });
+      await auditController.getAuditLogsHandler(req, res);
+      expect(AuditService.getAll).toHaveBeenCalledWith(
+        expect.objectContaining({ dateTo: '2026-08-17 10:30:00' })
+      );
+    });
   });
 
   describe('getAssetAuditLogsHandler', () => {
@@ -130,6 +174,38 @@ describe('audit.controller', () => {
     it('returns 400 when no builder id', async () => {
       await auditController.getBuilderAuditLogsHandler(req, res);
       expect(res._status).toBe(400);
+    });
+  });
+
+  describe('recordAuditExportHandler', () => {
+    it('records an export audit log with format, row count, and scope', async () => {
+      req.body = { format: 'csv', rowCount: 25, scope: 'current view' };
+      await auditController.recordAuditExportHandler(req, res);
+      expect(createAuditLog).toHaveBeenCalledWith(
+        expect.objectContaining({
+          userId: '1',
+          action: 'audit.exported',
+          resourceType: 'audit_log',
+          resourceName: 'Audit Log',
+          details: 'Exported audit logs as csv (25 row(s)) [current view]',
+        })
+      );
+      expect(res._json).toEqual({ success: true });
+    });
+
+    it('defaults unknown formats to unknown', async () => {
+      req.body = { format: 'xlsx' };
+      await auditController.recordAuditExportHandler(req, res);
+      expect(createAuditLog).toHaveBeenCalledWith(
+        expect.objectContaining({ details: 'Exported audit logs as unknown' })
+      );
+      expect(res._json).toEqual({ success: true });
+    });
+
+    it('returns 500 when logging fails', async () => {
+      createAuditLog.mockRejectedValueOnce(new Error('boom'));
+      await auditController.recordAuditExportHandler(req, res);
+      expect(res._status).toBe(500);
     });
   });
 

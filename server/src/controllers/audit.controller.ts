@@ -3,6 +3,7 @@ import type { AuthRequest } from '../middleware/authenticate.js';
 import { pool } from '../db.js';
 import logger from '../logger.js';
 import AuditService from '../services/audit.service.js';
+import { createAuditLog } from '../utils/audit.js';
 import type { AuditLogFilters } from '../models/audit.model.js';
 
 function parseCsvOrArray(input: unknown): string[] {
@@ -27,6 +28,15 @@ function parseJsonSafely(value: unknown): any {
   } catch {
     return null;
   }
+}
+
+function normalizeDateToEndOfDay(dateTo: string): string {
+  // Date-only inputs (YYYY-MM-DD) should include the entire day, so the
+  // upper bound becomes 23:59:59 of that day (e.g. from == to works).
+  if (/^\d{4}-\d{2}-\d{2}$/.test(dateTo)) {
+    return `${dateTo} 23:59:59`;
+  }
+  return dateTo;
 }
 
 async function resolveAuditAccessContext(req: AuthRequest): Promise<{
@@ -114,10 +124,10 @@ export async function getAuditLogsHandler(req: AuthRequest, res: Response) {
     const resourceTypeList = parseCsvOrArray(resourceType);
     const userIdList = parseCsvOrArray(userId);
 
-    const requestedCompanyId =
-      access.isSuperAdmin && typeof companyId === 'string' && companyId.trim()
-        ? companyId.trim()
-        : access.companyId;
+    // Super admins: if no explicit company query param, see all companies
+    const requestedCompanyId = access.isSuperAdmin
+      ? (typeof companyId === 'string' && companyId.trim() ? companyId.trim() : null)
+      : access.companyId;
 
     // Use companyFilter if provided (for filtering by specific company)
     const effectiveCompanyId =
@@ -151,7 +161,7 @@ export async function getAuditLogsHandler(req: AuthRequest, res: Response) {
       filters.dateFrom = dateFrom;
     }
     if (typeof dateTo === 'string' && dateTo) {
-      filters.dateTo = dateTo;
+      filters.dateTo = normalizeDateToEndOfDay(dateTo);
     }
 
     const result = await AuditService.getAll(filters);
@@ -308,6 +318,38 @@ export async function getBuilderAuditLogsHandler(
       message:
         'Audit logs not available. Please ensure database migration is complete.',
     });
+  }
+}
+
+export async function recordAuditExportHandler(req: AuthRequest, res: Response) {
+  try {
+    const userId = req.user?.userID;
+    const { format, rowCount, scope } = req.body ?? {};
+    const validFormat =
+      format === 'json' || format === 'csv' || format === 'pdf'
+        ? format
+        : 'unknown';
+
+    await createAuditLog({
+      userId,
+      action: 'audit.exported',
+      resourceType: 'audit_log',
+      resourceId: 'audit_log',
+      resourceName: 'Audit Log',
+      details:
+        `Exported audit logs as ${validFormat}` +
+        (typeof rowCount === 'number' ? ` (${rowCount} row(s))` : '') +
+        (scope ? ` [${scope}]` : ''),
+      ipAddress: req.ip,
+      userAgent: req.get('User-Agent'),
+      httpMethod: req.method,
+      httpEndpoint: req.originalUrl || req.url,
+    });
+
+    return res.status(200).json({ success: true });
+  } catch (error: any) {
+    logger.error('Record audit export failed:', error);
+    return res.status(500).json({ error: 'Failed to record audit export' });
   }
 }
 

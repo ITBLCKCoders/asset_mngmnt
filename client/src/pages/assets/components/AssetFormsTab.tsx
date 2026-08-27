@@ -48,7 +48,6 @@ interface ReturnForm {
   };
   department_name?: string;
   location_name?: string;
-  processor_wet_pdf_url?: string | null;
 }
 
 interface TransferForm {
@@ -69,7 +68,6 @@ interface TransferForm {
   };
   department_name?: string;
   location_name?: string;
-  processor_wet_pdf_url?: string | null;
 }
 
 interface BorrowForm {
@@ -87,7 +85,6 @@ interface BorrowForm {
   department_name?: string;
   asset_code?: string;
   asset_name?: string;
-  processor_wet_borrow_pdf_url?: string | null;
 }
 
 interface AssetFormsTabProps {
@@ -126,21 +123,6 @@ export function AssetFormsTab({ assetId, onPdfModalOpen, onPdfModalClose }: Asse
       toast.error('Failed to load forms');
     } finally {
       setLoading(false);
-    }
-  };
-
-  const handleViewPdf = (pdfUrl: string | null | undefined, title: string) => {
-    if (pdfUrl) {
-      // Dispatch event to open PDF preview at parent level
-      window.dispatchEvent(
-        new CustomEvent('openPdfPreview', {
-          detail: { pdfUrl, title },
-        })
-      );
-      // Close the asset details modal
-      onPdfModalOpen?.();
-    } else {
-      toast.error('PDF not available for this form');
     }
   };
 
@@ -346,15 +328,6 @@ export function AssetFormsTab({ assetId, onPdfModalOpen, onPdfModalClose }: Asse
                   </div>
                   <div className="flex items-center gap-2">
                     {getStatusBadge(form.status)}
-                    {form.processor_wet_pdf_url && (
-                      <Button
-                        variant="ghost"
-                        size="sm"
-                        onClick={() => handleViewPdf(form.processor_wet_pdf_url, `Return Form ${form.formNumber}`)}
-                      >
-                        <Eye className="h-4 w-4" />
-                      </Button>
-                    )}
                   </div>
                 </div>
               ))}
@@ -393,15 +366,6 @@ export function AssetFormsTab({ assetId, onPdfModalOpen, onPdfModalClose }: Asse
                   </div>
                   <div className="flex items-center gap-2">
                     {getStatusBadge(form.status)}
-                    {form.processor_wet_pdf_url && (
-                      <Button
-                        variant="ghost"
-                        size="sm"
-                        onClick={() => handleViewPdf(form.processor_wet_pdf_url, `Transfer Form ${form.formNumber}`)}
-                      >
-                        <Eye className="h-4 w-4" />
-                      </Button>
-                    )}
                   </div>
                 </div>
               ))}
@@ -444,15 +408,6 @@ export function AssetFormsTab({ assetId, onPdfModalOpen, onPdfModalClose }: Asse
                   </div>
                   <div className="flex items-center gap-2">
                     {getStatusBadge(form.status)}
-                    {form.processor_wet_borrow_pdf_url && (
-                      <Button
-                        variant="ghost"
-                        size="sm"
-                        onClick={() => handleViewPdf(form.processor_wet_borrow_pdf_url, `Borrow Form ${form.formNumber}`)}
-                      >
-                        <Eye className="h-4 w-4" />
-                      </Button>
-                    )}
                   </div>
                 </div>
               ))}

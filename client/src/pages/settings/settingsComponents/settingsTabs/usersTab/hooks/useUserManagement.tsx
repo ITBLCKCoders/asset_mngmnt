@@ -47,7 +47,7 @@ export function useUserManagement(isActive: boolean) {
           // In settings, users and roles should not be filtered by company
           // They are system-wide entities
           const results = await Promise.allSettled([
-            api.get<{ users: User[] }>('/users'),
+            api.get<{ users: User[] }>('/users?includeInactive=true'),
             api.get<{ roles: Role[] }>('/roles'),
             api.get<{ departments: Department[] }>('/departments'),
             api.get<{ companies: Company[] }>('/companies'),

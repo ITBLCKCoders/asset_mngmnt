@@ -18,7 +18,7 @@ import { PDFViewer } from '@/components/PDFViewer';
 import { api } from '@/lib/api';
 import { downloadPDF } from '@/lib/pdfGenerator';
 import { generateAssetChecklistPDF } from '@/lib/pdfGenerator/assetChecklistPdf';
-import { Download, Eye, FileText, Search, Package, User, Calendar } from 'lucide-react';
+import { Download, Eye, FileText, Search, Package, User, Calendar, ChevronLeft, ChevronRight } from 'lucide-react';
 import { toast } from 'sonner';
 import { Card, CardHeader, CardTitle, CardContent } from '@/components/ui/card';
 import { useCurrentUser } from '@/hooks/useCurrentUser';
@@ -29,8 +29,11 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select';
+import { getRoleAssetTypeScope } from '@/utils/roleAssetTypeScope';
 
 type AssetTypeFilter = 'all' | 'it' | 'admin';
+
+const PAGE_SIZE = 6;
 
 type ChecklistRow = {
   id: string;
@@ -92,9 +95,15 @@ export default function AssetChecklistFormsPage() {
   const [companyFilterId, setCompanyFilterId] = useState('');
   const [departmentFilterId, setDepartmentFilterId] = useState('');
   const [assetTypeFilter, setAssetTypeFilter] = useState<AssetTypeFilter>('all');
+  const { roleScope: userRoleScope, isRoleScoped: isAssetTypeRoleScoped } =
+    getRoleAssetTypeScope(currentUser?.role?.asset_type);
+  const effectiveAssetTypeFilter: AssetTypeFilter = isAssetTypeRoleScoped
+    ? userRoleScope
+    : assetTypeFilter;
   const [selectedChecklist, setSelectedChecklist] = useState<ChecklistRow | null>(null);
   const [showPreview, setShowPreview] = useState(false);
   const [previewUrl, setPreviewUrl] = useState('');
+  const [currentPage, setCurrentPage] = useState(1);
   const displayLoading = loading;
   
   // Auto-set company filter to user's company if they have one
@@ -203,8 +212,8 @@ export default function AssetChecklistFormsPage() {
     }
 
     // Apply asset type filter
-    if (assetTypeFilter !== 'all') {
-      const targetScope = assetTypeFilter === 'it' ? 'IT' : 'Admin';
+    if (effectiveAssetTypeFilter !== 'all') {
+      const targetScope = effectiveAssetTypeFilter === 'it' ? 'IT' : 'Admin';
       result = result.filter(row => row.asset_scope_type === targetScope);
     }
 
@@ -226,7 +235,20 @@ export default function AssetChecklistFormsPage() {
         .filter(Boolean)
         .some(value => String(value).toLowerCase().includes(q))
     );
-  }, [checklists, searchQuery, companyFilterId, departmentFilterId, assetTypeFilter]);
+  }, [checklists, searchQuery, companyFilterId, departmentFilterId, effectiveAssetTypeFilter]);
+
+  useEffect(() => {
+    setCurrentPage(1);
+  }, [searchQuery, companyFilterId, departmentFilterId, effectiveAssetTypeFilter]);
+
+  const pageCount = useMemo(
+    () => Math.max(1, Math.ceil(filteredChecklists.length / PAGE_SIZE)),
+    [filteredChecklists]
+  );
+
+  useEffect(() => {
+    setCurrentPage(p => Math.min(p, pageCount));
+  }, [pageCount]);
 
   const handleDownload = async (row: ChecklistRow) => {
     try {
@@ -320,13 +342,14 @@ export default function AssetChecklistFormsPage() {
               </div>
             </div>
           </div>
+          {!isAssetTypeRoleScoped && (
           <div className="flex gap-2 flex-wrap">
             <Button
               variant="outline"
               size="sm"
               onClick={() => setAssetTypeFilter('all')}
               className={
-                assetTypeFilter === 'all'
+                effectiveAssetTypeFilter === 'all'
                   ? 'bg-red-600 text-white hover:bg-red-700 hover:text-white border-red-600'
                   : ''
               }
@@ -338,7 +361,7 @@ export default function AssetChecklistFormsPage() {
               size="sm"
               onClick={() => setAssetTypeFilter('it')}
               className={
-                assetTypeFilter === 'it'
+                effectiveAssetTypeFilter === 'it'
                   ? 'bg-red-600 text-white hover:bg-red-700 hover:text-white border-red-600'
                   : ''
               }
@@ -350,7 +373,7 @@ export default function AssetChecklistFormsPage() {
               size="sm"
               onClick={() => setAssetTypeFilter('admin')}
               className={
-                assetTypeFilter === 'admin'
+                effectiveAssetTypeFilter === 'admin'
                   ? 'bg-red-600 text-white hover:bg-red-700 hover:text-white border-red-600'
                   : ''
               }
@@ -358,6 +381,7 @@ export default function AssetChecklistFormsPage() {
               Admin Assets
             </Button>
           </div>
+        )}
         </div>
 
         <div className="flex items-center gap-2 mb-4">
@@ -398,8 +422,11 @@ export default function AssetChecklistFormsPage() {
             </p>
           </div>
         ) : (
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-            {filteredChecklists.map(row => (
+          <div>
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+            {filteredChecklists
+              .slice((currentPage - 1) * PAGE_SIZE, currentPage * PAGE_SIZE)
+              .map(row => (
               <Card
                 key={row.id}
                 className="shadow-md hover:shadow-xl transition-all duration-200 border-slate-200 bg-white flex flex-col overflow-hidden"
@@ -473,31 +500,65 @@ export default function AssetChecklistFormsPage() {
                   </div>
                 </CardContent>
 
-                <div className="flex gap-2 border-t border-slate-100 p-4">
+                <div className="flex flex-col sm:flex-row gap-2 border-t border-slate-100 p-4">
                   <Button
                     variant="outline"
                     size="sm"
-                    className="flex-1 bg-red-600 text-white border-red-600 hover:bg-white hover:text-red-600 hover:border-red-600 shadow-sm"
+                    className="w-full sm:flex-1 bg-red-600 text-white border-red-600 hover:bg-white hover:text-red-600 hover:border-red-600 shadow-sm"
                     onClick={() => {
                       setSelectedChecklist(row);
                       setShowPreview(true);
                     }}
                   >
                     <Eye className="mr-2 h-4 w-4" />
-                    View
+                    <span className="hidden sm:inline">View</span>
+                    <span className="sm:hidden">View</span>
                   </Button>
                   <Button
                     variant="outline"
                     size="sm"
-                    className="flex-1 bg-white text-red-600 border-red-600 hover:bg-red-600 hover:text-white shadow-sm"
+                    className="w-full sm:flex-1 bg-white text-red-600 border-red-600 hover:bg-red-600 hover:text-white shadow-sm"
                     onClick={() => handleDownload(row)}
                   >
                     <Download className="mr-2 h-4 w-4" />
-                    Download
+                    <span className="hidden sm:inline">Download</span>
+                    <span className="sm:hidden">DL</span>
                   </Button>
                 </div>
               </Card>
             ))}
+            </div>
+            {filteredChecklists.length > PAGE_SIZE && (
+              <div className="flex items-center justify-center gap-4 pt-6">
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() =>
+                    setCurrentPage(p => Math.max(1, p - 1))
+                  }
+                  disabled={currentPage <= 1}
+                  className="gap-1.5"
+                >
+                  <ChevronLeft className="h-4 w-4" />
+                  Previous
+                </Button>
+                <span className="text-sm text-muted-foreground">
+                  Page {Math.min(currentPage, pageCount)} of {pageCount}
+                </span>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() =>
+                    setCurrentPage(p => Math.min(pageCount, p + 1))
+                  }
+                  disabled={currentPage >= pageCount}
+                  className="gap-1.5"
+                >
+                  Next
+                  <ChevronRight className="h-4 w-4" />
+                </Button>
+              </div>
+            )}
           </div>
         )}
       </main>
@@ -514,13 +575,7 @@ export default function AssetChecklistFormsPage() {
           />
           <AppDialogBody className="min-h-0 flex-1 overflow-auto !p-0">
             <div className="mx-4 my-4 h-[620px] overflow-hidden rounded-lg border border-slate-200 bg-slate-50 sm:mx-6">
-              {previewUrl ? (
-                <PDFViewer pdfUrl={previewUrl} className="h-full w-full" />
-              ) : (
-                <div className="flex h-full w-full items-center justify-center text-gray-500">
-                  Generating checklist PDF preview...
-                </div>
-              )}
+              <PDFViewer pdfUrl={previewUrl} className="h-full w-full" />
             </div>
           </AppDialogBody>
           <AppDialogChromeFooter className="justify-end gap-3">

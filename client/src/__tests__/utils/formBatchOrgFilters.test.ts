@@ -4,6 +4,8 @@ import {
   returnBatchMatchesOrgFilters,
   transferRowDepartmentId,
   transferBatchMatchesOrgFilters,
+  returnBatchMatchesAssetType,
+  transferBatchMatchesAssetType,
   collectCompanyOptionsFromReturnBatches,
   collectDepartmentOptionsFromReturnBatches,
   collectCompanyOptionsFromTransferBatches,
@@ -117,6 +119,76 @@ describe('formBatchOrgFilters', () => {
     it('should collect departments filtered by company', () => {
       const result = collectDepartmentOptionsFromTransferBatches([makeTransferBatch()], 'c1');
       expect(result).toEqual([{ id: 'd1', name: 'IT' }]);
+    });
+  });
+
+  describe('returnBatchMatchesAssetType', () => {
+    it('should match IT form department even when a row is Admin-scoped', () => {
+      const batch = {
+        form_department: { id: 'f1', name: 'IT' },
+        returns: [
+          { assignment: { department: { id: 'd1', name: 'Admin' } } },
+          { assignment: { department: { id: 'd2', name: 'IT' } } },
+        ],
+      };
+      expect(returnBatchMatchesAssetType(batch, 'IT')).toBe(true);
+      expect(returnBatchMatchesAssetType(batch, 'Admin')).toBe(false);
+    });
+
+    it('should match Admin form department and exclude IT', () => {
+      const batch = {
+        form_department: { id: 'f1', name: 'Administration' },
+        returns: [{ assignment: { department: { id: 'd1', name: 'IT' } } }],
+      };
+      expect(returnBatchMatchesAssetType(batch, 'Admin')).toBe(true);
+      expect(returnBatchMatchesAssetType(batch, 'IT')).toBe(false);
+    });
+
+    it('should match when all rows agree and no form department exists', () => {
+      const batch = {
+        form_department: null,
+        returns: [
+          { assignment: { department: { id: 'd1', name: 'IT' } } },
+          { assignment: { department: { id: 'd2', name: 'IT' } } },
+        ],
+      };
+      expect(returnBatchMatchesAssetType(batch, 'IT')).toBe(true);
+      expect(returnBatchMatchesAssetType(batch, 'Admin')).toBe(false);
+    });
+
+    it('should match neither tab for mixed rows without form department', () => {
+      const batch = {
+        form_department: null,
+        returns: [
+          { assignment: { department: { id: 'd1', name: 'IT' } } },
+          { assignment: { department: { id: 'd2', name: 'Admin' } } },
+        ],
+      };
+      expect(returnBatchMatchesAssetType(batch, 'IT')).toBe(false);
+      expect(returnBatchMatchesAssetType(batch, 'Admin')).toBe(false);
+    });
+  });
+
+  describe('transferBatchMatchesAssetType', () => {
+    it('should match IT form department even when a row is Admin-scoped', () => {
+      const batch = {
+        form_department: { id: 'f1', name: 'IT' },
+        returns: [{ assignment: { department: { id: 'd1', name: 'Admin' } } }],
+      };
+      expect(transferBatchMatchesAssetType(batch, 'IT')).toBe(true);
+      expect(transferBatchMatchesAssetType(batch, 'Admin')).toBe(false);
+    });
+
+    it('should match when all rows agree and no form department exists', () => {
+      const batch = {
+        form_department: null,
+        returns: [
+          { assignment: { department: { id: 'd1', name: 'Admin' } } },
+          { assignment: { department: { id: 'd2', name: 'Admin' } } },
+        ],
+      };
+      expect(transferBatchMatchesAssetType(batch, 'Admin')).toBe(true);
+      expect(transferBatchMatchesAssetType(batch, 'IT')).toBe(false);
     });
   });
 });

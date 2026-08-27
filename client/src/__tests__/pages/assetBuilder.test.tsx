@@ -60,8 +60,13 @@ vi.mock('sonner', () => ({
   toast: { error: vi.fn(), success: vi.fn() },
 }));
 
+const mockAssetsData = vi.hoisted(() => ({
+  assets: [],
+  loading: true,
+}));
+
 vi.mock('@/pages/assets/assets-list/useAssetsData', () => ({
-  useAssetsData: () => ({ assets: [], loading: true }),
+  useAssetsData: () => mockAssetsData,
 }));
 
 function renderPage() {
@@ -101,5 +106,53 @@ describe('AssetBuilderPage', () => {
     await waitFor(() => {
       expect(screen.getByText('Create New Asset Builder')).toBeDefined();
     });
+  });
+
+  it('shows non-available assets that are not in a builder', async () => {
+    (api.get as any).mockResolvedValue({});
+    mockAssetsData.loading = false;
+    mockAssetsData.assets = [
+      {
+        id: 'AST-999',
+        name: 'In Use Laptop',
+        description: '',
+        category: 'Electronics',
+        type: 'Laptop',
+        serialNo: '',
+        modelNo: '',
+        brand: '',
+        status: 'In Use',
+        assignedTo: '',
+        department: '',
+        location: '',
+        purchaseDate: null,
+        purchasePrice: 0,
+        supplier: '',
+        warranty: null,
+        warranty_months: null,
+        documents: [],
+        maintenanceSchedule: 'None',
+        lastMaintenanceDate: null,
+        nextMaintenanceDate: null,
+        condition: 'Good',
+        usefulLifeYears: 0,
+        salvageValue: 0,
+        depreciationMethod: '',
+        annualDepreciation: 0,
+        depreciationStartDate: null,
+        company: '',
+        building: '',
+        createdAt: new Date(),
+        createdBy: '',
+        updatedAt: new Date(),
+        updatedBy: '',
+        image: '',
+      },
+    ];
+    renderPage();
+    await waitFor(() => {
+      expect(screen.getByText('In Use Laptop')).toBeDefined();
+    });
+    expect(screen.getByText('AST-999')).toBeDefined();
   });
 });

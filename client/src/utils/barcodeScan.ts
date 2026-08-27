@@ -57,11 +57,13 @@ export function assetCodesMatch(a: string, b: string): boolean {
   return a.trim().toUpperCase() === b.trim().toUpperCase();
 }
 
-export function findAssetByScannedCode<T extends { id: string }>(
+export function findAssetByScannedCode<T extends { id: string; tagCode?: string }>(
   assets: T[],
   rawCode: string
 ): T | undefined {
   const code = parseScannedAssetCode(rawCode);
   if (!code) return undefined;
-  return assets.find(asset => assetCodesMatch(asset.id, code));
+  return assets.find(
+    asset => assetCodesMatch(asset.id, code) || (!!asset.tagCode && assetCodesMatch(asset.tagCode, code))
+  );
 }

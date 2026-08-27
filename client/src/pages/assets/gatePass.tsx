@@ -581,6 +581,29 @@ export default function GatePass() {
                       onSearchColumnChange={setSearchColumn}
                       className="mt-4"
                     />
+                    {filteredAssignments.length > 0 && (
+                      <div className="mt-3 flex justify-end">
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          onClick={() => {
+                            const allVisibleIds = filteredAssignments.map(a => a.assignmentID);
+                            const allSelected = allVisibleIds.every(id => selectedAssignments.includes(id));
+                            if (allSelected) {
+                              setSelectedAssignments(prev => prev.filter(id => !allVisibleIds.includes(id)));
+                            } else {
+                              setSelectedAssignments(prev => [...new Set([...prev, ...allVisibleIds])]);
+                            }
+                          }}
+                          className="text-red-600 border-red-300 hover:bg-red-50 whitespace-nowrap"
+                        >
+                          {filteredAssignments.length > 0 &&
+                          filteredAssignments.every(a => selectedAssignments.includes(a.assignmentID))
+                            ? 'Deselect All'
+                            : 'Select All'}
+                        </Button>
+                      </div>
+                    )}
                   </CardHeader>
                   <CardContent className="pt-0">
                     {loading ? (

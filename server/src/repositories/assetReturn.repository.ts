@@ -34,7 +34,7 @@ export const ASSET_RETURN_FORMS_LIST_SQL_FULL = `
 SELECT arf.formID, arf.form_number, arf.user_id, arf.department_id, arf.location_id, arf.location_room_id, arf.created_by, arf.created_at, arf.updated_at, arf.deleted_at,
        arf.signed_at, arf.signed_by, arf.signed_digital_signature,
        DATE_FORMAT(arf.process_signed_at, '%Y-%m-%d %H:%i:%s') AS process_signed_at,
-       arf.process_digital_signature, arf.return_type, arf.received_by,
+       arf.process_digital_signature, arf.process_signed_by, arf.return_type, arf.received_by,
        arf.process_user_position,
        DATE_FORMAT(arf.processor_declined_at, '%Y-%m-%d %H:%i:%s') AS processor_declined_at,
        arf.processor_declined_by, arf.processor_decline_reason,
@@ -63,9 +63,40 @@ SELECT arf.formID, arf.form_number, arf.user_id, arf.department_id, arf.location
        LEFT JOIN asset_mngmnt_departments d ON arf.department_id = d.departmentID
        WHERE arf.deleted_at IS NULL ORDER BY arf.created_at DESC`;
 
-export async function fetchAssetReturnFormsRowsForUserList(): Promise<any[]> {
+export function buildReturnScopeClause(
+  companyId?: string,
+  departmentIds?: string[]
+): { sql: string; params: unknown[] } {
+  const parts: string[] = [];
+  const params: unknown[] = [];
+  if (companyId) {
+    parts.push('d.company_id = ?');
+    params.push(companyId);
+  }
+  if (departmentIds && departmentIds.length > 0) {
+    const ph = departmentIds.map(() => '?').join(',');
+    parts.push(`d.departmentID IN (${ph})`);
+    params.push(...departmentIds);
+  }
+  return {
+    sql: parts.length > 0 ? ` AND ${parts.join(' AND ')}` : '',
+    params,
+  };
+}
+
+export async function fetchAssetReturnFormsRowsForUserList(
+  companyId?: string,
+  departmentIds?: string[]
+): Promise<any[]> {
+  const scopeClause = buildReturnScopeClause(companyId, departmentIds);
   try {
-    const [rows] = await pool.execute(ASSET_RETURN_FORMS_LIST_SQL_FULL);
+    const [rows] = await pool.execute(
+      ASSET_RETURN_FORMS_LIST_SQL_FULL.replace(
+        'WHERE arf.deleted_at IS NULL',
+        `WHERE arf.deleted_at IS NULL${scopeClause.sql}`
+      ),
+      scopeClause.params
+    );
     return rows as any[];
   } catch (e: unknown) {
     if (!isMysqlUnknownColumnError(e)) throw e;
@@ -73,10 +104,17 @@ export async function fetchAssetReturnFormsRowsForUserList(): Promise<any[]> {
       'asset_return_forms: full column list unavailable; using fallback query',
       e
     );
-    const [rows] = await pool.execute(ASSET_RETURN_FORMS_LIST_SQL_FALLBACK);
+    const [rows] = await pool.execute(
+      ASSET_RETURN_FORMS_LIST_SQL_FALLBACK.replace(
+        'WHERE arf.deleted_at IS NULL',
+        `WHERE arf.deleted_at IS NULL${scopeClause.sql}`
+      ),
+      scopeClause.params
+    );
     return (rows as any[]).map(r => ({
       ...r,
       process_user_position: null,
+      process_signed_by: null,
       processor_declined_at: null,
       processor_declined_by: null,
       processor_decline_reason: null,
@@ -90,53 +128,91 @@ export async function fetchAssetReturnFormsRowsForUserList(): Promise<any[]> {
 // Pending dept-head approval list
 // ---------------------------------------------------------------------------
 
-/** Dept-head pending list: prefers owner_absent + declined_at; falls back for older schemas. */
+/** Dept-head pending list: prefers owner_absent + declined_at + sub_approver mutual exclusion; falls back for older schemas. */
 export const PENDING_DH_APPROVAL_FORMS_SQL_FULL = `
 SELECT arf.formID, arf.form_number, arf.user_id, arf.department_id, arf.location_id, arf.location_room_id, arf.created_by, arf.created_at, arf.updated_at, arf.deleted_at,
   arf.signed_at, arf.signed_by, arf.signed_digital_signature,
   DATE_FORMAT(arf.process_signed_at, '%Y-%m-%d %H:%i:%s') AS process_signed_at,
-  arf.process_digital_signature, arf.return_type, arf.received_by,
+  arf.process_digital_signature, arf.process_signed_by, arf.return_type, arf.received_by,
+  DATE_FORMAT(arf.dept_head_signed_at, '%Y-%m-%d %H:%i:%s') AS dept_head_signed_at,
+  arf.dept_head_digital_signature, arf.dept_head_signed_by,
+  DATE_FORMAT(arf.sub_approver_1_signed_at, '%Y-%m-%d %H:%i:%s') AS sub_approver_1_signed_at,
+  arf.sub_approver_1_digital_signature, arf.sub_approver_1_signed_by,
+  arf.owner_absent,
+  d.company_id AS form_company_id, d.name AS form_department_name
+ FROM asset_return_forms arf
+ LEFT JOIN asset_mngmnt_departments d ON arf.department_id = d.departmentID
+ LEFT JOIN users ru ON arf.user_id = ru.userID
+ WHERE arf.deleted_at IS NULL AND (arf.declined_at IS NULL) AND (arf.signed_at IS NOT NULL OR arf.owner_absent = 1) AND arf.dept_head_signed_at IS NULL
+   AND arf.sub_approver_1_signed_at IS NULL
+   AND ru.department_id <=> ? AND d.company_id = ?`;
+
+export const PENDING_DH_APPROVAL_FORMS_SQL_FULL_NO_SUB = `
+SELECT arf.formID, arf.form_number, arf.user_id, arf.department_id, arf.location_id, arf.location_room_id, arf.created_by, arf.created_at, arf.updated_at, arf.deleted_at,
+  arf.signed_at, arf.signed_by, arf.signed_digital_signature,
+  DATE_FORMAT(arf.process_signed_at, '%Y-%m-%d %H:%i:%s') AS process_signed_at,
+  arf.process_digital_signature, arf.process_signed_by, arf.return_type, arf.received_by,
   DATE_FORMAT(arf.dept_head_signed_at, '%Y-%m-%d %H:%i:%s') AS dept_head_signed_at,
   arf.dept_head_digital_signature, arf.dept_head_signed_by,
   arf.owner_absent,
   d.company_id AS form_company_id, d.name AS form_department_name
  FROM asset_return_forms arf
  LEFT JOIN asset_mngmnt_departments d ON arf.department_id = d.departmentID
+ LEFT JOIN users ru ON arf.user_id = ru.userID
  WHERE arf.deleted_at IS NULL AND (arf.declined_at IS NULL) AND (arf.signed_at IS NOT NULL OR arf.owner_absent = 1) AND arf.dept_head_signed_at IS NULL
-   AND arf.department_id <=> ? AND d.company_id = ?`;
+   AND ru.department_id <=> ? AND d.company_id = ?`;
 
 export const PENDING_DH_APPROVAL_FORMS_SQL_NO_OWNER_ABSENT = `
 SELECT arf.formID, arf.form_number, arf.user_id, arf.department_id, arf.location_id, arf.location_room_id, arf.created_by, arf.created_at, arf.updated_at, arf.deleted_at,
   arf.signed_at, arf.signed_by, arf.signed_digital_signature,
   DATE_FORMAT(arf.process_signed_at, '%Y-%m-%d %H:%i:%s') AS process_signed_at,
-  arf.process_digital_signature, arf.return_type, arf.received_by,
+  arf.process_digital_signature, arf.process_signed_by, arf.return_type, arf.received_by,
   DATE_FORMAT(arf.dept_head_signed_at, '%Y-%m-%d %H:%i:%s') AS dept_head_signed_at,
   arf.dept_head_digital_signature, arf.dept_head_signed_by,
   d.company_id AS form_company_id, d.name AS form_department_name
  FROM asset_return_forms arf
  LEFT JOIN asset_mngmnt_departments d ON arf.department_id = d.departmentID
+ LEFT JOIN users ru ON arf.user_id = ru.userID
  WHERE arf.deleted_at IS NULL AND (arf.declined_at IS NULL) AND (arf.signed_at IS NOT NULL) AND arf.dept_head_signed_at IS NULL
-   AND arf.department_id <=> ? AND d.company_id = ?`;
+   AND ru.department_id <=> ? AND d.company_id = ?`;
 
 export const PENDING_DH_APPROVAL_FORMS_SQL_LEGACY_NO_DECLINED = `
 SELECT arf.formID, arf.form_number, arf.user_id, arf.department_id, arf.location_id, arf.location_room_id, arf.created_by, arf.created_at, arf.updated_at, arf.deleted_at,
   arf.signed_at, arf.signed_by, arf.signed_digital_signature,
   DATE_FORMAT(arf.process_signed_at, '%Y-%m-%d %H:%i:%s') AS process_signed_at,
-  arf.process_digital_signature, arf.return_type, arf.received_by,
+  arf.process_digital_signature, arf.process_signed_by, arf.return_type, arf.received_by,
   DATE_FORMAT(arf.dept_head_signed_at, '%Y-%m-%d %H:%i:%s') AS dept_head_signed_at,
   arf.dept_head_digital_signature, arf.dept_head_signed_by,
   d.company_id AS form_company_id, d.name AS form_department_name
  FROM asset_return_forms arf
  LEFT JOIN asset_mngmnt_departments d ON arf.department_id = d.departmentID
+ LEFT JOIN users ru ON arf.user_id = ru.userID
  WHERE arf.deleted_at IS NULL AND (arf.signed_at IS NOT NULL) AND arf.dept_head_signed_at IS NULL
-   AND arf.department_id <=> ? AND d.company_id = ?`;
+   AND ru.department_id <=> ? AND d.company_id = ?`;
 
 /** Same as FULL but without department filter — for Global Admin / full-scope users */
 export const PENDING_DH_APPROVAL_FORMS_SQL_FULL_NO_DEPT = `
 SELECT arf.formID, arf.form_number, arf.user_id, arf.department_id, arf.location_id, arf.location_room_id, arf.created_by, arf.created_at, arf.updated_at, arf.deleted_at,
   arf.signed_at, arf.signed_by, arf.signed_digital_signature,
   DATE_FORMAT(arf.process_signed_at, '%Y-%m-%d %H:%i:%s') AS process_signed_at,
-  arf.process_digital_signature, arf.return_type, arf.received_by,
+  arf.process_digital_signature, arf.process_signed_by, arf.return_type, arf.received_by,
+  DATE_FORMAT(arf.dept_head_signed_at, '%Y-%m-%d %H:%i:%s') AS dept_head_signed_at,
+  arf.dept_head_digital_signature, arf.dept_head_signed_by,
+  DATE_FORMAT(arf.sub_approver_1_signed_at, '%Y-%m-%d %H:%i:%s') AS sub_approver_1_signed_at,
+  arf.sub_approver_1_digital_signature, arf.sub_approver_1_signed_by,
+  arf.owner_absent,
+  d.company_id AS form_company_id, d.name AS form_department_name
+ FROM asset_return_forms arf
+ LEFT JOIN asset_mngmnt_departments d ON arf.department_id = d.departmentID
+ WHERE arf.deleted_at IS NULL AND (arf.declined_at IS NULL) AND (arf.signed_at IS NOT NULL OR arf.owner_absent = 1) AND arf.dept_head_signed_at IS NULL
+   AND arf.sub_approver_1_signed_at IS NULL
+   AND d.company_id = ?`;
+
+export const PENDING_DH_APPROVAL_FORMS_SQL_FULL_NO_DEPT_NO_SUB = `
+SELECT arf.formID, arf.form_number, arf.user_id, arf.department_id, arf.location_id, arf.location_room_id, arf.created_by, arf.created_at, arf.updated_at, arf.deleted_at,
+  arf.signed_at, arf.signed_by, arf.signed_digital_signature,
+  DATE_FORMAT(arf.process_signed_at, '%Y-%m-%d %H:%i:%s') AS process_signed_at,
+  arf.process_digital_signature, arf.process_signed_by, arf.return_type, arf.received_by,
   DATE_FORMAT(arf.dept_head_signed_at, '%Y-%m-%d %H:%i:%s') AS dept_head_signed_at,
   arf.dept_head_digital_signature, arf.dept_head_signed_by,
   arf.owner_absent,
@@ -150,7 +226,7 @@ export const PENDING_DH_APPROVAL_FORMS_SQL_NO_OWNER_ABSENT_NO_DEPT = `
 SELECT arf.formID, arf.form_number, arf.user_id, arf.department_id, arf.location_id, arf.location_room_id, arf.created_by, arf.created_at, arf.updated_at, arf.deleted_at,
   arf.signed_at, arf.signed_by, arf.signed_digital_signature,
   DATE_FORMAT(arf.process_signed_at, '%Y-%m-%d %H:%i:%s') AS process_signed_at,
-  arf.process_digital_signature, arf.return_type, arf.received_by,
+  arf.process_digital_signature, arf.process_signed_by, arf.return_type, arf.received_by,
   DATE_FORMAT(arf.dept_head_signed_at, '%Y-%m-%d %H:%i:%s') AS dept_head_signed_at,
   arf.dept_head_digital_signature, arf.dept_head_signed_by,
   d.company_id AS form_company_id, d.name AS form_department_name
@@ -163,7 +239,7 @@ export const PENDING_DH_APPROVAL_FORMS_SQL_LEGACY_NO_DECLINED_NO_DEPT = `
 SELECT arf.formID, arf.form_number, arf.user_id, arf.department_id, arf.location_id, arf.location_room_id, arf.created_by, arf.created_at, arf.updated_at, arf.deleted_at,
   arf.signed_at, arf.signed_by, arf.signed_digital_signature,
   DATE_FORMAT(arf.process_signed_at, '%Y-%m-%d %H:%i:%s') AS process_signed_at,
-  arf.process_digital_signature, arf.return_type, arf.received_by,
+  arf.process_digital_signature, arf.process_signed_by, arf.return_type, arf.received_by,
   DATE_FORMAT(arf.dept_head_signed_at, '%Y-%m-%d %H:%i:%s') AS dept_head_signed_at,
   arf.dept_head_digital_signature, arf.dept_head_signed_by,
   d.company_id AS form_company_id, d.name AS form_department_name
@@ -180,6 +256,19 @@ export async function fetchPendingDeptHeadApprovalFormRows(
   try {
     const [rows] = await pool.execute(
       PENDING_DH_APPROVAL_FORMS_SQL_FULL,
+      params
+    );
+    return rows as any[];
+  } catch (e: unknown) {
+    if (!isMysqlUnknownColumnError(e)) throw e;
+    logger.warn(
+      'pending-approvals: full query failed (unknown column); trying without sub_approver columns',
+      e
+    );
+  }
+  try {
+    const [rows] = await pool.execute(
+      PENDING_DH_APPROVAL_FORMS_SQL_FULL_NO_SUB,
       params
     );
     return rows as any[];
@@ -215,6 +304,19 @@ export async function fetchPendingDeptHeadApprovalFormRowsByCompany(
   try {
     const [rows] = await pool.execute(
       PENDING_DH_APPROVAL_FORMS_SQL_FULL_NO_DEPT,
+      params
+    );
+    return rows as any[];
+  } catch (e: unknown) {
+    if (!isMysqlUnknownColumnError(e)) throw e;
+    logger.warn(
+      'pending-approvals (no-dept): full query failed; trying without sub_approver columns',
+      e
+    );
+  }
+  try {
+    const [rows] = await pool.execute(
+      PENDING_DH_APPROVAL_FORMS_SQL_FULL_NO_DEPT_NO_SUB,
       params
     );
     return rows as any[];
@@ -468,14 +570,69 @@ export async function resolveReturnFormCompanyId(
 }
 
 /**
- * Get return forms by asset ID. Since asset_return_forms doesn't have a direct
- * asset_id column and return_form_assignments table doesn't exist, return empty array.
- * This would need database schema changes to properly link return forms to assets.
+ * Get return forms linked to an asset. A return form is linked to an asset
+ * through `asset_returns.assignment_id` → `asset_assignments.asset_id`, and
+ * `asset_returns.form_id` → `asset_return_forms.formID`. One form can cover
+ * several returned assets, so rows are deduplicated by formID. Returns the
+ * camelCase `ReturnForm` DTO shape expected by the Asset details modal and the
+ * Asset Builder forms tab.
  */
 export async function getReturnFormsByAssetId(
   assetId: string
 ): Promise<any[]> {
-  // Return empty array since there's no way to link return forms to assets
-  // with the current database schema
-  return [];
+  const [rows] = (await pool.execute(
+    `SELECT DISTINCT arf.formID, arf.form_number, arf.user_id, arf.created_at, arf.signed_at,
+            arf.return_type, arf.received_by,
+            arf.declined_at, arf.process_signed_at, arf.dept_head_signed_at, arf.processor_declined_at,
+            u.first_name, u.last_name, u.email,
+            d.name AS department_name, l.name AS location_name
+     FROM asset_returns ar
+      JOIN asset_return_forms arf ON ar.form_id = arf.formID AND arf.deleted_at IS NULL
+      JOIN asset_assignments aa ON ar.assignment_id = aa.assignmentID AND aa.deleted_at IS NULL
+      LEFT JOIN users u ON arf.user_id = u.userID
+      LEFT JOIN asset_mngmnt_departments d ON arf.department_id = d.departmentID
+      LEFT JOIN asset_mngmnt_locations l ON arf.location_id = l.locationID
+      WHERE aa.asset_id = ? AND ar.deleted_at IS NULL
+      ORDER BY arf.created_at DESC`,
+    [assetId]
+  )) as any[];
+
+  const seen = new Set<string>();
+  const forms: any[] = [];
+  for (const row of rows as any[]) {
+    const id = String(row.formID ?? '').trim();
+    if (!id || seen.has(id)) continue;
+    seen.add(id);
+
+    // Processor-initiated ("hold") forms set process_signed_at at creation, so
+    // they are only truly "Processed" once an approver has signed off.
+    const holdStyle = Boolean(row.received_by);
+    let status = 'Pending';
+    if (row.declined_at) status = 'Declined';
+    else if (row.processor_declined_at) status = 'Declined by processor';
+    else if (
+      row.process_signed_at &&
+      (!holdStyle || row.dept_head_signed_at)
+    ) status = 'Processed';
+    else if (row.dept_head_signed_at) status = 'Approved by dept head';
+
+    forms.push({
+      id,
+      formNumber: row.form_number ?? '',
+      status,
+      created_at: row.created_at,
+      signed_at: row.signed_at ?? null,
+      return_type: row.return_type ?? '',
+      received_by: row.received_by ?? '',
+      user: {
+        id: row.user_id ?? '',
+        first_name: row.first_name ?? '',
+        last_name: row.last_name ?? '',
+        email: row.email ?? '',
+      },
+      department_name: row.department_name ?? null,
+      location_name: row.location_name ?? null,
+    });
+  }
+  return forms;
 }

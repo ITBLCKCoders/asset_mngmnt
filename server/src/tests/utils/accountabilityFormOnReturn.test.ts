@@ -104,9 +104,49 @@ describe('accountabilityFormOnReturn', () => {
     mockPool.execute
       .mockResolvedValueOnce([[{ digital_signature: null }], []])
       .mockResolvedValueOnce([[], []])
+      .mockResolvedValueOnce([[], []])
+      // No active intangible assignments remain either
       .mockResolvedValueOnce([[], []]);
     await handleAccountabilityFormOnAssetReturn('u1', ['a1'], 'd1', 'loc1', 'room1', 'creator', req);
     expect(mockCreateAccountabilityFormHandler).not.toHaveBeenCalled();
+  });
+
+  it('should create a new form from remaining intangible assets when all tangibles are returned', async () => {
+    const req = makeReq();
+    // Defensive: the shared pool mock may retain one-shot responses from
+    // surrounding tests, so reset it (and the handler) before arranging again.
+    mockPool.execute.mockReset();
+    mockCreateAccountabilityFormHandler.mockReset();
+    mockPool.execute
+      // Fetch processor digital signature
+      .mockResolvedValueOnce([[{ digital_signature: null }], []])
+      // Find forms for user (none to disable)
+      .mockResolvedValueOnce([[], []])
+      // Find active tangible assignments (none remain)
+      .mockResolvedValueOnce([[], []])
+      // Find active intangible assignments -> one remains
+      .mockResolvedValueOnce([[
+        {
+          intangible_asset_id: 'ia1',
+          name: 'Software License',
+          description: 'Annual license',
+          type: 'Software',
+          department_id: 'd1',
+          location_id: 'loc1',
+          location_room_id: 'room1',
+          department_name: 'IT',
+        },
+      ], []]);
+    mockCreateAccountabilityFormHandler.mockResolvedValue(undefined);
+
+    await handleAccountabilityFormOnAssetReturn('u1', ['a1'], 'd1', 'loc1', 'room1', 'creator', req);
+
+    expect(mockCreateAccountabilityFormHandler).toHaveBeenCalledTimes(1);
+    const formReq = mockCreateAccountabilityFormHandler.mock.calls[0][0];
+    expect(formReq.body.assets).toEqual([
+      expect.objectContaining({ id: 'ia1', category: 'Intangible', name: 'Software License' }),
+    ]);
+    expect(formReq.body.departmentId).toBe('d1');
   });
 
   it('should not crash when handler throws', async () => {

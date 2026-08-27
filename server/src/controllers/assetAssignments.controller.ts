@@ -328,6 +328,7 @@ export async function createAssetAssignmentHandler(
     // Recreate accountability forms (per affected department)
     // ----------------------------------------------------------------
     const accountabilityFormIds: string[] = [];
+    const createdForms: { formId: string; formNumber: string }[] = [];
     try {
       if (assignedAssets.length > 0) {
         const assignedAssetCodes = assignedAssets.map(a => a.code);
@@ -492,6 +493,7 @@ export async function createAssetAssignmentHandler(
               previousFormId: disabledFormId,
               previousFormOriginalStatus,
               assignmentIds: departmentAssignmentIds,
+              skipNotification: true,
             },
           } as AuthRequest;
 
@@ -504,17 +506,84 @@ export async function createAssetAssignmentHandler(
             accountabilityFormRes
           );
           const createdBody = formCreateResult as {
-            form?: { formID?: number | string };
+            form?: { formID?: number | string; form_number?: string };
             error?: string;
           };
           const fid = createdBody?.form?.formID;
           if (fid != null && String(fid).trim() !== '' && String(fid) !== '0') {
-            accountabilityFormIds.push(String(fid));
+            const formId = String(fid);
+            accountabilityFormIds.push(formId);
+            createdForms.push({
+              formId,
+              formNumber: createdBody?.form?.form_number ?? '',
+            });
           }
         }
       }
     } catch (formError) {
       logger.error('Failed to create accountability form:', formError);
+    }
+
+    // ----------------------------------------------------------------
+    // Notify the assignee about pending accountability form(s) to sign
+    // ----------------------------------------------------------------
+    if (createdForms.length > 0) {
+      try {
+        const assignerName = await repo.getUserFullName(assignedBy);
+        const io = getIoInstance();
+        for (const createdForm of createdForms) {
+          const signMessage = createdForm.formNumber
+            ? `by ${assignerName}. Your accountability form ${createdForm.formNumber} is ready. Please review and sign it.`
+            : `by ${assignerName}. Your accountability form is ready. Please review and sign it.`;
+
+          await NotificationService.createNotification(
+            {
+              user_id: userId,
+              title: 'New asset accountability is ready for you to sign',
+              message: signMessage,
+              type: 'accountability_form',
+              status: 'unread',
+              data: JSON.stringify({
+                description: signMessage,
+                route: '/profile?tab=documents&docTab=accountability',
+                actionTarget: 'profile_documents_accountability',
+                formId: createdForm.formId,
+                formNumber: createdForm.formNumber,
+                assignedBy: assignerName,
+                timestamp: new Date().toISOString(),
+              }),
+            },
+            assignedBy,
+            req.ip,
+            req.get('User-Agent')
+          );
+
+          if (!io) {
+            logger.error('[NOTIFICATION] Socket.IO instance not available');
+          } else {
+            emitNotification(io, userId, 'notification', {
+              title: 'New asset accountability is ready for you to sign',
+              description: signMessage,
+              type: 'accountability_form',
+              route: '/profile?tab=documents&docTab=accountability',
+              actionTarget: 'profile_documents_accountability',
+              formId: createdForm.formId,
+              formNumber: createdForm.formNumber,
+              assignedBy: assignerName,
+              timestamp: new Date().toISOString(),
+            });
+          }
+        }
+      } catch (accountabilityNotifError) {
+        logger.error(
+          'Failed to send accountability notification:',
+          accountabilityNotifError
+        );
+      }
+    } else {
+      logger.warn(
+        'No accountability forms were created during asset assignment; skipping "ready to sign" notification'
+      );
     }
 
     // ----------------------------------------------------------------
@@ -543,7 +612,9 @@ export async function createAssetAssignmentHandler(
             timestamp: new Date().toISOString(),
           }),
         },
-        assignedBy
+        assignedBy,
+        req.ip,
+        req.get('User-Agent')
       );
 
       const notificationData = {
@@ -605,14 +676,28 @@ export async function getMyAssignmentsHandler(req: AuthRequest, res: Response) {
       return res.json({ assignments: [] });
     }
 
+    // Accept optional scope query param for IT/Admin tab switching. Applied for
+    // every user so anyone can view both their IT and Admin assigned assets.
+    const scopeParam = req.query.scope as string | undefined;
+    const scopeOverride =
+      scopeParam === 'it' || scopeParam === 'admin' ? scopeParam : undefined;
+    let effectiveDepartmentIds = departmentIds;
+    if (scopeOverride) {
+      effectiveDepartmentIds = await getDepartmentIdsForScope(
+        pool,
+        scopeOverride,
+        companyId
+      );
+    }
+
     let where = `
       AND aa.status = 'Active'
       AND aa.user_id = ?
       AND a.company_id = ?`;
     const params: unknown[] = [currentUserId, companyId];
-    if (departmentIds && departmentIds.length > 0) {
-      where += ` AND ac.department_id IN (${departmentIds.map(() => '?').join(',')})`;
-      params.push(...departmentIds);
+    if (effectiveDepartmentIds && effectiveDepartmentIds.length > 0) {
+      where += ` AND ac.department_id IN (${effectiveDepartmentIds.map(() => '?').join(',')})`;
+      params.push(...effectiveDepartmentIds);
     }
 
     const rows = await repo.listAssignmentsRaw(
@@ -721,6 +806,7 @@ export async function getAssetAssignmentsHandler(
         (userId as string) ?? null,
         (status as string) ?? null
       );
+      intangibleRows = await repo.getIntangibleAssignments(null);
     }
 
     const formMap = await buildAccountabilityFormMap(physicalRows);
@@ -835,8 +921,31 @@ export async function getFilteredAssetAssignmentsHandler(
       params
     );
 
+    // Optional: when includeInFlightReturns=1, also return assignment IDs that have an
+    // in-progress (not declined) return form so the Assets Return page can block them.
+    let inFlightReturnAssignmentIds: string[] = [];
+    if (req.query.includeInFlightReturns === '1') {
+      const [inFlightRows] = (await pool.execute(
+        `SELECT DISTINCT ar.assignment_id
+         FROM asset_returns ar
+         JOIN asset_return_forms arf ON ar.form_id = arf.formID
+         JOIN asset_assignments aa ON ar.assignment_id = aa.assignmentID
+         JOIN assets a ON aa.asset_id = a.assetID
+         WHERE ar.deleted_at IS NULL
+           AND arf.deleted_at IS NULL
+           AND arf.declined_at IS NULL
+           AND arf.processor_declined_at IS NULL
+           AND a.company_id = ?`,
+        [companyId]
+      )) as any[];
+      inFlightReturnAssignmentIds = (inFlightRows || []).map(
+        (r: any) => r.assignment_id
+      );
+    }
+
     return res.json({
       assignments: rows.map(r => mapAssignmentRow(r)),
+      inFlightReturnAssignmentIds,
     });
   } catch (error: any) {
     logger.error('Get filtered asset assignments failed:', error);
@@ -981,7 +1090,15 @@ export async function getAssetChecklistsHandler(
 ) {
   try {
     const employeeId = req.query.employee_id as string | undefined;
-    const checklists = await checklistListRepo.getAssetChecklists(employeeId);
+    const { companyId, departmentIds } = await getAssetScope(
+      pool,
+      req.user!.userID
+    );
+    const checklists = await checklistListRepo.getAssetChecklists(
+      employeeId,
+      companyId ?? undefined,
+      employeeId ? undefined : departmentIds?.length ? departmentIds : undefined
+    );
     return res.status(200).json({ checklists });
   } catch (error) {
     logger.error('Get asset checklists failed:', error);

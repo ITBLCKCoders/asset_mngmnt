@@ -96,6 +96,14 @@ async function sendLockoutNotification(
  */
 const DEFAULT_USER_ROLE_ID = '5ef9ba35-0232-11f1-a629-b8cb29c59adf';
 
+function getClientIp(req: Request): string {
+  return (
+    (req.headers['x-forwarded-for'] as string)?.split(',')[0] ||
+    req.socket.remoteAddress ||
+    'unknown'
+  );
+}
+
 export async function register(
   email: string,
   password: string,
@@ -191,16 +199,22 @@ export async function login(email: string, password: string, req: Request) {
   }
 
   // Check if account is locked
+  const clientIp = getClientIp(req);
   if (user.lockout_until && new Date(user.lockout_until) > new Date()) {
-    const remainingTime = Math.ceil(
-      (new Date(user.lockout_until).getTime() - Date.now()) / 60000
-    );
-    logger.warn(
-      `[LOGIN] Failed: Account locked for ${email}, ${remainingTime} minutes remaining`
-    );
-    return {
-      error: `Account is temporarily locked due to too many failed login attempts. Try again in ${remainingTime} minutes.`,
-    };
+    // IP-aware lockout: only the IP that triggered the lockout is blocked.
+    // Legacy lockouts without a recorded IP (NULL) block everyone.
+    const blocksThisRequest = !user.lockout_ip || user.lockout_ip === clientIp;
+    if (blocksThisRequest) {
+      const remainingTime = Math.ceil(
+        (new Date(user.lockout_until).getTime() - Date.now()) / 60000
+      );
+      logger.warn(
+        `[LOGIN] Failed: Account locked for ${email}, ${remainingTime} minutes remaining`
+      );
+      return {
+        error: `Account is temporarily locked due to too many failed login attempts. Try again in ${remainingTime} minutes.`,
+      };
+    }
   }
 
   if (!(await bcrypt.compare(password, user.password))) {
@@ -209,9 +223,25 @@ export async function login(email: string, password: string, req: Request) {
     // Get configurable settings
     const maxAttempts = (await SettingModel.getValue('max_login_attempts')) ?? 5;
     const baseLockoutMinutes = (await SettingModel.getValue('lockout_duration_minutes')) ?? 30;
+    const failedAttemptResetMinutes = (await SettingModel.getValue('failed_attempt_reset_minutes')) ?? 15;
+
+    // Time-based reset: if the last failed attempt happened longer ago than
+    // the reset window, restart the counter so stale attempts no longer lock
+    // a legitimate user on their first real login. Setting of 0 disables reset.
+    const resetWindowMs =
+      failedAttemptResetMinutes > 0
+        ? failedAttemptResetMinutes * 60 * 1000
+        : Number.POSITIVE_INFINITY;
+    const lastFailedAt = user.last_failed_attempt_at
+      ? new Date(user.last_failed_attempt_at).getTime()
+      : 0;
+    let attemptsSoFar = user.failed_login_attempts || 0;
+    if (Date.now() - lastFailedAt >= resetWindowMs) {
+      attemptsSoFar = 0;
+    }
 
     // Increment failed attempts
-    const newAttempts = (user.failed_login_attempts || 0) + 1;
+    const newAttempts = attemptsSoFar + 1;
     let lockoutUntil = null;
 
     if (newAttempts >= maxAttempts) {
@@ -221,8 +251,8 @@ export async function login(email: string, password: string, req: Request) {
       lockoutUntil = new Date(Date.now() + progressiveMinutes * 60 * 1000);
 
       await pool.execute(
-        'UPDATE users SET failed_login_attempts = ?, lockout_until = ?, lockout_count = ? WHERE email = ?',
-        [newAttempts, lockoutUntil, lockoutCount, email]
+        'UPDATE users SET failed_login_attempts = ?, lockout_until = ?, lockout_count = ?, lockout_ip = ?, last_failed_attempt_at = NOW() WHERE email = ?',
+        [newAttempts, lockoutUntil, lockoutCount, clientIp, email]
       );
 
       logger.warn(
@@ -238,7 +268,7 @@ export async function login(email: string, password: string, req: Request) {
     }
 
     await pool.execute(
-      'UPDATE users SET failed_login_attempts = ? WHERE email = ?',
+      'UPDATE users SET failed_login_attempts = ?, last_failed_attempt_at = NOW() WHERE email = ?',
       [newAttempts, email]
     );
 
@@ -252,7 +282,7 @@ export async function login(email: string, password: string, req: Request) {
 
   // Successful login: reset failed attempts and lockout count
   await pool.execute(
-    'UPDATE users SET failed_login_attempts = 0, lockout_until = NULL, lockout_count = 0 WHERE email = ?',
+    'UPDATE users SET failed_login_attempts = 0, lockout_until = NULL, lockout_count = 0, lockout_ip = NULL, last_failed_attempt_at = NULL WHERE email = ?',
     [email]
   );
 

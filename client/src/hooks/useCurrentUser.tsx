@@ -165,17 +165,9 @@ export function useCurrentUser() {
         }
       }
 
-      const authUser =
-        authPayload &&
-        typeof authPayload === 'object' &&
-        'user' in authPayload &&
-        authPayload.user
-          ? (authPayload as { user: Record<string, unknown> }).user
-          : null;
-
-      const data = authUser
-        ? authUser
-        : (await api.get<{ user: Record<string, unknown> }>('/auth/me')).user;
+      const data = (
+        await api.get<{ user: Record<string, unknown> }>('/auth/me')
+      ).user;
 
       const newUser = buildUserObject(data);
 

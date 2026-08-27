@@ -6,6 +6,7 @@ import { Shimmer } from '@/components/ui/shimmer';
 import { useMemo } from 'react';
 import { useUserPermissions } from '@/hooks/useUserPermissions';
 import { DataTable } from '@/components/ui/dataTable';
+import { getRoleDisplayName } from '@/lib/roleUtils';
 import type { ColumnDef } from '@tanstack/react-table';
 
 interface UserTableProps {
@@ -61,7 +62,7 @@ export function UserTable({ users, loading, openEdit }: UserTableProps) {
             variant="secondary"
             className="font-mono text-sm px-4 py-1.5 bg-red-100 text-red-800 border-red-300"
           >
-            {row.original.role?.name || 'No Role'}
+            {getRoleDisplayName(row.original.role?.name) || 'No Role'}
           </Badge>
         ),
       },
@@ -185,7 +186,7 @@ export function UserTable({ users, loading, openEdit }: UserTableProps) {
         {
           key: 'role',
           label: 'Role',
-          render: user => user.role?.name || 'No Role',
+          render: user => getRoleDisplayName(user.role?.name) || 'No Role',
         },
         {
           key: 'status',

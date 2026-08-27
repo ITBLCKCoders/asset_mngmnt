@@ -1,6 +1,7 @@
 import crypto from 'crypto';
 import { pool } from '../db.js';
 import { sendEmail } from '../email.js';
+import { buildEmailHtml } from '../email-templates.js';
 import logger from '../logger.js';
 import { generateTokens } from './tokens.js';
 import type { Request } from 'express';
@@ -20,16 +21,19 @@ export async function sendVerificationOTP(userId: string, email: string) {
   const link = `${config.FRONTEND_URL}/verify-otp`;
   await sendEmail(
     email,
-    'Your OTP Code – Asset Management',
-    `
-    <div style="font-family: Arial, sans-serif; max-width: 600px; margin: auto; padding: 20px; border: 1px solid #eee; border-radius: 10px; text-align: center;">
-      <h2 style="color: #c00;">Verify Your Email</h2>
-      <p>Your 6-digit verification code is:</p>
-      <div style="font-size: 36px; font-weight: bold; letter-spacing: 8px; color: #c00; margin: 20px 0;">${otp}</div>
-      <p><a href="${link}" style="color: #c00; text-decoration: underline;">Enter it here</a></p>
-      <p style="font-size: 12px; color: #666;">Expires in <strong>10 minutes</strong>.</p>
-    </div>
-  `,
+    'Verify your email – Asset Management',
+    buildEmailHtml({
+      title: 'Verify your email',
+      body: `
+        <p style="margin: 0 0 16px 0;">Please use the code below to verify your email address and activate your account.</p>
+        <div style="background: #f4f6f9; border-radius: 8px; padding: 16px; text-align: center; margin-bottom: 20px; letter-spacing: 10px; font-size: 32px; font-weight: 700; color: #1a2933;">${otp}</div>
+        <p style="margin: 0; font-size: 13px; color: #8899a8;">This code expires in <strong>10 minutes</strong>.</p>
+      `,
+      footerNote: 'Didn\'t request this? Please ignore this email.',
+      link,
+      linkText: 'Enter verification code',
+      siteUrl: config.FRONTEND_URL,
+    }),
     link
   );
   logger.info(`[OTP] Sent → ${redactEmail(email)}`);

@@ -1,9 +1,10 @@
-import { vi, describe, it, expect, beforeEach } from 'vitest';
+import { vi, describe, it, expect, beforeEach, afterEach } from 'vitest';
 import {
   getToken,
   setToken,
   getRefreshToken,
   setRefreshToken,
+  api,
 } from '@/lib/api';
 
 describe('api - cookie-based auth', () => {
@@ -50,5 +51,34 @@ describe('api - cookie-based auth', () => {
       setRefreshToken(null);
       expect(getRefreshToken()).toBeNull();
     });
+  });
+});
+
+describe('api - company approvers', () => {
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  it('setCompanyApprover sends a JSON body with the correct content type', async () => {
+    const fetchMock = vi.fn().mockResolvedValue({
+      ok: true,
+      status: 200,
+      headers: new Headers({ 'content-type': 'application/json' }),
+      json: async () => ({ message: 'Approver set successfully' }),
+    });
+    vi.stubGlobal('fetch', fetchMock);
+
+    await api.setCompanyApprover('c1', {
+      approverType: 'approver',
+      userId: 'u1',
+    });
+
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    const [, init] = fetchMock.mock.calls[0];
+    const headers = new Headers(init.headers);
+    expect(headers.get('Content-Type')).toBe('application/json');
+    expect(init.body).toBe(
+      JSON.stringify({ approverType: 'approver', userId: 'u1' })
+    );
   });
 });

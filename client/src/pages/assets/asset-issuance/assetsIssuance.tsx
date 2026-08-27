@@ -48,6 +48,9 @@ import {
   hasComputerTypeAssets,
 } from '@/utils/assetTypeDetection';
 import type { AssetChecklistItemData, OffboardingChecklistItemData } from '../../../../../shared/types/dtos/asset.dtos';
+import {
+  classifyDepartmentScopeByName,
+} from '@/lib/assetScope';
 
 const logger = createLogger('AssetsIssuance');
 
@@ -118,6 +121,7 @@ export default function AssetsAssignment() {
   const [builderSearchTerm, setBuilderSearchTerm] = useState('');
   const [departmentSearchTerm, setDepartmentSearchTerm] = useState('');
   const [userSearchTerm, setUserSearchTerm] = useState('');
+  const [intangibleSearchTerm, setIntangibleSearchTerm] = useState('');
   const [confirmModalOpen, setConfirmModalOpen] = useState(false);
   const [checklistDialogOpen, setChecklistDialogOpen] = useState(false);
   const [checklistStepIndex, setChecklistStepIndex] = useState(0);
@@ -141,10 +145,6 @@ export default function AssetsAssignment() {
     setPendingChecklists(next);
   };
 
-  const computerAssetsForChecklist = useMemo(() => {
-    const selected = assets.filter(a => selectedAssets.includes(a.id));
-    return filterComputerTypeAssets(selected);
-  }, [assets, selectedAssets]);
   const [assetBuilders, setAssetBuilders] = useState<any[]>([]);
   const [buildersLoading, setBuildersLoading] = useState(false);
   const [intangibleAssets, setIntangibleAssets] = useState<any[]>([]);
@@ -160,13 +160,48 @@ export default function AssetsAssignment() {
   const [tabLoading, setTabLoading] = useState(false);
   const displayLoading = loading;
 
+  // Merge builder items (including child assets, which /assets hides) into the
+  // displayable asset list so modals/checklists can resolve every selected code.
+  const allAssignableAssets = useMemo(() => {
+    const byId = new Map<string, any>();
+    for (const a of assets) byId.set(a.id, a);
+    for (const builder of assetBuilders) {
+      for (const item of (builder.items || []) as any[]) {
+        const code = item.asset_code;
+        if (code && !byId.has(code)) {
+          byId.set(code, {
+            id: code,
+            name: item.asset_name || code,
+            status: 'Available',
+            category: item.category_name || '',
+            type: item.type_name || '',
+            serialNo: '',
+            assignedTo: '',
+            department: '',
+            location: '',
+            description: '',
+            specifications: [],
+          });
+        }
+      }
+    }
+    return Array.from(byId.values());
+  }, [assets, assetBuilders]);
+
+  const computerAssetsForChecklist = useMemo(() => {
+    const selected = allAssignableAssets.filter(a =>
+      selectedAssets.includes(a.id)
+    );
+    return filterComputerTypeAssets(selected);
+  }, [allAssignableAssets, selectedAssets]);
+
   const isSuperAdmin = currentUser?.role?.name?.toLowerCase() === 'global admin';
   const isAdmin = currentUser?.role?.name?.toLowerCase() === 'admin';
   const showScopeTabs = isSuperAdmin || isAdmin;
   const effectiveCompanyId = isSuperAdmin || isAdmin
     ? activeCompany?.id || undefined
     : currentUser?.company_id || undefined;
-  const [scope, setScope] = useState<'it' | 'admin'>('it');
+  const [scope, setScope] = useState<'it' | 'admin' | 'hr'>('it');
 
   const fetchAssets = async () => {
     try {
@@ -363,7 +398,7 @@ export default function AssetsAssignment() {
       setLoading(false);
     };
     fetchData();
-  }, [activeCompany?.id, scope]);
+  }, [activeCompany?.id, scope, currentUser]);
 
   useEffect(() => {
     if (!showScopeTabs) return;
@@ -436,7 +471,10 @@ export default function AssetsAssignment() {
     }
 
     // Check if any selected assets are computer-type
-    const hasComputerAssets = hasComputerTypeAssets(assets, selectedAssets);
+    const hasComputerAssets = hasComputerTypeAssets(
+      allAssignableAssets,
+      selectedAssets
+    );
 
     if (hasComputerAssets) {
       setChecklistStepIndex(0);
@@ -536,11 +574,13 @@ export default function AssetsAssignment() {
 
         const scopeGroups: Record<string, any[]> = {};
         for (const ia of selectedIntangibleAssetObjects) {
-          const scope = ia.type === 'Admin scope' ? 'Admin scope' : 'IT scope';
-          if (!scopeGroups[scope]) {
-            scopeGroups[scope] = [];
+          const deptCandidate = ia.type_department?.name || ia.type || '';
+          const scopeType = classifyDepartmentScopeByName(deptCandidate);
+          const group = scopeType === 'Admin' ? 'Admin scope' : 'IT scope';
+          if (!scopeGroups[group]) {
+            scopeGroups[group] = [];
           }
-          scopeGroups[scope].push(ia);
+          scopeGroups[group].push(ia);
         }
 
         for (const [scope, scopeAssets] of Object.entries(scopeGroups)) {
@@ -582,11 +622,13 @@ export default function AssetsAssignment() {
         // Group by scope type
         const scopeGroups: Record<string, any[]> = {};
         for (const ia of selectedIntangibleAssetObjects) {
-          const scope = ia.type === 'Admin scope' ? 'Admin scope' : 'IT scope';
-          if (!scopeGroups[scope]) {
-            scopeGroups[scope] = [];
+          const deptCandidate = ia.type_department?.name || ia.type || '';
+          const scopeType = classifyDepartmentScopeByName(deptCandidate);
+          const group = scopeType === 'Admin' ? 'Admin scope' : 'IT scope';
+          if (!scopeGroups[group]) {
+            scopeGroups[group] = [];
           }
-          scopeGroups[scope].push(ia);
+          scopeGroups[group].push(ia);
         }
 
         // Send one batch request per scope (server creates accountability form with existing tangible assets)
@@ -863,18 +905,36 @@ export default function AssetsAssignment() {
     );
   }, [filteredAssets, groupedAssetIds]);
 
-  // For builder selection, include assets that are in builders but available
-  const allSelectableAssets = useMemo(() => {
-    return filteredAssets.filter(
-      asset => asset.status === 'Available'
-    );
-  }, [filteredAssets]);
-
   const scopedIntangibleAssets = useMemo(() => {
     if (!showScopeTabs) return intangibleAssets;
-    const targetType = scope === 'it' ? 'IT scope' : 'Admin scope';
-    return intangibleAssets.filter((asset: { type?: string }) => asset.type === targetType);
+    // Classify by the department linked to the asset's type (mirrors tangible
+    // asset routing by category department). 'Other' falls back to 'it' as the
+    // most permissive scope so unclassified assets remain visible to IT.
+    const targetScope = scope === 'hr' ? 'IT' : scope === 'admin' ? 'Admin' : 'IT';
+    return intangibleAssets.filter((asset: any) => {
+      const deptCandidate =
+        asset.type_department?.name ||
+        asset.type ||
+        '';
+      const scopeType = classifyDepartmentScopeByName(deptCandidate);
+      if (scopeType === 'IT') return targetScope === 'IT';
+      if (scopeType === 'Admin') return targetScope === 'Admin';
+      // 'Other' — fall back to IT scope tab
+      return targetScope === 'IT';
+    });
   }, [intangibleAssets, showScopeTabs, scope]);
+
+  const filteredIntangibleAssets = useMemo(() => {
+    if (!intangibleSearchTerm.trim()) return scopedIntangibleAssets;
+    const q = intangibleSearchTerm.toLowerCase();
+    return scopedIntangibleAssets.filter((asset: any) =>
+      (asset.name?.toLowerCase().includes(q)) ||
+      (asset.description?.toLowerCase().includes(q)) ||
+      (asset.remarks?.toLowerCase().includes(q)) ||
+      (asset.type?.toLowerCase().includes(q)) ||
+      (asset.code?.toLowerCase().includes(q))
+    );
+  }, [scopedIntangibleAssets, intangibleSearchTerm]);
 
   const availableBuilders = useMemo(() => {
     return assetBuilders.filter((builder: any) => {
@@ -944,17 +1004,14 @@ export default function AssetsAssignment() {
     return availableBuilders.filter((builder: any) => {
       const builderAssets =
         builder.items?.map((item: any) => item.asset_code) || [];
-      const availableBuilderAssets = builderAssets.filter((assetId: string) =>
-        allSelectableAssets.some(asset => asset.id === assetId)
-      );
       return (
-        availableBuilderAssets.length > 0 &&
-        availableBuilderAssets.every((assetId: string) =>
+        builderAssets.length > 0 &&
+        builderAssets.every((assetId: string) =>
           selectedAssets.includes(assetId)
         )
       );
     });
-  }, [availableBuilders, selectedAssets, allSelectableAssets]);
+  }, [availableBuilders, selectedAssets]);
 
   const filteredLocations = (locations || []).filter(
     loc =>
@@ -1134,15 +1191,18 @@ export default function AssetsAssignment() {
           {showScopeTabs && (
             <Tabs
               value={scope}
-              onValueChange={v => setScope(v as 'it' | 'admin')}
+              onValueChange={v => setScope(v as 'it' | 'admin' | 'hr')}
               className="w-full sm:w-auto"
             >
-              <TabsList className={segmentTabsListClassName + ' grid grid-cols-2 max-w-full sm:max-w-[280px]'}>
+              <TabsList className={segmentTabsListClassName + ' grid grid-cols-3 max-w-full sm:max-w-[420px]'}>
                 <TabsTrigger value="it" className={segmentTabsTriggerClassName}>
                   IT Asset
                 </TabsTrigger>
                 <TabsTrigger value="admin" className={segmentTabsTriggerClassName}>
                   Admin Asset
+                </TabsTrigger>
+                <TabsTrigger value="hr" className={segmentTabsTriggerClassName}>
+                  HR Asset
                 </TabsTrigger>
               </TabsList>
             </Tabs>
@@ -1187,18 +1247,22 @@ export default function AssetsAssignment() {
               </TabsList>
 
               <TabsContent value="select-assets" className="mt-4">
-                <AssetSelectionPanel
-                  assets={availableAssets}
-                  selectedAssets={selectedAssets}
-                  searchTerm={searchTerm}
-                  searchColumn={searchColumn}
-                  loading={loading || buildersLoading || tabLoading}
-                  hasPermission={hasPermission}
-                  onSearchChange={setSearchTerm}
-                  onSearchColumnChange={setSearchColumn}
-                  onAssetSelection={handleAssetSelection}
-                  onClearAll={() => setSelectedAssets([])}
-                />
+<AssetSelectionPanel
+  assets={availableAssets}
+  selectedAssets={selectedAssets}
+  searchTerm={searchTerm}
+  searchColumn={searchColumn}
+  loading={loading || buildersLoading || tabLoading}
+  hasPermission={hasPermission}
+  onSearchChange={setSearchTerm}
+  onSearchColumnChange={setSearchColumn}
+  onAssetSelection={handleAssetSelection}
+  onClearAll={() => setSelectedAssets([])}
+  onSelectAll={() => {
+    const availableIds = availableAssets.map(a => a.id);
+    setSelectedAssets(prev => [...new Set([...prev, ...availableIds])]);
+  }}
+/>
               </TabsContent>
 
               <TabsContent value="asset-built" className="mt-4">
@@ -1212,21 +1276,54 @@ export default function AssetsAssignment() {
                       <Badge variant="secondary" className="w-fit">
                         {availableBuilders.length} available
                       </Badge>
+                      {paginatedBuilders.length > 0 && (
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          onClick={() => {
+                            const allBuilderAssetIds = paginatedBuilders
+                              .flatMap((builder: any) =>
+                                (builder.items || []).map((item: any) => item.asset_code)
+                              );
+                            const allSelected = allBuilderAssetIds.length > 0 &&
+                              allBuilderAssetIds.every((id: string) => selectedAssets.includes(id));
+                            if (allSelected) {
+                              setSelectedAssets(prev =>
+                                prev.filter(id => !allBuilderAssetIds.includes(id))
+                              );
+                            } else {
+                              setSelectedAssets(prev => [...new Set([...prev, ...allBuilderAssetIds])]);
+                            }
+                          }}
+                          className="text-red-600 border-red-300 hover:bg-red-50 whitespace-nowrap"
+                        >
+                          {paginatedBuilders
+                            .flatMap((builder: any) =>
+                              (builder.items || []).map((item: any) => item.asset_code)
+                            ).length > 0 &&
+                          (paginatedBuilders
+                            .flatMap((builder: any) =>
+                              (builder.items || []).map((item: any) => item.asset_code)
+                            )).every((id: string) => selectedAssets.includes(id))
+                            ? 'Deselect All'
+                            : 'Select All'}
+                        </Button>
+                      )}
                     </CardTitle>
                     <p className="text-sm text-gray-500 mt-1">
                       Existing asset builders in your organization. Select a
                       builder to assign all its assets.
                     </p>
-                    <div className="relative mt-4 w-full">
-                      <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-gray-400" />
-                      <Input
-                        type="text"
-                        placeholder="Search by builder name or asset code..."
-                        value={builderSearchTerm}
-                        onChange={e => setBuilderSearchTerm(e.target.value)}
-                        className="pl-10 w-full h-10 border-gray-200 focus:border-red-500 focus:ring-red-500"
-                      />
-                    </div>
+<div className="relative mt-4 w-full">
+                    <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-gray-400" />
+                    <Input
+                      type="text"
+                      placeholder="Search by builder name or asset code..."
+                      value={builderSearchTerm}
+                      onChange={e => setBuilderSearchTerm(e.target.value)}
+                      className="pl-10 w-full h-10 border-gray-200 focus:border-red-500 focus:ring-red-500"
+                    />
+                  </div>
                   </CardHeader>
                   <CardContent className="pt-0 flex-1 flex flex-col overflow-hidden">
                     {buildersLoading || tabLoading ? (
@@ -1244,15 +1341,9 @@ export default function AssetsAssignment() {
                               builder.items?.map(
                                 (item: any) => item.asset_code
                               ) || [];
-                            const availableBuilderAssets = builderAssets.filter(
-                              (assetId: string) =>
-                                allSelectableAssets.some(
-                                  asset => asset.id === assetId
-                                )
-                            );
                             const isSelected =
-                              availableBuilderAssets.length > 0 &&
-                              availableBuilderAssets.every((assetId: string) =>
+                              builderAssets.length > 0 &&
+                              builderAssets.every((assetId: string) =>
                                 selectedAssets.includes(assetId)
                               );
 
@@ -1280,7 +1371,7 @@ export default function AssetsAssignment() {
                                     setSelectedAssets(prev => [
                                       ...new Set([
                                         ...prev,
-                                        ...availableBuilderAssets,
+                                        ...builderAssets,
                                       ]),
                                     ]);
                                   }
@@ -1395,16 +1486,46 @@ export default function AssetsAssignment() {
 
               <TabsContent value="intangible-assets" className="mt-4">
                 <Card className="shadow-xl border-0 bg-white/80 backdrop-blur-sm h-[592px] flex flex-col">
-                  <CardHeader className="pb-4 flex-shrink-0">
+                  <CardHeader className="pb-4 flex-shrink-0 space-y-3">
                     <CardTitle className="flex flex-wrap items-center gap-3 text-xl">
                       <div className="p-2 bg-red-100 rounded-lg flex-shrink-0">
                         <Layers className="h-5 w-5 text-red-600" />
                       </div>
                       <span>Intangible Assets</span>
                       <Badge variant="secondary" className="w-fit">
-                        {scopedIntangibleAssets.length} assets
+                        {filteredIntangibleAssets.length} assets
                       </Badge>
+                      {scopedIntangibleAssets.length > 0 && (
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          onClick={() => {
+                            const allIntangibleIds = scopedIntangibleAssets.map((a: any) => a.id);
+                            const allSelected = allIntangibleIds.every(id => selectedAssets.includes(id));
+                            if (allSelected) {
+                              setSelectedAssets(prev => prev.filter(id => !allIntangibleIds.includes(id)));
+                            } else {
+                              setSelectedAssets(prev => [...new Set([...prev, ...allIntangibleIds])]);
+                            }
+                          }}
+                          className="text-red-600 border-red-300 hover:bg-red-50 whitespace-nowrap"
+                        >
+                          {scopedIntangibleAssets.length > 0 &&
+                          scopedIntangibleAssets.every((a: any) => selectedAssets.includes(a.id))
+                            ? 'Deselect All'
+                            : 'Select All'}
+                        </Button>
+                      )}
                     </CardTitle>
+                    <div className="relative">
+                      <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-gray-400" />
+                      <Input
+                        placeholder="Search intangible assets..."
+                        value={intangibleSearchTerm}
+                        onChange={(e) => setIntangibleSearchTerm(e.target.value)}
+                        className="pl-9 h-9 text-sm"
+                      />
+                    </div>
                   </CardHeader>
                   <CardContent className="pt-0 flex-1 flex flex-col overflow-hidden">
                     {intangibleAssetsLoading || tabLoading ? (
@@ -1416,9 +1537,9 @@ export default function AssetsAssignment() {
                           Loading intangible assets...
                         </h3>
                       </div>
-                    ) : scopedIntangibleAssets.length > 0 ? (
+                    ) : filteredIntangibleAssets.length > 0 ? (
                       <div className="space-y-3 overflow-y-auto flex-1 pr-1 sm:-mr-6 sm:pr-6 scrollbar-thin scrollbar-thumb-gray-300 scrollbar-track-gray-100">
-                        {scopedIntangibleAssets.map((asset: any) => {
+                        {filteredIntangibleAssets.map((asset: any) => {
                           const isSelected = selectedAssets.includes(asset.id);
                           const assigneeCount = asset.assignees?.length ?? (asset.assigned_to ? 1 : 0);
                           const typeColor = asset.type === 'IT scope' 
@@ -1498,10 +1619,12 @@ export default function AssetsAssignment() {
                       <div className="text-center py-12">
                         <Layers className="mx-auto h-12 w-12 text-gray-400 mb-4" />
                         <h3 className="text-lg font-medium text-gray-900 mb-2">
-                          No Intangible Assets
+                          {intangibleSearchTerm ? 'No Results Found' : 'No Intangible Assets'}
                         </h3>
                         <p className="text-sm text-gray-500">
-                          No intangible assets found for this scope.
+                          {intangibleSearchTerm
+                            ? 'No intangible assets match your search. Try adjusting your search terms.'
+                            : 'No intangible assets found for this scope.'}
                         </p>
                       </div>
                     )}
@@ -1551,7 +1674,7 @@ export default function AssetsAssignment() {
           isOpen={confirmModalOpen}
           onOpenChange={setConfirmModalOpen}
           selectedAssets={selectedAssets}
-          assets={assets}
+          assets={allAssignableAssets}
           departments={departments}
           locations={locations}
           users={users}
@@ -1584,7 +1707,7 @@ export default function AssetsAssignment() {
             syncPendingChecklists([]);
           }}
           selectedAssets={selectedAssets}
-          assets={assets}
+          assets={allAssignableAssets}
           computerAssets={computerAssetsForChecklist}
           currentIndex={checklistStepIndex}
           selectedUser={selectedUser}

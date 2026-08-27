@@ -2,7 +2,6 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { useNavigate } from 'react-router-dom';
 import {
-  FilePlus,
   HandHelping,
   Wrench,
   ArrowRightLeft,
@@ -17,12 +16,6 @@ interface QuickAction {
 }
 
 const ACTIONS: QuickAction[] = [
-  {
-    label: 'Request Asset',
-    icon: FilePlus,
-    path: '/assets/request',
-    variant: 'default',
-  },
   {
     label: 'Borrow Asset',
     icon: HandHelping,

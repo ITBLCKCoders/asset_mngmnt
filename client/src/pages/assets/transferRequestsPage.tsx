@@ -22,11 +22,21 @@ import {
   XCircle,
   Layers,
   Search,
+  Download,
+  LayoutGrid,
+  List,
 } from 'lucide-react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { PageHeader } from '@/components/common/PageHeader';
 import { Button } from '@/components/ui/button';
+import { DataTable } from '@/components/ui/dataTable';
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipProvider,
+  TooltipTrigger,
+} from '@/components/ui/tooltip';
 import {
   Tabs,
   TabsContent,
@@ -51,8 +61,15 @@ import { cn } from '@/lib/utils';
 import { toast } from 'sonner';
 import { Shimmer } from '@/components/ui/shimmer';
 import { useCurrentUser } from '@/hooks/useCurrentUser';
+import { useUserPermissions } from '@/hooks/useUserPermissions';
 import SmsOtpDialog from '@/components/auth/SmsOtpDialog';
-import { FormTimeline } from '@/pages/profile/profileComponents/tabs/documentsTab';
+import {
+  FormTimeline,
+  TransferFormDetail,
+  buildTransferDataForPDFFromBatch,
+  type AssetTransferFormBatch,
+} from '@/pages/profile/profileComponents/tabs/documentsTab';
+import { generateAssetTransferPDF, downloadPDF } from '@/lib/pdfGenerator';
 import { proxyCloudinaryUrl } from '@/utils/cloudinaryProxy';
 
 const MAX_CONDITION_IMAGES = 5;
@@ -68,8 +85,6 @@ interface ApprovedBatch {
   form_number: string;
   created_at: string;
   user_id: string;
-  /** Wet-signed scan on file (`local` or URL), same idea as return forms */
-  processor_wet_transfer_pdf_url?: string | null;
   new_assigned_user_id: string;
   new_assigned_user?: {
     first_name: string;
@@ -81,8 +96,12 @@ interface ApprovedBatch {
   signed_by?: string | null;
   processed_by?: string | null;
   process_signed_at?: string | null;
+  received_by?: string | null;
   dept_head_signed_at?: string | null;
   dept_head_user_name?: string | null;
+  sub_approver_1_signed_at?: string | null;
+  sub_approver_1_user_name?: string | null;
+  sub_approver_1_position?: string | null;
   returns: Array<{
     assignment_id: string;
     return_condition?: string | null;
@@ -97,6 +116,14 @@ interface ApprovedBatch {
         last_name?: string | null;
       };
     };
+  }>;
+  /** Intangible assets linked to this transfer form (persisted at creation) */
+  intangibleAssets?: Array<{
+    id: string;
+    name: string;
+    type: string;
+    description: string | null;
+    notes: string | null;
   }>;
 }
 
@@ -121,8 +148,23 @@ function formatTransferFromNames(batch: ApprovedBatch): string {
 export default function TransferRequestsPage() {
   const navigate = useNavigate();
   const { user: currentUser } = useCurrentUser();
+  const { roleCustodian } = useUserPermissions();
   const [batches, setBatches] = useState<ApprovedBatch[]>([]);
   const [loading, setLoading] = useState(true);
+  const [processedBatches, setProcessedBatches] = useState<ApprovedBatch[]>(
+    []
+  );
+  const [processedLoading, setProcessedLoading] = useState(false);
+  const [activeTab, setActiveTab] = useState('request');
+  const [viewMode, setViewMode] = useState<'table' | 'card'>('card');
+  const [readOnly, setReadOnly] = useState(false);
+  const [scope, setScope] = useState<'it' | 'admin'>('it');
+
+  // Show scope tabs for Global Admin, Admin, and Overall Manager
+  const isSuperAdmin = currentUser?.role?.name?.toLowerCase() === 'global admin';
+  const isAdmin = currentUser?.role?.name?.toLowerCase() === 'admin';
+  const isOverallManager = roleCustodian?.managerRole === 'overallManager';
+  const showScopeTabs = isSuperAdmin || isAdmin || isOverallManager;
   const [selectedBatch, setSelectedBatch] = useState<ApprovedBatch | null>(
     null
   );
@@ -170,7 +212,7 @@ export default function TransferRequestsPage() {
   const fetchDepartments = async () => {
     try {
       const response = await api.get<{ departments?: Department[] }>(
-        '/departments'
+        `/departments?scope=${scope}`
       );
       setDepartments(response.departments ?? []);
     } catch {
@@ -182,7 +224,7 @@ export default function TransferRequestsPage() {
     try {
       setLoading(true);
       const res = await api.get<{ assetTransferForms?: ApprovedBatch[] }>(
-        '/asset-transfers/forms/approved-for-execution'
+        `/asset-transfers/forms/approved-for-execution?scope=${scope}`
       );
       setBatches(res.assetTransferForms || []);
     } catch (e) {
@@ -191,6 +233,22 @@ export default function TransferRequestsPage() {
       setBatches([]);
     } finally {
       setLoading(false);
+    }
+  };
+
+  const fetchProcessed = async () => {
+    try {
+      setProcessedLoading(true);
+      const res = await api.get<{ assetTransferForms?: ApprovedBatch[] }>(
+        `/asset-transfers/forms/processed-by-me?scope=${scope}`
+      );
+      setProcessedBatches(res.assetTransferForms || []);
+    } catch (e) {
+      console.error('Failed to fetch processed transfer requests', e);
+      toast.error('Failed to load processed transfer requests');
+      setProcessedBatches([]);
+    } finally {
+      setProcessedLoading(false);
     }
   };
 
@@ -206,14 +264,23 @@ export default function TransferRequestsPage() {
 
   useEffect(() => {
     fetchApproved();
+    fetchProcessed();
     fetchDepartments();
     fetchIntangibleAssets();
-  }, []);
+  }, [scope]);
 
-  const handleView = (batch: ApprovedBatch) => {
+  const handleView = (batch: ApprovedBatch, isReadOnly = false) => {
+    setReadOnly(isReadOnly);
     setSelectedBatch(batch);
-    setSelectedIntangibleAssetIds([]);
-    setIntangibleNotes({});
+    setSelectedIntangibleAssetIds(
+      (batch.intangibleAssets ?? []).map(ia => ia.id)
+    );
+    setIntangibleNotes(
+      (batch.intangibleAssets ?? []).reduce(
+        (acc, ia) => ({ ...acc, [ia.id]: ia.notes ?? '' }),
+        {} as Record<string, string>
+      )
+    );
     setConditions(
       (batch.returns || []).reduce(
         (acc, r) => ({
@@ -246,13 +313,54 @@ export default function TransferRequestsPage() {
         {} as Record<string, string[]>
       )
     );
-    setReceivedBy(currentUser?.position?.trim() || '');
-    setTransferTypeTransfer(true);
-    setTransferTypeOffboarding(false);
+    setReceivedBy(
+      isReadOnly
+        ? batch.received_by?.trim() ||
+            currentUser?.position?.trim() ||
+            ''
+        : currentUser?.position?.trim() || ''
+    );
+    if (isReadOnly) {
+      const isOffboarding = batch.transfer_type === 'Transfer Offboarding';
+      setTransferTypeTransfer(!isOffboarding);
+      setTransferTypeOffboarding(isOffboarding);
+    } else {
+      setTransferTypeTransfer(true);
+      setTransferTypeOffboarding(false);
+    }
     setVerificationTag(false);
     setVerificationCondition(false);
     setVerificationConfirmSign(false);
     setShowConfirmDialog(true);
+  };
+
+  const [showFormDetail, setShowFormDetail] = useState(false);
+  const [formDetailBatch, setFormDetailBatch] =
+    useState<AssetTransferFormBatch | null>(null);
+
+  const handleViewForm = (batch: ApprovedBatch) => {
+    setFormDetailBatch(batch as unknown as AssetTransferFormBatch);
+    setShowFormDetail(true);
+  };
+
+  const handleDownloadFormDetail = async () => {
+    if (!formDetailBatch) return;
+    try {
+      const data = buildTransferDataForPDFFromBatch(formDetailBatch);
+      if (!data) {
+        toast.error('Cannot generate PDF for this form');
+        return;
+      }
+      const blob = await generateAssetTransferPDF(data);
+      const fileName = formDetailBatch.form_number
+        ? `Asset_Transfer_Form_${formDetailBatch.form_number}_${Date.now()}.pdf`
+        : `Asset_Transfer_Form_${Date.now()}.pdf`;
+      downloadPDF(blob, fileName);
+      toast.success('Transfer form downloaded successfully');
+    } catch (e) {
+      console.error(e);
+      toast.error('Failed to download PDF');
+    }
   };
 
   const handleExecuteTransfer = async () => {
@@ -316,6 +424,7 @@ export default function TransferRequestsPage() {
       setShowConfirmDialog(false);
       setSelectedBatch(null);
       await fetchApproved();
+      await fetchProcessed();
     } catch (err: any) {
       const msg =
         err?.data?.error ||
@@ -414,6 +523,7 @@ export default function TransferRequestsPage() {
         setShowConfirmDialog(false);
         setSelectedBatch(null);
         await fetchApproved();
+        await fetchProcessed();
       } catch (err: any) {
         const msg =
           err?.data?.error ||
@@ -487,6 +597,134 @@ export default function TransferRequestsPage() {
     'Obsolete',
   ];
 
+  const isProcessedTab = activeTab === 'processed';
+  const listLoading = isProcessedTab ? processedLoading : loading;
+  const listBatches = isProcessedTab ? processedBatches : batches;
+  const emptyTitle = isProcessedTab
+    ? 'No processed transfer requests'
+    : 'No approved transfer requests';
+  const emptyBody = isProcessedTab
+    ? "Transfers you've processed will appear here."
+    : 'Requests appear here after a Department Head approves a transfer request.';
+
+  // Table columns for DataTable view
+  const transferRequestColumns = [
+    {
+      accessorKey: 'form_number',
+      header: 'Form #',
+      cell: ({ row }: any) => (
+        <span className="font-mono text-sm font-medium">
+          {row.original.form_number ?? row.original.formID}
+        </span>
+      ),
+      size: 140,
+    },
+    {
+      accessorKey: 'status',
+      header: 'Status',
+      cell: ({ row }: any) => (
+        <Badge className="bg-red-100 text-red-800">
+          {(row.original.returns || []).length} asset
+          {(row.original.returns || []).length !== 1 ? 's' : ''}
+        </Badge>
+      ),
+      size: 120,
+    },
+    {
+      accessorKey: 'transfer_to',
+      header: 'Transfer To',
+      cell: ({ row }: any) => {
+        const batch = row.original;
+        return (
+          <span className="text-sm">
+            {batch.new_assigned_user
+              ? `${batch.new_assigned_user.first_name} ${batch.new_assigned_user.last_name}`
+              : '—'}
+          </span>
+        );
+      },
+      size: 180,
+    },
+    {
+      accessorKey: 'transfer_from',
+      header: 'Transfer From',
+      cell: ({ row }: any) => (
+        <span className="text-sm text-gray-600">{formatTransferFromNames(row.original)}</span>
+      ),
+      size: 180,
+    },
+    {
+      accessorKey: 'assets',
+      header: 'Assets',
+      cell: ({ row }: any) => (
+        <span className="text-sm text-gray-600">
+          {(row.original.returns || []).length === 0
+            ? 'No assets'
+            : `${(row.original.returns || []).length} asset${(row.original.returns || []).length === 1 ? '' : 's'}`}
+        </span>
+      ),
+      size: 120,
+    },
+    {
+      accessorKey: 'created_at',
+      header: 'Created',
+      cell: ({ row }: any) => (
+        <span className="text-sm text-gray-500">
+          {row.original.created_at &&
+          !isNaN(new Date(row.original.created_at).getTime())
+            ? new Date(row.original.created_at).toLocaleDateString()
+            : '—'}
+        </span>
+      ),
+      size: 140,
+    },
+    {
+      accessorKey: 'transfer_type',
+      header: 'Transfer Type',
+      cell: ({ row }: any) => (
+        <span className="text-sm text-gray-600 capitalize">
+          {row.original.transfer_type ?? '—'}
+        </span>
+      ),
+      size: 140,
+    },
+    {
+      accessorKey: 'actions',
+      header: 'Actions',
+      cell: ({ row }: any) => (
+        <div className="flex items-center gap-2">
+          <Button
+            size="sm"
+            variant="outline"
+            className="bg-red-600 text-white border-red-600 hover:bg-white hover:text-red-600 hover:border-red-600 shadow-sm"
+            onClick={(e) => {
+              e.stopPropagation();
+              handleView(row.original, isProcessedTab);
+            }}
+          >
+            <Eye className="h-4 w-4 mr-1" />
+            {isProcessedTab ? 'View' : 'Transfer'}
+          </Button>
+          {isProcessedTab && (
+            <Button
+              size="sm"
+              variant="outline"
+              className="bg-white text-red-600 border-red-600 hover:bg-red-600 hover:text-white shadow-sm"
+              onClick={(e) => {
+                e.stopPropagation();
+                handleViewForm(row.original);
+              }}
+            >
+              <FileText className="h-4 w-4 mr-1" />
+              Form
+            </Button>
+          )}
+        </div>
+      ),
+      size: isProcessedTab ? 200 : 140,
+    },
+  ];
+
   return (
     <div className="min-h-screen">
       <main className="flex-1 p-6 space-y-6">
@@ -495,6 +733,14 @@ export default function TransferRequestsPage() {
           title="Transfer Requests"
           description="Approved transfer requests ready to execute"
         >
+          {showScopeTabs && (
+            <Tabs value={scope} onValueChange={v => setScope(v as 'it' | 'admin')} className="w-full sm:w-auto">
+              <TabsList className={segmentTabsListClassName + ' grid grid-cols-2 max-w-full sm:max-w-[280px]'}>
+                <TabsTrigger value="it" className={segmentTabsTriggerClassName}>IT Asset</TabsTrigger>
+                <TabsTrigger value="admin" className={segmentTabsTriggerClassName}>Admin Asset</TabsTrigger>
+              </TabsList>
+            </Tabs>
+          )}
           <Button
             variant="header"
             size="sm"
@@ -504,7 +750,79 @@ export default function TransferRequestsPage() {
           </Button>
         </PageHeader>
 
-        {loading ? (
+        <Tabs
+          value={activeTab}
+          onValueChange={v => setActiveTab(v)}
+          className="w-full"
+        >
+          <TabsList
+            className={segmentTabsListClassName + ' grid w-full grid-cols-2 mb-4'}
+          >
+            <TabsTrigger
+              value="request"
+              className={segmentTabsTriggerClassName}
+            >
+              Request
+            </TabsTrigger>
+            <TabsTrigger
+              value="processed"
+              className={segmentTabsTriggerClassName}
+            >
+              Processed
+            </TabsTrigger>
+          </TabsList>
+        </Tabs>
+
+        {/* View Mode Toggle */}
+        <div className="flex items-center justify-between mb-4">
+          <p className="text-sm text-slate-600">
+            {isProcessedTab ? 'Processed transfer requests' : 'Approved transfer requests'}
+          </p>
+          <div className="flex items-center gap-1 bg-slate-100 rounded-lg p-1 border border-slate-200">
+            <TooltipProvider delayDuration={200}>
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <Button
+                    variant={viewMode === 'card' ? 'default' : 'ghost'}
+                    size="sm"
+                    onClick={() => setViewMode('card')}
+                    aria-label="Card view"
+                    className={viewMode === 'card'
+                      ? 'bg-white text-red-600 shadow-sm border border-slate-200'
+                      : 'text-slate-500 hover:text-slate-700 hover:bg-slate-200'}
+                  >
+                    <LayoutGrid className="h-4 w-4" />
+                  </Button>
+                </TooltipTrigger>
+                <TooltipContent side="bottom" className="bg-slate-900 text-white text-xs px-2 py-1 rounded">
+                  Card View
+                </TooltipContent>
+              </Tooltip>
+            </TooltipProvider>
+            <TooltipProvider delayDuration={200}>
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <Button
+                    variant={viewMode === 'table' ? 'default' : 'ghost'}
+                    size="sm"
+                    onClick={() => setViewMode('table')}
+                    aria-label="Table view"
+                    className={viewMode === 'table'
+                      ? 'bg-white text-red-600 shadow-sm border border-slate-200'
+                      : 'text-slate-500 hover:text-slate-700 hover:bg-slate-200'}
+                  >
+                    <List className="h-4 w-4" />
+                  </Button>
+                </TooltipTrigger>
+                <TooltipContent side="bottom" className="bg-slate-900 text-white text-xs px-2 py-1 rounded">
+                  Table View
+                </TooltipContent>
+              </Tooltip>
+            </TooltipProvider>
+          </div>
+        </div>
+
+        {listLoading ? (
           <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-3">
             {Array.from({ length: 6 }).map((_, index) => (
               <Card
@@ -542,23 +860,21 @@ export default function TransferRequestsPage() {
               </Card>
             ))}
           </div>
-        ) : batches.length === 0 ? (
+        ) : listBatches.length === 0 ? (
           <Card className="shadow-xl border-0 bg-white/80 backdrop-blur-sm">
             <CardContent className="py-12 text-center">
               <div className="inline-flex items-center justify-center w-20 h-20 rounded-full bg-gradient-to-br from-red-100 to-red-200 mb-4">
                 <ArrowRightLeft className="h-10 w-10 text-red-600" />
               </div>
               <h3 className="text-lg font-semibold text-gray-900 mb-2">
-                No approved transfer requests
+                {emptyTitle}
               </h3>
-              <p className="text-gray-500 text-sm">
-                Requests appear here after a Department Head approves a transfer request.
-              </p>
+              <p className="text-gray-500 text-sm">{emptyBody}</p>
             </CardContent>
           </Card>
-        ) : (
+        ) : viewMode === 'card' ? (
           <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-3">
-            {batches.map(batch => {
+            {listBatches.map(batch => {
               const transferrerName = formatTransferFromNames(batch);
               return (
               <Card
@@ -577,7 +893,10 @@ export default function TransferRequestsPage() {
                         </CardTitle>
                         <p className="text-sm text-gray-500">
                           Created{' '}
-                          {new Date(batch.created_at).toLocaleDateString()}
+                          {batch.created_at &&
+                          !isNaN(new Date(batch.created_at).getTime())
+                            ? new Date(batch.created_at).toLocaleDateString()
+                            : '—'}
                         </p>
                       </div>
                     </div>
@@ -665,7 +984,17 @@ export default function TransferRequestsPage() {
                           <User className="h-4 w-4 text-gray-400 mt-0.5 flex-shrink-0" />
                           <div className="flex-1 min-w-0">
                             <p className="font-medium text-sm">
-                              Transferrer: {transferrerName}
+                              Transferred by: {transferrerName}
+                            </p>
+                          </div>
+                        </div>
+                      )}
+                      {isProcessedTab && batch.processed_by && (
+                        <div className="flex items-start gap-3">
+                          <User className="h-4 w-4 text-emerald-400 mt-0.5 flex-shrink-0" />
+                          <div className="flex-1 min-w-0">
+                            <p className="font-medium text-sm text-emerald-700">
+                              Processed by: {batch.processed_by}
                             </p>
                           </div>
                         </div>
@@ -710,26 +1039,107 @@ export default function TransferRequestsPage() {
                         dept_head_user_name={
                           batch.dept_head_user_name
                         }
+                        sub_approver_1_signed_at={
+                          batch.sub_approver_1_signed_at
+                        }
+                        sub_approver_1_user_name={
+                          batch.sub_approver_1_user_name
+                        }
+                        sub_approver_1_position={
+                          batch.sub_approver_1_position
+                        }
                         process_signed_at={batch.process_signed_at}
                       />
                     </CardContent>
                   </TabsContent>
                 </Tabs>
-                <div className="flex gap-2 p-4 mt-auto border-t border-slate-100">
+                <div className="flex flex-col sm:flex-row gap-2 p-4 mt-auto border-t border-slate-100">
                   <Button
                     variant="outline"
                     size="sm"
-                    onClick={() => handleView(batch)}
-                    className="flex-1 bg-red-600 text-white border-red-600 hover:bg-white hover:text-red-600 hover:border-red-600 shadow-sm"
+                    onClick={() => handleView(batch, isProcessedTab)}
+                    className="w-full sm:flex-1 bg-red-600 text-white border-red-600 hover:bg-white hover:text-red-600 hover:border-red-600 shadow-sm"
                   >
                     <Eye className="h-4 w-4 mr-2" />
-                    View & Transfer
+                    <span className="hidden sm:inline">{isProcessedTab ? 'View' : 'View & Transfer'}</span>
+                    <span className="sm:hidden">{isProcessedTab ? 'View' : 'Transfer'}</span>
                   </Button>
+                  {isProcessedTab && (
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() => handleViewForm(batch)}
+                      className="w-full sm:flex-1 bg-white text-red-600 border-red-600 hover:bg-red-600 hover:text-white shadow-sm"
+                    >
+                      <FileText className="h-4 w-4 mr-2" />
+                      <span className="hidden sm:inline">View Form</span>
+                      <span className="sm:hidden">Form</span>
+                    </Button>
+                  )}
                 </div>
               </Card>
             );
             })}
           </div>
+        ) : (
+          <DataTable<ApprovedBatch>
+            tableId="transfer-requests"
+            data={listBatches}
+            columns={transferRequestColumns}
+            searchPlaceholder={isProcessedTab ? 'Search processed requests...' : 'Search approved requests...'}
+            title={isProcessedTab ? 'Processed Transfer Requests' : 'Approved Transfer Requests'}
+            titleBadge={`${listBatches.length} requests`}
+            isLoading={listLoading}
+            onRowClick={(row) => {
+              handleView(row.original, isProcessedTab);
+            }}
+            mobileCardFields={[
+              {
+                key: 'form_number',
+                label: 'Form #',
+                render: (row) => row.form_number ?? row.formID,
+              },
+              {
+                key: 'status',
+                label: 'Status',
+                render: (row) => `${(row.returns || []).length} asset${(row.returns || []).length !== 1 ? 's' : ''}`,
+              },
+              {
+                key: 'transfer_to',
+                label: 'Transfer To',
+                render: (row) =>
+                  row.new_assigned_user
+                    ? `${row.new_assigned_user.first_name} ${row.new_assigned_user.last_name}`
+                    : '—',
+              },
+              {
+                key: 'transfer_from',
+                label: 'Transfer From',
+                render: (row) => formatTransferFromNames(row),
+              },
+              {
+                key: 'assets',
+                label: 'Assets',
+                render: (row) =>
+                  (row.returns || []).length === 0
+                    ? 'No assets'
+                    : `${(row.returns || []).length} asset${(row.returns || []).length === 1 ? '' : 's'}`,
+              },
+              {
+                key: 'created_at',
+                label: 'Created',
+                render: (row) =>
+                  row.created_at && !isNaN(new Date(row.created_at).getTime())
+                    ? new Date(row.created_at).toLocaleDateString()
+                    : '—',
+              },
+              {
+                key: 'transfer_type',
+                label: 'Transfer Type',
+                render: (row) => row.transfer_type ?? '—',
+              },
+            ]}
+          />
         )}
 
         <Dialog
@@ -753,16 +1163,22 @@ export default function TransferRequestsPage() {
               title={
                 <span className="flex items-center gap-3">
                   <ArrowRightLeft className="h-6 w-6 shrink-0 text-white" />
-                  Asset Transfer Confirmation
+                  {readOnly
+                    ? 'Asset Transfer Details'
+                    : 'Asset Transfer Confirmation'}
                 </span>
               }
-              description="Assess condition and complete transfer details for each asset."
+              description={
+                readOnly
+                  ? 'Review the completed transfer details.'
+                  : 'Assess condition and complete transfer details for each asset.'
+              }
             />
 
             {selectedBatch && (
               <AppDialogBody className="max-h-[min(50vh,520px)] min-h-0 flex-1 space-y-4 overflow-y-auto overflow-x-hidden sm:space-y-6">
                 <div className="inline-block rounded-full border border-slate-200 bg-slate-50 px-3 py-1 text-sm font-semibold text-slate-800">
-                  Selected Assets: {(selectedBatch.returns || []).length}
+                  Selected Assets: {(selectedBatch.returns || []).length + selectedIntangibleAssetIds.length}
                 </div>
 
                 <div className="rounded-xl border border-slate-200 bg-white p-5 shadow-sm">
@@ -783,6 +1199,7 @@ export default function TransferRequestsPage() {
                     >
                       <Checkbox
                         checked={transferTypeTransfer}
+                        disabled={readOnly}
                         onCheckedChange={c =>
                           setTransferTypeTransfer(Boolean(c))
                         }
@@ -799,6 +1216,7 @@ export default function TransferRequestsPage() {
                     >
                       <Checkbox
                         checked={transferTypeOffboarding}
+                        disabled={readOnly}
                         onCheckedChange={c =>
                           setTransferTypeOffboarding(Boolean(c))
                         }
@@ -808,6 +1226,13 @@ export default function TransferRequestsPage() {
                       </span>
                     </label>
                   </div>
+                </div>
+
+                <div className="rounded-xl border border-slate-200 bg-white p-5 shadow-sm">
+                  <Label className="text-sm font-semibold text-slate-800 tracking-tight uppercase flex items-center gap-2">
+                    <Package className="h-4 w-4 text-red-500" />
+                    Tangible Asset ({(selectedBatch.returns || []).length})
+                  </Label>
                 </div>
 
                 {(() => {
@@ -856,28 +1281,41 @@ export default function TransferRequestsPage() {
                                     <div
                                       key={opt}
                                       role="button"
-                                      tabIndex={0}
+                                      tabIndex={readOnly ? -1 : 0}
                                       className={cn(
-                                        'flex items-center gap-2 p-2 rounded-lg cursor-pointer border-2',
+                                        'flex items-center gap-2 p-2 rounded-lg border-2',
+                                        readOnly
+                                          ? 'cursor-default'
+                                          : 'cursor-pointer',
                                         sel
                                           ? 'border-red-500 bg-red-50'
                                           : 'border-slate-200 hover:border-slate-300'
                                       )}
-                                      onClick={() =>
-                                        setConditions(prev => ({
-                                          ...prev,
-                                          [r.assignment_id]: opt,
-                                        }))
+                                      onClick={
+                                        readOnly
+                                          ? undefined
+                                          : () =>
+                                              setConditions(prev => ({
+                                                ...prev,
+                                                [r.assignment_id]: opt,
+                                              }))
                                       }
-                                      onKeyDown={e => {
-                                        if (e.key === 'Enter' || e.key === ' ') {
-                                          e.preventDefault();
-                                          setConditions(prev => ({
-                                            ...prev,
-                                            [r.assignment_id]: opt,
-                                          }));
-                                        }
-                                      }}
+                                      onKeyDown={
+                                        readOnly
+                                          ? undefined
+                                          : e => {
+                                              if (
+                                                e.key === 'Enter' ||
+                                                e.key === ' '
+                                              ) {
+                                                e.preventDefault();
+                                                setConditions(prev => ({
+                                                  ...prev,
+                                                  [r.assignment_id]: opt,
+                                                }));
+                                              }
+                                            }
+                                      }
                                     >
                                       <CheckCircle
                                         className={cn(
@@ -898,6 +1336,7 @@ export default function TransferRequestsPage() {
                               <Textarea
                                 placeholder="Add notes..."
                                 value={notesByAssignment[r.assignment_id] ?? ''}
+                                disabled={readOnly}
                                 onChange={e =>
                                   setNotesByAssignment(prev => ({
                                     ...prev,
@@ -921,23 +1360,26 @@ export default function TransferRequestsPage() {
                                         alt=""
                                         className="h-20 w-20 object-cover rounded-lg border"
                                       />
-                                      <button
-                                        type="button"
-                                        onClick={() =>
-                                          handleConditionImageRemove(
-                                            r.assignment_id,
-                                            i
-                                          )
-                                        }
-                                        className="absolute -top-1 -right-1 h-6 w-6 rounded-full bg-red-500 text-white flex items-center justify-center opacity-0 group-hover:opacity-100"
-                                      >
-                                        <XCircle className="h-4 w-4" />
-                                      </button>
+                                      {!readOnly && (
+                                        <button
+                                          type="button"
+                                          onClick={() =>
+                                            handleConditionImageRemove(
+                                              r.assignment_id,
+                                              i
+                                            )
+                                          }
+                                          className="absolute -top-1 -right-1 h-6 w-6 rounded-full bg-red-500 text-white flex items-center justify-center opacity-0 group-hover:opacity-100"
+                                        >
+                                          <XCircle className="h-4 w-4" />
+                                        </button>
+                                      )}
                                     </div>
                                   )
                                 )}
-                                {(imageUrlsByAssignment[r.assignment_id] ?? [])
-                                  .length < MAX_CONDITION_IMAGES && (
+                                {!readOnly &&
+                                  (imageUrlsByAssignment[r.assignment_id] ?? [])
+                                    .length < MAX_CONDITION_IMAGES && (
                                   <label className="flex h-20 w-20 items-center justify-center rounded-lg border-2 border-dashed border-slate-300 cursor-pointer">
                                     <input
                                       type="file"
@@ -970,7 +1412,7 @@ export default function TransferRequestsPage() {
                   <div className="rounded-xl border border-slate-200 bg-white p-5 shadow-sm">
                     <Label className="text-sm font-semibold text-slate-800 tracking-tight uppercase flex items-center gap-2 mb-4">
                       <Layers className="h-4 w-4 text-red-500" />
-                      Intangible Assets ({selectedIntangibleAssetIds.length})
+                      Intangible Asset ({selectedIntangibleAssetIds.length})
                     </Label>
                     <div className="overflow-x-auto">
                       <table className="w-full text-sm">
@@ -999,6 +1441,7 @@ export default function TransferRequestsPage() {
                                   <Textarea
                                     placeholder="Notes..."
                                     value={intangibleNotes[id] ?? ''}
+                                    disabled={readOnly}
                                     onChange={e => setIntangibleNotes(prev => ({ ...prev, [id]: e.target.value }))}
                                     className="border-slate-200 focus:border-red-500 focus:ring-red-500/20 rounded-lg resize-none text-xs"
                                     rows={2}
@@ -1051,55 +1494,79 @@ export default function TransferRequestsPage() {
                   <Input
                     className="mt-3 border-slate-200"
                     value={receivedBy}
+                    disabled={readOnly}
                     onChange={e => setReceivedBy(e.target.value)}
                     placeholder="Position or role"
                   />
                 </div>
 
-                <div className="rounded-xl border border-slate-200 bg-white p-5 shadow-sm space-y-4">
-                  <Label className="text-sm font-semibold text-slate-800 uppercase block">
-                    Verification
-                  </Label>
-                  <label className="flex items-center gap-3 cursor-pointer">
-                    <Checkbox
-                      checked={verificationTag}
-                      onCheckedChange={c => setVerificationTag(Boolean(c))}
-                    />
-                    <span className="text-sm">
-                      All assets are tagged and accounted for
-                    </span>
-                  </label>
-                  <label className="flex items-center gap-3 cursor-pointer">
-                    <Checkbox
-                      checked={verificationCondition}
-                      onCheckedChange={c =>
-                        setVerificationCondition(Boolean(c))
-                      }
-                    />
-                    <span className="text-sm">
-                      Condition of each asset has been verified
-                    </span>
-                  </label>
-                  <label className="flex items-center gap-3 cursor-pointer">
-                    <Checkbox
-                      checked={verificationConfirmSign}
-                      onCheckedChange={c =>
-                        setVerificationConfirmSign(Boolean(c))
-                      }
-                    />
-                    <span className="text-sm">
-                      I sign this form confirming and approving this asset
-                      transfer
-                    </span>
-                  </label>
-                  <p className="text-sm text-slate-600">
-                    All selected assets will be transferred.
-                  </p>
-                </div>
+                {!readOnly && (
+                  <div className="rounded-xl border border-slate-200 bg-white p-5 shadow-sm space-y-4">
+                    <Label className="text-sm font-semibold text-slate-800 uppercase block">
+                      Verification
+                    </Label>
+                    <label className="flex items-center gap-3 cursor-pointer">
+                      <Checkbox
+                        checked={verificationTag}
+                        disabled={readOnly}
+                        onCheckedChange={c => setVerificationTag(Boolean(c))}
+                      />
+                      <span className="text-sm">
+                        All assets are tagged and accounted for
+                      </span>
+                    </label>
+                    <label className="flex items-center gap-3 cursor-pointer">
+                      <Checkbox
+                        checked={verificationCondition}
+                        disabled={readOnly}
+                        onCheckedChange={c =>
+                          setVerificationCondition(Boolean(c))
+                        }
+                      />
+                      <span className="text-sm">
+                        Condition of each asset has been verified
+                      </span>
+                    </label>
+                    <label className="flex items-center gap-3 cursor-pointer">
+                      <Checkbox
+                        checked={verificationConfirmSign}
+                        disabled={readOnly}
+                        onCheckedChange={c =>
+                          setVerificationConfirmSign(Boolean(c))
+                        }
+                      />
+                      <span className="text-sm">
+                        I sign this form confirming and approving this asset
+                        transfer
+                      </span>
+                    </label>
+                    <p className="text-sm text-slate-600">
+                      All selected assets will be transferred.
+                    </p>
+                  </div>
+                )}
               </AppDialogBody>
             )}
 
             <AppDialogChromeFooter className="justify-end">
+              {readOnly ? (
+                <>
+                  <Button
+                    variant="outline"
+                    onClick={() => selectedBatch && handleViewForm(selectedBatch)}
+                  >
+                    <FileText className="h-4 w-4 mr-2" />
+                    View Form
+                  </Button>
+                  <Button
+                    variant="outline"
+                    onClick={() => setShowConfirmDialog(false)}
+                  >
+                    Close
+                  </Button>
+                </>
+              ) : (
+                <>
               <Button
                 variant="outline"
                 onClick={() => setShowConfirmDialog(false)}
@@ -1135,7 +1602,11 @@ export default function TransferRequestsPage() {
                   }));
 
                   const intangibleAssetItems = selectedIntangibleAssetIds
-                    .filter(id => intangibleAssets.some(ia => ia.id === id))
+                    .filter(
+                      id =>
+                        intangibleAssets.some(ia => ia.id === id) ||
+                        selectedBatch.intangibleAssets?.some(ia => ia.id === id)
+                    )
                     .map(id => ({
                       id,
                       notes: intangibleNotes[id] ?? '',
@@ -1201,6 +1672,7 @@ export default function TransferRequestsPage() {
                       setShowConfirmDialog(false);
                       setSelectedBatch(null);
                       await fetchApproved();
+                        await fetchProcessed();
                     } catch (err: any) {
                       const msg =
                         err?.data?.error ||
@@ -1244,6 +1716,61 @@ export default function TransferRequestsPage() {
                 ) : (
                   'Transfer'
                 )}
+              </Button>
+              </>
+              )}
+            </AppDialogChromeFooter>
+          </AppDialogFrame>
+        </Dialog>
+
+        <Dialog
+          open={showFormDetail}
+          onOpenChange={setShowFormDetail}
+        >
+          <AppDialogFrame className="max-w-3xl h-[min(90dvh,920px)] max-h-[calc(100dvh-1rem)] min-h-0 overflow-hidden !flex !flex-col">
+            <AppDialogGradientHeader
+              title={`${
+                formDetailBatch?.returns[0]?.assignment?.user
+                  ? `${formDetailBatch.returns[0].assignment.user.first_name || ''} ${formDetailBatch.returns[0].assignment.user.last_name || ''}`.trim() ||
+                    'Transfer'
+                  : 'Transfer'
+              } - ${
+                formDetailBatch?.form_number ??
+                `Transfer of ${formDetailBatch?.returns.length ?? 0} assets`
+              }`}
+              description="Asset Transfer Form Preview"
+            />
+            {formDetailBatch && (
+              <div className="min-h-0 flex-1 flex flex-col overflow-hidden bg-white px-4 sm:px-6">
+                <TransferFormDetail
+                  key={formDetailBatch.formID}
+                  transferFormBatch={formDetailBatch}
+                  onClose={() => {
+                    setShowFormDetail(false);
+                    setFormDetailBatch(null);
+                  }}
+                  onDownload={handleDownloadFormDetail}
+                  contentOnly
+                />
+              </div>
+            )}
+            <AppDialogChromeFooter className="flex-shrink-0 flex-row justify-end gap-3 sm:gap-3">
+              <Button
+                variant="outline"
+                onClick={() => {
+                  setShowFormDetail(false);
+                  setFormDetailBatch(null);
+                }}
+              >
+                Close
+              </Button>
+              <Button
+                size="sm"
+                onClick={handleDownloadFormDetail}
+                className="bg-green-600 hover:bg-green-700 text-white"
+              >
+                <Download className="h-4 w-4 mr-2" />
+                Download PDF
               </Button>
             </AppDialogChromeFooter>
           </AppDialogFrame>

@@ -128,9 +128,9 @@ VALUES ('l1000000-0000-0000-0000-000000000003', '10000000-0000-0000-0000-0000000
 ON DUPLICATE KEY UPDATE `company_id` = `company_id`;
 
 -- 16. Asset borrow requests (pending dept head approval)
-INSERT INTO `asset_borrow_requests` (`borrow_request_id`, `company_id`, `user_id`, `borrow_scope`, `category_id`, `type_id`, `expected_return_at`, `purpose`, `status`)
+INSERT INTO `asset_borrow_requests` (`borrow_request_id`, `company_id`, `user_id`, `borrow_scope`, `description`, `expected_return_at`, `purpose`, `status`)
 VALUES
-('d1000000-0000-0000-0000-000000000001', '10000000-0000-0000-0000-000000000001', '40000000-0000-0000-0000-000000000003', 'it', '50000000-0000-0000-0000-000000000001', '60000000-0000-0000-0000-000000000001', DATE_ADD(NOW(), INTERVAL 7 DAY), 'E2E test borrow request for laptop', 'pending_dept_head');
+('d1000000-0000-0000-0000-000000000001', '10000000-0000-0000-0000-000000000001', '40000000-0000-0000-0000-000000000003', 'it', 'Laptop Dell XPS 16GB RAM for E2E test project work', DATE_ADD(NOW(), INTERVAL 7 DAY), 'E2E test borrow request for laptop', 'pending_dept_head');
 
 -- 17. Asset return forms (pending dept head approval, signed by user)
 INSERT INTO `asset_return_forms` (`formID`, `form_number`, `user_id`, `department_id`, `location_id`, `location_room_id`, `created_by`, `signed_at`, `signed_by`)

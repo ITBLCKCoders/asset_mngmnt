@@ -19,13 +19,22 @@ export type AssetBuilderRecord = {
   [key: string]: unknown;
 };
 
-/** Built-asset tags encode the parent asset code — match that item only. */
+/**
+ * Built-asset tags encode the parent tag_code (the original asset code). The
+ * parent's live asset_code may have changed, so translate the scanned tag_code
+ * to the current asset_code via tagCodeMap before matching the builder item.
+ */
 export function findBuilderByParentAssetCode(
   builders: AssetBuilderRecord[],
-  rawCode: string
+  rawCode: string,
+  tagCodeMap?: Record<string, string>
 ): AssetBuilderRecord | undefined {
-  const code = parseScannedAssetCode(rawCode);
+  let code = parseScannedAssetCode(rawCode);
   if (!code) return undefined;
+
+  if (tagCodeMap && tagCodeMap[code]) {
+    code = tagCodeMap[code];
+  }
 
   return builders.find(builder =>
     builder.items?.some(
@@ -50,11 +59,12 @@ export async function fetchAssetBuildersForScan(
 export async function resolveBuilderByParentScan(
   rawCode: string,
   cachedBuilders: AssetBuilderRecord[],
-  scope?: 'it' | 'admin' | null
+  scope?: 'it' | 'admin' | null,
+  tagCodeMap?: Record<string, string>
 ): Promise<AssetBuilderRecord | null> {
-  const fromCache = findBuilderByParentAssetCode(cachedBuilders, rawCode);
+  const fromCache = findBuilderByParentAssetCode(cachedBuilders, rawCode, tagCodeMap);
   if (fromCache) return fromCache;
 
   const fetched = await fetchAssetBuildersForScan(scope);
-  return findBuilderByParentAssetCode(fetched, rawCode) ?? null;
+  return findBuilderByParentAssetCode(fetched, rawCode, tagCodeMap) ?? null;
 }

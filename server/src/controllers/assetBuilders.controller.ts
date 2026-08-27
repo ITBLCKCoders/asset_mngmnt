@@ -16,6 +16,36 @@ import { emitNotification } from '../sockets/socketHandlers.js';
 import { getIoInstance } from '../utils/socketManager.js';
 import { NotificationService } from '../services/notification.service.js';
 
+/**
+ * Resolves the effective company ID for a user performing builder mutations.
+ *
+ * Global Admin uses the active company (company switcher in the header), matching
+ * the logic used by getAssetBuildersHandler/getAssetScope. All other users use
+ * their fixed company_id from the users table.
+ */
+async function resolveUserCompanyId(
+  pool: any,
+  userId: string
+): Promise<string | null> {
+  const [userRows] = (await pool.execute(
+    `SELECT u.company_id, r.name as role_name
+     FROM users u
+     LEFT JOIN asset_mngmnt_roles r ON u.role_id = r.roleID AND r.deleted_at IS NULL
+     WHERE u.userID = ?`,
+    [userId]
+  )) as any[];
+
+  const isSuperAdmin =
+    String(userRows?.[0]?.role_name ?? '').trim().toLowerCase() === 'global admin';
+
+  if (isSuperAdmin) {
+    const activeCompany = await getActiveCompany(pool);
+    return activeCompany?.id ?? null;
+  }
+
+  return userRows?.[0]?.company_id ?? null;
+}
+
 export async function createAssetBuilderHandler(
   req: AuthRequest,
   res: Response
@@ -35,11 +65,11 @@ export async function createAssetBuilderHandler(
       });
     }
 
-    // Validate that all asset codes exist and are available
+    // Validate that all asset codes exist
     const placeholders = assetIds.map(() => '?').join(',');
     const [assetRows] = (await pool.execute(
       `SELECT assetID, asset_code, name FROM assets
-       WHERE asset_code IN (${placeholders}) AND status = 'Available' AND deleted_at IS NULL`,
+       WHERE asset_code IN (${placeholders}) AND deleted_at IS NULL`,
       assetIds
     )) as any[];
 
@@ -53,7 +83,7 @@ export async function createAssetBuilderHandler(
         assetRows.map((a: any) => `${a.asset_code} (${a.assetID})`)
       );
       return res.status(400).json({
-        error: 'Some assets are not available or do not exist',
+        error: 'One or more assets do not exist',
       });
     }
 
@@ -202,7 +232,7 @@ export async function getAssetBuildersHandler(req: AuthRequest, res: Response) {
       scopeParam === 'it' || scopeParam === 'admin' ? scopeParam : undefined;
 
     // Get asset scope (company + optional department-based filtering)
-    const { companyId, departmentIds: scopeDeptIds, isSuperAdmin } = await getAssetScope(pool, userId);
+    const { companyId, departmentIds: scopeDeptIds } = await getAssetScope(pool, userId);
 
     logger.info(`User company ID from asset scope: ${companyId}`, {
       departmentIdsCount: scopeDeptIds?.length ?? 0,
@@ -215,19 +245,9 @@ export async function getAssetBuildersHandler(req: AuthRequest, res: Response) {
 
     let departmentIds = scopeDeptIds;
 
-    // For Global Admin, Admin, and overallManager: apply scope override if provided
+    // Apply scope override if provided so any user can toggle IT/Admin views.
     if (scopeOverride) {
-      const [userRows] = (await pool.execute(
-        `SELECT r.manager_role, r.name as role_name FROM users u
-         LEFT JOIN asset_mngmnt_roles r ON u.role_id = r.roleID AND r.deleted_at IS NULL
-         WHERE u.userID = ?`,
-        [userId]
-      )) as any[];
-      const managerRole = String(userRows?.[0]?.manager_role ?? '').trim();
-      const isAdmin = String(userRows?.[0]?.role_name ?? '').trim().toLowerCase() === 'admin';
-      if (isSuperAdmin || isAdmin || managerRole === 'overallManager') {
-        departmentIds = await getDepartmentIdsForScope(pool, scopeOverride, companyId);
-      }
+      departmentIds = await getDepartmentIdsForScope(pool, scopeOverride, companyId);
     }
 
     // Get asset builders for the company using stored procedure
@@ -365,6 +385,114 @@ export async function getAssetBuildersHandler(req: AuthRequest, res: Response) {
   }
 }
 
+// Match builders whose component assets include any of the given asset codes.
+// Unlike getAssetBuildersHandler, this is NOT scoped to the viewer's company —
+// used by accountability form PDF generation when the form's assets belong to a
+// company different from the viewer's active company scope.
+export async function matchAssetBuildersHandler(
+  req: AuthRequest,
+  res: Response
+) {
+  try {
+    const userId = req.user!.userID;
+    const { assetCodes } = req.body ?? {};
+
+    if (!Array.isArray(assetCodes) || assetCodes.length === 0) {
+      return res.status(400).json({ error: 'assetCodes array is required' });
+    }
+
+    const codes = assetCodes
+      .map((c: unknown) => (typeof c === 'string' ? c.trim() : ''))
+      .filter((c: string) => c.length > 0);
+
+    if (codes.length === 0) {
+      return res.status(400).json({
+        error: 'assetCodes must contain at least one non-empty code',
+      });
+    }
+    if (codes.length > 200) {
+      return res.status(400).json({ error: 'assetCodes exceeds 200 entries' });
+    }
+
+    const placeholders = codes.map(() => '?').join(',');
+    const [matchRows] = (await pool.execute(
+      `SELECT DISTINCT ab.builderID, ab.name, ab.status, ab.description
+       FROM asset_builder_items abi
+       JOIN assets a ON abi.asset_id = a.assetID AND a.deleted_at IS NULL
+       JOIN asset_builders ab ON ab.builderID = abi.builder_id AND ab.deleted_at IS NULL
+       WHERE a.asset_code IN (${placeholders})`,
+      codes
+    )) as any[];
+
+    if (!Array.isArray(matchRows) || matchRows.length === 0) {
+      logger.info(
+        `No asset builders matched any of the ${codes.length} asset codes for user ${userId}`
+      );
+      return res.json({ builders: [] });
+    }
+
+    const builders = [];
+    for (const row of matchRows) {
+      const [itemResult] = (await pool.execute(
+        'CALL sp_get_asset_builder_items(?)',
+        [row.builderID]
+      )) as any[][];
+
+      const itemRows =
+        (Array.isArray(itemResult?.[0]) ? itemResult[0] : itemResult) ?? [];
+
+      const builder: any = {
+        builderID: row.builderID,
+        name: row.name,
+        description: row.description,
+        status: row.status,
+        items: itemRows.map((item: any) => ({
+          itemID: item.itemID,
+          asset_id: item.asset_id,
+          asset_code: item.asset_code,
+          asset_name: item.asset_name,
+          category_name: item.category_name,
+          type_name: item.type_name,
+          is_parent: item.is_parent === 1,
+        })),
+      };
+
+      // When builder is Assigned, resolve assigned user (owner of assets in this builder)
+      if (String(row.status) === 'Assigned' && itemRows.length > 0) {
+        const firstAssetId = itemRows[0]?.asset_id;
+        if (firstAssetId) {
+          const [assignRows] = (await pool.execute(
+            `SELECT u.userID, u.first_name, u.last_name
+             FROM asset_assignments aa
+             JOIN users u ON aa.user_id = u.userID
+             WHERE aa.asset_id = ? AND aa.status = 'Active' AND aa.deleted_at IS NULL
+             LIMIT 1`,
+            [firstAssetId]
+          )) as any[];
+          if (assignRows?.length > 0) {
+            const u = assignRows[0];
+            builder.assigned_to = {
+              id: u.userID,
+              first_name: u.first_name ?? '',
+              last_name: u.last_name ?? '',
+            };
+          }
+        }
+      }
+
+      builders.push(builder);
+    }
+
+    logger.info(
+      `Matched ${builders.length} asset builders by asset codes for user ${userId}`
+    );
+    return res.json({ builders });
+  } catch (error: any) {
+    logger.error('Match asset builders failed:', error);
+    return res.status(500).json({ error: 'Failed to match asset builders' });
+  }
+}
+
 export async function updateAssetBuilderHandler(
   req: AuthRequest,
   res: Response
@@ -401,13 +529,10 @@ export async function updateAssetBuilderHandler(
 
     const builder = builderRows[0];
 
-    // Check if user belongs to the same company
-    const [userRows] = (await pool.execute(
-      'SELECT company_id FROM users WHERE userID = ?',
-      [userId]
-    )) as any[];
+    // Check if user belongs to the same company (Global Admin uses active company)
+    const userCompanyId = await resolveUserCompanyId(pool, userId);
 
-    if (userRows[0]?.company_id !== builder.company_id) {
+    if (userCompanyId !== builder.company_id) {
       return res.status(403).json({ error: 'Access denied' });
     }
 
@@ -420,17 +545,13 @@ export async function updateAssetBuilderHandler(
       [builderId]
     )) as any[];
 
-    const currentAssetIdsSet = new Set(
-      currentItems.map((item: any) => item.asset_id)
-    );
-
     // If no assetIds provided, keep existing assets (for status-only updates)
     let assetRows: any[] = [];
     if (assetIds && Array.isArray(assetIds) && assetIds.length > 0) {
-      // Validate: all asset codes must exist. Only NEW assets (not already in builder) must be Available.
+      // Validate: all asset codes must exist.
       const placeholders = assetIds.map(() => '?').join(',');
       const [rows] = (await pool.execute(
-        `SELECT assetID, asset_code, name, status FROM assets
+        `SELECT assetID, asset_code, name FROM assets
          WHERE asset_code IN (${placeholders}) AND deleted_at IS NULL`,
         assetIds
       )) as any[];
@@ -442,18 +563,6 @@ export async function updateAssetBuilderHandler(
         return res.status(400).json({
           error: 'One or more assets do not exist',
         });
-      }
-
-      // New assets (not currently in this builder) must be Available
-      for (const row of rows as any[]) {
-        if (
-          !currentAssetIdsSet.has(row.assetID) &&
-          row.status !== 'Available'
-        ) {
-          return res.status(400).json({
-            error: `Asset ${row.asset_code} is not available (status: ${row.status}). Only available assets can be added to a builder.`,
-          });
-        }
       }
 
       // Validate parentAssetId if provided
@@ -495,7 +604,7 @@ export async function updateAssetBuilderHandler(
         builderId,
         name.trim(),
         description?.trim() || null,
-        status || 'Available',
+        status ?? null,
         userId,
       ]
     )) as any[];
@@ -690,6 +799,7 @@ export async function updateAssetBuilderHandler(
 
         // --- Rebuild accountability forms (only if new assets were added) ---
         if (newAssignedAssets.length > 0) {
+          const createdForms: { formId: string; formNumber: string }[] = [];
           const assignedAssetCodes = newAssignedAssets.map(a => a.code);
           const assignedAssetDetails = await assignmentRepo.getCategoryDeptForAssetCodes(assignedAssetCodes);
 
@@ -770,6 +880,7 @@ export async function updateAssetBuilderHandler(
                 assignmentIds: newAssignmentIds,
                 previousFormId: disabledFormId,
                 previousFormOriginalStatus,
+                skipNotification: true,
               },
             } as AuthRequest;
 
@@ -778,10 +889,73 @@ export async function updateAssetBuilderHandler(
             } as Response;
 
             try {
-              await createAccountabilityFormHandler(accountabilityFormReq, accountabilityFormRes);
+              const formCreateResult: unknown = await createAccountabilityFormHandler(accountabilityFormReq, accountabilityFormRes);
+              const createdBody = formCreateResult as {
+                form?: { formID?: number | string; form_number?: string };
+                error?: string;
+              };
+              const fid = createdBody?.form?.formID;
+              if (fid != null && String(fid).trim() !== '' && String(fid) !== '0') {
+                const formId = String(fid);
+                createdForms.push({
+                  formId,
+                  formNumber: createdBody?.form?.form_number ?? '',
+                });
+              }
             } catch (formError) {
               logger.error('Failed to create accountability form during builder edit:', formError);
             }
+          }
+        }
+
+        // --- Notify the assigned user about accountability form(s) to sign ---
+        if (createdForms.length > 0) {
+          try {
+            const assignerName = await assignmentRepo.getUserFullName(userId);
+            const io = getIoInstance();
+            for (const createdForm of createdForms) {
+              const signMessage = createdForm.formNumber
+                ? `by ${assignerName}. Your accountability form ${createdForm.formNumber} is ready. Please review and sign it.`
+                : `by ${assignerName}. Your accountability form is ready. Please review and sign it.`;
+
+              await NotificationService.createNotification(
+                {
+                  user_id: assignedUserId,
+                  title: 'New asset accountability is ready for you to sign',
+                  message: signMessage,
+                  type: 'accountability_form',
+                  status: 'unread',
+                  data: JSON.stringify({
+                    description: signMessage,
+                    route: '/profile?tab=documents&docTab=accountability',
+                    actionTarget: 'profile_documents_accountability',
+                    formId: createdForm.formId,
+                    formNumber: createdForm.formNumber,
+                    assignedBy: assignerName,
+                    timestamp: new Date().toISOString(),
+                  }),
+                },
+                userId,
+                req.ip,
+                req.get('User-Agent')
+              );
+
+              if (io) {
+                emitNotification(io, assignedUserId, 'notification', {
+                  title: 'New asset accountability is ready for you to sign',
+                  description: signMessage,
+                  type: 'accountability_form',
+                  route: '/profile?tab=documents&docTab=accountability',
+                  actionTarget: 'profile_documents_accountability',
+                  formId: createdForm.formId,
+                  formNumber: createdForm.formNumber,
+                  assignedBy: assignerName,
+                  timestamp: new Date().toISOString(),
+                });
+              }
+            }
+          } catch (socketError) {
+            logger.error('Failed to send accountability notification:', socketError);
           }
         }
 
@@ -807,7 +981,9 @@ export async function updateAssetBuilderHandler(
                   timestamp: new Date().toISOString(),
                 }),
               },
-              userId
+              userId,
+              req.ip,
+              req.get('User-Agent')
             );
 
             const io = getIoInstance();
@@ -910,13 +1086,10 @@ export async function getAssetBuilderFormsHandler(
 
     const builder = builderRows[0];
 
-    // Check if user belongs to the same company
-    const [userRows] = (await pool.execute(
-      'SELECT company_id FROM users WHERE userID = ?',
-      [userId]
-    )) as any[];
+    // Check if user belongs to the same company (Global Admin uses active company)
+    const userCompanyId = await resolveUserCompanyId(pool, userId);
 
-    if (userRows[0]?.company_id !== builder.company_id) {
+    if (userCompanyId !== builder.company_id) {
       return res.status(403).json({ error: 'Access denied' });
     }
 
@@ -1053,13 +1226,10 @@ export async function deleteAssetBuilderHandler(
 
     const builder = builderRows[0];
 
-    // Check if user belongs to the same company
-    const [userRows] = (await pool.execute(
-      'SELECT company_id FROM users WHERE userID = ?',
-      [userId]
-    )) as any[];
+    // Check if user belongs to the same company (Global Admin uses active company)
+    const userCompanyId = await resolveUserCompanyId(pool, userId);
 
-    if (userRows[0]?.company_id !== builder.company_id) {
+    if (userCompanyId !== builder.company_id) {
       return res.status(403).json({ error: 'Access denied' });
     }
 

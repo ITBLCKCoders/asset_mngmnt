@@ -15,10 +15,62 @@ import { formatCurrency } from '@/lib/currency';
 
 export const assetColumns = [
   // 1. Asset Code
-  { id: 'id', header: 'Asset Code', accessorKey: 'id', size: 220 },
+  {
+    id: 'id',
+    header: 'Asset Code',
+    accessorKey: 'id',
+    size: 220,
+    cell: ({ row }: any) => {
+      const canExpand = row.getCanExpand();
+      const isChildRow = row.depth > 0;
+      return (
+        <div
+          className="flex items-center gap-1"
+          style={{ paddingLeft: isChildRow ? `${row.depth * 20}px` : undefined }}
+        >
+          {canExpand ? (
+            <button
+              type="button"
+              aria-label={row.getIsExpanded() ? 'Collapse builder assets' : 'Expand builder assets'}
+              onClick={e => {
+                e.stopPropagation();
+                row.toggleExpanded();
+              }}
+              className="rounded p-0.5 hover:bg-gray-100"
+            >
+              {row.getIsExpanded() ? (
+                <ChevronDown className="h-4 w-4 text-[#EE1D25]" />
+              ) : (
+                <ChevronRight className="h-4 w-4 text-gray-500" />
+              )}
+            </button>
+          ) : isChildRow ? (
+            <span className="flex w-5 shrink-0 items-center justify-center text-gray-300">
+              └
+            </span>
+          ) : (
+            <span className="w-5 shrink-0" />
+          )}
+          <span className={isChildRow ? 'truncate text-gray-600' : 'truncate'}>
+            {row.original.id}
+          </span>
+        </div>
+      );
+    },
+  },
 
   // 2. Asset Name
-  { id: 'name', header: 'Asset Name', accessorKey: 'name', size: 220 },
+  {
+    id: 'name',
+    header: 'Asset Name',
+    accessorKey: 'name',
+    size: 220,
+    cell: ({ row }: any) => (
+      <span className={row.depth > 0 ? 'text-gray-600' : undefined}>
+        {row.original.name}
+      </span>
+    ),
+  },
 
   // 4. Description
   {
@@ -475,15 +527,6 @@ export const assetColumns = [
     size: 170,
   },
 
-  // Annual Depreciation
-  {
-    id: 'annualDepreciation',
-    header: 'Annual Depreciation',
-    accessorKey: 'annualDepreciation',
-    size: 160,
-    cell: ({ row }: any) => formatCurrency(row.original.annualDepreciation),
-  },
-
   // Depreciation Start Date
   {
     id: 'depreciationStartDate',
@@ -494,6 +537,43 @@ export const assetColumns = [
       row.original.depreciationStartDate
         ? format(row.original.depreciationStartDate, 'MMM dd, yyyy')
         : '—',
+  },
+
+  // Annual Depreciation
+  {
+    id: 'annualDepreciation',
+    header: 'Annual Depreciation',
+    accessorKey: 'annualDepreciation',
+    size: 160,
+    cell: ({ row }: any) => formatCurrency(row.original.annualDepreciation),
+  },
+
+  // Book Value
+  {
+    id: 'bookValue',
+    header: 'Book Value',
+    accessorKey: 'bookValue',
+    size: 150,
+    cell: ({ row }: any) => formatCurrency(row.original.bookValue ?? 0),
+  },
+
+  // Accumulated Depreciation
+  {
+    id: 'accumulatedDepreciation',
+    header: 'Accumulated Depreciation',
+    accessorKey: 'accumulatedDepreciation',
+    size: 190,
+    cell: ({ row }: any) =>
+      formatCurrency(row.original.accumulatedDepreciation ?? 0),
+  },
+
+  // Depreciation / Month
+  {
+    id: 'monthlyDepreciation',
+    header: 'Depreciation / Month',
+    accessorKey: 'monthlyDepreciation',
+    size: 180,
+    cell: ({ row }: any) => formatCurrency(row.original.monthlyDepreciation ?? 0),
   },
 
   // Company

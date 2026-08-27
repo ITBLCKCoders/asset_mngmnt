@@ -38,9 +38,14 @@ export function useBarcodeAssetOrBuilderScan({
       const code = parseScannedAssetCode(rawCode);
       if (!code) return;
 
-      let builder = findBuilderByParentAssetCode(assetBuilders, rawCode);
+      const tagCodeMap = assets.reduce<Record<string, string>>((map, asset) => {
+        if (asset.tagCode && asset.tagCode !== asset.id) map[asset.tagCode] = asset.id;
+        return map;
+      }, {});
+
+      let builder = findBuilderByParentAssetCode(assetBuilders, rawCode, tagCodeMap);
       if (!builder) {
-        builder = (await resolveBuilderByParentScan(rawCode, assetBuilders, scope)) ?? undefined;
+        builder = (await resolveBuilderByParentScan(rawCode, assetBuilders, scope, tagCodeMap)) ?? undefined;
       }
       if (builder) {
         onOpenBuilder(builder);

@@ -1,6 +1,7 @@
 'use client';
 
 import { useEffect, useState, useMemo, useRef } from 'react';
+import { Link } from 'react-router-dom';
 import {
   Package,
   Boxes,
@@ -8,11 +9,13 @@ import {
   Search,
   CheckCircle2,
   AlertTriangle,
+  ImageIcon,
   Undo2,
   Download,
   FileText,
   Crown,
   Layers,
+  ArrowLeft,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { Tabs, TabsContent, TabsList, TabsTrigger, segmentTabsListClassName, segmentTabsTriggerClassName } from '@/components/ui/tabs';
@@ -35,6 +38,7 @@ import { Checkbox } from '@/components/ui/checkbox';
 import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
 import { api } from '@/lib/api';
+import { proxyCloudinaryUrl } from '@/utils/cloudinaryProxy';
 import { toast } from 'sonner';
 import { useCurrentUser } from '@/hooks/useCurrentUser';
 import { DataTable } from '@/components/ui/dataTable';
@@ -55,6 +59,14 @@ import { Dialog } from '@/components/ui/dialog';
 import type { ColumnDef } from '@tanstack/react-table';
 import SmsOtpDialog from '@/components/auth/SmsOtpDialog';
 import { Shimmer } from '@/components/ui/shimmer';
+import { useAssetMovementExport } from '@/hooks/useAssetMovementExport';
+import {
+  Dialog as UIDialog,
+  DialogContent,
+  DialogDescription,
+  DialogHeader,
+  DialogTitle,
+} from '@/components/ui/dialog';
 interface AssetAssignment {
   assignmentID: string;
   asset: {
@@ -156,11 +168,30 @@ interface ReturnRequest {
   };
 }
 
+/** One row = one returned asset within a return form (same layout as Return History). */
+interface MyReturnRow {
+  id: string;
+  formID?: string | null;
+  assetName: string;
+  assetCode: string;
+  formNumber: string;
+  returnedBy: string;
+  fromDepartment: string;
+  processedBy: string;
+  statusLabel: string;
+  declineReason?: string;
+  condition: string;
+  returnDate: string;
+  notes: string;
+  conditionImages: string[];
+}
+
 function getMyReturnStatusLabel(batch: AssetReturnFormBatch): string {
   if (batch.status === 'declined') return 'Declined';
   if (batch.status) return batch.status;
   if (batch.process_signed_at) return 'Returned';
-  if (batch.dept_head_signed_at) return 'Approved by Department head';
+  if (batch.dept_head_signed_at || batch.sub_approver_1_signed_at)
+    return 'Approved by Department head';
   if (batch.processor_declined_at) return 'Declined by processor';
   return 'Submitted';
 }
@@ -185,24 +216,16 @@ function getMyReturnFormNumber(batch: AssetReturnFormBatch): string {
   );
 }
 
-function getMyReturnAssetSummary(batch: AssetReturnFormBatch): string {
-  if (batch.returns.length === 0) return '-';
-
-  return (
-    batch.returns
-      .slice(0, 3)
-      .map(r => r.assignment?.asset?.name ?? 'Asset')
-      .join(', ') +
-    (batch.returns.length > 3 ? ` +${batch.returns.length - 3} more` : '')
-  );
-}
-
 /** Form still in flight: IT/Admin has not finished processing; processor/dept head did not decline. */
 function isReturnBatchInProgress(batch: AssetReturnFormBatch): boolean {
   // Submit-request and modern flows always have a form row; legacy grouped returns without form_id are not used to block.
   if (!batch.formID) return false;
   if (batch.processor_declined_at) return false;
-  if (batch.process_signed_at) return false;
+  // A processor-initiated (hold) form sets process_signed_at at creation, so it
+  // stays in progress until the dept head approves (which executes the return).
+  // Owner-submitted returns only set process_signed_at after dept approval.
+  if (batch.process_signed_at && (batch.dept_head_signed_at || batch.sub_approver_1_signed_at))
+    return false;
   if (
     batch.returns?.some(
       r => (r as { status?: string }).status === 'Declined by dept head'
@@ -219,78 +242,26 @@ function isTransferBatchInProgress(batch: AssetTransferFormBatch): boolean {
   return true;
 }
 
-const myReturnRequestColumns: ColumnDef<AssetReturnFormBatch>[] = [
-  {
-    id: 'formNumber',
-    header: 'Form / Request',
-    accessorFn: row => getMyReturnFormNumber(row),
-    size: 220,
-    cell: ({ row }) => (
-      <span className="font-medium">{getMyReturnFormNumber(row.original)}</span>
-    ),
-  },
-  {
-    id: 'createdAt',
-    header: 'Created',
-    accessorFn: row => new Date(row.created_at).toLocaleDateString(),
-    size: 130,
-    cell: ({ row }) => (
-      <span className="text-muted-foreground">
-        {new Date(row.original.created_at).toLocaleDateString()}
-      </span>
-    ),
-  },
-  {
-    id: 'status',
-    header: 'Status',
-    accessorFn: row =>
-      `${getMyReturnStatusLabel(row)} ${row.processor_decline_reason ?? ''}`,
-    size: 240,
-    cell: ({ row }) => {
-      const statusLabel = getMyReturnStatusLabel(row.original);
-
-      return (
-        <div className="max-w-xs align-top">
-          <Badge
-            variant="outline"
-            className={`text-xs ${getMyReturnStatusBadgeClass(statusLabel)}`}
-          >
-            {statusLabel}
-          </Badge>
-          {(statusLabel === 'Declined' ||
-            statusLabel === 'Declined by processor') &&
-            row.original.processor_decline_reason?.trim() && (
-              <p
-                className="mt-2 text-xs text-muted-foreground whitespace-normal"
-                title={row.original.processor_decline_reason}
-              >
-                <span className="font-medium text-foreground">Reason: </span>
-                {row.original.processor_decline_reason}
-              </p>
-            )}
-        </div>
-      );
-    },
-  },
-  {
-    id: 'assets',
-    header: 'Assets',
-    accessorFn: row => getMyReturnAssetSummary(row),
-    size: 320,
-    cell: ({ row }) => (
-      <span
-        className="text-muted-foreground"
-        title={getMyReturnAssetSummary(row.original)}
-      >
-        {getMyReturnAssetSummary(row.original)}
-      </span>
-    ),
-  },
-];
-
 export default function AssetReturnRequest() {
   const { user: currentUser } = useCurrentUser();
   const { hasPermission } = useUserPermissions();
+
+  const {
+    isExportDialogOpen,
+    setIsExportDialogOpen,
+    exportType,
+    setExportType,
+    exportStep,
+    setExportStep,
+    filters,
+    setFilters,
+    handleExportClick,
+    handleExportConfirm,
+    handleFilterChange,
+    handlePrevStep,
+    resetDialog,
+  } = useAssetMovementExport();
+
   const [assignments, setAssignments] = useState<AssetAssignment[]>([]);
   const [, setReturnRequests] = useState<ReturnRequest[]>([]);
   const [myReturnBatches, setMyReturnBatches] = useState<AssetReturnFormBatch[]>(
@@ -310,6 +281,7 @@ export default function AssetReturnRequest() {
   const [searchColumn, setSearchColumn] = useState('all');
   const [sortOrder] = useState<'asc' | 'desc'>('asc');
   const [viewMode, setViewMode] = useState<'list' | 'grid'>('list');
+  const [scope, setScope] = useState<'it' | 'admin'>('it');
   const [confirmDialogOpen, setConfirmDialogOpen] = useState(false);
   const [confirmReturnWhenApproved, setConfirmReturnWhenApproved] =
     useState(false);
@@ -327,13 +299,17 @@ export default function AssetReturnRequest() {
   const [selectedIntangibleAssetIds, setSelectedIntangibleAssetIds] = useState<string[]>([]);
   const [showOtpDialog, setShowOtpDialog] = useState(false);
   const pendingSubmitActionRef = useRef<(() => Promise<void>) | null>(null);
+  const [showImagesModal, setShowImagesModal] = useState(false);
+  const [selectedImagesForModal, setSelectedImagesForModal] = useState<
+    string[]
+  >([]);
 
   // Get user's digital initials from profile
   const digitalInitials = (currentUser as any)?.digitalSignature || '';
 
   const fetchAssignments = async () => {
     try {
-      const response = await api.get('/asset-assignments/me');
+      const response = await api.get(`/asset-assignments/me?scope=${scope}`);
       setAssignments(response.assignments || []);
     } catch (error) {
       console.error('Failed to fetch assignments:', error);
@@ -390,7 +366,7 @@ export default function AssetReturnRequest() {
   const fetchAssetBuilders = async () => {
     try {
       setBuildersLoading(true);
-      const response = await api.get('/asset-builders', {
+      const response = await api.get(`/asset-builders?scope=${scope}`, {
         headers: { 'Cache-Control': 'no-cache', Pragma: 'no-cache' },
       });
       if (response?.builders) {
@@ -430,7 +406,174 @@ export default function AssetReturnRequest() {
     if (currentUser) {
       fetchData();
     }
-  }, [currentUser]);
+  }, [currentUser, scope]);
+
+  useEffect(() => {
+    setSelectedAssignments([]);
+    setReturnConditions({});
+    setExpandedBuilderForSelect(null);
+  }, [scope]);
+
+  /** Flatten return forms into one row per returned asset (mirrors Return History table). */
+  const myReturnRows = useMemo((): MyReturnRow[] => {
+    const rows: MyReturnRow[] = [];
+    for (const batch of myReturnBatches) {
+      const formNumber = getMyReturnFormNumber(batch);
+      const statusLabel = getMyReturnStatusLabel(batch);
+      const declineReason = batch.processor_decline_reason?.trim() || undefined;
+      for (const r of batch.returns ?? []) {
+        const asset = r.assignment?.asset;
+        const user = r.assignment?.user;
+        rows.push({
+          id:
+            r.return_id ??
+            `${batch.formID ?? batch.return_batch_id ?? 'batch'}-${r.assignment_id}`,
+          formID: batch.formID,
+          assetName: asset?.name ?? 'Unknown Asset',
+          assetCode: asset?.code ?? 'No Code',
+          formNumber,
+          returnedBy:
+            user?.first_name && user?.last_name
+              ? `${user.first_name} ${user.last_name}`
+              : 'Unknown User',
+          fromDepartment: r.assignment?.department?.name ?? 'Unknown',
+          processedBy: batch.processed_by ?? '—',
+          statusLabel,
+          declineReason,
+          condition: r.return_condition || 'Not Specified',
+          returnDate: r.created_at
+            ? new Date(r.created_at).toLocaleDateString()
+            : 'N/A',
+          notes: r.return_notes || 'No notes',
+          conditionImages: Array.isArray(r.condition_images)
+            ? r.condition_images.filter((x): x is string => typeof x === 'string')
+            : [],
+        });
+      }
+    }
+    return rows;
+  }, [myReturnBatches]);
+
+  const myReturnRequestColumns = useMemo<ColumnDef<MyReturnRow>[]>(
+    () => [
+      {
+        id: 'asset',
+        header: 'Asset',
+        accessorFn: row => `${row.assetName} ${row.assetCode}`,
+        size: 200,
+        cell: ({ row }) => (
+          <div>
+            <div className="font-medium text-gray-900">{row.original.assetName}</div>
+            <div className="text-sm text-gray-500">{row.original.assetCode}</div>
+          </div>
+        ),
+      },
+      {
+        id: 'formNumber',
+        header: 'Return Form #',
+        accessorFn: row => row.formNumber,
+        size: 150,
+        cell: ({ row }) => (
+          <span className="font-medium">{row.original.formNumber}</span>
+        ),
+      },
+      {
+        id: 'returnedBy',
+        header: 'Returned By',
+        accessorFn: row => row.returnedBy,
+        size: 160,
+      },
+      {
+        id: 'fromDepartment',
+        header: 'From Department',
+        accessorFn: row => row.fromDepartment,
+        size: 150,
+      },
+      {
+        id: 'processedBy',
+        header: 'Processed By',
+        accessorFn: row => row.processedBy,
+        size: 140,
+      },
+      {
+        id: 'status',
+        header: 'Status',
+        accessorFn: row => row.statusLabel,
+        size: 240,
+        cell: ({ row }) => {
+          const statusLabel = row.original.statusLabel;
+          return (
+            <div className="max-w-xs align-top">
+              <Badge
+                variant="outline"
+                className={`text-xs ${getMyReturnStatusBadgeClass(statusLabel)}`}
+              >
+                {statusLabel}
+              </Badge>
+              {row.original.declineReason && (
+                <p
+                  className="mt-2 text-xs text-muted-foreground whitespace-normal"
+                  title={row.original.declineReason}
+                >
+                  <span className="font-medium text-foreground">Reason: </span>
+                  {row.original.declineReason}
+                </p>
+              )}
+            </div>
+          );
+        },
+      },
+      {
+        id: 'condition',
+        header: 'Condition',
+        accessorFn: row => row.condition,
+        size: 120,
+        cell: ({ row }) => (
+          <Badge variant="outline" className="bg-gray-100 text-gray-800">
+            {row.original.condition}
+          </Badge>
+        ),
+      },
+      {
+        id: 'returnDate',
+        header: 'Return Date',
+        accessorFn: row => row.returnDate,
+        size: 120,
+      },
+      {
+        id: 'photos',
+        header: 'Photos',
+        accessorFn: row => row.conditionImages.join(','),
+        size: 100,
+        cell: ({ row }) => {
+          const imgs = row.original.conditionImages ?? [];
+          if (imgs.length === 0)
+            return <span className="text-slate-400">—</span>;
+          return (
+            <Button
+              variant="outline"
+              size="sm"
+              className="gap-1.5"
+              onClick={() => {
+                setSelectedImagesForModal(imgs);
+                setShowImagesModal(true);
+              }}
+            >
+              <ImageIcon className="h-4 w-4" />
+              {imgs.length}
+            </Button>
+          );
+        },
+      },
+      {
+        id: 'notes',
+        header: 'Notes',
+        accessorFn: row => row.notes,
+        size: 200,
+      },
+    ],
+    []
+  );
 
   const assignmentIdsPendingReturnRequest = useMemo(() => {
     const ids = new Set<string>();
@@ -765,6 +908,24 @@ export default function AssetReturnRequest() {
           title="Return asset"
           description="Request to return your assigned assets"
         >
+          <div className="flex flex-col sm:flex-row sm:items-center gap-3">
+            <Tabs value={scope} onValueChange={v => setScope(v as 'it' | 'admin')} className="w-full sm:w-auto">
+              <TabsList className={segmentTabsListClassName + ' grid grid-cols-2 max-w-full sm:max-w-[280px]'}>
+                <TabsTrigger value="it" className={segmentTabsTriggerClassName}>IT Asset</TabsTrigger>
+                <TabsTrigger value="admin" className={segmentTabsTriggerClassName}>Admin Asset</TabsTrigger>
+              </TabsList>
+            </Tabs>
+            <Link to="/assets/return">
+              <Button
+                variant="header"
+                size="sm"
+                className="flex items-center gap-2"
+              >
+                <ArrowLeft className="h-4 w-4" />
+                Back to Asset Return
+              </Button>
+            </Link>
+          </div>
         </PageHeader>
 
         <div className="grid grid-cols-1 xl:grid-cols-3 gap-8">
@@ -1824,7 +1985,8 @@ export default function AssetReturnRequest() {
                 </div>
                 My Return Requests
                 <Badge variant="secondary" className="ml-auto">
-                  {myReturnBatches.length} total
+                  {myReturnRows.length} return
+                  {myReturnRows.length !== 1 ? 's' : ''}
                 </Badge>
               </CardTitle>
             </CardHeader>
@@ -1844,7 +2006,7 @@ export default function AssetReturnRequest() {
                     </div>
                   ))}
                 </div>
-              ) : myReturnBatches.length === 0 ? (
+              ) : myReturnRows.length === 0 ? (
                 <div className="text-center py-12">
                   <Undo2 className="h-16 w-16 text-gray-300 mx-auto mb-4" />
                   <p className="text-gray-500 text-lg">
@@ -1855,9 +2017,9 @@ export default function AssetReturnRequest() {
                   </p>
                 </div>
               ) : (
-                <DataTable<AssetReturnFormBatch>
+                <DataTable<MyReturnRow>
                   tableId="my-return-requests"
-                  data={myReturnBatches}
+                  data={myReturnRows}
                   columns={myReturnRequestColumns}
                   searchPlaceholder="Search my return requests..."
                   emptyState={
@@ -1867,13 +2029,172 @@ export default function AssetReturnRequest() {
                       </p>
                     </div>
                   }
+                  children={
+                    <div className="flex items-center gap-2">
+                      <Button
+                        variant="header"
+                        size="sm"
+                        onClick={() => handleExportClick('pdf')}
+                        className="flex items-center gap-2"
+                      >
+                        <Download className="h-4 w-4" />
+                        Export PDF
+                      </Button>
+                      <Button
+                        variant="header"
+                        size="sm"
+                        onClick={() => handleExportClick('excel')}
+                        className="flex items-center gap-2"
+                      >
+                        <Download className="h-4 w-4" />
+                        Export Excel
+                      </Button>
+                    </div>
+                  }
                 />
               )}
             </CardContent>
           </Card>
         </div>
-
       </main>
+
+      <Dialog open={showImagesModal} onOpenChange={setShowImagesModal}>
+        <AppDialogFrame className="max-w-2xl max-h-[90vh] overflow-hidden !flex !flex-col">
+          <AppDialogGradientHeader
+            title={
+              <span className="flex items-center gap-2">
+                <ImageIcon className="h-6 w-6 shrink-0 text-white" />
+                Return Condition Photos
+              </span>
+            }
+            description="Photos captured at the time of return"
+          />
+          <AppDialogBody className="min-h-0 flex-1 overflow-y-auto">
+            <div className="grid grid-cols-2 gap-4 py-2 sm:grid-cols-3">
+              {selectedImagesForModal.map((url, idx) => (
+                <div
+                  key={url}
+                  className="overflow-hidden rounded-lg border border-slate-200"
+                >
+                  <img
+                    src={proxyCloudinaryUrl(url)}
+                    alt={`Condition photo ${idx + 1}`}
+                    className="aspect-square w-full object-cover"
+                  />
+                </div>
+              ))}
+            </div>
+          </AppDialogBody>
+        </AppDialogFrame>
+      </Dialog>
+
+      <UIDialog open={isExportDialogOpen} onOpenChange={setIsExportDialogOpen}>
+        <DialogContent className="max-w-xl sm:max-w-2xl">
+          <DialogHeader>
+            <DialogTitle>
+              {exportStep === 1
+                ? `Export ${exportType?.toUpperCase() ?? ''} — Step 1: Format`
+                : `Export ${exportType?.toUpperCase() ?? ''} — Step 2: Filters`}
+            </DialogTitle>
+            <DialogDescription>
+              {exportStep === 1
+                ? 'Choose the export format.'
+                : 'Apply optional filters to narrow down the exported data.'}
+            </DialogDescription>
+          </DialogHeader>
+          <div className="py-4 space-y-6">
+            {exportStep === 1 && (
+              <div className="grid grid-cols-2 gap-4">
+                <Button
+                  variant="outline"
+                  className="h-24 flex-col gap-3"
+                  onClick={() => {
+                    setExportType('pdf');
+                    setExportStep(2);
+                  }}
+                >
+                  <FileText className="h-8 w-8 text-red-600" />
+                  <span className="font-semibold">PDF</span>
+                  <span className="text-xs text-gray-500">Document format</span>
+                </Button>
+                <Button
+                  variant="outline"
+                  className="h-24 flex-col gap-3"
+                  onClick={() => {
+                    setExportType('excel');
+                    setExportStep(2);
+                  }}
+                >
+                  <FileText className="h-8 w-8 text-green-600" />
+                  <span className="font-semibold">Excel</span>
+                  <span className="text-xs text-gray-500">Spreadsheet format</span>
+                </Button>
+              </div>
+            )}
+            {exportStep === 2 && (
+              <div className="space-y-4">
+                <div className="grid grid-cols-2 gap-4">
+                  <div>
+                    <Label className="text-sm font-medium">From Date</Label>
+                    <Input
+                      type="date"
+                      value={filters.fromDate}
+                      onChange={e => handleFilterChange('fromDate', e.target.value)}
+                      className="mt-1 h-9 text-sm"
+                    />
+                  </div>
+                  <div>
+                    <Label className="text-sm font-medium">To Date</Label>
+                    <Input
+                      type="date"
+                      value={filters.toDate}
+                      onChange={e => handleFilterChange('toDate', e.target.value)}
+                      className="mt-1 h-9 text-sm"
+                    />
+                  </div>
+                </div>
+                <div className="grid grid-cols-2 gap-4">
+                  <div>
+                    <Label className="text-sm font-medium">Accountability Form No</Label>
+                    <Input
+                      type="text"
+                      placeholder="e.g. AF-001"
+                      value={filters.accountabilityFormNo}
+                      onChange={e => handleFilterChange('accountabilityFormNo', e.target.value)}
+                      className="mt-1 h-9 text-sm"
+                    />
+                  </div>
+                  <div>
+                    <Label className="text-sm font-medium">Asset Code</Label>
+                    <Input
+                      type="text"
+                      placeholder="e.g. AST-001"
+                      value={filters.assetCode}
+                      onChange={e => handleFilterChange('assetCode', e.target.value)}
+                      className="mt-1 h-9 text-sm"
+                    />
+                  </div>
+                </div>
+              </div>
+            )}
+          </div>
+          <div className="flex justify-between pt-4 border-t">
+            {exportStep === 2 && (
+              <Button variant="outline" onClick={handlePrevStep}>
+                Back
+              </Button>
+            )}
+            <div className="flex gap-2">
+              <Button variant="outline" onClick={resetDialog}>
+                Cancel
+              </Button>
+              <Button onClick={handleExportConfirm} disabled={!exportType}>
+                {exportStep === 1 ? 'Next' : `Export ${exportType?.toUpperCase()}`}
+              </Button>
+            </div>
+          </div>
+        </DialogContent>
+      </UIDialog>
     </div>
   );
 }

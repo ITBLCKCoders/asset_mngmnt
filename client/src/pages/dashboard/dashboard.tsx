@@ -34,7 +34,6 @@ import {
   FileDown,
   FileText,
   HandHelping,
-  ClipboardList,
   XCircle,
 } from 'lucide-react';
 import { api } from '@/lib/api';
@@ -684,17 +683,12 @@ export default function Dashboard() {
     }
   }, [user, userLoading, securityCheckDone]);
 
-  const handleDigitalInitialsSkip = () => {
-    setShowDigitalInitialsDialog(false);
-    // Check if MFA is also missing
-    if (user && !user.mfaEnabled) {
-      setShowMFADialog(true);
-    }
-  };
-
   const handleDigitalInitialsGoToProfile = () => {
     setShowDigitalInitialsDialog(false);
-    navigate('/profile?tab=basic');
+    try {
+      localStorage.setItem('initials-tour-active', '1');
+    } catch {}
+    navigate('/profile?tab=basic&tour=initials');
   };
 
   const handleMFASkip = () => {
@@ -778,15 +772,6 @@ export default function Dashboard() {
       path: '/my-assets',
     },
     {
-      title: 'My Asset Requests',
-      value:
-        dashboardData?.categoryMix?.find(item => item.name === 'Asset Requests')
-          ?.value ?? 0,
-      icon: ClipboardList,
-      color: 'text-indigo-600',
-      path: '/assets/request',
-    },
-    {
       title: 'My Borrowing Requests',
       value:
         dashboardData?.categoryMix?.find(
@@ -803,7 +788,7 @@ export default function Dashboard() {
           ?.value ?? 0,
       icon: Clock,
       color: 'text-amber-600',
-      path: '/assets/request?status=pending',
+      path: '/assets/borrow',
     },
     {
       title: 'My Completed Requests',
@@ -812,7 +797,7 @@ export default function Dashboard() {
           ?.value ?? 0,
       icon: CheckCircle,
       color: 'text-green-600',
-      path: '/assets/request?status=completed',
+      path: '/assets/borrow',
     },
     {
       title: 'My Declined Requests',
@@ -821,7 +806,7 @@ export default function Dashboard() {
           ?.value ?? 0,
       icon: XCircle,
       color: 'text-red-600',
-      path: '/assets/request?status=declined',
+      path: '/assets/borrow',
     },
   ];
 
@@ -1113,9 +1098,14 @@ export default function Dashboard() {
         </div>
 
         {!isEmployee && (
-          <Card className="w-full">
+          <Card className="w-full overflow-hidden border-border/70 shadow-sm">
             <CardHeader>
-              <CardTitle>Recent Activity</CardTitle>
+              <CardTitle className="flex items-center gap-2 text-lg">
+                Recent Activity
+                <span className="ml-2 text-sm font-normal text-muted-foreground">
+                  ({auditLogs.length} total)
+                </span>
+              </CardTitle>
               <CardDescription>Latest audit events</CardDescription>
             </CardHeader>
             <CardContent>
@@ -1137,7 +1127,6 @@ export default function Dashboard() {
         isOpen={showDigitalInitialsDialog}
         onOpenChange={setShowDigitalInitialsDialog}
         onGoToProfile={handleDigitalInitialsGoToProfile}
-        onSkip={handleDigitalInitialsSkip}
       />
 
       <MFARequiredDialog

@@ -28,7 +28,7 @@ describe('users.controller', () => {
 
   describe('getUsersHandler', () => {
     it('returns users list', async () => {
-      const mockUser = { id: 'u-1', email: 'a@b.com', first_name: 'Alice', last_name: 'Smith', department_id: 'd-1', company_id: 'c-1', role: null, department: null, company: null, is_active: 1, created_at: null, updated_at: null, hr_accountability_receiver: 0, manager_approver_1: 0, manager_approver_2: 0, manager_approver_3: 0 };
+      const mockUser = { id: 'u-1', email: 'a@b.com', first_name: 'Alice', last_name: 'Smith', department_id: 'd-1', company_id: 'c-1', role: null, department: null, company: null, is_active: 1, created_at: null, updated_at: null, hr_accountability_receiver: 0, manager_approver_1: 0, manager_approver_2: 0, manager_approver_3: 0, finance_approver: 0, sub_approver_2: 0 };
       mockPool.pool.execute.mockResolvedValue([[ [mockUser] ]]);
       mockPool.pool.query
         .mockResolvedValueOnce([[{ userID: 'u-1', digital_signature: null }]])

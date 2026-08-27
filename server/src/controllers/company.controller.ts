@@ -239,8 +239,9 @@ export const updateCompany = async (req: AuthRequest, res: Response) => {
 };
 
 // DELETE Logo Only
-export const deleteCompanyLogo = async (req: Request, res: Response) => {
+export const deleteCompanyLogo = async (req: AuthRequest, res: Response) => {
   const { id } = req.params;
+  const userId = req.user?.userID;
 
   try {
     const [rows] = await pool.query<any[]>(
@@ -257,6 +258,17 @@ export const deleteCompanyLogo = async (req: Request, res: Response) => {
       'UPDATE companies SET logo_url = NULL WHERE companyID = ?',
       [id]
     );
+
+    await createAuditLog({
+      userId,
+      action: 'Deleted Company Logo',
+      resourceType: 'company',
+      ...(id && { resourceId: id }),
+      details: `Removed logo from company "${id}"`,
+      ipAddress: req.ip,
+      userAgent: req.get('User-Agent'),
+    });
+
     res.json({ message: 'Logo removed successfully' });
   } catch (err) {
     logger.error('Delete logo error', { err });
@@ -409,10 +421,22 @@ export const getMyCompanyHandler = async (req: AuthRequest, res: Response) => {
 };
 
 // Set active company
-export const setActiveCompany = async (req: Request, res: Response) => {
+export const setActiveCompany = async (req: AuthRequest, res: Response) => {
   const { id } = req.params;
+  const userId = req.user?.userID;
   try {
     await pool.query('CALL sp_SetActiveCompany(?)', [id]);
+
+    await createAuditLog({
+      userId,
+      action: 'Set Active Company',
+      resourceType: 'company',
+      ...(id && { resourceId: id }),
+      details: `Set company "${id}" as the active company`,
+      ipAddress: req.ip,
+      userAgent: req.get('User-Agent'),
+    });
+
     res.json({ success: true });
   } catch (err) {
     logger.error('Set active company error', { err });
@@ -421,10 +445,22 @@ export const setActiveCompany = async (req: Request, res: Response) => {
 };
 
 // Set main company
-export const setMainCompany = async (req: Request, res: Response) => {
+export const setMainCompany = async (req: AuthRequest, res: Response) => {
   const { id } = req.params;
+  const userId = req.user?.userID;
   try {
     await pool.query('CALL sp_SetMainCompany(?)', [id]);
+
+    await createAuditLog({
+      userId,
+      action: 'Set Main Company',
+      resourceType: 'company',
+      ...(id && { resourceId: id }),
+      details: `Set company "${id}" as the main company`,
+      ipAddress: req.ip,
+      userAgent: req.get('User-Agent'),
+    });
+
     res.json({ success: true });
   } catch (err) {
     logger.error('Set main company error', { err });

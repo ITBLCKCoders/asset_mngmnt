@@ -1,12 +1,17 @@
 import { describe, it, expect, jest, beforeEach } from '@jest/globals';
+import { EventEmitter } from 'events';
 import * as assetsController from '../../controllers/assets.controller.js';
 import { createMockRes } from '../helpers/mockRes.js';
 
-jest.mock('../../db.js', () => ({ pool: { execute: jest.fn() } }));
+jest.mock('../../db.js', () => ({ pool: { execute: jest.fn(), getConnection: jest.fn() } }));
 jest.mock('../../logger.js', () => ({ __esModule: true, default: { error: jest.fn(), info: jest.fn(), warn: jest.fn(), debug: jest.fn() } }));
 jest.mock('../../utils/audit.js', () => ({ createAuditLog: jest.fn() }));
 jest.mock('../../utils/cloudinary.js', () => ({ uploadToCloudinary: jest.fn(), uploadDocumentToCloudinary: jest.fn() }));
-jest.mock('../../utils/assetAuditDiff.js', () => ({ buildAssetUpdateAuditDiff: jest.fn() }));
+jest.mock('../../utils/assetAuditDiff.js', () => ({
+  buildAssetUpdateAuditDiff: jest.fn(),
+  mergeAssignmentIntoDiff: jest.fn(),
+}));
+jest.mock('busboy', () => ({ __esModule: true, default: jest.fn() }));
 jest.mock('../../utils/assetScope.js', () => ({ getAssetScope: jest.fn(), classifyDepartmentScopeByName: jest.fn(), getDepartmentIdsForScope: jest.fn() }));
 jest.mock('../../utils/companyTransferVisibility.js', () => ({ getTransferredOutAssetsForCompany: jest.fn(), setAssetOriginatingCompany: jest.fn() }));
 jest.mock('../../repositories/asset.repository.js', () => ({
@@ -25,6 +30,7 @@ jest.mock('../../repositories/asset.repository.js', () => ({
   getBuilderByAssetId: jest.fn(),
   getAccountabilityFormsForAssetWithLike: jest.fn(),
   getAssetByCodeForAssign: jest.fn(),
+  getAssetForUpdateByCode: jest.fn(),
   getDepartmentById: jest.fn(),
   getLocationById: jest.fn(),
   getUserBasicByIdSimple: jest.fn(),
@@ -33,6 +39,12 @@ jest.mock('../../repositories/asset.repository.js', () => ({
   getAssetById: jest.fn(),
   getAssetsBySearch: jest.fn(),
   upsertAssetToDepartmentAccess: jest.fn(),
+  getCompanyIdByIdOrName: jest.fn(),
+  getLocationIdById: jest.fn(),
+  getRoomIdByIdOrName: jest.fn(),
+  getDepartmentIdByIdOrName: jest.fn(),
+  getCategoryIdsByDepartmentIds: jest.fn(),
+  resolveAssetIdByCodeOrId: jest.fn(),
 }));
 
 jest.mock('../../repositories/accountabilityForm.repository.js', () => ({ findFormsByAssetId: jest.fn() }));
@@ -91,6 +103,45 @@ describe('assets.controller', () => {
       assetRepo.callGetAllAssets.mockResolvedValue([]);
       await assetsController.getMyAssetsHandler(req, res);
       expect(res._json.assets).toEqual([]);
+    });
+
+    it('filters by IT/Admin scope when scope param is provided', async () => {
+      req.query = { scope: 'admin' };
+      const { getDepartmentIdsForScope } = jest.requireMock('../../utils/assetScope.js');
+      getAssetScope.mockResolvedValue({ companyId: 10, departmentIds: null, isSuperAdmin: false });
+      getDepartmentIdsForScope.mockResolvedValue(['d1']);
+      assetRepo.getCategoryIdsByDepartmentIds.mockResolvedValue(['c1']);
+      assetRepo.getActiveAssignmentAssetIdsForUser.mockResolvedValue(['a1']);
+      assetRepo.callGetAllAssets.mockResolvedValue([mockAsset]);
+      assetRepo.getAssetDocumentsForIds.mockResolvedValue([]);
+      assetRepo.getCurrentAssignmentsForAssetIds.mockResolvedValue([]);
+      assetRepo.getAssignmentHistoryForAssetIds.mockResolvedValue([]);
+      assetRepo.getBuilderByBuilderId.mockRejectedValue(new Error('not found'));
+      assetRepo.getAccountabilityFormsForAsset.mockRejectedValue(new Error('not found'));
+      await assetsController.getMyAssetsHandler(req, res);
+      expect(res._json.assets).toHaveLength(1);
+      expect(res._json.assets[0].asset_code).toBe('AST-001');
+    });
+
+    it('excludes assets whose category is outside the requested scope', async () => {
+      req.query = { scope: 'admin' };
+      const { getDepartmentIdsForScope } = jest.requireMock('../../utils/assetScope.js');
+      getAssetScope.mockResolvedValue({ companyId: 10, departmentIds: null, isSuperAdmin: false });
+      getDepartmentIdsForScope.mockResolvedValue(['d1']);
+      assetRepo.getCategoryIdsByDepartmentIds.mockResolvedValue(['c1']);
+      assetRepo.getActiveAssignmentAssetIdsForUser.mockResolvedValue(['a1', 'a2']);
+      assetRepo.callGetAllAssets.mockResolvedValue([
+        mockAsset,
+        { ...mockAsset, assetID: 'a2', asset_code: 'AST-002', category_id: 'c2' },
+      ]);
+      assetRepo.getAssetDocumentsForIds.mockResolvedValue([]);
+      assetRepo.getCurrentAssignmentsForAssetIds.mockResolvedValue([]);
+      assetRepo.getAssignmentHistoryForAssetIds.mockResolvedValue([]);
+      assetRepo.getBuilderByBuilderId.mockRejectedValue(new Error('not found'));
+      assetRepo.getAccountabilityFormsForAsset.mockRejectedValue(new Error('not found'));
+      await assetsController.getMyAssetsHandler(req, res);
+      expect(res._json.assets).toHaveLength(1);
+      expect(res._json.assets[0].asset_code).toBe('AST-001');
     });
   });
 
@@ -212,24 +263,187 @@ describe('assets.controller', () => {
 
     it('returns all forms for an asset', async () => {
       req.params = { assetId: 'a1' };
+      assetRepo.resolveAssetIdByCodeOrId.mockResolvedValue('a1');
       const accFormRepo = jest.requireMock('../../repositories/accountabilityForm.repository.js');
       accFormRepo.findFormsByAssetId.mockResolvedValue([mockAccForm]);
       const retRepo = jest.requireMock('../../repositories/assetReturn.repository.js');
-      retRepo.getReturnFormsByAssetId.mockResolvedValue([]);
+      retRepo.getReturnFormsByAssetId.mockResolvedValue([
+        { id: 'rf1', formNumber: 'RF-001', status: 'Processed' },
+      ]);
       const trfRepo = jest.requireMock('../../repositories/assetTransferForm.repository.js');
-      trfRepo.getTransferFormsByAssetId.mockResolvedValue([]);
+      trfRepo.getTransferFormsByAssetId.mockResolvedValue([
+        { id: 'tf1', formNumber: 'TF-001', status: 'Completed' },
+      ]);
       const brwRepo = jest.requireMock('../../repositories/assetBorrowRequests.repository.js');
       brwRepo.getBorrowFormsByAssetId.mockResolvedValue([]);
       await assetsController.getAllFormsByAssetIdHandler(req, res);
       expect(res._json.accountabilityForms).toHaveLength(1);
-      expect(res._json.returnForms).toEqual([]);
-      expect(res._json.transferForms).toEqual([]);
+      expect(res._json.returnForms).toEqual([
+        { id: 'rf1', formNumber: 'RF-001', status: 'Processed' },
+      ]);
+      expect(res._json.transferForms).toEqual([
+        { id: 'tf1', formNumber: 'TF-001', status: 'Completed' },
+      ]);
       expect(res._json.borrowForms).toEqual([]);
     });
 
     it('returns 400 when assetId missing', async () => {
       await assetsController.getAllFormsByAssetIdHandler(req, res);
       expect(res._status).toBe(400);
+    });
+  });
+
+  describe('updateAssetHandler audit logging', () => {
+    const mockBusboy = jest.requireMock('busboy').default;
+    const { buildAssetUpdateAuditDiff, mergeAssignmentIntoDiff } =
+      jest.requireMock('../../utils/assetAuditDiff.js');
+
+    const oldRow = {
+      assetID: 'a1',
+      asset_code: 'AST-001',
+      name: 'Laptop',
+      description: null,
+      category_id: 'c1',
+      type_id: 't1',
+      supplier: null,
+      brand: null,
+      model: null,
+      serial: null,
+      image_url: null,
+      purchase_date: null,
+      asset_value: null,
+      salvage_value: 0,
+      depreciation_method: null,
+      useful_life_years: null,
+      annual_depreciation: null,
+      depreciation_start_date: null,
+      company_id: 'co1',
+      location_id: 'lo1',
+      location_room_id: 'r1',
+      department_id: 'd1',
+      location_notes: null,
+      warranty_months: null,
+      condition: 'Good',
+      maintenance_schedule: 'None',
+      status: 'Available',
+      is_old_unit: 0,
+    };
+
+    function makeReq(): { req: any; busboy: EventEmitter } {
+      const busboy = new EventEmitter();
+      mockBusboy.mockReturnValue(busboy);
+      const req: any = {
+        params: { assetId: 'AST-001' },
+        headers: { 'content-type': 'multipart/form-data; boundary=test' },
+        pipe: jest.fn(),
+        ip: '127.0.0.1',
+        get: jest.fn().mockReturnValue('test-agent'),
+        user: { userID: 'u1' },
+      };
+      return { req, busboy };
+    }
+
+    function emitFields(
+      busboy: EventEmitter,
+      fields: Record<string, string>
+    ): void {
+      for (const [k, v] of Object.entries(fields)) {
+        busboy.emit('field', k, v);
+      }
+      busboy.emit('finish');
+    }
+
+    function setupCommon(): void {
+      assetRepo.getAssetForUpdateByCode.mockResolvedValue(oldRow);
+      assetRepo.getCompanyIdByIdOrName.mockResolvedValue(null);
+      assetRepo.getLocationIdById.mockResolvedValue(null);
+      assetRepo.getRoomIdByIdOrName.mockResolvedValue(null);
+      assetRepo.getDepartmentIdByIdOrName.mockResolvedValue(null);
+      const conn = {
+        beginTransaction: jest.fn().mockResolvedValue(undefined),
+        execute: jest.fn().mockResolvedValue([[[oldRow]], []]),
+        commit: jest.fn().mockResolvedValue(undefined),
+        rollback: jest.fn().mockResolvedValue(undefined),
+        release: jest.fn().mockResolvedValue(undefined),
+      };
+      pool.getConnection.mockResolvedValue(conn);
+    }
+
+    it('logs assigned_to old → new when only the assignment changes', async () => {
+      const { req, busboy } = makeReq();
+      setupCommon();
+      assetRepo.getCurrentAssignmentForAssetId.mockResolvedValue({
+        assigned_user_name: 'Jane Doe',
+      });
+      assetRepo.getUserBasicByIdSimple.mockResolvedValue({
+        first_name: 'John',
+        last_name: 'Smith',
+      });
+      buildAssetUpdateAuditDiff.mockReturnValue({
+        oldValues: {},
+        newValues: {},
+        changeCount: 0,
+      });
+      mergeAssignmentIntoDiff.mockReturnValue({
+        oldValues: { assigned_to: 'Jane Doe' },
+        newValues: { assigned_to: 'John Smith' },
+        changeCount: 1,
+      });
+
+      const pending = assetsController.updateAssetHandler(req, res);
+      emitFields(busboy, {
+        name: 'Laptop',
+        categoryId: 'c1',
+        typeId: 't1',
+        condition: 'Good',
+        status: 'Available',
+        isOldUnit: '0',
+        maintenanceSchedule: 'None',
+        salvageValue: '0',
+        assignedUser: 'u2',
+      });
+      await pending;
+
+      expect(mergeAssignmentIntoDiff).toHaveBeenCalledWith(
+        expect.objectContaining({ changeCount: 0 }),
+        'Jane Doe',
+        'John Smith'
+      );
+      expect(createAuditLog).toHaveBeenCalledWith(
+        expect.objectContaining({
+          action: 'Updated Asset',
+          details: 'Updated 1 field(s)',
+          oldValues: { assigned_to: 'Jane Doe' },
+          newValues: { assigned_to: 'John Smith' },
+        })
+      );
+    });
+
+    it('skips the audit entry when there are no field changes', async () => {
+      const { req, busboy } = makeReq();
+      setupCommon();
+      assetRepo.getCurrentAssignmentForAssetId.mockResolvedValue(null);
+      buildAssetUpdateAuditDiff.mockReturnValue({
+        oldValues: {},
+        newValues: {},
+        changeCount: 0,
+      });
+
+      const pending = assetsController.updateAssetHandler(req, res);
+      emitFields(busboy, {
+        name: 'Laptop',
+        categoryId: 'c1',
+        typeId: 't1',
+        condition: 'Good',
+        status: 'Available',
+        isOldUnit: '0',
+        maintenanceSchedule: 'None',
+        salvageValue: '0',
+      });
+      await pending;
+
+      expect(mergeAssignmentIntoDiff).not.toHaveBeenCalled();
+      expect(createAuditLog).not.toHaveBeenCalled();
     });
   });
 });

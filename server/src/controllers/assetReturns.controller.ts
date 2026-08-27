@@ -6,17 +6,22 @@ import type { AuthRequest } from '../middleware/authenticate.js';
 import logger from '../logger.js';
 import { createAuditLog } from '../utils/audit.js';
 import { handleAccountabilityFormOnAssetReturn } from '../utils/accountabilityFormOnReturn.js';
-import {
-  getAssetScope,
-  classifyDepartmentScopeByName,
-} from '../utils/assetScope.js';
+import { getAssetScope, getDepartmentIdsForScope } from '../utils/assetScope.js';
 import { createAccountabilityFormHandler } from './accountabilityForms.controller.js';
 import {
-  isUserManagerApprover1,
   isUserManagerApprover2,
-  getManagerApprover1UserIdsInDepartmentAndCompany,
-  getManagerApprover2UserIdsInDepartment,
+  isUserSubApprover2,
+  getManagerApprover2UserIdsForProcessedReturn,
+  getManagerApprover2UserIdsInItAndAdminDepartmentsAndCompany,
+  getSubApprover2UserIdsInItAndAdminDepartmentsAndCompany,
+  getAssetRoleUsersForAssignmentsAndCompany,
+  isDesignatedApprover,
+  isDesignatedSubApprover,
+  getDesignatedApproverUserIdForRequester,
+  getDesignatedSubApproverUserIdForRequester,
+  getRequestorMA1Status,
 } from '../utils/approverNotifications.js';
+import { getRequestersAssignedToApprover } from '../services/userApprovers.service.js';
 import { createNotificationForApi } from '../utils/notificationsApi.js';
 import { getIoInstance } from '../utils/socketManager.js';
 import { emitNotification } from '../sockets/socketHandlers.js';
@@ -57,6 +62,7 @@ import {
   getTransferFormByReturnFormId,
   getTransferFormIdsByReturnFormId,
   getTransferFormAssignments,
+  findAccountabilityFormForAsset,
   getActiveAssignmentsByIds,
   getCategoryDepartmentsByAssetIds,
   getDepartmentById,
@@ -114,12 +120,14 @@ type LinkedTransferProcessorSource = {
 };
 
 /** IT Staff processor fields for return PDFs; uses linked transfer form when return has none. */
-async function resolveReturnProcessorFieldsForBatch(
-  form: {
-    formID?: string | null | undefined;
+export async function resolveReturnProcessorFieldsForBatch(
+form: {
+    formID?: string | null;
+    user_id?: string | null | undefined;
     created_by?: string | null | undefined;
     process_signed_at?: string | null | undefined;
     process_digital_signature?: string | null | undefined;
+    process_signed_by?: string | null | undefined;
   },
   options: {
     processorNames?: Map<string, string>;
@@ -132,8 +140,7 @@ async function resolveReturnProcessorFieldsForBatch(
   processor_pending_signed_at: string | null;
   processor_pending_signature: string | null;
 }> {
-  let processedBy =
-    options.processorNames?.get(form.created_by ?? '') ?? 'Unknown';
+  let processedBy = '';
   let processSignedAt = formatProcessSignedAtForApi(form.process_signed_at);
   let processDigitalSignature =
     (form.process_digital_signature != null &&
@@ -149,19 +156,6 @@ async function resolveReturnProcessorFieldsForBatch(
       : null);
 
   if (tf) {
-    if (tf.created_by) {
-      const cached = options.processorNames?.get(tf.created_by);
-      if (cached) {
-        processedBy = cached;
-      } else {
-        const procNames = await getUserNamesById(tf.created_by);
-        processedBy =
-          procNames?.first_name && procNames?.last_name
-            ? `${procNames.first_name} ${procNames.last_name}`.trim() ||
-              'Unknown'
-            : 'Unknown';
-      }
-    }
     if (tf.process_signed_at != null) {
       processSignedAt = formatProcessSignedAtForApi(tf.process_signed_at);
       processDigitalSignature =
@@ -181,10 +175,33 @@ async function resolveReturnProcessorFieldsForBatch(
     }
   }
 
-  const processorUserId = tf?.created_by ?? form.created_by ?? null;
+  // Never treat the returner (asset owner) as the processor. In transfer-request
+  // flows created_by can be the returner (or the requestor's dept head), so only
+  // fall back to created_by when it is a different user than the returner.
+  const processorUserId =
+    form.process_signed_by ??
+    (form.created_by && form.created_by !== form.user_id
+      ? (form.created_by ?? null)
+      : null);
   if (!processDigitalSignature && processSignedAt && processorUserId) {
     processDigitalSignature =
       await fetchUserDigitalSignature(processorUserId);
+  }
+
+  // Only show a processor name when a real processor signature exists and the
+  // recorded processor user is known. Forms with no processor signature (e.g.
+  // transfer-linked return forms) keep "processed by" empty.
+  if (processSignedAt && form.process_signed_by) {
+    const cached = options.processorNames?.get(form.process_signed_by);
+    if (cached) {
+      processedBy = cached;
+    } else {
+      const procNames = await getUserNamesById(form.process_signed_by);
+      processedBy =
+        procNames?.first_name && procNames?.last_name
+          ? `${procNames.first_name} ${procNames.last_name}`.trim()
+          : '';
+    }
   }
 
   return {
@@ -455,26 +472,48 @@ export async function submitAssetReturnRequestHandler(
         });
       }
 
-      // Send notification to Manager Approver 1 users in the same department AND company
-      logger.info(`Notification debug - department_id: ${effectiveDepartmentId}, company_id: ${companyId}, asset count: ${deptAssignments.length}`);
-      if (effectiveDepartmentId && companyId) {
+      // Send notification to designated Approver for the company
+      if (companyId) {
         try {
-          const managerApprover1UserIds = await getManagerApprover1UserIdsInDepartmentAndCompany(effectiveDepartmentId, companyId);
-          logger.info(`Found ${managerApprover1UserIds.length} Manager Approver 1 users in department ${effectiveDepartmentId} and company ${companyId}: ${JSON.stringify(managerApprover1UserIds)}`);
-          const requesterName = [firstDeptAssignment.user?.first_name, firstDeptAssignment.user?.last_name].filter(Boolean).join(' ') || 'A user';
+          // Check if requestor has MA1 custodian access - if so, route to same approver (MA3 capacity)
+          const requestorHasMA1 = await getRequestorMA1Status(firstDeptAssignment.user_id);
+          // Use the requester's designated approver (user-level, local-admin fallback)
+          const approverUserId = await getDesignatedApproverUserIdForRequester(firstDeptAssignment.user_id);
+          const subApproverUserId = await getDesignatedSubApproverUserIdForRequester(firstDeptAssignment.user_id);
+          
+          const requesterRow = await getUserNamesById(firstDeptAssignment.user_id);
+          const requesterName = requesterRow ? `${requesterRow.first_name} ${requesterRow.last_name}`.trim() : 'A user';
           const assetCount = deptAssignments.length;
 
           const io = getIoInstance();
-          for (const approverUserId of managerApprover1UserIds) {
-            if (approverUserId !== currentUserId) {
-              logger.info(`Sending notification to user ${approverUserId}`);
-              await createNotificationForApi({
-                user_id: approverUserId,
+          const notifyUsers = [approverUserId, subApproverUserId].filter((id): id is string => id !== null && id !== currentUserId);
+          
+          for (const approverUserId of notifyUsers) {
+            logger.info(`Sending notification to user ${approverUserId}`);
+            await createNotificationForApi({
+              user_id: approverUserId,
+              title: 'Asset Return Request Approval Needed',
+              message: `${requesterName} has submitted an asset return request for ${assetCount} asset${assetCount !== 1 ? 's' : ''} and requires your approval.`,
+              type: 'system',
+              data: {
+                form_id: form_id,
+                form_number: returnForm!.form_number,
+                requester_id: currentUserId,
+                requester_name: requesterName,
+                asset_count: assetCount,
+                route: '/approvals',
+                actionTarget: 'return_request_approval',
+              },
+            });
+            // Real-time socket push so the notification pops immediately
+            if (io) {
+              emitNotification(io, approverUserId, 'notification', {
+                id: form_id,
                 title: 'Asset Return Request Approval Needed',
                 message: `${requesterName} has submitted an asset return request for ${assetCount} asset${assetCount !== 1 ? 's' : ''} and requires your approval.`,
                 type: 'system',
                 data: {
-                  form_id: form_id,
+                  form_id,
                   form_number: returnForm!.form_number,
                   requester_id: currentUserId,
                   requester_name: requesterName,
@@ -482,30 +521,12 @@ export async function submitAssetReturnRequestHandler(
                   route: '/approvals',
                   actionTarget: 'return_request_approval',
                 },
+                time: new Date().toISOString(),
               });
-              // Real-time socket push so the notification pops immediately
-              if (io) {
-                emitNotification(io, approverUserId, 'notification', {
-                  id: form_id,
-                  title: 'Asset Return Request Approval Needed',
-                  message: `${requesterName} has submitted an asset return request for ${assetCount} asset${assetCount !== 1 ? 's' : ''} and requires your approval.`,
-                  type: 'system',
-                  data: {
-                    form_id,
-                    form_number: returnForm!.form_number,
-                    requester_id: currentUserId,
-                    requester_name: requesterName,
-                    asset_count: assetCount,
-                    route: '/approvals',
-                    actionTarget: 'return_request_approval',
-                  },
-                  time: new Date().toISOString(),
-                });
-              }
-              logger.info(`Notification + socket push sent successfully to user ${approverUserId}`);
             }
+            logger.info(`Notification + socket push sent successfully to user ${approverUserId}`);
           }
-          logger.info(`Sent return request notifications to ${managerApprover1UserIds.length} Manager Approver 1 users in department ${effectiveDepartmentId} company ${companyId}`);
+          logger.info(`Sent return request notifications to designated approvers for company ${companyId}`);
         } catch (notifError) {
           logger.error('Failed to send return request notifications:', notifError);
         }
@@ -671,6 +692,7 @@ export async function createAssetReturnHandler(
       created_by: req.user!.userID,
       process_signed_at: processSignedAtForDb,
       process_digital_signature: processDigitalSignature,
+      process_signed_by: processSignedAtForDb ? req.user!.userID : null,
       return_type: normalizeReturnTypeString(returnType) ?? null,
       // Required for manager-approval execution path (processor-initiated hold flow).
       received_by: assignToProcessor ? req.user!.userID : null,
@@ -789,10 +811,122 @@ export async function createAssetReturnHandler(
         }
       }
 
+      // Notify asset owners (excluding the processor) to sign the return form,
+      // unless the owner is marked absent (owner-absent flow skips the owner signature).
+      if (!ownerAbsent) {
+        try {
+          const ownerUserIds = [
+            ...new Set(assignmentRows.map((r: any) => r.user_id)),
+          ].filter((id: string) => id !== req.user!.userID);
+          const io = getIoInstance();
+          for (const ownerId of ownerUserIds) {
+            await createNotificationForApi({
+              user_id: ownerId,
+              title: 'An asset return has been initialized',
+              message:
+                'Your assets are being returned. Sign your return form to process this return.',
+              type: 'system',
+              data: {
+                form_id,
+                form_number: returnForm?.form_number ?? null,
+                route: '/profile?tab=documents&docTab=returns',
+                actionTarget: 'my_return_requests',
+              },
+            });
+            if (io) {
+              emitNotification(io, ownerId, 'notification', {
+                id: form_id,
+                title: 'An asset return has been initialized',
+                message:
+                  'Your assets are being returned. Sign your return form to process this return.',
+                type: 'system',
+                data: {
+                  form_id,
+                  form_number: returnForm?.form_number ?? null,
+                  route: '/profile?tab=documents&docTab=returns',
+                  actionTarget: 'my_return_requests',
+                },
+              });
+            }
+          }
+        } catch (notifErr) {
+          logger.error(
+            'Failed to notify asset owners about initialized return:',
+            notifErr
+          );
+        }
+      }
+
+      // Owner-absent flow: route directly to the asset owner's Manager Approver 1.
+      // The owner will not sign, so the form is routed for department-head approval
+      // first; Manager Approver 2 is notified after approval (see approveReturnFormHandler).
+      if (ownerAbsent) {
+        try {
+          const ownerDeptId = firstAssignment.user_id
+            ? await getUserDepartmentId(firstAssignment.user_id)
+            : null;
+          // Use the asset owner's designated approver (user-level, local-admin fallback)
+          const approverUserId = firstAssignment.user_id
+            ? await getDesignatedApproverUserIdForRequester(firstAssignment.user_id)
+            : null;
+          const subApproverUserId = firstAssignment.user_id
+            ? await getDesignatedSubApproverUserIdForRequester(firstAssignment.user_id)
+            : null;
+          const ownerNames = await getUserNamesById(firstAssignment.user_id);
+          const ownerName = ownerNames
+            ? `${ownerNames.first_name || ''} ${ownerNames.last_name || ''}`.trim()
+            : 'The asset owner';
+          const assetCount = assetReturns.length;
+          const io = getIoInstance();
+          const notifyUsers = [approverUserId, subApproverUserId].filter((id): id is string => id !== null && id !== req.user!.userID);
+          for (const approverUserId of notifyUsers) {
+            const approvalMessage = `${ownerName} is no longer in office. An asset return has been initialized for ${assetCount} asset${assetCount !== 1 ? 's' : ''} and requires your approval as the asset owner's department head.`;
+            await createNotificationForApi({
+              user_id: approverUserId,
+              title: 'Asset Return Request Approval Needed',
+              message: approvalMessage,
+              type: 'system',
+              data: {
+                form_id,
+                form_number: returnForm?.form_number ?? null,
+                requester_id: req.user!.userID,
+                requester_name: ownerName,
+                asset_count: assetCount,
+                route: '/approvals',
+                actionTarget: 'return_request_approval',
+              },
+            });
+            if (io) {
+              emitNotification(io, approverUserId, 'notification', {
+                id: form_id,
+                title: 'Asset Return Request Approval Needed',
+                message: approvalMessage,
+                type: 'system',
+                data: {
+                  form_id,
+                  form_number: returnForm?.form_number ?? null,
+                  requester_id: req.user!.userID,
+                  requester_name: ownerName,
+                  asset_count: assetCount,
+                  route: '/approvals',
+                  actionTarget: 'return_request_approval',
+                },
+                time: new Date().toISOString(),
+              });
+            }
+          }
+        } catch (notifErr) {
+          logger.error(
+            'Failed to notify Manager Approver 1 about owner-absent return:',
+            notifErr
+          );
+        }
+      }
+
       return res.status(201).json({
         message: ownerAbsent
-          ? 'Return request created. The asset owner was marked absent—download the return form, obtain the asset owner’s department head signature for processing, then the department head can approve in Approvals. Assets will be assigned to you after approval.'
-          : `Return request created. The returner must sign the form in Profile → Documents, then the department head must approve before assets are assigned to you.`,
+          ? 'Return request created. The asset owner was marked absent, the department head can approve in Approvals. Assets will be assigned to you after approval.'
+          : `Return has been initialized. The returner must sign the form in Profile → Documents, then the department head must approve before assets are assigned to you.`,
         assetReturns: holdReturns,
         returnForm: returnForm
           ? { formID: returnForm.formID, form_number: returnForm.form_number }
@@ -1230,6 +1364,16 @@ export async function createAssetReturnHandler(
       }
     }
 
+    // Notify Manager Approver 2 users in the asset scope department that the return was processed, checked and verified
+    await notifyManagerApprover2OfProcessedReturn({
+      formId: form_id,
+      formNumber: returnForm?.form_number ?? null,
+      companyId: companyId,
+      departmentId: categoryDeptId ?? firstAssignment.department_id ?? null,
+      returnRequestorUserId: firstAssignment.user_id,
+      processorUserId: req.user!.userID,
+    });
+
     return res.status(201).json({
       message: `Successfully returned ${assetReturns.length} asset(s)${hasIntangibleItems ? ` and ${intangibleAssetReturnItems.length} intangible asset(s)` : ''}`,
       assetReturns: createdReturns,
@@ -1242,6 +1386,79 @@ export async function createAssetReturnHandler(
     return res
       .status(500)
       .json({ error: 'Failed to create asset return forms' });
+  }
+}
+
+/**
+ * Notify Manager Approver 2 users in the asset scope department that a return has been
+ * processed, checked and verified. Falls back to the processor's department when the
+ * form has no scope department.
+ */
+async function notifyManagerApprover2OfProcessedReturn(params: {
+  formId: string;
+  formNumber: string | null;
+  companyId: string | null;
+  departmentId: string | null;
+  returnRequestorUserId: string;
+  processorUserId: string;
+}): Promise<void> {
+  const {
+    formId,
+    formNumber,
+    companyId,
+    departmentId,
+    returnRequestorUserId,
+    processorUserId,
+  } = params;
+
+  const requestorRow = await getUserNamesById(returnRequestorUserId);
+  const returnRequestorName = requestorRow
+    ? `${requestorRow.first_name || ''} ${requestorRow.last_name || ''}`.trim() ||
+      returnRequestorUserId
+    : returnRequestorUserId;
+  const processorRow = await getUserNamesById(processorUserId);
+  const processorName = processorRow
+    ? `${processorRow.first_name || ''} ${processorRow.last_name || ''}`.trim() ||
+      processorUserId
+    : processorUserId;
+
+  const managerApprover2UserIds =
+    await getManagerApprover2UserIdsForProcessedReturn(companyId, departmentId);
+  const subApprover2UserIds =
+    await getSubApprover2UserIdsInItAndAdminDepartmentsAndCompany(companyId);
+  const receiveApproverUserIds = [
+    ...new Set([...managerApprover2UserIds, ...subApprover2UserIds]),
+  ];
+  const io = getIoInstance();
+  for (const approverUserId of receiveApproverUserIds) {
+    if (approverUserId === processorUserId) continue;
+    const payload = {
+      user_id: approverUserId,
+      title: 'An asset has been returned, checked and verified',
+      message: `${processorName} has processed return request of ${returnRequestorName}`,
+      type: 'system' as const,
+      data: {
+        form_id: formId,
+        form_number: formNumber,
+        processor_id: processorUserId,
+        processor_name: processorName,
+        return_requestor_id: returnRequestorUserId,
+        return_requestor_name: returnRequestorName,
+        route: '/approvals?tab=receive',
+        actionTarget: 'approvals',
+      },
+    };
+    await createNotificationForApi(payload);
+    if (io) {
+      emitNotification(io, approverUserId, 'notification', {
+        id: formId,
+        title: payload.title,
+        message: payload.message,
+        type: payload.type,
+        data: payload.data,
+        time: new Date().toISOString(),
+      });
+    }
   }
 }
 
@@ -2046,6 +2263,10 @@ export async function getAssetReturnsHandler(req: AuthRequest, res: Response) {
         'You can only view your own return requests'
       );
     }
+
+    // Get scope from query param (for Global Admin to switch between IT/Admin)
+    const scope = req.query.scope as 'it' | 'admin' | undefined;
+
     const assetReturns = requestedUserId
       ? await AssetReturnModel.findByUserId(requestedUserId)
       : await AssetReturnModel.findAll();
@@ -2053,8 +2274,36 @@ export async function getAssetReturnsHandler(req: AuthRequest, res: Response) {
       assetReturns.map((r: AssetReturn) => enrichReturnWithDetails(r))
     );
 
-    // Fetch all return forms (including declined) for full history and status
-    const formsRows = await fetchAssetReturnFormsRowsForUserList();
+    // Scope list by the user's company and IT/Admin department scope.
+    const assetScope = await getAssetScope(pool, req.user!.userID);
+    const scopeCompanyId = assetScope.companyId ?? undefined;
+    const scopeDeptIds = assetScope.departmentIds?.length
+      ? assetScope.departmentIds
+      : undefined;
+    const isSuperAdmin = assetScope.isSuperAdmin;
+
+    // For Global Admin with scope param, get category IDs for that scope
+    let scopeCategoryIds: string[] | null = null;
+    if (isSuperAdmin && scope) {
+      const departmentIds = await getDepartmentIdsForScope(pool, scope, scopeCompanyId);
+      if (departmentIds.length > 0) {
+        const placeholders = departmentIds.map(() => '?').join(',');
+        const [rows] = (await pool.execute(
+          `SELECT categoryID FROM asset_categories WHERE department_id IN (${placeholders}) AND deleted_at IS NULL`,
+          departmentIds
+        )) as any[];
+        scopeCategoryIds = (rows as any[]).map(r => String(r.categoryID));
+      }
+    }
+
+    // Fetch all return forms (including declined) for full history and status.
+    // Department scope applies to the general listing only; a self-view
+    // (requestedUserId) stays company-scoped so the user's own returns are
+    // never hidden by their asset scope.
+    const formsRows = await fetchAssetReturnFormsRowsForUserList(
+      scopeCompanyId,
+      requestedUserId ? undefined : scopeDeptIds
+    );
     let forms = (formsRows ?? []) as (AssetReturnForm & {
       declined_at?: string | null;
       declined_by?: string | null;
@@ -2097,7 +2346,12 @@ export async function getAssetReturnsHandler(req: AuthRequest, res: Response) {
         linked?.dept_head_signed_at ?? (form as any).dept_head_signed_at;
       const processSigned = (form as any).process_signed_at;
       const processorDeclined = (form as any).processor_declined_at;
-      if (processSigned) return 'Processed';
+      // Processor-initiated (hold) forms set process_signed_at at creation, so
+      // they are only truly "Processed" once the dept head approved (which
+      // executes the return). Non-hold flows set process_signed_at only when
+      // processing actually happens, so they are unaffected.
+      const holdStyle = Boolean((form as any).received_by);
+      if (processSigned && (!holdStyle || deptApproved)) return 'Processed';
       if (processorDeclined) return 'Declined by processor';
       if (declined) return 'Declined by dept head';
       if (deptApproved) return 'Approved by dept head';
@@ -2124,13 +2378,20 @@ export async function getAssetReturnsHandler(req: AuthRequest, res: Response) {
       }
     }
 
-    // Processed-by for forms: resolve created_by user name
-    const createdByIds = [
-      ...new Set(forms.map(f => f.created_by).filter(Boolean)),
-    ] as string[];
+    // Processed-by for forms: resolve created_by / process_signed_by user names
+    const processorNameUserIds = [
+      ...new Set([
+        ...forms.map(f => f.created_by),
+        ...forms.map(
+          f =>
+            (f as AssetReturnForm & { process_signed_by?: string | null })
+              .process_signed_by
+        ),
+      ]),
+    ].filter(Boolean) as string[];
     const processorNames = new Map<string, string>();
-    if (createdByIds.length > 0) {
-      const userRows = await getUserNamesByIds(createdByIds);
+    if (processorNameUserIds.length > 0) {
+      const userRows = await getUserNamesByIds(processorNameUserIds);
       for (const u of userRows) {
         processorNames.set(
           u.userID,
@@ -2152,6 +2413,7 @@ export async function getAssetReturnsHandler(req: AuthRequest, res: Response) {
       ),
     ] as string[];
     const deptHeadNames = new Map<string, string>();
+    const deptHeadPositions = new Map<string, string>();
     if (deptHeadSignedByIds.length > 0) {
       const userRows = await getUserNamesByIds(deptHeadSignedByIds);
       for (const u of userRows) {
@@ -2159,6 +2421,7 @@ export async function getAssetReturnsHandler(req: AuthRequest, res: Response) {
           u.userID,
           `${u.first_name || ''} ${u.last_name || ''}`.trim() || 'Unknown'
         );
+        if (u.position) deptHeadPositions.set(u.userID, String(u.position));
       }
     }
 
@@ -2175,6 +2438,7 @@ export async function getAssetReturnsHandler(req: AuthRequest, res: Response) {
       ),
     ] as string[];
     const itManagerNames = new Map<string, string>();
+    const itManagerPositions = new Map<string, string>();
     if (itManagerSignedByIds.length > 0) {
       const userRows = await getUserNamesByIds(itManagerSignedByIds);
       for (const u of userRows) {
@@ -2182,6 +2446,7 @@ export async function getAssetReturnsHandler(req: AuthRequest, res: Response) {
           u.userID,
           `${u.first_name || ''} ${u.last_name || ''}`.trim() || 'Unknown'
         );
+        if (u.position) itManagerPositions.set(u.userID, String(u.position));
       }
     }
 
@@ -2192,7 +2457,9 @@ export async function getAssetReturnsHandler(req: AuthRequest, res: Response) {
       processorDeclinedAt: string | null | undefined
     ): string {
       if (processorDeclinedAt) return 'Declined by processor';
-      if (processSignedAt) return 'Returned';
+      // A processor-initiated (hold) form sets process_signed_at at creation;
+      // it is only "Returned" once the dept head approved (which executed it).
+      if (processSignedAt && deptHeadSignedAt) return 'Returned';
       if (deptHeadSignedAt) return 'Approved by Department head';
       return 'Submitted';
     }
@@ -2220,10 +2487,12 @@ export async function getAssetReturnsHandler(req: AuthRequest, res: Response) {
       dept_head_digital_signature?: string | null;
       dept_head_signed_by?: string | null;
       dept_head_user_name?: string | null;
+      dept_head_position?: string | null;
       it_manager_signed_at?: string | null;
       it_manager_digital_signature?: string | null;
       it_manager_signed_by?: string | null;
       it_manager_user_name?: string | null;
+      it_manager_position?: string | null;
       status?: string;
       form_department?: { id: string; name: string } | null;
       owner_absent?: boolean;
@@ -2370,9 +2639,12 @@ export async function getAssetReturnsHandler(req: AuthRequest, res: Response) {
       const processorFields = await resolveReturnProcessorFieldsForBatch(
         {
           formID: form.formID,
+          user_id: form.user_id,
           created_by: form.created_by,
           process_signed_at: formWithProcess.process_signed_at,
           process_digital_signature: formWithProcess.process_digital_signature,
+          process_signed_by: (form as { process_signed_by?: string | null })
+            .process_signed_by,
         },
         { processorNames }
       );
@@ -2426,6 +2698,9 @@ export async function getAssetReturnsHandler(req: AuthRequest, res: Response) {
         dept_head_user_name: deptHeadSignedBy
           ? (deptHeadNames.get(deptHeadSignedBy) ?? null)
           : null,
+        dept_head_position: deptHeadSignedBy
+          ? (deptHeadPositions.get(deptHeadSignedBy) ?? null)
+          : null,
         it_manager_signed_at: formatItManagerSignedAtForApi(
           formWithProcess.it_manager_signed_at
         ),
@@ -2434,6 +2709,9 @@ export async function getAssetReturnsHandler(req: AuthRequest, res: Response) {
         it_manager_signed_by: itManagerSignedBy,
         it_manager_user_name: itManagerSignedBy
           ? (itManagerNames.get(itManagerSignedBy) ?? null)
+          : null,
+        it_manager_position: itManagerSignedBy
+          ? (itManagerPositions.get(itManagerSignedBy) ?? null)
           : null,
         status: submitterStatus,
         form_department:
@@ -2522,6 +2800,70 @@ export async function getAssetReturnsHandler(req: AuthRequest, res: Response) {
       (a, b) =>
         new Date(b.created_at || 0).getTime() -
         new Date(a.created_at || 0).getTime()
+    );
+
+    // Filter by scope category IDs (for Global Admin with IT/Admin scope)
+    if (scopeCategoryIds && scopeCategoryIds.length > 0) {
+      const categorySet = new Set(scopeCategoryIds);
+      const filterFn = (r: any) => {
+        const catId = r.assignment?.asset?.category_id ?? r.asset?.category_id ?? null;
+        return catId && categorySet.has(String(catId));
+      };
+      // Filter flat history
+      const filteredHistory = flatReturnHistory.filter(filterFn);
+      flatReturnHistory.length = 0;
+      flatReturnHistory.push(...filteredHistory);
+
+      // Filter assetReturnForms - keep only forms that have returns matching the scope
+      for (const form of assetReturnForms) {
+        form.returns = form.returns.filter(filterFn);
+      }
+      // Remove forms with no returns
+      const filteredForms = assetReturnForms.filter(f => f.returns.length > 0);
+      assetReturnForms.length = 0;
+      assetReturnForms.push(...filteredForms);
+    }
+
+    // Attach return form number to each flattened history row
+    for (const r of flatReturnHistory as any[]) {
+      const form = r.form_id ? formById.get(r.form_id) : null;
+      r.form_number = form ? form.form_number : null;
+    }
+
+    // Attach accountability form numbers (from / new) and the temp-form owner
+    await Promise.all(
+      (flatReturnHistory as any[]).map(async (r: any) => {
+        const assetId =
+          r.assignment?.asset?.id ?? r.asset?.id ?? r.asset_id ?? null;
+        const returnerUserId = r.assignment?.user?.id ?? r.user_id ?? null;
+        const boundary = r.created_at ?? null;
+        if (!assetId) {
+          r.fromAccountabilityFormNumber = null;
+          r.toAccountabilityFormNumber = null;
+          r.newOwnerName = null;
+          return;
+        }
+        const [fromForm, toForm] = await Promise.all([
+          findAccountabilityFormForAsset({
+            assetId,
+            userId: returnerUserId,
+            dateBoundary: boundary,
+            direction: 'before',
+          }),
+          findAccountabilityFormForAsset({
+            assetId,
+            dateBoundary: boundary,
+            direction: 'after',
+            formOrigin: 'processor_return',
+          }),
+        ]);
+        r.fromAccountabilityFormNumber = fromForm?.form_number ?? null;
+        r.toAccountabilityFormNumber = toForm?.form_number ?? null;
+        r.newOwnerName =
+          toForm?.owner_first_name && toForm?.owner_last_name
+            ? `${toForm.owner_first_name} ${toForm.owner_last_name}`
+            : null;
+      })
     );
 
     return res.json({
@@ -2708,12 +3050,85 @@ export async function signAssetReturnFormHandler(
       logger.error('Failed to auto-sign offboarding checklists:', checklistErr);
     }
 
-    return res.json({
-      message: 'Return form signed successfully',
-      formID: formId,
-      signed_at: new Date().toISOString(),
-    });
-  } catch (error: any) {
+    // Notify Manager Approver 1 users in the returner's department AND company
+    // that the form has been signed and needs approval (mirrors the return request flow).
+    try {
+      const returnerUserDeptId = await getUserDepartmentId(form.user_id);
+      let signCompanyId = form.company_id || null;
+      if (!signCompanyId) {
+        const deptRow = await getDepartmentById(form.department_id);
+        signCompanyId = deptRow?.company_id ?? null;
+      }
+      if (!signCompanyId) {
+const signerUser = await getUserById(form.user_id);
+      signCompanyId = signerUser?.company_id ?? null;
+    }
+    if (signCompanyId && form.user_id) {
+      const approverUserId = await getDesignatedApproverUserIdForRequester(form.user_id);
+      const subApproverUserId = await getDesignatedSubApproverUserIdForRequester(form.user_id);
+      const signerRow = await getUserNamesById(userId);
+      const signerName = signerRow
+        ? `${signerRow.first_name} ${signerRow.last_name}`.trim()
+        : 'A user';
+      const returnsForForm = await AssetReturnModel.findByFormId(formId);
+      let assetCount = Array.isArray(returnsForForm)
+        ? returnsForForm.length
+        : 0;
+      // Held-transfer flow: asset_returns rows are only created at execution time,
+      // so derive the count from the linked transfer form's assignments instead.
+      if (assetCount === 0) {
+        const linkedTransferFormIds = await getTransferFormIdsByReturnFormId(formId);
+        for (const linkedTransferFormId of linkedTransferFormIds) {
+          const linkedAssignments = await getTransferFormAssignments(linkedTransferFormId);
+          assetCount += (linkedAssignments || []).length;
+        }
+      }
+
+const io = getIoInstance();
+      const notifyUsers = [approverUserId, subApproverUserId].filter((id): id is string => id !== null && id !== userId);
+      for (const approverUserId of notifyUsers) {
+        const message = `${signerName} has signed the asset return form for ${assetCount} asset${assetCount !== 1 ? 's' : ''} and requires your approval.`;
+        const payloadData = {
+          form_id: formId,
+          form_number: form.form_number,
+          requester_id: form.user_id,
+          requester_name: signerName,
+          asset_count: assetCount,
+          route: '/approvals',
+          actionTarget: 'return_request_approval',
+        };
+        await createNotificationForApi({
+          user_id: approverUserId,
+          title: 'Asset Return Request Approval Needed',
+          message,
+          type: 'system',
+          data: payloadData,
+        });
+        if (io) {
+          emitNotification(io, approverUserId, 'notification', {
+            id: formId,
+            title: 'Asset Return Request Approval Needed',
+            message,
+            type: 'system',
+            data: payloadData,
+            time: new Date().toISOString(),
+          });
+        }
+      }
+    }
+  } catch (notifError) {
+    logger.error(
+      'Failed to send Manager Approver 1 notification after return form sign:',
+      notifError
+    );
+  }
+
+  return res.json({
+    message: 'Return form signed successfully',
+    formID: formId,
+    signed_at: new Date().toISOString(),
+  });
+} catch (error: any) {
     const message = error?.message ?? '';
     logger.error('Sign asset return form failed:', error);
     if (
@@ -2732,7 +3147,7 @@ export async function signAssetReturnFormHandler(
   }
 }
 
-/** GET pending approvals: return forms with Returner signed but no Dept Head signature. Only Manager Approver 1 users; filtered by company. */
+/** GET pending approvals: return forms with Returner signed but no Dept Head signature. Only designated Approver/Sub Approver users for the company. */
 export async function getPendingApprovalsHandler(
   req: AuthRequest,
   res: Response
@@ -2740,30 +3155,277 @@ export async function getPendingApprovalsHandler(
   try {
     const userId = req.user!.userID;
 
-    const { companyId, departmentIds, isSuperAdmin } = await getAssetScope(pool, userId);
+    const { companyId, isSuperAdmin, isAdmin } = await getAssetScope(pool, userId);
     if (!companyId) {
       return res.json({ assetReturnForms: [] });
     }
 
-    const isManager1 = await isUserManagerApprover1(userId);
-    if (!isManager1) {
-      return res.json({ assetReturnForms: [] });
-    }
+    if (isSuperAdmin || isAdmin) {
+      // Global Admin: show all forms in the active company. Local Admin: show all forms in own company.
+      const pendingForms = await fetchPendingDeptHeadApprovalFormRowsByCompany(companyId);
+      const formIds = pendingForms.map((r: any) => r.formID);
 
-    let pendingForms: any[];
-    if (isSuperAdmin || departmentIds === null) {
-      // Global Admin / full-scope: show all forms in the company (no department filter)
-      pendingForms = await fetchPendingDeptHeadApprovalFormRowsByCompany(companyId);
-    } else {
-      const approverDepartmentId = await getUserDepartmentId(userId);
-      if (approverDepartmentId == null) {
+      if (formIds.length === 0) {
         return res.json({ assetReturnForms: [] });
       }
-      pendingForms = await fetchPendingDeptHeadApprovalFormRows(
-        approverDepartmentId,
-        companyId
+      // ... rest of processing (same as before)
+      const assetReturns = await AssetReturnModel.findAll();
+      const returnsWithDetails = await Promise.all(
+        assetReturns.map((r: AssetReturn) => enrichReturnWithDetails(r))
       );
+      const returnsByFormId = new Map<string, (typeof returnsWithDetails)[0][]>();
+      for (const r of returnsWithDetails as (typeof returnsWithDetails)[0][]) {
+        const fid = (r as AssetReturn & { form_id?: string | null }).form_id;
+        if (fid && formIds.includes(fid)) {
+          if (!returnsByFormId.has(fid)) returnsByFormId.set(fid, []);
+          returnsByFormId.get(fid)!.push(r);
+        }
+      }
+
+      const processorNameUserIds = [
+        ...new Set([
+          ...pendingForms.map((f: any) => f.created_by),
+          ...pendingForms.map((f: any) => f.process_signed_by),
+        ]),
+      ].filter(Boolean) as string[];
+      const processorNames = new Map<string, string>();
+      if (processorNameUserIds.length > 0) {
+        const userRows2 = await getUserNamesByIds(processorNameUserIds);
+        for (const u of userRows2) {
+          processorNames.set(
+            u.userID,
+            `${u.first_name || ''} ${u.last_name || ''}`.trim() || 'Unknown'
+          );
+        }
+      }
+
+      const assetReturnForms: {
+        formID: string;
+        form_number: string | null;
+        return_batch_id: string | null;
+        created_at: string;
+        user_id: string;
+        processed_by: string;
+        signed_at?: string | null;
+        signed_by?: string | null;
+        signed_digital_signature?: string | null;
+        process_signed_at?: string | null;
+        process_digital_signature?: string | null;
+        processor_pending_signed_at?: string | null;
+        processor_pending_signature?: string | null;
+        return_type?: string | null;
+        received_by?: string | null;
+        dept_head_signed_at?: string | null;
+        dept_head_digital_signature?: string | null;
+        dept_head_signed_by?: string | null;
+        dept_head_user_name?: string | null;
+        dept_head_position?: string | null;
+        it_manager_signed_at?: string | null;
+        it_manager_digital_signature?: string | null;
+        it_manager_signed_by?: string | null;
+        it_manager_user_name?: string | null;
+        it_manager_position?: string | null;
+        sub_approver_1_signed_at?: string | null;
+        sub_approver_1_digital_signature?: string | null;
+        sub_approver_1_signed_by?: string | null;
+        sub_approver_1_user_name?: string | null;
+        sub_approver_2_signed_at?: string | null;
+        sub_approver_2_digital_signature?: string | null;
+        sub_approver_2_signed_by?: string | null;
+        sub_approver_2_user_name?: string | null;
+        form_department?: { id: string; name: string } | null;
+        owner_absent?: boolean;
+        returns: (typeof returnsWithDetails)[0][];
+      }[] = [];
+
+      const sortOrder = (a: any, b: any) => {
+        const oa = getDepartmentSortOrder(a.form_department_name);
+        const ob = getDepartmentSortOrder(b.form_department_name);
+        if (oa !== ob) return oa - ob;
+        return (
+          new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
+        );
+      };
+      pendingForms.sort(sortOrder);
+
+      for (const form of pendingForms) {
+        let returns = returnsByFormId.get(form.formID) ?? [];
+        if (returns.length === 0) {
+          const tfIds = await getTransferFormIdsByReturnFormId(form.formID);
+          if (tfIds.length > 0) {
+            const transferFormId = tfIds[0]!;
+            const tfaRows = await getTransferFormAssignments(transferFormId);
+            const tfaByAssignment = new Map<
+              string,
+              { condition: string | null; notes: string | null }
+            >();
+            for (const r of tfaRows ?? []) {
+              tfaByAssignment.set(r.assignment_id, {
+                condition: r.transfer_condition ?? null,
+                notes: r.transfer_notes ?? null,
+              });
+            }
+            const assignmentIds = (tfaRows ?? []).map(
+              (r: any) => r.assignment_id
+            );
+            const syntheticReturns: (typeof returnsWithDetails)[0][] = [];
+            for (const assignmentId of assignmentIds) {
+              const [assignRows] = (await pool.execute(
+                `SELECT aa.*, a.asset_code, a.name as asset_name, a.category_id, a.type_id,
+                      ac.name as category_name, at.name as type_name,
+                      u.first_name, u.last_name, u.email, u.employee_number, u.position,
+                      d.name as department_name, l.name as location_name,
+                      lr.room_name, l.floor_unit, l.building,
+                      uc.companyID as user_company_id, uc.name as user_company_name,
+                      ud.departmentID as user_department_id, ud.name as user_department_name
+                 FROM asset_assignments aa
+                 LEFT JOIN assets a ON aa.asset_id = a.assetID
+                 LEFT JOIN asset_categories ac ON a.category_id = ac.categoryID
+                 LEFT JOIN asset_types at ON a.type_id = at.typeID
+                 LEFT JOIN users u ON aa.user_id = u.userID
+                 LEFT JOIN companies uc ON u.company_id = uc.companyID AND uc.deleted_at IS NULL
+                 LEFT JOIN asset_mngmnt_departments ud ON u.department_id = ud.departmentID AND ud.deleted_at IS NULL
+                 LEFT JOIN asset_mngmnt_departments d ON aa.department_id = d.departmentID
+                 LEFT JOIN asset_mngmnt_locations l ON aa.location_id = l.locationID
+                 LEFT JOIN asset_mngmnt_location_rooms lr ON aa.location_room_id = lr.roomID
+                WHERE aa.assignmentID = ? AND aa.deleted_at IS NULL`,
+                [assignmentId]
+              )) as any[];
+              if (assignRows.length > 0) {
+                const a = assignRows[0];
+                const tfaInfo = tfaByAssignment.get(assignmentId) ?? { condition: null, notes: null };
+                const historyDepartment = a.department_id
+                  ? { id: a.department_id, name: a.department_name }
+                  : null;
+                const historyLocation = a.location_id
+                  ? {
+                      id: a.location_id,
+                      name: a.location_name,
+                      floor_unit: a.floor_unit ?? '',
+                      building: a.building ?? '',
+                      room_name: a.room_name ?? null,
+                    }
+                  : null;
+                syntheticReturns.push({
+                  return_id: `synthetic-${assignmentId}`,
+                  assignment_id: assignmentId,
+                  form_id: form.formID,
+                  user_id: form.user_id,
+                  return_condition: tfaInfo.condition ?? 'Good',
+                  return_notes: tfaInfo.notes ?? '',
+                  return_batch_id: form.return_batch_id ?? null,
+                  return_location_id: a.location_id ?? null,
+                  return_location_room_id: a.location_room_id ?? null,
+                  return_department_id: a.department_id ?? null,
+                  condition_images: null,
+                  created_at: form.created_at,
+                  updated_at: form.updated_at,
+                  deleted_at: null,
+                  processed_by: form.processed_by ?? 'Unknown',
+                  assignment: a
+                    ? {
+                        assignmentID: a.assignmentID,
+                        asset: {
+                          id: a.asset_id,
+                          code: a.asset_code,
+                          name: a.asset_name,
+                          category_id: a.category_id,
+                          category_name: a.category_name,
+                          type_id: a.type_id,
+                          type_name: a.type_name,
+                        },
+                        user: {
+                          id: a.user_id,
+                          first_name: a.first_name,
+                          last_name: a.last_name,
+                          email: a.email,
+                          employeeNumber: a.employee_number,
+                          position: a.position ?? null,
+                          company:
+                            a.user_company_id != null
+                              ? { id: a.user_company_id, name: a.user_company_name }
+                              : undefined,
+                          department:
+                            a.user_department_id != null
+                              ? {
+                                  id: a.user_department_id,
+                                  name: a.user_department_name,
+                                }
+                              : undefined,
+                        },
+                        department: historyDepartment,
+                        location: historyLocation,
+                        assigned_date: a.assigned_date,
+                        expected_return_date: a.expected_return_date,
+                        actual_return_date: a.actual_return_date,
+                        assignment_notes: a.assignment_notes,
+                        status: 'Returned',
+                        assigned_by: {
+                          id: a.assigned_by ?? '',
+                          first_name: a.assigned_by_first_name ?? '',
+                          last_name: a.assigned_by_last_name ?? '',
+                        },
+                      }
+                    : null,
+                } as any);
+              }
+            }
+            returns = syntheticReturns;
+          }
+        }
+        const requesterRow = returns[0];
+        const requesterName = requesterRow?.assignment?.user
+          ? `${requesterRow.assignment.user.first_name || ''} ${requesterRow.assignment.user.last_name || ''}`.trim()
+          : 'Unknown';
+        const formDept = form.form_department_name
+          ? { id: form.department_id ?? '', name: form.form_department_name }
+          : null;
+        assetReturnForms.push({
+          formID: form.formID,
+          form_number: form.form_number,
+          return_batch_id: form.return_batch_id,
+          created_at: form.created_at,
+          user_id: form.user_id,
+          processed_by: form.processed_by,
+          signed_at: form.signed_at,
+          signed_by: form.signed_by,
+          signed_digital_signature: form.signed_digital_signature,
+          process_signed_at: form.process_signed_at,
+          process_digital_signature: form.process_digital_signature,
+          processor_pending_signed_at: form.processor_pending_signed_at,
+          processor_pending_signature: form.processor_pending_signature,
+          return_type: form.return_type,
+          received_by: form.received_by,
+          dept_head_signed_at: form.dept_head_signed_at,
+          dept_head_digital_signature: form.dept_head_digital_signature,
+          dept_head_signed_by: form.dept_head_signed_by,
+          dept_head_user_name: processorNames.get(form.dept_head_signed_by ?? '') ?? null,
+          sub_approver_1_signed_at: form.sub_approver_1_signed_at,
+          sub_approver_1_digital_signature: form.sub_approver_1_digital_signature,
+          sub_approver_1_signed_by: form.sub_approver_1_signed_by,
+          sub_approver_1_user_name: processorNames.get(form.sub_approver_1_signed_by ?? '') ?? null,
+          sub_approver_2_signed_at: form.sub_approver_2_signed_at,
+          sub_approver_2_digital_signature: form.sub_approver_2_digital_signature,
+          sub_approver_2_signed_by: form.sub_approver_2_signed_by,
+          sub_approver_2_user_name: processorNames.get(form.sub_approver_2_signed_by ?? '') ?? null,
+          form_department: formDept,
+          owner_absent: form.owner_absent === 1,
+          returns,
+        });
+      }
+
+      return res.json({ assetReturnForms });
     }
+
+    // Only see pending forms for requesters assigned to this user as approver
+    const requesterIds = await getRequestersAssignedToApprover(userId, companyId);
+    if (requesterIds.length === 0) {
+      return res.json({ assetReturnForms: [] });
+    }
+    const requesterSet = new Set(requesterIds);
+
+    const allPendingForms = await fetchPendingDeptHeadApprovalFormRowsByCompany(companyId);
+    const pendingForms = allPendingForms.filter((r: any) => requesterSet.has(String(r.user_id)));
     const formIds = pendingForms.map((r: any) => r.formID);
 
     if (formIds.length === 0) {
@@ -2783,12 +3445,15 @@ export async function getPendingApprovalsHandler(
       }
     }
 
-    const createdByIds = [
-      ...new Set(pendingForms.map((f: any) => f.created_by).filter(Boolean)),
-    ] as string[];
+    const processorNameUserIds = [
+      ...new Set([
+        ...pendingForms.map((f: any) => f.created_by),
+        ...pendingForms.map((f: any) => f.process_signed_by),
+      ]),
+    ].filter(Boolean) as string[];
     const processorNames = new Map<string, string>();
-    if (createdByIds.length > 0) {
-      const userRows2 = await getUserNamesByIds(createdByIds);
+    if (processorNameUserIds.length > 0) {
+      const userRows2 = await getUserNamesByIds(processorNameUserIds);
       for (const u of userRows2) {
         processorNames.set(
           u.userID,
@@ -2817,6 +3482,14 @@ export async function getPendingApprovalsHandler(
       dept_head_digital_signature?: string | null;
       dept_head_signed_by?: string | null;
       dept_head_user_name?: string | null;
+      sub_approver_1_signed_at?: string | null;
+      sub_approver_1_digital_signature?: string | null;
+      sub_approver_1_signed_by?: string | null;
+      sub_approver_1_user_name?: string | null;
+      sub_approver_2_signed_at?: string | null;
+      sub_approver_2_digital_signature?: string | null;
+      sub_approver_2_signed_by?: string | null;
+      sub_approver_2_user_name?: string | null;
       form_department?: { id: string; name: string } | null;
       owner_absent?: boolean;
       returns: (typeof returnsWithDetails)[0][];
@@ -2948,9 +3621,12 @@ export async function getPendingApprovalsHandler(
       const processorFields = await resolveReturnProcessorFieldsForBatch(
         {
           formID: form.formID,
+          user_id: form.user_id,
           created_by: form.created_by,
           process_signed_at: form.process_signed_at,
           process_digital_signature: form.process_digital_signature,
+          process_signed_by: (form as { process_signed_by?: string | null })
+            .process_signed_by,
         },
         { processorNames }
       );
@@ -2975,6 +3651,14 @@ export async function getPendingApprovalsHandler(
         dept_head_digital_signature: null,
         dept_head_signed_by: null,
         dept_head_user_name: null,
+        sub_approver_1_signed_at: null,
+        sub_approver_1_digital_signature: null,
+        sub_approver_1_signed_by: null,
+        sub_approver_1_user_name: null,
+        sub_approver_2_signed_at: null,
+        sub_approver_2_digital_signature: null,
+        sub_approver_2_signed_by: null,
+        sub_approver_2_user_name: null,
         form_department:
           form.department_id && form.form_department_name
             ? { id: form.department_id, name: form.form_department_name }
@@ -3000,16 +3684,24 @@ export async function getApprovedByMeHandler(req: AuthRequest, res: Response) {
       `SELECT arf.formID, arf.form_number, arf.user_id, arf.department_id, arf.location_id, arf.location_room_id, arf.created_by, arf.created_at, arf.updated_at, arf.deleted_at,
         arf.signed_at, arf.signed_by, arf.signed_digital_signature,
         DATE_FORMAT(arf.process_signed_at, '%Y-%m-%d %H:%i:%s') AS process_signed_at,
-        arf.process_digital_signature, arf.return_type, arf.received_by,
+        arf.process_digital_signature, arf.process_signed_by, arf.return_type, arf.received_by,
         DATE_FORMAT(arf.dept_head_signed_at, '%Y-%m-%d %H:%i:%s') AS dept_head_signed_at,
         arf.dept_head_digital_signature, arf.dept_head_signed_by,
         DATE_FORMAT(arf.it_manager_signed_at, '%Y-%m-%d %H:%i:%s') AS it_manager_signed_at,
         arf.it_manager_digital_signature, arf.it_manager_signed_by,
+        DATE_FORMAT(arf.sub_approver_1_signed_at, '%Y-%m-%d %H:%i:%s') AS sub_approver_1_signed_at,
+        arf.sub_approver_1_digital_signature, arf.sub_approver_1_signed_by,
+        DATE_FORMAT(arf.sub_approver_2_signed_at, '%Y-%m-%d %H:%i:%s') AS sub_approver_2_signed_at,
+        arf.sub_approver_2_digital_signature, arf.sub_approver_2_signed_by,
         d.name AS form_department_name
        FROM asset_return_forms arf
        LEFT JOIN asset_mngmnt_departments d ON arf.department_id = d.departmentID
-       WHERE arf.deleted_at IS NULL AND arf.dept_head_signed_at IS NOT NULL AND arf.dept_head_signed_by = ?`,
-      [userId]
+       WHERE arf.deleted_at IS NULL AND arf.dept_head_signed_at IS NOT NULL
+         AND (arf.dept_head_signed_by = ?
+              OR arf.it_manager_signed_by = ?
+              OR arf.sub_approver_1_signed_by = ?
+              OR arf.sub_approver_2_signed_by = ?)`,
+      [userId, userId, userId, userId]
     )) as any[];
 
     if (formRows.length === 0) {
@@ -3030,12 +3722,15 @@ export async function getApprovedByMeHandler(req: AuthRequest, res: Response) {
       }
     }
 
-    const createdByIds = [
-      ...new Set(formRows.map((f: any) => f.created_by).filter(Boolean)),
-    ] as string[];
+    const processorNameUserIds = [
+      ...new Set([
+        ...formRows.map((f: any) => f.created_by),
+        ...formRows.map((f: any) => f.process_signed_by),
+      ]),
+    ].filter(Boolean) as string[];
     const processorNames = new Map<string, string>();
-    if (createdByIds.length > 0) {
-      const userRows2 = await getUserNamesByIds(createdByIds);
+    if (processorNameUserIds.length > 0) {
+      const userRows2 = await getUserNamesByIds(processorNameUserIds);
       for (const u of userRows2) {
         processorNames.set(
           u.userID,
@@ -3044,11 +3739,23 @@ export async function getApprovedByMeHandler(req: AuthRequest, res: Response) {
       }
     }
 
-    const approverNameRow = await getUserNamesById(userId);
-    const approverName = approverNameRow
-      ? `${approverNameRow.first_name || ''} ${approverNameRow.last_name || ''}`.trim() ||
-        'Unknown'
-      : 'Unknown';
+    const deptHeadSignedByIds = [
+      ...new Set(
+        formRows.map((f: any) => f.dept_head_signed_by).filter(Boolean)
+      ),
+    ] as string[];
+    const deptHeadNames = new Map<string, string>();
+    const deptHeadPositions = new Map<string, string>();
+    if (deptHeadSignedByIds.length > 0) {
+      const deptHeadUserRows = await getUserNamesByIds(deptHeadSignedByIds);
+      for (const u of deptHeadUserRows) {
+        deptHeadNames.set(
+          u.userID,
+          `${u.first_name || ''} ${u.last_name || ''}`.trim() || 'Unknown'
+        );
+        if (u.position) deptHeadPositions.set(u.userID, String(u.position));
+      }
+    }
 
     const itManagerSignedByIds = [
       ...new Set(
@@ -3056,6 +3763,7 @@ export async function getApprovedByMeHandler(req: AuthRequest, res: Response) {
       ),
     ] as string[];
     const itManagerNames = new Map<string, string>();
+    const itManagerPositions = new Map<string, string>();
     if (itManagerSignedByIds.length > 0) {
       const userRows3 = await getUserNamesByIds(itManagerSignedByIds);
       for (const u of userRows3) {
@@ -3063,6 +3771,43 @@ export async function getApprovedByMeHandler(req: AuthRequest, res: Response) {
           u.userID,
           `${u.first_name || ''} ${u.last_name || ''}`.trim() || 'Unknown'
         );
+        if (u.position) itManagerPositions.set(u.userID, String(u.position));
+      }
+    }
+
+    const subApprover1SignedByIds = [
+      ...new Set(
+        formRows.map((f: any) => f.sub_approver_1_signed_by).filter(Boolean)
+      ),
+    ] as string[];
+    const subApprover1Names = new Map<string, string>();
+    const subApprover1Positions = new Map<string, string>();
+    if (subApprover1SignedByIds.length > 0) {
+      const userRows4 = await getUserNamesByIds(subApprover1SignedByIds);
+      for (const u of userRows4) {
+        subApprover1Names.set(
+          u.userID,
+          `${u.first_name || ''} ${u.last_name || ''}`.trim() || 'Unknown'
+        );
+        if (u.position) subApprover1Positions.set(u.userID, String(u.position));
+      }
+    }
+
+    const subApprover2SignedByIds = [
+      ...new Set(
+        formRows.map((f: any) => f.sub_approver_2_signed_by).filter(Boolean)
+      ),
+    ] as string[];
+    const subApprover2Names = new Map<string, string>();
+    const subApprover2Positions = new Map<string, string>();
+    if (subApprover2SignedByIds.length > 0) {
+      const userRows5 = await getUserNamesByIds(subApprover2SignedByIds);
+      for (const u of userRows5) {
+        subApprover2Names.set(
+          u.userID,
+          `${u.first_name || ''} ${u.last_name || ''}`.trim() || 'Unknown'
+        );
+        if (u.position) subApprover2Positions.set(u.userID, String(u.position));
       }
     }
 
@@ -3086,10 +3831,22 @@ export async function getApprovedByMeHandler(req: AuthRequest, res: Response) {
       dept_head_digital_signature?: string | null;
       dept_head_signed_by?: string | null;
       dept_head_user_name?: string | null;
+      dept_head_position?: string | null;
       it_manager_signed_at?: string | null;
       it_manager_digital_signature?: string | null;
       it_manager_signed_by?: string | null;
       it_manager_user_name?: string | null;
+      it_manager_position?: string | null;
+      sub_approver_1_signed_at?: string | null;
+      sub_approver_1_digital_signature?: string | null;
+      sub_approver_1_signed_by?: string | null;
+      sub_approver_1_user_name?: string | null;
+      sub_approver_1_position?: string | null;
+      sub_approver_2_signed_at?: string | null;
+      sub_approver_2_digital_signature?: string | null;
+      sub_approver_2_signed_by?: string | null;
+      sub_approver_2_user_name?: string | null;
+      sub_approver_2_position?: string | null;
       form_department?: { id: string; name: string } | null;
       returns: (typeof returnsWithDetails)[0][];
     }[] = [];
@@ -3106,9 +3863,12 @@ export async function getApprovedByMeHandler(req: AuthRequest, res: Response) {
       const processorFields = await resolveReturnProcessorFieldsForBatch(
         {
           formID: form.formID,
+          user_id: form.user_id,
           created_by: form.created_by,
           process_signed_at: form.process_signed_at,
           process_digital_signature: form.process_digital_signature,
+          process_signed_by: (form as { process_signed_by?: string | null })
+            .process_signed_by,
         },
         { processorNames }
       );
@@ -3133,7 +3893,12 @@ export async function getApprovedByMeHandler(req: AuthRequest, res: Response) {
         ),
         dept_head_digital_signature: form.dept_head_digital_signature ?? null,
         dept_head_signed_by: form.dept_head_signed_by ?? null,
-        dept_head_user_name: approverName,
+        dept_head_user_name: form.dept_head_signed_by
+          ? (deptHeadNames.get(form.dept_head_signed_by) ?? null)
+          : null,
+        dept_head_position: form.dept_head_signed_by
+          ? (deptHeadPositions.get(form.dept_head_signed_by) ?? null)
+          : null,
         it_manager_signed_at: formatItManagerSignedAtForApi(
           form.it_manager_signed_at
         ),
@@ -3141,6 +3906,33 @@ export async function getApprovedByMeHandler(req: AuthRequest, res: Response) {
         it_manager_signed_by: form.it_manager_signed_by ?? null,
         it_manager_user_name: form.it_manager_signed_by
           ? (itManagerNames.get(form.it_manager_signed_by) ?? null)
+          : null,
+        it_manager_position: form.it_manager_signed_by
+          ? (itManagerPositions.get(form.it_manager_signed_by) ?? null)
+          : null,
+        sub_approver_1_signed_at: formatItManagerSignedAtForApi(
+          form.sub_approver_1_signed_at
+        ),
+        sub_approver_1_digital_signature:
+          form.sub_approver_1_digital_signature ?? null,
+        sub_approver_1_signed_by: form.sub_approver_1_signed_by ?? null,
+        sub_approver_1_user_name: form.sub_approver_1_signed_by
+          ? (subApprover1Names.get(form.sub_approver_1_signed_by) ?? null)
+          : null,
+        sub_approver_1_position: form.sub_approver_1_signed_by
+          ? (subApprover1Positions.get(form.sub_approver_1_signed_by) ?? null)
+          : null,
+        sub_approver_2_signed_at: formatItManagerSignedAtForApi(
+          form.sub_approver_2_signed_at
+        ),
+        sub_approver_2_digital_signature:
+          form.sub_approver_2_digital_signature ?? null,
+        sub_approver_2_signed_by: form.sub_approver_2_signed_by ?? null,
+        sub_approver_2_user_name: form.sub_approver_2_signed_by
+          ? (subApprover2Names.get(form.sub_approver_2_signed_by) ?? null)
+          : null,
+        sub_approver_2_position: form.sub_approver_2_signed_by
+          ? (subApprover2Positions.get(form.sub_approver_2_signed_by) ?? null)
           : null,
         form_department:
           form.department_id && form.form_department_name
@@ -3170,15 +3962,16 @@ export async function getPendingStaffHandler(req: AuthRequest, res: Response) {
       `SELECT arf.formID, arf.form_number, arf.user_id, arf.department_id, arf.location_id, arf.location_room_id, arf.created_by, arf.created_at, arf.updated_at, arf.deleted_at,
         arf.signed_at, arf.signed_by, arf.signed_digital_signature,
         DATE_FORMAT(arf.process_signed_at, '%Y-%m-%d %H:%i:%s') AS process_signed_at,
-        arf.process_digital_signature, arf.return_type, arf.received_by,
+        arf.process_digital_signature, arf.process_signed_by, arf.return_type, arf.received_by,
         DATE_FORMAT(arf.dept_head_signed_at, '%Y-%m-%d %H:%i:%s') AS dept_head_signed_at,
+        DATE_FORMAT(arf.sub_approver_1_signed_at, '%Y-%m-%d %H:%i:%s') AS sub_approver_1_signed_at,
         arf.dept_head_digital_signature, arf.dept_head_signed_by,
         d.company_id AS form_company_id, d.name AS form_department_name
        FROM asset_return_forms arf
        LEFT JOIN asset_mngmnt_departments d ON arf.department_id = d.departmentID
        WHERE arf.deleted_at IS NULL
          AND arf.signed_at IS NOT NULL
-         AND arf.dept_head_signed_at IS NOT NULL
+         AND (arf.dept_head_signed_at IS NOT NULL OR arf.sub_approver_1_signed_at IS NOT NULL)
          AND arf.process_signed_at IS NULL
          AND (arf.processor_declined_at IS NULL)`
     )) as any[];
@@ -3215,20 +4008,6 @@ export async function getPendingStaffHandler(req: AuthRequest, res: Response) {
       }
     }
 
-    const createdByIds = [
-      ...new Set(pendingForms.map((f: any) => f.created_by).filter(Boolean)),
-    ] as string[];
-    const processorNames = new Map<string, string>();
-    if (createdByIds.length > 0) {
-      const userRows2 = await getUserNamesByIds(createdByIds);
-      for (const u of userRows2) {
-        processorNames.set(
-          u.userID,
-          `${u.first_name || ''} ${u.last_name || ''}`.trim() || 'Unknown'
-        );
-      }
-    }
-
     const sortOrder = (a: any, b: any) => {
       const oa = getDepartmentSortOrder(a.form_department_name);
       const ob = getDepartmentSortOrder(b.form_department_name);
@@ -3255,6 +4034,7 @@ export async function getPendingStaffHandler(req: AuthRequest, res: Response) {
       return_type?: string | null;
       received_by?: string | null;
       dept_head_signed_at?: string | null;
+      sub_approver_1_signed_at?: string | null;
       dept_head_digital_signature?: string | null;
       dept_head_signed_by?: string | null;
       returns: (typeof returnsWithDetails)[0][];
@@ -3268,7 +4048,7 @@ export async function getPendingStaffHandler(req: AuthRequest, res: Response) {
         form_number: form.form_number,
         created_at: form.created_at,
         user_id: form.user_id,
-        processed_by: processorNames.get(form.created_by ?? '') ?? 'Unknown',
+        processed_by: '',
         signed_at: form.signed_at ?? null,
         signed_by: form.signed_by ?? null,
         signed_digital_signature: form.signed_digital_signature ?? null,
@@ -3281,6 +4061,9 @@ export async function getPendingStaffHandler(req: AuthRequest, res: Response) {
         received_by: form.received_by ?? null,
         dept_head_signed_at: formatDeptHeadSignedAtForApi(
           form.dept_head_signed_at
+        ),
+        sub_approver_1_signed_at: formatDeptHeadSignedAtForApi(
+          form.sub_approver_1_signed_at
         ),
         dept_head_digital_signature: form.dept_head_digital_signature ?? null,
         dept_head_signed_by: form.dept_head_signed_by ?? null,
@@ -3297,6 +4080,163 @@ export async function getPendingStaffHandler(req: AuthRequest, res: Response) {
   }
 }
 
+/** GET return forms processed by the current user. Mirrors getPendingStaffHandler but filters forms where process_signed_at is set and process_signed_by matches the current user. For admins (global admin, admin role), shows all processed forms in their company scope. Supports optional scope filter (it | admin). */
+export async function getReturnProcessedByMeHandler(
+  req: AuthRequest,
+  res: Response
+) {
+  try {
+    const userId = req.user!.userID;
+    const scope = (req.query.scope as 'it' | 'admin' | undefined)?.toLowerCase();
+    const { companyId, departmentIds, isSuperAdmin } = await getAssetScope(pool, userId);
+    if (!companyId) {
+      return res.json({ assetReturnForms: [] });
+    }
+
+    const isAdminScope = isSuperAdmin || departmentIds === null;
+
+    // For admins (global admin, admin), apply scope filter to department IDs
+    let effectiveDeptIds = departmentIds;
+    if ((isSuperAdmin || departmentIds === null) && scope) {
+      const targetDeptPattern = scope === 'it' ? '%IT%' : '%Admin%';
+      const patterns = [
+        targetDeptPattern,
+        targetDeptPattern === '%IT%'
+          ? '%Information Technology%'
+          : '%Administration%',
+      ];
+      let sql = `SELECT departmentID 
+         FROM asset_mngmnt_departments 
+         WHERE (name LIKE ? OR name LIKE ?) AND deleted_at IS NULL AND company_id = ?`;
+      const params = [...patterns, companyId];
+      const [deptRows] = (await pool.execute(sql, params)) as any[];
+      effectiveDeptIds = deptRows.map((row: any) => row.departmentID);
+    }
+
+    const [formRows] = (await pool.execute(
+      `SELECT arf.formID, arf.form_number, arf.user_id, arf.department_id, arf.location_id, arf.location_room_id, arf.created_by, arf.created_at, arf.updated_at, arf.deleted_at,
+        arf.signed_at, arf.signed_by, arf.signed_digital_signature,
+        DATE_FORMAT(arf.process_signed_at, '%Y-%m-%d %H:%i:%s') AS process_signed_at,
+        arf.process_digital_signature, arf.process_signed_by, arf.return_type, arf.received_by,
+        DATE_FORMAT(arf.dept_head_signed_at, '%Y-%m-%d %H:%i:%s') AS dept_head_signed_at,
+        arf.dept_head_digital_signature, arf.dept_head_signed_by,
+        d.company_id AS form_company_id, d.name AS form_department_name
+       FROM asset_return_forms arf
+       LEFT JOIN asset_mngmnt_departments d ON arf.department_id = d.departmentID
+       WHERE arf.deleted_at IS NULL
+         AND arf.process_signed_at IS NOT NULL
+         AND d.company_id = ?
+         ${!isAdminScope ? 'AND arf.process_signed_by = ?' : ''}
+       ORDER BY arf.process_signed_at DESC`,
+      isAdminScope ? [companyId] : [companyId, userId]
+    )) as any[];
+
+    // Apply department scope filter (effectiveDeptIds includes scope filter for admins)
+    const filteredRows = effectiveDeptIds && effectiveDeptIds.length > 0
+      ? (formRows as any[]).filter((r: any) => r.department_id && effectiveDeptIds.includes(String(r.department_id)))
+      : formRows;
+
+    const formIds = (filteredRows as any[]).map((r: any) => r.formID);
+    if (formIds.length === 0) {
+      return res.json({ assetReturnForms: [] });
+    }
+
+    const assetReturns = await AssetReturnModel.findAll();
+    const returnsWithDetails = await Promise.all(
+      assetReturns.map((r: AssetReturn) => enrichReturnWithDetails(r))
+    );
+    const returnsByFormId = new Map<string, (typeof returnsWithDetails)[0][]>();
+    for (const r of returnsWithDetails as (typeof returnsWithDetails)[0][]) {
+      const fid = (r as AssetReturn & { form_id?: string | null }).form_id;
+      if (fid && formIds.includes(fid)) {
+        if (!returnsByFormId.has(fid)) returnsByFormId.set(fid, []);
+        returnsByFormId.get(fid)!.push(r);
+      }
+    }
+
+    // For admin scope, we need the actual processor name per form
+    const processorNamesCache = new Map<string, string>();
+
+    const assetReturnForms: {
+      formID: string;
+      form_number: string | null;
+      created_at: string;
+      user_id: string;
+      processed_by: string;
+      signed_at?: string | null;
+      signed_by?: string | null;
+      signed_digital_signature?: string | null;
+      process_signed_at?: string | null;
+      process_digital_signature?: string | null;
+      processor_pending_signed_at?: string | null;
+      processor_pending_signature?: string | null;
+      return_type?: string | null;
+      received_by?: string | null;
+      dept_head_signed_at?: string | null;
+      dept_head_digital_signature?: string | null;
+      dept_head_signed_by?: string | null;
+      returns: (typeof returnsWithDetails)[0][];
+    }[] = [];
+
+    for (const form of filteredRows as any[]) {
+      const returns = returnsByFormId.get(form.formID) ?? [];
+      if (returns.length === 0) continue;
+
+      let processedByName: string;
+      if (isAdminScope) {
+        // Get the actual processor name for this form
+        if (!processorNamesCache.has(form.process_signed_by)) {
+          const processorNames = await getUserNamesById(form.process_signed_by);
+          processedByName = processorNames
+            ? `${processorNames.first_name || ''} ${processorNames.last_name || ''}`
+                .trim() || 'Unknown'
+            : 'Unknown';
+          processorNamesCache.set(form.process_signed_by, processedByName);
+        } else {
+          processedByName = processorNamesCache.get(form.process_signed_by)!;
+        }
+      } else {
+        // Regular user: they are the processor
+        const myNames = await getUserNamesById(userId);
+        processedByName = myNames
+          ? `${myNames.first_name || ''} ${myNames.last_name || ''}`.trim() || 'Unknown'
+          : 'Unknown';
+      }
+
+      assetReturnForms.push({
+        formID: form.formID,
+        form_number: form.form_number,
+        created_at: form.created_at,
+        user_id: form.user_id,
+        processed_by: processedByName,
+        signed_at: form.signed_at ?? null,
+        signed_by: form.signed_by ?? null,
+        signed_digital_signature: form.signed_digital_signature ?? null,
+        process_signed_at: formatProcessSignedAtForApi(form.process_signed_at),
+        process_digital_signature: form.process_digital_signature ?? null,
+        return_type:
+          form.return_type ??
+          (form as { RETURN_TYPE?: string | null }).RETURN_TYPE ??
+          null,
+        received_by: form.received_by ?? null,
+        dept_head_signed_at: formatDeptHeadSignedAtForApi(
+          form.dept_head_signed_at
+        ),
+        dept_head_digital_signature: form.dept_head_digital_signature ?? null,
+        dept_head_signed_by: form.dept_head_signed_by ?? null,
+        returns,
+      });
+    }
+
+    return res.json({ assetReturnForms });
+  } catch (error: any) {
+    logger.error('Get return processed by me failed:', error);
+    return res
+      .status(500)
+      .json({ error: 'Failed to fetch processed return forms' });
+  }
+}
+
 /** GET receive-pending approvals: forms where only IT Manager / IT Department Head signature is missing. Requires manager_approver_2. Sorted by department (IT, admin, others) then created_at DESC. */
 export async function getReceivePendingApprovalsHandler(
   req: AuthRequest,
@@ -3306,11 +4246,12 @@ export async function getReceivePendingApprovalsHandler(
     const userId = req.user!.userID;
 
     const managerApprover2 = await isUserManagerApprover2(userId);
-    if (!managerApprover2) {
+    const subApprover2 = await isUserSubApprover2(userId);
+    const { companyId, departmentIds, isSuperAdmin, isAdmin } = await getAssetScope(pool, userId);
+    if (!isSuperAdmin && !isAdmin && !managerApprover2 && !subApprover2) {
       return res.json({ assetReturnForms: [] });
     }
 
-    const { companyId, departmentIds } = await getAssetScope(pool, userId);
     if (!companyId) {
       return res.json({ assetReturnForms: [] });
     }
@@ -3319,11 +4260,15 @@ export async function getReceivePendingApprovalsHandler(
       `SELECT arf.formID, arf.form_number, arf.user_id, arf.department_id, arf.location_id, arf.location_room_id, arf.created_by, arf.created_at, arf.updated_at, arf.deleted_at,
         arf.signed_at, arf.signed_by, arf.signed_digital_signature,
         DATE_FORMAT(arf.process_signed_at, '%Y-%m-%d %H:%i:%s') AS process_signed_at,
-        arf.process_digital_signature, arf.return_type, arf.received_by,
+        arf.process_digital_signature, arf.process_signed_by, arf.return_type, arf.received_by,
         DATE_FORMAT(arf.dept_head_signed_at, '%Y-%m-%d %H:%i:%s') AS dept_head_signed_at,
         arf.dept_head_digital_signature, arf.dept_head_signed_by,
         DATE_FORMAT(arf.it_manager_signed_at, '%Y-%m-%d %H:%i:%s') AS it_manager_signed_at,
         arf.it_manager_digital_signature, arf.it_manager_signed_by,
+        DATE_FORMAT(arf.sub_approver_1_signed_at, '%Y-%m-%d %H:%i:%s') AS sub_approver_1_signed_at,
+        arf.sub_approver_1_digital_signature, arf.sub_approver_1_signed_by,
+        DATE_FORMAT(arf.sub_approver_2_signed_at, '%Y-%m-%d %H:%i:%s') AS sub_approver_2_signed_at,
+        arf.sub_approver_2_digital_signature, arf.sub_approver_2_signed_by,
         arf.owner_absent,
         d.company_id AS form_company_id, d.name AS form_department_name
        FROM asset_return_forms arf
@@ -3332,6 +4277,7 @@ export async function getReceivePendingApprovalsHandler(
          AND (arf.signed_at IS NOT NULL OR arf.owner_absent = 1)
          AND arf.dept_head_signed_at IS NOT NULL
          AND arf.it_manager_signed_at IS NULL
+         AND arf.sub_approver_2_signed_at IS NULL
          AND (
            arf.process_signed_at IS NOT NULL
            OR EXISTS (
@@ -3375,12 +4321,15 @@ export async function getReceivePendingApprovalsHandler(
       }
     }
 
-    const createdByIds = [
-      ...new Set(pendingForms.map((f: any) => f.created_by).filter(Boolean)),
-    ] as string[];
+    const processorNameUserIds = [
+      ...new Set([
+        ...pendingForms.map((f: any) => f.created_by),
+        ...pendingForms.map((f: any) => f.process_signed_by),
+      ]),
+    ].filter(Boolean) as string[];
     const processorNames = new Map<string, string>();
-    if (createdByIds.length > 0) {
-      const userRows2 = await getUserNamesByIds(createdByIds);
+    if (processorNameUserIds.length > 0) {
+      const userRows2 = await getUserNamesByIds(processorNameUserIds);
       for (const u of userRows2) {
         processorNames.set(
           u.userID,
@@ -3419,10 +4368,21 @@ export async function getReceivePendingApprovalsHandler(
       dept_head_digital_signature?: string | null;
       dept_head_signed_by?: string | null;
       dept_head_user_name?: string | null;
+      dept_head_position?: string | null;
       it_manager_signed_at?: string | null;
       it_manager_digital_signature?: string | null;
       it_manager_signed_by?: string | null;
       it_manager_user_name?: string | null;
+      it_manager_position?: string | null;
+      sub_approver_1_signed_at?: string | null;
+      sub_approver_1_digital_signature?: string | null;
+      sub_approver_1_signed_by?: string | null;
+      sub_approver_1_user_name?: string | null;
+      sub_approver_1_position?: string | null;
+      sub_approver_2_signed_at?: string | null;
+      sub_approver_2_digital_signature?: string | null;
+      sub_approver_2_signed_by?: string | null;
+      sub_approver_2_user_name?: string | null;
       form_department?: { id: string; name: string } | null;
       returns: (typeof returnsWithDetails)[0][];
     }[] = [];
@@ -3433,6 +4393,7 @@ export async function getReceivePendingApprovalsHandler(
       ),
     ] as string[];
     const deptHeadNames = new Map<string, string>();
+    const deptHeadPositions = new Map<string, string>();
     if (deptHeadSignedByIds.length > 0) {
       const userRows3 = await getUserNamesByIds(deptHeadSignedByIds);
       for (const u of userRows3) {
@@ -3440,6 +4401,25 @@ export async function getReceivePendingApprovalsHandler(
           u.userID,
           `${u.first_name || ''} ${u.last_name || ''}`.trim() || 'Unknown'
         );
+        if (u.position) deptHeadPositions.set(u.userID, String(u.position));
+      }
+    }
+
+    const subApprover1SignedByIds = [
+      ...new Set(
+        pendingForms.map((f: any) => f.sub_approver_1_signed_by).filter(Boolean)
+      ),
+    ] as string[];
+    const subApprover1Names = new Map<string, string>();
+    const subApprover1Positions = new Map<string, string>();
+    if (subApprover1SignedByIds.length > 0) {
+      const userRows4 = await getUserNamesByIds(subApprover1SignedByIds);
+      for (const u of userRows4) {
+        subApprover1Names.set(
+          u.userID,
+          `${u.first_name || ''} ${u.last_name || ''}`.trim() || 'Unknown'
+        );
+        if (u.position) subApprover1Positions.set(u.userID, String(u.position));
       }
     }
 
@@ -3447,12 +4427,16 @@ export async function getReceivePendingApprovalsHandler(
       const returns = returnsByFormId.get(form.formID) ?? [];
       if (returns.length === 0) continue;
       const deptHeadSignedBy = form.dept_head_signed_by ?? null;
+      const subApprover1SignedBy = form.sub_approver_1_signed_by ?? null;
       const processorFields = await resolveReturnProcessorFieldsForBatch(
         {
           formID: form.formID,
+          user_id: form.user_id,
           created_by: form.created_by,
           process_signed_at: form.process_signed_at,
           process_digital_signature: form.process_digital_signature,
+          process_signed_by: (form as { process_signed_by?: string | null })
+            .process_signed_by,
         },
         { processorNames }
       );
@@ -3480,10 +4464,29 @@ export async function getReceivePendingApprovalsHandler(
         dept_head_user_name: deptHeadSignedBy
           ? (deptHeadNames.get(deptHeadSignedBy) ?? null)
           : null,
+        dept_head_position: deptHeadSignedBy
+          ? (deptHeadPositions.get(deptHeadSignedBy) ?? null)
+          : null,
         it_manager_signed_at: null,
         it_manager_digital_signature: null,
         it_manager_signed_by: null,
         it_manager_user_name: null,
+        sub_approver_1_signed_at: formatItManagerSignedAtForApi(
+          form.sub_approver_1_signed_at
+        ),
+        sub_approver_1_digital_signature:
+          form.sub_approver_1_digital_signature ?? null,
+        sub_approver_1_signed_by: subApprover1SignedBy,
+        sub_approver_1_user_name: subApprover1SignedBy
+          ? (subApprover1Names.get(subApprover1SignedBy) ?? null)
+          : null,
+        sub_approver_1_position: subApprover1SignedBy
+          ? (subApprover1Positions.get(subApprover1SignedBy) ?? null)
+          : null,
+        sub_approver_2_signed_at: null,
+        sub_approver_2_digital_signature: null,
+        sub_approver_2_signed_by: null,
+        sub_approver_2_user_name: null,
         form_department:
           form.department_id && form.form_department_name
             ? { id: form.department_id, name: form.form_department_name }
@@ -3516,7 +4519,11 @@ export async function receiveReturnFormHandler(
     }
 
     const managerApprover2 = await isUserManagerApprover2(userId);
-    if (!managerApprover2) {
+    const subApprover2 = await isUserSubApprover2(userId);
+    const { isSuperAdmin: scopeIsSuperAdmin, isAdmin: scopeIsAdmin } =
+      await getAssetScope(pool, userId);
+    const isAdminRole = scopeIsSuperAdmin || scopeIsAdmin;
+    if (!isAdminRole && !managerApprover2 && !subApprover2) {
       return res
         .status(403)
         .json({ error: 'You do not have permission to receive this form' });
@@ -3534,7 +4541,7 @@ export async function receiveReturnFormHandler(
         .status(400)
         .json({ error: 'Return form must be signed by the returner first' });
     }
-    if (!form.dept_head_signed_at) {
+    if (!form.dept_head_signed_at && !form.sub_approver_1_signed_at) {
       return res.status(400).json({
         error: 'Return form must be approved by Department Head first',
       });
@@ -3545,7 +4552,7 @@ export async function receiveReturnFormHandler(
           'Return form must be signed by IT Staff / IT Inventory Manager first',
       });
     }
-    if (form.it_manager_signed_at) {
+    if (form.it_manager_signed_at || form.sub_approver_2_signed_at) {
       return res.status(400).json({
         error:
           'This return form is already received (IT Manager / IT Department Head signature present)',
@@ -3556,23 +4563,42 @@ export async function receiveReturnFormHandler(
       (typeof digitalSignature === 'string' && digitalSignature.trim()) ||
       (await fetchUserDigitalSignature(userId));
 
-    await executeRawWrite(
-      `UPDATE asset_return_forms
-       SET it_manager_signed_at = NOW(), it_manager_digital_signature = ?, it_manager_signed_by = ?, updated_at = NOW()
-       WHERE formID = ?`,
-      [itManagerDigitalSignature, userId, formId]
-    );
+    const isSubApprover2Receiving = subApprover2 && !managerApprover2;
+    if (isSubApprover2Receiving) {
+      await executeRawWrite(
+        `UPDATE asset_return_forms
+         SET sub_approver_2_signed_at = NOW(), sub_approver_2_digital_signature = ?, sub_approver_2_signed_by = ?, updated_at = NOW()
+         WHERE formID = ?`,
+        [itManagerDigitalSignature, userId, formId]
+      );
+    } else {
+      await executeRawWrite(
+        `UPDATE asset_return_forms
+         SET it_manager_signed_at = NOW(), it_manager_digital_signature = ?, it_manager_signed_by = ?, updated_at = NOW()
+         WHERE formID = ?`,
+        [itManagerDigitalSignature, userId, formId]
+      );
+    }
 
     await createAuditLog({
       userId,
-      action: 'Received Asset Return Form (IT Manager / IT Department Head)',
+      action: isSubApprover2Receiving
+        ? 'Received Asset Return Form (Sub Approver 2)'
+        : 'Received Asset Return Form (IT Manager / IT Department Head)',
       resourceType: 'asset_return_form',
       resourceId: formId,
-      details: `User received asset return form ${form.form_number} as IT Manager / IT Department Head`,
-      newValues: {
-        it_manager_signed_at: new Date().toISOString(),
-        it_manager_signed_by: userId,
-      },
+      details: isSubApprover2Receiving
+        ? `User received asset return form ${form.form_number} as Sub Approver 2 (stand-in for IT/Admin dept head)`
+        : `User received asset return form ${form.form_number} as IT Manager / IT Department Head`,
+      newValues: isSubApprover2Receiving
+        ? {
+            sub_approver_2_signed_at: new Date().toISOString(),
+            sub_approver_2_signed_by: userId,
+          }
+        : {
+            it_manager_signed_at: new Date().toISOString(),
+            it_manager_signed_by: userId,
+          },
     });
 
     // Auto-receive linked offboarding checklists as IT Manager
@@ -3581,7 +4607,7 @@ export async function receiveReturnFormHandler(
       if (assignmentIds.length > 0) {
         const checklists = await checklistRepo.getChecklistsByAssignmentIds(assignmentIds);
         const unreceivedChecklists = checklists.filter(
-          (c: any) => c.dept_head_signed_at && !c.it_manager_signed_at
+          (c: any) => c.dept_head_signed_at && !c.it_manager_signed_at && !c.sub_approver_2_signed_at
         );
         if (unreceivedChecklists.length > 0) {
           const formCompanyId = (form as any).form_company_id || (form as any).company_id || null;
@@ -3591,6 +4617,7 @@ export async function receiveReturnFormHandler(
               approverUserId: userId,
               companyId: formCompanyId,
               digitalSignature: itManagerDigitalSignature,
+              isSubApprover: isSubApprover2Receiving,
             });
           }
         }
@@ -3742,11 +4769,12 @@ export async function processReturnFormHandler(
 
     await executeRawWrite(
       `UPDATE asset_return_forms
-       SET process_signed_at = ?, process_digital_signature = ?, received_by = ?, return_type = ?, process_user_position = ?, updated_at = NOW()
+       SET process_signed_at = ?, process_digital_signature = ?, process_signed_by = ?, received_by = ?, return_type = ?, process_user_position = ?, updated_at = NOW()
        WHERE formID = ?`,
       [
         processSignedAtForDb,
         processDigitalSignature,
+        userId,
         receivedByForDb,
         returnTypeForDb,
         processorPosition,
@@ -4250,34 +5278,15 @@ export async function processReturnFormHandler(
     const returnerHasRemainingAssets =
       Number(remainingAssignmentsRows?.[0]?.cnt ?? 0) > 0;
 
-    // Get processor's department for Manager Approver 2 notification
-    const processorDepartmentId = await getUserDepartmentId(req.user!.userID);
-
-    // Send notification to Manager Approver 2 in processor's department
-    if (processorDepartmentId) {
-      const managerApprover2UserIds = await getManagerApprover2UserIdsInDepartment(processorDepartmentId);
-      const processorNameRow = await getUserNamesById(req.user!.userID);
-      const processorName = processorNameRow
-        ? `${processorNameRow.first_name} ${processorNameRow.last_name}`
-        : req.user!.userID;
-
-      for (const approverUserId of managerApprover2UserIds) {
-        await createNotificationForApi({
-          user_id: approverUserId,
-          title: 'Return request processed',
-          message: `A return request is processed by ${processorName}: please sign for documentation and approval`,
-          type: 'system',
-          data: {
-            form_id: formId,
-            form_number: form.form_number,
-            processor_id: req.user!.userID,
-            processor_name: processorName,
-            route: '/approvals',
-            actionTarget: 'approvals',
-          },
-        });
-      }
-    }
+    // Notify Manager Approver 2 users in the asset scope department that the return was processed, checked and verified
+    await notifyManagerApprover2OfProcessedReturn({
+      formId,
+      formNumber: form.form_number,
+      companyId: form.form_company_id ?? null,
+      departmentId: form.department_id ?? null,
+      returnRequestorUserId: form.user_id,
+      processorUserId: req.user!.userID,
+    });
 
     // Send notification to return requestor
     await createNotificationForApi({
@@ -4290,7 +5299,7 @@ export async function processReturnFormHandler(
       data: {
         form_id: formId,
         form_number: form.form_number,
-        route: '/my-return-requests',
+        route: '/profile?tab=documents&docTab=returns',
         actionTarget: 'my_return_requests',
       },
     });
@@ -4335,7 +5344,7 @@ export async function processReturnFormHandler(
   }
 }
 
-/** POST approve (Dept Head signature) on a return form. Requires Approvals create+edit OR role manager_approver_1. */
+/** POST approve (Dept Head signature) on a return form. Requires Approvals create+edit OR designated approver. */
 export async function approveReturnFormHandler(
   req: AuthRequest,
   res: Response
@@ -4355,11 +5364,19 @@ export async function approveReturnFormHandler(
     }
     const form = formRow;
 
+    // Processor-initiated (hold) flow: the processor pre-signed the form and has
+    // custody (received_by), so after dept-head approval the return is executed
+    // and considered processed. Notification behaviour differs from owner-initiated returns.
+    const isHoldFlow = Boolean(form.process_signed_at && form.received_by);
+
     // Get company_id from form or user if not available
     let companyId = form.company_id;
     if (!companyId) {
       const formUser = await getUserById(form.user_id);
       companyId = formUser?.company_id || null;
+    }
+    if (!companyId) {
+      return res.status(400).json({ error: 'Company context required' });
     }
 
     const approveOwnerAbsent = Number((form as { owner_absent?: number }).owner_absent) === 1;
@@ -4368,9 +5385,9 @@ export async function approveReturnFormHandler(
         .status(400)
         .json({ error: 'Return form must be signed by the returner first' });
     }
-    if (form.dept_head_signed_at) {
+    if (form.dept_head_signed_at || form.sub_approver_1_signed_at) {
       return res.status(400).json({
-        error: 'This return form is already approved by Department Head',
+        error: 'This return form is already approved by the department head or sub approver',
       });
     }
 
@@ -4392,9 +5409,19 @@ export async function approveReturnFormHandler(
     );
     const canApproveByPermission = hasApprovalsCreate && hasApprovalsEdit;
 
-    const managerApprover1 = await isUserManagerApprover1(userId);
+    // Check if user is the designated approver or sub approver for the form's requester
+    const isApprover = form.user_id
+      ? await isDesignatedApprover(userId, form.user_id)
+      : false;
+    const isSubApprover = form.user_id
+      ? await isDesignatedSubApprover(userId, form.user_id)
+      : false;
 
-    if (!canApproveByPermission && !managerApprover1) {
+    const { isSuperAdmin: scopeIsSuperAdmin, isAdmin: scopeIsAdmin } =
+      await getAssetScope(pool, userId);
+    const isAdminRole = scopeIsSuperAdmin || scopeIsAdmin;
+
+    if (!canApproveByPermission && !isApprover && !isSubApprover && !isAdminRole) {
       return res
         .status(403)
         .json({ error: 'You do not have permission to approve this form' });
@@ -4404,28 +5431,47 @@ export async function approveReturnFormHandler(
       (typeof digitalSignature === 'string' && digitalSignature.trim()) ||
       (await fetchUserDigitalSignature(userId));
 
-    await executeRawWrite(
-      `UPDATE asset_return_forms
-       SET dept_head_signed_at = NOW(), dept_head_digital_signature = ?, dept_head_signed_by = ?, updated_at = NOW()
-       WHERE formID = ?`,
-      [deptHeadDigitalSignature, userId, formId]
-    );
+    const isSubApprover1Approver = isSubApprover && !isApprover;
+    if (isSubApprover1Approver) {
+      await executeRawWrite(
+        `UPDATE asset_return_forms
+         SET sub_approver_1_signed_at = NOW(), sub_approver_1_digital_signature = ?, sub_approver_1_signed_by = ?, updated_at = NOW()
+         WHERE formID = ?`,
+        [deptHeadDigitalSignature, userId, formId]
+      );
+    } else {
+      await executeRawWrite(
+        `UPDATE asset_return_forms
+         SET dept_head_signed_at = NOW(), dept_head_digital_signature = ?, dept_head_signed_by = ?, updated_at = NOW()
+         WHERE formID = ?`,
+        [deptHeadDigitalSignature, userId, formId]
+      );
+    }
 
     await createAuditLog({
       userId,
-      action: 'Approved Asset Return Form (Dept Head)',
+      action: isSubApprover1Approver
+        ? 'Approved Asset Return Form (Sub Approver 1)'
+        : 'Approved Asset Return Form (Dept Head)',
       resourceType: 'asset_return_form',
       resourceId: formId,
-      details: `User approved asset return form ${form.form_number} as Department Head`,
-      newValues: {
-        dept_head_signed_at: new Date().toISOString(),
-        dept_head_signed_by: userId,
-      },
+      details: isSubApprover1Approver
+        ? `User approved asset return form ${form.form_number} as Sub Approver 1 (stand-in for the requestor's department head)`
+        : `User approved asset return form ${form.form_number} as Department Head`,
+      newValues: isSubApprover1Approver
+        ? {
+            sub_approver_1_signed_at: new Date().toISOString(),
+            sub_approver_1_signed_by: userId,
+          }
+        : {
+            dept_head_signed_at: new Date().toISOString(),
+            dept_head_signed_by: userId,
+          },
     });
 
     let hadLinkedTransfer = false;
     const [linkedTfRows] = (await pool.execute(
-      `SELECT formID, dept_head_signed_at, process_signed_at, process_digital_signature, processor_pending_signature, processor_pending_signed_at, executed_at,
+      `SELECT formID, form_number, dept_head_signed_at, process_signed_at, process_digital_signature, processor_pending_signature, processor_pending_signed_at, executed_at,
               new_assigned_user_id, department_id, location_id, location_room_id, transfer_type, received_by
        FROM asset_transfer_forms WHERE return_form_id = ? AND deleted_at IS NULL LIMIT 1`,
       [formId]
@@ -4433,6 +5479,28 @@ export async function approveReturnFormHandler(
     const linkedTf = linkedTfRows?.[0];
     if (linkedTf) {
       hadLinkedTransfer = true;
+      // Auto-approve the linked transfer form so the transfer and return are approved together.
+      if (!linkedTf.dept_head_signed_at && !linkedTf.sub_approver_1_signed_at) {
+        try {
+          if (isSubApprover1Approver) {
+            await pool.execute(
+              `UPDATE asset_transfer_forms SET sub_approver_1_signed_at = NOW(), sub_approver_1_digital_signature = ?, sub_approver_1_signed_by = ?, updated_at = NOW() WHERE formID = ? AND dept_head_signed_at IS NULL AND sub_approver_1_signed_at IS NULL AND declined_at IS NULL`,
+              [deptHeadDigitalSignature || null, userId, linkedTf.formID]
+            );
+          } else {
+            await pool.execute(
+              `UPDATE asset_transfer_forms SET dept_head_signed_at = NOW(), dept_head_digital_signature = ?, dept_head_signed_by = ?, updated_at = NOW() WHERE formID = ? AND dept_head_signed_at IS NULL AND sub_approver_1_signed_at IS NULL AND declined_at IS NULL`,
+              [deptHeadDigitalSignature || null, userId, linkedTf.formID]
+            );
+          }
+          linkedTf.dept_head_signed_at = new Date();
+        } catch (autoApproveErr: any) {
+          logger.error(
+            'Failed to auto-approve linked transfer form on return approval:',
+            autoApproveErr
+          );
+        }
+      }
       if (linkedTf.dept_head_signed_at && !linkedTf.executed_at) {
         const processDigitalSig =
           (linkedTf.process_digital_signature != null &&
@@ -4524,100 +5592,197 @@ export async function approveReturnFormHandler(
       }
     }
 
-    // Send notification to requester
-    try {
-      const requesterRow = await getUserNamesById(form.user_id);
-      const requesterName = requesterRow ? `${requesterRow.first_name} ${requesterRow.last_name}` : 'A user';
-
-      const approverRow = await getUserNamesById(userId);
-      const approverName = approverRow ? `${approverRow.first_name} ${approverRow.last_name}` : 'A user';
-      
-      await createNotificationForApi({
-        user_id: form.user_id,
-        title: 'Asset Return Request Approved',
-        message: `Your asset return request has been approved by your department head ${approverName}`,
-        type: 'system',
-        data: {
-          form_id: formId,
-          form_number: form.form_number,
-          approver_id: userId,
-          approver_name: approverName,
-          route: '/my-return-requests',
-          actionTarget: 'return_request_approved',
-        },
-      });
-    } catch (notifError) {
-      logger.error('Failed to send approval notification to requester:', notifError);
+    // Notify Manager Approver 2 users in the asset scope department that the return
+    // was approved and is ready to be received (processor-initiated hold flow).
+    if (form.process_signed_at && form.received_by) {
+      try {
+        await notifyManagerApprover2OfProcessedReturn({
+          formId,
+          formNumber: form.form_number,
+          companyId: companyId || null,
+          departmentId: form.department_id ?? null,
+          returnRequestorUserId: form.user_id,
+          processorUserId: String(form.received_by).trim() || req.user!.userID,
+        });
+      } catch (notifError) {
+        logger.error(
+          'Failed to notify Manager Approver 2 after approving processed return:',
+          notifError
+        );
+      }
     }
 
-    // Send notification to IT/Admin asset role users based on asset scope
-    try {
-      const deptRow = await getDepartmentById(form.department_id);
-      const deptName = deptRow?.name || '';
-      const scopeType = classifyDepartmentScopeByName(deptName);
-      const isAdminScope = scopeType === 'Admin';
-      
-      // Get users with specific roles based on scope
-      // For IT scope: target users with 'IT Asset' role
-      // For Admin scope: target users with 'Admin Asset' role
-      const roleName = isAdminScope ? 'Admin Asset' : 'IT Asset';
-      
-      const [assetRoleUsers] = (await pool.execute(
-        `SELECT DISTINCT u.userID, u.first_name, u.last_name, r.name as role_name
-         FROM users u
-         JOIN asset_mngmnt_roles r ON u.role_id = r.roleID
-         WHERE r.name = ? 
-           AND r.deleted_at IS NULL
-           AND u.company_id = ?
-           AND u.is_active = 1`,
-        [roleName, companyId]
-      )) as any[];
-      
-      // If no users found with exact role name, try case-insensitive search
-      if (assetRoleUsers.length === 0) {
-        const [caseInsensitiveUsers] = (await pool.execute(
-          `SELECT DISTINCT u.userID, u.first_name, u.last_name, r.name as role_name
-           FROM users u
-           JOIN asset_mngmnt_roles r ON u.role_id = r.roleID
-           WHERE LOWER(r.name) = LOWER(?) 
-             AND r.deleted_at IS NULL
-             AND u.company_id = ?
-             AND u.is_active = 1`,
-          [roleName, companyId]
-        )) as any[];
+    // Processor-initiated hold flow: notify the processor who initiated the return
+    // that it is now approved and processed (they do not receive the generic
+    // "new return request received" broadcast below).
+    if (isHoldFlow && form.received_by && String(form.received_by).trim() !== form.user_id) {
+      try {
+        await createNotificationForApi({
+          user_id: String(form.received_by).trim(),
+          title: 'Asset return processed',
+          message: 'The asset return you initiated has been approved and is now processed.',
+          type: 'system',
+          data: {
+            form_id: formId,
+            form_number: form.form_number,
+            route: '/assets/return',
+            actionTarget: 'asset_return_requests',
+          },
+        });
+      } catch (notifError) {
+        logger.error('Failed to notify processor of processed hold return:', notifError);
+      }
+    }
+
+    // Send notification to requester. Skipped for owner-absent flows: the asset
+    // owner is no longer in office and should not receive return notifications.
+    if (!approveOwnerAbsent) {
+      try {
+        const requesterRow = await getUserNamesById(form.user_id);
+        const requesterName = requesterRow ? `${requesterRow.first_name} ${requesterRow.last_name}` : 'A user';
+
+        const approverRow = await getUserNamesById(userId);
+        const approverName = approverRow ? `${approverRow.first_name} ${approverRow.last_name}` : 'A user';
         
-        assetRoleUsers.push(...caseInsensitiveUsers);
+        await createNotificationForApi({
+          user_id: form.user_id,
+          title: 'Asset Return Request Approved',
+          message: isSubApprover1Approver
+            ? `Your asset return request has been approved by your department's sub approver ${approverName}`
+            : `Your asset return request has been approved by your department head ${approverName}`,
+          type: 'system',
+          data: {
+            form_id: formId,
+            form_number: form.form_number,
+            approver_id: userId,
+            approver_name: approverName,
+            route: '/profile?tab=documents&docTab=returns',
+            actionTarget: 'return_request_approved',
+          },
+        });
+      } catch (notifError) {
+        logger.error('Failed to send approval notification to requester:', notifError);
       }
-      
-      let notificationsSent = 0;
-      for (const assetUser of assetRoleUsers) {
-        if (assetUser.userID !== userId && assetUser.userID !== form.user_id) {
-          await createNotificationForApi({
-            user_id: assetUser.userID,
-            title: 'New Asset Return Request Received',
-            message: 'A new Asset return Request has been received',
-            type: 'system',
-            data: {
-              form_id: formId,
-              form_number: form.form_number,
-              requester_id: form.user_id,
-              route: '/assets/return-requests',
-              actionTarget: 'asset_return_requests',
-            },
-          });
-          notificationsSent++;
+    }
+
+    // A transfer request creates both a transfer and a return form. When the
+    // return form is approved, the linked transfer form is auto-approved too,
+    // so notify the requester that the transfer was approved as well.
+    if (hadLinkedTransfer && linkedTf && !approveOwnerAbsent) {
+      try {
+        const approverRow2 = await getUserNamesById(userId);
+        const approverName2 =
+          approverRow2
+            ? `${approverRow2.first_name} ${approverRow2.last_name}`
+            : 'A user';
+        await createNotificationForApi({
+          user_id: form.user_id,
+          title: 'Asset Transfer Request Approved',
+          message: `Your asset transfer request has been approved by your department head ${approverName2}`,
+          type: 'system',
+          data: {
+            form_id: linkedTf.formID,
+            form_number: linkedTf.form_number,
+            approver_id: userId,
+            approver_name: approverName2,
+            route: '/profile?tab=documents&docTab=transfers',
+            actionTarget: 'transfer_request_approved',
+          },
+        });
+      } catch (notifError) {
+        logger.error(
+          'Failed to send transfer approval notification to requester:',
+          notifError
+        );
+      }
+    }
+
+    // Processor-initiated hold flow: the returner is also notified that the return
+    // is now processed, since there is no separate processing step later on.
+    // Skipped for owner-absent flows (the owner is not in office).
+    if (isHoldFlow && !approveOwnerAbsent) {
+      try {
+        await createNotificationForApi({
+          user_id: form.user_id,
+          title: 'Asset return processed',
+          message: 'Your asset return has been processed.',
+          type: 'system',
+          data: {
+            form_id: formId,
+            form_number: form.form_number,
+            route: '/profile?tab=documents&docTab=returns',
+            actionTarget: 'my_return_requests',
+          },
+        });
+      } catch (notifError) {
+        logger.error('Failed to notify returner of processed hold return:', notifError);
+      }
+    }
+
+    // Send notification to IT/Admin asset role users based on asset scope.
+    // Skipped for processor-initiated (hold) returns — the initiating processor
+    // already has custody and is notified separately that the return is processed.
+    if (!isHoldFlow) {
+      try {
+        const assignmentIds = await getAssignmentIdsByReturnFormId(formId);
+        const deptRow = await getDepartmentById(form.department_id);
+        const assetRoleUsers = await getAssetRoleUsersForAssignmentsAndCompany(
+          companyId,
+          assignmentIds,
+          deptRow?.name || ''
+        );
+
+        let notificationsSent = 0;
+        for (const assetUser of assetRoleUsers) {
+          if (assetUser.userID !== userId && assetUser.userID !== form.user_id) {
+            await createNotificationForApi({
+              user_id: assetUser.userID,
+              title: 'New Asset Return Request Received',
+              message: 'A new Asset return Request has been received',
+              type: 'system',
+              data: {
+                form_id: formId,
+                form_number: form.form_number,
+                requester_id: form.user_id,
+                route: '/assets/return-requests',
+                actionTarget: 'asset_return_requests',
+              },
+            });
+            notificationsSent++;
+          }
         }
+
+        if (hadLinkedTransfer && linkedTf) {
+          for (const assetUser of assetRoleUsers) {
+            if (assetUser.userID !== userId && assetUser.userID !== form.user_id) {
+              await createNotificationForApi({
+                user_id: assetUser.userID,
+                title: 'New Asset Transfer Request Received',
+                message:
+                  'A new Asset Transfer Request has been received. Please process the return first, then process the transfer.',
+                type: 'system',
+                data: {
+                  form_id: linkedTf.formID,
+                  form_number: linkedTf.form_number,
+                  requester_id: form.user_id,
+                  route: '/assets/transfer-requests',
+                  actionTarget: 'asset_transfer_requests',
+                },
+              });
+              notificationsSent++;
+            }
+          }
+        }
+
+        logger.info('Return approval - notification summary', {
+          formId,
+          formNumber: form.form_number,
+          totalUsersFound: assetRoleUsers.length,
+          notificationsSent,
+        });
+      } catch (notifError) {
+        logger.error('Failed to send notification to asset role users:', notifError);
       }
-      
-      logger.info('Return approval - notification summary', {
-        formId,
-        formNumber: form.form_number,
-        roleName,
-        totalUsersFound: assetRoleUsers.length,
-        notificationsSent,
-      });
-    } catch (notifError) {
-      logger.error('Failed to send notification to asset role users:', notifError);
     }
 
     // Auto-approve linked offboarding checklists as dept head
@@ -4800,6 +5965,16 @@ export async function declineReturnFormHandler(
       });
     }
 
+    // Get company_id from form or user if not available
+    let companyId = form.company_id;
+    if (!companyId) {
+      const formUser = await getUserById(form.user_id);
+      companyId = formUser?.company_id || null;
+    }
+    if (!companyId) {
+      return res.status(400).json({ error: 'Company context required' });
+    }
+
     const [permRows] = (await pool.execute(
       'SELECT module_name, permission_type, granted FROM user_permissions WHERE user_id = ?',
       [userId]
@@ -4818,9 +5993,19 @@ export async function declineReturnFormHandler(
     );
     const canDeclineByPermission = hasApprovalsCreate && hasApprovalsEdit;
 
-    const managerApprover1 = await isUserManagerApprover1(userId);
+    // Check if user is the designated approver or sub approver for the form's requester
+    const isApprover = form.user_id
+      ? await isDesignatedApprover(userId, form.user_id)
+      : false;
+    const isSubApprover = form.user_id
+      ? await isDesignatedSubApprover(userId, form.user_id)
+      : false;
 
-    if (!canDeclineByPermission && !managerApprover1) {
+    const { isSuperAdmin: scopeIsSuperAdmin, isAdmin: scopeIsAdmin } =
+      await getAssetScope(pool, userId);
+    const isAdminRole = scopeIsSuperAdmin || scopeIsAdmin;
+
+    if (!canDeclineByPermission && !isApprover && !isSubApprover && !isAdminRole) {
       return res
         .status(403)
         .json({ error: 'You do not have permission to decline this form' });

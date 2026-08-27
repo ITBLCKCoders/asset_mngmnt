@@ -324,6 +324,38 @@ export async function copyMainCompanyAssetSettings(
         ]
       );
 
+      // Copy intangible asset types
+      await connection.execute(
+        `
+        INSERT INTO intangible_asset_types (name, prefix, company_id, created_by, updated_by)
+        SELECT name, prefix, ?, ?, ?
+        FROM intangible_asset_types
+        WHERE company_id = ? AND deleted_at IS NULL
+        ON DUPLICATE KEY UPDATE
+          name = VALUES(name),
+          prefix = VALUES(prefix),
+          updated_by = VALUES(updated_by),
+          updated_at = NOW()
+      `,
+        [currentCompany.id, userId, userId, mainCompany.id]
+      );
+
+      // Copy risk levels
+      await connection.execute(
+        `
+        INSERT INTO risk_levels (name, color, company_id, created_by, updated_by)
+        SELECT name, color, ?, ?, ?
+        FROM risk_levels
+        WHERE company_id = ? AND deleted_at IS NULL
+        ON DUPLICATE KEY UPDATE
+          name = VALUES(name),
+          color = VALUES(color),
+          updated_by = VALUES(updated_by),
+          updated_at = NOW()
+      `,
+        [currentCompany.id, userId, userId, mainCompany.id]
+      );
+
       // Copy asset ID format settings
       await connection.execute(
         `
@@ -1360,12 +1392,26 @@ export async function updateGlobalMFASettingsHandler(
   }
 
   try {
+    const previousValue = await SettingModel.getValue('mfa_enabled');
     const setting = await SettingModel.setValue(
       'mfa_enabled',
       mfaEnabled.toString(),
       'boolean',
       userId
     );
+
+    await createAuditLog({
+      userId,
+      action: 'Updated Global MFA Setting',
+      resourceType: 'setting',
+      resourceId: 'mfa_enabled',
+      resourceName: 'mfa_enabled',
+      details: `Global MFA ${mfaEnabled ? 'enabled' : 'disabled'}`,
+      oldValues: { mfa_enabled: previousValue ?? null },
+      newValues: { mfa_enabled: mfaEnabled },
+      ipAddress: req.ip,
+      userAgent: req.get('User-Agent'),
+    });
 
     return res.json({
       message: 'MFA settings updated successfully',
@@ -1394,6 +1440,7 @@ export async function getSecuritySettingsHandler(
       passwordExpirationDays: await SettingModel.getValue('password_expiration_days') ?? 90,
       maxLoginAttempts: await SettingModel.getValue('max_login_attempts') ?? 5,
       lockoutDurationMinutes: await SettingModel.getValue('lockout_duration_minutes') ?? 30,
+      failedAttemptResetMinutes: await SettingModel.getValue('failed_attempt_reset_minutes') ?? 15,
       sessionTimeoutMinutes: await SettingModel.getValue('session_timeout_minutes') ?? 60,
       auditLoggingEnabled: await SettingModel.getValue('audit_logging_enabled') ?? true,
       otpExpirySeconds: await SettingModel.getValue('otp_expiry_seconds') ?? 300,
@@ -1419,6 +1466,7 @@ export async function updateSecuritySettingsHandler(
     passwordExpirationDays,
     maxLoginAttempts,
     lockoutDurationMinutes,
+    failedAttemptResetMinutes,
     sessionTimeoutMinutes,
     auditLoggingEnabled,
     otpExpirySeconds,
@@ -1438,6 +1486,9 @@ export async function updateSecuritySettingsHandler(
   if (lockoutDurationMinutes && (typeof lockoutDurationMinutes !== 'number' || lockoutDurationMinutes < 1)) {
     return res.status(400).json({ error: 'lockoutDurationMinutes must be at least 1' });
   }
+  if (failedAttemptResetMinutes !== undefined && (typeof failedAttemptResetMinutes !== 'number' || failedAttemptResetMinutes < 0)) {
+    return res.status(400).json({ error: 'failedAttemptResetMinutes must be 0 or greater' });
+  }
   if (sessionTimeoutMinutes && (typeof sessionTimeoutMinutes !== 'number' || sessionTimeoutMinutes < 1)) {
     return res.status(400).json({ error: 'sessionTimeoutMinutes must be at least 1' });
   }
@@ -1446,40 +1497,45 @@ export async function updateSecuritySettingsHandler(
   }
 
   try {
-    // Update each setting if provided
-    if (passwordMinLength !== undefined) {
-      await SettingModel.setValue('password_min_length', passwordMinLength.toString(), 'number', userId);
+    const changedKeys: string[] = [];
+    const oldValues: Record<string, unknown> = {};
+    const newValues: Record<string, unknown> = {};
+    const settingKeys: Array<[keyof typeof req.body, string, 'string' | 'number' | 'boolean']> = [
+      ['passwordMinLength', 'password_min_length', 'number'],
+      ['passwordRequireUppercase', 'password_require_uppercase', 'boolean'],
+      ['passwordRequireLowercase', 'password_require_lowercase', 'boolean'],
+      ['passwordRequireNumbers', 'password_require_numbers', 'boolean'],
+      ['passwordRequireSpecial', 'password_require_special', 'boolean'],
+      ['passwordExpirationDays', 'password_expiration_days', 'number'],
+      ['maxLoginAttempts', 'max_login_attempts', 'number'],
+      ['lockoutDurationMinutes', 'lockout_duration_minutes', 'number'],
+      ['failedAttemptResetMinutes', 'failed_attempt_reset_minutes', 'number'],
+      ['sessionTimeoutMinutes', 'session_timeout_minutes', 'number'],
+      ['auditLoggingEnabled', 'audit_logging_enabled', 'boolean'],
+      ['otpExpirySeconds', 'otp_expiry_seconds', 'number'],
+    ];
+
+    for (const [bodyKey, settingKey, valueType] of settingKeys) {
+      const value = req.body[bodyKey];
+      if (value === undefined) continue;
+      changedKeys.push(settingKey);
+      oldValues[settingKey] = (await SettingModel.getValue(settingKey)) ?? null;
+      newValues[settingKey] = value;
+      await SettingModel.setValue(settingKey, value.toString(), valueType, userId);
     }
-    if (passwordRequireUppercase !== undefined) {
-      await SettingModel.setValue('password_require_uppercase', passwordRequireUppercase.toString(), 'boolean', userId);
-    }
-    if (passwordRequireLowercase !== undefined) {
-      await SettingModel.setValue('password_require_lowercase', passwordRequireLowercase.toString(), 'boolean', userId);
-    }
-    if (passwordRequireNumbers !== undefined) {
-      await SettingModel.setValue('password_require_numbers', passwordRequireNumbers.toString(), 'boolean', userId);
-    }
-    if (passwordRequireSpecial !== undefined) {
-      await SettingModel.setValue('password_require_special', passwordRequireSpecial.toString(), 'boolean', userId);
-    }
-    if (passwordExpirationDays !== undefined) {
-      await SettingModel.setValue('password_expiration_days', passwordExpirationDays.toString(), 'number', userId);
-    }
-    if (maxLoginAttempts !== undefined) {
-      await SettingModel.setValue('max_login_attempts', maxLoginAttempts.toString(), 'number', userId);
-    }
-    if (lockoutDurationMinutes !== undefined) {
-      await SettingModel.setValue('lockout_duration_minutes', lockoutDurationMinutes.toString(), 'number', userId);
-    }
-    if (sessionTimeoutMinutes !== undefined) {
-      await SettingModel.setValue('session_timeout_minutes', sessionTimeoutMinutes.toString(), 'number', userId);
-    }
-    if (auditLoggingEnabled !== undefined) {
-      await SettingModel.setValue('audit_logging_enabled', auditLoggingEnabled.toString(), 'boolean', userId);
-    }
-    if (otpExpirySeconds !== undefined) {
-      await SettingModel.setValue('otp_expiry_seconds', otpExpirySeconds.toString(), 'number', userId);
-    }
+
+    await createAuditLog({
+      userId,
+      action: 'Updated Security Settings',
+      resourceType: 'setting',
+      resourceId: 'security_settings',
+      resourceName: 'security_settings',
+      details: `Updated security setting(s): ${changedKeys.join(', ')}`,
+      oldValues,
+      newValues,
+      ipAddress: req.ip,
+      userAgent: req.get('User-Agent'),
+    });
 
     return res.json({
       message: 'Security settings updated successfully',

@@ -54,7 +54,7 @@ async function getUserCompany(pool: Pool, userId: string): Promise<any | null> {
   return companyRows[0] ?? null;
 }
 
-async function userIsAdminOrSuperAdmin(
+async function userIsGlobalAdmin(
   pool: Pool,
   userId: string
 ): Promise<boolean> {
@@ -69,24 +69,24 @@ async function userIsAdminOrSuperAdmin(
   const roleName = String(userRows[0]?.role_name ?? '')
     .trim()
     .toLowerCase();
-  return roleName === 'global admin' || roleName === 'admin';
+  return roleName === 'global admin';
 }
 
 /**
  * Resolves a company context for an authenticated user.
  *
- * Global Admin and Admin use the global active company (header company switch)
- * so categories, types, and settings match the asset list for the selected company.
+ * Global Admin uses the global active company (header company switch).
  *
- * Other users prefer their assigned company, then fall back to the global active company.
+ * Admin (local admin) and other users prefer their assigned company,
+ * then fall back to the global active company.
  */
 export async function getScopedActiveCompany(
   pool: Pool,
   userId?: string
 ): Promise<any | null> {
   if (userId) {
-    const isPrivileged = await userIsAdminOrSuperAdmin(pool, userId);
-    if (isPrivileged) {
+    const isGlobalAdmin = await userIsGlobalAdmin(pool, userId);
+    if (isGlobalAdmin) {
       const globalActive = await getActiveCompany(pool);
       if (globalActive) {
         return globalActive;

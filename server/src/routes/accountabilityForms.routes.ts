@@ -6,6 +6,7 @@ import {
   declineAccountabilityFormHandler,
   signReceivedCopyHandler,
   getAccountabilityFormByIdHandler,
+  getAccountabilityFormMovementHandler,
   getAccountabilityFormChecklistsHandler,
   signAccountabilityFormChecklistsHandler,
   getAccountabilityFormsByAssetIdHandler,
@@ -52,6 +53,24 @@ router.post(
   '/:formId/checklists/sign',
   signAccountabilityFormChecklistsHandler
 );
+
+/**
+ * @swagger
+ * /api/accountability-forms/{formId}/movement:
+ *   get:
+ *     tags: [Accountability Forms]
+ *     summary: Get asset movement tree for a form (return/transfer/new accountability forms per asset)
+ *     parameters:
+ *       - in: path
+ *         name: formId
+ *         required: true
+ *         schema: { type: string }
+ *     responses:
+ *       200: { description: Asset movement tree for the form }
+ *       401: { description: Unauthorized }
+ *       404: { description: Form not found }
+ */
+router.get('/:formId/movement', getAccountabilityFormMovementHandler);
 
 /**
  * @swagger

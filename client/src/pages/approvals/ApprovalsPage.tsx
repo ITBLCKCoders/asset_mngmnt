@@ -10,6 +10,8 @@ import {
   CheckCircle2,
   PackageCheck,
   ClipboardCheck,
+  ChevronLeft,
+  ChevronRight,
 } from 'lucide-react';
 import { api } from '@/lib/api';
 import { toast } from 'sonner';
@@ -54,6 +56,11 @@ import { Input } from '@/components/ui/input';
 import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs';
 import SmsOtpDialog from '@/components/auth/SmsOtpDialog';
 import { useRef } from 'react';
+import { useSearchParams } from 'react-router-dom';
+
+const APPROVAL_TABS = ['for-approval', 'receive', 'approved'] as const;
+
+const PAGE_SIZE = 6;
 
 type BorrowRequestBatch = BorrowRequestRow & {
   formType: 'borrow';
@@ -75,14 +82,20 @@ function mapChecklistApiBatches(
     ...b,
     formType: 'checklist' as const,
     dept_head_signed_at: withDeptHeadSigned
-      ? (b.checklists[0]?.dept_head_signed_at ?? new Date().toISOString())
+      ? (b.checklists[0]?.dept_head_signed_at ??
+        b.sub_approver_1_signed_at ??
+        new Date().toISOString())
+      : null,
+    sub_approver_1_signed_at: withDeptHeadSigned
+      ? (b.checklists[0]?.sub_approver_1_signed_at ?? null)
       : null,
   }));
 }
 
 export default function ApprovalsPage() {
   const { user: currentUser } = useCurrentUser();
-  const { hasPermission, roleCustodian } = useUserPermissions();
+  const { hasPermission, roleCustodian, loading: permissionsLoading } =
+    useUserPermissions();
 
   const [batches, setBatches] = useState<ApprovalBatch[]>([]);
   const [approvedBatches, setApprovedBatches] = useState<ApprovalBatch[]>([]);
@@ -97,18 +110,31 @@ export default function ApprovalsPage() {
   const displayReceiveLoading = receiveLoading;
 
   // ---------- Tabs ----------
-  const [activeTab, setActiveTab] = useState('for-approval');
+  const [searchParams] = useSearchParams();
+  const [activeTab, setActiveTab] = useState(() => {
+    const tab = searchParams.get('tab');
+    return tab && (APPROVAL_TABS as readonly string[]).includes(tab)
+      ? tab
+      : 'for-approval';
+  });
 
   // ---------- Search (per-tab) ----------
   const [searchQuery, setSearchQuery] = useState('');
   const [receiveSearchQuery, setReceiveSearchQuery] = useState('');
   const [approvedSearchQuery, setApprovedSearchQuery] = useState('');
 
+  // ---------- Pagination (per-tab) ----------
+  const [forApprovalPage, setForApprovalPage] = useState(1);
+  const [receivePage, setReceivePage] = useState(1);
+  const [approvedPage, setApprovedPage] = useState(1);
+
   // ---------- Detail dialog ----------
   const [selectedBatch, setSelectedBatch] = useState<ApprovalBatch | null>(
     null
   );
   const [showDetail, setShowDetail] = useState(false);
+  const [detailSourceTab, setDetailSourceTab] =
+    useState<(typeof APPROVAL_TABS)[number]>('for-approval');
   const [approving, setApproving] = useState(false);
   const [declining, setDeclining] = useState(false);
   const [receiving, setReceiving] = useState(false);
@@ -127,18 +153,46 @@ export default function ApprovalsPage() {
   const [checklistPreviewIndex, setChecklistPreviewIndex] = useState(0);
 
   // ---------- Permissions ----------
+  const normalizedRoleName = (currentUser?.role?.name ?? '')
+    .trim()
+    .toLowerCase();
+  const isAdminOrGlobalAdmin =
+    normalizedRoleName === 'admin' || normalizedRoleName === 'global admin';
+
   const canApprove =
     (hasPermission('Approvals', 'create') &&
       hasPermission('Approvals', 'edit')) ||
-    roleCustodian?.managerApprover1 === true;
+    roleCustodian?.managerApprover1 === true ||
+    roleCustodian?.managerApprover3 === true;
 
-  const canReceive = roleCustodian?.managerApprover2 === true;
+  const canReceive =
+    isAdminOrGlobalAdmin ||
+    roleCustodian?.managerApprover2 === true ||
+    roleCustodian?.subApprover2 === true;
+
+  // ---------- Tab deep-linking (?tab= query param) ----------
+  // Sync activeTab with ?tab= query, honoring receive-tab permission.
+  const tabParam = searchParams.get('tab');
+  useEffect(() => {
+    if (!permissionsLoading && !canReceive && activeTab === 'receive') {
+      setActiveTab('for-approval');
+      return;
+    }
+    if (
+      tabParam &&
+      tabParam !== activeTab &&
+      (APPROVAL_TABS as readonly string[]).includes(tabParam) &&
+      (tabParam !== 'receive' || canReceive)
+    ) {
+      setActiveTab(tabParam);
+    }
+  }, [tabParam, activeTab, canReceive, permissionsLoading]);
 
   // ---------- Fetch ----------
   const fetchPendingApprovals = async () => {
     try {
       setLoading(true);
-      const [returnRes, transferRes, checklistRes] = await Promise.all([
+      const [returnRes, transferRes, checklistRes, borrowRes] = await Promise.all([
         api.get<{ assetReturnForms?: AssetReturnFormBatch[] }>(
           '/asset-returns/forms/pending-approvals'
         ),
@@ -147,6 +201,9 @@ export default function ApprovalsPage() {
         ),
         api.get<{ checklistBatches?: ChecklistApprovalBatch[] }>(
           '/asset-checklists/pending-approvals'
+        ),
+        api.get<{ success: boolean; data: { borrowRequests?: any[] } }>(
+          '/asset-borrow-requests/pending-dept-approvals'
         ),
       ]);
       const returns = (returnRes.assetReturnForms ?? []).map(b => ({
@@ -161,8 +218,12 @@ export default function ApprovalsPage() {
         checklistRes.checklistBatches ?? [],
         false
       );
+      const borrowRequests = (borrowRes.data?.borrowRequests ?? []).map(b => ({
+        ...b,
+        formType: 'borrow' as const,
+      })) as ApprovalBatch[];
       setBatches(
-        ([...returns, ...transfers, ...checklists] as ApprovalBatch[]).sort(
+        ([...returns, ...transfers, ...checklists, ...borrowRequests] as ApprovalBatch[]).sort(
           (a, b) =>
             new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
         )
@@ -179,7 +240,7 @@ export default function ApprovalsPage() {
   const fetchApprovedByMe = async () => {
     try {
       setApprovedLoading(true);
-      const [returnRes, transferRes, checklistRes] = await Promise.all([
+      const [returnRes, transferRes, checklistRes, borrowRes] = await Promise.all([
         api.get<{ assetReturnForms?: AssetReturnFormBatch[] }>(
           '/asset-returns/forms/approved-by-me'
         ),
@@ -188,6 +249,9 @@ export default function ApprovalsPage() {
         ),
         api.get<{ checklistBatches?: ChecklistApprovalBatch[] }>(
           '/asset-checklists/approved-by-dept-head-me'
+        ),
+        api.get<{ success: boolean; data: { borrowRequests?: any[] } }>(
+          '/asset-borrow-requests/received-by-me'
         ),
       ]);
       const returns = (returnRes.assetReturnForms ?? []).map(b => ({
@@ -202,8 +266,12 @@ export default function ApprovalsPage() {
         checklistRes.checklistBatches ?? [],
         true
       );
+      const borrowRequests = (borrowRes.data?.borrowRequests ?? []).map(b => ({
+        ...b,
+        formType: 'borrow' as const,
+      })) as ApprovalBatch[];
       setApprovedBatches(
-        ([...returns, ...transfers, ...checklists] as ApprovalBatch[]).sort(
+        ([...returns, ...transfers, ...checklists, ...borrowRequests] as ApprovalBatch[]).sort(
           (a, b) =>
             new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
         )
@@ -250,6 +318,10 @@ export default function ApprovalsPage() {
           dept_head_signed_at:
             b.checklists[0]?.dept_head_signed_at ??
             b.dept_head_signed_at ??
+            null,
+          sub_approver_1_signed_at:
+            b.checklists[0]?.sub_approver_1_signed_at ??
+            b.sub_approver_1_signed_at ??
             null,
           it_manager_signed_at:
             b.checklists[0]?.it_manager_signed_at ??
@@ -356,6 +428,46 @@ export default function ApprovalsPage() {
     const q = approvedSearchQuery.toLowerCase();
     return approvedBatches.filter(b => searchFilter(b, q));
   }, [approvedBatches, approvedSearchQuery]);
+
+  // ---------- Pagination (per-tab) ----------
+  useEffect(() => {
+    setForApprovalPage(1);
+  }, [searchQuery]);
+
+  useEffect(() => {
+    setReceivePage(1);
+  }, [receiveSearchQuery]);
+
+  useEffect(() => {
+    setApprovedPage(1);
+  }, [approvedSearchQuery]);
+
+  const forApprovalPageCount = useMemo(
+    () => Math.max(1, Math.ceil(filteredBatches.length / PAGE_SIZE)),
+    [filteredBatches]
+  );
+
+  const receivePageCount = useMemo(
+    () => Math.max(1, Math.ceil(filteredReceiveBatches.length / PAGE_SIZE)),
+    [filteredReceiveBatches]
+  );
+
+  const approvedPageCount = useMemo(
+    () => Math.max(1, Math.ceil(filteredApprovedBatches.length / PAGE_SIZE)),
+    [filteredApprovedBatches]
+  );
+
+  useEffect(() => {
+    setForApprovalPage(p => Math.min(p, forApprovalPageCount));
+  }, [forApprovalPageCount]);
+
+  useEffect(() => {
+    setReceivePage(p => Math.min(p, receivePageCount));
+  }, [receivePageCount]);
+
+  useEffect(() => {
+    setApprovedPage(p => Math.min(p, approvedPageCount));
+  }, [approvedPageCount]);
 
   // ---------- Actions ----------
   const getChecklistAssetLabel = (c: ChecklistApprovalBatch['checklists'][0]) => {
@@ -498,6 +610,36 @@ export default function ApprovalsPage() {
         }
         return;
       }
+      if (selectedBatch.formType === 'borrow') {
+        const borrowBatch = selectedBatch as BorrowRequestBatch;
+        const borrowRequestId = borrowBatch.borrow_request_id;
+        if (!borrowRequestId) {
+          toast.error('Borrow request ID not found');
+          return;
+        }
+        try {
+          setApproving(true);
+          const sig =
+            (currentUser as { digitalSignature?: string })?.digitalSignature || '';
+          await api.post(
+            `/asset-borrow-requests/${borrowRequestId}/dept-head-approve`,
+            { digitalSignature: sig || undefined }
+          );
+          toast.success('Borrow request approved');
+          setShowDetail(false);
+          setSelectedBatch(null);
+          await refreshAll();
+        } catch (error: unknown) {
+          const msg =
+            (error as { data?: { error?: string } })?.data?.error ||
+            (error as Error)?.message ||
+            'Failed to approve borrow request';
+          toast.error(msg);
+        } finally {
+          setApproving(false);
+        }
+        return;
+      }
       if (
         selectedBatch.formType !== 'transfer' &&
         selectedBatch.formType !== 'return'
@@ -601,6 +743,32 @@ export default function ApprovalsPage() {
     // Set up the actual decline action as a pending action
     pendingActionRef.current = async () => {
       if (!selectedBatch) return;
+      if (selectedBatch.formType === 'borrow') {
+        const borrowBatch = selectedBatch as BorrowRequestBatch;
+        const borrowRequestId = borrowBatch.borrow_request_id;
+        if (!borrowRequestId) {
+          toast.error('Borrow request ID not found');
+          return;
+        }
+        try {
+          setDeclining(true);
+          await api.post(
+            `/asset-borrow-requests/${borrowRequestId}/dept-head-decline`,
+            { reason: declineReason }
+          );
+          toast.success('Borrow request declined');
+          setShowDetail(false);
+          setSelectedBatch(null);
+          await refreshAll();
+        } catch (error: any) {
+          const msg =
+            error?.response?.data?.error || error?.message || 'Failed to decline';
+          toast.error(msg);
+        } finally {
+          setDeclining(false);
+        }
+        return;
+      }
       if (
         selectedBatch.formType !== 'transfer' &&
         selectedBatch.formType !== 'return'
@@ -741,22 +909,32 @@ export default function ApprovalsPage() {
             .filter(Boolean)
             .join(' ')
             .trim();
+        const isSubApprover2Receiver =
+          roleCustodian?.subApprover2 === true &&
+          roleCustodian?.managerApprover2 !== true;
+        const receiverFields = isSubApprover2Receiver
+          ? {
+              sub_approver_2_signed_at: itManagerSignedAt,
+              sub_approver_2_digital_signature: sig || null,
+              sub_approver_2_signed_by: currentUser?.id ?? null,
+              sub_approver_2_user_name: receiverName || null,
+            }
+          : {
+              it_manager_signed_at: itManagerSignedAt,
+              it_manager_digital_signature: sig || null,
+              it_manager_signed_by: currentUser?.id ?? null,
+              it_manager_user_name: receiverName || null,
+            };
         if (formBatch.formType === 'return' && formBatch.form_number) {
           clearReturnPdfCacheForFormNumber(formBatch.form_number);
           setSelectedBatch({
             ...(selectedBatch as AssetReturnFormBatch),
-            it_manager_signed_at: itManagerSignedAt,
-            it_manager_digital_signature: sig || null,
-            it_manager_signed_by: currentUser?.id ?? null,
-            it_manager_user_name: receiverName || null,
+            ...receiverFields,
           } as FormApprovalBatch);
         } else if (formBatch.formType === 'transfer') {
           setSelectedBatch({
             ...(selectedBatch as AssetTransferFormBatch),
-            it_manager_signed_at: itManagerSignedAt,
-            it_manager_digital_signature: sig || null,
-            it_manager_signed_by: currentUser?.id ?? null,
-            it_manager_user_name: receiverName || null,
+            ...receiverFields,
           } as FormApprovalBatch);
         } else {
           setShowDetail(false);
@@ -779,10 +957,12 @@ export default function ApprovalsPage() {
   };
 
   const showReceiveButton =
+    detailSourceTab !== 'approved' &&
     canReceive &&
     selectedBatch != null &&
     (selectedBatch.formType === 'checklist'
-      ? !!(selectedBatch as ChecklistApprovalBatch).dept_head_signed_at &&
+      ? (!!(selectedBatch as ChecklistApprovalBatch).dept_head_signed_at ||
+          !!(selectedBatch as ChecklistApprovalBatch).sub_approver_1_signed_at) &&
         !(selectedBatch as ChecklistApprovalBatch).it_manager_signed_at
       : selectedBatch.formType === 'borrow'
         ? !!(selectedBatch as any).approved_at && !(selectedBatch as any).received_at
@@ -819,9 +999,15 @@ export default function ApprovalsPage() {
   );
 
   // ---------- Reusable card grid renderer ----------
-  const renderCardGrid = (list: ApprovalBatch[]) => (
+  const renderCardGrid = (
+    list: ApprovalBatch[],
+    sourceTab: (typeof APPROVAL_TABS)[number],
+    page: number
+  ) => (
     <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-      {list.map(batch => {
+      {list
+        .slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE)
+        .map(batch => {
         const key =
           batch.formType === 'checklist'
             ? (batch as ChecklistApprovalBatch).batchKey
@@ -838,6 +1024,7 @@ export default function ApprovalsPage() {
               key={cb.batchKey}
               batch={cb}
               onView={() => {
+                setDetailSourceTab(sourceTab);
                 setSelectedBatch(batch);
                 setChecklistPreviewIndex(0);
                 setShowDetail(true);
@@ -853,6 +1040,7 @@ export default function ApprovalsPage() {
               key={key}
               batch={batch as AssetTransferFormBatch}
               onView={() => {
+                setDetailSourceTab(sourceTab);
                 setSelectedBatch(batch);
                 setShowDetail(true);
               }}
@@ -867,6 +1055,7 @@ export default function ApprovalsPage() {
               key={key}
               batch={batch}
               onView={() => {
+                setDetailSourceTab(sourceTab);
                 setSelectedBatch(batch);
                 setShowDetail(true);
               }}
@@ -878,6 +1067,7 @@ export default function ApprovalsPage() {
             key={key}
             batch={batch as AssetReturnFormBatch}
             onView={() => {
+              setDetailSourceTab(sourceTab);
               setSelectedBatch(batch);
               setShowDetail(true);
             }}
@@ -888,6 +1078,39 @@ export default function ApprovalsPage() {
       })}
     </div>
   );
+
+  const renderPaginationControls = (
+    page: number,
+    pageCount: number,
+    setPage: React.Dispatch<React.SetStateAction<number>>
+  ) =>
+    pageCount > 1 ? (
+      <div className="flex items-center justify-center gap-4 pt-6">
+        <Button
+          variant="outline"
+          size="sm"
+          onClick={() => setPage(p => Math.max(1, p - 1))}
+          disabled={page <= 1}
+          className="gap-1.5"
+        >
+          <ChevronLeft className="h-4 w-4" />
+          Previous
+        </Button>
+        <span className="text-sm text-muted-foreground">
+          Page {Math.min(page, pageCount)} of {pageCount}
+        </span>
+        <Button
+          variant="outline"
+          size="sm"
+          onClick={() => setPage(p => Math.min(pageCount, p + 1))}
+          disabled={page >= pageCount}
+          className="gap-1.5"
+        >
+          Next
+          <ChevronRight className="h-4 w-4" />
+        </Button>
+      </div>
+    ) : null;
 
   const renderEmpty = (
     icon: React.ReactNode,
@@ -980,7 +1203,12 @@ export default function ApprovalsPage() {
                     'Return, transfer, and asset checklist forms that need Department Head (Manager Approver 1) approval will appear here.',
                     searchQuery
                   )
-                : renderCardGrid(filteredBatches)}
+                : (
+                    <div>
+                      {renderCardGrid(filteredBatches, 'for-approval', forApprovalPage)}
+                      {renderPaginationControls(forApprovalPage, forApprovalPageCount, setForApprovalPage)}
+                    </div>
+                  )}
           </TabsContent>
 
           {/* ──── Receive Approve Tab ──── */}
@@ -1006,7 +1234,12 @@ export default function ApprovalsPage() {
                       'Forms that need Department Head (IT/Admin Manager) signature will appear here.',
                       receiveSearchQuery
                     )
-                  : renderCardGrid(filteredReceiveBatches)}
+                  : (
+                      <div>
+                        {renderCardGrid(filteredReceiveBatches, 'receive', receivePage)}
+                        {renderPaginationControls(receivePage, receivePageCount, setReceivePage)}
+                      </div>
+                    )}
             </TabsContent>
           )}
 
@@ -1032,7 +1265,12 @@ export default function ApprovalsPage() {
                     'Forms you approve will appear here.',
                     approvedSearchQuery
                   )
-                : renderCardGrid(filteredApprovedBatches)}
+                : (
+                    <div>
+                      {renderCardGrid(filteredApprovedBatches, 'approved', approvedPage)}
+                      {renderPaginationControls(approvedPage, approvedPageCount, setApprovedPage)}
+                    </div>
+                  )}
           </TabsContent>
         </Tabs>
 
@@ -1115,13 +1353,7 @@ export default function ApprovalsPage() {
                     </div>
                   )}
                   <div className="min-h-0 flex-1 overflow-hidden rounded-lg border bg-slate-50">
-                    {checklistPreviewUrl ? (
-                      <PDFViewer pdfUrl={checklistPreviewUrl} className="h-full w-full" />
-                    ) : (
-                      <div className="flex h-full items-center justify-center text-slate-500">
-                        Generating preview...
-                      </div>
-                    )}
+                    <PDFViewer pdfUrl={checklistPreviewUrl} className="h-full w-full" />
                   </div>
                 </div>
               ) : selectedBatch.formType === 'transfer' ? (
@@ -1167,7 +1399,12 @@ export default function ApprovalsPage() {
                   onDownload={handleDownloadCurrent}
                   onApprove={handleApprove}
                   showApproveButton={
-                    canApprove && !selectedBatch.dept_head_signed_at
+                    detailSourceTab !== 'approved' &&
+                    canApprove &&
+                    !selectedBatch.dept_head_signed_at &&
+                    !(
+                      selectedBatch as { sub_approver_1_signed_at?: string | null }
+                    ).sub_approver_1_signed_at
                   }
                   isApproving={approving}
                   contentOnly
@@ -1185,12 +1422,22 @@ export default function ApprovalsPage() {
                   Close
                 </Button>
                 {canApprove &&
-                  selectedBatch.formType !== 'borrow' &&
+                  detailSourceTab !== 'approved' &&
                   (selectedBatch.formType === 'checklist'
-                    ? !(selectedBatch as ChecklistApprovalBatch).dept_head_signed_at
+                    ? !(selectedBatch as ChecklistApprovalBatch).dept_head_signed_at &&
+                      !(selectedBatch as ChecklistApprovalBatch).sub_approver_1_signed_at
                     : !(
-                        selectedBatch as { dept_head_signed_at?: string | null }
-                      ).dept_head_signed_at) && (
+                        selectedBatch as {
+                          dept_head_signed_at?: string | null;
+                          sub_approver_1_signed_at?: string | null;
+                        }
+                      ).dept_head_signed_at &&
+                      !(
+                        selectedBatch as {
+                          dept_head_signed_at?: string | null;
+                          sub_approver_1_signed_at?: string | null;
+                        }
+                      ).sub_approver_1_signed_at) && (
                     <>
                       {selectedBatch.formType !== 'checklist' && (
                         <Button

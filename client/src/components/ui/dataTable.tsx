@@ -77,6 +77,7 @@ type DataTableProps<T> = {
   lastModifiedAt?: Date; // for "Last modified" badge
   children?: React.ReactNode; // extra controls (e.g. buttons)
   getRowCanExpand?: (row: any) => boolean;
+  getSubRows?: (row: any) => any[];
   renderSubComponent?: (props: { row: any }) => React.ReactElement;
   onRowClick?: (row: any) => void; // callback for row clicks
   meta?: any; // meta data for table
@@ -206,6 +207,7 @@ export function DataTable<T>({
   lastModifiedAt,
   children,
   getRowCanExpand,
+  getSubRows,
   renderSubComponent,
   onRowClick,
   meta,
@@ -416,6 +418,7 @@ export function DataTable<T>({
     state: { sorting, globalFilter, pagination, expanded, columnOrder },
     globalFilterFn: effectiveGlobalFilterFn ?? 'includesString',
     getRowCanExpand: getRowCanExpand,
+    getSubRows: getSubRows,
     meta,
     manualPagination: serverPagination,
     pageCount: serverPagination ? pageCount : undefined,

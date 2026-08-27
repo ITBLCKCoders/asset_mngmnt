@@ -48,6 +48,7 @@ import {
   Calendar,
   MapPin,
   ShieldCheck,
+  GitBranch,
 } from 'lucide-react';
 import SmsOtpDialog from '@/components/auth/SmsOtpDialog';
 import { api } from '@/lib/api';
@@ -78,6 +79,21 @@ import {
   sortAssetsByLast5Digits,
 } from '@/lib/pdfGenerator/shared';
 import type { AccountabilityForm } from './accountabilityFormTypes';
+import { AssetMovementTab } from './AssetMovementTab';
+import type { AssetBuilderRecord } from '@/utils/builderScan';
+import {
+  buildBuilderGroupedAssetRows,
+  type AccountabilityAssetRow,
+} from './builderAssetGrouping';
+import {
+  fetchAssignedIntangibleAssetsForForm,
+  getAssetDisplayScope,
+  getFormAssignedIntangibleAssets,
+  getFormDisplayAssets,
+  intangibleMatchesFormScope,
+  mergeAssetsById,
+  splitDisplayAssets,
+} from './accountabilityFormAssets';
 
 export type { AccountabilityForm } from './accountabilityFormTypes';
 
@@ -88,6 +104,12 @@ const pdfCache = new Map<string, Blob>();
 
 // Simple in-memory image cache
 const imageCache = new Map<string, string>();
+
+// In-flight dedupe for the company-wide intangible asset list. Every list card
+// resolves the same /intangible-assets payload on mount; sharing one promise
+// collapses N concurrent DB calls into a single one. Cleared once settled so
+// later refetches still get fresh data.
+let intangibleAssetsFetchPromise: Promise<any> | null = null;
 
 // Debounce utility
 const debounce = <T extends (...args: T[]) => void>(
@@ -287,15 +309,41 @@ const getAssetScopeType = (
 };
 
 // Helper function to determine department label for header based on asset scopes
-const getDepartmentName = (form: AccountabilityForm) => {
+// Uses combined tangible + intangible classification (intangible via type_department)
+// so the 1st-page header matches the signatory "Copy for IT/Admin" and the
+// acknowledgment issuingDepartment logic (itAssets/itIntangibleAssets).
+const getDepartmentName = (
+  form: AccountabilityForm,
+  assignedIntangibleAssets: any[] = []
+) => {
   let hasIT = false;
   let hasAdmin = false;
 
+  // Classify embedded form assets via display scope (correct for intangibles)
   for (const asset of form.assets) {
-    const scope = getAssetScopeType(asset, form);
+    const scope = getAssetDisplayScope(asset as any, form);
     if (scope === 'IT') hasIT = true;
     if (scope === 'Admin') hasAdmin = true;
     if (hasIT && hasAdmin) break;
+  }
+
+  // Also consider resolved assigned intangibles (union used by PDF/content)
+  if (!(hasIT && hasAdmin)) {
+    for (const asset of assignedIntangibleAssets) {
+      const scope = getAssetDisplayScope(asset, form);
+      if (scope === 'IT') hasIT = true;
+      if (scope === 'Admin') hasAdmin = true;
+      if (hasIT && hasAdmin) break;
+    }
+  }
+
+  // Fallback when form has no classifiable assets: use form/user department
+  if (!hasIT && !hasAdmin) {
+    const fallback = classifyDepartmentScopeByName(
+      form.department?.name || form.user?.department?.name || ''
+    );
+    if (fallback === 'IT') hasIT = true;
+    if (fallback === 'Admin') hasAdmin = true;
   }
 
   if (hasIT && hasAdmin) {
@@ -354,13 +402,16 @@ const getAccountabilityFormAssignmentIds = (
   return [...assignmentIds];
 };
 
-const fetchAssignedIntangibleAssetsForForm = (
+// Classify a display asset (embedded form asset or resolved intangible) into the
+// IT/Admin bucket used by the card badges. Mirrors the PDF split at
+// generateAccountabilityFormPDF: intangibles are classified solely by their
+// Intangible Asset Type's department (Admin only when that department is
+// Admin/Administration; otherwise IT), so assignment department / type name do
+// not influence the bucket.
+const getDisplayScopeType = (
+  asset: any,
   form: AccountabilityForm
-): any[] => {
-  return (form.assets || []).filter(
-    (asset: any) => String(asset.category ?? '').toLowerCase() === 'intangible'
-  );
-};
+): ClientAssetScopeType => getAssetDisplayScope(asset, form);
 
 const getIntangibleAssetDescription = (asset: any): string =>
   String(asset?.description ?? '').trim();
@@ -370,7 +421,14 @@ const enrichIntangibleAssetsWithDescriptions = async (
   form: AccountabilityForm
 ): Promise<any[]> => {
   if (assets.length === 0) return assets;
-  if (assets.every(asset => getIntangibleAssetDescription(asset))) {
+  if (
+    assets.every(
+      asset =>
+        getIntangibleAssetDescription(asset) &&
+        asset.risk_level?.id &&
+        asset.type_department != null
+    )
+  ) {
     return assets;
   }
 
@@ -390,6 +448,9 @@ const enrichIntangibleAssetsWithDescriptions = async (
         description: fromApi.description ?? asset.description ?? '',
         name: asset.name || fromApi.name,
         type: asset.type || fromApi.type,
+        risk_level: fromApi.risk_level ?? asset.risk_level ?? null,
+        type_department:
+          fromApi.type_department ?? asset.type_department ?? null,
       };
     });
   } catch {
@@ -401,14 +462,70 @@ const enrichIntangibleAssetsWithDescriptions = async (
 export const generateAccountabilityFormPDF = async (
   form: AccountabilityForm,
   currentUser?: any,
-  intangibleAssets?: any[]
+  intangibleAssets?: any[],
+  assetBuilders?: AssetBuilderRecord[]
 ): Promise<Blob> => {
+  // Resolve the complete intangible set: the intangibles embedded in the form
+  // snapshot unioned with the intangibles currently assigned to the form's user
+  // (from the caller-provided list or fetched from /intangible-assets). Only
+  // intangibles matching the form's scope are included, so an Admin form never
+  // prints IT intangibles (and vice versa).
+  const embeddedIntangibles = fetchAssignedIntangibleAssetsForForm(form).filter(
+    (asset: any) => intangibleMatchesFormScope(asset, form)
+  );
+  let resolvedIntangibleAssets: any[] = embeddedIntangibles;
+  if (intangibleAssets && intangibleAssets.length > 0) {
+    resolvedIntangibleAssets = mergeAssetsById(
+      embeddedIntangibles,
+      intangibleAssets
+    );
+  } else {
+    try {
+      const response = await api.get<any[]>('/intangible-assets');
+      resolvedIntangibleAssets = mergeAssetsById(
+        embeddedIntangibles,
+        getFormAssignedIntangibleAssets(response, form)
+      );
+    } catch (error) {
+      logger.warn('Failed to fetch assigned intangible assets for form');
+    }
+  }
   const assignedIntangibleAssets = await enrichIntangibleAssetsWithDescriptions(
-    intangibleAssets && intangibleAssets.length > 0
-      ? intangibleAssets
-      : fetchAssignedIntangibleAssetsForForm(form),
+    resolvedIntangibleAssets,
     form
   );
+
+  // Resolve asset builders (used to group builder parent/child assets in the
+  // asset table). Builders are matched by the form's asset codes — NOT the
+  // viewer's company scope — because a form can hold assets from a company
+  // different from the viewer's active company.
+  let builders = assetBuilders;
+  if (!builders || builders.length === 0) {
+    try {
+      const assetCodes = (form.assets ?? [])
+        .map(a => a.code)
+        .filter((code): code is string => Boolean(code));
+      const response = await api.post('/asset-builders/match', { assetCodes });
+      builders = Array.isArray(response.builders) ? response.builders : [];
+      logger.info(
+        `[AccountabilityForm] builders resolved: ${
+          response.builders ? response.builders.length : 0
+        } found`
+      );
+    } catch (error) {
+      logger.warn('Failed to fetch asset builders for accountability form');
+      builders = [];
+    }
+  }
+  const firstBuilderItems = builders?.[0]?.items;
+  if (firstBuilderItems && firstBuilderItems.length > 0) {
+    logger.info(
+      `[AccountabilityForm] form ${form.formNumber} builders: ${firstBuilderItems.length}, sample codes: ${firstBuilderItems
+        .slice(0, 3)
+        .map((i: any) => i.asset_code)
+        .join(', ')}`
+    );
+  }
 
   const [{ jsPDF: JsPDFConstructor }, autoTableModule] = await Promise.all([
     import('jspdf'),
@@ -475,10 +592,10 @@ export const generateAccountabilityFormPDF = async (
       : 'Asset Accountability Form';
   doc.text(title, 105, 40, { align: 'center' });
 
-  // Department - font size 12
+  // Department - font size 12 (uses combined tangible+intangible scope so IT header matches IT copy)
   doc.setFontSize(12);
   doc.setFont('helvetica', 'normal');
-  const departmentName = getDepartmentName(form);
+  const departmentName = getDepartmentName(form, assignedIntangibleAssets);
   doc.text(departmentName, 105, 50, { align: 'center' });
 
   // Employee Information - font size 12 bold
@@ -539,10 +656,10 @@ export const generateAccountabilityFormPDF = async (
   );
 
   const itIntangibleAssets = assignedIntangibleAssets.filter(
-    (asset: any) => asset.type === 'IT scope' || asset.type === 'HR scope'
+    (asset: any) => getAssetDisplayScope(asset, form) === 'IT'
   );
   const adminIntangibleAssets = assignedIntangibleAssets.filter(
-    (asset: any) => asset.type === 'Admin scope'
+    (asset: any) => getAssetDisplayScope(asset, form) === 'Admin'
   );
 
   // Determine which department to show in the acknowledgment text
@@ -681,31 +798,113 @@ I agree that if any of the items are damaged or lost due to my negligence, I sha
     5: { cellWidth: 27.9 }, // Condition
   };
 
-  // IT Asset Details - font size 12 bold
-  if (itAssets.length > 0) {
-    doc.setFontSize(12);
-    doc.setFont('helvetica', 'bold');
-    doc.text('IT Asset Details', 20, y);
-
-    // Process IT assets in chunks of 15 rows per page
+  // Render a scope's asset table with builder grouping. Builder groups start
+  // with a full-width separator row showing the builder name (like the asset
+  // list export), with the parent asset first and children below. Rows are
+  // chunked to keep up to 15 asset rows per page without splitting a group.
+  const renderScopeAssetTable = (
+    scopeAssets: AccountabilityForm['assets'][number][],
+    startY: number
+  ): number => {
+    const rows = buildBuilderGroupedAssetRows(scopeAssets, builders);
+    const separators = rows.filter(r => r.kind === 'separator').length;
+    logger.info(
+      `[AccountabilityForm] grouping: scopeAssets=${scopeAssets.length}, builders=${
+        builders?.length ?? 0
+      }, totalRows=${rows.length}, separatorRows=${separators}`
+    );
+    logger.info(
+      `[AccountabilityForm] form asset codes: ${scopeAssets
+        .map(a => a.code)
+        .join(', ')}`
+    );
+    const matchedCounts = (builders ?? [])
+      .map(b => {
+        const matched = b.items?.filter(item =>
+          scopeAssets.some(a => a.code === item.asset_code)
+        ).length;
+        return matched ? `${b.name}: ${matched}` : null;
+      })
+      .filter(Boolean)
+      .join(' | ');
+    if (matchedCounts) {
+      logger.info(`[AccountabilityForm] builder matches: ${matchedCounts}`);
+    } else {
+      logger.info(
+        `[AccountabilityForm] NO builder matched any form asset (total builder items across all builders: ${
+          (builders ?? []).reduce(
+            (n, b) => n + (b.items?.length ?? 0),
+            0
+          )
+        })`
+      );
+    }
     const assetsPerPage = 15;
-    let currentY = y + 5;
-    let remainingAssets = [...itAssets];
+    const pageHeight = 330.2; // 8.5 x 13 inches in mm
+    const bottomMargin = 30; // Leave some margin at bottom
 
-    while (remainingAssets.length > 0) {
-      const isFirstBatch = remainingAssets.length === itAssets.length;
-      const currentBatch = remainingAssets.slice(0, assetsPerPage);
-      remainingAssets = remainingAssets.slice(assetsPerPage);
+    const batches: AccountabilityAssetRow[][] = [];
+    let currentBatch: AccountabilityAssetRow[] = [];
+    let assetCountInBatch = 0;
 
-      // Create rows for current batch
-      const itAssetRows = currentBatch.map(asset => [
-        asset.name,
-        asset.brand || '',
-        asset.modelNo || '',
-        asset.serialNo,
-        asset.code,
-        'Good',
-      ]);
+    for (const row of rows) {
+      if (row.kind === 'separator' && assetCountInBatch > 0) {
+        batches.push(currentBatch);
+        currentBatch = [];
+        assetCountInBatch = 0;
+      } else if (row.kind === 'asset' && assetCountInBatch >= assetsPerPage) {
+        batches.push(currentBatch);
+        currentBatch = [];
+        assetCountInBatch = 0;
+      }
+
+      currentBatch.push(row);
+      if (row.kind === 'asset') {
+        assetCountInBatch += 1;
+      }
+    }
+    if (currentBatch.length > 0) {
+      batches.push(currentBatch);
+    }
+
+    let currentY = startY;
+    batches.forEach((batch, index) => {
+      const isFirstBatch = index === 0;
+
+      // If there are more batches and we're approaching the bottom of the page, add a new page
+      if (!isFirstBatch && currentY + 50 > pageHeight - bottomMargin) {
+        doc.addPage();
+        const newPageNum = doc.getNumberOfPages();
+        if (!continuationHeaderDrawnPages.has(newPageNum)) {
+          drawContinuationHeader();
+          continuationHeaderDrawnPages.add(newPageNum);
+        }
+        currentY = 45;
+      }
+
+      const bodyRows = batch.map(row =>
+        row.kind === 'separator'
+          ? [
+              {
+                content: row.name,
+                colSpan: assetTableHead.length,
+                styles: {
+                  fillColor: headerFillColor,
+                  textColor: headerTextColor,
+                  fontStyle: 'bold',
+                  halign: 'center',
+                },
+              },
+            ]
+          : [
+              row.asset.name,
+              row.asset.brand || '',
+              row.asset.modelNo || '',
+              row.asset.serialNo,
+              row.asset.code,
+              'Good',
+            ]
+      );
 
       // Show table header on first batch or when batch starts at top of page (one header per page)
       const showTableHead = isFirstBatch || currentY <= 80;
@@ -715,7 +914,7 @@ I agree that if any of the items are damaged or lost due to my negligence, I sha
         tableWidth,
         margin: { ...tableMargin, top: 45 },
         head: showTableHead ? [assetTableHead] : [],
-        body: itAssetRows,
+        body: bodyRows as any[],
         theme: 'grid',
         styles: {
           fontSize: 12,
@@ -738,25 +937,18 @@ I agree that if any of the items are damaged or lost due to my negligence, I sha
       });
 
       currentY = (doc as any).lastAutoTable.finalY + 1;
+    });
 
-      // If there are more assets and we're approaching the bottom of the page, add a new page
-      if (remainingAssets.length > 0) {
-        const pageHeight = 330.2; // 8.5 x 13 inches in mm
-        const bottomMargin = 30; // Leave some margin at bottom
+    return currentY;
+  };
 
-        if (currentY + 50 > pageHeight - bottomMargin) {
-          doc.addPage();
-          const newPageNum = doc.getNumberOfPages();
-          if (!continuationHeaderDrawnPages.has(newPageNum)) {
-            drawContinuationHeader();
-            continuationHeaderDrawnPages.add(newPageNum);
-          }
-          currentY = 45;
-        }
-      }
-    }
+  // IT Asset Details - font size 12 bold
+  if (itAssets.length > 0) {
+    doc.setFontSize(12);
+    doc.setFont('helvetica', 'bold');
+    doc.text('IT Asset Details', 20, y);
 
-    y = currentY;
+    y = renderScopeAssetTable(itAssets, y + 5);
   }
 
   // Intangible Assets - font size 12 bold
@@ -767,17 +959,19 @@ I agree that if any of the items are damaged or lost due to my negligence, I sha
     doc.text('Intangible Assets', 20, y);
 
     // Intangible asset table columns
-    const intangibleTableHead = ['Asset Name', 'Description', 'Type'];
+    const intangibleTableHead = ['Asset Name', 'Description', 'Type', 'Risk Level'];
     const intangibleTableColumnStyles = {
-      0: { cellWidth: 80 },
-      1: { cellWidth: 85.9 },
+      0: { cellWidth: 70 },
+      1: { cellWidth: 70.9 },
       2: { cellWidth: 30 },
+      3: { cellWidth: 25 },
     };
 
     const intangibleRows = itIntangibleAssets.map((asset: any) => [
       asset.name,
       getIntangibleAssetDescription(asset),
       asset.type,
+      asset.risk_level?.name || '—',
     ]);
 
     autoTable(doc, {
@@ -816,76 +1010,7 @@ I agree that if any of the items are damaged or lost due to my negligence, I sha
     doc.setFont('helvetica', 'bold');
     doc.text('Admin Asset Details', 20, y);
 
-    // Process Admin assets in chunks of 15 rows per page
-    const assetsPerPage = 15;
-    let currentY = y + 5;
-    let remainingAssets = [...adminAssets];
-
-    while (remainingAssets.length > 0) {
-      const isFirstBatch = remainingAssets.length === adminAssets.length;
-      const currentBatch = remainingAssets.slice(0, assetsPerPage);
-      remainingAssets = remainingAssets.slice(assetsPerPage);
-
-      // Create rows for current batch
-      const adminAssetRows = currentBatch.map(asset => [
-        asset.name,
-        asset.brand || '',
-        asset.modelNo || '',
-        asset.serialNo,
-        asset.code,
-        'Good',
-      ]);
-
-      // Show table header on first batch or when batch starts at top of page (one header per page)
-      const showTableHead = isFirstBatch || currentY <= 80;
-
-      autoTable(doc, {
-        startY: currentY,
-        tableWidth,
-        margin: { ...tableMargin, top: 45 },
-        head: showTableHead ? [assetTableHead] : [],
-        body: adminAssetRows,
-        theme: 'grid',
-        styles: {
-          fontSize: 12,
-          cellPadding: 1,
-          lineWidth: 0.1,
-          lineColor: [0, 0, 0],
-        },
-        headStyles: { fillColor: headerFillColor, textColor: headerTextColor },
-        columnStyles: assetTableColumnStyles,
-        didDrawPage: data => {
-          if (
-            data.pageNumber >= 2 &&
-            !continuationHeaderDrawnPages.has(data.pageNumber)
-          ) {
-            doc.setPage(data.pageNumber);
-            drawContinuationHeader();
-            continuationHeaderDrawnPages.add(data.pageNumber);
-          }
-        },
-      });
-
-      currentY = (doc as any).lastAutoTable.finalY + 1;
-
-      // If there are more assets and we're approaching the bottom of the page, add a new page
-      if (remainingAssets.length > 0) {
-        const pageHeight = 330.2; // 8.5 x 13 inches in mm
-        const bottomMargin = 30; // Leave some margin at bottom
-
-        if (currentY + 50 > pageHeight - bottomMargin) {
-          doc.addPage();
-          const newPageNum = doc.getNumberOfPages();
-          if (!continuationHeaderDrawnPages.has(newPageNum)) {
-            drawContinuationHeader();
-            continuationHeaderDrawnPages.add(newPageNum);
-          }
-          currentY = 45;
-        }
-      }
-    }
-
-    y = currentY;
+    y = renderScopeAssetTable(adminAssets, y + 5);
   }
 
   // Intangible Assets - font size 12 bold
@@ -895,17 +1020,19 @@ I agree that if any of the items are damaged or lost due to my negligence, I sha
     doc.setFont('helvetica', 'bold');
     doc.text('Intangible Assets', 20, y);
 
-    const intangibleTableHead = ['Asset Name', 'Description', 'Type'];
+    const intangibleTableHead = ['Asset Name', 'Description', 'Type', 'Risk Level'];
     const intangibleTableColumnStyles = {
-      0: { cellWidth: 80 },
-      1: { cellWidth: 85.9 },
+      0: { cellWidth: 70 },
+      1: { cellWidth: 70.9 },
       2: { cellWidth: 30 },
+      3: { cellWidth: 25 },
     };
 
     const intangibleRows = adminIntangibleAssets.map((asset: any) => [
       asset.name,
       getIntangibleAssetDescription(asset),
       asset.type,
+      asset.risk_level?.name || '—',
     ]);
 
     autoTable(doc, {
@@ -1107,7 +1234,7 @@ I agree that if any of the items are damaged or lost due to my negligence, I sha
 
   doc.text('Issued to/ Received by:', 130, signatureY);
 
-  if (form.status === 'Signed' && form.signed_at) {
+  if (form.signed_at) {
     const empDate = new Date(form.signed_at);
     doc.text(`${empDate.toLocaleDateString()}`, 170, signatureY + 10);
     doc.text(`${empDate.toLocaleTimeString()}`, 170, signatureY + 15);
@@ -1141,8 +1268,9 @@ I agree that if any of the items are damaged or lost due to my negligence, I sha
     doc.text('Signature over Printed Name', 130, signatureY + 35);
   }
 
-  // Determine which copy label to use based on asset types
-  const copyLabel = itAssets.length > 0 ? 'Copy for IT:' : 'Copy for Admin:';
+  // Determine which copy label to use based on asset types (must match header/issuingDepartment: IT if any IT asset/intangible, else Admin)
+  const hasITForCopy = itAssets.length > 0 || itIntangibleAssets.length > 0;
+  const copyLabel = hasITForCopy ? 'Copy for IT:' : 'Copy for Admin:';
   doc.text(copyLabel, 20, signatureY + 60);
 
   const itCopyDate = form.created_at ? new Date(form.created_at) : new Date();
@@ -1353,6 +1481,73 @@ function ChecklistSummaryCard({
   );
 }
 
+function FormAssetSection({
+  tangibleAssets,
+  intangibleAssets,
+  intangibleAssetsLoading,
+}: {
+  tangibleAssets: any[];
+  intangibleAssets: any[];
+  intangibleAssetsLoading: boolean;
+}) {
+  if (
+    !intangibleAssetsLoading &&
+    tangibleAssets.length === 0 &&
+    intangibleAssets.length === 0
+  ) {
+    return <p className="font-medium text-sm">No Assets</p>;
+  }
+  return (
+    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+      <div className="min-w-0">
+        <p className="flex items-center gap-1.5 font-medium text-sm">
+          <Package className="h-4 w-4 text-blue-600 flex-shrink-0" />
+          Tangible Assets <span className="text-gray-400">({tangibleAssets.length})</span>
+        </p>
+        {tangibleAssets.length > 0 ? (
+          <div className="max-h-[120px] overflow-y-auto scrollbar-hide text-xs text-gray-500 mt-1">
+            <div className="space-y-1">
+              {tangibleAssets.map(asset => (
+                <div key={asset.id} className="flex items-start min-w-0">
+                  <span className="w-1 h-1 bg-gray-400 rounded-full mr-2 mt-1.5 flex-shrink-0"></span>
+                  <span className="break-words">{asset.name || asset.code}</span>
+                </div>
+              ))}
+            </div>
+          </div>
+        ) : (
+          <p className="text-xs text-gray-400 mt-1">None</p>
+        )}
+      </div>
+      <div className="min-w-0">
+        <p className="flex items-center gap-1.5 font-medium text-sm">
+          <FileText className="h-4 w-4 text-amber-600 flex-shrink-0" />
+          Intangible Assets <span className="text-gray-400">({intangibleAssets.length})</span>
+        </p>
+        {intangibleAssetsLoading ? (
+          <div className="space-y-1.5 mt-1">
+            <Shimmer className="h-4 w-24 rounded" />
+            <Shimmer className="h-4 w-32 rounded" />
+          </div>
+        ) : intangibleAssets.length > 0 ? (
+          <div className="max-h-[120px] overflow-y-auto scrollbar-hide text-xs text-gray-500 mt-1">
+            <div className="space-y-1">
+              {intangibleAssets.map(asset => (
+                <div key={asset.id} className="flex items-start min-w-0">
+                  <span className="w-1 h-1 bg-gray-400 rounded-full mr-2 mt-1.5 flex-shrink-0"></span>
+                  <span className="break-words">{asset.name || asset.code}</span>
+                </div>
+              ))}
+            </div>
+          </div>
+        ) : (
+          <p className="text-xs text-gray-400 mt-1">None</p>
+        )}
+      </div>
+    </div>
+  );
+}
+
 export function AccountabilityFormCard({
   form,
   onSign,
@@ -1439,6 +1634,11 @@ export function AccountabilityFormCard({
     : '';
   const [intangibleAssets, setIntangibleAssets] = useState<any[]>([]);
   const [intangibleAssetsLoading, setIntangibleAssetsLoading] = useState(false);
+  const displayAssets = getFormDisplayAssets(form, intangibleAssets);
+  const {
+    tangible: tangibleAssets,
+    intangible: intangibleDisplayAssets,
+  } = splitDisplayAssets(displayAssets);
 
   // OTP verification state
   const [showOtpDialog, setShowOtpDialog] = useState(false);
@@ -1517,47 +1717,31 @@ export function AccountabilityFormCard({
     fetchChecklists();
   }, [form.id, form.assignment?.id]);
 
-  // Fetch intangible assets for the assignment
+  // Fetch intangible assets currently assigned to the form's user. Fetched even
+  // on lazy-loaded list cards so the card's asset list matches the PDF, which
+  // always resolves assigned intangibles.
   useEffect(() => {
-    if (lazyLoadDetails) {
-      return;
-    }
     const fetchIntangibleAssets = async () => {
-      const assignmentIds = new Set<string>();
-      for (const id of form.assignmentIds ?? []) {
-        const assignmentId = String(id ?? '').trim();
-        if (assignmentId) {
-          assignmentIds.add(assignmentId);
+      try {
+        setIntangibleAssetsLoading(true);
+        if (!intangibleAssetsFetchPromise) {
+          intangibleAssetsFetchPromise = api
+            .get('/intangible-assets')
+            .finally(() => {
+              intangibleAssetsFetchPromise = null;
+            });
         }
-      }
-      if (form.assignment?.id) {
-        assignmentIds.add(String(form.assignment.id).trim());
-      }
-
-      if (assignmentIds.size > 0) {
-        try {
-          setIntangibleAssetsLoading(true);
-          const response = await api.get('/intangible-assets');
-          // Filter intangible assets that are assigned to this assignment
-          const assignmentIntangibleAssets = (response || []).filter(
-            (asset: any) =>
-              assignmentIds.has(
-                String(asset.assignment_id ?? asset.assignmentId ?? '').trim()
-              )
-          );
-          setIntangibleAssets(assignmentIntangibleAssets);
-        } catch (error) {
-          console.error('Failed to fetch intangible assets:', error);
-          setIntangibleAssets([]);
-        } finally {
-          setIntangibleAssetsLoading(false);
-        }
-      } else {
+        const response = await intangibleAssetsFetchPromise;
+        setIntangibleAssets(getFormAssignedIntangibleAssets(response, form));
+      } catch (error) {
+        console.error('Failed to fetch intangible assets:', error);
         setIntangibleAssets([]);
+      } finally {
+        setIntangibleAssetsLoading(false);
       }
     };
     fetchIntangibleAssets();
-  }, [form.assignment?.id, form.assignmentIds, lazyLoadDetails]);
+  }, [form.id, form.user.id]);
 
   const refreshFormChecklists = async () => {
     try {
@@ -1841,13 +2025,13 @@ export function AccountabilityFormCard({
                 Created {new Date(form.created_at).toLocaleDateString()}
               </p>
               <div className="mt-2 flex flex-wrap gap-1.5">
-                {form.assets.filter(a => getAssetScopeType(a, form) === 'IT')
+                {displayAssets.filter(a => getDisplayScopeType(a, form) === 'IT')
                   .length > 0 && (
                   <span className="inline-flex items-center rounded-md bg-blue-50 px-2 py-0.5 text-xs font-medium text-blue-700 ring-1 ring-inset ring-blue-600/20">
                     IT Asset Accountability
                   </span>
                 )}
-                {form.assets.filter(a => getAssetScopeType(a, form) === 'Admin')
+                {displayAssets.filter(a => getDisplayScopeType(a, form) === 'Admin')
                   .length > 0 && (
                   <span className="inline-flex items-center rounded-md bg-amber-50 px-2 py-0.5 text-xs font-medium text-amber-700 ring-1 ring-inset ring-amber-600/20">
                     Admin Asset Accountability
@@ -1963,25 +2147,12 @@ export function AccountabilityFormCard({
 
               {/* Asset Info */}
               <div className="flex items-start gap-3">
-                <Package className="h-4 w-4 text-gray-400 mt-0.5" />
                 <div className="flex-1">
-                  <p className="font-medium text-sm">
-                    {form.assets.length === 0
-                      ? 'No Assets'
-                      : `${form.assets.length} Assets`}
-                  </p>
-                  {form.assets.length > 0 && (
-                    <div className="max-h-[120px] overflow-y-auto scrollbar-hide text-xs text-gray-500 mt-1">
-                      <div className="space-y-0.5">
-                        {form.assets.map(asset => (
-                          <div key={asset.id} className="flex items-center">
-                            <span className="w-1 h-1 bg-gray-400 rounded-full mr-2 flex-shrink-0"></span>
-                            <span>{asset.name || asset.code}</span>
-                          </div>
-                        ))}
-                      </div>
-                    </div>
-                  )}
+                  <FormAssetSection
+                    tangibleAssets={tangibleAssets}
+                    intangibleAssets={intangibleDisplayAssets}
+                    intangibleAssetsLoading={intangibleAssetsLoading}
+                  />
                 </div>
               </div>
 
@@ -2132,25 +2303,12 @@ export function AccountabilityFormCard({
 
             {/* Asset Info */}
             <div className="flex items-start gap-3">
-              <Package className="h-4 w-4 text-gray-400 mt-0.5" />
               <div className="flex-1">
-                <p className="font-medium text-sm">
-                  {form.assets.length === 0
-                    ? 'No Assets'
-                    : `${form.assets.length} Assets`}
-                </p>
-                {form.assets.length > 0 && (
-                  <div className="max-h-[120px] overflow-y-auto scrollbar-hide text-xs text-gray-500 mt-1">
-                    <div className="space-y-0.5">
-                      {form.assets.map(asset => (
-                        <div key={asset.id} className="flex items-center">
-                          <span className="w-1 h-1 bg-gray-400 rounded-full mr-2 flex-shrink-0"></span>
-                          <span>{asset.name || asset.code}</span>
-                        </div>
-                      ))}
-                    </div>
-                  </div>
-                )}
+                <FormAssetSection
+                  tangibleAssets={tangibleAssets}
+                  intangibleAssets={intangibleDisplayAssets}
+                  intangibleAssetsLoading={intangibleAssetsLoading}
+                />
               </div>
             </div>
 
@@ -2226,7 +2384,7 @@ export function AccountabilityFormCard({
       </CardContent>
 
       {/* Footer with Actions */}
-      <div className="flex gap-2 p-4 mt-auto border-t border-slate-100">
+      <div className="flex flex-col sm:flex-row gap-2 p-4 mt-auto border-t border-slate-100">
         <Button
           variant="outline"
           size="sm"
@@ -2239,10 +2397,11 @@ export function AccountabilityFormCard({
               setShowPreviewModal(true);
             }
           }}
-          className="flex-1 bg-red-600 text-white border-red-600 hover:bg-white hover:text-red-600 hover:border-red-600 shadow-sm"
+          className="w-full sm:flex-1 bg-red-600 text-white border-red-600 hover:bg-white hover:text-red-600 hover:border-red-600 shadow-sm"
         >
           <Eye className="h-4 w-4 mr-2" />
-          View
+          <span className="hidden sm:inline">View</span>
+          <span className="sm:hidden">View</span>
         </Button>
 
         {showFooterDownload && (
@@ -2250,10 +2409,11 @@ export function AccountabilityFormCard({
             variant="outline"
             size="sm"
             onClick={handleDownload}
-            className="flex-1 bg-white text-red-600 border-red-600 hover:bg-red-600 hover:text-white shadow-sm"
+            className="w-full sm:flex-1 bg-white text-red-600 border-red-600 hover:bg-red-600 hover:text-white shadow-sm"
           >
             <Download className="h-4 w-4 mr-2" />
-            Download
+            <span className="hidden sm:inline">Download</span>
+            <span className="sm:hidden">DL</span>
           </Button>
         )}
 
@@ -2262,9 +2422,10 @@ export function AccountabilityFormCard({
             variant="outline"
             size="sm"
             onClick={() => onReceive(form)}
-            className="flex-1 bg-red-600 text-white border-red-600 hover:bg-white hover:text-red-600 hover:border-red-600 shadow-sm"
+            className="w-full sm:flex-1 bg-red-600 text-white border-red-600 hover:bg-white hover:text-red-600 hover:border-red-600 shadow-sm"
           >
-            Receive
+            <span className="hidden sm:inline">Receive</span>
+            <span className="sm:hidden">Recv</span>
           </Button>
         )}
 
@@ -2280,10 +2441,11 @@ export function AccountabilityFormCard({
                   setShowConfirmDialog(true);
                 }
               }}
-              className="flex-1 bg-red-600 text-white border-red-600 hover:bg-white hover:text-red-600 hover:border-red-600 shadow-sm"
+              className="w-full sm:flex-1 bg-red-600 text-white border-red-600 hover:bg-white hover:text-red-600 hover:border-red-600 shadow-sm"
             >
               <CheckCircle2 className="h-4 w-4 mr-2" />
-              Sign Form
+              <span className="hidden sm:inline">Sign Form</span>
+              <span className="sm:hidden">Sign</span>
             </Button>
 
             {/* Confirmation Dialog */}
@@ -2303,13 +2465,7 @@ export function AccountabilityFormCard({
 
                 <div className="min-h-0 flex-1 overflow-auto">
                   <div className="mx-4 my-4 h-[600px] overflow-hidden rounded-lg border border-slate-200 bg-slate-50 sm:mx-6">
-                    {pdfUrl ? (
-                      <PDFViewer pdfUrl={pdfUrl} className="h-full w-full" />
-                    ) : (
-                      <div className="flex h-full w-full items-center justify-center text-gray-500">
-                        Loading form preview...
-                      </div>
-                    )}
+                    <PDFViewer pdfUrl={pdfUrl} className="h-full w-full" />
                   </div>
 
                   <div className="space-y-4 px-6 py-4">
@@ -2485,13 +2641,7 @@ export function AccountabilityFormCard({
           </div>
           <AppDialogBody className="min-h-0 flex-1 overflow-auto !p-0">
             <div className="mx-4 h-[575px] overflow-hidden rounded-lg border border-slate-200 bg-slate-50 sm:mx-6">
-              {pdfUrl ? (
-                <PDFViewer pdfUrl={pdfUrl} className="h-full w-full" />
-              ) : (
-                <div className="flex h-full w-full items-center justify-center text-gray-500">
-                  Loading form preview...
-                </div>
-              )}
+              <PDFViewer pdfUrl={pdfUrl} className="h-full w-full" />
             </div>
             <div className="space-y-2 px-4 py-4 sm:px-6">
               <Label htmlFor="accountability-decline-reason">
@@ -2561,9 +2711,7 @@ export function AccountabilityFormCard({
         sendOtpEndpoint="/auth/initials/send-otp"
         verifyOtpEndpoint="/auth/initials/verify-otp"
         onVerified={() => {
-          if (pendingActionType === 'sign') {
-            toast.success('Form signed successfully');
-          } else if (pendingActionType === 'signChecklist') {
+          if (pendingActionType === 'signChecklist') {
             toast.success(
               unsignedChecklistCount > 1
                 ? `Signed ${unsignedChecklistCount} checklists successfully`
@@ -2619,12 +2767,8 @@ export function AccountabilityFormCard({
                   </p>
                 </div>
               </div>
-            ) : pdfUrl ? (
-              <PDFViewer pdfUrl={pdfUrl} className="w-full" />
             ) : (
-              <div className="flex h-full w-full items-center justify-center text-gray-500">
-                Loading form preview...
-              </div>
+              <PDFViewer pdfUrl={pdfUrl} className="w-full" />
             )}
           </AppDialogBody>
 
@@ -2710,13 +2854,7 @@ export function AccountabilityFormCard({
               </div>
             )}
             <div className="mx-4 my-4 h-[600px] overflow-hidden rounded-lg border border-slate-200 bg-slate-50 sm:mx-6">
-              {checklistPdfUrl ? (
-                <PDFViewer pdfUrl={checklistPdfUrl} className="h-full w-full" />
-              ) : (
-                <div className="flex h-full w-full items-center justify-center text-gray-500">
-                  Generating checklist PDF preview...
-                </div>
-              )}
+              <PDFViewer pdfUrl={checklistPdfUrl} className="h-full w-full" />
             </div>
             <div className="space-y-4 px-6 py-4">
               <div className="flex items-start space-x-3">
@@ -2787,13 +2925,7 @@ export function AccountabilityFormCard({
             description="Asset Checklist Form Preview"
           />
           <AppDialogBody className="min-h-0 flex-1 overflow-auto !p-0">
-            {checklistPdfUrl ? (
-              <PDFViewer pdfUrl={checklistPdfUrl} className="h-full w-full" />
-            ) : (
-              <div className="flex h-full w-full items-center justify-center text-gray-500">
-                Generating checklist PDF preview...
-              </div>
-            )}
+            <PDFViewer pdfUrl={checklistPdfUrl} className="h-full w-full" />
           </AppDialogBody>
           <AppDialogChromeFooter className="justify-end gap-3">
             {canSignChecklist && (
@@ -2843,6 +2975,8 @@ interface AccountabilityFormDetailProps {
   onDecline?: (formId: string, reason: string) => Promise<void>;
   /** Callback to notify parent when receive copy action completes */
   onReceiveCompleted?: () => void;
+  /** When true, show an Asset Movement tab (return/transfer/replacement chain) alongside the PDF */
+  showAssetMovement?: boolean;
 }
 
 export function AccountabilityFormDetail({
@@ -2860,6 +2994,7 @@ export function AccountabilityFormDetail({
   showDeclineButton = false,
   onDecline,
   onReceiveCompleted,
+  showAssetMovement = false,
 }: AccountabilityFormDetailProps) {
   const { user: currentUser } = useCurrentUser();
   const [pdfUrl, setPdfUrl] = useState<string>('');
@@ -2887,6 +3022,7 @@ export function AccountabilityFormDetail({
   const pendingReceiveActionRef = useRef<(() => Promise<void>) | null>(null);
   const [intangibleAssets, setIntangibleAssets] = useState<any[]>([]);
   const [intangibleAssetsLoading, setIntangibleAssetsLoading] = useState(false);
+  const [movementTabActive, setMovementTabActive] = useState(false);
 
   const isAssignedUser = currentUser?.id === form.user.id;
   const canSign = !readOnly && isAssignedUser && form.status === 'Pending';
@@ -2907,44 +3043,29 @@ export function AccountabilityFormDetail({
     setLocalForm(form);
   }, [form]);
 
-  // Fetch intangible assets for the assignment
+  // Fetch intangible assets currently assigned to the form's user
   useEffect(() => {
     const fetchIntangibleAssets = async () => {
-      const assignmentIds = new Set<string>();
-      for (const id of form.assignmentIds ?? []) {
-        const assignmentId = String(id ?? '').trim();
-        if (assignmentId) {
-          assignmentIds.add(assignmentId);
+      try {
+        setIntangibleAssetsLoading(true);
+        if (!intangibleAssetsFetchPromise) {
+          intangibleAssetsFetchPromise = api
+            .get('/intangible-assets')
+            .finally(() => {
+              intangibleAssetsFetchPromise = null;
+            });
         }
-      }
-      if (form.assignment?.id) {
-        assignmentIds.add(String(form.assignment.id).trim());
-      }
-
-      if (assignmentIds.size > 0) {
-        try {
-          setIntangibleAssetsLoading(true);
-          const response = await api.get('/intangible-assets');
-          // Filter intangible assets that are assigned to this assignment
-          const assignmentIntangibleAssets = (response || []).filter(
-            (asset: any) =>
-              assignmentIds.has(
-                String(asset.assignment_id ?? asset.assignmentId ?? '').trim()
-              )
-          );
-          setIntangibleAssets(assignmentIntangibleAssets);
-        } catch (error) {
-          console.error('Failed to fetch intangible assets:', error);
-          setIntangibleAssets([]);
-        } finally {
-          setIntangibleAssetsLoading(false);
-        }
-      } else {
+        const response = await intangibleAssetsFetchPromise;
+        setIntangibleAssets(getFormAssignedIntangibleAssets(response, form));
+      } catch (error) {
+        console.error('Failed to fetch intangible assets:', error);
         setIntangibleAssets([]);
+      } finally {
+        setIntangibleAssetsLoading(false);
       }
     };
     fetchIntangibleAssets();
-  }, [form.assignment?.id, form.assignmentIds]);
+  }, [form.id, form.user.id]);
 
   useEffect(() => {
     const generatePdf = async () => {
@@ -3069,13 +3190,7 @@ export function AccountabilityFormDetail({
 
               <div className="min-h-0 flex-1 overflow-auto">
                 <div className="mx-4 my-4 h-[500px] overflow-hidden rounded-lg border border-slate-200 bg-slate-50 sm:mx-6">
-                  {pdfUrl ? (
-                    <PDFViewer pdfUrl={pdfUrl} className="h-full w-full" />
-                  ) : (
-                    <div className="flex h-full w-full items-center justify-center text-gray-500">
-                      Loading form preview...
-                    </div>
-                  )}
+                  <PDFViewer pdfUrl={pdfUrl} className="h-full w-full" />
                 </div>
 
                 <div className="space-y-4 px-6 py-4">
@@ -3174,13 +3289,7 @@ export function AccountabilityFormDetail({
             </div>
             <AppDialogBody className="min-h-0 flex-1 overflow-auto !p-0">
               <div className="mx-4 h-[420px] overflow-hidden rounded-lg border border-slate-200 bg-slate-50 sm:mx-6">
-                {pdfUrl ? (
-                  <PDFViewer pdfUrl={pdfUrl} className="h-full w-full" />
-                ) : (
-                  <div className="flex h-full w-full items-center justify-center text-gray-500">
-                    Loading form preview...
-                  </div>
-                )}
+                <PDFViewer pdfUrl={pdfUrl} className="h-full w-full" />
               </div>
               <div className="space-y-2 px-4 py-4 sm:px-6">
                 <Label htmlFor="accountability-decline-reason">
@@ -3251,9 +3360,6 @@ export function AccountabilityFormDetail({
         sendOtpEndpoint="/auth/initials/send-otp"
         verifyOtpEndpoint="/auth/initials/verify-otp"
         onVerified={() => {
-          if (pendingActionType === 'sign') {
-            toast.success('Form signed successfully');
-          }
           setPendingActionType(null);
           setShowConfirmDialog(false);
           setAgreeTerms(false);
@@ -3455,25 +3561,67 @@ export function AccountabilityFormDetail({
               ) : null}
             </div>
           )}
-          <div className="flex h-[70vh] flex-1 flex-col overflow-hidden">
-            {pdfUrl ? (
+          {showAssetMovement ? (
+            <div className="flex min-h-0 flex-1 flex-col overflow-hidden">
+              <Tabs
+                value={movementTabActive ? 'movement' : 'form'}
+                onValueChange={tab => setMovementTabActive(tab === 'movement')}
+                className="flex min-h-0 w-full min-w-0 flex-1 flex-col"
+              >
+                <TabsList className={`grid w-full grid-cols-2 mb-3 ${segmentTabsListClassName}`}>
+                  <TabsTrigger value="form" className={cn(segmentTabsTriggerClassName, 'flex h-10 items-center justify-center gap-2')}>
+                    <FileText className="h-4 w-4 shrink-0" />
+                    Form
+                  </TabsTrigger>
+                  <TabsTrigger value="movement" className={cn(segmentTabsTriggerClassName, 'flex h-10 items-center justify-center gap-2')}>
+                    <GitBranch className="h-4 w-4 shrink-0" />
+                    Asset Movement
+                  </TabsTrigger>
+                </TabsList>
+                <TabsContent value="form" className="mt-0 min-h-0 flex-1 px-4 sm:px-6">
+                  <div className="flex h-[70vh] flex-col overflow-hidden">
+                    <PDFViewer pdfUrl={pdfUrl} className="h-full w-full" />
+                  </div>
+                </TabsContent>
+                <TabsContent value="movement" className="mt-0 min-h-0 flex-1 overflow-auto px-4 sm:px-6">
+                  <AssetMovementTab formId={form.id} formStatus={localForm.status} />
+                </TabsContent>
+              </Tabs>
+            </div>
+          ) : (
+            <div className="flex h-[70vh] flex-1 flex-col overflow-hidden">
               <PDFViewer pdfUrl={pdfUrl} className="h-full w-full" />
-            ) : (
-              <div className="flex h-full w-full items-center justify-center text-gray-500">
-                Generating PDF preview...
-              </div>
-            )}
-          </div>
+            </div>
+          )}
+        </div>
+      ) : showAssetMovement ? (
+        <div className={previewClassName}>
+          <Tabs
+            value={movementTabActive ? 'movement' : 'form'}
+            onValueChange={tab => setMovementTabActive(tab === 'movement')}
+            className="flex min-h-0 flex-1 flex-col"
+          >
+            <TabsList className={`grid w-full grid-cols-2 mb-3 ${segmentTabsListClassName}`}>
+              <TabsTrigger value="form" className={cn(segmentTabsTriggerClassName, 'flex h-10 items-center justify-center gap-2')}>
+                <FileText className="h-4 w-4 shrink-0" />
+                Form
+              </TabsTrigger>
+              <TabsTrigger value="movement" className={cn(segmentTabsTriggerClassName, 'flex h-10 items-center justify-center gap-2')}>
+                <GitBranch className="h-4 w-4 shrink-0" />
+                Asset Movement
+              </TabsTrigger>
+            </TabsList>
+            <TabsContent value="form" className="mt-0 min-h-0 flex-1 px-4 sm:px-6">
+              <PDFViewer pdfUrl={pdfUrl} className="h-full w-full" />
+            </TabsContent>
+            <TabsContent value="movement" className="mt-0 min-h-0 flex-1 overflow-auto px-4 sm:px-6">
+              <AssetMovementTab formId={form.id} formStatus={localForm.status} />
+            </TabsContent>
+          </Tabs>
         </div>
       ) : (
         <div className={previewClassName}>
-          {pdfUrl ? (
-            <PDFViewer pdfUrl={pdfUrl} className="h-full w-full" />
-          ) : (
-            <div className="flex h-full w-full items-center justify-center text-gray-500">
-              Generating PDF preview...
-            </div>
-          )}
+          <PDFViewer pdfUrl={pdfUrl} className="h-full w-full" />
         </div>
       )}
     </>

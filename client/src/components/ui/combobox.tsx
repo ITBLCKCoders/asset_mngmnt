@@ -22,10 +22,11 @@ interface ComboboxProps {
   value?: string;
   onChange?: (value: string) => void;
   placeholder?: string;
+  className?: string;
 }
 
 const Combobox = React.forwardRef<HTMLButtonElement, ComboboxProps>(
-  ({ options, value, onChange, placeholder = 'Select...', ...props }, ref) => {
+  ({ options, value, onChange, placeholder = 'Select...', className, ...props }, ref) => {
     const [open, setOpen] = React.useState(false);
 
     return (
@@ -36,7 +37,7 @@ const Combobox = React.forwardRef<HTMLButtonElement, ComboboxProps>(
             variant="outline"
             role="combobox"
             aria-expanded={open}
-            className="w-full justify-between bg-white hover:bg-gray-200"
+            className={cn('w-full justify-between bg-white hover:bg-gray-200', className)}
             {...props}
           >
             {value

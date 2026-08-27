@@ -9,7 +9,10 @@ import {
   uploadDocumentToCloudinary,
 } from '../utils/cloudinary.js';
 import { createAuditLog } from '../utils/audit.js';
-import { buildAssetUpdateAuditDiff } from '../utils/assetAuditDiff.js';
+import {
+  buildAssetUpdateAuditDiff,
+  mergeAssignmentIntoDiff,
+} from '../utils/assetAuditDiff.js';
 import {
   CreateAssetDtoSchema,
   UpdateAssetDtoSchema,
@@ -26,6 +29,7 @@ import {
   getTransferredOutAssetsForCompany,
   setAssetOriginatingCompany,
 } from '../utils/companyTransferVisibility.js';
+import { attachBuilderGroupingToAssets } from '../utils/assetBuilderGrouping.js';
 
 /** Matches `sp_create_asset` / `sp_update_asset` `p_status` ENUM (excludes UI-only `Assigned`). */
 const STORED_PROC_ASSET_STATUSES = new Set([
@@ -197,9 +201,33 @@ export async function getMyAssetsHandler(req: AuthRequest, res: Response) {
     const allAssets = await assetRepo.callGetAllAssets();
 
     // Filter to only include assets assigned to current user
-    const myAssets = allAssets.filter((asset: any) =>
+    let myAssets = allAssets.filter((asset: any) =>
       assetIds.includes(asset.assetID)
     );
+
+    // Accept optional scope query param for IT/Admin tab switching. Applied for
+    // every user so anyone can view both their IT and Admin assigned assets.
+    const scopeParam = req.query.scope as string | undefined;
+    const scopeOverride =
+      scopeParam === 'it' || scopeParam === 'admin' ? scopeParam : undefined;
+    if (scopeOverride) {
+      const { companyId } = await getAssetScope(pool, userId);
+      const departmentIds = await getDepartmentIdsForScope(
+        pool,
+        scopeOverride,
+        companyId ?? undefined
+      );
+      if (departmentIds.length > 0) {
+        const categoryIds = await assetRepo.getCategoryIdsByDepartmentIds(
+          departmentIds
+        );
+        const categorySet = new Set(categoryIds.map(String));
+        myAssets = myAssets.filter(
+          (asset: any) =>
+            !asset.category_id || categorySet.has(String(asset.category_id))
+        );
+      }
+    }
 
     logger.info(`Found ${myAssets.length} assets assigned to user ${userId}`);
 
@@ -288,28 +316,6 @@ export async function getMyAssetsHandler(req: AuthRequest, res: Response) {
         assignmentNotes: row.assignment_notes,
       }));
 
-      // Check if this asset is a builder and fetch children
-      try {
-        const builder = await assetRepo.getBuilderByBuilderId(asset.assetID);
-        if (builder) {
-          const childRows = await assetRepo.getBuilderChildrenByBuilderId(
-            asset.assetID
-          );
-          asset.children = childRows.map(row => ({
-            id: row.asset_code,
-            name: row.name,
-          }));
-          asset.isAssetBuilder = true;
-          asset.builderStatus = builder.status;
-        }
-      } catch (childError) {
-        logger.warn(
-          `Failed to fetch children for asset ${asset.assetID}:`,
-          childError
-        );
-        asset.children = [];
-      }
-
       // Fetch accountability forms for this asset
       try {
         const formRows = await assetRepo.getAccountabilityFormsForAsset(
@@ -328,6 +334,17 @@ export async function getMyAssetsHandler(req: AuthRequest, res: Response) {
           formError
         );
         asset.accountabilityForms = [];
+      }
+    }
+
+    try {
+      await attachBuilderGroupingToAssets(myAssets);
+    } catch (childError) {
+      logger.warn('Failed to attach builder grouping for my assets:', childError);
+      for (const asset of myAssets) {
+        asset.children = [];
+        asset.isAssetBuilder = false;
+        asset.builderStatus = null;
       }
     }
 
@@ -522,16 +539,6 @@ export async function getAssetsHandler(req: AuthRequest, res: Response) {
       // Batch fetch builder history (asset_builder_items for these assets)
       const builderHistoryRows = await assetRepo.getBuilderHistoryForAssetIds(assetIds);
 
-      // Which of our assets are builders?
-      const builderMetaRows = await assetRepo.getBuilderMetaForAssetIds(assetIds);
-      const builderIds = builderMetaRows.map(r => r.builderID);
-      const builderStatusById = new Map(
-        builderMetaRows.map(r => [r.builderID, r.status])
-      );
-
-      // Batch fetch builder children (for assets that are builders)
-      const childRows = await assetRepo.getBuilderChildrenForBuilderIds(builderIds);
-
       // Batch fetch accountability forms by asset_id (list view; JSON_CONTAINS forms can be loaded on detail)
       const formRows = await assetRepo.getAccountabilityFormsForAssetIds(assetIds);
 
@@ -616,17 +623,6 @@ export async function getAssetsHandler(req: AuthRequest, res: Response) {
             addedBy: row.added_by_name,
           }));
 
-        const builderStatus = builderStatusById.get(asset.assetID);
-        if (builderStatus !== undefined) {
-          asset.isAssetBuilder = true;
-          asset.builderStatus = builderStatus;
-          asset.children = childRows
-            .filter((c: any) => c.builder_id === asset.assetID)
-            .map((row: any) => ({ id: row.asset_code, name: row.name }));
-        } else {
-          asset.children = [];
-        }
-
         asset.accountabilityForms = (formRows as any[])
           .filter((f: any) => {
             if (f.asset_id === asset.assetID) return true;
@@ -647,6 +643,11 @@ export async function getAssetsHandler(req: AuthRequest, res: Response) {
             assets_data: row.assets_data,
           }));
       }
+
+      await attachBuilderGroupingToAssets(assets);
+
+      // Hide builder component assets from the top-level list; they appear under their parent.
+      assets = assets.filter((a: any) => !a.isBuilderChild);
     } else {
       for (const asset of assets) {
         asset.specifications = [];
@@ -711,6 +712,9 @@ export async function createAssetHandler(req: AuthRequest, res: Response) {
     depreciationMethod,
     usefulLifeYears,
     annualDepreciation,
+    bookValue,
+    accumulatedDepreciation,
+    monthlyDepreciation,
     depreciationStartDate,
     companyId,
     locationId,
@@ -732,6 +736,9 @@ export async function createAssetHandler(req: AuthRequest, res: Response) {
     salvageValue: fields.salvageValue ? Number(fields.salvageValue) : undefined,
     usefulLifeYears: fields.usefulLifeYears ? Number(fields.usefulLifeYears) : undefined,
     annualDepreciation: fields.annualDepreciation ? Number(fields.annualDepreciation) : undefined,
+    bookValue: fields.bookValue ? Number(fields.bookValue) : undefined,
+    accumulatedDepreciation: fields.accumulatedDepreciation ? Number(fields.accumulatedDepreciation) : undefined,
+    monthlyDepreciation: fields.monthlyDepreciation ? Number(fields.monthlyDepreciation) : undefined,
     warrantyMonths: fields.warrantyMonths ? Number(fields.warrantyMonths) : undefined,
     depreciationMethod: fields.depreciationMethod || undefined,
     isOldUnit: fields.isOldUnit === 'true' || fields.isOldUnit === '1',
@@ -836,7 +843,7 @@ export async function createAssetHandler(req: AuthRequest, res: Response) {
   try {
     // Create asset using regular asset creation
     const [rows] = (await pool.execute(
-      'CALL sp_create_asset(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
+      'CALL sp_create_asset(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
       [
         name.trim(),
         description?.trim() || null,
@@ -888,6 +895,9 @@ export async function createAssetHandler(req: AuthRequest, res: Response) {
         userId,
         userId,
         null, // Let the stored procedure set created_at to NOW()
+        bookValue || null,
+        accumulatedDepreciation || null,
+        monthlyDepreciation || null,
       ]
     )) as any[];
 
@@ -924,6 +934,9 @@ export async function createAssetHandler(req: AuthRequest, res: Response) {
         depreciation_method: asset.depreciation_method,
         useful_life_years: asset.useful_life_years,
         annual_depreciation: asset.annual_depreciation,
+        book_value: asset.book_value,
+        accumulated_depreciation: asset.accumulated_depreciation,
+        monthly_depreciation: asset.monthly_depreciation,
         depreciation_start_date: asset.depreciation_start_date,
         company_id: asset.company_id,
         location_id: asset.location_id,
@@ -1020,6 +1033,7 @@ export async function createAssetHandler(req: AuthRequest, res: Response) {
       asset: {
         assetID: asset.assetID,
         asset_code: asset.asset_code,
+        tag_code: asset.tag_code ?? asset.asset_code,
         name: asset.name,
         description: asset.description,
         category_id: asset.category_id,
@@ -1035,6 +1049,9 @@ export async function createAssetHandler(req: AuthRequest, res: Response) {
         depreciation_method: asset.depreciation_method,
         useful_life_years: asset.useful_life_years,
         annual_depreciation: asset.annual_depreciation,
+        book_value: asset.book_value,
+        accumulated_depreciation: asset.accumulated_depreciation,
+        monthly_depreciation: asset.monthly_depreciation,
         depreciation_start_date: asset.depreciation_start_date,
         company_id: asset.company_id,
         location_id: asset.location_id,
@@ -1089,9 +1106,13 @@ export async function getAssetPublicHandler(req: Request, res: Response) {
     const assetCode = decodeURIComponent(rawAssetCode);
 
     const assets = await assetRepo.callGetAllAssets();
+    const normalized = assetCode.toUpperCase();
+    // Resolve by the stable tag_code OR the (mutable) asset_code so previously
+    // printed tags keep working after the asset code changes.
     const asset = assets.find(
       (a: any) =>
-        String(a.asset_code).toUpperCase() === assetCode.toUpperCase()
+        String(a.tag_code || a.asset_code).toUpperCase() === normalized ||
+        String(a.asset_code).toUpperCase() === normalized
     );
 
     if (!asset) {
@@ -1107,6 +1128,7 @@ export async function getAssetPublicHandler(req: Request, res: Response) {
       assets: [
         {
           asset_code: asset.asset_code,
+          tag_code: asset.tag_code ?? asset.asset_code,
           name: asset.name,
           image_url: asset.image_url ?? null,
           description: asset.description ?? null,
@@ -1149,9 +1171,13 @@ export async function getAssetByCodeHandler(req: any, res: Response) {
 
     // Only filter out assets in builders if this is not a specific asset request
     // For individual asset lookup, we want to show all assets including those in builders
+    const normalized = assetCode.toUpperCase();
+    // Resolve by the stable tag_code OR the (mutable) asset_code so previously
+    // printed tags keep working after the asset code changes.
     const asset = assets.find(
       (a: any) =>
-        String(a.asset_code).toUpperCase() === assetCode.toUpperCase()
+        String(a.tag_code || a.asset_code).toUpperCase() === normalized ||
+        String(a.asset_code).toUpperCase() === normalized
     );
 
     if (!asset) {
@@ -1257,26 +1283,17 @@ export async function getAssetByCodeHandler(req: any, res: Response) {
       asset.builderHistory = [];
     }
 
-    // Check if this asset is a builder and fetch children
+    // Attach builder parent/child grouping for parent assets only
     try {
-      const builder = await assetRepo.getBuilderByAssetId(asset.assetID);
-      if (builder) {
-        // It's a builder, fetch children
-        const childRows = await assetRepo.getBuilderChildrenByBuilderId(builder.builderID);
-        asset.children = childRows.map((row: any) => ({
-          id: row.asset_code,
-          name: row.name,
-        }));
-        asset.isAssetBuilder = true;
-        // Set the builder status
-        asset.builderStatus = builder.status;
-      }
+      await attachBuilderGroupingToAssets([asset]);
     } catch (childError) {
       logger.warn(
         `Failed to fetch children for asset ${asset.assetID}:`,
         childError
       );
       asset.children = [];
+      asset.isAssetBuilder = false;
+      asset.builderStatus = null;
     }
 
     // Fetch accountability forms for this asset
@@ -1328,6 +1345,9 @@ export async function updateAssetHandler(req: AuthRequest, res: Response) {
     depreciationMethod,
     usefulLifeYears,
     annualDepreciation,
+    bookValue,
+    accumulatedDepreciation,
+    monthlyDepreciation,
     depreciationStartDate,
     companyId,
     locationId,
@@ -1350,6 +1370,9 @@ export async function updateAssetHandler(req: AuthRequest, res: Response) {
     salvageValue: fields.salvageValue ? Number(fields.salvageValue) : undefined,
     usefulLifeYears: fields.usefulLifeYears ? Number(fields.usefulLifeYears) : undefined,
     annualDepreciation: fields.annualDepreciation ? Number(fields.annualDepreciation) : undefined,
+    bookValue: fields.bookValue ? Number(fields.bookValue) : undefined,
+    accumulatedDepreciation: fields.accumulatedDepreciation ? Number(fields.accumulatedDepreciation) : undefined,
+    monthlyDepreciation: fields.monthlyDepreciation ? Number(fields.monthlyDepreciation) : undefined,
     warrantyMonths: fields.warrantyMonths ? Number(fields.warrantyMonths) : undefined,
     depreciationMethod: fields.depreciationMethod || undefined,
     isOldUnit: fields.isOldUnit === 'true' || fields.isOldUnit === '1',
@@ -1374,14 +1397,17 @@ export async function updateAssetHandler(req: AuthRequest, res: Response) {
     return res.status(400).json({ error: 'Name and category are required' });
   }
 
-  // Validate that asset exists
-  const asset = await assetRepo.getAssetByCodeForAssign(assetId!);
+  // Validate that asset exists (single full-row fetch by code, used for
+  // existence check, FK preservation, and audit diff)
+  const asset = await assetRepo.getAssetForUpdateByCode(assetId!);
 
   if (!asset) {
     return res.status(404).json({ error: 'Asset not found' });
   }
 
-  // Validate foreign keys
+  const oldAsset = asset;
+
+  // Validate foreign keys (run independently so they execute in parallel)
   logger.info('Validating foreign keys for update:', {
     companyId,
     locationId,
@@ -1389,37 +1415,12 @@ export async function updateAssetHandler(req: AuthRequest, res: Response) {
     departmentId,
   });
 
-  let validCompanyId = null;
-  if (companyId) {
-    validCompanyId = await assetRepo.getCompanyIdByIdOrName(companyId);
-    logger.info(
-      `Company validation for ${companyId}: ${validCompanyId ? 'found' : 'not found'}`
-    );
-  }
-
-  let validLocationId = null;
-  if (locationId) {
-    validLocationId = await assetRepo.getLocationIdById(locationId);
-    logger.info(
-      `Location validation for ${locationId}: ${validLocationId ? 'found' : 'not found'}`
-    );
-  }
-
-  let validLocationRoomId = null;
-  if (locationRoomId) {
-    validLocationRoomId = await assetRepo.getRoomIdByIdOrName(locationRoomId);
-    logger.info(
-      `Location room validation for ${locationRoomId}: ${validLocationRoomId ? 'found' : 'not found'}`
-    );
-  }
-
-  let validDepartmentId = null;
-  if (departmentId) {
-    validDepartmentId = await assetRepo.getDepartmentIdByIdOrName(departmentId);
-    logger.info(
-      `Department validation for ${departmentId}: ${validDepartmentId ? 'found' : 'not found'}`
-    );
-  }
+  let [validCompanyId, validLocationId, validLocationRoomId, validDepartmentId] = await Promise.all([
+    companyId ? assetRepo.getCompanyIdByIdOrName(companyId) : Promise.resolve(null),
+    locationId ? assetRepo.getLocationIdById(locationId) : Promise.resolve(null),
+    locationRoomId ? assetRepo.getRoomIdByIdOrName(locationRoomId) : Promise.resolve(null),
+    departmentId ? assetRepo.getDepartmentIdByIdOrName(departmentId) : Promise.resolve(null),
+  ]);
 
   logger.info('Validation results for update:', {
     validCompanyId,
@@ -1427,12 +1428,6 @@ export async function updateAssetHandler(req: AuthRequest, res: Response) {
     validLocationRoomId,
     validDepartmentId,
   });
-
-  // Get old values before update for audit logging
-  const oldAsset = await assetRepo.getAssetForUpdateById(asset.assetID);
-  if (!oldAsset) {
-    return res.status(404).json({ error: 'Asset not found' });
-  }
 
   // Preserve FKs when client omits or fails to resolve them (sp_update_asset overwrites with NULL)
   if (!validCompanyId) {
@@ -1465,19 +1460,92 @@ export async function updateAssetHandler(req: AuthRequest, res: Response) {
     }
   }
 
+  const conn = await pool.getConnection();
   try {
+    await conn.beginTransaction();
+
     // Check if category or type has changed to determine if we need to update the asset code
     const categoryChanged = oldAsset.category_id !== categoryId;
     const typeChanged = oldAsset.type_id !== typeId;
 
-    // Check if isOldUnit status has changed
-    const isOldUnitChanged = oldAsset.is_old_unit !== (isOldUnit || 0);
+    // Check if isOldUnit status has changed (normalize to numeric booleans so a
+    // string form field doesn't spuriously compare unequal to the DB number).
+    const rawIsOldUnit = isOldUnit as unknown;
+    const newIsOldUnit = rawIsOldUnit === '1' || rawIsOldUnit === 1 || rawIsOldUnit === true ? 1 : 0;
+    const isOldUnitChanged = Number(oldAsset.is_old_unit ?? 0) !== newIsOldUnit;
 
     let updatedAsset;
 
     if (categoryChanged || typeChanged || isOldUnitChanged) {
-      // Category, type, or isOldUnit status changed, update asset code using the new stored procedure
-      const [codeUpdateRows] = (await pool.execute(
+      // Persist all field changes (including the new is_old_unit flag and the
+      // purchase date) FIRST, then regenerate the asset code.
+      // sp_update_asset_code reads is_old_unit / purchase_date from the DB row,
+      // so it must run after sp_update_asset to produce the correct code (e.g.
+      // dropping "-OU-" when the old-unit switch is turned off).
+      const [updateRows] = (await conn.execute(
+        'CALL sp_update_asset(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
+        [
+          asset.assetID,
+          name.trim(),
+          description?.trim() || null,
+          categoryId,
+          supplier?.trim() || null,
+          typeId || null,
+          brand?.trim() || null,
+          model?.trim() || null,
+          serial?.trim() || null,
+          finalImageUrl,
+          finalPurchaseDate
+            ? new Date(finalPurchaseDate).toISOString().split('T')[0]
+            : null,
+          assetValue || null,
+          salvageValue || 0,
+          finalDepreciationMethod &&
+          [
+            'straight-line',
+            'declining-balance',
+            'double-declining',
+            'units-of-production',
+          ].includes(finalDepreciationMethod)
+            ? finalDepreciationMethod
+            : null,
+          usefulLifeYears || null,
+          annualDepreciation || null,
+          depreciationStartDate
+            ? new Date(depreciationStartDate).toISOString().split('T')[0]
+            : null,
+          validCompanyId,
+          validLocationId,
+          validLocationRoomId,
+          validDepartmentId,
+          locationNotes?.trim() || null,
+          warrantyMonths || null,
+          normalizeConditionForStoredProcedure(condition),
+          [
+            'Monthly',
+            'Quarterly',
+            'Semi-Annual',
+            'Annually',
+            'As Needed',
+            'None',
+          ].includes(maintenanceSchedule || '')
+            ? maintenanceSchedule
+            : 'None',
+          normalizeAssetStatusForStoredProcedure(status, oldAsset.status),
+          isOldUnit || 0,
+          userId,
+          bookValue || null,
+          accumulatedDepreciation || null,
+          monthlyDepreciation || null,
+        ]
+      )) as any[];
+
+      updatedAsset = updateRows[0][0];
+
+      // Regenerate the asset code now that the row reflects the new category,
+      // type, is_old_unit flag, and purchase date. Returns the asset with the
+      // newly generated code.
+      const [codeUpdateRows] = (await conn.execute(
         'CALL sp_update_asset_code(?, ?, ?, ?, ?)',
         [
           asset.assetID,
@@ -1489,68 +1557,10 @@ export async function updateAssetHandler(req: AuthRequest, res: Response) {
       )) as any[];
 
       updatedAsset = codeUpdateRows[0][0];
-
-      // Now update the other asset fields
-      const [updateRows] = (await pool.execute(
-        'CALL sp_update_asset(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
-        [
-          asset.assetID,
-          name.trim(),
-          description?.trim() || null,
-          categoryId,
-          supplier?.trim() || null,
-          typeId || null,
-          brand?.trim() || null,
-          model?.trim() || null,
-          serial?.trim() || null,
-          finalImageUrl,
-          finalPurchaseDate
-            ? new Date(finalPurchaseDate).toISOString().split('T')[0]
-            : null,
-          assetValue || null,
-          salvageValue || 0,
-          finalDepreciationMethod &&
-          [
-            'straight-line',
-            'declining-balance',
-            'double-declining',
-            'units-of-production',
-          ].includes(finalDepreciationMethod)
-            ? finalDepreciationMethod
-            : null,
-          usefulLifeYears || null,
-          annualDepreciation || null,
-          depreciationStartDate
-            ? new Date(depreciationStartDate).toISOString().split('T')[0]
-            : null,
-          validCompanyId,
-          validLocationId,
-          validLocationRoomId,
-          validDepartmentId,
-          locationNotes?.trim() || null,
-          warrantyMonths || null,
-          normalizeConditionForStoredProcedure(condition),
-          [
-            'Monthly',
-            'Quarterly',
-            'Semi-Annual',
-            'Annually',
-            'As Needed',
-            'None',
-          ].includes(maintenanceSchedule || '')
-            ? maintenanceSchedule
-            : 'None',
-          normalizeAssetStatusForStoredProcedure(status, oldAsset.status),
-          isOldUnit || 0,
-          userId,
-        ]
-      )) as any[];
-
-      updatedAsset = updateRows[0][0];
     } else {
       // No category or type change, use regular update
-      const [rows] = (await pool.execute(
-        'CALL sp_update_asset(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
+      const [rows] = (await conn.execute(
+        'CALL sp_update_asset(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
         [
           asset.assetID,
           name.trim(),
@@ -1601,33 +1611,63 @@ export async function updateAssetHandler(req: AuthRequest, res: Response) {
           normalizeAssetStatusForStoredProcedure(status, oldAsset.status),
           isOldUnit || 0,
           userId,
+          bookValue || null,
+          accumulatedDepreciation || null,
+          monthlyDepreciation || null,
         ]
       )) as any[];
 
       updatedAsset = rows[0][0];
     }
 
-    const auditDiff = buildAssetUpdateAuditDiff(
+    // Commit the core asset + code-regeneration update as a single transaction.
+    await conn.commit();
+
+    // Capture assignment change for the audit diff. The assigned user is stored
+    // in asset_assignments (not on the assets row), so it must be compared
+    // separately from the asset column diff.
+    const oldAssignment =
+      await assetRepo.getCurrentAssignmentForAssetId(asset.assetID);
+    const oldAssigneeName = oldAssignment?.assigned_user_name ?? null;
+
+    let newAssigneeName: string | null = null;
+    if (assignedUser) {
+      const assignedUserRow =
+        await assetRepo.getUserBasicByIdSimple(assignedUser);
+      newAssigneeName = assignedUserRow
+        ? `${assignedUserRow.first_name} ${assignedUserRow.last_name}`.trim() ||
+          null
+        : String(assignedUser);
+    }
+
+    let auditDiff = buildAssetUpdateAuditDiff(
       oldAsset as Record<string, unknown>,
       updatedAsset as Record<string, unknown>
     );
+    if (assignedUser) {
+      auditDiff = mergeAssignmentIntoDiff(
+        auditDiff,
+        oldAssigneeName,
+        newAssigneeName
+      );
+    }
     const hasFieldChanges = auditDiff.changeCount > 0;
 
-    await createAuditLog({
-      userId,
-      action: 'Updated Asset',
-      resourceType: 'asset',
-      resourceId: asset.asset_code || updatedAsset.asset_code || String(asset.assetID),
-      resourceName: asset.asset_code || updatedAsset.asset_code || String(asset.assetID),
-      details: hasFieldChanges
-        ? `Updated ${auditDiff.changeCount} field(s)`
-        : 'Updated asset details',
-      oldValues: hasFieldChanges ? auditDiff.oldValues : undefined,
-      newValues: hasFieldChanges ? auditDiff.newValues : undefined,
-      ipAddress: req.ip,
-      userAgent: req.get('User-Agent'),
-      companyId: updatedAsset.company_id,
-    });
+    if (hasFieldChanges) {
+      await createAuditLog({
+        userId,
+        action: 'Updated Asset',
+        resourceType: 'asset',
+        resourceId: asset.asset_code || updatedAsset.asset_code || String(asset.assetID),
+        resourceName: asset.asset_code || updatedAsset.asset_code || String(asset.assetID),
+        details: `Updated ${auditDiff.changeCount} field(s)`,
+        oldValues: auditDiff.oldValues,
+        newValues: auditDiff.newValues,
+        ipAddress: req.ip,
+        userAgent: req.get('User-Agent'),
+        companyId: updatedAsset.company_id,
+      });
+    }
 
     // Handle document uploads if any
     if (documents && documents.length > 0) {
@@ -1710,11 +1750,13 @@ export async function updateAssetHandler(req: AuthRequest, res: Response) {
       }
     }
 
+    if (res.headersSent) return;
     return res.json({
       message: 'Asset updated successfully',
       asset: {
         assetID: updatedAsset.assetID,
         asset_code: updatedAsset.asset_code,
+        tag_code: updatedAsset.tag_code ?? updatedAsset.asset_code,
         name: updatedAsset.name,
         description: updatedAsset.description,
         category_id: updatedAsset.category_id,
@@ -1730,6 +1772,9 @@ export async function updateAssetHandler(req: AuthRequest, res: Response) {
         depreciation_method: updatedAsset.depreciation_method,
         useful_life_years: updatedAsset.useful_life_years,
         annual_depreciation: updatedAsset.annual_depreciation,
+        book_value: updatedAsset.book_value,
+        accumulated_depreciation: updatedAsset.accumulated_depreciation,
+        monthly_depreciation: updatedAsset.monthly_depreciation,
         depreciation_start_date: updatedAsset.depreciation_start_date,
         company_id: updatedAsset.company_id,
         location_id: updatedAsset.location_id,
@@ -1749,8 +1794,16 @@ export async function updateAssetHandler(req: AuthRequest, res: Response) {
       },
     });
   } catch (error: any) {
+    try {
+      await conn.rollback();
+    } catch (rollbackError) {
+      logger.warn('Rollback failed during asset update:', rollbackError);
+    }
+    if (res.headersSent) return;
     logger.error('Update asset failed:', error);
     return res.status(500).json({ error: 'Failed to update asset' });
+  } finally {
+    conn.release();
   }
 }
 
@@ -1874,8 +1927,14 @@ export async function getAllFormsByAssetIdHandler(
     const transferFormsRepo = await import('../repositories/assetTransferForm.repository.js');
     const borrowFormsRepo = await import('../repositories/assetBorrowRequests.repository.js');
 
+    // Client sends `asset_code` (Asset.id) but DB joins use `assetID`.
+    // Resolve code/tag → canonical ID so return/transfer/borrow lookups work.
+    // Falls back to the raw param when not found to preserve 200-empty for unknown assets.
+    const resolvedAssetId =
+      (await assetRepo.resolveAssetIdByCodeOrId(assetId)) ?? assetId;
+
     // Fetch accountability forms with proper mapping
-    const accountabilityRows = await accountabilityFormsRepo.findFormsByAssetId(assetId);
+    const accountabilityRows = await accountabilityFormsRepo.findFormsByAssetId(resolvedAssetId);
     
     // Map accountability forms to match frontend expectations
     const accountabilityForms = accountabilityRows.map((row: any) => {
@@ -1905,9 +1964,9 @@ export async function getAllFormsByAssetIdHandler(
     });
 
     // Fetch other form types (return empty arrays for now due to schema limitations)
-    const returnForms = await returnFormsRepo.getReturnFormsByAssetId(assetId);
-    const transferForms = await transferFormsRepo.getTransferFormsByAssetId(assetId);
-    const borrowForms = await borrowFormsRepo.getBorrowFormsByAssetId(pool, assetId);
+    const returnForms = await returnFormsRepo.getReturnFormsByAssetId(resolvedAssetId);
+    const transferForms = await transferFormsRepo.getTransferFormsByAssetId(resolvedAssetId);
+    const borrowForms = await borrowFormsRepo.getBorrowFormsByAssetId(pool, resolvedAssetId);
 
     return res.json({
       accountabilityForms,

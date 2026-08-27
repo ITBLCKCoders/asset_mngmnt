@@ -34,6 +34,7 @@ import { api } from '@/lib/api';
 import { useAvatarPreview } from '@/hooks/avatarPreview';
 import { Shimmer } from '@/components/ui/shimmer';
 import { toast } from 'sonner';
+import 'driver.js/dist/driver.css';
 
 interface BasicInfoTabProps {
   isEditing: boolean;
@@ -134,6 +135,32 @@ const BasicInfoTab = forwardRef<BasicInfoTabHandle, BasicInfoTabProps>(
         signature.startsWith('http://') ||
         signature.startsWith('https://'));
 
+    // Both helpers resolve the live canvas instance and guard against the
+    // library's refNullError ('react-signature-canvas is currently mounting
+    // or unmounting: React refs are null during this phase.'). While the
+    // SignatureCanvas is mid-mount/unmount its internal _sigPad/_canvas are
+    // null, so method calls throw. We treat that as "empty / no-op" rather
+    // than letting it propagate to the console.
+    const safeCanvasIsEmpty = (): boolean => {
+      const canvas = canvasRef || sigCanvas.current;
+      if (!canvas) return true;
+      try {
+        return canvas.isEmpty();
+      } catch {
+        return true;
+      }
+    };
+
+    const safeClearCanvas = (): void => {
+      const canvas = canvasRef || sigCanvas.current;
+      if (!canvas) return;
+      try {
+        canvas.clear();
+      } catch {
+        /* ignore mount/unmount phase */
+      }
+    };
+
     useEffect(() => {
       if (user && !isEditing) {
         setFormData({
@@ -163,9 +190,7 @@ const BasicInfoTab = forwardRef<BasicInfoTabHandle, BasicInfoTabProps>(
         }
         setSignatureMarkedDone(false);
 
-        if (sigCanvas.current) {
-          sigCanvas.current.clear();
-        }
+        safeClearCanvas();
       }
     }, [user, isEditing]);
 
@@ -189,7 +214,7 @@ const BasicInfoTab = forwardRef<BasicInfoTabHandle, BasicInfoTabProps>(
         const existingSignature = user?.digitalSignature;
         console.log('Loading signature onto canvas, hasCanvas:', !!canvas, 'hasSignature:', !!existingSignature);
         if (!canvas) return;
-        canvas.clear();
+        safeClearCanvas();
         if (isImageSignature(existingSignature)) {
           try {
             (canvas as any).fromDataURL(existingSignature);
@@ -214,8 +239,7 @@ const BasicInfoTab = forwardRef<BasicInfoTabHandle, BasicInfoTabProps>(
     };
 
     const isSettingInitials = (): boolean => {
-      const canvas = canvasRef || sigCanvas.current;
-      return !!(signatureReadyToSave || (canvas && !canvas.isEmpty()));
+      return !!(signatureReadyToSave || !safeCanvasIsEmpty());
     };
 
     const sendOtp = async () => {
@@ -283,7 +307,7 @@ const BasicInfoTab = forwardRef<BasicInfoTabHandle, BasicInfoTabProps>(
         return signatureReadyToSave;
       }
       const canvas = canvasRef || sigCanvas.current;
-      if (canvas && !canvas.isEmpty()) {
+      if (canvas && !safeCanvasIsEmpty()) {
         let signatureDataURL: string | null = null;
         try {
           const signatureData = canvas.toData();
@@ -440,8 +464,8 @@ const BasicInfoTab = forwardRef<BasicInfoTabHandle, BasicInfoTabProps>(
         } else {
           const canvas = canvasRef || sigCanvas.current;
           console.log('Canvas ref exists:', !!canvas);
-          console.log('Canvas isEmpty:', canvas?.isEmpty());
-          if (canvas && !canvas.isEmpty()) {
+          console.log('Canvas isEmpty:', safeCanvasIsEmpty());
+          if (canvas && !safeCanvasIsEmpty()) {
             let signatureDataURL: string | null = null;
             try {
               const signatureData = canvas.toData();
@@ -566,8 +590,7 @@ const BasicInfoTab = forwardRef<BasicInfoTabHandle, BasicInfoTabProps>(
 
         clearPreview();
 
-        const didSaveInitials = !!(signatureReadyToSave ||
-          ((canvasRef || sigCanvas.current) && !(canvasRef || sigCanvas.current)?.isEmpty()));
+        const didSaveInitials = !!(signatureReadyToSave || !safeCanvasIsEmpty());
 
         if (didSaveInitials) {
           setSignatureSaved(true);
@@ -949,7 +972,7 @@ const BasicInfoTab = forwardRef<BasicInfoTabHandle, BasicInfoTabProps>(
             )}
 
             {isEditing && (
-              <div className="rounded-xl border-2 border-red-200 overflow-hidden bg-white shadow-sm">
+              <div id="tour-step-2-canvas" data-tour="step-2" className="rounded-xl border-2 border-red-200 overflow-hidden bg-white shadow-sm">
                 <div className={signatureMarkedDone ? 'pointer-events-none opacity-50' : ''}>
                   <SignatureCanvas
                     key={canvasKey}
@@ -961,6 +984,21 @@ const BasicInfoTab = forwardRef<BasicInfoTabHandle, BasicInfoTabProps>(
                     minWidth={2.5}
                     maxWidth={5}
                     canvasProps={{ className: 'w-full h-[500px] bg-gray-50' }}
+                    onEnd={() => {
+                      // Tour Step 2 -> Step 3 : user drew something, highlight Mark as Done
+                      try {
+                        const fn: any = (window as any).tourMoveNextWhenReady;
+                        const c: any = (window as any).tourMoveNext;
+                        const canvas = canvasRef || sigCanvas.current;
+                        const empty = (() => { try { return (canvas as any)?.isEmpty?.() ?? true; } catch { return true; } })();
+                        if (!empty) {
+                          window.setTimeout(() => {
+                            if (typeof fn === 'function') fn('#tour-step-3-mark-done');
+                            else if (typeof c === 'function') c();
+                          }, 700);
+                        }
+                      } catch {}
+                    }}
                   />
                 </div>
                 <div className="flex flex-col gap-3 border-t bg-gray-100 p-4 sm:flex-row sm:items-center sm:justify-between relative z-10">
@@ -1130,6 +1168,14 @@ const BasicInfoTab = forwardRef<BasicInfoTabHandle, BasicInfoTabProps>(
                                   setSignatureMarkedDone(true);
                                   toast.success('Initials marked as done! Click Save to save your profile.');
                                   console.log('signatureReadyToSave set successfully');
+                                  // Tour Step 3 -> Step 4 : Mark as Done clicked → highlight Save Profile (scroll to top first)
+                                  try {
+                                    window.setTimeout(() => {
+                                      const fn: any = (window as any).tourMoveNextWhenReady;
+                                      if (typeof fn === 'function') fn('#tour-step-4-save-profile');
+                                      else (window as any).tourMoveNext?.();
+                                    }, 650);
+                                  } catch {}
                                 } else {
                                   toast.error('Failed to capture initials. Please try again.');
                                   console.error('Failed to capture signature, signatureDataURL is null or invalid');
@@ -1144,6 +1190,8 @@ const BasicInfoTab = forwardRef<BasicInfoTabHandle, BasicInfoTabProps>(
                             toast.error('Failed to mark initials as done. Please try again.');
                           }
                         }}
+                        id="tour-step-3-mark-done"
+                        data-tour="step-3"
                         disabled={signatureMarkedDone}
                         className="bg-red-600 hover:bg-red-700 text-white"
                       >
@@ -1257,6 +1305,8 @@ const BasicInfoTab = forwardRef<BasicInfoTabHandle, BasicInfoTabProps>(
               Cancel
             </AlertDialogCancel>
             <AlertDialogAction
+              id="tour-step-6-agree-save"
+              data-tour="step-6"
               disabled={!allConsentsChecked}
               onClick={async () => {
                 setShowConsentDialog(false);
@@ -1265,6 +1315,14 @@ const BasicInfoTab = forwardRef<BasicInfoTabHandle, BasicInfoTabProps>(
                 if (otpSent) {
                   setOtpCode(['', '', '', '', '', '']);
                   setShowOtpDialog(true);
+                  // Tour Step 6 -> Step 7 : I Agree clicked → highlight Verify (wait for OTP dialog)
+                  try {
+                    window.setTimeout(() => {
+                      const fn: any = (window as any).tourMoveNextWhenReady;
+                      if (typeof fn === 'function') fn('#tour-step-7-verify-otp');
+                      else (window as any).tourMoveNext?.();
+                    }, 700);
+                  } catch {}
                 } else {
                   // If OTP failed, show consent dialog again
                   setShowConsentDialog(true);
@@ -1359,11 +1417,15 @@ const BasicInfoTab = forwardRef<BasicInfoTabHandle, BasicInfoTabProps>(
               )}
             </Button>
             <Button
+              id="tour-step-7-verify-otp"
+              data-tour="step-7"
               onClick={async () => {
                 const verified = await verifyOtp();
                 if (verified) {
                   setShowOtpDialog(false);
                   setOtpCode(['', '', '', '', '', '']);
+                  // Tour complete — destroy tour and clear state
+                  try { (window as any).tourDestroy?.(); } catch {}
                   // Execute the save after successful verification
                   if (pendingSaveRef.current) {
                     try {

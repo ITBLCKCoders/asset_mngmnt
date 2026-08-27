@@ -130,6 +130,12 @@ type ReportRow = {
   accountabilityFormDate?: string;
   condition?: string;
   assetValue?: number | null;
+  formNumber?: string;
+  fromDepartmentName?: string;
+  toDepartmentName?: string;
+  fromAccountabilityFormNumber?: string | null;
+  toAccountabilityFormNumber?: string | null;
+  newOwnerName?: string | null;
 };
 
 type CompanyOption = { id: string; name: string; logo_url?: string | null };
@@ -478,9 +484,82 @@ export default function ReportsPage() {
         };
       });
 
+      const addHistoryColumns = (cols: ColumnDef<ReportRow>[]) =>
+        cols.flatMap(column =>
+          column.id === 'asset'
+            ? [
+                column,
+                {
+                  id: 'formNumber',
+                  header:
+                    focusedTableKey === 'return'
+                      ? 'Return Form #'
+                      : focusedTableKey === 'transfer'
+                        ? 'Transfer Form #'
+                        : 'Form #',
+                  accessorKey: 'formNumber',
+                  size: 150,
+                },
+                {
+                  id: 'fromAccountability',
+                  header: 'From Asset Accountability',
+                  accessorKey: 'fromAccountabilityFormNumber',
+                  size: 170,
+                  cell: ({ row }: { row: { original: ReportRow } }) => (
+                    <span>{row.original.fromAccountabilityFormNumber ?? '—'}</span>
+                  ),
+                },
+                {
+                  id: 'toAccountability',
+                  header: 'New Asset Accountability',
+                  accessorKey: 'toAccountabilityFormNumber',
+                  size: 170,
+                  cell: ({ row }: { row: { original: ReportRow } }) => (
+                    <span>{row.original.toAccountabilityFormNumber ?? '—'}</span>
+                  ),
+                },
+                ...(focusedTableKey === 'return'
+                  ? [
+                      {
+                        id: 'newOwner',
+                        header: 'New Owner',
+                        accessorKey: 'newOwnerName',
+                        size: 160,
+                        cell: ({ row }: { row: { original: ReportRow } }) => (
+                          <span>{row.original.newOwnerName ?? '—'}</span>
+                        ),
+                      },
+                    ]
+                  : []),
+              ]
+            : column.id === 'person'
+              ? [
+                  column,
+                  {
+                    id: 'fromDepartmentName',
+                    header:
+                      focusedTableKey === 'return'
+                        ? 'From Department'
+                        : 'Transferrer Department',
+                    accessorKey: 'fromDepartmentName',
+                    size: 170,
+                  },
+                  {
+                    id: 'toDepartmentName',
+                    header:
+                      focusedTableKey === 'return'
+                        ? 'To Department'
+                        : 'Transferee Department',
+                    accessorKey: 'toDepartmentName',
+                    size: 170,
+                  },
+                ]
+              : [column]
+        );
+
       const transferColumns =
         focusedTableKey === 'transfer'
-          ? labelAdjustedColumns.flatMap(column =>
+          ? addHistoryColumns(labelAdjustedColumns).flatMap(column =>
               column.id === 'person'
                 ? [
                     column,
@@ -491,9 +570,11 @@ export default function ReportsPage() {
                       size: 180,
                     },
                   ]
-                : [column]
+                : column
             )
-          : labelAdjustedColumns;
+          : focusedTableKey === 'return'
+            ? addHistoryColumns(labelAdjustedColumns)
+            : labelAdjustedColumns;
 
       const assignmentColumns =
         focusedTableKey === 'assignment'
@@ -578,6 +659,38 @@ export default function ReportsPage() {
                 : 'Assigned To',
         render: (row: ReportRow) => row.person,
       },
+      { key: 'formNumber', label: 'Form #', render: (row: ReportRow) => row.formNumber ?? '' },
+      {
+        key: 'fromDepartmentName',
+        label:
+          focusedTableKey === 'return' ? 'From Department' : 'Transferrer Department',
+        render: (row: ReportRow) => row.fromDepartmentName ?? '',
+      },
+      {
+        key: 'toDepartmentName',
+        label:
+          focusedTableKey === 'return' ? 'To Department' : 'Transferee Department',
+        render: (row: ReportRow) => row.toDepartmentName ?? '',
+      },
+      {
+        key: 'fromAccountability',
+        label: 'From Asset Accountability',
+        render: (row: ReportRow) => row.fromAccountabilityFormNumber ?? '—',
+      },
+      {
+        key: 'toAccountability',
+        label: 'New Asset Accountability',
+        render: (row: ReportRow) => row.toAccountabilityFormNumber ?? '—',
+      },
+      ...(focusedTableKey === 'return'
+        ? [
+            {
+              key: 'newOwner',
+              label: 'New Owner',
+              render: (row: ReportRow) => row.newOwnerName ?? '—',
+            },
+          ]
+        : []),
       { key: 'transferee', label: 'Transferee', render: (row: ReportRow) => row.transferee ?? '' },
       { key: 'departmentName', label: 'Department', render: (row: ReportRow) => row.departmentName },
       { key: 'processor', label: 'Processed By', render: (row: ReportRow) => row.processor },
@@ -587,10 +700,22 @@ export default function ReportsPage() {
     const visibleFields = focusedTableKey && REPORTS_WITH_STATUS.has(focusedTableKey)
       ? fields
       : fields.filter(field => field.key !== 'status');
+    const historyFields =
+      focusedTableKey === 'return' || focusedTableKey === 'transfer'
+        ? visibleFields
+        : visibleFields.filter(
+            field =>
+              field.key !== 'formNumber' &&
+              field.key !== 'fromDepartmentName' &&
+              field.key !== 'toDepartmentName' &&
+              field.key !== 'fromAccountability' &&
+              field.key !== 'toAccountability' &&
+              field.key !== 'newOwner'
+          );
     const transferFields =
       focusedTableKey === 'transfer'
-        ? visibleFields
-        : visibleFields.filter(field => field.key !== 'transferee');
+        ? historyFields
+        : historyFields.filter(field => field.key !== 'transferee');
     const assignmentFields =
       focusedTableKey === 'assignment'
         ? transferFields.flatMap(field =>
@@ -1003,6 +1128,7 @@ export default function ReportsPage() {
         const showBorrowDates = tableKey === 'borrow';
         const showTransferee = tableKey === 'transfer';
         const showAssignmentFields = tableKey === 'assignment';
+        const showHistoryColumns = tableKey === 'return' || tableKey === 'transfer';
         const personHeader =
           tableKey === 'return'
             ? 'Returner'
@@ -1040,6 +1166,16 @@ export default function ReportsPage() {
               'No.',
               'Asset',
               personHeader,
+              ...(showHistoryColumns
+                ? [
+                    tableKey === 'return' ? 'Return Form #' : 'Transfer Form #',
+                    tableKey === 'return' ? 'From Department' : 'Transferrer Department',
+                    tableKey === 'return' ? 'To Department' : 'Transferee Department',
+                    'From Asset Accountability',
+                    'New Asset Accountability',
+                    ...(tableKey === 'return' ? ['New Owner'] : []),
+                  ]
+                : []),
               ...(showTransferee ? ['Transferee'] : []),
               ...(showAssignmentFields
                 ? ['Accountability Form #', 'Form Date', 'Condition', 'Asset Value']
@@ -1062,6 +1198,16 @@ export default function ReportsPage() {
                   String(index + 1),
                   row.asset,
                   row.person,
+                  ...(showHistoryColumns
+                    ? [
+                        row.formNumber ?? '',
+                        row.fromDepartmentName ?? '',
+                        row.toDepartmentName ?? '',
+                        row.fromAccountabilityFormNumber ?? '',
+                        row.toAccountabilityFormNumber ?? '',
+                        ...(tableKey === 'return' ? [row.newOwnerName ?? ''] : []),
+                      ]
+                    : []),
                   ...(showTransferee ? [row.transferee ?? ''] : []),
                   ...(showAssignmentFields
                     ? [
@@ -1088,6 +1234,16 @@ export default function ReportsPage() {
                     'No records found',
                     '',
                     '',
+                    ...(showHistoryColumns
+                      ? [
+                          '',
+                          '',
+                          '',
+                          '',
+                          '',
+                          ...(tableKey === 'return' ? [''] : []),
+                        ]
+                      : []),
                     ...(showTransferee ? [''] : []),
                     ...(showAssignmentFields ? ['', '', '', ''] : []),
                     '',
@@ -1237,32 +1393,48 @@ export default function ReportsPage() {
         const returns =
           returnsRes.status === 'fulfilled' ? returnsRes.value.assetReturns ?? [] : [];
         setReturnRows(
-          returns.map((row: any) => ({
-            id: String(row.return_id ?? row.form_id ?? Math.random()),
-            reference: makeReference(
-              row.form_number ?? row.form_id ?? row.return_id,
-              'RETURN'
-            ),
-            asset: `${row.assignment?.asset?.name ?? 'Unknown Asset'} (${row.assignment?.asset?.code ?? 'No Code'})`,
-            categoryId: String(row.assignment?.asset?.category_id ?? ''),
-            person:
-              row.assignment?.user?.first_name || row.assignment?.user?.last_name
-                ? `${row.assignment?.user?.first_name ?? ''} ${row.assignment?.user?.last_name ?? ''}`.trim()
-                : row.processed_by ?? 'Unknown User',
-            processor: row.processed_by ?? row.processor ?? 'System',
-            departmentId: String(
-              row.assignment?.department?.id ?? row.form_department?.id ?? ''
-            ),
-            departmentName:
-              row.assignment?.department?.name ??
-              row.form_department?.name ??
-              'Unassigned',
-            companyId: defaultCompanyId,
-            companyName: defaultCompanyName,
-            status: row.status ?? 'Processed',
-            date: row.created_at ?? '',
-            notes: row.return_notes ?? 'No notes',
-          }))
+          returns.map((row: any) => {
+            const toDepartment = row.return_department_id
+              ? departments.find(
+                  (d: any) =>
+                    (d.departmentID ?? d.id) === String(row.return_department_id)
+                )?.name
+              : null;
+            return {
+              id: String(row.return_id ?? row.form_id ?? Math.random()),
+              reference: makeReference(
+                row.form_number ?? row.form_id ?? row.return_id,
+                'RETURN'
+              ),
+              asset: `${row.assignment?.asset?.name ?? 'Unknown Asset'} (${row.assignment?.asset?.code ?? 'No Code'})`,
+              categoryId: String(row.assignment?.asset?.category_id ?? ''),
+              person:
+                row.assignment?.user?.first_name || row.assignment?.user?.last_name
+                  ? `${row.assignment?.user?.first_name ?? ''} ${row.assignment?.user?.last_name ?? ''}`.trim()
+                  : row.processed_by ?? 'Unknown User',
+              processor: row.processed_by ?? row.processor ?? 'System',
+              departmentId: String(
+                row.assignment?.department?.id ?? row.form_department?.id ?? ''
+              ),
+              departmentName:
+                row.assignment?.department?.name ??
+                row.form_department?.name ??
+                'Unassigned',
+              companyId: defaultCompanyId,
+              companyName: defaultCompanyName,
+              status: row.status ?? 'Processed',
+              date: row.created_at ?? '',
+              notes: row.return_notes ?? 'No notes',
+              formNumber: row.form_number ?? 'N/A',
+              fromDepartmentName: row.assignment?.department?.name ?? 'Unknown',
+              toDepartmentName: toDepartment ?? 'Unknown',
+              fromAccountabilityFormNumber:
+                row.fromAccountabilityFormNumber ?? null,
+              toAccountabilityFormNumber:
+                row.toAccountabilityFormNumber ?? null,
+              newOwnerName: row.newOwnerName ?? null,
+            };
+          })
         );
 
         const transfers =
@@ -1293,6 +1465,12 @@ export default function ReportsPage() {
             status: row.status ?? 'Unknown',
             date: row.transferDate ?? '',
             notes: row.transferNotes ?? row.action ?? 'No notes',
+            formNumber: row.formNumber ?? 'N/A',
+            fromDepartmentName: row.from?.department ?? 'Unknown',
+            toDepartmentName: row.to?.department ?? 'Unknown',
+            fromAccountabilityFormNumber:
+              row.fromAccountabilityFormNumber ?? null,
+            toAccountabilityFormNumber: row.toAccountabilityFormNumber ?? null,
           }))
         );
 

@@ -1,6 +1,8 @@
 // src/routes/company.routes.ts
 import { Router } from 'express';
 import { authenticate } from '../middleware/authenticate.js';
+import { requireRole } from '../middleware/requireRole.js';
+import { ROLES } from '../constants/roles.js';
 import {
   createCompany,
   updateCompany,
@@ -142,7 +144,7 @@ router.get('/my', authenticate, getMyCompanyHandler);
  *       401: { description: Unauthorized }
  *       404: { description: Company not found }
  */
-router.patch('/:id/active', authenticate, setActiveCompany);
+router.patch('/:id/active', authenticate, requireRole(ROLES.SUPER_ADMIN), setActiveCompany);
 
 /**
  * @swagger

@@ -8,6 +8,7 @@ type TransferFormLike = {
   executed_at?: string | null;
   declined_at?: string | null;
   dept_head_signed_at?: string | null;
+  sub_approver_1_signed_at?: string | null;
   returns?: Array<{ return_id?: string | null }>;
 };
 
@@ -27,7 +28,8 @@ export function getTransferFormUiStatus(
   if (batch.executed_at || hasExecutedTransferRecords(batch)) {
     return 'completed';
   }
-  if (batch.dept_head_signed_at) return 'approved';
+  if (batch.dept_head_signed_at || batch.sub_approver_1_signed_at)
+    return 'approved';
   return 'pending';
 }
 

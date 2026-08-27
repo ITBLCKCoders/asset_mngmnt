@@ -28,6 +28,12 @@ export interface AssetTransferForm {
   it_manager_signed_at?: string | null;
   it_manager_digital_signature?: string | null;
   it_manager_signed_by?: string | null;
+  sub_approver_1_signed_at?: string | null;
+  sub_approver_1_digital_signature?: string | null;
+  sub_approver_1_signed_by?: string | null;
+  sub_approver_2_signed_at?: string | null;
+  sub_approver_2_digital_signature?: string | null;
+  sub_approver_2_signed_by?: string | null;
   executed_at?: string | null;
   return_form_id?: string | null;
   declined_at?: string | null;
@@ -93,6 +99,8 @@ export class AssetTransferFormModel {
               transfer_type, received_by,
               dept_head_signed_at, dept_head_digital_signature, dept_head_signed_by,
               it_manager_signed_at, it_manager_digital_signature, it_manager_signed_by,
+              sub_approver_1_signed_at, sub_approver_1_digital_signature, sub_approver_1_signed_by,
+              sub_approver_2_signed_at, sub_approver_2_digital_signature, sub_approver_2_signed_by,
               executed_at, return_form_id, declined_at
        FROM asset_transfer_forms
        WHERE user_id = ? AND deleted_at IS NULL
@@ -217,5 +225,59 @@ export class AssetTransferFormModel {
     )) as any[];
     const list = Array.isArray(rows) ? rows : [];
     return list.map((r: any) => r.assignment_id);
+  }
+
+  /** Insert intangible assets selected for a transfer form (both submit-request and create-held flows). */
+  static async addFormIntangibleAssets(
+    formId: string,
+    items: Array<{ id: string; notes?: string | null }>
+  ): Promise<void> {
+    for (const item of items) {
+      await pool.execute(
+        `INSERT INTO transfer_form_intangible_assets (form_id, intangible_asset_id, notes)
+         VALUES (?, ?, ?)
+         ON DUPLICATE KEY UPDATE notes = VALUES(notes)`,
+        [formId, item.id, item.notes != null ? String(item.notes) : null]
+      );
+    }
+  }
+
+  /** Get intangible asset IDs linked to a transfer form. */
+  static async getFormIntangibleAssetIds(formId: string): Promise<string[]> {
+    const [rows] = (await pool.execute(
+      'SELECT intangible_asset_id FROM transfer_form_intangible_assets WHERE form_id = ?',
+      [formId]
+    )) as any[];
+    const list = Array.isArray(rows) ? rows : [];
+    return list.map((r: any) => r.intangible_asset_id);
+  }
+
+  /** Get intangible assets linked to a transfer form with display fields for dialogs and the transfer PDF. */
+  static async getFormIntangibleAssets(formId: string): Promise<
+    Array<{
+      id: string;
+      name: string;
+      type: string;
+      description: string | null;
+      notes: string | null;
+    }>
+  > {
+    const [rows] = (await pool.execute(
+      `SELECT tfia.intangible_asset_id AS id, tfia.notes,
+              ia.name, ia.type, ia.description
+       FROM transfer_form_intangible_assets tfia
+       INNER JOIN intangible_assets ia ON tfia.intangible_asset_id = ia.id
+       WHERE tfia.form_id = ?
+       ORDER BY tfia.created_at ASC`,
+      [formId]
+    )) as any[];
+    const list = Array.isArray(rows) ? rows : [];
+    return list.map((r: any) => ({
+      id: r.id,
+      name: r.name || '',
+      type: r.type || '',
+      description: r.description ?? null,
+      notes: r.notes ?? null,
+    }));
   }
 }

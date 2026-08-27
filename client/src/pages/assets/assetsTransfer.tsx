@@ -23,6 +23,8 @@ import {
   Images,
   Crown,
   Layers,
+  Download,
+  FileText,
 } from 'lucide-react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { PageHeader } from '@/components/common/PageHeader';
@@ -40,12 +42,20 @@ import {
 import { Label } from '@/components/ui/label';
 import { Badge } from '@/components/ui/badge';
 import { Checkbox } from '@/components/ui/checkbox';
+import { Switch } from '@/components/ui/switch';
 import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
+import { Combobox } from '@/components/ui/combobox';
 import { api } from '@/lib/api';
 import { cn } from '@/lib/utils';
 import { Tabs, TabsContent, TabsList, TabsTrigger, segmentTabsListClassName, segmentTabsTriggerClassName } from '@/components/ui/tabs';
-import { Dialog } from '@/components/ui/dialog';
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogDescription,
+} from '@/components/ui/dialog';
 import {
   AppDialogFrame,
   AppDialogGradientHeader,
@@ -55,11 +65,14 @@ import {
 import { toast } from 'sonner';
 import { useCurrentUser } from '@/hooks/useCurrentUser';
 import { useUserPermissions } from '@/hooks/useUserPermissions';
+import { useAssetMovementExport } from '@/hooks/useAssetMovementExport';
 import { DataTable } from '@/components/ui/dataTable';
 import type { ColumnDef } from '@tanstack/react-table';
 import { Shimmer } from '@/components/ui/shimmer';
 import SmsOtpDialog from '@/components/auth/SmsOtpDialog';
 import { proxyCloudinaryUrl } from '@/utils/cloudinaryProxy';
+import { classifyDepartmentScopeByName } from '@/lib/assetScope';
+import { getIntangibleAssigneeCount } from '@/utils/intangibleAssets';
 
 interface Asset {
   id: string;
@@ -180,14 +193,17 @@ interface TransferHistoryRecord {
   formId: string;
   formNumber: string;
   asset: { id: string; code: string; name: string };
-  from: { name: string };
-  to: { name: string };
+  from: { name: string; department?: string | null };
+  to: { name: string; department?: string | null };
+  processor: string;
   status: string;
   action: string;
   condition: string | null;
   transferNotes: string | null;
   conditionImages: string[];
   transferDate: string;
+  fromAccountabilityFormNumber: string | null;
+  toAccountabilityFormNumber: string | null;
 }
 
 export default function AssetsTransfer() {
@@ -202,6 +218,8 @@ export default function AssetsTransfer() {
   const [selectedAssignments, setSelectedAssignments] = useState<string[]>([]);
   const [intangibleAssets, setIntangibleAssets] = useState<any[]>([]);
   const [selectedIntangibleAssetIds, setSelectedIntangibleAssetIds] = useState<string[]>([]);
+  const [intangibleNotes, setIntangibleNotes] = useState<Record<string, string>>({});
+  const [intangibleSearchTerm, setIntangibleSearchTerm] = useState('');
   const [buildings, setBuildings] = useState<string[]>([]);
   const [transferring, setTransferring] = useState(false);
   const [showTransferDialog, setShowTransferDialog] = useState(false);
@@ -220,6 +238,7 @@ export default function AssetsTransfer() {
   const [photoPreviewOpen, setPhotoPreviewOpen] = useState(false);
   const [photoPreviewImages, setPhotoPreviewImages] = useState<string[]>([]);
   const [verificationConfirmSign, setVerificationConfirmSign] = useState(false);
+  const [ownerAbsent, setOwnerAbsent] = useState(false);
   const [expandedTransferAssets, setExpandedTransferAssets] = useState<
     Set<string>
   >(new Set());
@@ -231,6 +250,8 @@ export default function AssetsTransfer() {
     useState<string>('');
   const [newAssignmentRoom, setNewAssignmentRoom] = useState<string>('');
   const [newAssignmentUser, setNewAssignmentUser] = useState<string>('');
+  const [newAssignmentDepartmentSearch, setNewAssignmentDepartmentSearch] =
+    useState('');
   const [searchTerm, setSearchTerm] = useState('');
   const [searchColumn, setSearchColumn] = useState('all');
   const [expandedAssets, setExpandedAssets] = useState<string[]>([]);
@@ -256,6 +277,11 @@ export default function AssetsTransfer() {
   const [companyTransferTab, setCompanyTransferTab] = useState<'asset' | 'built'>('asset');
   const [smsOtpDialogOpen, setSmsOtpDialogOpen] = useState(false);
   const pendingTransferActionRef = useRef<(() => Promise<void>) | null>(null);
+  // Export filter departments and users
+  const [exportDepartments, setExportDepartments] = useState<Department[]>([]);
+  const [exportUsers, setExportUsers] = useState<User[]>([]);
+  // Export filter accountability form options
+  const [exportAccountabilityForms, setExportAccountabilityForms] = useState<string[]>([]);
 
   const isSuperAdmin = currentUser?.role?.name?.toLowerCase() === 'global admin';
   const isAdmin = currentUser?.role?.name?.toLowerCase() === 'admin';
@@ -263,9 +289,49 @@ export default function AssetsTransfer() {
   const showScopeTabs = isSuperAdmin || isAdmin || isOverallManager;
   const [scope, setScope] = useState<'it' | 'admin'>('it');
 
+  // Transfer History Export & Search
+  const {
+    isExportDialogOpen: isTransferHistoryExportOpen,
+    setIsExportDialogOpen: setIsTransferHistoryExportOpen,
+    exportType: transferHistoryExportType,
+    setExportType: setTransferHistoryExportType,
+    exportStep: transferHistoryExportStep,
+    setExportStep: setTransferHistoryExportStep,
+    filters: transferHistoryFilters,
+    setFilters: setTransferHistoryFilters,
+    handleExportClick: handleTransferHistoryExportClick,
+    handleExportConfirm: handleTransferHistoryExportConfirm,
+    handleFilterChange: handleTransferHistoryFilterChange,
+    handlePrevStep: handleTransferHistoryPrevStep,
+    resetDialog: resetTransferHistoryExportDialog,
+  } = useAssetMovementExport();
+
+  // Transfer history search column options
+  const transferHistorySearchColumns = [
+    { label: 'All Columns', value: 'all' },
+    { label: 'Asset', value: 'asset' },
+    { label: 'Transfer Form #', value: 'transferForm' },
+    { label: 'From Accountability', value: 'fromAccountabilityFormNumber' },
+    { label: 'To Accountability', value: 'toAccountabilityFormNumber' },
+    { label: 'From Department', value: 'from' },
+    { label: 'To Department', value: 'to' },
+    { label: 'Processed By', value: 'processedBy' },
+    { label: 'Transferrer', value: 'transferrer' },
+    { label: 'Transferee', value: 'transferee' },
+    { label: 'Status', value: 'status' },
+  ];
+
   const fetchDepartments = async () => {
     try {
-      const response = await api.get('/departments');
+      let companyId: string | undefined;
+      const userRole = currentUser?.role?.name?.toLowerCase();
+      if (userRole === 'global admin' || userRole === 'admin') {
+        companyId = activeCompany?.id || undefined;
+      } else {
+        companyId = currentUser?.company_id || undefined;
+      }
+      const url = companyId ? `/departments?companyId=${companyId}` : '/departments';
+      const response = await api.get(url);
       setDepartments(response.departments || []);
     } catch (error) {
       console.error('Failed to fetch departments:', error);
@@ -275,7 +341,15 @@ export default function AssetsTransfer() {
 
   const fetchLocations = async () => {
     try {
-      const response = await api.get('/locations');
+      let companyId: string | undefined;
+      const userRole = currentUser?.role?.name?.toLowerCase();
+      if (userRole === 'global admin' || userRole === 'admin') {
+        companyId = activeCompany?.id || undefined;
+      } else {
+        companyId = currentUser?.company_id || undefined;
+      }
+      const url = companyId ? `/locations?companyId=${companyId}` : '/locations';
+      const response = await api.get(url);
       const locs = response.locations || [];
       setLocations(locs);
       setBuildings([
@@ -290,11 +364,73 @@ export default function AssetsTransfer() {
 
   const fetchUsers = async () => {
     try {
-      const response = await api.get('/users');
+      let companyId: string | undefined;
+      const userRole = currentUser?.role?.name?.toLowerCase();
+      if (userRole === 'global admin' || userRole === 'admin') {
+        companyId = activeCompany?.id || undefined;
+      } else {
+        companyId = currentUser?.company_id || undefined;
+      }
+      const url = companyId ? `/users?companyId=${companyId}` : '/users';
+      const response = await api.get(url);
       setUsers(response.users || []);
     } catch (error) {
       console.error('Failed to fetch users:', error);
       setUsers([]);
+    }
+  };
+
+  const fetchExportDepartments = async () => {
+    try {
+      let companyId: string | undefined;
+      const userRole = currentUser?.role?.name?.toLowerCase();
+      if (userRole === 'global admin' || userRole === 'admin') {
+        companyId = activeCompany?.id || undefined;
+      } else {
+        companyId = currentUser?.company_id || undefined;
+      }
+      const url = companyId ? `/departments?companyId=${companyId}` : '/departments';
+      const response = await api.get(url);
+      setExportDepartments(response.departments || []);
+    } catch (error) {
+      console.error('Failed to fetch export departments:', error);
+      setExportDepartments([]);
+    }
+  };
+
+  const fetchExportUsers = async () => {
+    try {
+      let companyId: string | undefined;
+      const userRole = currentUser?.role?.name?.toLowerCase();
+      if (userRole === 'global admin' || userRole === 'admin') {
+        companyId = activeCompany?.id || undefined;
+      } else {
+        companyId = currentUser?.company_id || undefined;
+      }
+      const url = companyId ? `/users?companyId=${companyId}` : '/users';
+      const response = await api.get(url);
+      setExportUsers(response.users || []);
+    } catch (error) {
+      console.error('Failed to fetch export users:', error);
+      setExportUsers([]);
+    }
+  };
+
+  const fetchExportAccountabilityForms = async () => {
+    try {
+      const response = await api.get('/accountability-forms');
+      const forms = response.forms || [];
+      const formNumbers = Array.from(
+        new Set<string>(
+          forms
+            .map((f: any) => f.formNumber)
+            .filter((n: unknown): n is string => typeof n === 'string' && n.trim() !== '')
+        )
+      ).sort((a: string, b: string) => a.localeCompare(b));
+      setExportAccountabilityForms(formNumbers);
+    } catch (error) {
+      console.error('Failed to fetch export accountability forms:', error);
+      setExportAccountabilityForms([]);
     }
   };
 
@@ -360,7 +496,14 @@ export default function AssetsTransfer() {
   const fetchTransferHistory = async () => {
     try {
       setTransferHistoryLoading(true);
-      const response = await api.get('/asset-transfers/history');
+      const queryParams = new URLSearchParams();
+      if (showScopeTabs) {
+        queryParams.append('scope', scope);
+      }
+      const url = queryParams.toString()
+        ? `/asset-transfers/history?${queryParams.toString()}`
+        : '/asset-transfers/history';
+      const response = await api.get(url);
       const data = response?.data ?? response;
       setTransferHistory(data?.records ?? []);
     } catch (error) {
@@ -420,14 +563,24 @@ export default function AssetsTransfer() {
       setLoading(false);
     };
     fetchData();
-  }, [activeCompany?.id, scope]);
+  }, [activeCompany?.id, scope, currentUser]);
 
   useEffect(() => {
     if (!showScopeTabs) return;
     setSelectedAssignments([]);
     setSelectedCompanyAssetIds([]);
+    setSelectedIntangibleAssetIds([]);
     setExpandedBuilderForSelect(null);
   }, [scope, showScopeTabs]);
+
+  // Fetch export departments and users when export dialog opens
+  useEffect(() => {
+    if (isTransferHistoryExportOpen) {
+      fetchExportDepartments();
+      fetchExportUsers();
+      fetchExportAccountabilityForms();
+    }
+  }, [isTransferHistoryExportOpen]);
 
   const assignedBuilders = useMemo(() => {
     return assetBuilders.filter(
@@ -575,6 +728,7 @@ export default function AssetsTransfer() {
       }))
     );
     setExpandedTransferAssets(new Set(selectedData.map(a => a.asset.id)));
+    setIntangibleNotes({});
     setTransferTypeTransfer(false);
     setTransferTypeOffboarding(false);
     setReceivedBy(currentUser?.position?.trim() || '');
@@ -611,6 +765,27 @@ export default function AssetsTransfer() {
         return false;
       }
     }
+    if (ownerAbsent) {
+      const details = assetTransferData
+        .map(td =>
+          assignments.find(a => a.assignmentID === td.assignmentId)
+        )
+        .filter(Boolean) as AssetAssignment[];
+      const ownerIds = new Set(details.map(a => a.user.id).filter(Boolean));
+      for (const id of selectedIntangibleAssetIds) {
+        const ia = intangibleAssets.find(a => a.id === id);
+        const iaOwnerIds = (ia?.assignees ?? [])
+          .map((as: any) => as?.userId)
+          .filter(Boolean);
+        for (const oid of iaOwnerIds) ownerIds.add(oid);
+      }
+      if (ownerIds.size > 1) {
+        toast.error(
+          'When the asset owner is absent, select assets that belong to the same owner only.'
+        );
+        return false;
+      }
+    }
     if (
       !verificationTag ||
       !verificationCondition ||
@@ -632,7 +807,7 @@ export default function AssetsTransfer() {
         (currentUser as { digitalSignature?: string | null })?.digitalSignature ??
         null;
       const intangibleAssetItems = selectedIntangibleAssetIds.length > 0
-        ? selectedIntangibleAssetIds.map(id => ({ id }))
+        ? selectedIntangibleAssetIds.map(id => ({ id, notes: intangibleNotes[id] ?? '' }))
         : undefined;
       const payload: Record<string, unknown> = {
         assetTransfers: assetTransferData.map(d => ({
@@ -651,6 +826,7 @@ export default function AssetsTransfer() {
           roomName: newAssignmentRoom || null,
         },
         intangibleAssetItems,
+        ownerAbsent,
       };
       if (verificationConfirmSign) {
         payload.processSignature = {
@@ -661,11 +837,14 @@ export default function AssetsTransfer() {
       await api.post('/asset-transfers/create-held', payload);
 
       toast.success(
-        'Transfer has been processed. It will appear in Transfer History below.'
+        ownerAbsent
+          ? 'Transfer request created. The asset owner was marked absent, the department head can approve in Approvals. The assets will be transferred after approval.'
+          : 'Transfer has been initialized. The transferer must sign the forms in Profile → Documents, then the department head must approve before the assets are transferred.'
       );
       setShowTransferDialog(false);
       setSelectedAssignments([]);
       setSelectedIntangibleAssetIds([]);
+      setIntangibleNotes({});
       await Promise.all([fetchAssignments(), fetchTransferHistory(), fetchIntangibleAssets()]);
     } catch (err: any) {
       const data = err?.data ?? err?.response?.data;
@@ -784,24 +963,78 @@ export default function AssetsTransfer() {
         ),
       },
       {
-        id: 'from',
-        header: 'From',
-        accessorFn: row => row.from?.name ?? '',
-        size: 160,
+        id: 'transferForm',
+        header: 'Transfer Form #',
+        accessorFn: row => row.formNumber ?? '',
+        size: 150,
         cell: ({ row }) => (
-          <span className="text-sm text-gray-900">
-            {row.original.from?.name ?? '—'}
+          <span className="text-sm font-medium text-gray-900">
+            {row.original.formNumber ?? '—'}
           </span>
         ),
       },
       {
-        id: 'to',
-        header: 'To',
-        accessorFn: row => row.to?.name ?? '',
-        size: 160,
+        id: 'fromAccountability',
+        header: 'From Asset Accountability',
+        accessorKey: 'fromAccountabilityFormNumber',
+        size: 170,
         cell: ({ row }) => (
           <span className="text-sm text-gray-900">
-            {row.original.to?.name ?? '—'}
+            {row.original.fromAccountabilityFormNumber ?? '—'}
+          </span>
+        ),
+      },
+      {
+        id: 'toAccountability',
+        header: 'New Asset Accountability',
+        accessorKey: 'toAccountabilityFormNumber',
+        size: 170,
+        cell: ({ row }) => (
+          <span className="text-sm text-gray-900">
+            {row.original.toAccountabilityFormNumber ?? '—'}
+          </span>
+        ),
+      },
+      {
+        id: 'from',
+        header: 'From Department',
+        accessorFn: row => row.from?.name ?? '',
+        size: 180,
+        cell: ({ row }) => (
+          <div>
+            <div className="text-sm text-gray-900">
+              {row.original.from?.name ?? '—'}
+            </div>
+            <div className="text-xs text-gray-500">
+              {row.original.from?.department ?? '—'}
+            </div>
+          </div>
+        ),
+      },
+      {
+        id: 'to',
+        header: 'To Department',
+        accessorFn: row => row.to?.name ?? '',
+        size: 180,
+        cell: ({ row }) => (
+          <div>
+            <div className="text-sm text-gray-900">
+              {row.original.to?.name ?? '—'}
+            </div>
+            <div className="text-xs text-gray-500">
+              {row.original.to?.department ?? '—'}
+            </div>
+          </div>
+        ),
+      },
+      {
+        id: 'processedBy',
+        header: 'Processed By',
+        accessorFn: row => row.processor ?? '',
+        size: 140,
+        cell: ({ row }) => (
+          <span className="text-sm text-gray-900">
+            {row.original.processor ?? '—'}
           </span>
         ),
       },
@@ -1036,6 +1269,49 @@ export default function AssetsTransfer() {
     });
   }, [assetBuilders, companyTransferAssets, companyTransferSearchTerm]);
 
+  const scopedIntangibleAssets = useMemo(() => {
+    if (!showScopeTabs) return intangibleAssets;
+    // Classify by the department linked to the asset's type (mirrors tangible
+    // asset routing by category department). 'Other' falls back to 'it' as the
+    // most permissive scope so unclassified assets remain visible to IT.
+    const targetScope = scope === 'admin' ? 'Admin' : 'IT';
+    return intangibleAssets.filter((asset: any) => {
+      const deptCandidate =
+        asset.type_department?.name ||
+        asset.type ||
+        '';
+      const scopeType = classifyDepartmentScopeByName(deptCandidate);
+      if (scopeType === 'IT') return targetScope === 'IT';
+      if (scopeType === 'Admin') return targetScope === 'Admin';
+      // 'Other' — fall back to IT scope tab
+      return targetScope === 'IT';
+    });
+  }, [intangibleAssets, showScopeTabs, scope]);
+
+  const filteredIntangibleAssets = useMemo(() => {
+    if (!intangibleSearchTerm.trim()) return scopedIntangibleAssets;
+    const q = intangibleSearchTerm.toLowerCase();
+    return scopedIntangibleAssets.filter((asset: any) =>
+      (asset.name?.toLowerCase().includes(q)) ||
+      (asset.description?.toLowerCase().includes(q)) ||
+      (asset.remarks?.toLowerCase().includes(q)) ||
+      (asset.type?.toLowerCase().includes(q)) ||
+      (asset.code?.toLowerCase().includes(q))
+    );
+  }, [scopedIntangibleAssets, intangibleSearchTerm]);
+
+  const handleIntangibleAssetSelection = (
+    id: string,
+    checked: boolean | string
+  ) => {
+    const isChecked = Boolean(checked);
+    if (isChecked) {
+      setSelectedIntangibleAssetIds(prev => [...prev, id]);
+    } else {
+      setSelectedIntangibleAssetIds(prev => prev.filter(x => x !== id));
+    }
+  };
+
   const companyTransferBuiltAssets = useMemo(() => {
     const eligibleByCode = new Map(
       companyTransferAssets.map(asset => [asset.assetCode?.trim(), asset])
@@ -1159,7 +1435,7 @@ export default function AssetsTransfer() {
           {/* Asset Selection / Asset Built Tabs */}
           <div className="xl:col-span-2">
             <Tabs value={activeTab} onValueChange={(value) => { setActiveTab(value); setTabLoading(true); setTimeout(() => setTabLoading(false), 300); }} className="w-full">
-              <TabsList className={segmentTabsListClassName + ' grid grid-cols-3'}>
+              <TabsList className={segmentTabsListClassName + ' grid grid-cols-4'}>
                 <TabsTrigger
                   value="select-assets"
                   className={segmentTabsTriggerClassName + ' flex items-center gap-2'}
@@ -1190,6 +1466,16 @@ export default function AssetsTransfer() {
                     {filteredCompanyTransferAssets.length}
                   </Badge>
                 </TabsTrigger>
+                <TabsTrigger
+                  value="intangible-assets"
+                  className={segmentTabsTriggerClassName + ' flex items-center gap-2'}
+                >
+                  <Layers className="h-4 w-4" />
+                  Intangible Assets
+                  <Badge variant="secondary" className="ml-1 text-xs">
+                    {scopedIntangibleAssets.length}
+                  </Badge>
+                </TabsTrigger>
               </TabsList>
 
               <TabsContent value="select-assets" className="mt-4">
@@ -1214,6 +1500,29 @@ export default function AssetsTransfer() {
                       onSearchColumnChange={setSearchColumn}
                       className="mt-4 w-full"
                     />
+                    {filteredAssignments.length > 0 && (
+                      <div className="mt-3 flex justify-end">
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          onClick={() => {
+                            const allVisibleIds = filteredAssignments.map(a => a.assignmentID);
+                            const allSelected = allVisibleIds.every(id => selectedAssignments.includes(id));
+                            if (allSelected) {
+                              setSelectedAssignments(prev => prev.filter(id => !allVisibleIds.includes(id)));
+                            } else {
+                              setSelectedAssignments(prev => [...new Set([...prev, ...allVisibleIds])]);
+                            }
+                          }}
+                          className="text-red-600 border-red-300 hover:bg-red-50 whitespace-nowrap"
+                        >
+                          {filteredAssignments.length > 0 &&
+                          filteredAssignments.every(a => selectedAssignments.includes(a.assignmentID))
+                            ? 'Deselect All'
+                            : 'Select All'}
+                        </Button>
+                      </div>
+                    )}
                   </CardHeader>
 
                   <CardContent className="pt-0">
@@ -1506,6 +1815,29 @@ export default function AssetsTransfer() {
                       </TabsList>
 
                       <TabsContent value="asset" className="mt-0">
+                        {filteredCompanyTransferAssets.length > 0 && (
+                          <div className="mb-3 flex justify-end">
+                            <Button
+                              variant="outline"
+                              size="sm"
+                              onClick={() => {
+                                const allVisibleIds = filteredCompanyTransferAssets.map(a => a.assetId);
+                                const allSelected = allVisibleIds.every(id => selectedCompanyAssetIds.includes(id));
+                                if (allSelected) {
+                                  setSelectedCompanyAssetIds(prev => prev.filter(id => !allVisibleIds.includes(id)));
+                                } else {
+                                  setSelectedCompanyAssetIds(prev => [...new Set([...prev, ...allVisibleIds])]);
+                                }
+                              }}
+                              className="text-red-600 border-red-300 hover:bg-red-50 whitespace-nowrap"
+                            >
+                              {filteredCompanyTransferAssets.length > 0 &&
+                              filteredCompanyTransferAssets.every(a => selectedCompanyAssetIds.includes(a.assetId))
+                                ? 'Deselect All'
+                                : 'Select All'}
+                            </Button>
+                          </div>
+                        )}
                         <div className="space-y-3 max-h-96 overflow-y-auto scrollbar-thin scrollbar-thumb-gray-300 scrollbar-track-gray-100 -mr-6 pr-6">
                           {companyAssetsLoading || tabLoading ? (
                             <div className="space-y-3">
@@ -2019,6 +2351,190 @@ export default function AssetsTransfer() {
                 </Card>
               </TabsContent>
 
+              <TabsContent value="intangible-assets" className="mt-4">
+                <Card className="shadow-xl border-0 bg-white/80 backdrop-blur-sm min-h-[500px]">
+                  <CardHeader className="pb-4">
+                    <CardTitle className="flex items-center gap-3 text-xl">
+                      <div className="p-2 bg-red-100 rounded-lg">
+                        <Layers className="h-5 w-5 text-red-600" />
+                      </div>
+                      Select Intangible Assets to Transfer
+                      <Badge variant="secondary" className="ml-auto">
+                        {scopedIntangibleAssets.length} available
+                      </Badge>
+                    </CardTitle>
+                    <div className="flex flex-col sm:flex-row sm:items-center gap-4 mt-4">
+                      <div className="relative flex-1">
+                        <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-gray-400" />
+                        <Input
+                          placeholder="Search intangible assets..."
+                          value={intangibleSearchTerm}
+                          onChange={e => setIntangibleSearchTerm(e.target.value)}
+                          className="pl-10 w-full border-gray-200 focus:border-red-500 focus:ring-red-500"
+                        />
+                      </div>
+                      {scopedIntangibleAssets.length > 0 && (
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          onClick={() => {
+                            const allVisibleIds = scopedIntangibleAssets.map(a => a.id);
+                            const allSelected = allVisibleIds.every(id => selectedIntangibleAssetIds.includes(id));
+                            if (allSelected) {
+                              setSelectedIntangibleAssetIds(prev => prev.filter(id => !allVisibleIds.includes(id)));
+                            } else {
+                              setSelectedIntangibleAssetIds(prev => [...new Set([...prev, ...allVisibleIds])]);
+                            }
+                          }}
+                          className="text-red-600 border-red-300 hover:bg-red-50 whitespace-nowrap"
+                        >
+                          {scopedIntangibleAssets.length > 0 &&
+                          scopedIntangibleAssets.every(a => selectedIntangibleAssetIds.includes(a.id))
+                            ? 'Deselect All'
+                            : 'Select All'}
+                        </Button>
+                      )}
+                    </div>
+                  </CardHeader>
+                  <CardContent className="pt-0">
+                    <div className="space-y-3 max-h-96 overflow-y-auto scrollbar-thin scrollbar-thumb-gray-300 scrollbar-track-gray-100 -mr-6 pr-6">
+                      {loading || tabLoading ? (
+                        <div className="space-y-3">
+                          {Array.from({ length: 5 }).map((_, index) => (
+                            <div
+                              key={index}
+                              className="group relative p-4 border-2 rounded-xl border-gray-200"
+                            >
+                              <div className="flex items-start gap-4">
+                                <div className="flex-shrink-0 mt-1">
+                                  <Shimmer className="h-5 w-5 rounded" />
+                                </div>
+                                <div className="flex-1 min-w-0">
+                                  <div className="mb-2">
+                                    <Shimmer className="h-6 w-40 rounded" />
+                                  </div>
+                                  <div className="flex flex-wrap gap-2">
+                                    <Shimmer className="h-5 w-28 rounded-full" />
+                                    <Shimmer className="h-5 w-24 rounded-full" />
+                                  </div>
+                                  <div className="mt-3">
+                                    <Shimmer className="h-4 w-full rounded" />
+                                  </div>
+                                </div>
+                              </div>
+                            </div>
+                          ))}
+                        </div>
+                      ) : filteredIntangibleAssets.length === 0 ? (
+                        <div className="text-center py-12">
+                          <Layers className="h-16 w-16 text-gray-300 mx-auto mb-4" />
+                          <p className="text-gray-500 text-lg">
+                            {intangibleSearchTerm
+                              ? 'No Results Found'
+                              : 'No intangible assets found'}
+                          </p>
+                          <p className="text-gray-400 text-sm mt-1">
+                            {intangibleSearchTerm
+                              ? 'Try adjusting your search criteria'
+                              : 'Intangible assets in your scope will appear here'}
+                          </p>
+                        </div>
+                      ) : (
+                        filteredIntangibleAssets.map(asset => (
+                          <div
+                            key={asset.id}
+                            className={cn(
+                              'group relative p-4 border-2 rounded-xl transition-all duration-200 cursor-pointer',
+                              selectedIntangibleAssetIds.includes(asset.id)
+                                ? 'border-red-500 bg-red-50 shadow-md'
+                                : 'border-gray-200 hover:border-gray-300 hover:shadow-sm'
+                            )}
+                            onClick={() =>
+                              handleIntangibleAssetSelection(
+                                asset.id,
+                                !selectedIntangibleAssetIds.includes(asset.id)
+                              )
+                            }
+                          >
+                            <div className="flex items-start gap-4">
+                              <div className="flex-shrink-0 mt-1">
+                                <Checkbox
+                                  id={asset.id}
+                                  checked={selectedIntangibleAssetIds.includes(asset.id)}
+                                  onCheckedChange={(checked: boolean | string) =>
+                                    handleIntangibleAssetSelection(asset.id, checked)
+                                  }
+                                  className="pointer-events-none"
+                                />
+                              </div>
+
+                              <div className="flex-1 min-w-0">
+                                <div className="mb-2">
+                                  <div className="flex items-center justify-between">
+                                    <h3 className="font-semibold text-lg text-gray-900 truncate">
+                                      {asset.name}
+                                    </h3>
+                                    {selectedIntangibleAssetIds.includes(asset.id) && (
+                                      <CheckCircle2 className="h-5 w-5 text-red-600 flex-shrink-0" />
+                                    )}
+                                  </div>
+                                </div>
+
+                                <div className="flex flex-wrap gap-2">
+                                  {asset.type && (
+                                    <Badge
+                                      variant="outline"
+                                      className="text-xs border-blue-300 bg-blue-50 text-blue-800"
+                                    >
+                                      {asset.type}
+                                    </Badge>
+                                  )}
+                                  <Badge
+                                    variant="outline"
+                                    className="text-xs border-gray-300"
+                                  >
+                                    {getIntangibleAssigneeCount(asset)}{' '}
+                                    assignee{getIntangibleAssigneeCount(asset) !== 1 ? 's' : ''}
+                                  </Badge>
+                                </div>
+
+                                {asset.description && (
+                                  <p className="text-sm text-gray-600 mt-2 line-clamp-2">
+                                    {asset.description}
+                                  </p>
+                                )}
+                              </div>
+                            </div>
+                          </div>
+                        ))
+                      )}
+                    </div>
+
+                    {selectedIntangibleAssetIds.length > 0 && (
+                      <div className="mt-6 p-4 bg-gradient-to-r from-red-50 to-red-100 border border-red-200 rounded-xl">
+                        <div className="flex items-center justify-between">
+                          <div className="flex items-center gap-2">
+                            <CheckCircle2 className="h-5 w-5 text-red-600" />
+                            <span className="font-semibold text-red-900">
+                              {selectedIntangibleAssetIds.length} intangible asset
+                              {selectedIntangibleAssetIds.length !== 1 ? 's' : ''} selected for transfer
+                            </span>
+                          </div>
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            onClick={() => setSelectedIntangibleAssetIds([])}
+                            className="text-red-600 border-red-300 hover:bg-red-50"
+                          >
+                            Clear All
+                          </Button>
+                        </div>
+                      </div>
+                    )}
+                  </CardContent>
+                </Card>
+              </TabsContent>
+
             </Tabs>
           </div>
 
@@ -2100,15 +2616,37 @@ export default function AssetsTransfer() {
         {/* Transfer History Table */}
         <Card className="shadow-xl border-0 bg-white/80 backdrop-blur-sm">
           <CardHeader>
-            <CardTitle className="flex items-center gap-3 text-xl">
-              <div className="p-2 bg-red-100 rounded-lg">
-                <ArrowRightLeft className="h-5 w-5 text-red-600" />
+            <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 w-full">
+              <CardTitle className="flex items-center gap-3 text-xl">
+                <div className="p-2 bg-red-100 rounded-lg">
+                  <ArrowRightLeft className="h-5 w-5 text-red-600" />
+                </div>
+                Transfer History
+                <Badge variant="secondary" className="ml-auto">
+                  {transferHistory.length} transfers
+                </Badge>
+              </CardTitle>
+              <div className="flex items-center gap-2">
+                <Button
+                  variant="header"
+                  size="sm"
+                  onClick={() => handleTransferHistoryExportClick('pdf')}
+                  className="flex items-center gap-2"
+                >
+                  <Download className="h-4 w-4" />
+                  Export PDF
+                </Button>
+                <Button
+                  variant="header"
+                  size="sm"
+                  onClick={() => handleTransferHistoryExportClick('excel')}
+                  className="flex items-center gap-2"
+                >
+                  <Download className="h-4 w-4" />
+                  Export Excel
+                </Button>
               </div>
-              Transfer History
-              <Badge variant="secondary" className="ml-auto">
-                {transferHistory.length} transfers
-              </Badge>
-            </CardTitle>
+            </div>
           </CardHeader>
 
           <CardContent>
@@ -2161,6 +2699,7 @@ export default function AssetsTransfer() {
                 data={transferHistory}
                 columns={transferHistoryColumns}
                 searchPlaceholder="Search transfer history..."
+                searchColumnOptions={transferHistorySearchColumns}
                 emptyState={
                   <div className="text-center py-8">
                     <p className="text-gray-500">No matching transfers</p>
@@ -2218,9 +2757,11 @@ export default function AssetsTransfer() {
               setVerificationTag(false);
               setVerificationCondition(false);
               setVerificationConfirmSign(false);
+              setOwnerAbsent(false);
               setTransferTypeTransfer(false);
               setTransferTypeOffboarding(false);
               setReceivedBy('');
+              setIntangibleNotes({});
             }
           }}
         >
@@ -2241,7 +2782,7 @@ export default function AssetsTransfer() {
               className={`max-h-[min(50vh,520px)] min-h-0 flex-1 space-y-4 overflow-y-auto overflow-x-hidden sm:space-y-6${smsOtpDialogOpen ? ' !overflow-hidden' : ''}`}
             >
               <div className="inline-block rounded-full border border-slate-200 bg-slate-50 px-3 py-1 text-sm font-semibold text-slate-800">
-                Selected Assets: {assetTransferData.length}
+                Selected Assets: {assetTransferData.length + selectedIntangibleAssetIds.length}
               </div>
               {/* Transfer Type - only Transfer and Transfer Offboarding */}
               <div className="rounded-xl border border-slate-200 bg-white p-5 shadow-sm">
@@ -2286,6 +2827,16 @@ export default function AssetsTransfer() {
                   </label>
                 </div>
               </div>
+
+              {/* Tangible Asset table */}
+              {assetTransferData.length > 0 && (
+                <div className="rounded-xl border border-slate-200 bg-white p-5 shadow-sm">
+                  <Label className="text-sm font-semibold text-slate-800 tracking-tight uppercase flex items-center gap-2">
+                    <Package className="h-4 w-4 text-red-500" />
+                    Tangible Asset ({assetTransferData.length})
+                  </Label>
+                </div>
+              )}
 
               {/* Asset Cards */}
               {assetTransferData.map((td, idx) => {
@@ -2438,6 +2989,54 @@ export default function AssetsTransfer() {
                 );
               })}
 
+              {/* Intangible Asset table */}
+              {selectedIntangibleAssetIds.length > 0 && (
+                <div className="rounded-xl border border-slate-200 bg-white p-5 shadow-sm">
+                  <Label className="text-sm font-semibold text-slate-800 tracking-tight uppercase flex items-center gap-2 mb-4">
+                    <Layers className="h-4 w-4 text-red-500" />
+                    Intangible Asset ({selectedIntangibleAssetIds.length})
+                  </Label>
+                  <div className="overflow-x-auto">
+                    <table className="w-full text-sm">
+                      <thead>
+                        <tr className="border-b border-slate-200">
+                          <th className="text-left py-2 px-3 font-semibold text-slate-700">Name</th>
+                          <th className="text-left py-2 px-3 font-semibold text-slate-700">Type</th>
+                          <th className="text-left py-2 px-3 font-semibold text-slate-700">Description</th>
+                          <th className="text-left py-2 px-3 font-semibold text-slate-700">Notes</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {selectedIntangibleAssetIds.map(id => {
+                          const asset = intangibleAssets.find(a => a.id === id);
+                          if (!asset) return null;
+                          return (
+                            <tr key={id} className="border-b border-slate-100 last:border-0">
+                              <td className="py-2 px-3 text-slate-900 font-medium">{asset.name}</td>
+                              <td className="py-2 px-3">
+                                <Badge variant="outline" className={asset.type === 'IT scope' ? 'bg-red-100 text-red-800 border-red-200' : 'bg-orange-100 text-orange-800 border-orange-200'}>
+                                  {asset.type}
+                                </Badge>
+                              </td>
+                              <td className="py-2 px-3 text-slate-600">{asset.description || '—'}</td>
+                              <td className="py-2 px-3">
+                                <Textarea
+                                  placeholder="Notes..."
+                                  value={intangibleNotes[id] ?? ''}
+                                  onChange={e => setIntangibleNotes(prev => ({ ...prev, [id]: e.target.value }))}
+                                  className="border-slate-200 focus:border-red-500 focus:ring-red-500/20 rounded-lg resize-none text-xs"
+                                  rows={2}
+                                />
+                              </td>
+                            </tr>
+                          );
+                        })}
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+              )}
+
               {/* New Assignment Details */}
               <div className="rounded-xl border border-slate-200 bg-white p-5 shadow-sm space-y-4">
                 <Label className="text-sm font-semibold text-slate-800 uppercase">
@@ -2477,18 +3076,91 @@ export default function AssetsTransfer() {
                         setNewAssignmentUser('');
                       }}
                     >
-                      <SelectTrigger className="mt-1">
-                        <SelectValue placeholder="Choose department" />
+                      <SelectTrigger className="mt-1 w-full bg-white hover:bg-gray-200 border border-gray-200 rounded-md focus:border-blue-500 focus:ring-1 focus:ring-blue-500">
+                        <SelectValue placeholder="Choose department">
+                          {newAssignmentDepartment
+                            ? departments?.find(
+                                d => d.departmentID === newAssignmentDepartment
+                              )?.name
+                            : undefined}
+                        </SelectValue>
                       </SelectTrigger>
-                      <SelectContent>
-                        {(departments || []).map(d => (
-                          <SelectItem
-                            key={d.departmentID}
-                            value={d.departmentID}
-                          >
-                            {d.name}
-                          </SelectItem>
-                        ))}
+                      <SelectContent className="max-h-60 bg-white border border-gray-200 rounded-md shadow-md">
+                        <div className="px-2 py-2 border-b border-gray-200">
+                          <div className="relative">
+                            <svg
+                              className="absolute left-2.5 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-400"
+                              fill="none"
+                              stroke="currentColor"
+                              viewBox="0 0 24 24"
+                            >
+                              <path
+                                strokeLinecap="round"
+                                strokeLinejoin="round"
+                                strokeWidth={2}
+                                d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"
+                              />
+                            </svg>
+                            <input
+                              type="text"
+                              placeholder="Search departments..."
+                              value={newAssignmentDepartmentSearch}
+                              onKeyDown={e => e.stopPropagation()}
+                              onChange={e =>
+                                setNewAssignmentDepartmentSearch(e.target.value)
+                              }
+                              className="w-full h-9 pl-8 pr-3 rounded-md border border-gray-200 bg-white text-sm focus:outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500"
+                            />
+                          </div>
+                        </div>
+
+                        <div className="max-h-48 overflow-y-auto">
+                          {(departments || [])
+                            .filter(
+                              dept =>
+                                dept.name
+                                  .toLowerCase()
+                                  .includes(
+                                    newAssignmentDepartmentSearch.toLowerCase()
+                                  ) ||
+                                dept.code
+                                  .toLowerCase()
+                                  .includes(
+                                    newAssignmentDepartmentSearch.toLowerCase()
+                                  )
+                            )
+                            .map(d => (
+                              <SelectItem
+                                key={d.departmentID}
+                                value={d.departmentID}
+                                className="py-2 hover:bg-gray-200 focus:bg-gray-200"
+                              >
+                                <div className="flex items-center justify-between w-full">
+                                  <span>{d.name}</span>
+                                  <span className="text-sm text-gray-500">
+                                    ({d.code})
+                                  </span>
+                                </div>
+                              </SelectItem>
+                            ))}
+                          {(departments || []).filter(
+                            dept =>
+                              dept.name
+                                .toLowerCase()
+                                .includes(
+                                  newAssignmentDepartmentSearch.toLowerCase()
+                                ) ||
+                              dept.code
+                                .toLowerCase()
+                                .includes(
+                                  newAssignmentDepartmentSearch.toLowerCase()
+                                )
+                          ).length === 0 && (
+                            <div className="px-3 py-6 text-sm text-gray-500 text-center">
+                              No departments found
+                            </div>
+                          )}
+                        </div>
                       </SelectContent>
                     </Select>
                   </div>
@@ -2618,8 +3290,32 @@ export default function AssetsTransfer() {
                     transfer
                   </span>
                 </label>
+                <div className="flex flex-col gap-2 rounded-lg border border-slate-200 bg-slate-50/80 p-3 sm:flex-row sm:items-center sm:justify-between">
+                  <div className="space-y-0.5 pr-2">
+                    <Label
+                      htmlFor="owner-absent-transfer-switch"
+                      className="text-sm font-medium text-slate-800"
+                    >
+                      Asset owner is not in office anymore
+                    </Label>
+                    <p className="text-xs text-slate-600">
+                      The transfer form will not go to the asset owner for
+                      digital signing; route it to the asset owner&apos;s
+                      department head for approval. Use only when all selected
+                      assets belong to the same owner.
+                    </p>
+                  </div>
+                  <Switch
+                    id="owner-absent-transfer-switch"
+                    checked={ownerAbsent}
+                    onCheckedChange={setOwnerAbsent}
+                    className="shrink-0"
+                  />
+                </div>
                 <p className="text-sm text-slate-600">
-                  All selected assets will be transferred.
+                  {ownerAbsent
+                    ? "The asset owner will not see this form in Profile. Department heads in the owner's department can approve in Approvals."
+                    : 'All selected assets will be transferred after the transferer signs the forms and the department head approves.'}
                 </p>
               </div>
             </AppDialogBody>
@@ -2654,8 +3350,8 @@ export default function AssetsTransfer() {
                   </div>
                 ) : (
                   <>
-                    Transfer {assetTransferData.length} Asset
-                    {assetTransferData.length !== 1 ? 's' : ''}
+                    Transfer {assetTransferData.length + selectedIntangibleAssetIds.length} Asset
+                    {assetTransferData.length + selectedIntangibleAssetIds.length !== 1 ? 's' : ''}
                   </>
                 )}
               </Button>
@@ -2689,6 +3385,180 @@ export default function AssetsTransfer() {
             (currentUser as { contactNumber?: string })?.contactNumber
           }
         />
+
+        {/* Transfer History Export Dialog */}
+        <Dialog open={isTransferHistoryExportOpen} onOpenChange={setIsTransferHistoryExportOpen}>
+          <DialogContent className="max-w-xl sm:max-w-2xl">
+            <DialogHeader>
+              <DialogTitle>
+                {transferHistoryExportStep === 1
+                  ? `Export ${transferHistoryExportType?.toUpperCase() ?? ''} — Step 1: Format`
+                  : `Export ${transferHistoryExportType?.toUpperCase() ?? ''} — Step 2: Filters`}
+              </DialogTitle>
+              <DialogDescription>
+                {transferHistoryExportStep === 1
+                  ? 'Choose the export format.'
+                  : 'Apply optional filters to narrow down the exported data.'}
+              </DialogDescription>
+            </DialogHeader>
+            <div className="py-4 space-y-6">
+              {transferHistoryExportStep === 1 && (
+                <div className="grid grid-cols-2 gap-4">
+                  <Button
+                    variant="outline"
+                    className="h-24 flex-col gap-3"
+                    onClick={() => {
+                      setTransferHistoryExportType('pdf');
+                      setTransferHistoryExportStep(2);
+                    }}
+                  >
+                    <FileText className="h-8 w-8 text-red-600" />
+                    <span className="font-semibold">PDF</span>
+                    <span className="text-xs text-gray-500">Document format</span>
+                  </Button>
+                  <Button
+                    variant="outline"
+                    className="h-24 flex-col gap-3"
+                    onClick={() => {
+                      setTransferHistoryExportType('excel');
+                      setTransferHistoryExportStep(2);
+                    }}
+                  >
+                    <FileText className="h-8 w-8 text-green-600" />
+                    <span className="font-semibold">Excel</span>
+                    <span className="text-xs text-gray-500">Spreadsheet format</span>
+                  </Button>
+                </div>
+              )}
+              {transferHistoryExportStep === 2 && (
+                <div className="space-y-4">
+                  <div className="grid grid-cols-2 gap-4">
+                    <div>
+                      <Label className="text-sm font-medium">From Date</Label>
+                      <Input
+                        type="date"
+                        value={transferHistoryFilters.fromDate}
+                        onChange={e => handleTransferHistoryFilterChange('fromDate', e.target.value)}
+                        className="mt-1 h-9 text-sm"
+                      />
+                    </div>
+                    <div>
+                      <Label className="text-sm font-medium">To Date</Label>
+                      <Input
+                        type="date"
+                        value={transferHistoryFilters.toDate}
+                        onChange={e => handleTransferHistoryFilterChange('toDate', e.target.value)}
+                        className="mt-1 h-9 text-sm"
+                      />
+                    </div>
+                  </div>
+                  <div className="grid grid-cols-2 gap-4">
+                    <div>
+                      <Label className="text-sm font-medium">Accountability Form No (All)</Label>
+                      <Input
+                        type="text"
+                        placeholder="e.g. AF-001"
+                        value={transferHistoryFilters.accountabilityFormNo}
+                        onChange={e => handleTransferHistoryFilterChange('accountabilityFormNo', e.target.value)}
+                        className="mt-1 h-9 text-sm"
+                      />
+                    </div>
+                    <div>
+                      <Label className="text-sm font-medium">Asset Code</Label>
+                      <Input
+                        type="text"
+                        placeholder="e.g. AST-001"
+                        value={transferHistoryFilters.assetCode}
+                        onChange={e => handleTransferHistoryFilterChange('assetCode', e.target.value)}
+                        className="mt-1 h-9 text-sm"
+                      />
+                    </div>
+                  </div>
+                  <div className="grid grid-cols-2 gap-4">
+                    <div>
+                      <Label className="text-sm font-medium">From Asset Accountability</Label>
+                      <Combobox
+                        options={[
+                          { value: '', label: 'All Forms' },
+                          ...exportAccountabilityForms.map(n => ({ value: n, label: n })),
+                        ]}
+                        value={transferHistoryFilters.oldAccountabilityFormNo}
+                        onChange={v => handleTransferHistoryFilterChange('oldAccountabilityFormNo', v)}
+                        placeholder="Search from accountability"
+                        className="mt-1 h-9 text-sm"
+                      />
+                    </div>
+                    <div>
+                      <Label className="text-sm font-medium">To Asset Accountability</Label>
+                      <Combobox
+                        options={[
+                          { value: '', label: 'All Forms' },
+                          ...exportAccountabilityForms.map(n => ({ value: n, label: n })),
+                        ]}
+                        value={transferHistoryFilters.newAccountabilityFormNo}
+                        onChange={v => handleTransferHistoryFilterChange('newAccountabilityFormNo', v)}
+                        placeholder="Search to accountability"
+                        className="mt-1 h-9 text-sm"
+                      />
+                    </div>
+                  </div>
+                  <div className="grid grid-cols-2 gap-4">
+                    <div>
+                      <Label className="text-sm font-medium">Department</Label>
+                      <Combobox
+                        options={[
+                          { value: '', label: 'All Departments' },
+                          ...exportDepartments.map(dept => ({ value: dept.departmentID, label: dept.name })),
+                        ]}
+                        value={transferHistoryFilters.departmentId}
+                        onChange={v => handleTransferHistoryFilterChange('departmentId', v)}
+                        placeholder="Search department"
+                        className="mt-1 h-9 text-sm"
+                      />
+                    </div>
+                    <div>
+                      <Label className="text-sm font-medium">User</Label>
+                      <Combobox
+                        options={[
+                          { value: '', label: 'All Users' },
+                          ...exportUsers
+                            .filter(
+                              (u: User) =>
+                                !transferHistoryFilters.departmentId ||
+                                u.department_id === transferHistoryFilters.departmentId
+                            )
+                            .map((user: User) => ({
+                              value: user.userID,
+                              label: `${user.first_name} ${user.last_name} (${user.email})`,
+                            })),
+                        ]}
+                        value={transferHistoryFilters.userId}
+                        onChange={v => handleTransferHistoryFilterChange('userId', v)}
+                        placeholder="Search user"
+                        className="mt-1 h-9 text-sm"
+                      />
+                    </div>
+                  </div>
+                </div>
+              )}
+            </div>
+            <div className="flex justify-between pt-4 border-t">
+              {transferHistoryExportStep === 2 && (
+                <Button variant="outline" onClick={handleTransferHistoryPrevStep}>
+                  Back
+                </Button>
+              )}
+              <div className="flex gap-2">
+                <Button variant="outline" onClick={resetTransferHistoryExportDialog}>
+                  Cancel
+                </Button>
+                <Button onClick={handleTransferHistoryExportConfirm} disabled={!transferHistoryExportType}>
+                  {transferHistoryExportStep === 1 ? 'Next' : `Export ${transferHistoryExportType?.toUpperCase()}`}
+                </Button>
+              </div>
+            </div>
+          </DialogContent>
+        </Dialog>
       </main>
     </div>
   );

@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo } from 'react';
+import { useState, useEffect, useMemo, useCallback } from 'react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { PageHeader } from '@/components/common/PageHeader';
 import { Badge } from '@/components/ui/badge';
@@ -13,14 +13,6 @@ import {
 } from '@/components/ui/select';
 import { Button } from '@/components/ui/button';
 import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from '@/components/ui/table';
-import {
   Sheet,
   SheetContent,
   SheetDescription,
@@ -33,22 +25,99 @@ import {
   FileText,
   Settings,
   Shield,
-  Search,
-  ChevronLeft,
-  ChevronRight,
   Download,
+  RefreshCw,
   AlertTriangle,
   CheckCircle,
 } from 'lucide-react';
 import { format, formatDistanceToNow } from 'date-fns';
 import { api } from '@/lib/api';
 import { Shimmer } from '@/components/ui/shimmer';
-import {
-  AuditFieldChanges,
-  formatAuditPlainText,
-  hasAuditFieldChanges,
-} from '@/components/common/AuditFieldChanges';
+import { DataTable } from '@/components/ui/dataTable';
+import type { ColumnDef } from '@tanstack/react-table';
+import { formatAuditPlainText } from '@/components/common/AuditFieldChanges';
 import { useAuditFieldLookups } from '@/hooks/useAuditFieldLookups';
+import jsPDF from 'jspdf';
+import autoTable from 'jspdf-autotable';
+
+function formatValue(value: unknown): string {
+  if (value === null || value === undefined) return '—';
+  if (typeof value === 'boolean') return value ? 'Yes' : 'No';
+  if (typeof value === 'object') return JSON.stringify(value);
+  return String(value);
+}
+
+function isUuidLike(value: string): boolean {
+  return /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(value);
+}
+
+function toReadableLabel(key: string): string {
+  return key.replace(/_/g, ' ').replace(/\b\w/g, (char) => char.toUpperCase());
+}
+
+function KeyValueList({ value }: { value: unknown }) {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) {
+    return <div className="text-sm text-gray-700">{formatValue(value)}</div>;
+  }
+
+  const record = value as Record<string, unknown>;
+  const entries = Object.entries(record);
+  if (entries.length === 0) {
+    return <div className="text-sm text-gray-500">No fields</div>;
+  }
+
+  const visibleRows = entries
+    .map(([key, rawValue]) => {
+      const stringValue = typeof rawValue === 'string' ? rawValue : null;
+      const isIdField = /(^id$|_id$)/.test(key);
+      const isActorRefField = /(_by$|^created_by$|^updated_by$|^assigned_by$)/.test(key);
+      const normalizedKey = key.toLowerCase();
+      const looksLikeIdRef = normalizedKey.endsWith('id') || normalizedKey.endsWith('_id') || normalizedKey.endsWith('by') || normalizedKey.endsWith('_by');
+
+      if (isIdField) return null;
+
+      if (isActorRefField || looksLikeIdRef) {
+        const companionKey = [
+          `${key}_name`, `${key}_email`, `${key}_display_name`,
+          `${key.replace(/_by$/, '')}_name`,
+          `${key.replace(/_by$/, '')}_email`,
+          `${key.replace(/_by$/, '')}_display_name`,
+        ].find((candidate) => {
+          const companion = record[candidate];
+          return typeof companion === 'string' && companion.trim().length > 0;
+        });
+
+        if (companionKey) {
+          return { key, label: toReadableLabel(key), valueText: formatValue(record[companionKey]) };
+        }
+
+        if (stringValue && isUuidLike(stringValue)) return null;
+      }
+
+      return { key, label: toReadableLabel(key), valueText: formatValue(rawValue) };
+    })
+    .filter((row): row is { key: string; label: string; valueText: string } => Boolean(row));
+
+  if (visibleRows.length === 0) {
+    return <div className="text-sm text-gray-500">No readable fields</div>;
+  }
+
+  return (
+    <div className="space-y-2">
+      {visibleRows.map((row) => (
+        <div
+          key={row.key}
+          className="grid grid-cols-1 gap-1 rounded-md border border-gray-200 bg-gray-50 p-2 sm:grid-cols-[160px_1fr] sm:gap-3"
+        >
+          <div className="text-xs font-semibold uppercase tracking-wide text-gray-500">
+            {row.label}
+          </div>
+          <div className="text-sm text-gray-800 break-all">{row.valueText}</div>
+        </div>
+      ))}
+    </div>
+  );
+}
 
 interface AuditLogEntry {
   id: string;
@@ -170,6 +239,125 @@ const getActionType = (
   return 'update';
 };
 
+const auditTrailColumns: ColumnDef<AuditLogEntry>[] = [
+  {
+    accessorKey: 'timestamp',
+    header: 'Time',
+    size: 180,
+    cell: ({ row }) => {
+      const log = row.original;
+      return (
+        <div>
+          <div className="text-sm font-medium">
+            {formatDistanceToNow(log.timestamp, { addSuffix: true })}
+          </div>
+          <div className="text-xs text-muted-foreground">
+            {format(log.timestamp, 'MMM dd, yyyy HH:mm:ss')}
+          </div>
+        </div>
+      );
+    },
+  },
+  {
+    accessorKey: 'user.name',
+    header: 'User',
+    size: 200,
+    cell: ({ row }) => {
+      const log = row.original;
+      const initials = log.user.name
+        .split(' ')
+        .map((n: string) => n[0])
+        .join('');
+      return (
+        <div className="flex items-center gap-2">
+          <Avatar className="h-6 w-6">
+            <AvatarFallback className="text-[10px]">
+              {initials}
+            </AvatarFallback>
+          </Avatar>
+          <div>
+            <div className="text-sm">{log.user.name}</div>
+            <div className="text-xs text-muted-foreground">
+              {log.user.email}
+            </div>
+          </div>
+        </div>
+      );
+    },
+  },
+  {
+    accessorKey: 'action',
+    header: 'Action',
+    size: 150,
+    cell: ({ row }) => {
+      const log = row.original;
+      const type = getActionType(log.action);
+      return (
+        <div className="flex items-center gap-2">
+          {getActionIcon(type)}
+          <Badge variant={getActionBadgeVariant(type) as any}>
+            <span className="capitalize">{log.action}</span>
+          </Badge>
+        </div>
+      );
+    },
+  },
+  {
+    accessorKey: 'resourceType',
+    header: 'Resource',
+    size: 200,
+    cell: ({ row }) => {
+      const log = row.original;
+      return (
+        <div>
+          <div className="text-sm font-medium">
+            {log.resource || log.resourceId || '—'}
+          </div>
+          <div className="text-xs text-muted-foreground">
+            {log.resourceType}
+          </div>
+        </div>
+      );
+    },
+  },
+  {
+    accessorKey: 'status',
+    header: 'Status',
+    size: 100,
+    cell: ({ row }) => {
+      const status = row.original.status ?? 'success';
+      return (
+        <Badge variant={status === 'failure' ? 'destructive' : 'default'}>
+          <span className="capitalize">{status}</span>
+        </Badge>
+      );
+    },
+  },
+  {
+    accessorKey: 'severity',
+    header: 'Severity',
+    size: 100,
+    cell: ({ row }) => {
+      const severity = row.original.severity ?? 'info';
+      return (
+        <Badge variant={severity === 'critical' ? 'destructive' : severity === 'warning' ? 'secondary' : 'outline'}>
+          <span className="capitalize">{severity}</span>
+        </Badge>
+      );
+    },
+  },
+  {
+    accessorKey: 'ipAddress',
+    header: 'IP',
+    size: 120,
+    cell: ({ row }) => (
+      <div className="text-xs text-muted-foreground">
+        {row.original.ipAddress}
+      </div>
+    ),
+  },
+];
+
 export default function AuditTrail() {
   const [logs, setLogs] = useState<AuditLogEntry[]>([]);
   const [selectedLog, setSelectedLog] = useState<AuditLogEntry | null>(null);
@@ -279,50 +467,46 @@ export default function AuditTrail() {
     return params.toString();
   };
 
-  useEffect(() => {
-    const fetchAuditLogs = async () => {
-      try {
-        setLoading(true);
+  const fetchAuditLogs = useCallback(async () => {
+    try {
+      setLoading(true);
+      setError(null);
 
-        const response = await api.get(`/audit?${buildQuery()}`);
-        const responseData = response.data || response;
+      const response = await api.get(`/audit?${buildQuery()}`);
+      const responseData = response.data || response;
 
-        if (responseData && Array.isArray(responseData.auditLogs)) {
-          const auditLogs = responseData.auditLogs.map((log: any) => ({
-            ...log,
-            timestamp: new Date(log.timestamp),
-            type: getActionType(log.action),
-          }));
-          setLogs(auditLogs);
-          setMeta({
-            page: responseData?.meta?.page ?? currentPage,
-            limit: responseData?.meta?.limit ?? itemsPerPage,
-            total: responseData?.meta?.total ?? auditLogs.length,
-            totalPages: responseData?.meta?.totalPages ?? 1,
-          });
-          setError(null);
-        } else {
-          setLogs([]);
-          setMeta({ page: 1, limit: itemsPerPage, total: 0, totalPages: 1 });
-          if (responseData?.message) {
-            setError(responseData.message);
-          }
-        }
-      } catch (err: any) {
-        console.error('Failed to fetch audit logs:', err);
-        setError(
-          err.response?.data?.error ||
-            err.message ||
-            'Failed to load audit logs'
-        );
+      if (responseData && Array.isArray(responseData.auditLogs)) {
+        const auditLogs = responseData.auditLogs.map((log: any) => ({
+          ...log,
+          timestamp: new Date(log.timestamp),
+          type: getActionType(log.action),
+        }));
+        setLogs(auditLogs);
+        setMeta({
+          page: responseData?.meta?.page ?? currentPage,
+          limit: responseData?.meta?.limit ?? itemsPerPage,
+          total: responseData?.meta?.total ?? auditLogs.length,
+          totalPages: responseData?.meta?.totalPages ?? 1,
+        });
+      } else {
         setLogs([]);
         setMeta({ page: 1, limit: itemsPerPage, total: 0, totalPages: 1 });
-      } finally {
-        setLoading(false);
+        if (responseData?.message) {
+          setError(responseData.message);
+        }
       }
-    };
-
-    fetchAuditLogs();
+    } catch (err: any) {
+      console.error('Failed to fetch audit logs:', err);
+      setError(
+        err.response?.data?.error ||
+          err.message ||
+          'Failed to load audit logs'
+      );
+      setLogs([]);
+      setMeta({ page: 1, limit: itemsPerPage, total: 0, totalPages: 1 });
+    } finally {
+      setLoading(false);
+    }
   }, [
     searchTerm,
     sortBy,
@@ -339,9 +523,13 @@ export default function AuditTrail() {
     dateTo,
   ]);
 
+  useEffect(() => {
+    fetchAuditLogs();
+  }, [fetchAuditLogs]);
+
   const totalPages = Math.max(1, meta.totalPages || 1);
 
-  const { lookups: auditFieldLookups, mergedIdLabels } =
+  const { mergedIdLabels } =
     useAuditFieldLookups();
 
   const checkVerification = async () => {
@@ -380,6 +568,16 @@ export default function AuditTrail() {
 
       if (!Array.isArray(rows) || rows.length === 0) {
         return;
+      }
+
+      try {
+        await api.post('/audit/export', {
+          format: formatType,
+          rowCount: rows.length,
+          scope: 'current view',
+        });
+      } catch (exportLogErr) {
+        console.warn('Failed to record audit export', exportLogErr);
       }
 
       const now = format(new Date(), 'yyyyMMdd-HHmmss');
@@ -437,31 +635,89 @@ export default function AuditTrail() {
     }
   };
 
+  const handleDownloadPdf = () => {
+    const doc = new jsPDF({ orientation: 'landscape' });
+    doc.setFontSize(14);
+    doc.text('Asset Management Audit Trail', 14, 14);
+
+    const body = logs.map((row) => [
+      format(new Date(row.timestamp), 'MMM dd, yyyy HH:mm:ss'),
+      row.user?.name || 'System',
+      row.action,
+      row.resourceType,
+      row.resource || '—',
+      (row.details ?? '—').slice(0, 120),
+    ]);
+
+    autoTable(doc, {
+      head: [['Date/Time', 'User', 'Action', 'Resource type', 'Resource', 'Details']],
+      body,
+      startY: 20,
+      styles: { fontSize: 7, cellPadding: 2 },
+      headStyles: { fillColor: [79, 70, 229] },
+      theme: 'striped',
+    });
+
+    const now = new Date();
+    const stamp = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}_${String(now.getHours()).padStart(2, '0')}${String(now.getMinutes()).padStart(2, '0')}`;
+    doc.save(`asset-audit-trail-${stamp}.pdf`);
+
+    api
+      .post('/audit/export', {
+        format: 'pdf',
+        rowCount: logs.length,
+        scope: 'current view',
+      })
+      .catch(err => console.warn('Failed to record audit export', err));
+  };
+
   return (
     <div className="flex flex-col min-h-screen bg-[#FFFFFF]">
       <main className="flex-1 space-y-6 p-4 sm:p-6 lg:p-8">
         <PageHeader
           icon={Shield}
           title="Audit Trail"
-          description="Track all system activities and changes"
+          description="Track all system activities and changes with compliance-grade audit logging."
         >
           <Button
-            variant="header"
+            variant="secondary"
+            size="sm"
+            onClick={() => fetchAuditLogs()}
+            disabled={displayLoading}
+            className="bg-white/10 hover:bg-white/20 text-white border-white/20 backdrop-blur-sm shadow-lg transition-all duration-300 gap-2"
+          >
+            <RefreshCw className={`h-4 w-4 ${displayLoading ? 'animate-spin' : ''}`} />
+            Refresh
+          </Button>
+          <Button
+            variant="secondary"
             size="sm"
             onClick={() => exportCurrentView('csv')}
-            className="flex items-center gap-2"
+            disabled={logs.length === 0 || displayLoading}
+            className="bg-white/10 hover:bg-white/20 text-white border-white/20 backdrop-blur-sm shadow-lg transition-all duration-300 gap-2"
           >
             <Download className="h-4 w-4" />
             Export CSV
           </Button>
           <Button
-            variant="outline"
+            variant="secondary"
             size="sm"
             onClick={() => exportCurrentView('json')}
-            className="flex items-center gap-2"
+            disabled={logs.length === 0 || displayLoading}
+            className="bg-white/10 hover:bg-white/20 text-white border-white/20 backdrop-blur-sm shadow-lg transition-all duration-300 gap-2"
           >
             <Download className="h-4 w-4" />
             Export JSON
+          </Button>
+          <Button
+            variant="secondary"
+            size="sm"
+            onClick={handleDownloadPdf}
+            disabled={logs.length === 0 || displayLoading}
+            className="bg-white/10 hover:bg-white/20 text-white border-white/20 backdrop-blur-sm shadow-lg transition-all duration-300 gap-2"
+          >
+            <Download className="h-4 w-4" />
+            Export PDF
           </Button>
         </PageHeader>
 
@@ -499,153 +755,133 @@ export default function AuditTrail() {
           </div>
         )}
 
-        <Card>
+        <Card className="overflow-hidden border-border/70 shadow-sm">
           <CardHeader>
-            <CardTitle className="flex items-center gap-2">
+            <CardTitle className="flex items-center gap-2 text-lg">
               <CalendarDays className="h-5 w-5" />
               Recent Activities
+              <span className="ml-2 text-sm font-normal text-muted-foreground">
+                ({meta.total} total)
+              </span>
             </CardTitle>
-            <div className="mt-4 flex flex-col gap-4">
-              <div className="w-full sm:max-w-sm">
-                <div className="relative">
-                  <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-                  <Input
-                    placeholder="Search by user, action, resource, or details..."
-                    value={searchTerm}
-                    onChange={e => {
-                      setCurrentPage(1);
-                      setSearchTerm(e.target.value);
-                    }}
-                    className="pl-10"
-                  />
-                </div>
-              </div>
-              <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
-                <div className="grid grid-cols-2 gap-2 sm:grid-cols-8">
-                  <Select value={actionFilter} onValueChange={value => {
-                    setCurrentPage(1);
-                    setActionFilter(value);
-                  }}>
-                    <SelectTrigger className="w-full sm:w-36">
-                      <SelectValue placeholder="Action" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="all">All Actions</SelectItem>
-                      <SelectItem value="User Registration">User Registration</SelectItem>
-                      <SelectItem value="auth.login.success">Login Success</SelectItem>
-                      <SelectItem value="auth.login.failure">Login Failure</SelectItem>
-                      <SelectItem value="auth.logout">Logout</SelectItem>
-                      <SelectItem value="Created Asset">Created Asset</SelectItem>
-                      <SelectItem value="Updated Asset">Updated Asset</SelectItem>
-                      <SelectItem value="Deleted Asset">Deleted Asset</SelectItem>
-                    </SelectContent>
-                  </Select>
-                  <Select value={resourceTypeFilter} onValueChange={value => {
-                    setCurrentPage(1);
-                    setResourceTypeFilter(value);
-                  }}>
-                    <SelectTrigger className="w-full sm:w-36">
-                      <SelectValue placeholder="Resource" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="all">All Resources</SelectItem>
-                      <SelectItem value="asset">Asset</SelectItem>
-                      <SelectItem value="asset_builder">Builder</SelectItem>
-                      <SelectItem value="asset_assignment">Assignment</SelectItem>
-                      <SelectItem value="user">User</SelectItem>
-                      <SelectItem value="setting">Setting</SelectItem>
-                      <SelectItem value="auth_session">Auth Session</SelectItem>
-                    </SelectContent>
-                  </Select>
-                  <Select value={statusFilter} onValueChange={value => {
-                    setCurrentPage(1);
-                    setStatusFilter(value);
-                  }}>
-                    <SelectTrigger className="w-full sm:w-32">
-                      <SelectValue placeholder="Status" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="all">All Status</SelectItem>
-                      <SelectItem value="success">Success</SelectItem>
-                      <SelectItem value="failure">Failure</SelectItem>
-                    </SelectContent>
-                  </Select>
-                  <Select value={severityFilter} onValueChange={value => {
-                    setCurrentPage(1);
-                    setSeverityFilter(value);
-                  }}>
-                    <SelectTrigger className="w-full sm:w-32">
-                      <SelectValue placeholder="Severity" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="all">All Severity</SelectItem>
-                      <SelectItem value="info">Info</SelectItem>
-                      <SelectItem value="warning">Warning</SelectItem>
-                      <SelectItem value="critical">Critical</SelectItem>
-                    </SelectContent>
-                  </Select>
-                  <Select value={companyFilter} onValueChange={value => {
-                    setCurrentPage(1);
-                    setCompanyFilter(value);
-                  }}>
-                    <SelectTrigger className="w-full sm:w-36">
-                      <SelectValue placeholder="Company" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="all">All Companies</SelectItem>
-                      {companies.map((company: any) => (
-                        <SelectItem key={company.companyID || company.id} value={company.companyID || company.id}>
-                          {company.name}
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                  <Select value={departmentFilter} onValueChange={value => {
-                    setCurrentPage(1);
-                    setDepartmentFilter(value);
-                  }}>
-                    <SelectTrigger className="w-full sm:w-36">
-                      <SelectValue placeholder="Department" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="all">All Departments</SelectItem>
-                      {departments.map((dept: any) => (
-                        <SelectItem key={dept.departmentID || dept.id} value={dept.departmentID || dept.id}>
-                          {dept.name}
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                  <Input type="date" value={dateFrom} onChange={e => {
-                    setCurrentPage(1);
-                    setDateFrom(e.target.value);
-                  }} />
-                  <Input type="date" value={dateTo} onChange={e => {
-                    setCurrentPage(1);
-                    setDateTo(e.target.value);
-                  }} />
-                </div>
-                <Select
-                  value={itemsPerPage.toString()}
-                  onValueChange={value => {
-                    setCurrentPage(1);
-                    setItemsPerPage(Number(value));
-                  }}
-                >
-                  <SelectTrigger className="w-full sm:w-24">
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="10">10</SelectItem>
-                    <SelectItem value="25">25</SelectItem>
-                    <SelectItem value="50">50</SelectItem>
-                    <SelectItem value="100">100</SelectItem>
-                  </SelectContent>
-                </Select>
-              </div>
-            </div>
           </CardHeader>
           <CardContent>
+            <div className="mb-4 rounded-lg border border-gray-200 bg-muted/30 p-3">
+              <div className="flex flex-wrap items-center gap-2">
+                <Select value={actionFilter} onValueChange={value => {
+                  setCurrentPage(1);
+                  setActionFilter(value);
+                }}>
+                  <SelectTrigger className="w-full sm:w-36">
+                    <SelectValue placeholder="Action" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="all">All Actions</SelectItem>
+                    <SelectItem value="User Registration">User Registration</SelectItem>
+                    <SelectItem value="auth.login.success">Login Success</SelectItem>
+                    <SelectItem value="auth.login.failure">Login Failure</SelectItem>
+                    <SelectItem value="auth.logout">Logout</SelectItem>
+                    <SelectItem value="Created Asset">Created Asset</SelectItem>
+                    <SelectItem value="Updated Asset">Updated Asset</SelectItem>
+                    <SelectItem value="Deleted Asset">Deleted Asset</SelectItem>
+                  </SelectContent>
+                </Select>
+                <Select value={resourceTypeFilter} onValueChange={value => {
+                  setCurrentPage(1);
+                  setResourceTypeFilter(value);
+                }}>
+                  <SelectTrigger className="w-full sm:w-36">
+                    <SelectValue placeholder="Resource" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="all">All Resources</SelectItem>
+                    <SelectItem value="asset">Asset</SelectItem>
+                    <SelectItem value="asset_builder">Builder</SelectItem>
+                    <SelectItem value="asset_assignment">Assignment</SelectItem>
+                    <SelectItem value="user">User</SelectItem>
+                    <SelectItem value="setting">Setting</SelectItem>
+                    <SelectItem value="auth_session">Auth Session</SelectItem>
+                  </SelectContent>
+                </Select>
+                <Select value={statusFilter} onValueChange={value => {
+                  setCurrentPage(1);
+                  setStatusFilter(value);
+                }}>
+                  <SelectTrigger className="w-full sm:w-32">
+                    <SelectValue placeholder="Status" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="all">All Status</SelectItem>
+                    <SelectItem value="success">Success</SelectItem>
+                    <SelectItem value="failure">Failure</SelectItem>
+                  </SelectContent>
+                </Select>
+                <Select value={severityFilter} onValueChange={value => {
+                  setCurrentPage(1);
+                  setSeverityFilter(value);
+                }}>
+                  <SelectTrigger className="w-full sm:w-32">
+                    <SelectValue placeholder="Severity" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="all">All Severity</SelectItem>
+                    <SelectItem value="info">Info</SelectItem>
+                    <SelectItem value="warning">Warning</SelectItem>
+                    <SelectItem value="critical">Critical</SelectItem>
+                  </SelectContent>
+                </Select>
+                <Select value={companyFilter} onValueChange={value => {
+                  setCurrentPage(1);
+                  setCompanyFilter(value);
+                }}>
+                  <SelectTrigger className="w-full sm:w-36">
+                    <SelectValue placeholder="Company" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="all">All Companies</SelectItem>
+                    {companies.map((company: any) => (
+                      <SelectItem key={company.companyID || company.id} value={company.companyID || company.id}>
+                        {company.name}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+                <Select value={departmentFilter} onValueChange={value => {
+                  setCurrentPage(1);
+                  setDepartmentFilter(value);
+                }}>
+                  <SelectTrigger className="w-full sm:w-36">
+                    <SelectValue placeholder="Department" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="all">All Departments</SelectItem>
+                    {departments.map((dept: any) => (
+                      <SelectItem key={dept.departmentID || dept.id} value={dept.departmentID || dept.id}>
+                        {dept.name}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+                <Input
+                  type="date"
+                  value={dateFrom}
+                  onChange={e => {
+                    setCurrentPage(1);
+                    setDateFrom(e.target.value);
+                  }}
+                  className="w-full sm:w-auto"
+                />
+                <Input
+                  type="date"
+                  value={dateTo}
+                  onChange={e => {
+                    setCurrentPage(1);
+                    setDateTo(e.target.value);
+                  }}
+                  className="w-full sm:w-auto"
+                />
+              </div>
+            </div>
             {displayLoading ? (
               <div className="space-y-4">
                 <div className="flex gap-4 pb-3 border-b">
@@ -676,225 +912,235 @@ export default function AuditTrail() {
               <div className="text-center py-8 text-red-600">
                 <p>{error}</p>
               </div>
-            ) : logs.length === 0 ? (
-              <div className="text-center py-8 text-muted-foreground">
-                <p>No audit logs found matching your criteria</p>
-              </div>
             ) : (
-              <>
-                <div className="rounded-lg border overflow-hidden">
-                  <Table>
-                    <TableHeader>
-                      <TableRow>
-                        <TableHead>Time</TableHead>
-                        <TableHead>User</TableHead>
-                        <TableHead>Action</TableHead>
-                        <TableHead>Resource</TableHead>
-                        <TableHead>Status</TableHead>
-                        <TableHead>Severity</TableHead>
-                        <TableHead>IP</TableHead>
-                      </TableRow>
-                    </TableHeader>
-                    <TableBody>
-                      {logs.map((log: AuditLogEntry) => (
-                        <TableRow
-                          key={log.id}
-                          className="cursor-pointer"
-                          onClick={() => setSelectedLog(log)}
-                        >
-                          <TableCell>
-                            <div className="text-sm font-medium">
-                              {formatDistanceToNow(log.timestamp, {
-                                addSuffix: true,
-                              })}
-                            </div>
-                            <div className="text-xs text-muted-foreground">
-                              {format(log.timestamp, "MMM dd, yyyy HH:mm:ss")}
-                            </div>
-                          </TableCell>
-                          <TableCell>
-                            <div className="flex items-center gap-2">
-                              <Avatar className="h-6 w-6">
-                                <AvatarFallback className="text-[10px]">
-                                  {log.user.name
-                                    .split(' ')
-                                    .map((n: string) => n[0])
-                                    .join('')}
-                                </AvatarFallback>
-                              </Avatar>
-                              <div>
-                                <div className="text-sm">{log.user.name}</div>
-                                <div className="text-xs text-muted-foreground">
-                                  {log.user.email}
-                                </div>
-                              </div>
-                            </div>
-                          </TableCell>
-                          <TableCell>
-                            <div className="flex items-center gap-2">
-                              {getActionIcon(log.type)}
-                              <Badge variant={getActionBadgeVariant(log.type) as any}>
-                                {log.action}
-                              </Badge>
-                            </div>
-                          </TableCell>
-                          <TableCell>
-                            <div className="text-sm font-medium">
-                              {formatAuditPlainText(log.resource ?? '', mergedIdLabels)}
-                            </div>
-                            <div className="text-xs text-muted-foreground">
-                              {log.resourceType}
-                            </div>
-                          </TableCell>
-                          <TableCell>
-                            <Badge variant={log.status === 'failure' ? 'destructive' : 'default'}>
-                              {log.status ?? 'success'}
-                            </Badge>
-                          </TableCell>
-                          <TableCell>
-                            <Badge variant={log.severity === 'critical' ? 'destructive' : log.severity === 'warning' ? 'secondary' : 'outline'}>
-                              {log.severity ?? 'info'}
-                            </Badge>
-                          </TableCell>
-                          <TableCell>
-                            <div className="text-xs text-muted-foreground">
-                              {log.ipAddress}
-                            </div>
-                          </TableCell>
-                        </TableRow>
-                      ))}
-                    </TableBody>
-                  </Table>
-                </div>
-                <div className="flex items-center justify-between mt-4">
-                  <div className="text-sm text-muted-foreground">
-                    Showing {meta.total} entries
+              <DataTable
+                data={logs}
+                columns={auditTrailColumns}
+                searchPlaceholder="Search by user, action, resource, or details…"
+                isLoading={false}
+                tableId="audit-trail"
+                serverPagination
+                pageCount={totalPages}
+                totalRowCount={meta.total}
+                pageIndex={currentPage - 1}
+                pageSize={itemsPerPage}
+                onPaginationChange={(pageIndex, pageSize) => {
+                  setCurrentPage(pageIndex + 1);
+                  setItemsPerPage(pageSize);
+                }}
+                onSearchChange={(value) => {
+                  setCurrentPage(1);
+                  setSearchTerm(value);
+                }}
+                onRowClick={(row) => {
+                  setSelectedLog(row.original);
+                  setShowRawJson(false);
+                }}
+                emptyState={
+                  <div className="py-8 text-center text-muted-foreground">
+                    <p>No audit logs found matching your criteria</p>
                   </div>
-                  <div className="flex flex-wrap items-center gap-2">
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      onClick={() =>
-                        setCurrentPage(prev => Math.max(1, prev - 1))
-                      }
-                      disabled={currentPage === 1}
-                    >
-                      <ChevronLeft className="h-4 w-4" />
-                      Previous
-                    </Button>
-                    <span className="text-sm">
-                      Page {currentPage} of {totalPages}
-                    </span>
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      onClick={() =>
-                        setCurrentPage(prev => Math.min(totalPages, prev + 1))
-                      }
-                      disabled={currentPage === totalPages}
-                    >
-                      Next
-                      <ChevronRight className="h-4 w-4" />
-                    </Button>
-                  </div>
-                </div>
-              </>
+                }
+              />
             )}
           </CardContent>
         </Card>
 
-        {selectedLog && (
-          <Sheet open={!!selectedLog} onOpenChange={(open) => !open && setSelectedLog(null)}>
-            <SheetContent className="w-full sm:max-w-2xl overflow-y-auto bg-white">
-              <SheetHeader>
-                <SheetTitle>Audit Log Details</SheetTitle>
-                <SheetDescription>
-                  Full details for the selected audit event
-                </SheetDescription>
-              </SheetHeader>
-              <div className="mt-6 space-y-6">
-                <div className="grid grid-cols-2 gap-4 text-sm">
-                  <div>
-                    <div className="font-medium text-muted-foreground">Time</div>
-                    <div>{format(selectedLog.timestamp, "MMM dd, yyyy HH:mm:ss")}</div>
-                  </div>
-                  <div>
-                    <div className="font-medium text-muted-foreground">User</div>
-                    <div>{selectedLog.user.name} ({selectedLog.user.email})</div>
-                  </div>
-                  <div>
-                    <div className="font-medium text-muted-foreground">Action</div>
-                    <div className="flex items-center gap-2">
-                      {getActionIcon(selectedLog.type)}
-                      <Badge variant={getActionBadgeVariant(selectedLog.type) as any}>
-                        {selectedLog.action}
-                      </Badge>
+        <Sheet
+          open={!!selectedLog}
+          onOpenChange={(open) => {
+            if (!open) {
+              setSelectedLog(null);
+              setShowRawJson(false);
+            }
+          }}
+        >
+          <SheetContent className="w-full overflow-y-auto border-l border-gray-200 bg-white sm:max-w-2xl">
+            {selectedLog ? (
+              <>
+                <SheetHeader>
+                  <SheetTitle>Audit Log Details</SheetTitle>
+                  <SheetDescription>
+                    Full details for the selected audit event
+                  </SheetDescription>
+                </SheetHeader>
+                <div className="mt-6 space-y-6">
+                  <div className="rounded-xl border border-gray-200 bg-gray-50 p-4">
+                    <div className="mb-3 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+                      Event Overview
+                    </div>
+                    <div className="grid grid-cols-1 gap-4 text-sm sm:grid-cols-2">
+                      <div className="rounded-md border border-gray-200 bg-white p-3">
+                        <div className="mb-1 text-xs font-medium uppercase tracking-wide text-muted-foreground">
+                          Time
+                        </div>
+                        <div>
+                          {format(selectedLog.timestamp, 'MMM dd, yyyy HH:mm:ss')}
+                        </div>
+                      </div>
+                      <div className="rounded-md border border-gray-200 bg-white p-3">
+                        <div className="mb-1 text-xs font-medium uppercase tracking-wide text-muted-foreground">
+                          User
+                        </div>
+                        <div>
+                          {selectedLog.user.name} ({selectedLog.user.email})
+                        </div>
+                      </div>
+                      <div className="rounded-md border border-gray-200 bg-white p-3">
+                        <div className="mb-1 text-xs font-medium uppercase tracking-wide text-muted-foreground">
+                          Action
+                        </div>
+                        <div className="flex items-center gap-2">
+                          {getActionIcon(selectedLog.type)}
+                          <Badge variant={getActionBadgeVariant(selectedLog.type) as any}>
+                            {selectedLog.action}
+                          </Badge>
+                        </div>
+                      </div>
+                      <div className="rounded-md border border-gray-200 bg-white p-3">
+                        <div className="mb-1 text-xs font-medium uppercase tracking-wide text-muted-foreground">
+                          Resource
+                        </div>
+                        <div>
+                          {selectedLog.resourceType} - {formatAuditPlainText(selectedLog.resource ?? selectedLog.resourceId ?? '', mergedIdLabels)}
+                        </div>
+                      </div>
+                      <div className="rounded-md border border-gray-200 bg-white p-3">
+                        <div className="mb-1 text-xs font-medium uppercase tracking-wide text-muted-foreground">
+                          Status
+                        </div>
+                        <Badge variant={selectedLog.status === 'failure' ? 'destructive' : 'default'}>
+                          <span className="capitalize">{selectedLog.status ?? 'success'}</span>
+                        </Badge>
+                      </div>
+                      <div className="rounded-md border border-gray-200 bg-white p-3">
+                        <div className="mb-1 text-xs font-medium uppercase tracking-wide text-muted-foreground">
+                          Severity
+                        </div>
+                        <Badge variant={selectedLog.severity === 'critical' ? 'destructive' : selectedLog.severity === 'warning' ? 'secondary' : 'outline'}>
+                          <span className="capitalize">{selectedLog.severity ?? 'info'}</span>
+                        </Badge>
+                      </div>
+                      {selectedLog.ipAddress && (
+                        <div className="rounded-md border border-gray-200 bg-white p-3">
+                          <div className="mb-1 text-xs font-medium uppercase tracking-wide text-muted-foreground">
+                            IP Address
+                          </div>
+                          <div>{selectedLog.ipAddress}</div>
+                        </div>
+                      )}
+                      {selectedLog.requestId && (
+                        <div className="rounded-md border border-gray-200 bg-white p-3">
+                          <div className="mb-1 text-xs font-medium uppercase tracking-wide text-muted-foreground">
+                            Request ID
+                          </div>
+                          <div className="font-mono text-xs">{selectedLog.requestId}</div>
+                        </div>
+                      )}
+                      {selectedLog.httpMethod && (
+                        <div className="rounded-md border border-gray-200 bg-white p-3">
+                          <div className="mb-1 text-xs font-medium uppercase tracking-wide text-muted-foreground">
+                            HTTP Method
+                          </div>
+                          <div className="uppercase">{selectedLog.httpMethod}</div>
+                        </div>
+                      )}
+                      {selectedLog.httpEndpoint && (
+                        <div className="rounded-md border border-gray-200 bg-white p-3 sm:col-span-2">
+                          <div className="mb-1 text-xs font-medium uppercase tracking-wide text-muted-foreground">
+                            HTTP Endpoint
+                          </div>
+                          <div className="font-mono text-xs break-all">{selectedLog.httpEndpoint}</div>
+                        </div>
+                      )}
                     </div>
                   </div>
-                  <div>
-                    <div className="font-medium text-muted-foreground">Resource</div>
-                    <div>{formatAuditPlainText(selectedLog.resource ?? '', mergedIdLabels)}</div>
-                  </div>
-                  <div>
-                    <div className="font-medium text-muted-foreground">Status</div>
-                    <Badge variant={selectedLog.status === 'failure' ? 'destructive' : 'default'}>
-                      {selectedLog.status ?? 'success'}
-                    </Badge>
-                  </div>
-                  <div>
-                    <div className="font-medium text-muted-foreground">Severity</div>
-                    <Badge variant={selectedLog.severity === 'critical' ? 'destructive' : selectedLog.severity === 'warning' ? 'secondary' : 'outline'}>
-                      {selectedLog.severity ?? 'info'}
-                    </Badge>
-                  </div>
-                  <div>
-                    <div className="font-medium text-muted-foreground">IP Address</div>
-                    <div>{selectedLog.ipAddress}</div>
-                  </div>
-                  <div>
-                    <div className="font-medium text-muted-foreground">Request ID</div>
-                    <div>{selectedLog.requestId || 'N/A'}</div>
-                  </div>
-                </div>
 
-                {selectedLog.details && (
-                  <div>
-                    <div className="font-medium text-muted-foreground mb-2">Details</div>
-                    <div className="text-sm bg-muted p-3 rounded">
-                      {formatAuditPlainText(selectedLog.details, mergedIdLabels)}
+                  {selectedLog.details && (
+                    <div className="rounded-xl border border-gray-200 bg-gray-50 p-4">
+                      <div className="mb-2 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+                        Details
+                      </div>
+                      <div className="rounded-md border border-gray-200 bg-white p-3 text-sm leading-relaxed">
+                        {formatAuditPlainText(selectedLog.details, mergedIdLabels)}
+                      </div>
                     </div>
-                  </div>
-                )}
+                  )}
 
-                {hasAuditFieldChanges(selectedLog.oldValues, selectedLog.newValues) && (
-                  <div>
-                    <div className="font-medium text-muted-foreground mb-2">Changes</div>
-                    <AuditFieldChanges
-                      oldValues={selectedLog.oldValues}
-                      newValues={selectedLog.newValues}
-                      lookups={auditFieldLookups}
-                    />
-                  </div>
-                )}
+                  {Boolean(selectedLog.oldValues || selectedLog.newValues) && (
+                    <div className="rounded-xl border border-gray-200 bg-gray-50 p-4">
+                      <div className="flex items-center justify-between mb-2">
+                        <div className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+                          Changes
+                        </div>
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          onClick={() => setShowRawJson(!showRawJson)}
+                        >
+                          {showRawJson ? 'Show Formatted' : 'Show Raw JSON'}
+                        </Button>
+                      </div>
+                      {showRawJson ? (
+                        <pre className="max-h-96 overflow-auto rounded-md border border-gray-200 bg-white p-3 text-xs">
+                          {JSON.stringify({ old: selectedLog.oldValues, new: selectedLog.newValues }, null, 2)}
+                        </pre>
+                      ) : (
+                        <div className="space-y-2">
+                          {(() => {
+                            const changedFields = (() => {
+                              const oldKeys = selectedLog.oldValues ? Object.keys(selectedLog.oldValues) : [];
+                              const newKeys = selectedLog.newValues ? Object.keys(selectedLog.newValues) : [];
+                              return Array.from(new Set([...oldKeys, ...newKeys]));
+                            })();
 
-                <div>
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    onClick={() => setShowRawJson(!showRawJson)}
-                  >
-                    {showRawJson ? 'Hide' : 'Show'} Raw JSON
-                  </Button>
-                  {showRawJson && (
-                    <pre className="mt-2 text-xs bg-muted p-3 rounded overflow-auto max-h-96">
-                      {JSON.stringify(selectedLog, null, 2)}
-                    </pre>
+                            const filterChangedFields = (value: unknown) => {
+                              if (!value || typeof value !== 'object' || Array.isArray(value)) return value;
+                              const record = value as Record<string, unknown>;
+                              const filtered: Record<string, unknown> = {};
+                              for (const field of changedFields) {
+                                if (field in record) filtered[field] = record[field];
+                              }
+                              return filtered;
+                            };
+
+                            const filteredOld = filterChangedFields(selectedLog.oldValues);
+                            const filteredNew = filterChangedFields(selectedLog.newValues);
+
+                            return (
+                              <>
+                                {Boolean(filteredOld) && Object.keys(filteredOld as Record<string, unknown>).length > 0 && (
+                                  <div>
+                                    <div className="mb-1 text-xs font-medium uppercase tracking-wide text-muted-foreground">
+                                      Old Values
+                                    </div>
+                                    <div className="max-h-64 overflow-auto rounded-md border border-gray-200 bg-white p-3">
+                                      <KeyValueList value={filteredOld} />
+                                    </div>
+                                  </div>
+                                )}
+                                {Boolean(filteredNew) && Object.keys(filteredNew as Record<string, unknown>).length > 0 && (
+                                  <div>
+                                    <div className="mb-1 text-xs font-medium uppercase tracking-wide text-muted-foreground">
+                                      New Values
+                                    </div>
+                                    <div className="max-h-64 overflow-auto rounded-md border border-gray-200 bg-white p-3">
+                                      <KeyValueList value={filteredNew} />
+                                    </div>
+                                  </div>
+                                )}
+                              </>
+                            );
+                          })()}
+                        </div>
+                      )}
+                    </div>
                   )}
                 </div>
-              </div>
-            </SheetContent>
-          </Sheet>
-        )}
+              </>
+            ) : null}
+          </SheetContent>
+        </Sheet>
       </main>
     </div>
   );

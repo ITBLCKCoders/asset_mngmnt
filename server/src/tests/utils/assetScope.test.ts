@@ -41,6 +41,7 @@ describe('assetScope', () => {
         companyId: null,
         departmentIds: null,
         isSuperAdmin: false,
+        isAdmin: false,
       });
     });
 
@@ -88,6 +89,29 @@ describe('assetScope', () => {
       const result = await getAssetScope(pool as any, 'admin-1');
 
       expect(result.isSuperAdmin).toBe(true);
+      expect(result.isAdmin).toBe(false);
+      expect(result.companyId).toBe('co-1');
+      expect(result.departmentIds).toBeNull();
+    });
+
+    it('should return isAdmin true when role is Admin (local admin)', async () => {
+      const pool = createMockPool();
+      (pool.execute as jest.Mock).mockResolvedValueOnce([
+        [
+          {
+            company_id: 'co-1',
+            role_name: 'Admin',
+            asset_type: null,
+            manager_role: null,
+          },
+        ],
+        [],
+      ]);
+
+      const result = await getAssetScope(pool as any, 'local-admin-1');
+
+      expect(result.isAdmin).toBe(true);
+      expect(result.isSuperAdmin).toBe(false);
       expect(result.companyId).toBe('co-1');
       expect(result.departmentIds).toBeNull();
     });

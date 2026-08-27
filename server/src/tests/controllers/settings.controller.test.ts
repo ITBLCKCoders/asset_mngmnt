@@ -11,6 +11,7 @@ jest.mock('../../utils/audit.js', () => ({ createAuditLog: jest.fn() }));
 const { pool } = jest.requireMock('../../db.js');
 const { getScopedActiveCompany } = jest.requireMock('../../utils/activeCompany.js');
 const { SettingModel } = jest.requireMock('../../models/setting.model.js');
+const createAuditLog = jest.requireMock('../../utils/audit.js').createAuditLog as jest.Mock;
 
 const activeCompany = { id: 1, name: 'Acme Corp', code: 'ACME' };
 
@@ -195,6 +196,16 @@ describe('settings.controller', () => {
       SettingModel.setValue.mockResolvedValue({ key: 'mfa_enabled', value: 'false' });
       await settingsController.updateGlobalMFASettingsHandler(req, res);
       expect(res._json.mfaEnabled).toBe(false);
+      expect(createAuditLog).toHaveBeenCalledWith(
+        expect.objectContaining({
+          userId: '5',
+          action: 'Updated Global MFA Setting',
+          resourceType: 'setting',
+          resourceId: 'mfa_enabled',
+          details: 'Global MFA disabled',
+          newValues: { mfa_enabled: false },
+        })
+      );
     });
 
     it('returns 400 when mfaEnabled not boolean', async () => {
@@ -230,6 +241,16 @@ describe('settings.controller', () => {
       await settingsController.updateSecuritySettingsHandler(req, res);
       expect(SettingModel.setValue).toHaveBeenCalledTimes(2);
       expect(res._json.message).toContain('updated');
+      expect(createAuditLog).toHaveBeenCalledWith(
+        expect.objectContaining({
+          userId: '5',
+          action: 'Updated Security Settings',
+          resourceType: 'setting',
+          resourceId: 'security_settings',
+          details: 'Updated security setting(s): password_min_length, max_login_attempts',
+          newValues: { password_min_length: 10, max_login_attempts: 3 },
+        })
+      );
     });
 
     it('validates passwordMinLength', async () => {
