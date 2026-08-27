@@ -1,7 +1,7 @@
 import {
   AccountabilityForm,
   AccountabilityFormModel,
-} from '../models/accountabilityForm.model';
+} from '../models/accountabilityForm.model.js';
 import logger from '../logger.js';
 import { createAuditLog } from '../utils/audit.js';
 

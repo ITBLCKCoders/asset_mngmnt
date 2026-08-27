@@ -2,7 +2,10 @@ import { useAuth, AuthLoadingSpinner } from '@/context/AuthContext';
 import { Navigate, useSearchParams, useNavigate } from 'react-router-dom';
 import { Button } from '@/components/ui/button';
 import { ArrowLeft } from 'lucide-react';
-import UserManual from '@/pages/userManual';
+import { lazy, Suspense } from 'react';
+import { RouteContentFallback } from '@/components/common/pageSkeletons';
+
+const UserManual = lazy(() => import('@/pages/userManual'));
 
 function BackButton() {
   const [searchParams] = useSearchParams();
@@ -41,7 +44,9 @@ export default function PublicUserManual() {
   return (
     <>
       <BackButton />
-      <UserManual />
+      <Suspense fallback={<RouteContentFallback />}>
+        <UserManual />
+      </Suspense>
     </>
   );
 }

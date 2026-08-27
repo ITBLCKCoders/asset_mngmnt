@@ -1,4 +1,4 @@
-import { Notification, NotificationModel } from '../models/notification.model';
+import { Notification, NotificationModel } from '../models/notification.model.js';
 import logger from '../logger.js';
 import { createAuditLog } from '../utils/audit.js';
 
@@ -98,8 +98,8 @@ export class NotificationService {
           type: newNotification?.type,
           status: newNotification?.status,
         },
-        ipAddress: ipAddress ?? null,
-        userAgent: userAgent ?? null,
+        ipAddress: ipAddress ?? undefined,
+        userAgent: userAgent ?? undefined,
       });
 
       logger.info(
@@ -164,8 +164,8 @@ export class NotificationService {
           type: updatedNotification?.type,
           status: updatedNotification?.status,
         },
-        ipAddress: ipAddress ?? null,
-        userAgent: userAgent ?? null,
+        ipAddress: ipAddress ?? undefined,
+        userAgent: userAgent ?? undefined,
       });
 
       logger.info(`Notification updated successfully: ${notificationID}`);
@@ -216,8 +216,8 @@ export class NotificationService {
           status: existingNotification.status,
         },
         newValues: null,
-        ipAddress: ipAddress ?? null,
-        userAgent: userAgent ?? null,
+        ipAddress: ipAddress ?? undefined,
+        userAgent: userAgent ?? undefined,
       });
 
       logger.info(`Notification deleted successfully: ${notificationID}`);

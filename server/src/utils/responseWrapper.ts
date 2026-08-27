@@ -1,5 +1,5 @@
 import { Response } from 'express';
-import { ValidationError } from '../dtos/common/ApiResponseDto';
+import { ValidationError } from '../dtos/common/ApiResponseDto.js';
 import logger from '../logger.js';
 
 export interface ApiResponse<T = any> {

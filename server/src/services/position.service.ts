@@ -1,4 +1,4 @@
-import { Position, PositionModel } from '../models/position.model';
+import { Position, PositionModel } from '../models/position.model.js';
 import logger from '../logger.js';
 import { createAuditLog } from '../utils/audit.js';
 

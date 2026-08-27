@@ -4,14 +4,14 @@ import {
   AssetAssignmentDto,
   AccountabilityFormDto,
   AssetChildDto,
-} from '../dtos/assets/AssetResponseDto';
-import { UserResponseDto, UserProfileDto } from '../dtos/users/UserResponseDto';
-import { RoleResponseDto } from '../dtos/roles/RoleResponseDto';
-import { DepartmentResponseDto } from '../dtos/departments/DepartmentResponseDto';
+} from '../dtos/assets/AssetResponseDto.js';
+import { UserResponseDto, UserProfileDto } from '../dtos/users/UserResponseDto.js';
+import { RoleResponseDto } from '../dtos/roles/RoleResponseDto.js';
+import { DepartmentResponseDto } from '../dtos/departments/DepartmentResponseDto.js';
 import {
   CompanyResponseDto,
   ActiveCompanyResponseDto,
-} from '../dtos/companies/CompanyResponseDto';
+} from '../dtos/companies/CompanyResponseDto.js';
 
 export class DtoTransformers {
   static transformAsset(asset: any): AssetResponseDto {

@@ -1,4 +1,4 @@
-import { Setting, SettingModel } from '../models/setting.model';
+import { Setting, SettingModel } from '../models/setting.model.js';
 import logger from '../logger.js';
 import { createAuditLog } from '../utils/audit.js';
 

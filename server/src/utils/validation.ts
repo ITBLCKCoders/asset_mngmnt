@@ -1,6 +1,6 @@
 import { z } from 'zod';
 import { Request, Response, NextFunction } from 'express';
-import { ValidationError } from '../dtos/common/ApiResponseDto';
+import { ValidationError } from '../dtos/common/ApiResponseDto.js';
 
 export function validateDto<T>(schema: z.ZodSchema<T>) {
   return (req: Request, res: Response, next: NextFunction) => {

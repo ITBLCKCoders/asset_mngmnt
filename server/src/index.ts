@@ -62,6 +62,7 @@ import { originCheck } from './middleware/originCheck.js';
 import { validateAllConfigs } from './config/validation.js';
 import { AssetBorrowRequestsService } from './services/assetBorrowRequests.service.js';
 import { pool } from './db.js';
+import { setIoInstance } from './utils/socketManager.js';
 const app = express();
 
 // TLS termination is the responsibility of the deployment environment:
@@ -224,7 +225,6 @@ const io = new SocketIOServer(server, {
 setupSocketHandlers(io);
 
 // Set io instance for use in other modules via socketManager
-import { setIoInstance } from './utils/socketManager.js';
 setIoInstance(io);
 
 // Export io for use in other modules

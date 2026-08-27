@@ -1,4 +1,4 @@
-import { Brand, BrandModel } from '../models/brand.model';
+import { Brand, BrandModel } from '../models/brand.model.js';
 import logger from '../logger.js';
 import { createAuditLog } from '../utils/audit.js';
 

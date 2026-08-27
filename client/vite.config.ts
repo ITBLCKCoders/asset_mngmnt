@@ -41,5 +41,27 @@ export default defineConfig(({ mode }) => {
       host: 'localhost',
       port,
     },
+    build: {
+      chunkSizeWarningLimit: 1000,
+      rollupOptions: {
+        output: {
+          manualChunks(id) {
+            if (!id.includes('node_modules')) return;
+            // Isolated heavy libs with minimal cross-deps — safe to split
+            if (id.includes('node_modules/mermaid')) return 'vendor-mermaid';
+            if (id.includes('node_modules/exceljs')) return 'vendor-excel';
+            if (
+              id.includes('node_modules/cytoscape') ||
+              id.includes('node_modules/cose-bilkent') ||
+              id.includes('node_modules/dagre')
+            )
+              return 'vendor-cytoscape';
+            // Keep all other node_modules in single vendor to avoid circular
+            // deps between vendor-react / vendor-ui / vendor-charts etc.
+            return 'vendor';
+          },
+        },
+      },
+    },
   };
 });

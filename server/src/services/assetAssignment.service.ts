@@ -2,7 +2,7 @@ import type { RowDataPacket } from 'mysql2';
 import {
   AssetAssignment,
   AssetAssignmentModel,
-} from '../models/assetAssignment.model';
+} from '../models/assetAssignment.model.js';
 import logger from '../logger.js';
 import { createAuditLog } from '../utils/audit.js';
 import * as repo from '../repositories/assetAssignment.repository.js';

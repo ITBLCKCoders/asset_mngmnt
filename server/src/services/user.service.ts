@@ -1,4 +1,4 @@
-import { User, UserModel } from '../models/user.model';
+import { User, UserModel } from '../models/user.model.js';
 import logger from '../logger.js';
 import { createAuditLog } from '../utils/audit.js';
 
