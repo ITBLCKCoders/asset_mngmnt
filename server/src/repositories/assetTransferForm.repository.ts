@@ -33,6 +33,7 @@ export interface RoomRow extends RowDataPacket {
 export interface DepartmentRow extends RowDataPacket {
   departmentID: string;
   company_id: string | null;
+  name: string | null;
 }
 
 export interface UserRow extends RowDataPacket {
@@ -100,7 +101,7 @@ export async function getDepartmentById(
   departmentId: string
 ): Promise<DepartmentRow | null> {
   const [rows] = await pool.execute<DepartmentRow[]>(
-    `SELECT departmentID, company_id FROM asset_mngmnt_departments WHERE departmentID = ? AND deleted_at IS NULL`,
+    `SELECT departmentID, company_id, name FROM asset_mngmnt_departments WHERE departmentID = ? AND deleted_at IS NULL`,
     [departmentId]
   );
   return rows[0] ?? null;
