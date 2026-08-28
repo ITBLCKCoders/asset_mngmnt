@@ -79,6 +79,11 @@ import {
 import * as checklistRepo from '../repositories/assetChecklist.repository.js';
 import { generateChecklistFormNumber, generateChecklistFormNumberFallback } from '../utils/checklistFormNumber.js';
 import { getCategoryDepartmentForAssetIds, getCompanyIdByDepartment } from '../repositories/assetReturn.repository.js';
+import {
+  generateReturnFormNumber,
+  generateReturnFormNumberFallback,
+} from '../utils/returnFormNumber.js';
+import { processorDeclineReturnFormBodySchema } from '../dtos/assetReturns/processorDeclineReturnFormDto.js';
 
 /** Format process_signed_at for API: we store server local time in DB; return ISO UTC so client shows correct local time. */
 function formatProcessSignedAtForApi(
@@ -224,12 +229,6 @@ function getDepartmentSortOrder(
   if (lower.includes('administration') || lower.includes('admin')) return 1;
   return 2;
 }
-
-import {
-  generateReturnFormNumber,
-  generateReturnFormNumberFallback,
-} from '../utils/returnFormNumber.js';
-import { processorDeclineReturnFormBodySchema } from '../dtos/assetReturns/processorDeclineReturnFormDto.js';
 
 /** Normalize to Returned, Offboarding, or Returned,Offboarding (same as process flow). */
 function normalizeReturnTypeString(raw: unknown): string | null {
@@ -455,7 +454,10 @@ export async function submitAssetReturnRequestHandler(
       });
       const form_id = returnForm!.formID;
       createdForms.push({ formID: form_id, form_number: returnForm!.form_number });
-      if (!firstForm) firstForm = createdForms[createdForms.length - 1];
+      if (!firstForm) {
+        const last = createdForms.at(-1);
+        if (last) firstForm = last;
+      }
 
       // Create asset return records for this department group
       for (const row of deptAssignments) {
@@ -569,11 +571,11 @@ export async function submitAssetReturnRequestHandler(
         action: 'Submitted Return Request',
         resourceType: 'asset_return_form',
         resourceId: f.formID,
-        resourceName: f.form_number,
+        resourceName: f.form_number ?? undefined,
         details: `Return request submitted for ${assignmentIds.length} asset(s) with type: ${normalizedReturnType}`,
         ipAddress: req.ip,
         userAgent: req.get('User-Agent'),
-        companyId: null,
+        companyId: undefined,
       }).catch((err) => logger.warn('Failed to create return request audit log:', err));
     }
 

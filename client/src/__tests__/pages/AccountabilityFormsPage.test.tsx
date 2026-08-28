@@ -54,7 +54,7 @@ function renderPage() {
 describe('AccountabilityFormsPage', () => {
   beforeEach(() => {
     vi.clearAllMocks();
-    delete mockUser.role.asset_type;
+    delete (mockUser.role as any).asset_type;
     (api.get as any).mockResolvedValue({});
     (api.post as any).mockResolvedValue({});
   });
@@ -166,7 +166,7 @@ describe('AccountabilityFormsPage', () => {
   });
 
   it('hides toggle and shows only IT forms for an IT-scoped role', async () => {
-    mockUser.role.asset_type = 'it';
+    (mockUser.role as any).asset_type = 'it';
     (api.get as any).mockResolvedValue({
       forms: [makeForm('it-form', 'AF-1', 'IT'), makeForm('admin-form', 'AF-2', 'Admin')],
     });
@@ -182,7 +182,7 @@ describe('AccountabilityFormsPage', () => {
   });
 
   it('hides toggle and shows only admin forms for an Admin-scoped role', async () => {
-    mockUser.role.asset_type = 'admin';
+    (mockUser.role as any).asset_type = 'admin';
     (api.get as any).mockResolvedValue({
       forms: [makeForm('it-form', 'AF-1', 'IT'), makeForm('admin-form', 'AF-2', 'Admin')],
     });

@@ -1,4 +1,4 @@
-import { Type, TypeModel } from '../models/type.model';
+import { Type, TypeModel } from '../models/type.model.js';
 import logger from '../logger.js';
 import { createAuditLog } from '../utils/audit.js';
 

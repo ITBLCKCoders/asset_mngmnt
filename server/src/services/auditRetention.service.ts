@@ -23,8 +23,8 @@ export class AuditRetentionService {
       details: `Updated system defaults: ${defaultMonths} months default, ${minimumMonths} months minimum`,
       status: 'success',
       severity: 'info',
-      ipAddress: ipAddress ?? null,
-      userAgent: userAgent ?? null,
+      ipAddress: ipAddress ?? undefined,
+      userAgent: userAgent ?? undefined,
     });
   }
 
@@ -58,8 +58,8 @@ export class AuditRetentionService {
         companyId,
         status: 'success',
         severity: 'info',
-        ipAddress: ipAddress ?? null,
-        userAgent: userAgent ?? null,
+        ipAddress: ipAddress ?? undefined,
+        userAgent: userAgent ?? undefined,
       });
 
       return (await AuditRetentionModel.getByCompanyId(companyId))!;
@@ -86,8 +86,8 @@ export class AuditRetentionService {
         companyId,
         status: 'success',
         severity: 'info',
-        ipAddress: ipAddress ?? null,
-        userAgent: userAgent ?? null,
+        ipAddress: ipAddress ?? undefined,
+        userAgent: userAgent ?? undefined,
       });
 
       return (await AuditRetentionModel.getByCompanyId(companyId))!;
@@ -125,8 +125,8 @@ export class AuditRetentionService {
       companyId,
       status: 'success',
       severity: 'info',
-      ipAddress: ipAddress ?? null,
-      userAgent: userAgent ?? null,
+      ipAddress: ipAddress ?? undefined,
+      userAgent: userAgent ?? undefined,
     });
 
     return { archivedCount };

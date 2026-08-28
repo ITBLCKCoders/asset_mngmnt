@@ -1,4 +1,4 @@
-import { Department, DepartmentModel } from '../models/department.model';
+import { Department, DepartmentModel } from '../models/department.model.js';
 import logger from '../logger.js';
 import { createAuditLog } from '../utils/audit.js';
 

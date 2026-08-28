@@ -1,4 +1,4 @@
-import { Permission, PermissionModel } from '../models/permission.model';
+import { Permission, PermissionModel } from '../models/permission.model.js';
 import logger from '../logger.js';
 import { createAuditLog } from '../utils/audit.js';
 

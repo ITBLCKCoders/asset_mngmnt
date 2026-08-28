@@ -1,7 +1,7 @@
 import * as assetRepo from '../repositories/asset.repository.js';
 
 type AssetWithBuilderFields = {
-  assetID: string;
+  assetID?: string;
   isAssetBuilder?: boolean;
   isBuilderChild?: boolean;
   builderStatus?: string | null;
@@ -9,9 +9,9 @@ type AssetWithBuilderFields = {
 };
 
 export async function attachBuilderGroupingToAssets(
-  assets: AssetWithBuilderFields[]
+  assets: Array<AssetWithBuilderFields & Record<string, any>>
 ): Promise<void> {
-  const assetIds = assets.map(a => a.assetID).filter(Boolean);
+  const assetIds = (assets.map((a: any) => a.assetID).filter(Boolean) as string[]);
   if (assetIds.length === 0) {
     for (const asset of assets) {
       asset.isAssetBuilder = false;
@@ -22,7 +22,7 @@ export async function attachBuilderGroupingToAssets(
     return;
   }
 
-  const assetById = new Map(assets.map(a => [a.assetID, a]));
+  const assetById = new Map(assets.map((a: any) => [a.assetID, a]));
 
   const linkRows = await assetRepo.getBuilderLinksForAssetIds(assetIds);
   const builderIds = [...new Set(linkRows.map(r => r.builder_id))];
@@ -75,15 +75,16 @@ export async function attachBuilderGroupingToAssets(
   }
 
   for (const asset of assets) {
-    const builderId = builderIdByParentAssetId.get(asset.assetID);
+    const aid = (asset as any).assetID as string | undefined;
+    const builderId = aid ? builderIdByParentAssetId.get(aid) : undefined;
     if (builderId) {
       asset.isAssetBuilder = true;
       asset.isBuilderChild = false;
       asset.builderStatus = builderStatusByBuilder.get(builderId) ?? null;
-      asset.children = childrenByParentAssetId.get(asset.assetID) ?? [];
+      asset.children = childrenByParentAssetId.get(aid!) ?? [];
     } else {
       asset.isAssetBuilder = false;
-      asset.isBuilderChild = builderChildAssetIds.has(asset.assetID);
+      asset.isBuilderChild = aid ? builderChildAssetIds.has(aid) : false;
       asset.builderStatus = null;
       asset.children = [];
     }

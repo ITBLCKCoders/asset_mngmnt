@@ -1,4 +1,4 @@
-import { Location, LocationModel } from '../models/location.model';
+import { Location, LocationModel } from '../models/location.model.js';
 import logger from '../logger.js';
 import { createAuditLog } from '../utils/audit.js';
 

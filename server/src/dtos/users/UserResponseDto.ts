@@ -1,6 +1,6 @@
-import { RoleResponseDto } from '../roles/RoleResponseDto';
-import { DepartmentResponseDto } from '../departments/DepartmentResponseDto';
-import { CompanyResponseDto } from '../companies/CompanyResponseDto';
+import { RoleResponseDto } from '../roles/RoleResponseDto.js';
+import { DepartmentResponseDto } from '../departments/DepartmentResponseDto.js';
+import { CompanyResponseDto } from '../companies/CompanyResponseDto.js';
 
 export interface UserResponseDto {
   userID: string;

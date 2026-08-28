@@ -111,6 +111,11 @@ interface AssetAssignment {
   };
 }
 
+function getMyTransferAssetSummary(returns: unknown[]): string {
+  if (!Array.isArray(returns) || returns.length === 0) return '-';
+  return `${returns.length} asset${returns.length !== 1 ? 's' : ''}`;
+}
+
 /** One row = one asset within a transfer form (mirrors Transfer History table). */
 interface TransferRequestRow {
   id: string;
@@ -119,15 +124,17 @@ interface TransferRequestRow {
   request_date: string;
   status: TransferFormUiStatus;
   target_user?: string;
-  assetName: string;
-  assetCode: string;
-  fromDepartment: string;
-  toDepartment: string;
-  processedBy: string;
-  transferDate: string;
-  condition: string;
-  notes: string;
-  conditionImages: string[];
+  asset_count?: number;
+  assets_label?: string;
+  assetName?: string;
+  assetCode?: string;
+  fromDepartment?: string;
+  toDepartment?: string;
+  processedBy?: string;
+  transferDate?: string;
+  condition?: string;
+  notes?: string;
+  conditionImages?: string[];
 }
 
 interface SubmitTransferRequestResponse {
@@ -345,6 +352,7 @@ export default function AssetTransferRequest() {
           : undefined;
         const returns = Array.isArray(b.returns) ? b.returns : [];
         return {
+          id: b.formID,
           formID: b.formID,
           form_number: b.form_number || '-',
           request_date: b.created_at || new Date().toISOString(),
@@ -724,6 +732,47 @@ export default function AssetTransferRequest() {
       selectedAssignments.includes(a.assignmentID)
     );
   };
+
+  const myTransferRequestColumns: ColumnDef<TransferRequestRow>[] = useMemo(
+    () => [
+      {
+        accessorKey: 'form_number',
+        header: 'Form Number',
+        cell: ({ row }) => (
+          <span className="text-sm font-medium">{row.getValue('form_number') as string}</span>
+        ),
+      },
+      {
+        accessorKey: 'status',
+        header: 'Status',
+        cell: ({ row }) => {
+          const s = row.getValue('status') as TransferFormUiStatus;
+          return (
+            <Badge variant="outline" className={`text-xs ${getTransferStatusBadgeClass(s)}`}>
+              {formatTransferFormUiStatus(s)}
+            </Badge>
+          );
+        },
+      },
+      {
+        accessorKey: 'target_user',
+        header: 'Transfer To',
+        cell: ({ row }) => (row.getValue('target_user') as string) || '-',
+      },
+      {
+        accessorKey: 'assets_label',
+        header: 'Assets',
+        cell: ({ row }) => (row.getValue('assets_label') as string) || '-',
+      },
+      {
+        accessorKey: 'request_date',
+        header: 'Request Date',
+        cell: ({ row }) =>
+          new Date(row.getValue('request_date') as string).toLocaleDateString(),
+      },
+    ],
+    []
+  );
 
   return (
     <div className="min-h-screen">

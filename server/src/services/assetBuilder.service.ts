@@ -1,4 +1,4 @@
-import { AssetBuilder, AssetBuilderModel } from '../models/assetBuilder.model';
+import { AssetBuilder, AssetBuilderModel } from '../models/assetBuilder.model.js';
 import logger from '../logger.js';
 import { createAuditLog } from '../utils/audit.js';
 

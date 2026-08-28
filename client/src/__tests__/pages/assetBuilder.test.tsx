@@ -61,7 +61,7 @@ vi.mock('sonner', () => ({
 }));
 
 const mockAssetsData = vi.hoisted(() => ({
-  assets: [],
+  assets: [] as any[],
   loading: true,
 }));
 

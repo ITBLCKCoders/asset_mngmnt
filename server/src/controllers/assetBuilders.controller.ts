@@ -798,8 +798,8 @@ export async function updateAssetBuilderHandler(
         }
 
         // --- Rebuild accountability forms (only if new assets were added) ---
+        const createdForms: { formId: string; formNumber: string }[] = [];
         if (newAssignedAssets.length > 0) {
-          const createdForms: { formId: string; formNumber: string }[] = [];
           const assignedAssetCodes = newAssignedAssets.map(a => a.code);
           const assignedAssetDetails = await assignmentRepo.getCategoryDeptForAssetCodes(assignedAssetCodes);
 

@@ -1,4 +1,4 @@
-import { Supplier, SupplierModel } from '../models/supplier.model';
+import { Supplier, SupplierModel } from '../models/supplier.model.js';
 import logger from '../logger.js';
 import { createAuditLog } from '../utils/audit.js';
 

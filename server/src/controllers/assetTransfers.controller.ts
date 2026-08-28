@@ -5238,7 +5238,7 @@ export async function approveTransferFormHandler(
     try {
       const requesterRow = await getUserById(form.user_id);
       const assetRoleCompanyId = requesterRow?.company_id ?? null;
-      const transferDeptRow = await getDepartmentById(form.department_id);
+      const transferDeptRow = form.department_id ? await getDepartmentById(form.department_id) : null;
       const transferAssignments = await getTransferFormAssignments(formId);
       const assetRoleUsers = await getAssetRoleUsersForAssignmentsAndCompany(
         assetRoleCompanyId,
