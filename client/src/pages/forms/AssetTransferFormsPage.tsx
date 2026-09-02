@@ -1,10 +1,9 @@
 'use client';
 
 import { useState, useEffect, useMemo } from 'react';
-import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
 import { PageHeader } from '@/components/common/PageHeader';
-import { Search, ArrowRightLeft, ChevronLeft, ChevronRight } from 'lucide-react';
+import { ArrowRightLeft, ChevronLeft, ChevronRight } from 'lucide-react';
 import { api } from '@/lib/api';
 import { toast } from 'sonner';
 import { useCurrentUser } from '@/hooks/useCurrentUser';
@@ -23,7 +22,9 @@ import {
 } from '@/components/common/appDialogChrome';
 import { Shimmer } from '@/components/ui/shimmer';
 import { Download } from 'lucide-react';
-import { matchesFormListSearch } from '@/utils/formListSearch';
+import { matchesFormListSearchWithFilters } from '@/utils/formListSearch';
+import { TRANSFER_FILTER_OPTIONS } from '@/utils/formSearchFilterOptions';
+import { SearchWithMultiFilter } from '@/components/common/SearchWithMultiFilter';
 import { Label } from '@/components/ui/label';
 import {
   Select,
@@ -49,6 +50,7 @@ export default function AssetTransferFormsPage() {
   const [batches, setBatches] = useState<AssetTransferFormBatch[]>([]);
   const [loading, setLoading] = useState(true);
   const [searchQuery, setSearchQuery] = useState('');
+  const [searchFilters, setSearchFilters] = useState<string[]>(['all']);
   const [companyFilterId, setCompanyFilterId] = useState('');
   const [departmentFilterId, setDepartmentFilterId] = useState('');
   const [assetTypeFilter, setAssetTypeFilter] = useState<AssetTypeFilter>('all');
@@ -140,13 +142,13 @@ export default function AssetTransferFormsPage() {
   const filteredBatches = useMemo(() => {
     if (!searchQuery.trim()) return orgFilteredBatches;
     return orgFilteredBatches.filter(b =>
-      matchesFormListSearch(b, searchQuery)
+      matchesFormListSearchWithFilters(b, searchQuery, searchFilters)
     );
-  }, [orgFilteredBatches, searchQuery]);
+  }, [orgFilteredBatches, searchQuery, searchFilters]);
 
   useEffect(() => {
     setCurrentPage(1);
-  }, [searchQuery, companyFilterId, departmentFilterId, effectiveAssetTypeFilter]);
+  }, [searchQuery, searchFilters, companyFilterId, departmentFilterId, effectiveAssetTypeFilter]);
 
   const pageCount = useMemo(
     () => Math.max(1, Math.ceil(filteredBatches.length / PAGE_SIZE)),
@@ -197,16 +199,15 @@ export default function AssetTransferFormsPage() {
                 <Label className="text-sm font-medium text-muted-foreground mb-1.5 block">
                   Search
                 </Label>
-                <div className="relative max-w-md">
-                  <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 w-4 h-4" />
-                  <Input
-                    type="text"
-                    placeholder="Search form number, assets, users, department, recipient..."
-                    value={searchQuery}
-                    onChange={e => setSearchQuery(e.target.value)}
-                    className="pl-10"
-                  />
-                </div>
+                <SearchWithMultiFilter
+                  value={searchQuery}
+                  onChange={setSearchQuery}
+                  selectedFilters={searchFilters}
+                  onSelectedFiltersChange={setSearchFilters}
+                  filterOptions={TRANSFER_FILTER_OPTIONS}
+                  placeholder="Search form number, assets, users, department, recipient..."
+                  className="max-w-md"
+                />
               </div>
               <div className="flex flex-col sm:flex-row gap-4 sm:items-end flex-wrap">
                 {showCompanyFilter && (

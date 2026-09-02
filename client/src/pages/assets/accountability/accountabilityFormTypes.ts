@@ -74,5 +74,12 @@ export interface AccountabilityForm {
     digitalSignature?: string;
     [key: string]: unknown;
   };
-  formOrigin?: 'processor_return';
+  formOrigin?: 'processor_return' | 'clearance';
+  clearanceScope?: 'IT' | 'Admin';
+  clearanceReason?: 'return' | 'transfer';
+  referenceDisabledFormNumbers?: string[];
+  clearedAt?: string;
 }
+
+export type ClearanceScope = 'IT' | 'Admin';
+export type ClearanceReason = 'return' | 'transfer';

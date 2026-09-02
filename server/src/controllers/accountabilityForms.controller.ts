@@ -11,7 +11,8 @@ import { resolveAssetIdByCodeOrId } from '../repositories/asset.repository.js';
 import { declineAccountabilityFormBodySchema } from '../dtos/accountabilityForms/DeclineAccountabilityFormDto.js';
 import { applyReturnAssignmentSideEffectsOnConnection } from '../utils/returnAssignmentSideEffects.js';
 import { signedRawUrlFromStoredSecureUrl } from '../utils/cloudinary.js';
-import { getAssetScope } from '../utils/assetScope.js';
+import { getAssetScope, classifyDepartmentScopeByName } from '../utils/assetScope.js';
+import { getClearanceEligibility, createClearanceForScope } from '../utils/accountabilityFormOnReturn.js';
 import { emitNotification } from '../sockets/socketHandlers.js';
 import { createNotificationForApi } from '../utils/notificationsApi.js';
 import { getHrAccountabilityReceiverUserIds } from '../utils/approverNotifications.js';
@@ -280,13 +281,20 @@ async function signLinkedChecklistsForAccountabilityForm(params: {
   return signedCount;
 }
 
+export type ClearanceScope = 'IT' | 'Admin';
+export type ClearanceReason = 'return' | 'transfer';
+
 /** Stored inside `assets_data` JSON alongside `assets` (not shown in PDF tables). */
-type AccountabilityFormOrigin = 'processor_return';
+export type AccountabilityFormOrigin = 'processor_return' | 'clearance';
 
 function parseAccountabilityAssetsData(assetsDataRaw: unknown): {
   assets: any[];
   assignmentIds: string[];
   formOrigin?: AccountabilityFormOrigin;
+  clearanceScope?: ClearanceScope;
+  clearanceReason?: ClearanceReason;
+  referenceDisabledFormNumbers?: string[];
+  clearedAt?: string;
 } {
   const assets: any[] = [];
   const assignmentIds: string[] = [];
@@ -323,6 +331,34 @@ function parseAccountabilityAssetsData(assetsDataRaw: unknown): {
       }
     }
     const fo = (assetsData as { form_origin?: unknown })?.form_origin;
+    const clearedScope = (assetsData as { clearance_scope?: unknown })
+      ?.clearance_scope;
+    const clearedReason = (assetsData as { clearance_reason?: unknown })
+      ?.clearance_reason;
+    const refDisabled = (assetsData as {
+      reference_disabled_form_numbers?: unknown;
+    })?.reference_disabled_form_numbers;
+    const clearedAt = (assetsData as { cleared_at?: unknown })?.cleared_at;
+    if (fo === 'clearance') {
+      return {
+        assets,
+        assignmentIds: [...new Set(assignmentIds)],
+        formOrigin: 'clearance',
+        clearanceScope:
+          clearedScope === 'IT' || clearedScope === 'Admin'
+            ? (clearedScope as ClearanceScope)
+            : undefined,
+        clearanceReason:
+          clearedReason === 'return' || clearedReason === 'transfer'
+            ? (clearedReason as ClearanceReason)
+            : undefined,
+        referenceDisabledFormNumbers: Array.isArray(refDisabled)
+          ? refDisabled.map((v: unknown) => String(v)).filter(Boolean)
+          : undefined,
+        clearedAt:
+          typeof clearedAt === 'string' && clearedAt ? clearedAt : undefined,
+      };
+    }
     if (fo === 'processor_return') {
       return {
         assets,
@@ -340,7 +376,11 @@ function parseAccountabilityAssetsData(assetsDataRaw: unknown): {
 async function generateFormNumber(
   companyId: string,
   assets: any[],
-  departmentId?: string
+  departmentId?: string,
+  options?: {
+    origin?: AccountabilityFormOrigin;
+    clearanceScope?: ClearanceScope;
+  }
 ): Promise<string> {
   // Fetch accountability form settings
   const settings = await repo.getAccountabilityFormSettings(companyId);
@@ -392,9 +432,21 @@ async function generateFormNumber(
     );
   }
 
-  const assetCode = isITAsset
-    ? settings?.it_asset_code
-    : settings?.admin_asset_code;
+  let assetCode: string | null;
+  if (options?.origin === 'clearance') {
+    // Clearance certificates use a distinct code so they never collide with
+    // standard IT/Admin accountability sequences.
+    assetCode =
+      options.clearanceScope === 'IT'
+        ? 'CLR-IT'
+        : options.clearanceScope === 'Admin'
+          ? 'CLR-ADM'
+          : 'CLR';
+  } else {
+    assetCode = isITAsset
+      ? settings?.it_asset_code
+      : settings?.admin_asset_code;
+  }
 
   // Build form number parts
   const parts = [];
@@ -470,14 +522,234 @@ export async function createAccountabilityFormHandler(
       itCopySignature,
       formOrigin: formOriginBody,
       form_origin: formOriginSnake,
+      clearanceScope: clearanceScopeBody,
+      clearance_scope: clearanceScopeSnake,
+      clearanceReason: clearanceReasonBody,
+      clearance_reason: clearanceReasonSnake,
+      referenceDisabledFormNumbers,
+      reference_disabled_form_numbers: referenceDisabledFormNumbersSnake,
+      clearedAt,
+      cleared_at: clearedAtSnake,
       previousFormId,
       previousFormOriginalStatus,
       skipNotification,
     } = req.body;
     const formOriginRaw = formOriginBody ?? formOriginSnake;
     const formOriginStored: AccountabilityFormOrigin | undefined =
-      formOriginRaw === 'processor_return' ? 'processor_return' : undefined;
+      formOriginRaw === 'processor_return'
+        ? 'processor_return'
+        : formOriginRaw === 'clearance'
+          ? 'clearance'
+          : undefined;
+    const clearanceScopeRaw =
+      (formOriginStored === 'clearance'
+        ? (clearanceScopeBody ?? clearanceScopeSnake)
+        : undefined) ?? null;
+    const clearanceScopeStored: ClearanceScope | undefined =
+      clearanceScopeRaw === 'IT' || clearanceScopeRaw === 'Admin'
+        ? (clearanceScopeRaw as ClearanceScope)
+        : undefined;
+    const clearanceReasonRaw =
+      (formOriginStored === 'clearance'
+        ? (clearanceReasonBody ?? clearanceReasonSnake)
+        : undefined) ?? null;
+    const clearanceReasonStored: ClearanceReason | undefined =
+      clearanceReasonRaw === 'return' || clearanceReasonRaw === 'transfer'
+        ? (clearanceReasonRaw as ClearanceReason)
+        : undefined;
+    const referenceDisabledFormNumbersStored: string[] | undefined = (() => {
+      if (formOriginStored !== 'clearance') return undefined;
+      const raw =
+        referenceDisabledFormNumbers ?? referenceDisabledFormNumbersSnake;
+      if (!Array.isArray(raw)) return undefined;
+      return raw
+        .map((v: unknown) => String(v ?? '').trim())
+        .filter(Boolean);
+    })();
+    const clearedAtRaw =
+      formOriginStored === 'clearance' ? (clearedAt ?? clearedAtSnake) : null;
+    const clearedAtStored: string | undefined =
+      typeof clearedAtRaw === 'string' && clearedAtRaw.trim() !== ''
+        ? clearedAtRaw
+        : new Date().toISOString();
     const createdBy = req.user!.userID;
+
+    // Handle clearance certificates (zero-asset, per-scope) before the
+    // multi-asset branch so an empty `assets` array never silently bypasses
+    // the clearance flow.
+    if (formOriginStored === 'clearance') {
+      if (!userId) {
+        return res.status(400).json({ error: 'User ID is required' });
+      }
+      if (!clearanceScopeStored) {
+        return res
+          .status(400)
+          .json({ error: 'clearance_scope (IT | Admin) is required' });
+      }
+
+      const userDetails = await repo.getUserCompanyAndName(userId);
+      let companyId: string | null =
+        (departmentId && (await repo.getCompanyIdByDepartmentId(departmentId))) ||
+        null;
+      if (!companyId) {
+        companyId = userDetails?.company_id ?? null;
+      }
+      if (!companyId) {
+        return res.status(400).json({
+          error: 'Could not determine company for clearance creation',
+        });
+      }
+
+      let formNumber = '';
+      let attempts = 0;
+      const maxAttempts = 5;
+      while (attempts < maxAttempts) {
+        try {
+          formNumber = await generateFormNumber(
+            companyId,
+            [],
+            departmentId ?? null,
+            {
+              origin: 'clearance',
+              clearanceScope: clearanceScopeStored,
+            }
+          );
+
+          const assetsDataPayload: Record<string, unknown> = {
+            assets: [],
+            form_origin: 'clearance',
+            clearance_scope: clearanceScopeStored,
+            clearance_reason: clearanceReasonStored ?? 'return',
+            reference_disabled_form_numbers:
+              referenceDisabledFormNumbersStored ?? [],
+            cleared_at: clearedAtStored,
+          };
+
+          await repo.insertAccountabilityFormMulti({
+            formNumber,
+            userId,
+            departmentId: departmentId || null,
+            locationId: locationId || null,
+            createdBy,
+            assetsDataJson: JSON.stringify(assetsDataPayload),
+            issuerSignature: issuerSignature || null,
+            itCopySignature: itCopySignature || null,
+            assignmentId: null,
+          });
+          break;
+        } catch (error: any) {
+          attempts++;
+          if (error.code === 'ER_DUP_ENTRY' && attempts < maxAttempts) {
+            await new Promise(resolve => setTimeout(resolve, 100 * attempts));
+            continue;
+          }
+          throw error;
+        }
+      }
+
+      const resolvedFormId = await getFormIdByFormNumber(formNumber);
+      if (!resolvedFormId) {
+        logger.error(
+          'Could not resolve formID after clearance insert',
+          { formNumber }
+        );
+        return res.status(500).json({
+          error: 'Failed to create clearance certificate',
+        });
+      }
+
+      const userName =
+        `${userDetails?.first_name || ''} ${userDetails?.last_name || ''}`.trim();
+      await createAuditLog({
+        userId: createdBy,
+        action: 'Created Clearance Certificate',
+        resourceType: 'accountability_form',
+        resourceId: resolvedFormId,
+        resourceName: formNumber,
+        details: `Clearance certificate ${formNumber} (${clearanceScopeStored}) created for ${userName} (${referenceDisabledFormNumbersStored?.join(', ') || 'no reference forms'})`,
+        newValues: {
+          form_number: formNumber,
+          user_id: userId,
+          clearance_scope: clearanceScopeStored,
+          clearance_reason: clearanceReasonStored ?? 'return',
+          reference_disabled_form_numbers:
+            referenceDisabledFormNumbersStored ?? [],
+        },
+        ipAddress: req.ip,
+        userAgent: req.get ? req.get('User-Agent') : 'Unknown',
+      });
+
+      if (!skipNotification) {
+        try {
+          const createdByRow = await repo.getUserNameById(createdBy);
+          const assignerName = createdByRow
+            ? `${createdByRow.first_name ?? ''} ${createdByRow.last_name ?? ''}`.trim() ||
+              createdBy
+            : createdBy;
+
+          await NotificationService.createNotification(
+            {
+              user_id: userId,
+              title: 'Asset clearance certificate issued',
+              message: `by ${assignerName}. You are now cleared of all ${clearanceScopeStored} asset accountabilities. Download your clearance from your profile.`,
+              type: 'accountability_form',
+              status: 'unread',
+              data: JSON.stringify({
+                description: `by ${assignerName}. You are now cleared of all ${clearanceScopeStored} asset accountabilities. Download your clearance from your profile.`,
+                route: '/profile?tab=documents',
+                actionTarget: 'profile_documents',
+                formId: resolvedFormId,
+                formNumber: formNumber,
+                assignedBy: assignerName,
+                clearanceScope: clearanceScopeStored,
+                timestamp: new Date().toISOString(),
+              }),
+            },
+            createdBy,
+            req.ip,
+            req.get('User-Agent')
+          );
+
+          const io = getIoInstance();
+          if (!io) {
+            logger.error('[NOTIFICATION] Socket.IO instance not available');
+          } else {
+            emitNotification(io, userId, 'notification', {
+              title: 'Asset clearance certificate issued',
+              description: `by ${assignerName}. You are now cleared of all ${clearanceScopeStored} asset accountabilities. Download your clearance from your profile.`,
+              type: 'accountability_form',
+              route: '/profile?tab=documents',
+              actionTarget: 'profile_documents',
+              formId: resolvedFormId,
+              formNumber: formNumber,
+              assignedBy: assignerName,
+              clearanceScope: clearanceScopeStored,
+              timestamp: new Date().toISOString(),
+            });
+          }
+        } catch (socketError) {
+          logger.error('Failed to send clearance notification:', socketError);
+        }
+      }
+
+      return res.status(201).json({
+        message: 'Clearance certificate created successfully',
+        form: {
+          formID: resolvedFormId,
+          form_number: formNumber,
+          user_id: userId,
+          department_id: departmentId ?? null,
+          location_id: locationId ?? null,
+          status: 'Pending',
+          created_at: new Date(),
+          created_by: createdBy,
+          formOrigin: 'clearance',
+          clearanceScope: clearanceScopeStored,
+          clearanceReason: clearanceReasonStored ?? 'return',
+          assets: [],
+        },
+      });
+    }
 
     // Handle builder forms (multiple assets)
     if (assets && Array.isArray(assets) && assets.length > 0) {
@@ -966,6 +1238,16 @@ export async function getAccountabilityFormsByAssetIdHandler(
         assets: assets,
         assignmentIds: parsed.assignmentIds,
         ...(formOrigin ? { formOrigin } : {}),
+        ...(parsed.clearanceScope
+          ? { clearanceScope: parsed.clearanceScope }
+          : {}),
+        ...(parsed.clearanceReason
+          ? { clearanceReason: parsed.clearanceReason }
+          : {}),
+        ...(parsed.referenceDisabledFormNumbers
+          ? { referenceDisabledFormNumbers: parsed.referenceDisabledFormNumbers }
+          : {}),
+        ...(parsed.clearedAt ? { clearedAt: parsed.clearedAt } : {}),
         user: {
           id: row.user_id,
           first_name: row.first_name,
@@ -1118,6 +1400,16 @@ export async function getAccountabilityFormsHandler(
         assets: assets,
         assignmentIds: parsed.assignmentIds,
         ...(formOrigin ? { formOrigin } : {}),
+        ...(parsed.clearanceScope
+          ? { clearanceScope: parsed.clearanceScope }
+          : {}),
+        ...(parsed.clearanceReason
+          ? { clearanceReason: parsed.clearanceReason }
+          : {}),
+        ...(parsed.referenceDisabledFormNumbers
+          ? { referenceDisabledFormNumbers: parsed.referenceDisabledFormNumbers }
+          : {}),
+        ...(parsed.clearedAt ? { clearedAt: parsed.clearedAt } : {}),
         user: {
           id: row.user_id,
           first_name: row.first_name,
@@ -2464,6 +2756,221 @@ export async function getAssetMovementHandler(
   } catch (error: any) {
     logger.error('Get asset movement failed:', error);
     return res.status(500).json({ error: 'Failed to fetch asset movement' });
+  }
+}
+
+/**
+ * Opt-in clearance: GET /api/accountability-forms/clearance/eligibility?userId=
+ * Returns which scopes (IT/Admin) are currently clear and eligible for a
+ * clearance certificate. Used by the `Issue an accountability clearance`
+ * modal (checkbox default checked) and the DocumentsTab banner.
+ */
+export async function getClearanceEligibilityHandler(
+  req: AuthRequest,
+  res: Response
+) {
+  try {
+    const userId = String((req.query as any)?.userId ?? '').trim();
+    if (!userId) {
+      return res.status(400).json({ error: 'userId query param is required' });
+    }
+
+    // Reuse the same eligibility logic as the return/transfer flow, but
+    // derive `disabledFormNumbersByScope` from recently disabled forms
+    // (last 7 days). If no recent disable, still check current clear state.
+    const [recentDisabled] = (await pool.execute(
+      `SELECT form_number, assets_data, status, updated_at
+       FROM accountability_forms
+       WHERE user_id = ? AND deleted_at IS NULL
+         AND status = 'Disabled'
+         AND updated_at >= DATE_SUB(NOW(), INTERVAL 7 DAY)
+       ORDER BY updated_at DESC`,
+      [userId]
+    )) as any[];
+
+    const disabledByScope: Record<string, string[]> = { IT: [], Admin: [] };
+    for (const row of recentDisabled as any[]) {
+      try {
+        const data =
+          typeof row.assets_data === 'string'
+            ? JSON.parse(row.assets_data)
+            : row.assets_data;
+        const assets = Array.isArray(data?.assets) ? data.assets : [];
+        for (const a of assets) {
+          const scope = classifyDepartmentScopeByName(
+            a?.department || a?.categoryDepartment || ''
+          );
+          if (scope === 'IT' || scope === 'Admin') {
+            (disabledByScope[scope as string] as string[]).push(String(row.form_number));
+          }
+        }
+      } catch {
+        /* ignore */
+      }
+    }
+
+    const eligibility = await getClearanceEligibility({
+      userId,
+      disabledFormNumbersByScope: {
+        IT: [...new Set(disabledByScope.IT)],
+        Admin: [...new Set(disabledByScope.Admin)],
+      },
+    });
+
+    // If no recent disable but user is currently 0/0/0, still consider
+    // eligible (so the banner can appear even days after the return).
+    // Fall back to a direct current-state check when helper returns empty
+    // due to lack of recent disable.
+    if (eligibility.eligibleScopes.length === 0) {
+      for (const scope of ['IT', 'Admin'] as const) {
+        const hasRecent = eligibility.detailsByScope[scope].hasRecentClearance;
+        const hasOther = eligibility.detailsByScope[scope].hasOtherActiveForm;
+        const remT = eligibility.detailsByScope[scope].remainingTangible;
+        const remI = eligibility.detailsByScope[scope].remainingIntangible;
+        if (!hasRecent && !hasOther && remT === 0 && remI === 0) {
+          // No active accountability for this scope — user is clear
+          eligibility.eligibleScopes.push(scope);
+        }
+      }
+    }
+
+    return res.json({
+      userId,
+      eligibleScopes: eligibility.eligibleScopes,
+      disabledFormNumbersByScope: eligibility.disabledFormNumbersByScope,
+      detailsByScope: eligibility.detailsByScope,
+    });
+  } catch (error: any) {
+    logger.error('Get clearance eligibility failed:', error);
+    return res.status(500).json({ error: 'Failed to check clearance eligibility' });
+  }
+}
+
+async function isProcessorAllowedForScope(
+  processorUserId: string,
+  scope: ClearanceScope
+): Promise<boolean> {
+  const [rows] = (await pool.execute(
+    `SELECT r.name as role_name, r.asset_type, r.manager_role
+     FROM users u
+     LEFT JOIN asset_mngmnt_roles r ON u.role_id = r.roleID AND r.deleted_at IS NULL
+     WHERE u.userID = ? LIMIT 1`,
+    [processorUserId]
+  )) as any[];
+  const row = (rows as any[])[0];
+  if (!row) return false;
+  const roleName = String(row.role_name ?? '').toLowerCase();
+  if (roleName === 'global admin' || roleName === 'admin') return true;
+  const assetType = String(row.asset_type ?? '').toLowerCase();
+  const managerRole = String(row.manager_role ?? '').toLowerCase();
+  if (managerRole === 'overallmanager') return true;
+  if (scope === 'IT') {
+    return managerRole === 'itmanager' || assetType === 'it';
+  }
+  if (scope === 'Admin') {
+    return managerRole === 'adminmanager' || assetType === 'admin';
+  }
+  return false;
+}
+
+/**
+ * Opt-in clearance: POST /api/accountability-forms/clearance
+ * Body: { userId, clearanceScope: 'IT'|'Admin', referenceDisabledFormNumbers?, clearanceReason? }
+ * Creates a single-scope clearance; `Issued by:` will be the processor
+ * (req.user) with their signature/date/time.
+ */
+export async function createClearanceHandler(req: AuthRequest, res: Response) {
+  try {
+    const processorUserId = req.user!.userID;
+    const { userId, clearanceScope, referenceDisabledFormNumbers, clearanceReason } =
+      req.body as {
+        userId?: string;
+        clearanceScope?: string;
+        referenceDisabledFormNumbers?: string[];
+        clearanceReason?: string;
+      };
+
+    if (!userId || !clearanceScope) {
+      return res.status(400).json({ error: 'userId and clearanceScope are required' });
+    }
+    if (clearanceScope !== 'IT' && clearanceScope !== 'Admin') {
+      return res.status(400).json({ error: 'clearanceScope must be IT or Admin' });
+    }
+
+    const allowed = await isProcessorAllowedForScope(
+      processorUserId,
+      clearanceScope as ClearanceScope
+    );
+    if (!allowed) {
+      return res.status(403).json({
+        error: `You are not authorized to issue ${clearanceScope} clearance`,
+      });
+    }
+
+    // Verify eligibility still holds at issuance time
+    const eligibility = await getClearanceEligibility({
+      userId: String(userId),
+      disabledFormNumbersByScope: {
+        IT: clearanceScope === 'IT' ? (referenceDisabledFormNumbers ?? ['manual']) : [],
+        Admin: clearanceScope === 'Admin' ? (referenceDisabledFormNumbers ?? ['manual']) : [],
+      },
+    });
+
+    // Also allow issuance when current state is clear even without recent disable
+    const detail = eligibility.detailsByScope[clearanceScope as ClearanceScope];
+    const isCurrentlyClear =
+      !detail.hasRecentClearance &&
+      !detail.hasOtherActiveForm &&
+      detail.remainingTangible === 0 &&
+      detail.remainingIntangible === 0;
+    const isEligible =
+      eligibility.eligibleScopes.includes(clearanceScope as ClearanceScope) ||
+      isCurrentlyClear;
+
+    if (!isEligible) {
+      return res.status(400).json({
+        error: `User is not eligible for ${clearanceScope} clearance (active assets or forms remain)`,
+      });
+    }
+
+    // Prefer the signature that was used on the return/transfer form if
+    // provided; otherwise fall back to the processor's stored digital_signature.
+    let processorSignature: string | null = null;
+    const bodySig = (req.body as any)?.issuerSignature ?? (req.body as any)?.processorSignature;
+    if (typeof bodySig === 'string' && bodySig.trim() !== '') {
+      processorSignature = bodySig.trim();
+    } else {
+      const [sigRows] = (await pool.execute(
+        'SELECT digital_signature FROM users WHERE userID = ?',
+        [processorUserId]
+      )) as any[];
+      processorSignature = sigRows[0]?.digital_signature ?? null;
+    }
+
+    await createClearanceForScope({
+      userId: String(userId),
+      scope: clearanceScope as ClearanceScope,
+      createdBy: processorUserId,
+      req,
+      processorDigitalSignature: processorSignature,
+      referenceDisabledFormNumbers:
+        Array.isArray(referenceDisabledFormNumbers) && referenceDisabledFormNumbers.length > 0
+          ? referenceDisabledFormNumbers.map((v: any) => String(v))
+          : eligibility.disabledFormNumbersByScope[clearanceScope as ClearanceScope] ?? [],
+      clearanceReason:
+        clearanceReason === 'transfer' ? 'transfer' : 'return',
+    });
+
+    const formNumber = `clearance-${clearanceScope}`;
+    return res.status(201).json({
+      message: `${clearanceScope} clearance created`,
+      clearanceScope,
+      userId,
+      issuedBy: processorUserId,
+    });
+  } catch (error: any) {
+    logger.error('Create clearance failed:', error);
+    return res.status(500).json({ error: 'Failed to create clearance' });
   }
 }
 

@@ -10,11 +10,10 @@ import {
   segmentTabsListClassName,
   segmentTabsTriggerClassName,
 } from '@/components/ui/tabs';
-import { Input } from '@/components/ui/input';
+
 import { Button } from '@/components/ui/button';
 import { PageHeader } from '@/components/common/PageHeader';
 import {
-  Search,
   FileCheck,
   ClipboardList,
   ChevronLeft,
@@ -33,7 +32,8 @@ import {
 import {
   AccountabilityFormCard,
   AccountabilityFormDetail,
-  AccountabilityForm,
+  ClearanceFormCard,
+  type AccountabilityForm,
 } from '@/pages/assets/accountability/accountabilityForm';
 import { Shimmer } from '@/components/ui/shimmer';
 import { Label } from '@/components/ui/label';
@@ -44,7 +44,9 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select';
-import { matchesFormListSearch } from '@/utils/formListSearch';
+import { matchesFormListSearchWithFilters } from '@/utils/formListSearch';
+import { ACCOUNTABILITY_FILTER_OPTIONS } from '@/utils/formSearchFilterOptions';
+import { SearchWithMultiFilter } from '@/components/common/SearchWithMultiFilter';
 import { cn } from '@/lib/utils';
 import { getRoleAssetTypeScope } from '@/utils/roleAssetTypeScope';
 import { getAssetDisplayScope } from '@/pages/assets/accountability/accountabilityFormAssets';
@@ -70,6 +72,7 @@ export default function AccountabilityFormsPage() {
     hasPermission('Accountability Form', 'delete');
   const [statusFilter, setStatusFilter] = useState<StatusFilter>('active');
   const [searchQuery, setSearchQuery] = useState('');
+  const [searchFilters, setSearchFilters] = useState<string[]>(['all']);
   const [companyFilterId, setCompanyFilterId] = useState('');
   const [departmentFilterId, setDepartmentFilterId] = useState('');
   const [assetTypeFilter, setAssetTypeFilter] = useState<AssetTypeFilter>('all');
@@ -153,6 +156,7 @@ export default function AccountabilityFormsPage() {
     setCurrentPage(1);
   }, [
     searchQuery,
+    searchFilters,
     statusFilter,
     companyFilterId,
     departmentFilterId,
@@ -188,7 +192,7 @@ export default function AccountabilityFormsPage() {
   const filterBySearch = (list: AccountabilityForm[]) => {
     if (!searchQuery.trim()) return list;
     return list.filter((f: AccountabilityForm) =>
-      matchesFormListSearch(f, searchQuery)
+      matchesFormListSearchWithFilters(f, searchQuery, searchFilters)
     );
   };
 
@@ -280,14 +284,14 @@ export default function AccountabilityFormsPage() {
           filterByAssetType(filterByCompanyAndDepartment(forms))
         )
       ),
-    [forms, searchQuery, statusFilter, companyFilterId, departmentFilterId, effectiveAssetTypeFilter]
+    [forms, searchQuery, searchFilters, statusFilter, companyFilterId, departmentFilterId, effectiveAssetTypeFilter]
   );
   const filteredHrCopy = useMemo(
     () =>
       applyStatusFilter(
         filterBySearch(filterByAssetType(filterByCompanyAndDepartment(hrCopyForms)))
       ),
-    [hrCopyForms, searchQuery, statusFilter, companyFilterId, departmentFilterId, effectiveAssetTypeFilter]
+    [hrCopyForms, searchQuery, searchFilters, statusFilter, companyFilterId, departmentFilterId, effectiveAssetTypeFilter]
   );
 
   const pageCount = useMemo(() => {
@@ -410,20 +414,28 @@ export default function AccountabilityFormsPage() {
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
           {formList
             .slice((currentPage - 1) * PAGE_SIZE, currentPage * PAGE_SIZE)
-            .map((form: AccountabilityForm) => (
-              <AccountabilityFormCard
-                key={form.id}
-                form={form}
-                onView={handleViewForm}
-                showSignButton={false}
-                lazyLoadDetails
-                statusPillVariant={isHrList ? 'toReceive' : 'activeDisabled'}
-                showReceiveButton={isHrList && hasHrCopyAccess}
-                onReceive={handleReceiveCopy}
-                showDownloadButton={!isHrList}
-                showPendingReceiverSignatureBadge
-              />
-            ))}
+            .map((form: AccountabilityForm) =>
+              form.formOrigin === 'clearance' ? (
+                <ClearanceFormCard
+                  key={form.id}
+                  form={form}
+                  onView={handleViewForm}
+                />
+              ) : (
+                <AccountabilityFormCard
+                  key={form.id}
+                  form={form}
+                  onView={handleViewForm}
+                  showSignButton={false}
+                  lazyLoadDetails
+                  statusPillVariant={isHrList ? 'toReceive' : 'activeDisabled'}
+                  showReceiveButton={isHrList && hasHrCopyAccess}
+                  onReceive={handleReceiveCopy}
+                  showDownloadButton={!isHrList}
+                  showPendingReceiverSignatureBadge
+                />
+              )
+            )}
         </div>
         {formList.length > PAGE_SIZE && (
           <div className="flex items-center justify-center gap-4 pt-6">
@@ -515,16 +527,15 @@ export default function AccountabilityFormsPage() {
                     <Label className="text-sm font-medium text-muted-foreground mb-1.5 block">
                       Search
                     </Label>
-                    <div className="relative">
-                      <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 w-4 h-4" />
-                      <Input
-                        type="text"
-                        placeholder="Search form number, employee, assets, department, company..."
-                        value={searchQuery}
-                        onChange={e => setSearchQuery(e.target.value)}
-                        className="pl-10 max-w-md"
-                      />
-                    </div>
+                    <SearchWithMultiFilter
+                      value={searchQuery}
+                      onChange={setSearchQuery}
+                      selectedFilters={searchFilters}
+                      onSelectedFiltersChange={setSearchFilters}
+                      filterOptions={ACCOUNTABILITY_FILTER_OPTIONS}
+                      placeholder="Search form number, employee, assets, department, company..."
+                      className="max-w-md"
+                    />
                   </div>
                   <div className="flex flex-col sm:flex-row gap-4 sm:items-end flex-wrap">
                     {showCompanyFilter && (
@@ -624,7 +635,7 @@ export default function AccountabilityFormsPage() {
                         effectiveAssetTypeFilter === 'all'
                           ? 'bg-red-600 text-white hover:bg-red-700 hover:text-white border-red-600'
                           : ''
-                    }
+                      }
                     >
                       All Assets
                     </Button>
@@ -636,7 +647,7 @@ export default function AccountabilityFormsPage() {
                         effectiveAssetTypeFilter === 'it'
                           ? 'bg-red-600 text-white hover:bg-red-700 hover:text-white border-red-600'
                           : ''
-                    }
+                      }
                     >
                       IT Assets
                     </Button>
@@ -648,7 +659,7 @@ export default function AccountabilityFormsPage() {
                         effectiveAssetTypeFilter === 'admin'
                           ? 'bg-red-600 text-white hover:bg-red-700 hover:text-white border-red-600'
                           : ''
-                    }
+                      }
                     >
                       Admin Assets
                     </Button>
@@ -683,16 +694,15 @@ export default function AccountabilityFormsPage() {
                     <Label className="text-sm font-medium text-muted-foreground mb-1.5 block">
                       Search
                     </Label>
-                    <div className="relative">
-                      <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 w-4 h-4" />
-                      <Input
-                        type="text"
-                        placeholder="Search form number, employee, assets, department, company..."
-                        value={searchQuery}
-                        onChange={e => setSearchQuery(e.target.value)}
-                        className="pl-10 max-w-md"
-                      />
-                    </div>
+                    <SearchWithMultiFilter
+                      value={searchQuery}
+                      onChange={setSearchQuery}
+                      selectedFilters={searchFilters}
+                      onSelectedFiltersChange={setSearchFilters}
+                      filterOptions={ACCOUNTABILITY_FILTER_OPTIONS}
+                      placeholder="Search form number, employee, assets, department, company..."
+                      className="max-w-md"
+                    />
                   </div>
                   <div className="flex flex-col sm:flex-row gap-4 sm:items-end flex-wrap">
                     {showCompanyFilter && (

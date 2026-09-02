@@ -30,4 +30,6 @@ export { generateAssetBorrowingPDF } from './assetBorrowingPdf';
 export type { AssetChecklistData } from './assetChecklistPdf';
 export { generateAssetChecklistPDF } from './assetChecklistPdf';
 
+export { generateAccountabilityClearancePDF } from './accountabilityClearancePdf';
+
 export { generateDashboardPDF } from './dashboardPdf';

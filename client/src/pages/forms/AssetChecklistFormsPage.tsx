@@ -2,8 +2,10 @@
 
 import { useEffect, useMemo, useState } from 'react';
 import { Button } from '@/components/ui/button';
-import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
+import { matchesFormListSearchWithFilters } from '@/utils/formListSearch';
+import { CHECKLIST_FILTER_OPTIONS } from '@/utils/formSearchFilterOptions';
+import { SearchWithMultiFilter } from '@/components/common/SearchWithMultiFilter';
 import { Badge } from '@/components/ui/badge';
 import { Dialog } from '@/components/ui/dialog';
 import { PageHeader } from '@/components/common/PageHeader';
@@ -18,7 +20,7 @@ import { PDFViewer } from '@/components/PDFViewer';
 import { api } from '@/lib/api';
 import { downloadPDF } from '@/lib/pdfGenerator';
 import { generateAssetChecklistPDF } from '@/lib/pdfGenerator/assetChecklistPdf';
-import { Download, Eye, FileText, Search, Package, User, Calendar, ChevronLeft, ChevronRight } from 'lucide-react';
+import { Download, Eye, FileText, Package, User, Calendar, ChevronLeft, ChevronRight } from 'lucide-react';
 import { toast } from 'sonner';
 import { Card, CardHeader, CardTitle, CardContent } from '@/components/ui/card';
 import { useCurrentUser } from '@/hooks/useCurrentUser';
@@ -92,6 +94,7 @@ export default function AssetChecklistFormsPage() {
   const [checklists, setChecklists] = useState<ChecklistRow[]>([]);
   const [loading, setLoading] = useState(true);
   const [searchQuery, setSearchQuery] = useState('');
+  const [searchFilters, setSearchFilters] = useState<string[]>(['all']);
   const [companyFilterId, setCompanyFilterId] = useState('');
   const [departmentFilterId, setDepartmentFilterId] = useState('');
   const [assetTypeFilter, setAssetTypeFilter] = useState<AssetTypeFilter>('all');
@@ -217,29 +220,14 @@ export default function AssetChecklistFormsPage() {
       result = result.filter(row => row.asset_scope_type === targetScope);
     }
 
-    // Apply search filter
-    const q = searchQuery.trim().toLowerCase();
-    if (!q) return result;
-
-    return result.filter(row =>
-      [
-        checklistFormNumber(row),
-        row.employee_name,
-        row.employee_department,
-        row.employee_company,
-        row.received_by,
-        row.asset?.name,
-        row.asset?.code,
-        checklistTypeLabel(row),
-      ]
-        .filter(Boolean)
-        .some(value => String(value).toLowerCase().includes(q))
-    );
-  }, [checklists, searchQuery, companyFilterId, departmentFilterId, effectiveAssetTypeFilter]);
+    // Apply search filter (multi-select)
+    if (!searchQuery.trim()) return result;
+    return result.filter(row => matchesFormListSearchWithFilters(row, searchQuery, searchFilters));
+  }, [checklists, searchQuery, searchFilters, companyFilterId, departmentFilterId, effectiveAssetTypeFilter]);
 
   useEffect(() => {
     setCurrentPage(1);
-  }, [searchQuery, companyFilterId, departmentFilterId, effectiveAssetTypeFilter]);
+  }, [searchQuery, searchFilters, companyFilterId, departmentFilterId, effectiveAssetTypeFilter]);
 
   const pageCount = useMemo(
     () => Math.max(1, Math.ceil(filteredChecklists.length / PAGE_SIZE)),
@@ -280,16 +268,15 @@ export default function AssetChecklistFormsPage() {
               <Label className="text-sm font-medium text-muted-foreground mb-1.5 block">
                 Search
               </Label>
-              <div className="relative max-w-md">
-                <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 w-4 h-4" />
-                <Input
-                  type="text"
-                  placeholder="Search form number, employee, asset, received by..."
-                  value={searchQuery}
-                  onChange={e => setSearchQuery(e.target.value)}
-                  className="pl-10"
-                />
-              </div>
+              <SearchWithMultiFilter
+                value={searchQuery}
+                onChange={setSearchQuery}
+                selectedFilters={searchFilters}
+                onSelectedFiltersChange={setSearchFilters}
+                filterOptions={CHECKLIST_FILTER_OPTIONS}
+                placeholder="Search form number, employee, asset, received by..."
+                className="max-w-md"
+              />
             </div>
             <div className="flex flex-col sm:flex-row gap-4 sm:items-end flex-wrap">
               {showCompanyFilter && (

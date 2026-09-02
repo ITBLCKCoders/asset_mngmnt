@@ -50,6 +50,7 @@ import { toast } from 'sonner';
 import { PDFViewer } from '@/components/PDFViewer';
 import {
   AccountabilityFormCard,
+  ClearanceFormCard,
   generateAccountabilityFormPDF,
   type AccountabilityForm,
 } from '@/pages/assets/accountability/accountabilityForm';
@@ -60,6 +61,7 @@ import {
   generateAssetTransferPDF,
   generateAssetBorrowingPDF,
   generateAssetChecklistPDF,
+  generateAccountabilityClearancePDF,
   downloadPDF,
   type AssetReturnData,
   type AssetTransferData,
@@ -3429,12 +3431,45 @@ export default function DocumentsTab({
     try {
       const fullFormResponse = await api.get(`/accountability-forms/${form.id}`);
       const fullForm = fullFormResponse.form;
+      if (fullForm?.formOrigin === 'clearance') {
+        const pdfBlob = await generateAccountabilityClearancePDF(
+          fullForm,
+          currentUser
+        );
+        const pdfUrl = URL.createObjectURL(pdfBlob);
+        setFormPdfUrl(pdfUrl);
+        setShowFormDetail(true);
+        return;
+      }
       const pdfBlob = await generateAccountabilityFormPDF(fullForm);
       const pdfUrl = URL.createObjectURL(pdfBlob);
       setFormPdfUrl(pdfUrl);
       setShowFormDetail(true);
     } catch (error) {
       toast.error('Failed to generate PDF for this accountability form');
+    }
+  };
+
+  const handleDownloadClearanceForm = async (form: AccountabilityForm) => {
+    try {
+      const fullFormResponse = await api.get(`/accountability-forms/${form.id}`);
+      const fullForm = fullFormResponse.form;
+      const pdfBlob = await generateAccountabilityClearancePDF(
+        fullForm,
+        currentUser
+      );
+      const safeNumber = (form.formNumber || 'clearance').replace(
+        /[^a-zA-Z0-9-_]/g,
+        '_'
+      );
+      downloadPDF(
+        pdfBlob,
+        `Asset_Clearance_${form.clearanceScope ?? 'IT'}_${safeNumber}.pdf`
+      );
+      toast.success('Clearance certificate downloaded');
+    } catch (error) {
+      console.error('Failed to download clearance certificate:', error);
+      toast.error('Failed to download clearance certificate');
     }
   };
 
@@ -3737,17 +3772,26 @@ export default function DocumentsTab({
                 </div>
               ) : (
                 <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-                  {filteredForms.map(form => (
-                    <AccountabilityFormCard
-                      key={form.id}
-                      form={form}
-                      onSign={handleSignForm}
-                      onView={handleViewForm}
-                      showDeclineButton
-                      onDecline={handleDeclineAccountabilityForm}
-                      showDownloadButton={false}
-                    />
-                  ))}
+                  {filteredForms.map(form =>
+                    form.formOrigin === 'clearance' ? (
+                      <ClearanceFormCard
+                        key={form.id}
+                        form={form}
+                        onView={handleViewForm}
+                        onDownload={handleDownloadClearanceForm}
+                      />
+                    ) : (
+                      <AccountabilityFormCard
+                        key={form.id}
+                        form={form}
+                        onSign={handleSignForm}
+                        onView={handleViewForm}
+                        showDeclineButton
+                        onDecline={handleDeclineAccountabilityForm}
+                        showDownloadButton={false}
+                      />
+                    )
+                  )}
                 </div>
               )}
             </TabsContent>

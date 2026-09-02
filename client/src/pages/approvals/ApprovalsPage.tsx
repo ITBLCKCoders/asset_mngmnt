@@ -5,7 +5,6 @@ import { Button } from '@/components/ui/button';
 import { PageHeader } from '@/components/common/PageHeader';
 import {
   CheckSquare,
-  Search,
   Download,
   CheckCircle2,
   PackageCheck,
@@ -52,8 +51,11 @@ import type { BorrowRequestRow } from '@/pages/assets/borrowRequestsPage';
 import { useCurrentUser } from '@/hooks/useCurrentUser';
 import { useUserPermissions } from '@/hooks/useUserPermissions';
 import { Shimmer } from '@/components/ui/shimmer';
-import { Input } from '@/components/ui/input';
+import { Label } from '@/components/ui/label';
 import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs';
+import { matchesFormListSearchWithFilters } from '@/utils/formListSearch';
+import { APPROVAL_FILTER_OPTIONS } from '@/utils/formSearchFilterOptions';
+import { SearchWithMultiFilter } from '@/components/common/SearchWithMultiFilter';
 import SmsOtpDialog from '@/components/auth/SmsOtpDialog';
 import { useRef } from 'react';
 import { useSearchParams } from 'react-router-dom';
@@ -120,8 +122,11 @@ export default function ApprovalsPage() {
 
   // ---------- Search (per-tab) ----------
   const [searchQuery, setSearchQuery] = useState('');
+  const [searchFilters, setSearchFilters] = useState<string[]>(['all']);
   const [receiveSearchQuery, setReceiveSearchQuery] = useState('');
+  const [receiveSearchFilters, setReceiveSearchFilters] = useState<string[]>(['all']);
   const [approvedSearchQuery, setApprovedSearchQuery] = useState('');
+  const [approvedSearchFilters, setApprovedSearchFilters] = useState<string[]>(['all']);
 
   // ---------- Pagination (per-tab) ----------
   const [forApprovalPage, setForApprovalPage] = useState(1);
@@ -366,7 +371,7 @@ export default function ApprovalsPage() {
     if (canReceive) fetchReceivePendingApprovals();
   }, [canReceive]);
 
-  // ---------- Filtering ----------
+  // ---------- Filtering (multi-select aware: falls back to global when 'all') ----------
   const searchFilter = (batch: ApprovalBatch, q: string) => {
     if (batch.formType === 'checklist') {
       const c = batch as ChecklistApprovalBatch;
@@ -411,36 +416,47 @@ export default function ApprovalsPage() {
     return false;
   };
 
+  const isAllFilter = (filters: string[]) => filters.length === 0 || filters.includes('all');
+
   const filteredBatches = useMemo(() => {
     if (!searchQuery.trim()) return batches;
+    if (!isAllFilter(searchFilters)) {
+      return batches.filter(b => matchesFormListSearchWithFilters(b, searchQuery, searchFilters));
+    }
     const q = searchQuery.toLowerCase();
     return batches.filter(b => searchFilter(b, q));
-  }, [batches, searchQuery]);
+  }, [batches, searchQuery, searchFilters]);
 
   const filteredReceiveBatches = useMemo(() => {
     if (!receiveSearchQuery.trim()) return receiveBatches;
+    if (!isAllFilter(receiveSearchFilters)) {
+      return receiveBatches.filter(b => matchesFormListSearchWithFilters(b, receiveSearchQuery, receiveSearchFilters));
+    }
     const q = receiveSearchQuery.toLowerCase();
     return receiveBatches.filter(b => searchFilter(b, q));
-  }, [receiveBatches, receiveSearchQuery]);
+  }, [receiveBatches, receiveSearchQuery, receiveSearchFilters]);
 
   const filteredApprovedBatches = useMemo(() => {
     if (!approvedSearchQuery.trim()) return approvedBatches;
+    if (!isAllFilter(approvedSearchFilters)) {
+      return approvedBatches.filter(b => matchesFormListSearchWithFilters(b, approvedSearchQuery, approvedSearchFilters));
+    }
     const q = approvedSearchQuery.toLowerCase();
     return approvedBatches.filter(b => searchFilter(b, q));
-  }, [approvedBatches, approvedSearchQuery]);
+  }, [approvedBatches, approvedSearchQuery, approvedSearchFilters]);
 
   // ---------- Pagination (per-tab) ----------
   useEffect(() => {
     setForApprovalPage(1);
-  }, [searchQuery]);
+  }, [searchQuery, searchFilters]);
 
   useEffect(() => {
     setReceivePage(1);
-  }, [receiveSearchQuery]);
+  }, [receiveSearchQuery, receiveSearchFilters]);
 
   useEffect(() => {
     setApprovedPage(1);
-  }, [approvedSearchQuery]);
+  }, [approvedSearchQuery, approvedSearchFilters]);
 
   const forApprovalPageCount = useMemo(
     () => Math.max(1, Math.ceil(filteredBatches.length / PAGE_SIZE)),
@@ -1183,14 +1199,18 @@ export default function ApprovalsPage() {
 
           {/* ──── For Approval Tab ──── */}
           <TabsContent value="for-approval" className="mt-8">
-            <div className="relative max-w-md mb-6">
-              <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 w-4 h-4" />
-              <Input
-                type="text"
-                placeholder="Search by form number, asset, or returner..."
+            <div className="mb-6">
+              <Label className="text-sm font-medium text-muted-foreground mb-1.5 block">
+                Search
+              </Label>
+              <SearchWithMultiFilter
                 value={searchQuery}
-                onChange={e => setSearchQuery(e.target.value)}
-                className="pl-10"
+                onChange={setSearchQuery}
+                selectedFilters={searchFilters}
+                onSelectedFiltersChange={setSearchFilters}
+                filterOptions={APPROVAL_FILTER_OPTIONS}
+                placeholder="Search by form number, asset, or returner..."
+                className="max-w-md"
               />
             </div>
 
@@ -1214,14 +1234,18 @@ export default function ApprovalsPage() {
           {/* ──── Receive Approve Tab ──── */}
           {canReceive && (
             <TabsContent value="receive" className="mt-8">
-              <div className="relative max-w-md mb-6">
-                <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 w-4 h-4" />
-                <Input
-                  type="text"
-                  placeholder="Search by form number, asset, or returner..."
+              <div className="mb-6">
+                <Label className="text-sm font-medium text-muted-foreground mb-1.5 block">
+                  Search
+                </Label>
+                <SearchWithMultiFilter
                   value={receiveSearchQuery}
-                  onChange={e => setReceiveSearchQuery(e.target.value)}
-                  className="pl-10"
+                  onChange={setReceiveSearchQuery}
+                  selectedFilters={receiveSearchFilters}
+                  onSelectedFiltersChange={setReceiveSearchFilters}
+                  filterOptions={APPROVAL_FILTER_OPTIONS}
+                  placeholder="Search by form number, asset, or returner..."
+                  className="max-w-md"
                 />
               </div>
 
@@ -1245,14 +1269,18 @@ export default function ApprovalsPage() {
 
           {/* ──── Approved Tab ──── */}
           <TabsContent value="approved" className="mt-8">
-            <div className="relative max-w-md mb-6">
-              <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 w-4 h-4" />
-              <Input
-                type="text"
-                placeholder="Search by form number, asset, or returner..."
+            <div className="mb-6">
+              <Label className="text-sm font-medium text-muted-foreground mb-1.5 block">
+                Search
+              </Label>
+              <SearchWithMultiFilter
                 value={approvedSearchQuery}
-                onChange={e => setApprovedSearchQuery(e.target.value)}
-                className="pl-10"
+                onChange={setApprovedSearchQuery}
+                selectedFilters={approvedSearchFilters}
+                onSelectedFiltersChange={setApprovedSearchFilters}
+                filterOptions={APPROVAL_FILTER_OPTIONS}
+                placeholder="Search by form number, asset, or returner..."
+                className="max-w-md"
               />
             </div>
 

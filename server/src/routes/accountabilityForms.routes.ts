@@ -11,6 +11,8 @@ import {
   signAccountabilityFormChecklistsHandler,
   getAccountabilityFormsByAssetIdHandler,
   checkUnsignedAccountabilityFormsHandler,
+  getClearanceEligibilityHandler,
+  createClearanceHandler,
 } from '../controllers/accountabilityForms.controller.js';
 import { authenticate } from '../middleware/authenticate.js';
 
@@ -47,6 +49,9 @@ router.get('/', getAccountabilityFormsHandler);
  *       401: { description: Unauthorized }
  */
 router.get('/asset/:assetId', getAccountabilityFormsByAssetIdHandler);
+
+router.get('/clearance/eligibility', getClearanceEligibilityHandler);
+router.post('/clearance', createClearanceHandler);
 
 router.get('/:formId/checklists', getAccountabilityFormChecklistsHandler);
 router.post(

@@ -3673,4 +3673,137 @@ export function AccountabilityFormDetail({
   );
 }
 
+/**
+ * ClearanceFormCard — minimal card for an Asset Clearance Certificate
+ * (formOrigin === 'clearance'). Reuses the company branding of the
+ * accountability form but exposes only View / Download (no signing,
+ * declining, or HR-receive actions).
+ */
+export function ClearanceFormCard({
+  form,
+  onView,
+  onDownload,
+}: {
+  form: AccountabilityForm;
+  onView?: (form: AccountabilityForm) => void;
+  onDownload?: (form: AccountabilityForm) => void;
+}) {
+  const scope = form.clearanceScope ?? 'IT';
+  const isIT = scope === 'IT';
+  const scopeLabel = isIT ? 'IT Clearance' : 'Admin Clearance';
+  const ScopeIcon = isIT ? ShieldCheck : ShieldCheck;
+  const clearedDate = form.clearedAt
+    ? new Date(form.clearedAt).toLocaleDateString()
+    : new Date(form.created_at).toLocaleDateString();
+  const reasonLabel =
+    form.clearanceReason === 'transfer'
+      ? 'Generated from company/department transfer'
+      : 'Generated from asset return';
+
+  return (
+    <Card className="shadow-md hover:shadow-xl transition-all duration-200 border-slate-200 bg-white flex flex-col overflow-hidden">
+      <CardHeader className="pb-3">
+        <div className="flex items-start justify-between">
+          <div className="flex items-center gap-3">
+            <div
+              className={`p-2.5 shadow-sm rounded-xl ${
+                isIT
+                  ? 'bg-gradient-to-br from-emerald-500 to-emerald-600'
+                  : 'bg-gradient-to-br from-amber-500 to-amber-600'
+              }`}
+            >
+              <ScopeIcon className="h-5 w-5 text-white" />
+            </div>
+            <div>
+              <p
+                className={`text-[11px] font-semibold uppercase tracking-wider ${
+                  isIT ? 'text-emerald-600' : 'text-amber-600'
+                }`}
+              >
+                {scopeLabel}
+              </p>
+              <CardTitle className="text-lg">{form.formNumber}</CardTitle>
+              <p className="text-sm text-gray-500">Issued {clearedDate}</p>
+            </div>
+          </div>
+          <Badge
+            variant="secondary"
+            className={
+              isIT
+                ? 'bg-emerald-100 text-emerald-800'
+                : 'bg-amber-100 text-amber-800'
+            }
+          >
+            Cleared
+          </Badge>
+        </div>
+      </CardHeader>
+      <CardContent className="space-y-3 pt-0">
+        <div className="flex items-start gap-3">
+          <User className="h-4 w-4 text-gray-400 mt-0.5 flex-shrink-0" />
+          <div className="flex-1 min-w-0">
+            <p className="font-medium text-sm">
+              {form.user.first_name} {form.user.last_name}
+            </p>
+            <p className="text-xs text-gray-500">{reasonLabel}</p>
+          </div>
+        </div>
+        {form.referenceDisabledFormNumbers &&
+          form.referenceDisabledFormNumbers.length > 0 && (
+            <div className="flex items-start gap-3">
+              <FileText className="h-4 w-4 text-gray-400 mt-0.5 flex-shrink-0" />
+              <div className="flex-1 min-w-0">
+                <p className="text-xs font-medium text-gray-500 uppercase tracking-wide">
+                  Disabled Form(s)
+                </p>
+                <p className="text-sm text-gray-700 break-words">
+                  {form.referenceDisabledFormNumbers.join(', ')}
+                </p>
+              </div>
+            </div>
+          )}
+        <div className="flex items-start gap-3">
+          <ShieldCheck className="h-4 w-4 text-gray-400 mt-0.5 flex-shrink-0" />
+          <div className="flex-1 min-w-0">
+            <p className="text-xs font-medium text-gray-500 uppercase tracking-wide">
+              Scope
+            </p>
+            <p className="text-sm text-gray-700">
+              {scope} Department — 0 tangible, 0 intangible assets remaining
+            </p>
+          </div>
+        </div>
+      </CardContent>
+      <div className="flex gap-2 p-4 mt-auto border-t border-slate-100">
+        <Button
+          variant="outline"
+          size="sm"
+          onClick={() => onView?.(form)}
+          className={`flex-1 text-white border-transparent shadow-sm ${
+            isIT
+              ? 'bg-emerald-600 hover:bg-white hover:text-emerald-600 hover:border-emerald-600'
+              : 'bg-amber-600 hover:bg-white hover:text-amber-600 hover:border-amber-600'
+          }`}
+        >
+          <Eye className="h-4 w-4 mr-2" />
+          View
+        </Button>
+        <Button
+          variant="outline"
+          size="sm"
+          onClick={() => onDownload?.(form)}
+          className={`flex-1 text-white border-transparent shadow-sm ${
+            isIT
+              ? 'bg-emerald-600 hover:bg-white hover:text-emerald-600 hover:border-emerald-600'
+              : 'bg-amber-600 hover:bg-white hover:text-amber-600 hover:border-amber-600'
+          }`}
+        >
+          <Download className="h-4 w-4 mr-2" />
+          Download
+        </Button>
+      </div>
+    </Card>
+  );
+}
+
 export default AccountabilityFormCard;

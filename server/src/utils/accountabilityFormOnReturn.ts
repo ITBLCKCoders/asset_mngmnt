@@ -1,10 +1,15 @@
 import type { Request } from 'express';
 import { pool } from '../db.js';
 import { createAuditLog } from './audit.js';
-import { createAccountabilityFormHandler } from '../controllers/accountabilityForms.controller.js';
+import {
+  createAccountabilityFormHandler,
+  type ClearanceScope,
+  type ClearanceReason,
+} from '../controllers/accountabilityForms.controller.js';
 import type { AuthRequest } from '../middleware/authenticate.js';
 import type { Response } from 'express';
 import logger from '../logger.js';
+import { classifyDepartmentScopeByName } from './assetScope.js';
 
 /**
  * When assets are returned:
@@ -16,6 +21,20 @@ export type ProcessSignature = {
   digital_signature?: string;
 } | null;
 
+export interface ClearanceEligibility {
+  eligibleScopes: ClearanceScope[];
+  disabledFormNumbersByScope: Record<ClearanceScope, string[]>;
+  detailsByScope: Record<
+    ClearanceScope,
+    {
+      remainingTangible: number;
+      remainingIntangible: number;
+      hasOtherActiveForm: boolean;
+      hasRecentClearance: boolean;
+    }
+  >;
+}
+
 export async function handleAccountabilityFormOnAssetReturn(
   userId: string,
   returnedAssetIds: string[],
@@ -25,21 +44,47 @@ export async function handleAccountabilityFormOnAssetReturn(
   createdBy: string,
   req: Request,
   _processSignature?: ProcessSignature
-): Promise<void> {
-  if (returnedAssetIds.length === 0) return;
+): Promise<ClearanceEligibility> {
+  const emptyEligibility: ClearanceEligibility = {
+    eligibleScopes: [],
+    disabledFormNumbersByScope: { IT: [], Admin: [] },
+    detailsByScope: {
+      IT: {
+        remainingTangible: 0,
+        remainingIntangible: 0,
+        hasOtherActiveForm: false,
+        hasRecentClearance: false,
+      },
+      Admin: {
+        remainingTangible: 0,
+        remainingIntangible: 0,
+        hasOtherActiveForm: false,
+        hasRecentClearance: false,
+      },
+    },
+  };
+
+  if (returnedAssetIds.length === 0) return emptyEligibility;
 
   const idSet = new Set(returnedAssetIds.map(id => String(id)));
 
-  // Fetch processor's digital initials from profile
+  // Fetch processor's digital initials from profile — prefer the signature
+  // that was actually used to sign the return/transfer form (so the
+  // clearance `Issued by:` matches the processor's drawn signature).
   let processorDigitalSignature: string | null = null;
-  try {
-    const [processorRows] = (await pool.execute(
-      'SELECT digital_signature FROM users WHERE userID = ?',
-      [createdBy]
-    )) as any[];
-    processorDigitalSignature = processorRows[0]?.digital_signature || null;
-  } catch (err) {
-    logger.error('Failed to fetch processor digital initials:', err);
+  const preferredSig = _processSignature?.digital_signature?.trim();
+  if (preferredSig) {
+    processorDigitalSignature = preferredSig;
+  } else {
+    try {
+      const [processorRows] = (await pool.execute(
+        'SELECT digital_signature FROM users WHERE userID = ?',
+        [createdBy]
+      )) as any[];
+      processorDigitalSignature = processorRows[0]?.digital_signature || null;
+    } catch (err) {
+      logger.error('Failed to fetch processor digital initials:', err);
+    }
   }
 
   // 1. Find and disable any accountability forms for this user that contain any returned asset (do not update form content)
@@ -48,6 +93,11 @@ export async function handleAccountabilityFormOnAssetReturn(
      WHERE user_id = ? AND deleted_at IS NULL`,
     [userId]
   )) as any[];
+
+  const disabledFormNumbersByScope: Record<ClearanceScope, string[]> = {
+    IT: [],
+    Admin: [],
+  };
 
   for (const form of formRows) {
     const isSingleAsset = form.asset_id && idSet.has(String(form.asset_id));
@@ -68,6 +118,48 @@ export async function handleAccountabilityFormOnAssetReturn(
       })();
     if (!isSingleAsset && !isMultiContaining) continue;
 
+    // Classify the disabled form's scope using its assets_data. Department
+    // classifications follow `classifyDepartmentScopeByName` (same as the
+    // accountability PDF). Fallback to single-asset department lookup if the
+    // form was stored as a legacy single-asset row.
+    const formScopes = new Set<ClearanceScope>();
+    try {
+      const data =
+        typeof form.assets_data === 'string'
+          ? JSON.parse(form.assets_data)
+          : form.assets_data;
+      const assets = Array.isArray(data?.assets) ? data.assets : [];
+      for (const a of assets) {
+        const scope = classifyDepartmentScopeByName(
+          a?.department || a?.categoryDepartment || ''
+        );
+        if (scope === 'IT' || scope === 'Admin') {
+          formScopes.add(scope);
+        }
+      }
+      if (formScopes.size === 0 && form.asset_id) {
+        const [singleRows] = (await pool.execute(
+          `SELECT d.name as department_name
+           FROM assets a
+           LEFT JOIN asset_categories ac ON a.category_id = ac.categoryID
+           LEFT JOIN asset_mngmnt_departments d ON ac.department_id = d.departmentID
+           WHERE a.assetID = ? AND a.deleted_at IS NULL`,
+          [form.asset_id]
+        )) as any[];
+        const scope = classifyDepartmentScopeByName(
+          singleRows[0]?.department_name || ''
+        );
+        if (scope === 'IT' || scope === 'Admin') {
+          formScopes.add(scope);
+        }
+      }
+    } catch (err) {
+      logger.warn(
+        `Failed to classify disabled form ${form.formID} scope:`,
+        err as Record<string, unknown>
+      );
+    }
+
     await pool.execute(
       'UPDATE accountability_forms SET status = "Disabled", updated_at = NOW() WHERE formID = ?',
       [form.formID]
@@ -84,6 +176,10 @@ export async function handleAccountabilityFormOnAssetReturn(
       ipAddress: req.ip,
       userAgent: req.get ? req.get('User-Agent') : 'Unknown',
     });
+
+    for (const scope of formScopes) {
+      disabledFormNumbersByScope[scope].push(String(form.form_number));
+    }
   }
 
   // 2. Create new accountability form(s) with user's currently assigned assets only
@@ -93,6 +189,14 @@ export async function handleAccountabilityFormOnAssetReturn(
      WHERE aa.user_id = ? AND aa.status = 'Active' AND aa.deleted_at IS NULL`,
     [userId]
   )) as any[];
+
+  // 2a. Per-scope clearance eligibility — DO NOT auto-create. The
+  // processor will see a modal `Issue an accountability clearance` with a
+  // checkbox default checked and must explicitly confirm per scope.
+  const clearanceEligibility = await getClearanceEligibility({
+    userId,
+    disabledFormNumbersByScope,
+  });
 
   if (activeAssignments.length === 0) {
     // No tangible assets remain. Intangible assets are tracked in a separate
@@ -112,7 +216,7 @@ export async function handleAccountabilityFormOnAssetReturn(
       [userId]
     )) as any[];
 
-    if (activeIntangibles.length === 0) return;
+    if (activeIntangibles.length === 0) return clearanceEligibility;
 
     // Group by department so each department gets its own form (mirrors the
     // tangible grouping above and the form's per-department flow).
@@ -170,7 +274,7 @@ export async function handleAccountabilityFormOnAssetReturn(
       }
     }
 
-    return;
+    return clearanceEligibility;
   }
 
   // Get categories/departments for active assets
@@ -320,7 +424,7 @@ export async function handleAccountabilityFormOnAssetReturn(
       returnedAssetDeptNames.has(d)
     );
     if (!hasOverlapWithReturned) {
-      return;
+      return clearanceEligibility;
     }
 
     if (allAssetsRows.length > 0) {
@@ -366,5 +470,282 @@ export async function handleAccountabilityFormOnAssetReturn(
         );
       }
     }
+  }
+
+  return clearanceEligibility;
+}
+
+/**
+ * Check eligibility for per-scope clearance without creating. Used by the
+ * opt-in modal: the processor sees a checkbox default checked for each
+ * eligible scope and must confirm to actually create the certificate.
+ */
+export async function getClearanceEligibility(params: {
+  userId: string;
+  disabledFormNumbersByScope: Record<ClearanceScope, string[]>;
+}): Promise<ClearanceEligibility> {
+  const { userId, disabledFormNumbersByScope } = params;
+
+  const eligibility: ClearanceEligibility = {
+    eligibleScopes: [],
+    disabledFormNumbersByScope,
+    detailsByScope: {
+      IT: {
+        remainingTangible: 0,
+        remainingIntangible: 0,
+        hasOtherActiveForm: false,
+        hasRecentClearance: false,
+      },
+      Admin: {
+        remainingTangible: 0,
+        remainingIntangible: 0,
+        hasOtherActiveForm: false,
+        hasRecentClearance: false,
+      },
+    },
+  };
+
+  const scopes: ClearanceScope[] = ['IT', 'Admin'];
+  for (const scope of scopes) {
+    if (disabledFormNumbersByScope[scope].length === 0) continue;
+
+    let hasRecentClearance = false;
+    let hasOtherActiveForm = false;
+    let remainingTangible = 0;
+    let remainingIntangible = 0;
+
+    // Dedup: skip if a clearance for this scope already exists in the last
+    // 90 days (Pending or Signed). A Disabled clearance is treated as
+    // historical and a new one can be issued.
+    const [existingClearance] = (await pool.execute(
+      `SELECT formID, form_number FROM accountability_forms
+       WHERE user_id = ? AND deleted_at IS NULL
+         AND status IN ('Pending', 'Signed')
+         AND JSON_UNQUOTE(JSON_EXTRACT(assets_data, '$.form_origin')) = 'clearance'
+         AND JSON_UNQUOTE(JSON_EXTRACT(assets_data, '$.clearance_scope')) = ?
+         AND created_at >= DATE_SUB(NOW(), INTERVAL 90 DAY)
+       ORDER BY created_at DESC LIMIT 1`,
+      [userId, scope]
+    )) as any[];
+    if (existingClearance.length > 0) {
+      hasRecentClearance = true;
+      logger.info(
+        `Skipping ${scope} clearance for user ${userId}: recent clearance ${existingClearance[0].form_number} already exists`
+      );
+    } else {
+      // Count remaining tangibles for this scope
+      const [remainingTangibleRows] = (await pool.execute(
+        `SELECT a.assetID, d.name AS department_name
+         FROM asset_assignments aa
+         INNER JOIN assets a ON aa.asset_id = a.assetID AND a.deleted_at IS NULL
+         LEFT JOIN asset_categories ac ON a.category_id = ac.categoryID
+         LEFT JOIN asset_mngmnt_departments d ON ac.department_id = d.departmentID
+         WHERE aa.user_id = ? AND aa.status = 'Active' AND aa.deleted_at IS NULL`,
+        [userId]
+      )) as any[];
+      const remainingTangibleForScope = (remainingTangibleRows as any[]).filter(
+        row =>
+          classifyDepartmentScopeByName(row.department_name || '') === scope
+      );
+      remainingTangible = remainingTangibleForScope.length;
+
+      // Count remaining intangibles for this scope (intangibles use
+      // `type_department` for their scope, see
+      // `getActiveIntangibleAssetsByUserAndDepartment` in
+      // `accountabilityForm.repository.ts:422`).
+      const [remainingIntangibleRows] = (await pool.execute(
+        `SELECT ia.id, td.name AS type_department_name, d.name AS department_name
+         FROM intangible_asset_assignments iaa
+         INNER JOIN intangible_assets ia
+           ON iaa.intangible_asset_id = ia.id AND ia.deleted_at IS NULL
+         LEFT JOIN intangible_asset_types iat
+           ON ia.type = iat.name
+          AND iat.company_id = ia.company_id
+          AND iat.deleted_at IS NULL
+         LEFT JOIN asset_mngmnt_departments td
+           ON iat.department_id = td.departmentID
+          AND td.deleted_at IS NULL
+         LEFT JOIN asset_mngmnt_departments d
+           ON iaa.department_id = d.departmentID
+          AND d.deleted_at IS NULL
+         WHERE iaa.user_id = ? AND iaa.status = 'Active' AND iaa.deleted_at IS NULL`,
+        [userId]
+      )) as any[];
+      const remainingIntangibleForScope = (
+        remainingIntangibleRows as any[]
+      ).filter(row => {
+        // Intangibles follow the same scope rule as the PDF: the scope is
+        // determined by the Intangible Asset Type's department
+        // (type_department) only. Fallback to assignment department when
+        // type has no department.
+        const scopeByType = classifyDepartmentScopeByName(
+          row.type_department_name || ''
+        );
+        if (scopeByType === scope) return true;
+        if (scopeByType === 'Other') {
+          return (
+            classifyDepartmentScopeByName(row.department_name || '') === scope
+          );
+        }
+        return false;
+      });
+      remainingIntangible = remainingIntangibleForScope.length;
+
+      // Check whether another active accountability form still covers this
+      // scope (Pending or Signed). A Disabled form does not block clearance.
+      const [otherActiveForms] = (await pool.execute(
+        `SELECT formID, form_number, assets_data FROM accountability_forms
+         WHERE user_id = ? AND deleted_at IS NULL
+           AND status IN ('Pending', 'Signed')`,
+        [userId]
+      )) as any[];
+      const otherActiveFormForScope = (otherActiveForms as any[]).find(
+        form => {
+          try {
+            const data =
+              typeof form.assets_data === 'string'
+                ? JSON.parse(form.assets_data)
+                : form.assets_data;
+            const assets = Array.isArray(data?.assets) ? data.assets : [];
+            return assets.some(
+              (a: any) =>
+                classifyDepartmentScopeByName(
+                  a?.department || a?.categoryDepartment || ''
+                ) === scope
+            );
+          } catch {
+            return false;
+          }
+        }
+      );
+      hasOtherActiveForm = !!otherActiveFormForScope;
+
+      if (otherActiveFormForScope) {
+        logger.info(
+          `Skipping ${scope} clearance for user ${userId}: active form ${otherActiveFormForScope.form_number} still covers this scope`
+        );
+      } else if (
+        remainingTangibleForScope.length > 0 ||
+        remainingIntangibleForScope.length > 0
+      ) {
+        logger.info(
+          `Skipping ${scope} clearance for user ${userId}: still has ${remainingTangibleForScope.length} tangible and ${remainingIntangibleForScope.length} intangible assets in this scope`
+        );
+      } else {
+        // Eligible — caller will show the opt-in modal (checkbox default checked)
+        // instead of auto-creating.
+        eligibility.eligibleScopes.push(scope);
+      }
+    }
+
+    eligibility.detailsByScope[scope] = {
+      remainingTangible,
+      remainingIntangible,
+      hasOtherActiveForm,
+      hasRecentClearance,
+    };
+  }
+
+  return eligibility;
+}
+
+/**
+ * Explicitly create a clearance certificate for a single scope.
+ * Called only when the IT/Admin processor confirms the opt-in modal
+ * (checkbox default checked). The `Issued by:` block will show the
+ * processor's name/signature/date/time.
+ */
+export async function createClearanceForScope(params: {
+  userId: string;
+  scope: ClearanceScope;
+  createdBy: string;
+  req: Request;
+  processorDigitalSignature: string | null;
+  referenceDisabledFormNumbers: string[];
+  clearanceReason?: ClearanceReason;
+}): Promise<void> {
+  const {
+    userId,
+    scope,
+    createdBy,
+    req,
+    processorDigitalSignature,
+    referenceDisabledFormNumbers,
+    clearanceReason: clearanceReasonParam,
+  } = params;
+
+  const [userRows] = (await pool.execute(
+    `SELECT u.company_id, u.department_id, d.name as department_name
+     FROM users u
+     LEFT JOIN asset_mngmnt_departments d
+       ON u.department_id = d.departmentID AND d.deleted_at IS NULL
+     WHERE u.userID = ? LIMIT 1`,
+    [userId]
+  )) as any[];
+  const userRow = (userRows as any[])[0] ?? null;
+  const companyId = userRow?.company_id ?? null;
+  if (!companyId) {
+    logger.warn(
+      `Cannot generate ${scope} clearance for user ${userId}: no company found`
+    );
+    return;
+  }
+
+  const [scopeDeptRows] = (await pool.execute(
+    `SELECT departmentID FROM asset_mngmnt_departments
+     WHERE company_id = ? AND deleted_at IS NULL
+       AND (name LIKE ? OR name LIKE ?)
+     ORDER BY (name LIKE '%Information Technology%') DESC, (name LIKE '%Administration%') DESC
+     LIMIT 1`,
+    [
+      companyId,
+      scope === 'IT' ? '%IT%' : '%Admin%',
+      scope === 'IT' ? '%Information Technology%' : '%Administration%',
+    ]
+  )) as any[];
+  const scopeDepartmentId = scopeDeptRows[0]?.departmentID ?? null;
+
+  const clearanceReason: ClearanceReason =
+    clearanceReasonParam ??
+    ((req as { body?: { clearanceReason?: string } })?.body
+      ?.clearanceReason === 'transfer'
+      ? 'transfer'
+      : 'return');
+
+  const clearanceReq = {
+    ...req,
+    user: { userID: createdBy },
+    body: {
+      userId,
+      departmentId: scopeDepartmentId,
+      locationId: null,
+      locationRoomId: null,
+      assets: [],
+      formOrigin: 'clearance',
+      clearanceScope: scope,
+      clearanceReason,
+      referenceDisabledFormNumbers,
+      clearedAt: new Date().toISOString(),
+      issuerSignature: processorDigitalSignature,
+      itCopySignature: processorDigitalSignature,
+      skipNotification: false,
+    },
+  } as AuthRequest;
+
+  const clearanceRes = {
+    status: () => ({ json: () => ({}) }),
+  } as unknown as Response;
+
+  try {
+    await createAccountabilityFormHandler(clearanceReq, clearanceRes);
+    logger.info(
+      `Created ${scope} clearance certificate for user ${userId} (disabled forms: ${referenceDisabledFormNumbers.join(', ')})`
+    );
+  } catch (err) {
+    logger.error(
+      `Failed to create ${scope} clearance certificate for user ${userId}:`,
+      err as Record<string, unknown>
+    );
+    throw err;
   }
 }

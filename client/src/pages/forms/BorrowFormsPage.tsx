@@ -2,7 +2,6 @@
 
 import { useEffect, useMemo, useState } from 'react';
 import { Button } from '@/components/ui/button';
-import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { PageHeader } from '@/components/common/PageHeader';
 import {
@@ -20,10 +19,11 @@ import {
   buildBorrowDataForPDFFromBatch,
   type AssetBorrowFormBatch,
 } from '@/pages/profile/profileComponents/tabs/documentsTab';
-import { matchesFormListSearch } from '@/utils/formListSearch';
+import { matchesFormListSearchWithFilters } from '@/utils/formListSearch';
+import { BORROW_FILTER_OPTIONS } from '@/utils/formSearchFilterOptions';
+import { SearchWithMultiFilter } from '@/components/common/SearchWithMultiFilter';
 import {
   HandHelping,
-  Search,
   Download,
   ChevronLeft,
   ChevronRight,
@@ -60,6 +60,7 @@ export default function BorrowFormsPage() {
   const [batches, setBatches] = useState<AssetBorrowFormBatch[]>([]);
   const [loading, setLoading] = useState(true);
   const [searchQuery, setSearchQuery] = useState('');
+  const [searchFilters, setSearchFilters] = useState<string[]>(['all']);
   const [companyFilterId, setCompanyFilterId] = useState('');
   const [departmentFilterId, setDepartmentFilterId] = useState('');
   const [assetTypeFilter, setAssetTypeFilter] = useState<AssetTypeFilter>('all');
@@ -187,13 +188,13 @@ export default function BorrowFormsPage() {
   const filteredBatches = useMemo(() => {
     if (!searchQuery.trim()) return orgFilteredBatches;
     return orgFilteredBatches.filter(batch =>
-      matchesFormListSearch(batch, searchQuery)
+      matchesFormListSearchWithFilters(batch, searchQuery, searchFilters)
     );
-  }, [orgFilteredBatches, searchQuery]);
+  }, [orgFilteredBatches, searchQuery, searchFilters]);
 
   useEffect(() => {
     setCurrentPage(1);
-  }, [searchQuery, companyFilterId, departmentFilterId, effectiveAssetTypeFilter]);
+  }, [searchQuery, searchFilters, companyFilterId, departmentFilterId, effectiveAssetTypeFilter]);
 
   const pageCount = useMemo(
     () => Math.max(1, Math.ceil(filteredBatches.length / PAGE_SIZE)),
@@ -244,16 +245,15 @@ export default function BorrowFormsPage() {
                 <Label className="text-sm font-medium text-muted-foreground mb-1.5 block">
                   Search
                 </Label>
-                <div className="relative max-w-md">
-                  <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 w-4 h-4" />
-                  <Input
-                    type="text"
-                    placeholder="Search form number, asset, requester, department, purpose..."
-                    value={searchQuery}
-                    onChange={e => setSearchQuery(e.target.value)}
-                    className="pl-10"
-                  />
-                </div>
+                <SearchWithMultiFilter
+                  value={searchQuery}
+                  onChange={setSearchQuery}
+                  selectedFilters={searchFilters}
+                  onSelectedFiltersChange={setSearchFilters}
+                  filterOptions={BORROW_FILTER_OPTIONS}
+                  placeholder="Search form number, asset, requester, department, purpose..."
+                  className="max-w-md"
+                />
               </div>
               <div className="flex flex-col sm:flex-row gap-4 sm:items-end flex-wrap">
                 {showCompanyFilter && (

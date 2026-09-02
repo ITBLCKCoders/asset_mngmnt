@@ -71,6 +71,8 @@ import {
 } from '@/pages/profile/profileComponents/tabs/documentsTab';
 import { generateAssetTransferPDF, downloadPDF } from '@/lib/pdfGenerator';
 import { proxyCloudinaryUrl } from '@/utils/cloudinaryProxy';
+import { IssueClearanceModal } from '@/pages/assets/accountability/components/IssueClearanceModal';
+import type { ClearanceScope } from '@/pages/assets/accountability/accountabilityFormTypes';
 
 const MAX_CONDITION_IMAGES = 5;
 const VALID_IMAGE_TYPES = [
@@ -207,6 +209,13 @@ export default function TransferRequestsPage() {
     receivedBy: string;
     newAssignment: any;
     intangibleAssetItems?: { id: string; notes: string }[];
+  } | null>(null);
+  const [clearanceModal, setClearanceModal] = useState<{
+    open: boolean;
+    userId: string;
+    userName: string;
+    eligibleScopes: ClearanceScope[];
+    disabledFormNumbersByScope: Record<ClearanceScope, string[]>;
   } | null>(null);
 
   const fetchDepartments = async () => {
@@ -363,6 +372,24 @@ export default function TransferRequestsPage() {
     }
   };
 
+  const handleClearanceConfirm = async (scopes: ClearanceScope[]) => {
+    if (!clearanceModal) return;
+    try {
+      for (const scope of scopes) {
+        await api.post('/accountability-forms/clearance', {
+          userId: clearanceModal.userId,
+          clearanceScope: scope,
+          referenceDisabledFormNumbers: clearanceModal.disabledFormNumbersByScope[scope],
+          clearanceReason: 'transfer',
+        });
+      }
+      toast.success('Clearance issued successfully');
+    } catch (err: unknown) {
+      const e = err as { data?: { error?: string } };
+      toast.error(e?.data?.error ?? 'Failed to issue clearance');
+    }
+  };
+
   const handleExecuteTransfer = async () => {
     if (!selectedBatch) return;
     if (!receivedBy) {
@@ -425,6 +452,29 @@ export default function TransferRequestsPage() {
       setSelectedBatch(null);
       await fetchApproved();
       await fetchProcessed();
+      if (selectedBatch.user_id) {
+        const transferrerName = formatTransferFromNames(selectedBatch);
+        console.log('[clearance] checking eligibility for transferrer', selectedBatch.user_id);
+        try {
+          const elig = await api.get<{ eligibleScopes?: ClearanceScope[]; disabledFormNumbersByScope?: Record<ClearanceScope, string[]> }>('/accountability-forms/clearance/eligibility?userId=' + selectedBatch.user_id);
+          console.log('[clearance] eligibility response:', elig);
+          if (elig.eligibleScopes?.length) {
+            setClearanceModal({
+              open: true,
+              userId: selectedBatch.user_id,
+              userName: transferrerName || 'Employee',
+              eligibleScopes: elig.eligibleScopes,
+              disabledFormNumbersByScope: elig.disabledFormNumbersByScope ?? { IT: [], Admin: [] },
+            });
+          } else {
+            console.log('[clearance] no eligible scopes for transferrer', selectedBatch.user_id);
+          }
+        } catch (err) {
+          console.warn('[clearance] eligibility check failed (non-critical):', err);
+        }
+      } else {
+        console.log('[clearance] no selectedBatch.user_id, skipping eligibility check');
+      }
     } catch (err: any) {
       const msg =
         err?.data?.error ||
@@ -524,6 +574,30 @@ export default function TransferRequestsPage() {
         setSelectedBatch(null);
         await fetchApproved();
         await fetchProcessed();
+        const transferrerId = selectedBatch?.user_id;
+        if (transferrerId) {
+          const transferrerName = selectedBatch ? formatTransferFromNames(selectedBatch) : '';
+          console.log('[clearance] checking eligibility for transferrer', transferrerId);
+          try {
+            const elig = await api.get<{ eligibleScopes?: ClearanceScope[]; disabledFormNumbersByScope?: Record<ClearanceScope, string[]> }>('/accountability-forms/clearance/eligibility?userId=' + transferrerId);
+            console.log('[clearance] eligibility response:', elig);
+            if (elig.eligibleScopes?.length) {
+              setClearanceModal({
+                open: true,
+                userId: transferrerId,
+                userName: transferrerName || 'Employee',
+                eligibleScopes: elig.eligibleScopes,
+                disabledFormNumbersByScope: elig.disabledFormNumbersByScope ?? { IT: [], Admin: [] },
+              });
+            } else {
+              console.log('[clearance] no eligible scopes for transferrer', transferrerId);
+            }
+          } catch (err) {
+            console.warn('[clearance] eligibility check failed (non-critical):', err);
+          }
+        } else {
+          console.log('[clearance] no selectedBatch.user_id, skipping eligibility check');
+        }
       } catch (err: any) {
         const msg =
           err?.data?.error ||
@@ -1862,6 +1936,18 @@ export default function TransferRequestsPage() {
           currentUserPosition={currentUser?.position || ''}
           onNext={handleTransferChecklistNext}
           onFinalSubmit={handleTransferChecklistFinalSubmit}
+        />
+
+        <IssueClearanceModal
+          open={!!clearanceModal?.open}
+          onOpenChange={open => {
+            if (!open) setClearanceModal(null);
+          }}
+          userId={clearanceModal?.userId ?? ''}
+          userName={clearanceModal?.userName ?? ''}
+          eligibleScopes={clearanceModal?.eligibleScopes ?? []}
+          disabledFormNumbersByScope={clearanceModal?.disabledFormNumbersByScope ?? { IT: [], Admin: [] }}
+          onConfirm={handleClearanceConfirm}
         />
       </main>
     </div>
