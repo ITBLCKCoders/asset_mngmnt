@@ -44,9 +44,9 @@ SELECT arf.formID, arf.form_number, arf.user_id, arf.department_id, arf.location
        arf.it_manager_digital_signature, arf.it_manager_signed_by,
        arf.declined_at, arf.declined_by, arf.owner_absent,
        d.name AS form_department_name
-       FROM asset_return_forms arf
-       LEFT JOIN asset_mngmnt_departments d ON arf.department_id = d.departmentID
-       WHERE arf.deleted_at IS NULL ORDER BY arf.created_at DESC`;
+        FROM asset_return_forms arf
+        LEFT JOIN asset_mngmnt_departments d ON arf.department_id = d.departmentID
+        WHERE arf.deleted_at IS NULL ORDER BY arf.created_at DESC`;
 
 export const ASSET_RETURN_FORMS_LIST_SQL_FALLBACK = `
 SELECT arf.formID, arf.form_number, arf.user_id, arf.department_id, arf.location_id, arf.location_room_id, arf.created_by, arf.created_at, arf.updated_at, arf.deleted_at,
@@ -59,9 +59,9 @@ SELECT arf.formID, arf.form_number, arf.user_id, arf.department_id, arf.location
        arf.it_manager_digital_signature, arf.it_manager_signed_by,
        arf.declined_at, arf.declined_by,
        d.name AS form_department_name
-       FROM asset_return_forms arf
-       LEFT JOIN asset_mngmnt_departments d ON arf.department_id = d.departmentID
-       WHERE arf.deleted_at IS NULL ORDER BY arf.created_at DESC`;
+        FROM asset_return_forms arf
+        LEFT JOIN asset_mngmnt_departments d ON arf.department_id = d.departmentID
+        WHERE arf.deleted_at IS NULL ORDER BY arf.created_at DESC`;
 
 export function buildReturnScopeClause(
   companyId?: string,

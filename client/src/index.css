@@ -195,6 +195,15 @@ select:focus {
   border-color: #3e4554 !important;
 }
 
+/* react-phone-number-input: keep the inner <input> transparent so it follows
+   the `.PhoneInput` wrapper background. Browsers paint a native white input by
+   default, so in dark mode the phone field showed light (`--foreground`) text
+   on an opaque white box surrounded by the dark card — i.e. the field rendered
+   black/unreadable. Transparent makes it match every other form input. */
+.PhoneInputInput {
+  background-color: transparent;
+}
+
 /* Dark-mode compatibility layer for legacy hardcoded utility classes.
    This keeps pages readable without rewriting every feature file at once. */
 .dark .bg-white {
@@ -1322,6 +1331,12 @@ nav::-webkit-scrollbar-thumb:hover {
 }
 .dark .ring-white\/20 {
   --tw-ring-color: rgb(180 170 160 / 0.18) !important;
+}
+.dark .ring-gray-200 {
+  --tw-ring-color: rgb(255 255 255 / 0.15) !important;
+}
+.dark .ring-white\/10 {
+  --tw-ring-color: rgb(255 255 255 / 0.12) !important;
 }
 
 /* Light solid glass — warm paper, defined borders (complement warm OLED dark).

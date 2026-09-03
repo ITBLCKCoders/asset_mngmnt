@@ -234,6 +234,7 @@ export interface AccountabilityFormDto {
   signed_at: string | null;
   adminCopySignerId?: string | null;
   adminCopySignerName?: string | null;
+  adminCopySignature?: string | null;
   adminCopyCopyType?: 'IT' | 'Admin' | null;
   adminCopySignedAt?: string | null;
   approvedBy?: string | null;
@@ -277,6 +278,8 @@ export interface AccountabilityFormDetailDto {
     first_name: string;
     last_name: string;
   } | null;
+  adminCopySignerName?: string | null;
+  adminCopySignature?: string | null;
   adminCopyCopyType?: 'IT' | 'Admin' | null;
   adminCopySignedAt?: string | null;
   approvedBy?: string | null;

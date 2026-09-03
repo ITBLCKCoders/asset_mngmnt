@@ -385,6 +385,47 @@ export function clearReturnPdfCacheForFormNumber(formNumber: string | null) {
   }
 }
 
+// Cache accountability-form PDF preview object URLs by form id (max 5) so
+// reopening the same form is instant — the object URL stays alive across dialog
+// opens. Invalidated explicitly after sign/decline so stale previews regenerate.
+const ACCOUNTABILITY_PDF_CACHE_MAX = 5;
+const accountabilityFormPdfCache = new Map<string, string>();
+const accountabilityFormPdfCacheOrder: string[] = [];
+
+function getCachedAccountabilityPdfUrl(formId: string | null): string | null {
+  if (!formId) return null;
+  return accountabilityFormPdfCache.get(formId) ?? null;
+}
+
+function setCachedAccountabilityPdfUrl(formId: string | null, url: string) {
+  if (!formId) return;
+  if (accountabilityFormPdfCache.has(formId)) {
+    const old = accountabilityFormPdfCache.get(formId);
+    if (old && old !== url) URL.revokeObjectURL(old);
+  }
+  accountabilityFormPdfCache.set(formId, url);
+  const idx = accountabilityFormPdfCacheOrder.indexOf(formId);
+  if (idx !== -1) accountabilityFormPdfCacheOrder.splice(idx, 1);
+  accountabilityFormPdfCacheOrder.push(formId);
+  while (accountabilityFormPdfCacheOrder.length > ACCOUNTABILITY_PDF_CACHE_MAX) {
+    const evict = accountabilityFormPdfCacheOrder.shift();
+    if (evict) {
+      const u = accountabilityFormPdfCache.get(evict);
+      if (u) URL.revokeObjectURL(u);
+      accountabilityFormPdfCache.delete(evict);
+    }
+  }
+}
+
+export function clearAccountabilityPdfCacheForForm(formId: string | null) {
+  if (!formId) return;
+  const u = accountabilityFormPdfCache.get(formId);
+  if (u) URL.revokeObjectURL(u);
+  accountabilityFormPdfCache.delete(formId);
+  const idx = accountabilityFormPdfCacheOrder.indexOf(formId);
+  if (idx !== -1) accountabilityFormPdfCacheOrder.splice(idx, 1);
+}
+
 // Return Form Detail Component (accepts a batch = one return form with one or more assets)
 // When contentOnly is true, only the PDF body is rendered (caller provides DialogHeader/Footer).
 export const ReturnFormDetail: React.FC<{
@@ -3095,6 +3136,10 @@ export default function DocumentsTab({
     null
   );
   const [formPdfUrl, setFormPdfUrl] = useState<string | null>(null);
+  // Guards the async PDF generation in handleViewForm so only the most recent
+  // View request can populate the dialog (prevents a stale overwrite).
+  const viewFormRequestIdRef = useRef(0);
+  const formPdfUrlRef = useRef<string | null>(null);
   const [selectedReturnFormBatch, setSelectedReturnFormBatch] =
     useState<AssetReturnFormBatch | null>(null);
   const [selectedTransferFormBatch, setSelectedTransferFormBatch] =
@@ -3114,6 +3159,8 @@ export default function DocumentsTab({
   const [clearanceEligibility, setClearanceEligibility] = useState<{ canGenerate: boolean; reason: string | null; disabledFormNumbers: string[] } | null>(null);
   const [showGenerateClearance, setShowGenerateClearance] = useState(false);
   const [generatingClearance, setGeneratingClearance] = useState(false);
+  const [showClearanceOtp, setShowClearanceOtp] = useState(false);
+  const pendingClearanceActionRef = useRef<(() => Promise<void>) | null>(null);
 
   useEffect(() => {
     if (initialSubTab && initialSubTab !== activeSubTab) {
@@ -3166,11 +3213,18 @@ export default function DocumentsTab({
     if (currentUser?.id) fetchClearanceEligibility();
   }, [currentUser?.id, accountabilityForms.length]);
 
-  const handleGenerateClearance = async () => {
+  const handleGenerateClearance = async (employeeSignature?: string | null) => {
     if (!currentUser?.id) return;
     setGeneratingClearance(true);
     try {
-      await api.post('/accountability-forms/clearance', { userId: currentUser.id });
+      // employeeSignature is only sent after email-OTP verification (see
+      // GenerateClearanceModal onConfirm -> SmsOtpDialog pending action).
+      // The server stamps it as the "Employee Undergoing Clearance" signature.
+      await api.post('/accountability-forms/clearance', {
+        userId: currentUser.id,
+        employeeSignature: employeeSignature ?? null,
+        otpVerified: true,
+      });
       toast.success('Request has been sent to IT department');
       setShowGenerateClearance(false);
       await fetchAccountabilityForms();
@@ -3393,6 +3447,8 @@ export default function DocumentsTab({
     try {
       await api.post(`/accountability-forms/${formId}/sign`, { acknowledgments });
       await fetchAccountabilityForms();
+      // A previously cached preview is now stale — regenerate on next view.
+      clearAccountabilityPdfCacheForForm(formId);
       // Update selectedForm if it's the one being signed
       if (selectedForm && selectedForm.id === formId) {
         setSelectedForm({
@@ -3416,6 +3472,8 @@ export default function DocumentsTab({
     try {
       await api.post(`/accountability-forms/${formId}/decline`, { reason });
       await fetchAccountabilityForms();
+      // A previously cached preview is now stale — regenerate on next view.
+      clearAccountabilityPdfCacheForForm(formId);
       toast.success('Accountability form declined');
     } catch (error: unknown) {
       console.error('Failed to decline accountability form:', error);
@@ -3461,26 +3519,53 @@ export default function DocumentsTab({
   };
 
   const handleViewForm = async (form: AccountabilityForm) => {
+    // Open the detail dialog immediately so the user is not blocked while the
+    // (heavy) PDF is generated. PDFViewer shows a "Loading PDF preview..." state
+    // until the object URL is ready; a cache makes reopening the same form instant.
     setSelectedForm(form);
+    setShowFormDetail(true);
+
+    const formId = form.id;
+    // Reusing a cached object URL avoids regenerating the multi-page PDF.
+    const cached = getCachedAccountabilityPdfUrl(formId);
+    if (cached) {
+      setFormPdfUrl(cached);
+      return;
+    }
+
+    // Invalidate a previous pending generation for the same form (if the dialog
+    // was closed mid-flight) so a fresh one starts from a clean slate.
+    if (formPdfUrlRef.current) {
+      URL.revokeObjectURL(formPdfUrlRef.current);
+      formPdfUrlRef.current = null;
+    }
+
+    const requestId = ++viewFormRequestIdRef.current;
+    setFormPdfUrl(null);
     try {
-      const fullFormResponse = await api.get(`/accountability-forms/${form.id}`);
+      const fullFormResponse = await api.get(`/accountability-forms/${formId}`);
+      if (requestId !== viewFormRequestIdRef.current) return;
       const fullForm = fullFormResponse.form;
+      let pdfBlob: Blob;
       if (fullForm?.formOrigin === 'clearance') {
-        const pdfBlob = await generateAccountabilityClearancePDF(
+        pdfBlob = await generateAccountabilityClearancePDF(
           fullForm,
           currentUser
         );
-        const pdfUrl = URL.createObjectURL(pdfBlob);
-        setFormPdfUrl(pdfUrl);
-        setShowFormDetail(true);
-        return;
+      } else {
+        pdfBlob = await generateAccountabilityFormPDF(fullForm);
       }
-      const pdfBlob = await generateAccountabilityFormPDF(fullForm);
+      if (requestId !== viewFormRequestIdRef.current) return;
       const pdfUrl = URL.createObjectURL(pdfBlob);
+      formPdfUrlRef.current = pdfUrl;
       setFormPdfUrl(pdfUrl);
-      setShowFormDetail(true);
+      setCachedAccountabilityPdfUrl(formId, pdfUrl);
     } catch (error) {
-      toast.error('Failed to generate PDF for this accountability form');
+      console.error('Failed to generate PDF for this accountability form:', error);
+      if (requestId === viewFormRequestIdRef.current) {
+        toast.error('Failed to generate PDF for this accountability form');
+        handleCloseFormDetail();
+      }
     }
   };
 
@@ -3514,6 +3599,21 @@ export default function DocumentsTab({
   };
 
   const handleCloseFormDetail = () => {
+    // Bump the request id so any in-flight generation is ignored (stale result
+    // guard when the dialog is closed mid-generation).
+    viewFormRequestIdRef.current += 1;
+    const currentFormId = selectedForm?.id ?? null;
+    const current = formPdfUrlRef.current;
+    // Only revoke the URL if it is not the cached one — cached object URLs stay
+    // alive so reopening the same form is instant.
+    if (
+      current &&
+      (!currentFormId ||
+        getCachedAccountabilityPdfUrl(currentFormId) !== current)
+    ) {
+      URL.revokeObjectURL(current);
+    }
+    formPdfUrlRef.current = null;
     setShowFormDetail(false);
     setSelectedForm(null);
     setFormPdfUrl(null);
@@ -4527,7 +4627,35 @@ export default function DocumentsTab({
         open={showGenerateClearance}
         onOpenChange={setShowGenerateClearance}
         disabledFormNumbers={clearanceEligibility?.disabledFormNumbers ?? []}
-        onConfirm={handleGenerateClearance}
+        onConfirm={async () => {
+          // Gate actual creation behind email-OTP verification. After a
+          // successful verify, the pending action creates the clearance with
+          // the employee's signature stamped under Employee Undergoing Clearance.
+          const employeeSignature = currentUser?.digitalSignature ?? null;
+          pendingClearanceActionRef.current = async () => {
+            await handleGenerateClearance(employeeSignature);
+          };
+          setShowGenerateClearance(false);
+          setShowClearanceOtp(true);
+        }}
+      />
+      <SmsOtpDialog
+        isOpen={showClearanceOtp}
+        onOpenChange={setShowClearanceOtp}
+        sendOtpEndpoint="/auth/initials/send-otp"
+        verifyOtpEndpoint="/auth/initials/verify-otp"
+        onVerified={() => {
+          setShowClearanceOtp(false);
+          pendingClearanceActionRef.current = null;
+        }}
+        onCancel={() => {
+          setShowClearanceOtp(false);
+          pendingClearanceActionRef.current = null;
+        }}
+        pendingActionRef={pendingClearanceActionRef}
+        title="OTP Email Verification"
+        description="OTP Email Verification has been sent to your registered email for clearance form generation. Once verified, your signature, date and time will appear under Employee Undergoing Clearance."
+        verifyButtonLabel="Verify & Generate"
       />
 
       {/* Checklist Preview Dialog */}

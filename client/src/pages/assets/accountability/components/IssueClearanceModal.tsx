@@ -126,7 +126,7 @@ export function IssueClearanceModal({
               )}
             </div>
             <p className="text-xs text-muted-foreground">
-              Your name, signature, date and time will appear in the <span className="font-medium">Issued by (IT/Admin Processor):</span> block of the clearance PDF.
+              Issuing this certificate routes it for approval. The clearance PDF carries <span className="font-medium">Copy for IT, Copy for Admin, Department Head, Employee Undergoing Clearance, and HR Copy (201 File)</span> signature blocks.
             </p>
           </div>
         </div>

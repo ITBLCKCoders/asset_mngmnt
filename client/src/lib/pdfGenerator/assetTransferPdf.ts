@@ -386,9 +386,9 @@ export const generateAssetTransferPDF = async (
     [
       [{ content: 'Section B: Approvals', colSpan: 2 }],
       ['', ''],
-      [sectionBManagerLabel, sectionBStaffLabel],
-      ['', ''],
       ['Transferrer Department Head', 'Transferrer'],
+      ['', ''],
+      [sectionBManagerLabel, sectionBStaffLabel],
     ];
 
   autoTable(doc, {
@@ -429,10 +429,10 @@ export const generateAssetTransferPDF = async (
       const contentWidth = Math.max(20, xMax - xMin);
       const contentHeight = Math.max(10, yMax - yMin);
 
-      // Row 1, column 0: IT Manager / IT Department Head
+      // Row 3, column 0: IT Manager / IT Department Head
       if (
         hasItManagerSignature &&
-        data.row.index === 1 &&
+        data.row.index === 3 &&
         data.column.index === 0
       ) {
         const yTop = yMin;
@@ -517,11 +517,11 @@ export const generateAssetTransferPDF = async (
         return;
       }
 
-      // Row 1, column 1: IT Staff / IT Inventory Manager (matches return form processor cell)
+      // Row 3, column 1: IT Staff / IT Inventory Manager (matches return form processor cell)
       if (
         showProcessorSignatureBlock &&
         (processUserNameForCell || transferData.process_digital_signature) &&
-        data.row.index === 1 &&
+        data.row.index === 3 &&
         data.column.index === 1
       ) {
         const yTop = yMin;
@@ -588,10 +588,10 @@ export const generateAssetTransferPDF = async (
         return;
       }
 
-      // Row 3, column 0: Transferrer Department Head (matches return form dept-head cell)
+      // Row 1, column 0: Transferrer Department Head (matches return form dept-head cell)
       if (
         hasDeptHeadSignature &&
-        data.row.index === 3 &&
+        data.row.index === 1 &&
         data.column.index === 0
       ) {
         const yTop = yMin;
@@ -676,10 +676,10 @@ export const generateAssetTransferPDF = async (
         return;
       }
 
-      // Row 3, column 1: Transferrer (matches return form returner cell)
+      // Row 1, column 1: Transferrer (matches return form returner cell)
       if (
         hasTransferrerSignature &&
-        data.row.index === 3 &&
+        data.row.index === 1 &&
         data.column.index === 1
       ) {
         const yTop = yMin;

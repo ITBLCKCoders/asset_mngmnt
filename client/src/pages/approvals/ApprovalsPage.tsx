@@ -224,6 +224,11 @@ export default function ApprovalsPage() {
     useState(false);
   const [accountabilityPreviewLoading, setAccountabilityPreviewLoading] =
     useState(false);
+  const [accountabilityPreviewBatch, setAccountabilityPreviewBatch] =
+    useState<AccountabilityApprovalBatch | null>(null);
+  const [accountabilityPreviewMode, setAccountabilityPreviewMode] = useState<
+    'view' | 'action'
+  >('view');
 
   // ---------- Permissions ----------
   const normalizedRoleName = (currentUser?.role?.name ?? '')
@@ -721,8 +726,14 @@ export default function ApprovalsPage() {
     }
   };
 
-  const openAccountabilityPreview = async (formId: string) => {
+  const openAccountabilityPreview = async (
+    formId: string,
+    batch?: AccountabilityApprovalBatch,
+    mode: 'view' | 'action' = 'view'
+  ) => {
     if (!formId) return;
+    if (batch) setAccountabilityPreviewBatch(batch);
+    setAccountabilityPreviewMode(mode);
     setShowAccountabilityPreview(true);
     setAccountabilityPreviewLoading(true);
     setAccountabilityPreviewForm(null);
@@ -739,6 +750,55 @@ export default function ApprovalsPage() {
     } finally {
       setAccountabilityPreviewLoading(false);
     }
+  };
+
+  const closeAccountabilityPreview = () => {
+    setShowAccountabilityPreview(false);
+    setAccountabilityPreviewForm(null);
+    setAccountabilityPreviewBatch(null);
+    setAccountabilityPreviewMode('view');
+  };
+
+  const handleAccountabilityPreviewApprove = () => {
+    if (!accountabilityPreviewBatch) return;
+    const ab = accountabilityPreviewBatch;
+    pendingActionRef.current = async () => {
+      try {
+        setApproving(true);
+        const sig =
+          (currentUser as { digitalSignature?: string })?.digitalSignature ||
+          '';
+        if (ab.formType === 'admin_copy_signature') {
+          await api.post(
+            `/accountability-forms/${ab.formID}/sign-admin-copy`,
+            { digitalSignature: sig || undefined }
+          );
+          toast.success(
+            ab.admin_copy_copy_type
+              ? `${ab.admin_copy_copy_type} copy signed; awaiting final approval`
+              : 'IT/Admin copy signed; awaiting final approval'
+          );
+        } else {
+          await api.post(`/accountability-forms/${ab.formID}/approve`, {
+            digitalSignature: sig || undefined,
+          });
+          toast.success('Accountability form approved');
+        }
+        closeAccountabilityPreview();
+        await refreshAll();
+      } catch (error: any) {
+        const msg =
+          error?.response?.data?.error ||
+          error?.data?.error ||
+          error?.message ||
+          'Failed to update accountability form';
+        toast.error(msg);
+      } finally {
+        setApproving(false);
+      }
+    };
+    setOtpPurpose('approve');
+    setShowOtpDialog(true);
   };
 
   const handleApprove = async () => {
@@ -1286,12 +1346,16 @@ export default function ApprovalsPage() {
               batch={batch as AccountabilityApprovalBatch}
               onView={() => {
                 void openAccountabilityPreview(
-                  (batch as AccountabilityApprovalBatch).formID
+                  (batch as AccountabilityApprovalBatch).formID,
+                  batch as AccountabilityApprovalBatch,
+                  'view'
                 );
               }}
               onAction={() => {
                 void openAccountabilityPreview(
-                  (batch as AccountabilityApprovalBatch).formID
+                  (batch as AccountabilityApprovalBatch).formID,
+                  batch as AccountabilityApprovalBatch,
+                  'action'
                 );
               }}
             />
@@ -1894,6 +1958,8 @@ export default function ApprovalsPage() {
             setShowAccountabilityPreview(open);
             if (!open) {
               setAccountabilityPreviewForm(null);
+              setAccountabilityPreviewBatch(null);
+              setAccountabilityPreviewMode('view');
             }
           }}
         >
@@ -1914,23 +1980,46 @@ export default function ApprovalsPage() {
             ) : accountabilityPreviewForm ? (
               <AccountabilityFormDetail
                 form={accountabilityPreviewForm}
-                onClose={() => {
-                  setShowAccountabilityPreview(false);
-                  setAccountabilityPreviewForm(null);
-                }}
+                onClose={closeAccountabilityPreview}
                 onSign={async () => {
-                  setShowAccountabilityPreview(false);
-                  setAccountabilityPreviewForm(null);
+                  closeAccountabilityPreview();
                 }}
                 headerInParentChrome
                 viewContext="all"
                 readOnly
+                embedded
               />
             ) : (
               <div className="flex items-center justify-center py-16 text-sm text-muted-foreground">
                 Form could not be loaded.
               </div>
             )}
+            <AppDialogChromeFooter className="flex-shrink-0 flex-row flex-wrap justify-end gap-3 sm:gap-3">
+              <Button variant="outline" onClick={closeAccountabilityPreview}>
+                Close
+              </Button>
+              {canApprove &&
+                accountabilityPreviewMode === 'action' &&
+                accountabilityPreviewBatch && (
+                  <Button
+                    size="sm"
+                    onClick={handleAccountabilityPreviewApprove}
+                    disabled={
+                      approving ||
+                      accountabilityPreviewLoading ||
+                      !accountabilityPreviewForm
+                    }
+                    className="bg-blue-600 hover:bg-blue-700 text-white"
+                  >
+                    {approving
+                      ? 'Working...'
+                      : accountabilityPreviewBatch.formType ===
+                          'admin_copy_signature'
+                        ? 'Sign Copy'
+                        : 'Approve'}
+                  </Button>
+                )}
+            </AppDialogChromeFooter>
           </AppDialogFrame>
         </Dialog>
 

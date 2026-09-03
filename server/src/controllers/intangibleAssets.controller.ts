@@ -7,9 +7,138 @@ import { createAuditLog } from '../utils/audit.js';
 import * as intangibleAssetsService from '../services/intangibleAssets.service.js';
 import * as repo from '../repositories/assetAssignment.repository.js';
 import * as formRepo from '../repositories/accountabilityForm.repository.js';
+import * as intangibleRepo from '../repositories/intangibleAssets.repository.js';
 import { emitNotification } from '../sockets/socketHandlers.js';
 import { getIoInstance } from '../utils/socketManager.js';
 import { NotificationService } from '../services/notification.service.js';
+
+/**
+ * Shared pending-copy handling for intangible accountability forms created
+ * with a designated IT/Admin copy signer: hide the linked intangible rows
+ * and notify the copy signer instead of the asset owner. The owner is
+ * notified with both notices once the form is finally approved.
+ * Returns true when the pending flow applies.
+ */
+async function holdIntangiblesForPendingCopy(args: {
+  assignmentId: string;
+  assignedTo: string;
+  adminCopySignerId: string | null | undefined;
+  adminCopyCopyType: string | null | undefined;
+  formId: string;
+  formNumber: string;
+  req: AuthRequest;
+}): Promise<boolean> {
+  if (!args.adminCopySignerId) return false;
+  try {
+    await intangibleRepo.setIntangibleInactiveByAccountabilityAssignmentIds(
+      [args.assignmentId],
+      args.assignedTo
+    );
+  } catch (hideErr) {
+    logger.error('Failed to hold intangible assignments pending copy sign:', hideErr);
+  }
+  try {
+    const signerNameRow = await formRepo.getUserNameById(args.adminCopySignerId);
+    void signerNameRow;
+    const issuerRow = await formRepo.getUserNameById(args.req.user!.userID);
+    const assignerName = issuerRow
+      ? `${issuerRow.first_name ?? ''} ${issuerRow.last_name ?? ''}`.trim() || args.req.user!.userID
+      : args.req.user!.userID;
+    const ownerRow = await formRepo.getUserNameById(args.assignedTo);
+    const ownerName = ownerRow
+      ? `${ownerRow.first_name ?? ''} ${ownerRow.last_name ?? ''}`.trim() || args.assignedTo
+      : args.assignedTo;
+    const copyType = args.adminCopyCopyType === 'Admin' ? 'Admin' : 'IT';
+    await NotificationService.createNotification(
+      {
+        user_id: args.adminCopySignerId,
+        title: `Accountability form ${args.formNumber} needs ${copyType} copy signature`,
+        message: `Please sign the ${copyType} copy for ${ownerName}'s accountability form (${args.formNumber}).`,
+        type: 'accountability_form',
+        status: 'unread',
+        data: JSON.stringify({
+          description: `Please sign the ${copyType} copy for ${ownerName}'s accountability form (${args.formNumber}).`,
+          route: '/approvals?tab=for-approval',
+          actionTarget: 'accountability_form_admin_copy',
+          formId: args.formId,
+          formNumber: args.formNumber,
+          copyType,
+          assignedBy: assignerName,
+          timestamp: new Date().toISOString(),
+        }),
+      },
+      args.req.user!.userID,
+      args.req.ip,
+      args.req.get('User-Agent')
+    );
+    const io = getIoInstance();
+    if (io) {
+      emitNotification(io, args.adminCopySignerId, 'notification', {
+        title: `Accountability form ${args.formNumber} needs ${copyType} copy signature`,
+        description: `Please sign the ${copyType} copy for ${ownerName}'s accountability form (${args.formNumber}).`,
+        type: 'accountability_form',
+        route: '/approvals?tab=for-approval',
+        actionTarget: 'accountability_form_admin_copy',
+        formId: args.formId,
+        formNumber: args.formNumber,
+        copyType,
+        assignedBy: assignerName,
+        timestamp: new Date().toISOString(),
+      });
+    }
+  } catch (notifErr) {
+    logger.error('Failed to notify copy signer for intangible form:', notifErr);
+  }
+  return true;
+}
+
+/**
+ * Adopt an in-flight (pending approval) accountability form instead of
+ * disabling + recreating it: merge the newly assigned assets into its
+ * `assets_data` so ONE live form carries the whole issuance flow. The copy
+ * signer was already notified for the adopted form, so no new notification
+ * is sent — only the rows are held hidden and an audit entry is written.
+ * Returns an error message string, or null on success.
+ */
+async function mergeAssetsIntoInflightForm(args: {
+  mergeTarget: { formID: string; form_number: string; assets_data: string | null };
+  combinedAssets: any[];
+  assignmentId: string;
+  assignedTo: string;
+  userId: string;
+  req: AuthRequest;
+}): Promise<string | null> {
+  try {
+    const merged = await formRepo.mergeAssetsIntoFormAssetsData(
+      args.mergeTarget.formID,
+      args.combinedAssets,
+      [args.assignmentId]
+    );
+    try {
+      await intangibleRepo.setIntangibleInactiveByAccountabilityAssignmentIds(
+        [args.assignmentId],
+        args.assignedTo
+      );
+    } catch (hideErr) {
+      logger.error('Failed to hold intangible assignments on merge into in-flight form:', hideErr);
+    }
+    await createAuditLog({
+      userId: args.userId,
+      action: 'Merged Assets Into In-Flight Accountability Form',
+      resourceType: 'accountability_form',
+      resourceId: args.mergeTarget.formID,
+      resourceName: args.mergeTarget.form_number,
+      details: `Merged ${args.combinedAssets.length} asset(s) into in-flight form ${args.mergeTarget.form_number} instead of recreating it`,
+      newValues: { assetCount: merged.assetCount, assignment_ids: merged.assignmentIds },
+      ipAddress: args.req.ip || 'unknown',
+      userAgent: args.req.get('User-Agent') || 'unknown',
+    });
+    return null;
+  } catch (err: any) {
+    logger.error('Failed to merge assets into in-flight form:', err);
+    return 'Failed to merge new assets into the pending accountability form';
+  }
+}
 
 // GET all intangible assets
 export const getAllIntangibleAssets = async (req: AuthRequest, res: Response) => {
@@ -318,6 +447,26 @@ export const assignIntangibleAsset = async (req: AuthRequest, res: Response) => 
           ? await repo.getActiveAssignmentsByUserAndCategories(assignedTo, categoryIds)
           : [];
 
+        // Include just-issued tangible assignments still held as `Inactive`
+        // pending the IT/Admin copy signature so merged forms don't drop them.
+        if (categoryIds.length > 0) {
+          try {
+            const pendingRows = await repo.getPendingCopyAssignmentsByUserAndCategories(
+              assignedTo,
+              categoryIds
+            );
+            const seen = new Set(departmentAssetsRows.map(r => String((r as any).assetID)));
+            for (const row of pendingRows) {
+              if (!seen.has(String((row as any).assetID))) {
+                departmentAssetsRows.push(row);
+                seen.add(String((row as any).assetID));
+              }
+            }
+          } catch (mergeErr) {
+            logger.error('Failed to merge pending-copy assignments into form:', mergeErr);
+          }
+        }
+
         // All of the user's currently-active intangible assets in this department
         // (includes the asset being assigned plus previously assigned ones).
         const intangibleRows = departmentId
@@ -351,11 +500,28 @@ export const assignIntangibleAsset = async (req: AuthRequest, res: Response) => 
         ];
 
         if (combinedAssets.length > 0) {
-          // Disable existing accountability forms
+          // Never disable in-flight approval forms: adopt the newest one and
+          // merge the new assets into it so a single live form carries the
+          // whole issuance flow (mixed tangible+intangible issuance).
           const existingForms = await repo.getExistingAccountabilityForms(assignedTo, deptName);
+          const inflightForms = existingForms.filter(f =>
+            String((f as any).approval_status ?? '').startsWith('pending')
+          );
           for (const form of existingForms) {
+            if (inflightForms.some(f => f.formID === form.formID)) continue;
             await repo.disableAccountabilityForm(form.formID);
           }
+          const mergeTarget = inflightForms[0] ?? null;
+          if (mergeTarget) {
+            formErrorMsg = await mergeAssetsIntoInflightForm({
+              mergeTarget,
+              combinedAssets,
+              assignmentId,
+              assignedTo,
+              userId,
+              req,
+            });
+          } else {
 
           // Generate form number
           const settings = await formRepo.getAccountabilityFormSettings(activeCompany.id);
@@ -422,6 +588,7 @@ export const assignIntangibleAsset = async (req: AuthRequest, res: Response) => 
               issuerSignature: issuerSignature || null,
               itCopySignature: itCopySignature || null,
               assignmentId: null,
+              approvalStatus: adminCopySignerId ? 'pending_admin_copy_signature' : 'approved',
               adminCopySignerId: adminCopySignerId ?? null,
               adminCopyCopyType: adminCopyCopyType ?? null,
             });
@@ -448,6 +615,18 @@ export const assignIntangibleAsset = async (req: AuthRequest, res: Response) => 
                 companyId: activeCompany.id,
               });
 
+              // Pending copy flow holds the rows hidden and notifies the copy
+              // signer; the owner is notified only at final approval.
+              const pendingCopyFlow = await holdIntangiblesForPendingCopy({
+                assignmentId,
+                assignedTo,
+                adminCopySignerId: adminCopySignerId ?? null,
+                adminCopyCopyType: adminCopyCopyType ?? null,
+                formId: resolvedFormId,
+                formNumber,
+                req,
+              });
+              if (!pendingCopyFlow) {
               try {
                 const createdByRow = await formRepo.getUserNameById(userId);
                 const assignerName = createdByRow
@@ -493,7 +672,9 @@ export const assignIntangibleAsset = async (req: AuthRequest, res: Response) => 
               } catch (notifError) {
                 logger.error('Failed to send form notification:', notifError);
               }
+              }
             }
+          }
           }
         }
       }
@@ -674,6 +855,26 @@ export const batchAssignIntangibleAssets = async (req: AuthRequest, res: Respons
           ? await repo.getActiveAssignmentsByUserAndCategories(assignedTo, categoryIds)
           : [];
 
+        // Include just-issued tangible assignments still held as `Inactive`
+        // pending the IT/Admin copy signature so merged forms don't drop them.
+        if (categoryIds.length > 0) {
+          try {
+            const pendingRows = await repo.getPendingCopyAssignmentsByUserAndCategories(
+              assignedTo,
+              categoryIds
+            );
+            const seen = new Set(departmentAssetsRows.map(r => String((r as any).assetID)));
+            for (const row of pendingRows) {
+              if (!seen.has(String((row as any).assetID))) {
+                departmentAssetsRows.push(row);
+                seen.add(String((row as any).assetID));
+              }
+            }
+          } catch (mergeErr) {
+            logger.error('Failed to merge pending-copy assignments into form:', mergeErr);
+          }
+        }
+
         // All of the user's currently-active intangible assets in this department
         // (includes the assets being assigned in this batch plus previously assigned ones).
         const intangibleRows = departmentId
@@ -707,11 +908,28 @@ export const batchAssignIntangibleAssets = async (req: AuthRequest, res: Respons
         ];
 
         if (combinedAssets.length > 0) {
-          // Disable existing accountability forms
+          // Never disable in-flight approval forms: adopt the newest one and
+          // merge the new assets into it so a single live form carries the
+          // whole issuance flow (mixed tangible+intangible issuance).
           const existingForms = await repo.getExistingAccountabilityForms(assignedTo, deptName);
+          const inflightForms = existingForms.filter(f =>
+            String((f as any).approval_status ?? '').startsWith('pending')
+          );
           for (const form of existingForms) {
+            if (inflightForms.some(f => f.formID === form.formID)) continue;
             await repo.disableAccountabilityForm(form.formID);
           }
+          const mergeTarget = inflightForms[0] ?? null;
+          if (mergeTarget) {
+            formErrorMsg = await mergeAssetsIntoInflightForm({
+              mergeTarget,
+              combinedAssets,
+              assignmentId,
+              assignedTo,
+              userId,
+              req,
+            });
+          } else {
 
           // Generate form number
           const settings = await formRepo.getAccountabilityFormSettings(activeCompany.id);
@@ -778,6 +996,7 @@ export const batchAssignIntangibleAssets = async (req: AuthRequest, res: Respons
               issuerSignature: issuerSignature || null,
               itCopySignature: itCopySignature || null,
               assignmentId: null,
+              approvalStatus: adminCopySignerId ? 'pending_admin_copy_signature' : 'approved',
               adminCopySignerId: adminCopySignerId ?? null,
               adminCopyCopyType: adminCopyCopyType ?? null,
             });
@@ -804,6 +1023,18 @@ export const batchAssignIntangibleAssets = async (req: AuthRequest, res: Respons
                 companyId: activeCompany.id,
               });
 
+              // Pending copy flow holds the rows hidden and notifies the copy
+              // signer; the owner is notified only at final approval.
+              const pendingCopyFlow = await holdIntangiblesForPendingCopy({
+                assignmentId,
+                assignedTo,
+                adminCopySignerId: adminCopySignerId ?? null,
+                adminCopyCopyType: adminCopyCopyType ?? null,
+                formId: resolvedFormId,
+                formNumber,
+                req,
+              });
+              if (!pendingCopyFlow) {
               try {
                 const createdByRow = await formRepo.getUserNameById(userId);
                 const assignerName = createdByRow
@@ -849,7 +1080,9 @@ export const batchAssignIntangibleAssets = async (req: AuthRequest, res: Respons
               } catch (notifError) {
                 logger.error('Failed to send form notification:', notifError);
               }
+              }
             }
+          }
           }
         }
       }

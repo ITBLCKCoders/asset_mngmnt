@@ -97,6 +97,10 @@ export interface FormFullRow extends RowDataPacket {
   received_copy_201_file_signed_by: string | null;
   received_copy_201_file_signed_by_name: string | null;
   received_copy_wet_pdf_url: string | null;
+  dept_head_signed_by?: string | null;
+  dept_head_signed_by_name?: string | null;
+  dept_head_signature?: string | null;
+  dept_head_signed_at?: string | null;
   created_by: string | null;
   created_at: string | null;
   updated_at: string | null;
@@ -422,6 +426,63 @@ export async function updateFormAssetsDataById(
   );
 }
 
+/**
+ * Merge newly assigned assets into an in-flight accountability form instead
+ * of disabling + recreating it, so a single live form carries the whole
+ * issuance flow (mixed tangible+intangible or repeat issuance while
+ * pending). Unions `assets` by id and `assignment_ids`, preserving every
+ * other `assets_data` key. Returns the merged totals.
+ */
+export async function mergeAssetsIntoFormAssetsData(
+  formId: string,
+  newAssets: any[],
+  newAssignmentIds: string[]
+): Promise<{ assetCount: number; assignmentIds: string[] }> {
+  const [rows] = await pool.execute(
+    'SELECT assets_data FROM accountability_forms WHERE formID = ? AND deleted_at IS NULL',
+    [formId]
+  );
+  const raw = (rows as Array<{ assets_data?: unknown }>)[0]?.assets_data;
+  let existing: Record<string, any> = {};
+  if (raw != null && raw !== '') {
+    try {
+      const parsed = Buffer.isBuffer(raw)
+        ? JSON.parse(raw.toString('utf8'))
+        : typeof raw === 'string'
+          ? JSON.parse(raw)
+          : raw;
+      if (parsed && typeof parsed === 'object') {
+        existing = parsed as Record<string, any>;
+      }
+    } catch {
+      /* fall through with empty base */
+    }
+  }
+  const assets = Array.isArray(existing.assets) ? [...existing.assets] : [];
+  const seen = new Set(
+    assets.map((a: any) => String(a?.id ?? a?.assetID ?? '').trim()).filter(Boolean)
+  );
+  for (const asset of newAssets ?? []) {
+    const key = String((asset as any)?.id ?? '').trim();
+    if (key && !seen.has(key)) {
+      assets.push(asset);
+      seen.add(key);
+    }
+  }
+  const assignmentIds = Array.isArray(existing.assignment_ids)
+    ? (existing.assignment_ids as unknown[]).map(v => String(v ?? '').trim()).filter(Boolean)
+    : [];
+  for (const id of newAssignmentIds ?? []) {
+    const key = String(id ?? '').trim();
+    if (key && !assignmentIds.includes(key)) assignmentIds.push(key);
+  }
+  await updateFormAssetsDataById(
+    formId,
+    JSON.stringify({ ...existing, assets, assignment_ids: assignmentIds })
+  );
+  return { assetCount: assets.length, assignmentIds };
+}
+
 export interface ActiveIntangibleAssetForFormRow extends RowDataPacket {
   id: string;
   name: string;
@@ -539,7 +600,17 @@ SELECT
   admin_copy_signer.first_name as admin_copy_signer_first_name,
   admin_copy_signer.last_name as admin_copy_signer_last_name,
   approved_by_user.first_name as approved_by_first_name,
-  approved_by_user.last_name as approved_by_last_name
+  approved_by_user.last_name as approved_by_last_name,
+  approved_by_user.digital_signature as approved_by_digital_signature,
+  dept_head_signer.first_name as dept_head_signer_first_name,
+  dept_head_signer.last_name as dept_head_signer_last_name,
+  dept_head_signer.digital_signature as dept_head_signer_digital_signature,
+  clearance_it_signer.first_name as clearance_it_signer_first_name,
+  clearance_it_signer.last_name as clearance_it_signer_last_name,
+  clearance_admin_signer.first_name as clearance_admin_signer_first_name,
+  clearance_admin_signer.last_name as clearance_admin_signer_last_name,
+  clearance_hr_signer.first_name as clearance_hr_signer_first_name,
+  clearance_hr_signer.last_name as clearance_hr_signer_last_name
 FROM accountability_forms af
 LEFT JOIN assets a ON af.asset_id = a.assetID
 LEFT JOIN asset_categories ac ON a.category_id = ac.categoryID
@@ -555,7 +626,11 @@ LEFT JOIN users assigned_by_user ON aa.assigned_by = assigned_by_user.userID
 LEFT JOIN users created_by_user ON af.created_by = created_by_user.userID
 LEFT JOIN users received_copy_signer ON af.received_copy_201_file_signed_by = received_copy_signer.userID
 LEFT JOIN users admin_copy_signer ON af.admin_copy_signer_id = admin_copy_signer.userID
-LEFT JOIN users approved_by_user ON af.approved_by = approved_by_user.userID`;
+LEFT JOIN users approved_by_user ON af.approved_by = approved_by_user.userID
+LEFT JOIN users dept_head_signer ON af.dept_head_signed_by = dept_head_signer.userID
+LEFT JOIN users clearance_it_signer ON af.clearance_it_signer_id = clearance_it_signer.userID
+LEFT JOIN users clearance_admin_signer ON af.clearance_admin_signer_id = clearance_admin_signer.userID
+LEFT JOIN users clearance_hr_signer ON af.clearance_hr_signer_id = clearance_hr_signer.userID`;
 
 export async function findFormsByAssetId(
   assetId: string
@@ -943,18 +1018,80 @@ export async function updateFormApproval(args: {
   formId: string;
   approvedBy: string;
   approvalNotes: string | null;
+  deptHeadSignature?: string | null;
+  deptHeadSignedByName?: string | null;
 }): Promise<number> {
-  const [result] = await pool.execute<ResultSetHeader>(
-    `UPDATE accountability_forms
-     SET approval_status = 'approved',
-         approved_by = ?,
-         approved_at = NOW(),
-         approval_notes = ?,
-         updated_at = NOW()
-     WHERE formID = ? AND approval_status = 'pending_approval'`,
-    [args.approvedBy, args.approvalNotes, args.formId]
-  );
-  return result.affectedRows;
+  // Stamp the Department head signatory (new field set) together with the
+  // generic approval columns. Falls back to the legacy update when the
+  // dept_head_* migration has not been applied yet.
+  try {
+    const [result] = await pool.execute<ResultSetHeader>(
+      `UPDATE accountability_forms
+       SET approval_status = 'approved',
+           approved_by = ?,
+           approved_at = NOW(),
+           approval_notes = ?,
+           dept_head_signed_by = ?,
+           dept_head_signed_by_name = ?,
+           dept_head_signature = ?,
+           dept_head_signed_at = NOW(),
+           updated_at = NOW()
+       WHERE formID = ? AND approval_status = 'pending_approval'`,
+      [
+        args.approvedBy,
+        args.approvalNotes,
+        args.approvedBy,
+        args.deptHeadSignedByName ?? null,
+        args.deptHeadSignature ?? null,
+        args.formId,
+      ]
+    );
+    return result.affectedRows;
+  } catch (error: any) {
+    if (error?.code !== 'ER_BAD_FIELD_ERROR') throw error;
+    const [result] = await pool.execute<ResultSetHeader>(
+      `UPDATE accountability_forms
+       SET approval_status = 'approved',
+           approved_by = ?,
+           approved_at = NOW(),
+           approval_notes = ?,
+           updated_at = NOW()
+       WHERE formID = ? AND approval_status = 'pending_approval'`,
+      [args.approvedBy, args.approvalNotes, args.formId]
+    );
+    return result.affectedRows;
+  }
+}
+
+/**
+ * Stamp the Department head signatory for the combined copy-sign + approve
+ * path (admin-copy signer is also the owner's approver). Defensive against
+ * DBs that have not applied the dept_head_* migration yet.
+ */
+export async function stampDeptHeadOnCombinedApproval(args: {
+  formId: string;
+  signedBy: string;
+  signedByName?: string | null;
+  signature?: string | null;
+}): Promise<void> {
+  try {
+    await pool.execute(
+      `UPDATE accountability_forms
+       SET dept_head_signed_by = ?, dept_head_signed_by_name = ?,
+           dept_head_signature = ?, dept_head_signed_at = NOW(),
+           updated_at = NOW()
+       WHERE formID = ?`,
+      [
+        args.signedBy,
+        args.signedByName ?? null,
+        args.signature ?? null,
+        args.formId,
+      ]
+    );
+  } catch (error: any) {
+    if (error?.code !== 'ER_BAD_FIELD_ERROR') throw error;
+    // Legacy DB without dept_head columns — approval columns already stamped.
+  }
 }
 
 /**
@@ -1123,17 +1260,57 @@ export async function updateClearanceHrApproval(
 export async function updateClearanceApproverToIt(
   formId: string,
   approverId: string,
-  signature: string | null
+  signature: string | null,
+  approverName?: string | null
 ): Promise<number> {
-  const [result] = await pool.execute<ResultSetHeader>(
+  // Stamp the Department head signatory (owner's approver/sub-approver) so the
+  // clearance PDF "Reviewed/Checked by Department Head" block renders with the
+  // approver's name, signature, date and time. Falls back gracefully when the
+  // dept_head_* migration has not been applied yet.
+  try {
+    const [result] = await pool.execute<ResultSetHeader>(
+      `UPDATE accountability_forms
+       SET approved_by = ?, approved_at = NOW(), approval_notes = ?, updated_at = NOW(),
+           dept_head_signed_by = ?, dept_head_signed_by_name = ?,
+           dept_head_signature = ?, dept_head_signed_at = NOW(),
+           approval_status = 'pending_it'
+       WHERE formID = ? AND approval_status = 'pending_approval' AND deleted_at IS NULL
+         AND JSON_UNQUOTE(JSON_EXTRACT(assets_data, '$.form_origin')) = 'clearance'`,
+      [approverId, signature, approverId, approverName ?? null, signature, formId]
+    );
+    return result.affectedRows;
+  } catch (error: any) {
+    if (error?.code !== 'ER_BAD_FIELD_ERROR') throw error;
+    const [result] = await pool.execute<ResultSetHeader>(
+      `UPDATE accountability_forms
+       SET approved_by = ?, approved_at = NOW(), approval_notes = ?, updated_at = NOW(),
+           approval_status = 'pending_it'
+       WHERE formID = ? AND approval_status = 'pending_approval' AND deleted_at IS NULL
+         AND JSON_UNQUOTE(JSON_EXTRACT(assets_data, '$.form_origin')) = 'clearance'`,
+      [approverId, signature, formId]
+    );
+    return result.affectedRows;
+  }
+}
+
+/**
+ * Stamp the employee's OTP-verified signature on a newly created clearance
+ * certificate. Sets `acknowledgments` + `signed_at` without touching `status`
+ * so the 4-step approval flow is unaffected.
+ */
+export async function stampClearanceEmployeeSignature(
+  formId: string,
+  acknowledgmentsJson: string,
+  ip: string,
+  userAgent: string
+): Promise<void> {
+  await pool.execute(
     `UPDATE accountability_forms
-     SET approved_by = ?, approved_at = NOW(), approval_notes = ?, updated_at = NOW(),
-         approval_status = 'pending_it'
-     WHERE formID = ? AND approval_status = 'pending_approval' AND deleted_at IS NULL
-       AND JSON_UNQUOTE(JSON_EXTRACT(assets_data, '$.form_origin')) = 'clearance'`,
-    [approverId, signature, formId]
+     SET acknowledgments = ?, signed_at = NOW(),
+         signed_ip = ?, signed_user_agent = ?, updated_at = NOW()
+     WHERE formID = ? AND deleted_at IS NULL`,
+    [acknowledgmentsJson, ip, userAgent, formId]
   );
-  return result.affectedRows;
 }
 
 export async function hasRole(

@@ -44,6 +44,9 @@ export function GenerateClearanceModal({ open, onOpenChange, disabledFormNumbers
             <p className="text-sm mt-1 text-slate-700 break-words">{disabledFormNumbers.length ? disabledFormNumbers.join(', ') : '—'}</p>
           </div>
           <p className="text-xs text-muted-foreground">
+            Clicking Generate Clearance will send an OTP to your registered email. Once verified, your signature, date and time will appear under <span className="font-medium">Employee Undergoing Clearance</span> on the certificate.
+          </p>
+          <p className="text-xs text-muted-foreground">
             After submission you will see a notification: <span className="font-medium">Request has been sent to IT department</span> and the form will appear in approvals.
           </p>
         </div>

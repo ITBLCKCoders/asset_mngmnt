@@ -270,7 +270,7 @@ export default function LoginPage() {
             ease: TRANSITION_EASING,
           }}
         >
-          <div className="flex flex-col items-center rounded-lg bg-white/95 p-6 shadow-xl backdrop-blur-sm lg:bg-transparent lg:p-0 lg:shadow-none lg:backdrop-blur-none">
+          <div className="flex flex-col items-center">
             <div className="mb-6 w-52 drop-shadow-md sm:w-64 lg:w-[29rem] lg:drop-shadow-lg">
               <img src={logo} alt="Blackcoders" className="w-full h-auto" />
             </div>

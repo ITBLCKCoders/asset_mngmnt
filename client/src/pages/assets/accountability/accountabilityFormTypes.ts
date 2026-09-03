@@ -76,11 +76,19 @@ export interface AccountabilityForm {
   issuerSignature?: string;
   itCopySignature?: string;
   adminCopySignerId?: string | null;
+  adminCopySignerName?: string | null;
+  adminCopySignature?: string | null;
   adminCopyCopyType?: 'IT' | 'Admin' | null;
   adminCopySignedAt?: string | null;
   approvedBy?: string | null;
   approvedAt?: string | null;
   approvalNotes?: string | null;
+  approvedByName?: string | null;
+  approvedBySignature?: string | null;
+  deptHeadSignedById?: string | null;
+  deptHeadSignedByName?: string | null;
+  deptHeadSignature?: string | null;
+  deptHeadSignedAt?: string | null;
   receivedCopy201FileSignature?: string | null;
   receivedCopy201FileSignedAt?: string | null;
   receivedCopy201FileSignedById?: string | null;
@@ -94,6 +102,12 @@ export interface AccountabilityForm {
   clearanceReason?: 'return' | 'transfer' | 'clearance';
   referenceDisabledFormNumbers?: string[];
   clearedAt?: string;
+  clearanceItSignerName?: string | null;
+  clearanceItSignature?: string | null;
+  clearanceItSignedAt?: string | null;
+  clearanceAdminSignerName?: string | null;
+  clearanceAdminSignature?: string | null;
+  clearanceAdminSignedAt?: string | null;
 }
 
 export type ClearanceScope = 'IT' | 'Admin' | 'Unified';

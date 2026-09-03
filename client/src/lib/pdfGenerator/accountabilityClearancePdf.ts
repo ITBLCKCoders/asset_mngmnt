@@ -42,9 +42,6 @@ export const generateAccountabilityClearancePDF = async (
 
   const tableMargin = { left: 10, right: 10 };
   const tableWidth = 195.9;
-  const issuerName = form.issuer
-    ? `${form.issuer.first_name} ${form.issuer.last_name}`
-    : 'Administrator';
 
   doc.setProperties({
     title: `${form.user.first_name} ${form.user.last_name} Clearance ${form.formNumber}`,
@@ -84,13 +81,16 @@ export const generateAccountabilityClearancePDF = async (
   doc.setFont('helvetica', 'bold');
   doc.text('Asset Clearance Certificate', 105, 40, { align: 'center' });
 
-  // Department / scope subtitle
+  // Department subtitle — hidden for Unified clearance (no IT/Admin scope)
   doc.setFontSize(12);
   doc.setFont('helvetica', 'normal');
-  const scope = form.clearanceScope ?? 'IT';
-  const departmentName =
-    scope === 'IT' ? 'IT Department' : 'Administration Department';
-  doc.text(departmentName, 105, 50, { align: 'center' });
+  const scope = form.clearanceScope ?? 'Unified';
+  const isUnified = scope === 'Unified';
+  if (!isUnified) {
+    const departmentName =
+      scope === 'IT' ? 'IT Department' : 'Administration Department';
+    doc.text(departmentName, 105, 50, { align: 'center' });
+  }
 
   // Employee Information table (same shape as accountability form)
   doc.setFontSize(12);
@@ -154,7 +154,7 @@ export const generateAccountabilityClearancePDF = async (
   const referenceList =
     form.referenceDisabledFormNumbers && form.referenceDisabledFormNumbers.length > 0
       ? form.referenceDisabledFormNumbers.join(', ')
-      : 'N/A';
+      : '—';
   const clearedDate = form.clearedAt
     ? new Date(form.clearedAt).toLocaleDateString('en-US', {
         year: 'numeric',
@@ -167,15 +167,19 @@ export const generateAccountabilityClearancePDF = async (
         day: 'numeric',
       });
   const clearanceReasonText =
-    form.clearanceReason === 'transfer' ? 'transferred' : 'returned';
+    form.clearanceReason === 'transfer'
+      ? 'transferred'
+      : form.clearanceReason === 'clearance'
+        ? 'settled'
+        : 'returned';
 
   const statement = `This is to certify that ${employeeFullName}${
     employeeMeta ? ` (${employeeMeta})` : ''
   } has no outstanding company assets, accountabilities, or obligations with ${companyName} as of ${clearedDate}.
 
-All properties covered by ${scope} Accountability Form(s) ${referenceList} have been duly ${clearanceReasonText} and verified. The corresponding accountability forms have been closed as Disabled, and a complete review of the asset registry — both tangible and intangible — confirms zero (0) active assignments remaining under the employee's name for the ${scope} scope.
+All properties covered by Accountability Form(s) ${referenceList} have been duly ${clearanceReasonText} and verified. The corresponding accountability forms have been closed as Disabled, and a complete review of the asset registry — both tangible and intangible — confirms zero (0) active assignments remaining under the employee's name.
 
-The employee is hereby CLEARED of all asset accountability for the ${scope} scope and is free of any further liability pertaining to company property thereunder. This certificate is issued for HR 201-file, clearance, exit, and transfer purposes and may be presented as proof of settlement.`;
+The employee is hereby CLEARED of all asset accountability and is free of any further liability pertaining to company property thereunder. This certificate is issued for HR 201-file, clearance, exit, and transfer purposes and may be presented as proof of settlement.`;
 
   const splitStatement = doc.splitTextToSize(statement, 170);
   doc.text(splitStatement, 20, y, { align: 'justify', maxWidth: 170 });
@@ -192,7 +196,6 @@ The employee is hereby CLEARED of all asset accountability for the ${scope} scop
     margin: tableMargin,
     head: [['Field', 'Value']],
     body: [
-      ['Scope', scope],
       [
         'Reason',
         form.clearanceReason === 'transfer'
@@ -204,19 +207,7 @@ The employee is hereby CLEARED of all asset accountability for the ${scope} scop
         form.referenceDisabledFormNumbers &&
         form.referenceDisabledFormNumbers.length > 0
           ? form.referenceDisabledFormNumbers.join(', ')
-          : 'N/A',
-      ],
-      [
-        'Tangible Assets Remaining (this scope)',
-        '0',
-      ],
-      [
-        'Intangible Assets Remaining (this scope)',
-        '0',
-      ],
-      [
-        'Other Active Accountability Forms (this scope)',
-        '0',
+          : '—',
       ],
       ['Clearance Date', clearedDate],
       ['Certificate No.', form.formNumber],
@@ -236,17 +227,7 @@ The employee is hereby CLEARED of all asset accountability for the ${scope} scop
   });
   y = (doc as any).lastAutoTable.finalY + 12;
 
-  // Acknowledgment
-  doc.setFontSize(12);
-  doc.setFont('helvetica', 'bold');
-  doc.text('Acknowledgment', 20, y);
-  y += 6;
-  doc.setFontSize(12);
-  doc.setFont('helvetica', 'normal');
-  const ack = `I, ${employeeFullName}, acknowledge that this clearance certificate reflects the settlement of all asset accountabilities previously held under my name for the ${scope} scope, and that any future asset assignment for the same scope will be covered by a newly issued Accountability Form.`;
-  const splitAck = doc.splitTextToSize(ack, 170);
-  doc.text(splitAck, 20, y, { align: 'justify', maxWidth: 170 });
-  y += splitAck.length * 5 + 6;
+  // Acknowledgment moved to page 2 (signatures page) — see below.
 
   // ── Footer (page 1) ─────────────────────────────────────────────────
   doc.setPage(1);
@@ -291,81 +272,101 @@ The employee is hereby CLEARED of all asset accountability for the ${scope} scop
     align: 'right',
   });
 
-  const signatureY = y;
-  const issuerSignedDate = (form.clearedAt
-    ? new Date(form.clearedAt)
-    : form.created_at
-      ? new Date(form.created_at)
-      : new Date());
-  const issuedByLabel =
-    scope === 'IT'
-      ? 'Issued by (IT Processor):'
-      : 'Issued by (Admin Processor):';
+  // Acknowledgment (moved from page 1)
+  doc.setFontSize(12);
+  doc.setFont('helvetica', 'bold');
+  doc.text('Acknowledgment', 20, y);
+  y += 6;
   doc.setFontSize(12);
   doc.setFont('helvetica', 'normal');
-  doc.text(issuedByLabel, 20, signatureY);
-  doc.text(`${issuerSignedDate.toLocaleDateString()}`, 60, signatureY + 10);
-  doc.text(`${issuerSignedDate.toLocaleTimeString()}`, 60, signatureY + 15);
-  doc.text(issuerName, 20, signatureY + 28);
-  logger.debug('Rendering issuer signature on clearance form', {
-    hasIssuerSignature: !!form.issuerSignature,
-  });
-  await addSignatureToPDF(doc, form.issuerSignature, -20, signatureY, 122, 74);
+  const ack = `I, ${employeeFullName}, acknowledge that this clearance certificate reflects the settlement of all asset accountabilities previously held under my name, and that any future asset assignment will be covered by a newly issued Accountability Form.`;
+  const splitAck = doc.splitTextToSize(ack, 170);
+  doc.text(splitAck, 20, y, { align: 'justify', maxWidth: 170 });
+  y += splitAck.length * 5 + 10;
+
+  const signatureY = y;
+  doc.setFontSize(12);
+  doc.setFont('helvetica', 'normal');
+
+  // Row 1, left: Copy for IT (IT Asset stage signer)
+  doc.text('Copy for IT:', 20, signatureY);
+  if (form.clearanceItSignedAt) {
+    const itCopyDate = new Date(form.clearanceItSignedAt);
+    doc.text(`${itCopyDate.toLocaleDateString()}`, 60, signatureY + 10);
+    doc.text(`${itCopyDate.toLocaleTimeString()}`, 60, signatureY + 15);
+  }
+  if (form.clearanceItSignerName) {
+    doc.text(form.clearanceItSignerName, 20, signatureY + 28);
+  }
+  if (form.clearanceItSignature) {
+    await addSignatureToPDF(
+      doc,
+      form.clearanceItSignature,
+      -20,
+      signatureY,
+      122,
+      74
+    );
+  }
   doc.setLineWidth(0.2);
   doc.line(20, signatureY + 30, 80, signatureY + 30);
   doc.text('Signature over Printed Name', 20, signatureY + 35);
 
-  doc.text('Received by / Employee:', 130, signatureY);
+  // Row 1, right: Employee Undergoing Clearance (replaces Received by)
+  doc.text('Employee Undergoing Clearance:', 130, signatureY);
   if (form.signed_at) {
     const empDate = new Date(form.signed_at);
     doc.text(`${empDate.toLocaleDateString()}`, 170, signatureY + 10);
     doc.text(`${empDate.toLocaleTimeString()}`, 170, signatureY + 15);
-    doc.text(
-      `${form.user.first_name} ${form.user.last_name}`,
-      130,
-      signatureY + 28
+  }
+  doc.text(
+    `${form.user.first_name} ${form.user.last_name}`,
+    130,
+    signatureY + 28
+  );
+  const digitalSignature = form.acknowledgments?.digitalSignature;
+  logger.debug('Rendering employee signature on clearance form', {
+    hasEmployeeSignature: !!digitalSignature,
+  });
+  if (digitalSignature) {
+    await addSignatureToPDF(
+      doc,
+      digitalSignature,
+      90,
+      signatureY,
+      122,
+      74
     );
-    const digitalSignature = form.acknowledgments?.digitalSignature;
-    if (digitalSignature) {
-      await addSignatureToPDF(
-        doc,
-        digitalSignature,
-        90,
-        signatureY,
-        122,
-        74
-      );
-    }
-  } else {
-    doc.text(
-      `${form.user.first_name} ${form.user.last_name}`,
-      130,
-      signatureY + 28
-    );
-    doc.text('____________________', 130, signatureY + 30);
   }
   doc.setLineWidth(0.2);
   doc.line(130, signatureY + 30, 190, signatureY + 30);
   doc.text('Signature over Printed Name', 130, signatureY + 35);
 
-  const copyLabel = scope === 'IT' ? 'Copy for IT:' : 'Copy for Admin:';
-  doc.text(copyLabel, 20, signatureY + 60);
-  const itCopyDate = form.created_at ? new Date(form.created_at) : new Date();
-  doc.text(`${itCopyDate.toLocaleDateString()}`, 60, signatureY + 70);
-  doc.text(`${itCopyDate.toLocaleTimeString()}`, 60, signatureY + 75);
-  doc.text(issuerName, 20, signatureY + 88);
-  await addSignatureToPDF(
-    doc,
-    form.itCopySignature,
-    -20,
-    signatureY + 60,
-    122,
-    74
-  );
+  // Row 2, left: Copy for Admin (Admin Asset stage signer)
+  doc.text('Copy for Admin:', 20, signatureY + 60);
+  if (form.clearanceAdminSignedAt) {
+    const adminCopyDate = new Date(form.clearanceAdminSignedAt);
+    doc.text(`${adminCopyDate.toLocaleDateString()}`, 60, signatureY + 70);
+    doc.text(`${adminCopyDate.toLocaleTimeString()}`, 60, signatureY + 75);
+  }
+  if (form.clearanceAdminSignerName) {
+    doc.text(form.clearanceAdminSignerName, 20, signatureY + 88);
+  }
+  if (form.clearanceAdminSignature) {
+    await addSignatureToPDF(
+      doc,
+      form.clearanceAdminSignature,
+      -20,
+      signatureY + 60,
+      122,
+      74
+    );
+  }
   doc.setLineWidth(0.2);
   doc.line(20, signatureY + 90, 80, signatureY + 90);
   doc.text('Signature over Printed Name', 20, signatureY + 95);
 
+  // Row 2, right: HR Copy (201 File) — under Employee Undergoing Clearance
   doc.text('HR Copy (201 File):', 130, signatureY + 60);
   if (form.receivedCopy201FileSignedAt) {
     const rcSignedDate = new Date(form.receivedCopy201FileSignedAt);
@@ -400,6 +401,39 @@ The employee is hereby CLEARED of all asset accountability for the ${scope} scop
   doc.setLineWidth(0.2);
   doc.line(130, signatureY + 90, 190, signatureY + 90);
   doc.text('Signature over Printed Name', 130, signatureY + 95);
+
+  // Row 3, left: Reviewed/Checked by Department Head
+  // (the clearance owner's designated approver / sub-approver)
+  const deptHeadName =
+    form.deptHeadSignedByName?.trim() ||
+    form.approvedByName?.trim() ||
+    '';
+  const deptHeadAtRaw =
+    form.deptHeadSignedAt || (form as any).approvedAt || null;
+  const deptHeadSignature =
+    form.deptHeadSignature || (form as any).approvedBySignature || null;
+  doc.text('Reviewed/Checked by Department Head:', 20, signatureY + 120);
+  if (deptHeadAtRaw) {
+    const deptHeadDate = new Date(deptHeadAtRaw);
+    doc.text(`${deptHeadDate.toLocaleDateString()}`, 60, signatureY + 130);
+    doc.text(`${deptHeadDate.toLocaleTimeString()}`, 60, signatureY + 135);
+  }
+  if (deptHeadName) {
+    doc.text(deptHeadName, 20, signatureY + 148);
+  }
+  if (deptHeadSignature) {
+    await addSignatureToPDF(
+      doc,
+      deptHeadSignature,
+      -20,
+      signatureY + 120,
+      122,
+      74
+    );
+  }
+  doc.setLineWidth(0.2);
+  doc.line(20, signatureY + 150, 80, signatureY + 150);
+  doc.text('Signature over Printed Name', 20, signatureY + 155);
 
   return doc.output('blob');
 };

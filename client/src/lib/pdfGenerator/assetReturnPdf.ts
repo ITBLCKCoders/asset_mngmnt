@@ -486,9 +486,9 @@ export const generateAssetReturnPDF = async (
     [
       [{ content: 'Section B: Approvals', colSpan: 2 }],
       ['', ''],
-      [sectionBManagerLabel, sectionBStaffLabel],
-      ['', ''], // row 3: empty row above Returner; we draw signature block in column 2 when signed
       ["Returner's Department Head", 'Returner'],
+      ['', ''], // row 3: empty row above IT Staff; we draw signature block in column 2 when signed
+      [sectionBManagerLabel, sectionBStaffLabel],
     ];
 
   doc.setDrawColor(0, 0, 0);
@@ -531,10 +531,10 @@ export const generateAssetReturnPDF = async (
       const contentWidth = Math.max(20, xMax - xMin);
       const contentHeight = Math.max(10, yMax - yMin);
 
-      // Row 1, column 0: IT Manager / IT Department Head (matches checklist IT manager cell)
+      // Row 3, column 0: IT Manager / IT Department Head (matches checklist IT manager cell)
       if (
         hasItManagerSignature &&
-        data.row.index === 1 &&
+        data.row.index === 3 &&
         data.column.index === 0
       ) {
         const yTop = yMin;
@@ -607,11 +607,11 @@ export const generateAssetReturnPDF = async (
         }
       }
 
-      // Row 1, column 1: IT Staff / IT Inventory Manager (matches checklist creator cell)
+      // Row 3, column 1: IT Staff / IT Inventory Manager (matches checklist creator cell)
       if (
         showProcessorSignatureBlock &&
         processUserNameForCell &&
-        data.row.index === 1 &&
+        data.row.index === 3 &&
         data.column.index === 1
       ) {
         const yTop = yMin;
@@ -657,10 +657,10 @@ export const generateAssetReturnPDF = async (
         }
       }
 
-      // Row 3, column 0: Returner's Department Head (matches checklist dept-head cell)
+      // Row 1, column 0: Returner's Department Head (matches checklist dept-head cell)
       if (
         hasDeptHeadSignature &&
-        data.row.index === 3 &&
+        data.row.index === 1 &&
         data.column.index === 0
       ) {
         const yTop = yMin;
@@ -733,10 +733,10 @@ export const generateAssetReturnPDF = async (
         }
       }
 
-      // Row 3, column 1: Returner (matches checklist employee cell)
+      // Row 1, column 1: Returner (matches checklist employee cell)
       if (
         hasReturnerSignature &&
-        data.row.index === 3 &&
+        data.row.index === 1 &&
         data.column.index === 1
       ) {
         const yTop = yMin;
@@ -778,11 +778,11 @@ export const generateAssetReturnPDF = async (
         }
       }
 
-      // Row 3, column 1: owner-absent note (no returner signature available)
+      // Row 1, column 1: owner-absent note (no returner signature available)
       if (
         !hasReturnerSignature &&
         returnData.ownerAbsent &&
-        data.row.index === 3 &&
+        data.row.index === 1 &&
         data.column.index === 1
       ) {
         const yTop = yMin;

@@ -122,6 +122,8 @@ export interface ExistingAccountabilityFormRow extends RowDataPacket {
   formID: string;
   form_number: string;
   status: string;
+  approval_status: string | null;
+  created_at: string | null;
   assets_data: string | null;
 }
 
@@ -318,6 +320,49 @@ export async function setAssignmentInactive(
   ]);
 }
 
+/**
+ * Bulk-hide newly created assignments while their accountability form is in
+ * the IT/Admin copy approval flow. Rows stay reserved (asset remains
+ * `Assigned`) but are invisible to My Assets / Active-only queries until
+ * the copy is signed. Mirrors the borrow-flow precedent.
+ */
+export async function setAssignmentsInactiveByIds(
+  assignmentIds: string[],
+  noteSuffix: string
+): Promise<void> {
+  const ids = [...new Set((assignmentIds ?? []).map(id => String(id ?? '').trim()).filter(Boolean))];
+  if (ids.length === 0) return;
+  const placeholders = ids.map(() => '?').join(',');
+  await pool.execute(
+    `UPDATE asset_assignments
+      SET status = 'Inactive',
+          assignment_notes = CONCAT(IFNULL(assignment_notes, ''), ?),
+          updated_at = NOW()
+      WHERE assignmentID IN (${placeholders}) AND deleted_at IS NULL`,
+    [noteSuffix, ...ids]
+  );
+}
+
+/**
+ * Reveal assignments once the IT/Admin copy is signed. Only flips rows that
+ * are still `Inactive` so unrelated Active rows are never touched.
+ */
+export async function setAssignmentsActiveByIds(
+  assignmentIds: string[]
+): Promise<number> {
+  const ids = [...new Set((assignmentIds ?? []).map(id => String(id ?? '').trim()).filter(Boolean))];
+  if (ids.length === 0) return 0;
+  const placeholders = ids.map(() => '?').join(',');
+  const [result] = await pool.execute(
+    `UPDATE asset_assignments
+      SET status = 'Active', updated_at = NOW()
+      WHERE assignmentID IN (${placeholders})
+        AND status = 'Inactive' AND deleted_at IS NULL`,
+    [...ids]
+  );
+  return (result as { affectedRows?: number }).affectedRows ?? 0;
+}
+
 export async function callCreateAssignment(args: {
   assignmentId: string;
   assetId: string;
@@ -497,6 +542,36 @@ export async function getActiveAssignmentsByUserAndCategories(
   return rows;
 }
 
+/**
+ * Same shape as above but for assignments held as `Inactive` pending the
+ * IT/Admin copy signature. Used when building merged accountability forms
+ * so just-issued (still hidden) assets are not dropped from the form.
+ */
+export async function getPendingCopyAssignmentsByUserAndCategories(
+  userId: string,
+  categoryIds: string[]
+): Promise<DepartmentAssetRow[]> {
+  if (categoryIds.length === 0) return [];
+  const placeholders = categoryIds.map(() => '?').join(',');
+  const [rows] = await pool.execute<DepartmentAssetRow[]>(
+    `SELECT
+       a.assetID, a.asset_code, a.name, a.serial, a.model, a.brand,
+       ac.name as category_name, at.name as type_name, d.name as department_name,
+       d.departmentID as department_id
+     FROM asset_assignments aa
+     JOIN assets a ON aa.asset_id = a.assetID
+     LEFT JOIN asset_categories ac ON a.category_id = ac.categoryID
+     LEFT JOIN asset_types at ON a.type_id = at.typeID
+     LEFT JOIN asset_mngmnt_departments d ON ac.department_id = d.departmentID
+     WHERE aa.user_id = ? AND aa.status = 'Inactive' AND aa.deleted_at IS NULL
+       AND aa.assignment_notes LIKE '%Pending IT/Admin copy signature%'
+       AND ac.categoryID IN (${placeholders})
+     ORDER BY aa.assigned_date ASC`,
+    [userId, ...categoryIds]
+  );
+  return rows;
+}
+
 export async function getActiveAssignmentIdsByUserAndAssetIds(
   userId: string,
   assetIds: string[]
@@ -569,12 +644,13 @@ export async function getExistingAccountabilityForms(
   departmentName: string
 ): Promise<ExistingAccountabilityFormRow[]> {
   const [rows] = await pool.execute<ExistingAccountabilityFormRow[]>(
-    `SELECT af.formID, af.form_number, af.status, af.assets_data
+    `SELECT af.formID, af.form_number, af.status, af.approval_status, af.created_at, af.assets_data
      FROM accountability_forms af
      WHERE af.user_id = ? AND af.status NOT IN ("Disabled", "Revoked", "Declined") AND af.deleted_at IS NULL
        AND JSON_EXTRACT(af.assets_data, '$.assets[0].department') = ?
        AND (JSON_UNQUOTE(JSON_EXTRACT(af.assets_data, '$.form_origin')) IS NULL
-            OR JSON_UNQUOTE(JSON_EXTRACT(af.assets_data, '$.form_origin')) <> 'processor_return')`,
+            OR JSON_UNQUOTE(JSON_EXTRACT(af.assets_data, '$.form_origin')) <> 'processor_return')
+     ORDER BY af.created_at DESC`,
     [userId, departmentName]
   );
   return rows;

@@ -469,7 +469,7 @@ export default function RegisterPage() {
           transition={{ duration: AUTH_TRANSITION_MS / 1000, ease: TRANSITION_EASING }}
         >
           <div
-            className={`flex flex-col items-center rounded-lg bg-white/95 p-6 shadow-xl backdrop-blur-sm lg:bg-transparent lg:p-0 lg:shadow-none lg:backdrop-blur-none ${
+            className={`flex flex-col items-center ${
               showVerification
                 ? 'overflow-visible'
                 : 'max-h-[92vh] overflow-y-auto'

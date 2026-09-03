@@ -255,6 +255,48 @@ export async function assignIntangibleAsset(data: {
   return { assigned: true };
 }
 
+/**
+ * Reveal intangible assignments linked to the given tangible assignmentIDs
+ * (via `accountability_assignment_id`) once the IT/Admin copy is signed.
+ */
+export async function setIntangibleActiveByAccountabilityAssignmentIds(
+  accountabilityAssignmentIds: string[],
+  userId: string
+): Promise<number> {
+  const ids = [...new Set((accountabilityAssignmentIds ?? []).map(id => String(id ?? '').trim()).filter(Boolean))];
+  if (ids.length === 0 || !userId) return 0;
+  const placeholders = ids.map(() => '?').join(',');
+  const [result] = (await pool.query(
+    `UPDATE intangible_asset_assignments
+      SET status = 'Active', updated_at = NOW()
+      WHERE accountability_assignment_id IN (${placeholders})
+        AND user_id = ? AND status = 'Inactive' AND deleted_at IS NULL`,
+    [...ids, userId]
+  )) as any[];
+  return (result as { affectedRows?: number })?.affectedRows ?? 0;
+}
+
+/**
+ * Hide intangible assignments linked to the given tangible assignmentIDs
+ * while their accountability form awaits the IT/Admin copy signature.
+ */
+export async function setIntangibleInactiveByAccountabilityAssignmentIds(
+  accountabilityAssignmentIds: string[],
+  userId: string
+): Promise<number> {
+  const ids = [...new Set((accountabilityAssignmentIds ?? []).map(id => String(id ?? '').trim()).filter(Boolean))];
+  if (ids.length === 0 || !userId) return 0;
+  const placeholders = ids.map(() => '?').join(',');
+  const [result] = (await pool.query(
+    `UPDATE intangible_asset_assignments
+      SET status = 'Inactive', updated_at = NOW()
+      WHERE accountability_assignment_id IN (${placeholders})
+        AND user_id = ? AND status = 'Active' AND deleted_at IS NULL`,
+    [...ids, userId]
+  )) as any[];
+  return (result as { affectedRows?: number })?.affectedRows ?? 0;
+}
+
 export async function unassignIntangibleAsset(
   id: string,
   userId: string,

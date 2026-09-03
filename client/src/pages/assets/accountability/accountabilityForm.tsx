@@ -135,6 +135,9 @@ const generateCacheKey = (
     status: form.status,
     issuerSignature: form.issuerSignature,
     itCopySignature: form.itCopySignature,
+    adminCopySignature: (form as AccountabilityForm).adminCopySignature,
+    adminCopySignedAt: (form as AccountabilityForm).adminCopySignedAt,
+    adminCopySignerName: (form as AccountabilityForm).adminCopySignerName,
     receivedCopy201FileSignature: form.receivedCopy201FileSignedAt,
     digitalSignature: form.acknowledgments?.digitalSignature,
     assetCount: form.assets.length,
@@ -1273,29 +1276,89 @@ I agree that if any of the items are damaged or lost due to my negligence, I sha
   const copyLabel = hasITForCopy ? 'Copy for IT:' : 'Copy for Admin:';
   doc.text(copyLabel, 20, signatureY + 60);
 
-  const itCopyDate = form.created_at ? new Date(form.created_at) : new Date();
+  // IT/Admin copy signatory stays blank until the designated copy signer
+  // signs. Never pre-fill with the issuer name. Date/time/name render once
+  // signed_at exists; the signature image is optional (signers without saved
+  // digital initials still store signed_at with a null signature).
+  const adminCopySignedAtRaw = form.adminCopySignedAt ?? null;
+  const adminCopySignatureValue =
+    form.adminCopySignature ?? form.itCopySignature ?? null;
+  const isAdminCopySigned = !!adminCopySignedAtRaw;
+  const hasAdminCopySignatureImage = !!adminCopySignatureValue;
+  const adminCopySignerDisplayName =
+    form.adminCopySignerName?.trim() || '';
 
-  doc.text(`${itCopyDate.toLocaleDateString()}`, 60, signatureY + 70);
-  doc.text(`${itCopyDate.toLocaleTimeString()}`, 60, signatureY + 75);
-  doc.text(issuerName, 20, signatureY + 88);
+  if (isAdminCopySigned) {
+    const itCopyDate = new Date(adminCopySignedAtRaw as string);
+    doc.text(`${itCopyDate.toLocaleDateString()}`, 60, signatureY + 70);
+    doc.text(`${itCopyDate.toLocaleTimeString()}`, 60, signatureY + 75);
+    if (adminCopySignerDisplayName) {
+      doc.text(adminCopySignerDisplayName, 20, signatureY + 88);
+    }
+  }
 
-  // Render IT copy digital signature if available (between name and signature line)
+  // Render IT/Admin copy digital signature if available (between name and signature line)
   logger.debug('Rendering IT copy signature', {
-    hasITCopySignature: !!form.itCopySignature,
-    signatureLength: form.itCopySignature?.length,
+    hasITCopySignature: hasAdminCopySignatureImage,
+    signatureLength: adminCopySignatureValue?.length,
+    isAdminCopySigned,
   });
-  await addSignatureToPDF(
-    doc,
-    form.itCopySignature,
-    -20,
-    signatureY + 60,
-    122,
-    74
-  );
+  if (isAdminCopySigned && hasAdminCopySignatureImage) {
+    await addSignatureToPDF(
+      doc,
+      adminCopySignatureValue as string,
+      -20,
+      signatureY + 60,
+      122,
+      74
+    );
+  }
 
   doc.setLineWidth(0.2);
   doc.line(20, signatureY + 90, 80, signatureY + 90);
   doc.text('Signature over Printed Name', 20, signatureY + 95);
+
+  // Department head signatory (new field) directly underneath the Copy block,
+  // left column. Stamped at final approval by the owner's designated
+  // approver/sub-approver. Falls back to approved_by for backfilled rows.
+  const deptHeadName =
+    form.deptHeadSignedByName?.trim() ||
+    (form as any).approvedByName?.trim() ||
+    '';
+  const deptHeadAtRaw =
+    form.deptHeadSignedAt || (form as any).approvedAt || null;
+  const deptHeadSignature =
+    form.deptHeadSignature || (form as any).approvedBySignature || null;
+  // Extra vertical gap (mm) added below the IT/Admin copy signatory section
+  // so the Department head block is not sitting too close to it. Only the
+  // Department head block offsets below use this gap.
+  const deptHeadGap = 15;
+  doc.text('Reviewed/Checked by Department Head:', 20, signatureY + 108 + deptHeadGap);
+  if (deptHeadAtRaw) {
+    const deptHeadDate = new Date(deptHeadAtRaw);
+    doc.text(`${deptHeadDate.toLocaleDateString()}`, 60, signatureY + 118 + deptHeadGap);
+    doc.text(`${deptHeadDate.toLocaleTimeString()}`, 60, signatureY + 123 + deptHeadGap);
+  }
+  if (deptHeadName) {
+    doc.text(deptHeadName, 20, signatureY + 136 + deptHeadGap);
+  }
+  if (deptHeadSignature) {
+    logger.debug('Rendering Department head signature', {
+      hasDeptHeadSignature: !!deptHeadSignature,
+      signatureLength: deptHeadSignature?.length,
+    });
+    await addSignatureToPDF(
+      doc,
+      deptHeadSignature,
+      -20,
+      signatureY + 108 + deptHeadGap,
+      122,
+      74
+    );
+  }
+  doc.setLineWidth(0.2);
+  doc.line(20, signatureY + 138 + deptHeadGap, 80, signatureY + 138 + deptHeadGap);
+  doc.text('Signature over Printed Name', 20, signatureY + 143 + deptHeadGap);
   doc.text('Received Copy for 201 File:', 130, signatureY + 60);
   if (form.receivedCopy201FileSignedAt) {
     const rcSignedDate = new Date(form.receivedCopy201FileSignedAt);
@@ -3688,9 +3751,10 @@ export function ClearanceFormCard({
   onView?: (form: AccountabilityForm) => void;
   onDownload?: (form: AccountabilityForm) => void;
 }) {
-  const scope = form.clearanceScope ?? 'IT';
+  const scope = form.clearanceScope ?? 'Unified';
   const isIT = scope === 'IT';
-  const scopeLabel = isIT ? 'IT Clearance' : 'Admin Clearance';
+  const scopeLabel =
+    scope === 'Unified' ? 'Unified Clearance' : isIT ? 'IT Clearance' : 'Admin Clearance';
   const ScopeIcon = isIT ? ShieldCheck : ShieldCheck;
   const clearedDate = form.clearedAt
     ? new Date(form.clearedAt).toLocaleDateString()
@@ -3769,7 +3833,7 @@ export function ClearanceFormCard({
               Scope
             </p>
             <p className="text-sm text-gray-700">
-              {scope} Department — 0 tangible, 0 intangible assets remaining
+              {scope === 'Unified' ? 'Unified clearance' : `${scope} Department`} — 0 assets remaining
             </p>
           </div>
         </div>
