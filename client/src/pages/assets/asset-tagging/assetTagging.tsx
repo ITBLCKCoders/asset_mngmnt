@@ -491,7 +491,7 @@ export default function AssetsTagging() {
   const selectedAssetsData = modalTagAssets;
 
   return (
-    <div className="flex flex-col min-h-screen bg-[#FFFFFF]">
+    <div className="flex flex-col min-h-screen bg-background">
       <main className="flex-1 p-6 space-y-6">
         <PageHeader
           icon={Tag}

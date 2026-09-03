@@ -4,6 +4,8 @@
 
 :root {
   /* Warm paper — stone-tinted to complement warm OLED dark (#0c0e12/#1c1f26). Soft card #fefcfb for eye comfort, defined stone borders. */
+  /* Make native controls (number spinners, textarea, raw inputs) follow the app theme instead of the OS. */
+  color-scheme: light;
   --background: #fbfaf9;
   --foreground: #1a1d23;
   --card: #fefcfb;
@@ -41,6 +43,8 @@
 .dark {
   /* Warm OLED near-black graphite — shifted from cool #151d2b/#202a3a for depth.
      Zinc undertone (hue ~35°, sat 7%) keeps OLED (#0c0e12) readable without blue glare. */
+  /* Native controls follow the app theme in dark mode. */
+  color-scheme: dark;
   --background: #0c0e12;
   --foreground: #eceef2;
   --card: #1c1f26;
@@ -276,6 +280,11 @@ select:focus {
 .dark .bg-gray-200,
 .dark .bg-slate-200 {
   background-color: #2e333e !important;
+}
+
+/* Segmented tab list container (e.g. Settings, Asset List) — slate-100/90 band in the light theme. */
+.dark .bg-slate-100\/90 {
+  background-color: rgb(36 40 48 / 0.93) !important;
 }
 
 .dark .bg-gray-300,
@@ -703,6 +712,9 @@ select:focus {
 }
 .dark .hover\:bg-white\/20:hover {
   background-color: rgb(180 170 160 / 0.18) !important;
+}
+.dark .hover\:bg-white\/90:hover {
+  background-color: rgb(28 31 38 / 0.88) !important;
 }
 .dark .hover\:text-gray-800:hover {
   color: #e7edf6 !important;

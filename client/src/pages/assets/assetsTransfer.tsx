@@ -1218,7 +1218,7 @@ export default function AssetsTransfer() {
     const q = companyTransferSearchTerm.trim().toLowerCase();
     const nonBuilderAssets = companyTransferAssets.filter(
       asset => !builderAssetCodes.has(String(asset.assetCode || '').trim())
-    ).filter(asset => asset.source !== 'available');
+    );
     const base = !q
       ? nonBuilderAssets
       : nonBuilderAssets.filter(

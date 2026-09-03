@@ -637,7 +637,7 @@ export function DataTable<T>({
                     </TableRow>
                   ))}
                 </TableHeader>
-                <TableBody className="divide-y divide-gray-200">
+                <TableBody className="[&_tr:last-child]:!border-b">
                   {table.getRowModel().rows.length > 0 ? (
                     table.getRowModel().rows.map(row => (
                       <React.Fragment key={row.id}>
