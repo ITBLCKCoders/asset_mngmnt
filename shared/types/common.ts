@@ -102,6 +102,24 @@ export enum AccountabilityFormStatus {
   Declined = 'Declined',
 }
 
+export enum AccountabilityFormApprovalStatus {
+  PendingAdminCopySignature = 'pending_admin_copy_signature',
+  PendingApproval = 'pending_approval',
+  PendingIt = 'pending_it',
+  PendingAdmin = 'pending_admin',
+  PendingHr = 'pending_hr',
+  Approved = 'approved',
+}
+
+export type ClearanceScopeUnified = 'Unified';
+
+export enum IntangibleDeactivationStatus {
+  Pending = 'Pending',
+  PendingHrApproval = 'PendingHrApproval',
+  Approved = 'Approved',
+  Declined = 'Declined',
+}
+
 export enum UserRole {
   Admin = 'Admin',
   Manager = 'Manager',

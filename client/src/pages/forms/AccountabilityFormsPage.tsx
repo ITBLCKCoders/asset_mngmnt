@@ -277,11 +277,27 @@ export default function AccountabilityFormsPage() {
     return list;
   };
 
+  /**
+   * Hide forms still in the approval flow from the regular user view. They
+   * haven't reached the new asset owner yet, so the user can't act on them.
+   * HR accountability receivers / issuers keep seeing everything.
+   */
+  const filterOutPendingApprovals = (list: AccountabilityForm[]) => {
+    if (isSuperAdminOrAdmin || hasHrAccountabilityReceiver) return list;
+    return list.filter((f: AccountabilityForm) => {
+      const ap = f.approvalStatus;
+      if (!ap) return true;
+      return ap === 'approved' || ap === undefined || ap === null;
+    });
+  };
+
   const filteredAll = useMemo(
     () =>
       applyStatusFilter(
-        filterBySearch(
-          filterByAssetType(filterByCompanyAndDepartment(forms))
+        filterOutPendingApprovals(
+          filterBySearch(
+            filterByAssetType(filterByCompanyAndDepartment(forms))
+          )
         )
       ),
     [forms, searchQuery, searchFilters, statusFilter, companyFilterId, departmentFilterId, effectiveAssetTypeFilter]
@@ -289,7 +305,9 @@ export default function AccountabilityFormsPage() {
   const filteredHrCopy = useMemo(
     () =>
       applyStatusFilter(
-        filterBySearch(filterByAssetType(filterByCompanyAndDepartment(hrCopyForms)))
+        filterOutPendingApprovals(
+          filterBySearch(filterByAssetType(filterByCompanyAndDepartment(hrCopyForms)))
+        )
       ),
     [hrCopyForms, searchQuery, searchFilters, statusFilter, companyFilterId, departmentFilterId, effectiveAssetTypeFilter]
   );

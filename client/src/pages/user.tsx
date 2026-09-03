@@ -902,6 +902,10 @@ function UserPermissions() {
                                   (!selectedUser.role ||
                                     selectedUser.role.name === 'User'))
                               }
+                              isGlobalAdmin={
+                                selectedUser?.role?.name?.trim().toLowerCase() ===
+                                'global admin'
+                              }
                             />
                           </div>
                         )}

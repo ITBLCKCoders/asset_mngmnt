@@ -347,6 +347,7 @@ export default function LoginPage() {
                   type="button"
                   onClick={goToRegister}
                   disabled={isRouting}
+                  variant="ghost"
                   className="w-full max-w-xs text-red-600 hover:bg-red-600 hover:text-white text-sm py-2 shadow-none"
                 >
                   Create an account

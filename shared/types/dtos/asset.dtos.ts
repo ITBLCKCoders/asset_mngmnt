@@ -6,6 +6,7 @@ import {
   MaintenanceSchedule,
   DepreciationMethod,
   AccountabilityFormStatus,
+  AccountabilityFormApprovalStatus,
 } from '../common';
 
 // Asset DTOs
@@ -214,6 +215,7 @@ export interface AccountabilityFormDto {
   id: string;
   formNumber: string;
   status: AccountabilityFormStatus;
+  approvalStatus?: AccountabilityFormApprovalStatus | null;
   declineReason?: string | null;
   assets_data?: {
     assets?: Array<{
@@ -230,6 +232,14 @@ export interface AccountabilityFormDto {
   } | null;
   created_at: string;
   signed_at: string | null;
+  adminCopySignerId?: string | null;
+  adminCopySignerName?: string | null;
+  adminCopyCopyType?: 'IT' | 'Admin' | null;
+  adminCopySignedAt?: string | null;
+  approvedBy?: string | null;
+  approvedByName?: string | null;
+  approvedAt?: string | null;
+  approvalNotes?: string | null;
 }
 
 export interface AssetFormsResponseDto {
@@ -243,6 +253,7 @@ export interface AccountabilityFormDetailDto {
   id: string;
   formNumber: string;
   status: AccountabilityFormStatus;
+  approvalStatus?: AccountabilityFormApprovalStatus | null;
   created_at: string;
   signed_at: string | null;
   user: {
@@ -260,6 +271,18 @@ export interface AccountabilityFormDetailDto {
     name: string;
   } | null;
   received_copy_wet_pdf_url?: string | null;
+  adminCopySignerId?: string | null;
+  adminCopySigner?: {
+    id: string;
+    first_name: string;
+    last_name: string;
+  } | null;
+  adminCopyCopyType?: 'IT' | 'Admin' | null;
+  adminCopySignedAt?: string | null;
+  approvedBy?: string | null;
+  approvedByName?: string | null;
+  approvedAt?: string | null;
+  approvalNotes?: string | null;
 }
 
 export interface ReturnFormDto {
@@ -646,4 +669,46 @@ export interface IntangibleAssetListItemDto {
   updated_by: string | null;
   updated_by_name: string | null;
   assignees: IntangibleAssetAssigneeDto[];
+}
+
+export interface IntangibleDeactivationFormDto {
+  id: string;
+  formNumber: string;
+  status: string;
+  declineReason?: string | null;
+  user: {
+    id: string;
+    first_name: string;
+    last_name: string;
+    email: string;
+    company?: { id: string; name: string } | null;
+    department?: { id: string; name: string } | null;
+  };
+  department?: { id: string; name: string } | null;
+  assets: Array<{
+    id: string;
+    name: string;
+    type: string;
+    description?: string | null;
+  }>;
+  assetsData?: unknown;
+  requesterSignature?: string | null;
+  requestedAt: string;
+  deptHeadApproverId?: string | null;
+  deptHeadApproverName?: string | null;
+  deptHeadSignedAt?: string | null;
+  deptHeadSignature?: string | null;
+  hrApproverId?: string | null;
+  hrApproverName?: string | null;
+  hrSignedAt?: string | null;
+  hrSignature?: string | null;
+  declineReasonFull?: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface CreateIntangibleDeactivationDto {
+  intangibleAssetIds: string[];
+  digitalSignature: string;
+  remarks?: string;
 }

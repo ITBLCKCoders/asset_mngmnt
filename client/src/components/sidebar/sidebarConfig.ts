@@ -126,6 +126,12 @@ export const ASSET_SIDEBAR_ENTRIES: AssetSidebarEntry[] = [
     icon: ArrowRightLeft,
   },
   {
+    label: 'Intangible Deactivation',
+    perm: 'Intangible Deactivation',
+    path: '/assets/intangible-deactivation',
+    icon: FileText,
+  },
+  {
     label: 'Asset Disposal',
     perm: 'Asset Disposal',
     path: '/assets/disposal',

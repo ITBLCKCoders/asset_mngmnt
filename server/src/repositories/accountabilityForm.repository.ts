@@ -280,11 +280,15 @@ export async function insertAccountabilityFormMulti(args: {
   issuerSignature: string | null;
   itCopySignature: string | null;
   assignmentId?: string | null;
+  approvalStatus?: string;
+  adminCopySignerId?: string | null;
+  adminCopyCopyType?: 'IT' | 'Admin' | null;
 }): Promise<void> {
   await pool.execute(
     `INSERT INTO accountability_forms
-     (form_number, assignment_id, asset_id, user_id, department_id, location_id, created_by, assets_data, issuer_signature, it_copy_signature)
-     VALUES (?, ?, NULL, ?, ?, ?, ?, ?, ?, ?)`,
+     (form_number, assignment_id, asset_id, user_id, department_id, location_id, created_by, assets_data, issuer_signature, it_copy_signature,
+      approval_status, admin_copy_signer_id, admin_copy_copy_type)
+     VALUES (?, ?, NULL, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
     [
       args.formNumber,
       args.assignmentId || null,
@@ -295,6 +299,9 @@ export async function insertAccountabilityFormMulti(args: {
       args.assetsDataJson,
       args.issuerSignature,
       args.itCopySignature,
+      args.approvalStatus ?? 'approved',
+      args.adminCopySignerId ?? null,
+      args.adminCopyCopyType ?? null,
     ]
   );
 }
@@ -309,11 +316,15 @@ export async function insertAccountabilityFormSingle(args: {
   createdBy: string;
   issuerSignature: string | null;
   itCopySignature: string | null;
+  approvalStatus?: string;
+  adminCopySignerId?: string | null;
+  adminCopyCopyType?: 'IT' | 'Admin' | null;
 }): Promise<void> {
   await pool.execute(
     `INSERT INTO accountability_forms
-     (form_number, assignment_id, asset_id, user_id, department_id, location_id, created_by, issuer_signature, it_copy_signature)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+     (form_number, assignment_id, asset_id, user_id, department_id, location_id, created_by, issuer_signature, it_copy_signature,
+      approval_status, admin_copy_signer_id, admin_copy_copy_type)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
     [
       args.formNumber,
       args.assignmentId,
@@ -324,6 +335,9 @@ export async function insertAccountabilityFormSingle(args: {
       args.createdBy,
       args.issuerSignature,
       args.itCopySignature,
+      args.approvalStatus ?? 'approved',
+      args.adminCopySignerId ?? null,
+      args.adminCopyCopyType ?? null,
     ]
   );
 }
@@ -521,7 +535,11 @@ SELECT
   created_by_user.last_name as created_by_last_name,
   created_by_user.email as created_by_email,
   received_copy_signer.first_name as received_copy_signer_first_name,
-  received_copy_signer.last_name as received_copy_signer_last_name
+  received_copy_signer.last_name as received_copy_signer_last_name,
+  admin_copy_signer.first_name as admin_copy_signer_first_name,
+  admin_copy_signer.last_name as admin_copy_signer_last_name,
+  approved_by_user.first_name as approved_by_first_name,
+  approved_by_user.last_name as approved_by_last_name
 FROM accountability_forms af
 LEFT JOIN assets a ON af.asset_id = a.assetID
 LEFT JOIN asset_categories ac ON a.category_id = ac.categoryID
@@ -535,7 +553,9 @@ LEFT JOIN asset_mngmnt_location_rooms lr ON af.location_room_id = lr.roomID
 LEFT JOIN asset_assignments aa ON af.assignment_id = aa.assignmentID
 LEFT JOIN users assigned_by_user ON aa.assigned_by = assigned_by_user.userID
 LEFT JOIN users created_by_user ON af.created_by = created_by_user.userID
-LEFT JOIN users received_copy_signer ON af.received_copy_201_file_signed_by = received_copy_signer.userID`;
+LEFT JOIN users received_copy_signer ON af.received_copy_201_file_signed_by = received_copy_signer.userID
+LEFT JOIN users admin_copy_signer ON af.admin_copy_signer_id = admin_copy_signer.userID
+LEFT JOIN users approved_by_user ON af.approved_by = approved_by_user.userID`;
 
 export async function findFormsByAssetId(
   assetId: string
@@ -857,6 +877,151 @@ export async function getTransferFormsForMovement(
   return rows as any[];
 }
 
+// ---------------------------------------------------------------------------
+// Approval-flow helpers
+//
+// `approval_status` on `accountability_forms` drives flows:
+// Standard (IT/Admin asset): 1. `pending_admin_copy_signature` -> 2. `pending_approval` -> 3. `approved`
+// Unified clearance (`form_origin='clearance', clearance_scope='Unified'`):
+//   1. `pending_approval` -> waiting for owner's designated approver/sub-approver
+//   2. `pending_it`       -> waiting for IT Asset role
+//   3. `pending_admin`    -> waiting for Admin Asset role
+//   4. `pending_hr`       -> waiting for HR Receiver
+//   5. `approved`
+// ---------------------------------------------------------------------------
+
+export interface AdminCopySignerUserRow extends RowDataPacket {
+  userID: string;
+  first_name: string | null;
+  last_name: string | null;
+  email: string | null;
+}
+
+/**
+ * Resolve a user-shaped row by id (used to enrich signer/approver names in
+ * approval responses).
+ */
+export async function getAdminCopySignerUser(
+  userId: string
+): Promise<AdminCopySignerUserRow | null> {
+  const [rows] = await pool.execute<AdminCopySignerUserRow[]>(
+    `SELECT userID, first_name, last_name, email
+     FROM users
+     WHERE userID = ? AND deleted_at IS NULL
+     LIMIT 1`,
+    [userId]
+  );
+  return rows[0] ?? null;
+}
+
+/**
+ * Update the IT/Admin copy signature columns and (optionally) flip the
+ * approval status. Returns the new approval status.
+ */
+export async function updateAdminCopySignature(
+  formId: string,
+  signature: string | null,
+  newApprovalStatus: 'pending_approval' | 'approved'
+): Promise<number> {
+  const [result] = await pool.execute<ResultSetHeader>(
+    `UPDATE accountability_forms
+     SET admin_copy_signature = ?,
+         admin_copy_signed_at = NOW(),
+         approval_status = ?,
+         updated_at = NOW()
+     WHERE formID = ? AND approval_status = 'pending_admin_copy_signature'`,
+    [signature, newApprovalStatus, formId]
+  );
+  return result.affectedRows;
+}
+
+/**
+ * Set `approval_status = 'approved'`. Only acts on forms currently in
+ * `pending_approval`; returns affected rows.
+ */
+export async function updateFormApproval(args: {
+  formId: string;
+  approvedBy: string;
+  approvalNotes: string | null;
+}): Promise<number> {
+  const [result] = await pool.execute<ResultSetHeader>(
+    `UPDATE accountability_forms
+     SET approval_status = 'approved',
+         approved_by = ?,
+         approved_at = NOW(),
+         approval_notes = ?,
+         updated_at = NOW()
+     WHERE formID = ? AND approval_status = 'pending_approval'`,
+    [args.approvedBy, args.approvalNotes, args.formId]
+  );
+  return result.affectedRows;
+}
+
+/**
+ * Fetch full-detail rows for forms where the given user is the designated
+ * IT/Admin copy signer AND the form is awaiting their signature.
+ */
+export async function listFormsPendingAdminCopySignature(
+  signerUserId: string
+): Promise<RowDataPacket[]> {
+  const [rows] = await pool.execute<RowDataPacket[]>(
+    `${FORM_FULL_SELECT_AND_JOINS}
+     WHERE af.deleted_at IS NULL
+       AND af.approval_status = 'pending_admin_copy_signature'
+       AND af.admin_copy_signer_id = ?
+     ORDER BY af.created_at DESC`,
+    [signerUserId]
+  );
+  return rows;
+}
+
+/**
+ * Fetch full-detail rows for forms waiting on this user's approval
+ * (designated approver or sub-approver of the form's user).
+ */
+export async function listFormsPendingApprovalForApprover(
+  approverUserId: string
+): Promise<RowDataPacket[]> {
+  const [rows] = await pool.execute<RowDataPacket[]>(
+    `${FORM_FULL_SELECT_AND_JOINS}
+     WHERE af.deleted_at IS NULL
+       AND af.approval_status = 'pending_approval'
+AND (
+          EXISTS (
+            SELECT 1 FROM user_approvers ua
+            WHERE ua.user_id = af.user_id
+              AND ua.approver_user_id = ?
+              AND ua.approver_type = 'approver'
+          )
+          OR EXISTS (
+            SELECT 1 FROM user_approvers ua
+            WHERE ua.user_id = af.user_id
+              AND ua.approver_user_id = ?
+              AND ua.approver_type = 'sub_approver'
+          )
+        )
+     ORDER BY af.created_at DESC`,
+    [approverUserId, approverUserId]
+  );
+  return rows;
+}
+
+/**
+ * Get the next/previous approval_status for a given form (helper for the
+ * approval workflow when combining the copy-signing and approval steps).
+ */
+export async function getFormApprovalStatus(
+  formId: string
+): Promise<string | null> {
+  const [rows] = await pool.execute<RowDataPacket[]>(
+    `SELECT approval_status FROM accountability_forms
+     WHERE formID = ? AND deleted_at IS NULL LIMIT 1`,
+    [formId]
+  );
+  const row = rows[0] as { approval_status?: string | null } | undefined;
+  return row?.approval_status ?? null;
+}
+
 /**
  * Find the currently-active accountability forms that still cover the given
  * asset ids (i.e. where each asset went after this form was disabled). Excludes
@@ -904,4 +1069,133 @@ export async function getActiveAccountabilityFormsForAssetIds(
     params
   )) as any[];
   return rows as any[];
+}
+
+// ---------------------------------------------------------------------------
+// Unified clearance 4-step helpers
+// ---------------------------------------------------------------------------
+
+export async function updateClearanceItApproval(
+  formId: string,
+  signerId: string,
+  signature: string | null
+): Promise<number> {
+  const [result] = await pool.execute<ResultSetHeader>(
+    `UPDATE accountability_forms
+     SET clearance_it_signer_id = ?, clearance_it_signature = ?, clearance_it_signed_at = NOW(),
+         approval_status = 'pending_admin', updated_at = NOW()
+     WHERE formID = ? AND approval_status = 'pending_it' AND deleted_at IS NULL`,
+    [signerId, signature, formId]
+  );
+  return result.affectedRows;
+}
+
+export async function updateClearanceAdminApproval(
+  formId: string,
+  signerId: string,
+  signature: string | null
+): Promise<number> {
+  const [result] = await pool.execute<ResultSetHeader>(
+    `UPDATE accountability_forms
+     SET clearance_admin_signer_id = ?, clearance_admin_signature = ?, clearance_admin_signed_at = NOW(),
+         approval_status = 'pending_hr', updated_at = NOW()
+     WHERE formID = ? AND approval_status = 'pending_admin' AND deleted_at IS NULL`,
+    [signerId, signature, formId]
+  );
+  return result.affectedRows;
+}
+
+export async function updateClearanceHrApproval(
+  formId: string,
+  signerId: string,
+  signature: string | null
+): Promise<number> {
+  const [result] = await pool.execute<ResultSetHeader>(
+    `UPDATE accountability_forms
+     SET clearance_hr_signer_id = ?, clearance_hr_signature = ?, clearance_hr_signed_at = NOW(),
+         approval_status = 'approved', approved_by = ?, approved_at = NOW(), updated_at = NOW()
+     WHERE formID = ? AND approval_status = 'pending_hr' AND deleted_at IS NULL`,
+    [signerId, signature, signerId, formId]
+  );
+  return result.affectedRows;
+}
+
+export async function updateClearanceApproverToIt(
+  formId: string,
+  approverId: string,
+  signature: string | null
+): Promise<number> {
+  const [result] = await pool.execute<ResultSetHeader>(
+    `UPDATE accountability_forms
+     SET approved_by = ?, approved_at = NOW(), approval_notes = ?, updated_at = NOW(),
+         approval_status = 'pending_it'
+     WHERE formID = ? AND approval_status = 'pending_approval' AND deleted_at IS NULL
+       AND JSON_UNQUOTE(JSON_EXTRACT(assets_data, '$.form_origin')) = 'clearance'`,
+    [approverId, signature, formId]
+  );
+  return result.affectedRows;
+}
+
+export async function hasRole(
+  userId: string,
+  roleName: 'IT Asset' | 'Admin Asset'
+): Promise<boolean> {
+  const [rows] = await pool.execute<RowDataPacket[]>(
+    `SELECT 1 FROM users u
+     LEFT JOIN asset_mngmnt_roles r ON u.role_id = r.roleID AND r.deleted_at IS NULL
+     LEFT JOIN user_custodian_settings uc ON u.userID = uc.user_id
+     WHERE u.userID = ?
+       AND (LOWER(TRIM(r.name)) = LOWER(TRIM(?)) OR LOWER(TRIM(r.name)) LIKE CONCAT('%', LOWER(TRIM(?)), '%'))
+     LIMIT 1`,
+    [userId, roleName, roleName]
+  );
+  // Fallback broader check via user_custodian_settings is not role-based but we also support direct role name match above.
+  // For custodian table drop, role name is authoritative.
+  return Array.isArray(rows) && rows.length > 0;
+}
+
+export async function listFormsPendingItForUser(userId: string): Promise<RowDataPacket[]> {
+  // Only users with IT Asset role should see these, but filter at query by status only
+  const [rows] = await pool.execute<RowDataPacket[]>(
+    `${FORM_FULL_SELECT_AND_JOINS}
+     WHERE af.deleted_at IS NULL AND af.approval_status = 'pending_it'
+       AND JSON_UNQUOTE(JSON_EXTRACT(af.assets_data, '$.form_origin')) = 'clearance'
+     ORDER BY af.created_at DESC`
+  );
+  return rows;
+}
+
+export async function listFormsPendingAdminForUser(userId: string): Promise<RowDataPacket[]> {
+  const [rows] = await pool.execute<RowDataPacket[]>(
+    `${FORM_FULL_SELECT_AND_JOINS}
+     WHERE af.deleted_at IS NULL AND af.approval_status = 'pending_admin'
+       AND JSON_UNQUOTE(JSON_EXTRACT(af.assets_data, '$.form_origin')) = 'clearance'
+     ORDER BY af.created_at DESC`
+  );
+  return rows;
+}
+
+export async function listFormsPendingHrForUser(userId: string): Promise<RowDataPacket[]> {
+  const [rows] = await pool.execute<RowDataPacket[]>(
+    `${FORM_FULL_SELECT_AND_JOINS}
+     WHERE af.deleted_at IS NULL AND af.approval_status = 'pending_hr'
+       AND JSON_UNQUOTE(JSON_EXTRACT(af.assets_data, '$.form_origin')) = 'clearance'
+     ORDER BY af.created_at DESC`
+  );
+  return rows;
+}
+
+export async function listFormsPendingClearanceForApprover(approverUserId: string): Promise<RowDataPacket[]> {
+  const [rows] = await pool.execute<RowDataPacket[]>(
+    `${FORM_FULL_SELECT_AND_JOINS}
+     WHERE af.deleted_at IS NULL AND af.approval_status = 'pending_approval'
+       AND JSON_UNQUOTE(JSON_EXTRACT(af.assets_data, '$.form_origin')) = 'clearance'
+       AND (
+         EXISTS (SELECT 1 FROM user_approvers ua WHERE ua.user_id = af.user_id AND ua.approver_user_id = ? AND ua.approver_type = 'approver')
+         OR EXISTS (SELECT 1 FROM user_approvers ua WHERE ua.user_id = af.user_id AND ua.approver_user_id = ? AND ua.approver_type = 'sub_approver')
+       )
+     ORDER BY af.created_at DESC`,
+    [approverUserId, approverUserId]
+  );
+  return rows;
 }

@@ -87,8 +87,6 @@ import {
   type AssetReturnFormBatch,
 } from '@/pages/profile/profileComponents/tabs/documentsTab';
 import { generateAssetReturnPDF, downloadPDF } from '@/lib/pdfGenerator';
-import { IssueClearanceModal } from '@/pages/assets/accountability/components/IssueClearanceModal';
-import type { ClearanceScope } from '@/pages/assets/accountability/accountabilityFormTypes';
 
 const conditionOptions = [
   {
@@ -232,13 +230,6 @@ export default function ReturnRequestsPage() {
   const [intangibleAssets, setIntangibleAssets] = useState<any[]>([]);
   const [selectedIntangibleAssetIds, setSelectedIntangibleAssetIds] = useState<string[]>([]);
   const [intangibleNotes, setIntangibleNotes] = useState<Record<string, string>>({});
-  const [clearanceModal, setClearanceModal] = useState<{
-    open: boolean;
-    userId: string;
-    userName: string;
-    eligibleScopes: ClearanceScope[];
-    disabledFormNumbersByScope: Record<ClearanceScope, string[]>;
-  } | null>(null);
 
   // Close parent dialog when SMS OTP dialog opens to prevent scrollbar issues
   useEffect(() => {
@@ -584,28 +575,6 @@ export default function ReturnRequestsPage() {
         setProcessForm(null);
         await fetchPending();
         await fetchProcessed();
-        if (processForm.user_id) {
-          console.log('[clearance] checking eligibility for user', processForm.user_id, 'form', processForm.formID);
-          try {
-            const elig = await api.get<{ eligibleScopes?: ClearanceScope[]; disabledFormNumbersByScope?: Record<ClearanceScope, string[]> }>('/accountability-forms/clearance/eligibility?userId=' + processForm.user_id);
-            console.log('[clearance] eligibility response:', elig);
-            if (elig.eligibleScopes?.length) {
-              setClearanceModal({
-                open: true,
-                userId: processForm.user_id,
-                userName: returnerName(processForm),
-                eligibleScopes: elig.eligibleScopes,
-                disabledFormNumbersByScope: elig.disabledFormNumbersByScope ?? { IT: [], Admin: [] },
-              });
-            } else {
-              console.log('[clearance] no eligible scopes for user', processForm.user_id);
-            }
-          } catch (err) {
-            console.warn('[clearance] eligibility check failed (non-critical):', err);
-          }
-        } else {
-          console.log('[clearance] no processForm.user_id, skipping eligibility check');
-        }
       } catch (err: unknown) {
         const e = err as { data?: { error?: string } };
         toast.error(e?.data?.error ?? 'Failed to process return');
@@ -706,32 +675,6 @@ export default function ReturnRequestsPage() {
         setProcessForm(null);
         await fetchPending();
         await fetchProcessed();
-        if (params.formID) {
-          const formRef = processingFormRef.current;
-          const targetUserId = formRef?.user_id;
-          if (targetUserId) {
-            console.log('[clearance] checking eligibility for user', targetUserId, 'form', params.formID);
-            try {
-              const elig = await api.get<{ eligibleScopes?: ClearanceScope[]; disabledFormNumbersByScope?: Record<ClearanceScope, string[]> }>('/accountability-forms/clearance/eligibility?userId=' + targetUserId);
-              console.log('[clearance] eligibility response:', elig);
-              if (elig.eligibleScopes?.length) {
-                setClearanceModal({
-                  open: true,
-                  userId: targetUserId,
-                  userName: returnerName(formRef),
-                  eligibleScopes: elig.eligibleScopes,
-                  disabledFormNumbersByScope: elig.disabledFormNumbersByScope ?? { IT: [], Admin: [] },
-                });
-              } else {
-                console.log('[clearance] no eligible scopes for user', targetUserId);
-              }
-            } catch (err) {
-              console.warn('[clearance] eligibility check failed (non-critical):', err);
-            }
-          } else {
-            console.log('[clearance] no targetUserId from processingFormRef, skipping');
-          }
-        }
       } catch (err: unknown) {
         const e = err as { data?: { error?: string } };
         toast.error(e?.data?.error ?? 'Failed to process return');
@@ -746,24 +689,6 @@ export default function ReturnRequestsPage() {
     const u = form.returns[0]?.assignment?.user;
     if (!u) return 'Unknown';
     return [u.first_name, u.last_name].filter(Boolean).join(' ') || 'Unknown';
-  };
-
-  const handleClearanceConfirm = async (scopes: ClearanceScope[]) => {
-    if (!clearanceModal) return;
-    try {
-      for (const scope of scopes) {
-        await api.post('/accountability-forms/clearance', {
-          userId: clearanceModal.userId,
-          clearanceScope: scope,
-          referenceDisabledFormNumbers: clearanceModal.disabledFormNumbersByScope[scope],
-          clearanceReason: 'return',
-        });
-      }
-      toast.success('Clearance issued successfully');
-    } catch (err: unknown) {
-      const e = err as { data?: { error?: string } };
-      toast.error(e?.data?.error ?? 'Failed to issue clearance');
-    }
   };
 
   const allConditionsSelected =
@@ -2162,17 +2087,6 @@ export default function ReturnRequestsPage() {
           onFinalSubmit={handleChecklistFinalSubmit}
         />
 
-        <IssueClearanceModal
-          open={!!clearanceModal?.open}
-          onOpenChange={open => {
-            if (!open) setClearanceModal(null);
-          }}
-          userId={clearanceModal?.userId ?? ''}
-          userName={clearanceModal?.userName ?? ''}
-          eligibleScopes={clearanceModal?.eligibleScopes ?? []}
-          disabledFormNumbersByScope={clearanceModal?.disabledFormNumbersByScope ?? { IT: [], Admin: [] }}
-          onConfirm={handleClearanceConfirm}
-        />
       </main>
     </div>
   );

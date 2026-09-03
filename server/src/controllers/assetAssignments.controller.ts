@@ -124,6 +124,8 @@ export async function createAssetAssignmentHandler(
       issuerSignature,
       signITCopy,
       itCopySignature,
+      adminCopySignerId,
+      adminCopyCopyType,
     } = req.body;
     const assignedBy = req.user!.userID;
 
@@ -490,6 +492,8 @@ export async function createAssetAssignmentHandler(
               issuerSignature,
               signITCopy,
               itCopySignature,
+              adminCopySignerId: adminCopySignerId ?? null,
+              adminCopyCopyType: adminCopyCopyType ?? null,
               previousFormId: disabledFormId,
               previousFormOriginalStatus,
               assignmentIds: departmentAssignmentIds,
@@ -526,12 +530,37 @@ export async function createAssetAssignmentHandler(
 
     // ----------------------------------------------------------------
     // Notify the assignee about pending accountability form(s) to sign
+    // (skip when the form is still in the approval flow - the controller
+    //  already notified the IT/Admin copy signer / owner's approver.)
     // ----------------------------------------------------------------
     if (createdForms.length > 0) {
       try {
         const assignerName = await repo.getUserFullName(assignedBy);
         const io = getIoInstance();
         for (const createdForm of createdForms) {
+          // Only send the user-facing "ready to sign" notification when the
+          // form's approval flow has already completed. The new approval
+          // flow (admin copy + approver) sends its own notifications.
+          let approvalStatus: string | null = null;
+          try {
+            const detailRow = await pool.execute(
+              `SELECT approval_status FROM accountability_forms
+               WHERE formID = ? AND deleted_at IS NULL LIMIT 1`,
+              [createdForm.formId]
+            );
+            const rows = (detailRow as any)?.[0] as Array<{
+              approval_status?: string;
+            }>;
+            approvalStatus = rows?.[0]?.approval_status ?? null;
+          } catch (statusErr) {
+            logger.warn('Could not read approval_status for new form:', statusErr);
+          }
+          if (approvalStatus && approvalStatus !== 'approved') {
+            // Approval flow is in progress; the controller already notified
+            // the copy signer / approver.
+            continue;
+          }
+
           const signMessage = createdForm.formNumber
             ? `by ${assignerName}. Your accountability form ${createdForm.formNumber} is ready. Please review and sign it.`
             : `by ${assignerName}. Your accountability form is ready. Please review and sign it.`;

@@ -4,7 +4,18 @@
     <meta charset="UTF-8" />
     <link rel="icon" type="image/svg+xml" href="/Blackcoders-Black.png" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="color-scheme" content="light dark" />
     <title>Asset Management</title>
+    <script>
+      (function () {
+        try {
+          var k = "am-theme";
+          var s = localStorage.getItem(k);
+          var d = s ? s === "dark" : window.matchMedia("(prefers-color-scheme: dark)").matches;
+          document.documentElement.classList.toggle("dark", d);
+        } catch (e) {}
+      })();
+    </script>
   </head>
   <body>
     <div id="root"></div>

@@ -168,6 +168,10 @@ export function RoleFormDialog({
                 onChange={setModulePermissions}
                 disabled={false}
                 className="min-h-[200px]"
+                isGlobalAdmin={
+                  form.name.trim().toLowerCase() === 'global admin' ||
+                  editing?.name?.trim().toLowerCase() === 'global admin'
+                }
               />
             </div>
           </div>

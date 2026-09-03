@@ -44,7 +44,6 @@ import {
   generateChecklistFormNumberFallback,
 } from '../utils/checklistFormNumber.js';
 import * as checklistRepo from '../repositories/assetChecklist.repository.js';
-import * as intangibleAssetsService from '../services/intangibleAssets.service.js';
 import {
   getCategoryDepartmentForAssetIds,
   getCompanyIdByDepartment,
@@ -53,7 +52,7 @@ import {
   generateTransferFormNumber,
   generateTransferFormNumberFallback,
 } from '../utils/transferFormNumber.js';
-import { getAssetScope, getDepartmentIdsForScope } from '../utils/assetScope.js';
+import { getAssetScope, getDepartmentIdsForScope, classifyDepartmentScopeByName } from '../utils/assetScope.js';
 import { fetchUserDigitalSignature } from '../repositories/assetReturn.repository.js';
 import { createAccountabilityFormHandler } from './accountabilityForms.controller.js';
 import {
@@ -518,6 +517,8 @@ export async function createAssetTransferHandler(
       transferType,
       receivedBy,
       newAssignment,
+      adminCopySignerId,
+      adminCopyCopyType,
     } = req.body;
 
     if (
@@ -1023,6 +1024,8 @@ export async function createAssetTransferHandler(
           departmentId: deptInfo.departmentId || newDeptId,
           locationId: newLocId,
           locationRoomId: newRoomId,
+          adminCopySignerId: adminCopySignerId ?? null,
+          adminCopyCopyType: adminCopyCopyType ?? null,
         },
       } as AuthRequest;
       const accountabilityFormRes = {
@@ -1086,8 +1089,9 @@ export async function createHeldTransferHandler(
       receivedBy,
       newAssignment,
       processSignature,
-      intangibleAssetItems,
       ownerAbsent: ownerAbsentRaw,
+      adminCopySignerId,
+      adminCopyCopyType,
     } = req.body;
     const ownerAbsent =
       ownerAbsentRaw === true ||
@@ -1095,26 +1099,15 @@ export async function createHeldTransferHandler(
       ownerAbsentRaw === 1 ||
       ownerAbsentRaw === '1';
 
-    const hasIntangibleItems = intangibleAssetItems && Array.isArray(intangibleAssetItems) && intangibleAssetItems.length > 0;
     if (
       !assetTransfers ||
       !Array.isArray(assetTransfers) ||
-      (assetTransfers.length === 0 && !hasIntangibleItems)
+      assetTransfers.length === 0
     ) {
-      if (!hasIntangibleItems) {
-        return res.status(400).json({
-          error: 'Asset transfers array is required',
-        });
-      }
+      return res.status(400).json({
+        error: 'Asset transfers array is required',
+      });
     }
-
-    const intangibleItems: Array<{ id: string; notes: string | null }> =
-      hasIntangibleItems
-        ? (intangibleAssetItems as any[]).map((it: any) => ({
-            id: String(it?.id ?? it ?? ''),
-            notes: it?.notes != null ? String(it.notes) : null,
-          }))
-        : [];
 
     if (!newAssignment?.userId) {
       return res.status(400).json({
@@ -1136,20 +1129,6 @@ export async function createHeldTransferHandler(
       const ownerIds = [
         ...new Set(assignmentRows.map((r: any) => r.user_id).filter(Boolean)),
       ];
-      for (const item of intangibleItems) {
-        try {
-          const activeAssignments =
-            await intangibleAssetsService.getActiveAssignmentsByAsset(item.id);
-          for (const a of activeAssignments as any[]) {
-            if (a.user_id) ownerIds.push(a.user_id);
-          }
-        } catch (err) {
-          logger.error(
-            'Failed to resolve intangible owner for owner-absent check',
-            { id: item.id, err }
-          );
-        }
-      }
       const distinctOwnerIds = [...new Set(ownerIds)];
       if (distinctOwnerIds.length > 1) {
         return res.status(400).json({
@@ -1263,13 +1242,6 @@ export async function createHeldTransferHandler(
       throw assignErr;
     }
 
-    if (intangibleItems.length > 0) {
-      await AssetTransferFormModel.addFormIntangibleAssets(
-        form_id,
-        intangibleItems
-      );
-    }
-
     const validConditions = [
       'Excellent',
       'Good',
@@ -1361,6 +1333,63 @@ export async function createHeldTransferHandler(
               },
             });
           }
+        }
+        // Second notification to each transferrer: return form created for IT/Admin condition checking
+        try {
+          const deptForScope = categoryDeptId ? await getDepartmentById(categoryDeptId) : null;
+          const scope = classifyDepartmentScopeByName(deptForScope?.name ?? null);
+          const targetDeptLabel =
+            scope === 'IT'
+              ? 'IT Department'
+              : scope === 'Admin'
+                ? 'Admin Department'
+                : deptForScope?.name?.trim() || 'department';
+          const deptHint = scope === 'IT' ? 'IT asset' : scope === 'Admin' ? 'Admin asset' : 'asset';
+          for (const transferrerId of transferrerUserIds) {
+            const assetsForOwner = assignmentRows.filter((r: any) => r.user_id === transferrerId).length || assignmentRows.length;
+            const returnFormNumberForMsg = returnForm!.form_number ?? returnFormNumber;
+            const message2 =
+              `A return form (${returnFormNumberForMsg}) has also been created for the asset to be returned first to the ${targetDeptLabel} for asset condition checking (${deptHint}). When approved, please bring the asset to the ${targetDeptLabel}.`;
+            await createNotificationForApi({
+              user_id: transferrerId,
+              title: 'Return Form Created for Condition Checking',
+              message: message2,
+              type: 'system',
+              data: {
+                form_id: returnFormId,
+                form_number: returnFormNumberForMsg,
+                transfer_form_id: form_id,
+                transfer_form_number: transferForm!.form_number ?? null,
+                asset_count: assetsForOwner,
+                scope,
+                target_department: targetDeptLabel,
+                route: '/profile?tab=documents&docTab=returns',
+                actionTarget: 'my_return_requests',
+              },
+            });
+            if (io) {
+              emitNotification(io, transferrerId, 'notification', {
+                id: returnFormId,
+                title: 'Return Form Created for Condition Checking',
+                message: message2,
+                type: 'system',
+                data: {
+                  form_id: returnFormId,
+                  form_number: returnFormNumberForMsg,
+                  transfer_form_id: form_id,
+                  transfer_form_number: transferForm!.form_number ?? null,
+                  asset_count: assetsForOwner,
+                  scope,
+                  target_department: targetDeptLabel,
+                  route: '/profile?tab=documents&docTab=returns',
+                  actionTarget: 'my_return_requests',
+                },
+                time: new Date().toISOString(),
+              });
+            }
+          }
+        } catch (requesterNotifErr) {
+          logger.error('Failed to send held-transfer return-form condition-check notification:', requesterNotifErr);
         }
       } catch (notifErr) {
         logger.error(
@@ -1470,7 +1499,6 @@ export async function submitTransferRequestHandler(
       notes?: string;
       transferType?: string;
       digitalSignature?: string;
-      intangibleAssetIds?: string[];
     };
     const rawAssignmentIds = body.assignmentIds;
     const assignmentIds = Array.isArray(rawAssignmentIds)
@@ -1773,23 +1801,60 @@ export async function submitTransferRequestHandler(
           logger.error('Failed to send transfer request notifications:', notifError);
         }
       }
-    }
 
-    // Persist intangible assets selected for the transfer on the first created form.
-    // They stay assigned to the transferrer until execution (mirrors the tangible flow),
-    // so a declined request does not leave the intangibles unassigned.
-    const intangibleAssetIds = body.intangibleAssetIds;
-    if (intangibleAssetIds && intangibleAssetIds.length > 0 && firstForm) {
+      // Second notification to the requester: return form created for IT/Admin condition checking
       try {
-        await AssetTransferFormModel.addFormIntangibleAssets(
-          firstForm.formID,
-          intangibleAssetIds.map(id => ({ id: String(id) }))
-        );
-      } catch (err) {
-        logger.error(
-          'Failed to persist intangible assets on transfer request',
-          { ids: intangibleAssetIds, err }
-        );
+        const deptForScope = effectiveDepartmentId ? await getDepartmentById(effectiveDepartmentId) : null;
+        const scope = classifyDepartmentScopeByName(deptForScope?.name ?? null);
+        const targetDeptLabel =
+          scope === 'IT'
+            ? 'IT Department'
+            : scope === 'Admin'
+              ? 'Admin Department'
+              : deptForScope?.name?.trim() || 'department';
+        const deptHint = scope === 'IT' ? 'IT asset' : scope === 'Admin' ? 'Admin asset' : 'asset';
+        const message =
+          `A return form (${returnForm?.form_number ?? returnFormNumber}) has also been created for the asset to be returned first to the ${targetDeptLabel} for asset condition checking (${deptHint}). When approved, please bring the asset to the ${targetDeptLabel}.`;
+        const ioReq = getIoInstance();
+        await createNotificationForApi({
+          user_id: currentUserId,
+          title: 'Return Form Created for Condition Checking',
+          message,
+          type: 'system',
+          data: {
+            form_id: returnFormId,
+            form_number: returnForm?.form_number ?? returnFormNumber,
+            transfer_form_id: formId,
+            transfer_form_number: transferForm!.form_number ?? null,
+            asset_count: deptAssignments.length,
+            scope,
+            target_department: targetDeptLabel,
+            route: '/profile?tab=documents&docTab=returns',
+            actionTarget: 'my_return_requests',
+          },
+        });
+        if (ioReq) {
+          emitNotification(ioReq, currentUserId, 'notification', {
+            id: returnFormId,
+            title: 'Return Form Created for Condition Checking',
+            message,
+            type: 'system',
+            data: {
+              form_id: returnFormId,
+              form_number: returnForm?.form_number ?? returnFormNumber,
+              transfer_form_id: formId,
+              transfer_form_number: transferForm!.form_number ?? null,
+              asset_count: deptAssignments.length,
+              scope,
+              target_department: targetDeptLabel,
+              route: '/profile?tab=documents&docTab=returns',
+              actionTarget: 'my_return_requests',
+            },
+            time: new Date().toISOString(),
+          });
+        }
+      } catch (requesterNotifErr) {
+        logger.error('Failed to send transfer return-form condition-check notification to requester:', requesterNotifErr);
       }
     }
 
@@ -2162,22 +2227,6 @@ const processed_by =
           ? (linkedProcessorNames.get(linkedProcessorId) ?? null)
           : (linkedProcessorNames.get(form.created_by) ?? null)
         : null;
-    let intangibleAssetsForForm: Array<{
-      id: string;
-      name: string;
-      type: string;
-      description: string | null;
-      notes: string | null;
-    }> = [];
-    try {
-      intangibleAssetsForForm =
-        await AssetTransferFormModel.getFormIntangibleAssets(formId);
-    } catch (intangibleErr) {
-      logger.error('Failed to load transfer form intangible assets', {
-        formId,
-        err: intangibleErr,
-      });
-    }
     batches.push({
       formID: formId,
       form_number: form.form_number,
@@ -2217,7 +2266,6 @@ const processed_by =
       it_manager_digital_signature: null,
       it_manager_signed_by: null,
       it_manager_user_name: null,
-      intangibleAssets: intangibleAssetsForForm,
       returns: recordRows.map((r: any) => ({
         return_id: null,
         assignment_id: r.assignment_id,
@@ -2316,10 +2364,8 @@ interface RunTransferFormExecutionOptions {
     checklistData: any;
     remarks?: string;
   }>;
-  intangibleAssetItems?: Array<{
-    id: string;
-    notes?: string;
-  }>;
+  adminCopySignerId?: string | null;
+  adminCopyCopyType?: 'IT' | 'Admin' | null;
 }
 
 /** Run transfer execution (assignments, accountability, executed_at). Throws AppError on failure. Exported for use from approveReturnFormHandler when return form has linked transfer. */
@@ -2335,7 +2381,8 @@ export async function runTransferFormExecution(
     receivedBy,
     newAssignment,
     checklists,
-    intangibleAssetItems,
+    adminCopySignerId,
+    adminCopyCopyType,
   } = options;
   const { req, processorId } = context;
   const form = await AssetTransferFormModel.findById(formId);
@@ -2361,53 +2408,6 @@ export async function runTransferFormExecution(
   if (!match)
     throw new ValidationError('Request assignment IDs do not match the form');
 
-  // Resolve the intangible assets for this transfer. Persisted items on the form
-  // are the source of truth (they survive request → approval → execution, including
-  // the auto-execute-on-approval path). The request body items are accepted only to
-  // supply notes; any body id not on the form is rejected as tampering. For forms
-  // created before the persistence migration, the body items are used as a fallback.
-  let effectiveIntangibleItems: Array<{ id: string; notes: string | null }> = [];
-  try {
-    const persistedIntangibleAssets =
-      await AssetTransferFormModel.getFormIntangibleAssets(formId);
-    if (persistedIntangibleAssets.length > 0) {
-      const persistedById = new Map(
-        persistedIntangibleAssets.map(p => [p.id, p.notes ?? null])
-      );
-      const bodyItems = Array.isArray(intangibleAssetItems)
-        ? intangibleAssetItems.map((it: any) => ({
-            id: String(it?.id ?? it ?? ''),
-            notes: it?.notes != null ? String(it.notes) : null,
-          }))
-        : [];
-      for (const item of bodyItems) {
-        if (!persistedById.has(item.id)) {
-          throw new ValidationError(
-            'Request intangible asset IDs do not match the form'
-          );
-        }
-      }
-      const notesByBody = new Map(bodyItems.map(b => [b.id, b.notes]));
-      effectiveIntangibleItems = persistedIntangibleAssets.map(p => ({
-        id: p.id,
-        notes: notesByBody.has(p.id) ? (notesByBody.get(p.id) ?? null) : p.notes,
-      }));
-    } else if (
-      Array.isArray(intangibleAssetItems) &&
-      intangibleAssetItems.length > 0
-    ) {
-      effectiveIntangibleItems = intangibleAssetItems.map((it: any) => ({
-        id: String(it?.id ?? it ?? ''),
-        notes: it?.notes != null ? String(it.notes) : null,
-      }));
-    }
-  } catch (err) {
-    if (err instanceof AppError) throw err;
-    logger.error('Failed to resolve intangible assets for transfer execution', {
-      formId,
-      err,
-    });
-  }
   const placeholders = bodyAssignmentIds.map(() => '?').join(',');
   /** Active = normal path. Returned is allowed when the return was processed first but this transfer form is still pending execution (linked transfer / Transfer Requests). */
   const [assignmentRows] = (await pool.execute(
@@ -3031,6 +3031,8 @@ export async function runTransferFormExecution(
               formOrigin: 'processor_return',
               issuerSignature: processorDigitalSignature,
               itCopySignature: processorDigitalSignature,
+              adminCopySignerId: adminCopySignerId ?? null,
+              adminCopyCopyType: adminCopyCopyType ?? null,
             },
           } as AuthRequest;
           const tempFormRes = {
@@ -3243,6 +3245,8 @@ export async function runTransferFormExecution(
         locationId: newLocId,
         locationRoomId: newRoomId,
         skipNotification: true,
+        adminCopySignerId: adminCopySignerId ?? null,
+        adminCopyCopyType: adminCopyCopyType ?? null,
       },
     } as AuthRequest;
     let accountabilityFormResBody: any = null;
@@ -3270,49 +3274,6 @@ export async function runTransferFormExecution(
         `Create accountability form for transfer new assignee failed (${deptName}):`,
         acErr
       );
-    }
-  }
-
-  // Process intangible asset transfers (unassign from old owner, assign to new user).
-  // Intangibles stay with the transferrer until execution, mirroring the tangible flow.
-  if (effectiveIntangibleItems.length > 0 && companyId) {
-    for (const item of effectiveIntangibleItems) {
-      try {
-        if (pastOwnerUserId) {
-          await intangibleAssetsService.unassignIntangibleAsset(
-            item.id,
-            pastOwnerUserId,
-            companyId
-          );
-        }
-        await intangibleAssetsService.assignIntangibleAsset({
-          id: item.id,
-          assignedTo: newUserId,
-          assignmentId: formId,
-          companyId,
-          assignedBy: processorId,
-          departmentId: newDeptId,
-          locationId: newLocId,
-          locationRoomId: newRoomId,
-        });
-        await createAuditLog({
-          userId: processorId,
-          action: 'Transferred Intangible Asset',
-          resourceType: 'intangible_asset',
-          resourceId: item.id,
-          resourceName: item.id,
-          details: `Intangible asset transferred via transfer form ${formId}`,
-          newValues: { assignedTo: newUserId, notes: item.notes || null },
-          ipAddress: req.ip,
-          userAgent: req.get ? req.get('User-Agent') : 'Unknown',
-          companyId,
-        });
-      } catch (err) {
-        logger.error('Failed to transfer intangible asset', {
-          id: item.id,
-          err,
-        });
-      }
     }
   }
 
@@ -3536,7 +3497,9 @@ export async function executeTransferFormHandler(
       receivedBy,
       newAssignment,
       checklists,
-      intangibleAssetItems,
+
+      adminCopySignerId,
+      adminCopyCopyType,
     } = req.body;
 
     if (!formId) return res.status(400).json({ error: 'Form ID is required' });
@@ -3564,7 +3527,9 @@ export async function executeTransferFormHandler(
         receivedBy,
         newAssignment,
         checklists,
-        intangibleAssetItems,
+  
+        adminCopySignerId,
+        adminCopyCopyType,
       },
       { req, processorId: req.user!.userID }
     );
@@ -4634,22 +4599,6 @@ async function buildTransferFormBatches(forms: any[]): Promise<any[]> {
         processor_pending_signature?: string | null;
       }
     );
-    let intangibleAssetsForForm: Array<{
-      id: string;
-      name: string;
-      type: string;
-      description: string | null;
-      notes: string | null;
-    }> = [];
-    try {
-      intangibleAssetsForForm =
-        await AssetTransferFormModel.getFormIntangibleAssets(formId);
-    } catch (intangibleErr) {
-      logger.error('Failed to load transfer form intangible assets', {
-        formId,
-        err: intangibleErr,
-      });
-    }
     batches.push({
       formID: formId,
       form_number: form.form_number,
@@ -4715,7 +4664,6 @@ async function buildTransferFormBatches(forms: any[]): Promise<any[]> {
         : null,
       declined_at: form.declined_at ?? null,
       executed_at: form.executed_at ?? null,
-      intangibleAssets: intangibleAssetsForForm,
       returns: (recordRows as any[]).map((r: any) => ({
         return_id: r.record_id,
         assignment_id: r.assignment_id,
@@ -5184,57 +5132,20 @@ export async function approveTransferFormHandler(
       logger.error('Failed to send transfer approval notification to requester:', notifError);
     }
 
-    // Auto-approve the linked return form so the transfer and return are approved together.
+    // Linked return forms are now approved independently — do not auto-approve the paired return form here.
     if (returnFormId) {
       try {
         const [returnFormRows] = (await pool.execute(
-          `SELECT form_number, dept_head_signed_at, sub_approver_1_signed_at FROM asset_return_forms WHERE formID = ? AND deleted_at IS NULL`,
+          `SELECT form_number FROM asset_return_forms WHERE formID = ? AND deleted_at IS NULL`,
           [returnFormId]
         )) as any[];
-        const returnFormRow = returnFormRows?.[0];
-        returnFormNumber = returnFormRow?.form_number ?? null;
-        if (
-          returnFormRow &&
-          !returnFormRow.dept_head_signed_at &&
-          !returnFormRow.sub_approver_1_signed_at
-        ) {
-          if (isSubApprover1Approver) {
-            await pool.execute(
-              `UPDATE asset_return_forms SET sub_approver_1_signed_at = NOW(), sub_approver_1_digital_signature = ?, sub_approver_1_signed_by = ?, updated_at = NOW() WHERE formID = ? AND dept_head_signed_at IS NULL AND sub_approver_1_signed_at IS NULL AND declined_at IS NULL`,
-              [deptHeadDigitalSignature || null, userId, returnFormId]
-            );
-          } else {
-            await pool.execute(
-              `UPDATE asset_return_forms SET dept_head_signed_at = NOW(), dept_head_digital_signature = ?, dept_head_signed_by = ?, updated_at = NOW() WHERE formID = ? AND dept_head_signed_at IS NULL AND sub_approver_1_signed_at IS NULL AND declined_at IS NULL`,
-              [deptHeadDigitalSignature || null, userId, returnFormId]
-            );
-          }
-          const approverRow = await getUserNamesById(userId);
-          const approverName = approverRow ? `${approverRow.first_name} ${approverRow.last_name}` : 'A user';
-          await createNotificationForApi({
-            user_id: form.user_id,
-            title: 'Asset Return Request Approved',
-            message: isSubApprover1Approver
-              ? `Your asset return request has been approved by your department's sub approver ${approverName}`
-              : `Your asset return request has been approved by your department head ${approverName}`,
-            type: 'system',
-            data: {
-              form_id: returnFormId,
-              form_number: returnFormNumber,
-              approver_id: userId,
-              approver_name: approverName,
-              route: '/profile?tab=documents&docTab=returns',
-              actionTarget: 'return_request_approved',
-            },
-          });
-        }
-      } catch (autoApproveErr: any) {
-        logger.error('Failed to auto-approve linked return form on transfer approval:', autoApproveErr);
+        returnFormNumber = returnFormRows?.[0]?.form_number ?? null;
+      } catch (e) {
+        // non-fatal
       }
     }
 
-    // Notify IT/Admin asset role users of the company about the approved transfer
-    // and its linked return, so they can process the return first then the transfer.
+    // Notify IT/Admin asset role users of the company about the approved transfer only.
     try {
       const requesterRow = await getUserById(form.user_id);
       const assetRoleCompanyId = requesterRow?.company_id ?? null;
@@ -5261,21 +5172,7 @@ export async function approveTransferFormHandler(
               actionTarget: 'asset_transfer_requests',
             },
           });
-          if (returnFormId) {
-            await createNotificationForApi({
-              user_id: assetUser.userID,
-              title: 'New Asset Return Request Received',
-              message: 'A new Asset return Request has been received',
-              type: 'system',
-              data: {
-                form_id: returnFormId,
-                form_number: returnFormNumber,
-                requester_id: form.user_id,
-                route: '/assets/return-requests',
-                actionTarget: 'asset_return_requests',
-              },
-            });
-          }
+          // Linked return notification is now sent only when the return itself is approved.
         }
       }
     } catch (notifError: any) {
@@ -5392,7 +5289,7 @@ export async function approveTransferFormHandler(
   }
 }
 
-/** POST decline transfer form (Dept Head). Declines both transfer form and linked return form. */
+/** POST decline transfer form (Dept Head). Declines only the targeted transfer form — linked return must be declined separately. */
 export async function declineTransferFormHandler(
   req: AuthRequest,
   res: Response
@@ -5456,13 +5353,7 @@ export async function declineTransferFormHandler(
       `UPDATE asset_transfer_forms SET declined_at = NOW(), declined_by = ?, updated_at = NOW() WHERE formID = ?`,
       [userId, formId]
     );
-    const returnFormId = formAny.return_form_id ?? null;
-    if (returnFormId) {
-      await pool.execute(
-        `UPDATE asset_return_forms SET declined_at = NOW(), declined_by = ?, updated_at = NOW() WHERE formID = ?`,
-        [userId, returnFormId]
-      );
-    }
+    // Declines are now independent — do not auto-decline the linked return form. Approver must decline each form separately.
     await createAuditLog({
       userId,
       action: 'Declined Asset Transfer Form',

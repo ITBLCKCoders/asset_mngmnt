@@ -1,3 +1,11 @@
+export type AccountabilityFormApprovalStatus =
+  | 'pending_admin_copy_signature'
+  | 'pending_approval'
+  | 'pending_it'
+  | 'pending_admin'
+  | 'pending_hr'
+  | 'approved';
+
 export interface AccountabilityForm {
   id: string;
   formNumber: string;
@@ -60,12 +68,19 @@ export interface AccountabilityForm {
     | 'Revoked'
     | 'Disabled'
     | 'Declined';
+  approvalStatus?: AccountabilityFormApprovalStatus;
   declineReason?: string | null;
   created_at: string;
   updated_at?: string;
   signed_at?: string;
   issuerSignature?: string;
   itCopySignature?: string;
+  adminCopySignerId?: string | null;
+  adminCopyCopyType?: 'IT' | 'Admin' | null;
+  adminCopySignedAt?: string | null;
+  approvedBy?: string | null;
+  approvedAt?: string | null;
+  approvalNotes?: string | null;
   receivedCopy201FileSignature?: string | null;
   receivedCopy201FileSignedAt?: string | null;
   receivedCopy201FileSignedById?: string | null;
@@ -75,11 +90,11 @@ export interface AccountabilityForm {
     [key: string]: unknown;
   };
   formOrigin?: 'processor_return' | 'clearance';
-  clearanceScope?: 'IT' | 'Admin';
-  clearanceReason?: 'return' | 'transfer';
+  clearanceScope?: 'IT' | 'Admin' | 'Unified';
+  clearanceReason?: 'return' | 'transfer' | 'clearance';
   referenceDisabledFormNumbers?: string[];
   clearedAt?: string;
 }
 
-export type ClearanceScope = 'IT' | 'Admin';
-export type ClearanceReason = 'return' | 'transfer';
+export type ClearanceScope = 'IT' | 'Admin' | 'Unified';
+export type ClearanceReason = 'return' | 'transfer' | 'clearance';

@@ -6,7 +6,7 @@ import type { AuthRequest } from '../middleware/authenticate.js';
 import logger from '../logger.js';
 import { createAuditLog } from '../utils/audit.js';
 import { handleAccountabilityFormOnAssetReturn } from '../utils/accountabilityFormOnReturn.js';
-import { getAssetScope, getDepartmentIdsForScope } from '../utils/assetScope.js';
+import { getAssetScope, getDepartmentIdsForScope, classifyDepartmentScopeByName } from '../utils/assetScope.js';
 import { createAccountabilityFormHandler } from './accountabilityForms.controller.js';
 import {
   isUserManagerApprover2,
@@ -309,8 +309,10 @@ export async function submitAssetReturnRequestHandler(
       return_type?: string;
       digitalSignature?: string;
       intangibleAssetIds?: string[];
+      adminCopySignerId?: string | null;
+      adminCopyCopyType?: 'IT' | 'Admin' | null;
     };
-    const { assignmentIds, returnConditions, returnNotes, intangibleAssetIds } = body;
+    const { assignmentIds, returnConditions, returnNotes, intangibleAssetIds, adminCopySignerId, adminCopyCopyType } = body;
     const returnTypeRaw = body.returnType ?? body.return_type;
 
     const normalizedReturnType = normalizeReturnTypeString(returnTypeRaw);
@@ -534,6 +536,59 @@ export async function submitAssetReturnRequestHandler(
         }
       }
 
+      // Second notification to the requester: return form created + IT/Admin condition-check routing
+      try {
+        const deptForScope = effectiveDepartmentId ? await getDepartmentById(effectiveDepartmentId) : null;
+        const scope = classifyDepartmentScopeByName(deptForScope?.name ?? null);
+        const targetDeptLabel =
+          scope === 'IT'
+            ? 'IT Department'
+            : scope === 'Admin'
+              ? 'Admin Department'
+              : deptForScope?.name?.trim() || 'department';
+        const returnFormNumberForMsg = returnForm!.form_number ?? formNumber;
+        const deptHint = scope === 'IT' ? 'IT asset' : scope === 'Admin' ? 'Admin asset' : 'asset';
+        const assetCount = deptAssignments.length;
+        const message =
+          `A return form (${returnFormNumberForMsg}) has also been created for the asset to be returned first to the ${targetDeptLabel} for asset condition checking (${deptHint}). When approved, please bring the asset to the ${targetDeptLabel}.`;
+        const io2 = getIoInstance();
+        await createNotificationForApi({
+          user_id: currentUserId,
+          title: 'Return Form Created for Condition Checking',
+          message,
+          type: 'system',
+          data: {
+            form_id,
+            form_number: returnForm!.form_number ?? formNumber,
+            asset_count: assetCount,
+            scope,
+            target_department: targetDeptLabel,
+            route: '/profile?tab=documents&docTab=returns',
+            actionTarget: 'my_return_requests',
+          },
+        });
+        if (io2) {
+          emitNotification(io2, currentUserId, 'notification', {
+            id: form_id,
+            title: 'Return Form Created for Condition Checking',
+            message,
+            type: 'system',
+            data: {
+              form_id,
+              form_number: returnForm!.form_number ?? formNumber,
+              asset_count: assetCount,
+              scope,
+              target_department: targetDeptLabel,
+              route: '/profile?tab=documents&docTab=returns',
+              actionTarget: 'my_return_requests',
+            },
+            time: new Date().toISOString(),
+          });
+        }
+      } catch (requesterNotifErr) {
+        logger.error('Failed to send return-form condition-check notification to requester:', requesterNotifErr);
+      }
+
     }
 
     // Process intangible assets tied to the first created form
@@ -605,6 +660,8 @@ export async function createAssetReturnHandler(
       assignToProcessor = false,
       ownerAbsent: ownerAbsentRaw,
       intangibleAssetReturnItems,
+      adminCopySignerId,
+      adminCopyCopyType,
     } = req.body;
     const ownerAbsent =
       ownerAbsentRaw === true ||
@@ -1313,6 +1370,8 @@ export async function createAssetReturnHandler(
       req,
       processSignature: processSignature ?? undefined,
       assignToProcessor: !!assignToProcessor,
+      adminCopySignerId: adminCopySignerId ?? null,
+      adminCopyCopyType: adminCopyCopyType ?? null,
     });
 
     // Build userReturnMap from assignmentRows for returner notifications (returner notification difference retained)
@@ -1481,9 +1540,18 @@ async function runAfterReturnAccountabilityAndProcessorAssign(
       digital_signature?: string;
     } | null;
     assignToProcessor: boolean;
+    adminCopySignerId?: string | null;
+    adminCopyCopyType?: 'IT' | 'Admin' | null;
   }
 ): Promise<void> {
-  const { processorId, req, processSignature, assignToProcessor } = options;
+  const {
+    processorId,
+    req,
+    processSignature,
+    assignToProcessor,
+    adminCopySignerId,
+    adminCopyCopyType,
+  } = options;
 
   const userReturnMap = new Map<
     string,
@@ -1518,7 +1586,8 @@ async function runAfterReturnAccountabilityAndProcessorAssign(
         data.locationRoomId,
         processorId,
         req,
-        processSignature ?? undefined
+        processSignature ?? undefined,
+        { adminCopySignerId, adminCopyCopyType }
       );
     } catch (formErr) {
       logger.error('Accountability form update on return failed:', formErr);
@@ -1704,6 +1773,8 @@ async function runAfterReturnAccountabilityAndProcessorAssign(
           formOrigin: 'processor_return',
           issuerSignature: processorDigitalSignature,
           itCopySignature: processorDigitalSignature,
+          adminCopySignerId: options?.adminCopySignerId ?? null,
+          adminCopyCopyType: options?.adminCopyCopyType ?? null,
         },
       } as AuthRequest;
       const accountabilityFormRes = {
@@ -1739,7 +1810,8 @@ async function executeReturnFormAfterApproval(
     process_digital_signature?: string | null;
     received_by?: string | null;
   },
-  req: AuthRequest
+  req: AuthRequest,
+  options?: { adminCopySignerId?: string | null; adminCopyCopyType?: 'IT' | 'Admin' | null }
 ): Promise<void> {
   const returnsList = await AssetReturnModel.findByFormId(formId);
   if (returnsList.length === 0) return;
@@ -2118,6 +2190,8 @@ async function executeReturnFormAfterApproval(
           }
         : null,
       assignToProcessor,
+      adminCopySignerId: options?.adminCopySignerId ?? null,
+      adminCopyCopyType: options?.adminCopyCopyType ?? null,
     }
   );
 
@@ -4664,6 +4738,8 @@ export async function processReturnFormHandler(
       assignToProcessor = false,
       receivedBy,
       intangibleAssetReturnItems,
+      adminCopySignerId,
+      adminCopyCopyType,
     } = req.body as {
       processSignature?: { signed_at?: string; digital_signature?: string };
       assetReturns?: {
@@ -4679,6 +4755,8 @@ export async function processReturnFormHandler(
       assignToProcessor?: boolean;
       receivedBy?: string | null;
       intangibleAssetReturnItems?: { id: string; notes?: string }[];
+      adminCopySignerId?: string | null;
+      adminCopyCopyType?: 'IT' | 'Admin' | null;
     };
     const userId = req.user!.userID;
 
@@ -5266,6 +5344,8 @@ export async function processReturnFormHandler(
         req,
         processSignature: processSignature ?? null,
         assignToProcessor: !!assignToProcessor,
+        adminCopySignerId: adminCopySignerId ?? null,
+        adminCopyCopyType: adminCopyCopyType ?? null,
       }
     );
 
@@ -5354,7 +5434,11 @@ export async function approveReturnFormHandler(
   try {
     const { formId } = req.params;
     const userId = req.user!.userID;
-    const { digitalSignature } = req.body as { digitalSignature?: string };
+    const { digitalSignature, adminCopySignerId, adminCopyCopyType } = req.body as {
+      digitalSignature?: string;
+      adminCopySignerId?: string | null;
+      adminCopyCopyType?: 'IT' | 'Admin' | null;
+    };
 
     if (!formId) {
       return res.status(400).json({ error: 'Form ID is required' });
@@ -5471,120 +5555,11 @@ export async function approveReturnFormHandler(
           },
     });
 
-    let hadLinkedTransfer = false;
-    const [linkedTfRows] = (await pool.execute(
-      `SELECT formID, form_number, dept_head_signed_at, process_signed_at, process_digital_signature, processor_pending_signature, processor_pending_signed_at, executed_at,
-              new_assigned_user_id, department_id, location_id, location_room_id, transfer_type, received_by
-       FROM asset_transfer_forms WHERE return_form_id = ? AND deleted_at IS NULL LIMIT 1`,
-      [formId]
-    )) as any[];
-    const linkedTf = linkedTfRows?.[0];
-    if (linkedTf) {
-      hadLinkedTransfer = true;
-      // Auto-approve the linked transfer form so the transfer and return are approved together.
-      if (!linkedTf.dept_head_signed_at && !linkedTf.sub_approver_1_signed_at) {
-        try {
-          if (isSubApprover1Approver) {
-            await pool.execute(
-              `UPDATE asset_transfer_forms SET sub_approver_1_signed_at = NOW(), sub_approver_1_digital_signature = ?, sub_approver_1_signed_by = ?, updated_at = NOW() WHERE formID = ? AND dept_head_signed_at IS NULL AND sub_approver_1_signed_at IS NULL AND declined_at IS NULL`,
-              [deptHeadDigitalSignature || null, userId, linkedTf.formID]
-            );
-          } else {
-            await pool.execute(
-              `UPDATE asset_transfer_forms SET dept_head_signed_at = NOW(), dept_head_digital_signature = ?, dept_head_signed_by = ?, updated_at = NOW() WHERE formID = ? AND dept_head_signed_at IS NULL AND sub_approver_1_signed_at IS NULL AND declined_at IS NULL`,
-              [deptHeadDigitalSignature || null, userId, linkedTf.formID]
-            );
-          }
-          linkedTf.dept_head_signed_at = new Date();
-        } catch (autoApproveErr: any) {
-          logger.error(
-            'Failed to auto-approve linked transfer form on return approval:',
-            autoApproveErr
-          );
-        }
-      }
-      if (linkedTf.dept_head_signed_at && !linkedTf.executed_at) {
-        const processDigitalSig =
-          (linkedTf.process_digital_signature != null &&
-            String(linkedTf.process_digital_signature).trim()) ||
-          (linkedTf.processor_pending_signature != null &&
-            String(linkedTf.processor_pending_signature).trim()) ||
-          null;
-        const processSignedAtRaw =
-          linkedTf.process_signed_at != null
-            ? linkedTf.process_signed_at
-            : linkedTf.processor_pending_signed_at;
-        const processSig = processSignedAtRaw
-          ? {
-              digital_signature: processDigitalSig,
-              signed_at:
-                processSignedAtRaw instanceof Date
-                  ? processSignedAtRaw.toISOString()
-                  : String(processSignedAtRaw),
-            }
-          : null;
-        if (processSig) {
-          const [tfaRows] = (await pool.execute(
-            `SELECT assignment_id, transfer_condition, transfer_notes, condition_images FROM transfer_form_assignments WHERE form_id = ?`,
-            [linkedTf.formID]
-          )) as any[];
-          const assetTransfers = (tfaRows || []).map((r: any) => {
-            let imageUrls: string[] = [];
-            if (r.condition_images) {
-              try {
-                imageUrls =
-                  typeof r.condition_images === 'string'
-                    ? JSON.parse(r.condition_images)
-                    : r.condition_images;
-              } catch {
-                imageUrls = [];
-              }
-            }
-            return {
-              assignmentId: r.assignment_id,
-              condition: r.transfer_condition || 'Good',
-              notes: r.transfer_notes || '',
-              imageUrls,
-            };
-          });
-          const newAssignment = {
-            userId: linkedTf.new_assigned_user_id,
-            departmentId: linkedTf.department_id ?? null,
-            locationId: linkedTf.location_id ?? null,
-            roomId: linkedTf.location_room_id ?? null,
-            roomName: null as string | null,
-          };
-          try {
-            await runTransferFormExecution(
-              linkedTf.formID,
-              {
-                assetTransfers,
-                processSignature: processSig,
-                transferType: linkedTf.transfer_type ?? null,
-                receivedBy: linkedTf.received_by ?? null,
-                newAssignment,
-              },
-              { req, processorId: userId }
-            );
-          } catch (execErr: any) {
-            logger.error(
-              'Execute linked transfer on return form approval failed',
-              execErr
-            );
-            return res.status(500).json({
-              error:
-                'Return form approved but linked transfer execution failed. You may execute the transfer manually from Transfer Requests.',
-              details: execErr?.message,
-            });
-          }
-        }
-      }
-    }
-
-    // Processor-initiated hold: form had process signature and received_by before manager approved; execute return now. Skip when this return form is linked to a transfer form (transfer execution already handled asset movement).
-    if (!hadLinkedTransfer && form.process_signed_at && form.received_by) {
+    // Linked transfer forms are now approved independently — do not auto-approve/execute the paired transfer form here.
+    // Processor-initiated hold: form had process signature and received_by before manager approved; execute return now.
+    if (form.process_signed_at && form.received_by) {
       try {
-        await executeReturnFormAfterApproval(formId, form as { user_id: string; form_number: string; process_signed_at?: string | null; process_digital_signature?: string | null; received_by?: string | null }, req);
+        await executeReturnFormAfterApproval(formId, form as { user_id: string; form_number: string; process_signed_at?: string | null; process_digital_signature?: string | null; received_by?: string | null }, req, { adminCopySignerId, adminCopyCopyType });
       } catch (execErr) {
         logger.error('Execute return after manager approve failed', execErr);
         return res.status(500).json({
@@ -5667,37 +5642,7 @@ export async function approveReturnFormHandler(
       }
     }
 
-    // A transfer request creates both a transfer and a return form. When the
-    // return form is approved, the linked transfer form is auto-approved too,
-    // so notify the requester that the transfer was approved as well.
-    if (hadLinkedTransfer && linkedTf && !approveOwnerAbsent) {
-      try {
-        const approverRow2 = await getUserNamesById(userId);
-        const approverName2 =
-          approverRow2
-            ? `${approverRow2.first_name} ${approverRow2.last_name}`
-            : 'A user';
-        await createNotificationForApi({
-          user_id: form.user_id,
-          title: 'Asset Transfer Request Approved',
-          message: `Your asset transfer request has been approved by your department head ${approverName2}`,
-          type: 'system',
-          data: {
-            form_id: linkedTf.formID,
-            form_number: linkedTf.form_number,
-            approver_id: userId,
-            approver_name: approverName2,
-            route: '/profile?tab=documents&docTab=transfers',
-            actionTarget: 'transfer_request_approved',
-          },
-        });
-      } catch (notifError) {
-        logger.error(
-          'Failed to send transfer approval notification to requester:',
-          notifError
-        );
-      }
-    }
+    // Linked transfer must be approved separately — no cross-notification here.
 
     // Processor-initiated hold flow: the returner is also notified that the return
     // is now processed, since there is no separate processing step later on.
@@ -5754,27 +5699,7 @@ export async function approveReturnFormHandler(
           }
         }
 
-        if (hadLinkedTransfer && linkedTf) {
-          for (const assetUser of assetRoleUsers) {
-            if (assetUser.userID !== userId && assetUser.userID !== form.user_id) {
-              await createNotificationForApi({
-                user_id: assetUser.userID,
-                title: 'New Asset Transfer Request Received',
-                message:
-                  'A new Asset Transfer Request has been received. Please process the return first, then process the transfer.',
-                type: 'system',
-                data: {
-                  form_id: linkedTf.formID,
-                  form_number: linkedTf.form_number,
-                  requester_id: form.user_id,
-                  route: '/assets/transfer-requests',
-                  actionTarget: 'asset_transfer_requests',
-                },
-              });
-              notificationsSent++;
-            }
-          }
-        }
+        // Linked transfer notifications are now sent only when the transfer itself is approved.
 
         logger.info('Return approval - notification summary', {
           formId,
@@ -5942,7 +5867,7 @@ export async function declineReturnFormByProcessorHandler(
   }
 }
 
-/** POST decline return form (Dept Head). If linked to a transfer form (asset_transfer_forms.return_form_id), declines both. */
+/** POST decline return form (Dept Head). Declines only the targeted return form — linked transfer must be declined separately. */
 export async function declineReturnFormHandler(
   req: AuthRequest,
   res: Response
@@ -6018,14 +5943,7 @@ export async function declineReturnFormHandler(
       [userId, formId]
     );
 
-    const transferFormIds = await getTransferFormIdsByReturnFormId(formId);
-    if (transferFormIds.length > 0) {
-      const transferFormId = transferFormIds[0]!;
-      await executeRawWrite(
-        `UPDATE asset_transfer_forms SET declined_at = NOW(), declined_by = ?, updated_at = NOW() WHERE formID = ?`,
-        [userId, transferFormId]
-      );
-    }
+    // Declines are now independent — do not auto-decline the linked transfer form. Approver must decline each form separately.
 
     await createAuditLog({
       userId,

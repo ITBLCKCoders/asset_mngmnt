@@ -23,6 +23,49 @@ import logger from '../logger.js';
 import { ALL_MODULE_NAMES } from '../constants/modulePermissions.js';
 import { createAuditLog } from '../utils/audit.js';
 
+const SETTINGS_AND_USER_MODULES = new Set([
+  'Settings',
+  'Asset Categories',
+  'Asset Types',
+  'Asset Brands',
+  'Suppliers',
+  'Intangible Asset Types',
+  'Risk Levels',
+  'Departments',
+  'Locations',
+  'Roles',
+  'Companies',
+  'Users',
+]);
+
+export function buildGlobalAdminDefaultPermissionsMatrix(): Record<
+  string,
+  { view: boolean; create: boolean; edit: boolean; delete: boolean }
+> {
+  const permissions: Record<
+    string,
+    { view: boolean; create: boolean; edit: boolean; delete: boolean }
+  > = {};
+  ALL_MODULE_NAMES.forEach(module => {
+    if (SETTINGS_AND_USER_MODULES.has(module)) {
+      permissions[module] = {
+        view: true,
+        create: true,
+        edit: true,
+        delete: true,
+      };
+    } else {
+      permissions[module] = {
+        view: true,
+        create: false,
+        edit: false,
+        delete: false,
+      };
+    }
+  });
+  return permissions;
+}
+
 function buildEmptyPermissionsMatrix(): Record<
   string,
   { view: boolean; create: boolean; edit: boolean; delete: boolean }
@@ -53,7 +96,19 @@ export async function getUserPermissionsHandler(
       [userId]
     )) as any[];
 
-    const permissions = buildEmptyPermissionsMatrix();
+    const [userRoleRows] = (await pool.execute(
+      `SELECT u.role_id, r.name as role_name
+       FROM users u
+       LEFT JOIN asset_mngmnt_roles r ON u.role_id = r.roleID AND r.deleted_at IS NULL
+       WHERE u.userID = ?`,
+      [userId]
+    )) as any[];
+    const isGlobalAdmin =
+      String(userRoleRows[0]?.role_name ?? '').trim().toLowerCase() === 'global admin';
+
+    const permissions = rows.length === 0 && isGlobalAdmin
+      ? buildGlobalAdminDefaultPermissionsMatrix()
+      : buildEmptyPermissionsMatrix();
 
     // Override with database values
     rows.forEach((row: any) => {
@@ -82,11 +137,7 @@ export async function getUserPermissionsHandler(
       subApprover2: boolean;
       subApprover1: boolean;
     } | null = null;
-    const [userRows] = (await pool.execute(
-      'SELECT role_id FROM users WHERE userID = ?',
-      [userId]
-    )) as any[];
-    const roleId = userRows[0]?.role_id;
+    const roleId = userRoleRows[0]?.role_id;
     const [custodianResultSets] = (await pool.execute(
       'CALL sp_get_user_custodian_settings(?)',
       [userId]
@@ -307,7 +358,7 @@ export async function applyRolePermissionsHandler(
     }
 
     const [roleRows] = (await pool.execute(
-      'SELECT hr_accountability_receiver FROM asset_mngmnt_roles WHERE roleID = ? AND deleted_at IS NULL',
+      'SELECT name, hr_accountability_receiver FROM asset_mngmnt_roles WHERE roleID = ? AND deleted_at IS NULL',
       [roleId]
     )) as any[];
     const role = roleRows[0];
@@ -318,22 +369,31 @@ export async function applyRolePermissionsHandler(
     }
 
     const hrReceiver = Boolean(role.hr_accountability_receiver);
+    const isGlobalAdminRole =
+      String(role.name ?? '').trim().toLowerCase() === 'global admin';
 
-    const permissions = buildEmptyPermissionsMatrix();
+    let permissions = buildEmptyPermissionsMatrix();
     try {
       const [rolePermRows] = (await pool.execute(
         'SELECT module_name, permission_type, granted FROM role_permissions WHERE role_id = ?',
         [roleId]
       )) as any[];
-      (rolePermRows as any[]).forEach((row: any) => {
-        const modulePerms = permissions[row.module_name];
-        if (modulePerms && row.permission_type in modulePerms) {
-          (modulePerms as any)[row.permission_type] = row.granted === 1;
-        }
-      });
+      if (rolePermRows.length === 0 && isGlobalAdminRole) {
+        permissions = buildGlobalAdminDefaultPermissionsMatrix();
+      } else {
+        (rolePermRows as any[]).forEach((row: any) => {
+          const modulePerms = permissions[row.module_name];
+          if (modulePerms && row.permission_type in modulePerms) {
+            (modulePerms as any)[row.permission_type] = row.granted === 1;
+          }
+        });
+      }
     } catch (e: any) {
       if (e?.code !== 'ER_NO_SUCH_TABLE') {
         throw e;
+      }
+      if (isGlobalAdminRole) {
+        permissions = buildGlobalAdminDefaultPermissionsMatrix();
       }
       logger.warn(
         'role_permissions table missing; apply-role uses HR accountability overlay only when applicable'
@@ -404,18 +464,33 @@ export async function getRolePermissionsHandler(
 ) {
   try {
     const { roleID } = req.params;
-    const permissions = buildEmptyPermissionsMatrix();
+
+    const [roleRows] = (await pool.execute(
+      'SELECT name FROM asset_mngmnt_roles WHERE roleID = ? AND deleted_at IS NULL',
+      [roleID]
+    )) as any[];
+    const isGlobalAdminRole =
+      String(roleRows[0]?.name ?? '').trim().toLowerCase() === 'global admin';
+
+    let permissions = isGlobalAdminRole
+      ? buildGlobalAdminDefaultPermissionsMatrix()
+      : buildEmptyPermissionsMatrix();
+
     try {
       const [rows] = (await pool.execute(
         'SELECT module_name, permission_type, granted FROM role_permissions WHERE role_id = ?',
         [roleID]
       )) as any[];
-      (rows as any[]).forEach((row: any) => {
-        const modulePerms = permissions[row.module_name];
-        if (modulePerms && row.permission_type in modulePerms) {
-          (modulePerms as any)[row.permission_type] = row.granted === 1;
-        }
-      });
+      if ((rows as any[]).length > 0) {
+        // If explicit rows exist in DB, start from empty and apply them
+        permissions = buildEmptyPermissionsMatrix();
+        (rows as any[]).forEach((row: any) => {
+          const modulePerms = permissions[row.module_name];
+          if (modulePerms && row.permission_type in modulePerms) {
+            (modulePerms as any)[row.permission_type] = row.granted === 1;
+          }
+        });
+      }
     } catch (e: any) {
       if (e?.code !== 'ER_NO_SUCH_TABLE') {
         throw e;

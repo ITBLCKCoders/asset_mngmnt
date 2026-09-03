@@ -1,9 +1,9 @@
-import { render, screen } from '@testing-library/react';
+import { render, screen, fireEvent } from '@testing-library/react';
 import { describe, it, expect, vi } from 'vitest';
 import {
   ModulePermissionsMatrix,
   type ModulePermissionsMap,
-} from '@/components/common/ModulePermissionsMatrix';
+} from '../../components/common/modulePermissionsMatrix';
 
 const emptyValue: ModulePermissionsMap = {};
 const fullValue: ModulePermissionsMap = {
@@ -54,7 +54,7 @@ describe('ModulePermissionsMatrix', () => {
       s => s.getAttribute('data-state') !== 'checked'
     );
     if (uncheckedSwitch) {
-      uncheckedSwitch.click();
+      fireEvent.click(uncheckedSwitch);
       expect(handleChange).toHaveBeenCalled();
     }
   });
@@ -69,7 +69,9 @@ describe('ModulePermissionsMatrix', () => {
       />
     );
     const switches = screen.getAllByRole('switch');
-    switches[0]?.click();
+    if (switches[0]) {
+      fireEvent.click(switches[0]);
+    }
     expect(handleChange).not.toHaveBeenCalled();
   });
 
@@ -82,5 +84,25 @@ describe('ModulePermissionsMatrix', () => {
     );
     const dashboardSwitches = screen.getAllByRole('switch');
     expect(dashboardSwitches.length).toBeGreaterThan(0);
+  });
+
+  it('should show warning dialog when enabling operational permission for global admin', async () => {
+    const handleChange = vi.fn();
+    render(
+      <ModulePermissionsMatrix
+        value={emptyValue}
+        onChange={handleChange}
+        isGlobalAdmin={true}
+      />
+    );
+    const switches = screen.getAllByRole('switch');
+    // Switch at index 2 (Create) for Dashboard
+    const createSwitch = switches[2];
+    expect(createSwitch).toBeDefined();
+    if (createSwitch) {
+      fireEvent.click(createSwitch);
+      expect(await screen.findByText('Operational Permission Warning')).toBeDefined();
+      expect(handleChange).not.toHaveBeenCalled();
+    }
   });
 });

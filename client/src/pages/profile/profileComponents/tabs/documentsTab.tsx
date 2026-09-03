@@ -69,6 +69,7 @@ import {
   type AssetChecklistData,
 } from '@/lib/pdfGenerator';
 import SmsOtpDialog from '@/components/auth/SmsOtpDialog';
+import { GenerateClearanceModal } from '@/pages/profile/profileComponents/GenerateClearanceModal';
 
 export function buildReturnDataForPDFFromBatch(
   batch: AssetReturnFormBatch,
@@ -3110,6 +3111,9 @@ export default function DocumentsTab({
   const [statusFilter, setStatusFilter] = useState<
     'all' | 'active' | 'disabled'
   >('active');
+  const [clearanceEligibility, setClearanceEligibility] = useState<{ canGenerate: boolean; reason: string | null; disabledFormNumbers: string[] } | null>(null);
+  const [showGenerateClearance, setShowGenerateClearance] = useState(false);
+  const [generatingClearance, setGeneratingClearance] = useState(false);
 
   useEffect(() => {
     if (initialSubTab && initialSubTab !== activeSubTab) {
@@ -3145,6 +3149,36 @@ export default function DocumentsTab({
       console.error('Failed to fetch accountability forms:', error);
       setAccountabilityForms([]);
       setFilteredForms([]);
+    }
+  };
+
+  const fetchClearanceEligibility = async () => {
+    if (!currentUser?.id) return;
+    try {
+      const res = await api.get(`/accountability-forms/clearance/eligibility?userId=${currentUser.id}`);
+      setClearanceEligibility({ canGenerate: !!res.canGenerate, reason: res.reason ?? null, disabledFormNumbers: res.disabledFormNumbers ?? res.disabledFormNumbersByScope?.Unified ?? [] });
+    } catch {
+      setClearanceEligibility(null);
+    }
+  };
+
+  useEffect(() => {
+    if (currentUser?.id) fetchClearanceEligibility();
+  }, [currentUser?.id, accountabilityForms.length]);
+
+  const handleGenerateClearance = async () => {
+    if (!currentUser?.id) return;
+    setGeneratingClearance(true);
+    try {
+      await api.post('/accountability-forms/clearance', { userId: currentUser.id });
+      toast.success('Request has been sent to IT department');
+      setShowGenerateClearance(false);
+      await fetchAccountabilityForms();
+      await fetchClearanceEligibility();
+    } catch (e: any) {
+      toast.error(e?.data?.error ?? e?.message ?? 'Failed to generate clearance');
+    } finally {
+      setGeneratingClearance(false);
     }
   };
 
@@ -3454,6 +3488,12 @@ export default function DocumentsTab({
     try {
       const fullFormResponse = await api.get(`/accountability-forms/${form.id}`);
       const fullForm = fullFormResponse.form;
+      // Printable only when fully approved
+      const isApproved = (fullForm as any)?.approvalStatus === 'approved' || (fullForm as any)?.approval_status === 'approved';
+      if (!isApproved) {
+        toast.error('You can print this clearance only after it has been approved by all participating departments');
+        return;
+      }
       const pdfBlob = await generateAccountabilityClearancePDF(
         fullForm,
         currentUser
@@ -3464,7 +3504,7 @@ export default function DocumentsTab({
       );
       downloadPDF(
         pdfBlob,
-        `Asset_Clearance_${form.clearanceScope ?? 'IT'}_${safeNumber}.pdf`
+        `Asset_Clearance_${form.clearanceScope ?? 'Unified'}_${safeNumber}.pdf`
       );
       toast.success('Clearance certificate downloaded');
     } catch (error) {
@@ -3685,7 +3725,7 @@ export default function DocumentsTab({
 
             {/* TabsContent: Accountability */}
             <TabsContent value="accountability" className="mt-0">
-              <div className="flex items-center gap-3 mb-6">
+              <div className="flex items-center gap-3 mb-2">
                 <FileCheck className="w-6 h-6 text-blue-600" />
                 <h3 className="text-xl font-semibold text-gray-900">
                   Asset Accountability Forms
@@ -3693,7 +3733,15 @@ export default function DocumentsTab({
                 <span className="bg-blue-100 text-blue-800 text-sm px-2 py-1 rounded-full">
                   {filteredForms.length}
                 </span>
+                {clearanceEligibility?.canGenerate && (
+                  <Button size="sm" onClick={() => setShowGenerateClearance(true)} className="ml-auto bg-emerald-600 hover:bg-emerald-700 text-white">
+                    Generate Accountability Clearance Form
+                  </Button>
+                )}
               </div>
+              {clearanceEligibility && !clearanceEligibility.canGenerate && clearanceEligibility.reason && (
+                <p className="text-xs text-slate-500 mb-4">Clearance not available: {clearanceEligibility.reason}</p>
+              )}
 
               <div className="flex flex-col sm:flex-row gap-4 mb-6">
                 <div className="relative flex-1">
@@ -4474,6 +4522,13 @@ export default function DocumentsTab({
           )}
         </AppDialogFrame>
       </Dialog>
+
+      <GenerateClearanceModal
+        open={showGenerateClearance}
+        onOpenChange={setShowGenerateClearance}
+        disabledFormNumbers={clearanceEligibility?.disabledFormNumbers ?? []}
+        onConfirm={handleGenerateClearance}
+      />
 
       {/* Checklist Preview Dialog */}
       <Dialog open={showChecklistPreview} onOpenChange={(open) => {

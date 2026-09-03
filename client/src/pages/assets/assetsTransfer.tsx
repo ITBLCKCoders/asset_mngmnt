@@ -22,7 +22,6 @@ import {
   Building2,
   Images,
   Crown,
-  Layers,
   Download,
   FileText,
 } from 'lucide-react';
@@ -71,8 +70,6 @@ import type { ColumnDef } from '@tanstack/react-table';
 import { Shimmer } from '@/components/ui/shimmer';
 import SmsOtpDialog from '@/components/auth/SmsOtpDialog';
 import { proxyCloudinaryUrl } from '@/utils/cloudinaryProxy';
-import { classifyDepartmentScopeByName } from '@/lib/assetScope';
-import { getIntangibleAssigneeCount } from '@/utils/intangibleAssets';
 
 interface Asset {
   id: string;
@@ -216,10 +213,6 @@ export default function AssetsTransfer() {
   const [users, setUsers] = useState<User[]>([]);
   const [loading, setLoading] = useState(true);
   const [selectedAssignments, setSelectedAssignments] = useState<string[]>([]);
-  const [intangibleAssets, setIntangibleAssets] = useState<any[]>([]);
-  const [selectedIntangibleAssetIds, setSelectedIntangibleAssetIds] = useState<string[]>([]);
-  const [intangibleNotes, setIntangibleNotes] = useState<Record<string, string>>({});
-  const [intangibleSearchTerm, setIntangibleSearchTerm] = useState('');
   const [buildings, setBuildings] = useState<string[]>([]);
   const [transferring, setTransferring] = useState(false);
   const [showTransferDialog, setShowTransferDialog] = useState(false);
@@ -536,16 +529,6 @@ export default function AssetsTransfer() {
     }
   };
 
-  const fetchIntangibleAssets = async () => {
-    try {
-      const response = await api.get('/intangible-assets');
-      setIntangibleAssets(response || []);
-    } catch (error) {
-      console.error('Failed to fetch intangible assets:', error);
-      setIntangibleAssets([]);
-    }
-  };
-
   useEffect(() => {
     const fetchData = async () => {
       // Fetch assignments and other data
@@ -558,7 +541,6 @@ export default function AssetsTransfer() {
         fetchAssetBuilders(),
         fetchCompanyTransferAssets(),
         fetchTransferHistory(),
-        fetchIntangibleAssets(),
       ]);
       setLoading(false);
     };
@@ -569,7 +551,6 @@ export default function AssetsTransfer() {
     if (!showScopeTabs) return;
     setSelectedAssignments([]);
     setSelectedCompanyAssetIds([]);
-    setSelectedIntangibleAssetIds([]);
     setExpandedBuilderForSelect(null);
   }, [scope, showScopeTabs]);
 
@@ -713,8 +694,8 @@ export default function AssetsTransfer() {
       .filter(Boolean) as AssetAssignment[];
 
   const handleTransferClick = () => {
-    if (selectedAssignments.length === 0 && selectedIntangibleAssetIds.length === 0) {
-      toast.error('Please select at least one asset or intangible asset to transfer');
+    if (selectedAssignments.length === 0) {
+      toast.error('Please select at least one asset to transfer');
       return;
     }
     const selectedData = getSelectedAssignmentDetails();
@@ -728,7 +709,6 @@ export default function AssetsTransfer() {
       }))
     );
     setExpandedTransferAssets(new Set(selectedData.map(a => a.asset.id)));
-    setIntangibleNotes({});
     setTransferTypeTransfer(false);
     setTransferTypeOffboarding(false);
     setReceivedBy(currentUser?.position?.trim() || '');
@@ -772,13 +752,6 @@ export default function AssetsTransfer() {
         )
         .filter(Boolean) as AssetAssignment[];
       const ownerIds = new Set(details.map(a => a.user.id).filter(Boolean));
-      for (const id of selectedIntangibleAssetIds) {
-        const ia = intangibleAssets.find(a => a.id === id);
-        const iaOwnerIds = (ia?.assignees ?? [])
-          .map((as: any) => as?.userId)
-          .filter(Boolean);
-        for (const oid of iaOwnerIds) ownerIds.add(oid);
-      }
       if (ownerIds.size > 1) {
         toast.error(
           'When the asset owner is absent, select assets that belong to the same owner only.'
@@ -806,9 +779,6 @@ export default function AssetsTransfer() {
       const processDigitalSignature =
         (currentUser as { digitalSignature?: string | null })?.digitalSignature ??
         null;
-      const intangibleAssetItems = selectedIntangibleAssetIds.length > 0
-        ? selectedIntangibleAssetIds.map(id => ({ id, notes: intangibleNotes[id] ?? '' }))
-        : undefined;
       const payload: Record<string, unknown> = {
         assetTransfers: assetTransferData.map(d => ({
           assignmentId: d.assignmentId,
@@ -825,7 +795,6 @@ export default function AssetsTransfer() {
           roomId: null,
           roomName: newAssignmentRoom || null,
         },
-        intangibleAssetItems,
         ownerAbsent,
       };
       if (verificationConfirmSign) {
@@ -843,9 +812,7 @@ export default function AssetsTransfer() {
       );
       setShowTransferDialog(false);
       setSelectedAssignments([]);
-      setSelectedIntangibleAssetIds([]);
-      setIntangibleNotes({});
-      await Promise.all([fetchAssignments(), fetchTransferHistory(), fetchIntangibleAssets()]);
+      await Promise.all([fetchAssignments(), fetchTransferHistory()]);
     } catch (err: any) {
       const data = err?.data ?? err?.response?.data;
       toast.error(
@@ -1269,49 +1236,6 @@ export default function AssetsTransfer() {
     });
   }, [assetBuilders, companyTransferAssets, companyTransferSearchTerm]);
 
-  const scopedIntangibleAssets = useMemo(() => {
-    if (!showScopeTabs) return intangibleAssets;
-    // Classify by the department linked to the asset's type (mirrors tangible
-    // asset routing by category department). 'Other' falls back to 'it' as the
-    // most permissive scope so unclassified assets remain visible to IT.
-    const targetScope = scope === 'admin' ? 'Admin' : 'IT';
-    return intangibleAssets.filter((asset: any) => {
-      const deptCandidate =
-        asset.type_department?.name ||
-        asset.type ||
-        '';
-      const scopeType = classifyDepartmentScopeByName(deptCandidate);
-      if (scopeType === 'IT') return targetScope === 'IT';
-      if (scopeType === 'Admin') return targetScope === 'Admin';
-      // 'Other' — fall back to IT scope tab
-      return targetScope === 'IT';
-    });
-  }, [intangibleAssets, showScopeTabs, scope]);
-
-  const filteredIntangibleAssets = useMemo(() => {
-    if (!intangibleSearchTerm.trim()) return scopedIntangibleAssets;
-    const q = intangibleSearchTerm.toLowerCase();
-    return scopedIntangibleAssets.filter((asset: any) =>
-      (asset.name?.toLowerCase().includes(q)) ||
-      (asset.description?.toLowerCase().includes(q)) ||
-      (asset.remarks?.toLowerCase().includes(q)) ||
-      (asset.type?.toLowerCase().includes(q)) ||
-      (asset.code?.toLowerCase().includes(q))
-    );
-  }, [scopedIntangibleAssets, intangibleSearchTerm]);
-
-  const handleIntangibleAssetSelection = (
-    id: string,
-    checked: boolean | string
-  ) => {
-    const isChecked = Boolean(checked);
-    if (isChecked) {
-      setSelectedIntangibleAssetIds(prev => [...prev, id]);
-    } else {
-      setSelectedIntangibleAssetIds(prev => prev.filter(x => x !== id));
-    }
-  };
-
   const companyTransferBuiltAssets = useMemo(() => {
     const eligibleByCode = new Map(
       companyTransferAssets.map(asset => [asset.assetCode?.trim(), asset])
@@ -1435,7 +1359,7 @@ export default function AssetsTransfer() {
           {/* Asset Selection / Asset Built Tabs */}
           <div className="xl:col-span-2">
             <Tabs value={activeTab} onValueChange={(value) => { setActiveTab(value); setTabLoading(true); setTimeout(() => setTabLoading(false), 300); }} className="w-full">
-              <TabsList className={segmentTabsListClassName + ' grid grid-cols-4'}>
+              <TabsList className={segmentTabsListClassName + ' grid grid-cols-3'}>
                 <TabsTrigger
                   value="select-assets"
                   className={segmentTabsTriggerClassName + ' flex items-center gap-2'}
@@ -1464,16 +1388,6 @@ export default function AssetsTransfer() {
                   Company
                   <Badge variant="secondary" className="ml-1 text-xs">
                     {filteredCompanyTransferAssets.length}
-                  </Badge>
-                </TabsTrigger>
-                <TabsTrigger
-                  value="intangible-assets"
-                  className={segmentTabsTriggerClassName + ' flex items-center gap-2'}
-                >
-                  <Layers className="h-4 w-4" />
-                  Intangible Assets
-                  <Badge variant="secondary" className="ml-1 text-xs">
-                    {scopedIntangibleAssets.length}
                   </Badge>
                 </TabsTrigger>
               </TabsList>
@@ -2351,190 +2265,6 @@ export default function AssetsTransfer() {
                 </Card>
               </TabsContent>
 
-              <TabsContent value="intangible-assets" className="mt-4">
-                <Card className="shadow-xl border-0 bg-white/80 backdrop-blur-sm min-h-[500px]">
-                  <CardHeader className="pb-4">
-                    <CardTitle className="flex items-center gap-3 text-xl">
-                      <div className="p-2 bg-red-100 rounded-lg">
-                        <Layers className="h-5 w-5 text-red-600" />
-                      </div>
-                      Select Intangible Assets to Transfer
-                      <Badge variant="secondary" className="ml-auto">
-                        {scopedIntangibleAssets.length} available
-                      </Badge>
-                    </CardTitle>
-                    <div className="flex flex-col sm:flex-row sm:items-center gap-4 mt-4">
-                      <div className="relative flex-1">
-                        <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-gray-400" />
-                        <Input
-                          placeholder="Search intangible assets..."
-                          value={intangibleSearchTerm}
-                          onChange={e => setIntangibleSearchTerm(e.target.value)}
-                          className="pl-10 w-full border-gray-200 focus:border-red-500 focus:ring-red-500"
-                        />
-                      </div>
-                      {scopedIntangibleAssets.length > 0 && (
-                        <Button
-                          variant="outline"
-                          size="sm"
-                          onClick={() => {
-                            const allVisibleIds = scopedIntangibleAssets.map(a => a.id);
-                            const allSelected = allVisibleIds.every(id => selectedIntangibleAssetIds.includes(id));
-                            if (allSelected) {
-                              setSelectedIntangibleAssetIds(prev => prev.filter(id => !allVisibleIds.includes(id)));
-                            } else {
-                              setSelectedIntangibleAssetIds(prev => [...new Set([...prev, ...allVisibleIds])]);
-                            }
-                          }}
-                          className="text-red-600 border-red-300 hover:bg-red-50 whitespace-nowrap"
-                        >
-                          {scopedIntangibleAssets.length > 0 &&
-                          scopedIntangibleAssets.every(a => selectedIntangibleAssetIds.includes(a.id))
-                            ? 'Deselect All'
-                            : 'Select All'}
-                        </Button>
-                      )}
-                    </div>
-                  </CardHeader>
-                  <CardContent className="pt-0">
-                    <div className="space-y-3 max-h-96 overflow-y-auto scrollbar-thin scrollbar-thumb-gray-300 scrollbar-track-gray-100 -mr-6 pr-6">
-                      {loading || tabLoading ? (
-                        <div className="space-y-3">
-                          {Array.from({ length: 5 }).map((_, index) => (
-                            <div
-                              key={index}
-                              className="group relative p-4 border-2 rounded-xl border-gray-200"
-                            >
-                              <div className="flex items-start gap-4">
-                                <div className="flex-shrink-0 mt-1">
-                                  <Shimmer className="h-5 w-5 rounded" />
-                                </div>
-                                <div className="flex-1 min-w-0">
-                                  <div className="mb-2">
-                                    <Shimmer className="h-6 w-40 rounded" />
-                                  </div>
-                                  <div className="flex flex-wrap gap-2">
-                                    <Shimmer className="h-5 w-28 rounded-full" />
-                                    <Shimmer className="h-5 w-24 rounded-full" />
-                                  </div>
-                                  <div className="mt-3">
-                                    <Shimmer className="h-4 w-full rounded" />
-                                  </div>
-                                </div>
-                              </div>
-                            </div>
-                          ))}
-                        </div>
-                      ) : filteredIntangibleAssets.length === 0 ? (
-                        <div className="text-center py-12">
-                          <Layers className="h-16 w-16 text-gray-300 mx-auto mb-4" />
-                          <p className="text-gray-500 text-lg">
-                            {intangibleSearchTerm
-                              ? 'No Results Found'
-                              : 'No intangible assets found'}
-                          </p>
-                          <p className="text-gray-400 text-sm mt-1">
-                            {intangibleSearchTerm
-                              ? 'Try adjusting your search criteria'
-                              : 'Intangible assets in your scope will appear here'}
-                          </p>
-                        </div>
-                      ) : (
-                        filteredIntangibleAssets.map(asset => (
-                          <div
-                            key={asset.id}
-                            className={cn(
-                              'group relative p-4 border-2 rounded-xl transition-all duration-200 cursor-pointer',
-                              selectedIntangibleAssetIds.includes(asset.id)
-                                ? 'border-red-500 bg-red-50 shadow-md'
-                                : 'border-gray-200 hover:border-gray-300 hover:shadow-sm'
-                            )}
-                            onClick={() =>
-                              handleIntangibleAssetSelection(
-                                asset.id,
-                                !selectedIntangibleAssetIds.includes(asset.id)
-                              )
-                            }
-                          >
-                            <div className="flex items-start gap-4">
-                              <div className="flex-shrink-0 mt-1">
-                                <Checkbox
-                                  id={asset.id}
-                                  checked={selectedIntangibleAssetIds.includes(asset.id)}
-                                  onCheckedChange={(checked: boolean | string) =>
-                                    handleIntangibleAssetSelection(asset.id, checked)
-                                  }
-                                  className="pointer-events-none"
-                                />
-                              </div>
-
-                              <div className="flex-1 min-w-0">
-                                <div className="mb-2">
-                                  <div className="flex items-center justify-between">
-                                    <h3 className="font-semibold text-lg text-gray-900 truncate">
-                                      {asset.name}
-                                    </h3>
-                                    {selectedIntangibleAssetIds.includes(asset.id) && (
-                                      <CheckCircle2 className="h-5 w-5 text-red-600 flex-shrink-0" />
-                                    )}
-                                  </div>
-                                </div>
-
-                                <div className="flex flex-wrap gap-2">
-                                  {asset.type && (
-                                    <Badge
-                                      variant="outline"
-                                      className="text-xs border-blue-300 bg-blue-50 text-blue-800"
-                                    >
-                                      {asset.type}
-                                    </Badge>
-                                  )}
-                                  <Badge
-                                    variant="outline"
-                                    className="text-xs border-gray-300"
-                                  >
-                                    {getIntangibleAssigneeCount(asset)}{' '}
-                                    assignee{getIntangibleAssigneeCount(asset) !== 1 ? 's' : ''}
-                                  </Badge>
-                                </div>
-
-                                {asset.description && (
-                                  <p className="text-sm text-gray-600 mt-2 line-clamp-2">
-                                    {asset.description}
-                                  </p>
-                                )}
-                              </div>
-                            </div>
-                          </div>
-                        ))
-                      )}
-                    </div>
-
-                    {selectedIntangibleAssetIds.length > 0 && (
-                      <div className="mt-6 p-4 bg-gradient-to-r from-red-50 to-red-100 border border-red-200 rounded-xl">
-                        <div className="flex items-center justify-between">
-                          <div className="flex items-center gap-2">
-                            <CheckCircle2 className="h-5 w-5 text-red-600" />
-                            <span className="font-semibold text-red-900">
-                              {selectedIntangibleAssetIds.length} intangible asset
-                              {selectedIntangibleAssetIds.length !== 1 ? 's' : ''} selected for transfer
-                            </span>
-                          </div>
-                          <Button
-                            variant="outline"
-                            size="sm"
-                            onClick={() => setSelectedIntangibleAssetIds([])}
-                            className="text-red-600 border-red-300 hover:bg-red-50"
-                          >
-                            Clear All
-                          </Button>
-                        </div>
-                      </div>
-                    )}
-                  </CardContent>
-                </Card>
-              </TabsContent>
-
             </Tabs>
           </div>
 
@@ -2589,7 +2319,7 @@ export default function AssetsTransfer() {
                       onClick={handleTransferClick}
                       disabled={
                         transferring ||
-                        (selectedAssignments.length === 0 && selectedIntangibleAssetIds.length === 0) ||
+                        selectedAssignments.length === 0 ||
                         !hasPermission('Asset Transfer', 'create') ||
                         !hasPermission('Asset Transfer', 'edit')
                       }
@@ -2597,11 +2327,11 @@ export default function AssetsTransfer() {
                     >
                       <div className="flex items-center gap-2">
                         <ArrowRightLeft className="h-5 w-5" />
-                        Transfer {selectedAssignments.length + selectedIntangibleAssetIds.length} Asset
-                        {selectedAssignments.length + selectedIntangibleAssetIds.length !== 1 ? 's' : ''}
+                        Transfer {selectedAssignments.length} Asset
+                        {selectedAssignments.length !== 1 ? 's' : ''}
                       </div>
                     </Button>
-                    {selectedAssignments.length === 0 && selectedIntangibleAssetIds.length === 0 && (
+                    {selectedAssignments.length === 0 && (
                       <p className="text-sm text-gray-500 text-center">
                         Select asset assignments above to enable transfer
                       </p>
@@ -2761,8 +2491,7 @@ export default function AssetsTransfer() {
               setTransferTypeTransfer(false);
               setTransferTypeOffboarding(false);
               setReceivedBy('');
-              setIntangibleNotes({});
-            }
+                    }
           }}
         >
           <AppDialogFrame
@@ -2782,7 +2511,7 @@ export default function AssetsTransfer() {
               className={`max-h-[min(50vh,520px)] min-h-0 flex-1 space-y-4 overflow-y-auto overflow-x-hidden sm:space-y-6${smsOtpDialogOpen ? ' !overflow-hidden' : ''}`}
             >
               <div className="inline-block rounded-full border border-slate-200 bg-slate-50 px-3 py-1 text-sm font-semibold text-slate-800">
-                Selected Assets: {assetTransferData.length + selectedIntangibleAssetIds.length}
+                Selected Assets: {assetTransferData.length}
               </div>
               {/* Transfer Type - only Transfer and Transfer Offboarding */}
               <div className="rounded-xl border border-slate-200 bg-white p-5 shadow-sm">
@@ -2989,53 +2718,6 @@ export default function AssetsTransfer() {
                 );
               })}
 
-              {/* Intangible Asset table */}
-              {selectedIntangibleAssetIds.length > 0 && (
-                <div className="rounded-xl border border-slate-200 bg-white p-5 shadow-sm">
-                  <Label className="text-sm font-semibold text-slate-800 tracking-tight uppercase flex items-center gap-2 mb-4">
-                    <Layers className="h-4 w-4 text-red-500" />
-                    Intangible Asset ({selectedIntangibleAssetIds.length})
-                  </Label>
-                  <div className="overflow-x-auto">
-                    <table className="w-full text-sm">
-                      <thead>
-                        <tr className="border-b border-slate-200">
-                          <th className="text-left py-2 px-3 font-semibold text-slate-700">Name</th>
-                          <th className="text-left py-2 px-3 font-semibold text-slate-700">Type</th>
-                          <th className="text-left py-2 px-3 font-semibold text-slate-700">Description</th>
-                          <th className="text-left py-2 px-3 font-semibold text-slate-700">Notes</th>
-                        </tr>
-                      </thead>
-                      <tbody>
-                        {selectedIntangibleAssetIds.map(id => {
-                          const asset = intangibleAssets.find(a => a.id === id);
-                          if (!asset) return null;
-                          return (
-                            <tr key={id} className="border-b border-slate-100 last:border-0">
-                              <td className="py-2 px-3 text-slate-900 font-medium">{asset.name}</td>
-                              <td className="py-2 px-3">
-                                <Badge variant="outline" className={asset.type === 'IT scope' ? 'bg-red-100 text-red-800 border-red-200' : 'bg-orange-100 text-orange-800 border-orange-200'}>
-                                  {asset.type}
-                                </Badge>
-                              </td>
-                              <td className="py-2 px-3 text-slate-600">{asset.description || '—'}</td>
-                              <td className="py-2 px-3">
-                                <Textarea
-                                  placeholder="Notes..."
-                                  value={intangibleNotes[id] ?? ''}
-                                  onChange={e => setIntangibleNotes(prev => ({ ...prev, [id]: e.target.value }))}
-                                  className="border-slate-200 focus:border-red-500 focus:ring-red-500/20 rounded-lg resize-none text-xs"
-                                  rows={2}
-                                />
-                              </td>
-                            </tr>
-                          );
-                        })}
-                      </tbody>
-                    </table>
-                  </div>
-                </div>
-              )}
 
               {/* New Assignment Details */}
               <div className="rounded-xl border border-slate-200 bg-white p-5 shadow-sm space-y-4">
@@ -3350,8 +3032,8 @@ export default function AssetsTransfer() {
                   </div>
                 ) : (
                   <>
-                    Transfer {assetTransferData.length + selectedIntangibleAssetIds.length} Asset
-                    {assetTransferData.length + selectedIntangibleAssetIds.length !== 1 ? 's' : ''}
+                    Transfer {assetTransferData.length} Asset
+                    {assetTransferData.length !== 1 ? 's' : ''}
                   </>
                 )}
               </Button>

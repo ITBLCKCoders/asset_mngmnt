@@ -2,22 +2,110 @@
 @tailwind components;
 @tailwind utilities;
 
+:root {
+  /* Warm paper — stone-tinted to complement warm OLED dark (#0c0e12/#1c1f26). Soft card #fefcfb for eye comfort, defined stone borders. */
+  --background: #fbfaf9;
+  --foreground: #1a1d23;
+  --card: #fefcfb;
+  --card-foreground: #1a1d23;
+  --popover: #fefcfb;
+  --popover-foreground: #1a1d23;
+  --primary: #dc2626;
+  --primary-foreground: #ffffff;
+  --secondary: #f3f2ef;
+  --secondary-foreground: #1a1d23;
+  --muted: #f5f4f1;
+  --muted-foreground: #5f6b7a;
+  --accent: #ede9e3;
+  --accent-foreground: #1a1d23;
+  --destructive: #dc2626;
+  --destructive-foreground: #ffffff;
+  --border: #e7e5e4;
+  --input: #d6d3d1;
+  --ring: #dc2626;
+  --radius: 0.75rem;
+  /* Chart tokens — light (warm) */
+  --chart-grid: #e7e5e4;
+  --chart-axis: #d6d3d1;
+  --chart-tick: #5f6b7a;
+  --chart-tooltip-bg: #fefcfb;
+  --chart-tooltip-border: #e7e5e4;
+  --chart-cursor: rgb(180 170 160 / 0.12);
+  --chart-1: oklch(0.646 0.222 41.116);
+  --chart-2: oklch(0.6 0.118 184.704);
+  --chart-3: oklch(0.398 0.07 227.392);
+  --chart-4: oklch(0.828 0.189 84.429);
+  --chart-5: oklch(0.769 0.188 70.08);
+}
+
+.dark {
+  /* Warm OLED near-black graphite — shifted from cool #151d2b/#202a3a for depth.
+     Zinc undertone (hue ~35°, sat 7%) keeps OLED (#0c0e12) readable without blue glare. */
+  --background: #0c0e12;
+  --foreground: #eceef2;
+  --card: #1c1f26;
+  --card-foreground: #eceef2;
+  --popover: #23272f;
+  --popover-foreground: #eceef2;
+  --primary: #dc2626;
+  --primary-foreground: #ffffff;
+  --secondary: #242830;
+  --secondary-foreground: #e7e9ee;
+  --muted: #272b33;
+  --muted-foreground: #b1bdce;
+  --accent: #2e333e;
+  --accent-foreground: #f1f5f9;
+  --destructive: #dc2626;
+  --destructive-foreground: #ffffff;
+  --border: #2d323c;
+  --input: #343a46;
+  /* Brand bg red stays #dc2626 in dark; text red lightened to #f87171 for AA (see text-red overrides below). */
+  --ring: #dc2626;
+  /* Chart tokens — dark (higher contrast on warm OLED) */
+  --chart-grid: #2a303b;
+  --chart-axis: #2d323c;
+  --chart-tick: #b1bdce;
+  --chart-tooltip-bg: #23272f;
+  --chart-tooltip-border: #2d323c;
+  --chart-cursor: rgb(180 170 160 / 0.1);
+  --chart-1: oklch(0.488 0.243 264.376);
+  --chart-2: oklch(0.696 0.17 162.48);
+  --chart-3: oklch(0.769 0.188 70.08);
+  --chart-4: oklch(0.627 0.265 303.9);
+  --chart-5: oklch(0.645 0.246 16.439);
+}
+
 @layer base {
-  :root {
-    --chart-1: oklch(0.646 0.222 41.116);
-    --chart-2: oklch(0.6 0.118 184.704);
-    --chart-3: oklch(0.398 0.07 227.392);
-    --chart-4: oklch(0.828 0.189 84.429);
-    --chart-5: oklch(0.769 0.188 70.08);
+  * {
+    @apply border-border;
   }
 
-  .dark {
-    --chart-1: oklch(0.488 0.243 264.376);
-    --chart-2: oklch(0.696 0.17 162.48);
-    --chart-3: oklch(0.769 0.188 70.08);
-    --chart-4: oklch(0.627 0.265 303.9);
-    --chart-5: oklch(0.645 0.246 16.439);
+  html,
+  body,
+  #root {
+    @apply min-h-screen bg-background text-foreground;
   }
+
+  body {
+    @apply antialiased;
+  }
+}
+
+.dark body,
+.dark #root {
+  background:
+    radial-gradient(circle at 78% 0%, rgb(220 38 38 / 0.06), transparent 26rem),
+    linear-gradient(135deg, #111418 0%, #0c0e12 54%, #191d24 100%);
+}
+
+.dark .app-shell {
+  background:
+    radial-gradient(circle at 82% 6%, rgb(220 38 38 / 0.07), transparent 24rem),
+    linear-gradient(135deg, #111418 0%, #0c0e12 54%, #191d24 100%);
+}
+
+.dark .app-main {
+  background: transparent !important;
 }
 
 /* Ensure proper text rendering at high DPI */
@@ -50,59 +138,6 @@ html {
   height: 100%;
 }
 
-@keyframes spin {
-  from {
-    transform: rotate(0deg);
-  }
-  to {
-    transform: rotate(360deg);
-  }
-}
-
-.logo-spin {
-  animation: spin 20s linear infinite;
-}
-
-[data-radix-popper-content-wrapper] .day_today {
-  @apply bg-[#EE1D25] text-white font-extrabold shadow-md;
-}
-
-@keyframes fade-in {
-  from {
-    opacity: 0;
-    transform: translateY(10px);
-  }
-  to {
-    opacity: 1;
-    transform: translateY(0);
-  }
-}
-.animate-fade-in {
-  animation: fade-in 0.4s ease-out forwards;
-}
-
-.scrollbar-hide {
-  -ms-overflow-style: none;
-  scrollbar-width: none;
-}
-.scrollbar-hide::-webkit-scrollbar {
-  display: none;
-}
-
-nav::-webkit-scrollbar {
-  width: 6px;
-}
-nav::-webkit-scrollbar-track {
-  background: transparent;
-}
-nav::-webkit-scrollbar-thumb {
-  background: rgba(255, 255, 255, 0.3);
-  border-radius: 3px;
-}
-nav::-webkit-scrollbar-thumb:hover {
-  background: rgba(255, 255, 255, 0.5);
-}
-
 /* High DPI image rendering */
 img {
   image-rendering: auto;
@@ -133,4 +168,1193 @@ canvas {
 .driver-popover.digital-initials-tour-popover .driver-popover-progress-text {
   color: #6b7280;
   font-size: 12px;
+}
+
+/* Override input borders — warm stone aligned to --input */
+input:not([type="checkbox"]):not([type="radio"]),
+textarea,
+select {
+  border-color: var(--input) !important;
+}
+
+input:not([type="checkbox"]):not([type="radio"]):focus,
+textarea:focus,
+select:focus {
+  border-color: #beb9b3 !important;
+}
+
+.dark input:not([type="checkbox"]):not([type="radio"]),
+.dark textarea,
+.dark select {
+  border-color: var(--input) !important;
+}
+
+.dark input:not([type="checkbox"]):not([type="radio"]):focus,
+.dark textarea:focus,
+.dark select:focus {
+  border-color: #3e4554 !important;
+}
+
+/* Dark-mode compatibility layer for legacy hardcoded utility classes.
+   This keeps pages readable without rewriting every feature file at once. */
+.dark .bg-white {
+  background-color: var(--card) !important;
+}
+
+/* Preserve glass translucency for white/* without flattening to solid in dark.
+   Warm OLED: base rgb(28 31 38) = #1c1f26 card. opacities bumped +0.12 for readability on data tables. */
+.dark .bg-white\/95 {
+  background-color: rgb(28 31 38 / 0.94) !important;
+}
+
+.dark .bg-white\/90 {
+  background-color: rgb(28 31 38 / 0.88) !important;
+}
+
+.dark .bg-white\/80 {
+  background-color: rgb(28 31 38 / 0.80) !important;
+}
+
+.dark .bg-white\/70 {
+  background-color: rgb(28 31 38 / 0.74) !important;
+}
+
+.dark .bg-white\/60 {
+  background-color: rgb(28 31 38 / 0.72) !important;
+}
+
+.dark .bg-white\/50 {
+  background-color: rgb(28 31 38 / 0.62) !important;
+}
+
+/* Option A glass tokens – card translucency preserves frost over warm OLED gradient.
+   /60 bumped 0.60→0.82 for table readability as requested. */
+.dark .bg-card\/95 {
+  background-color: rgb(28 31 38 / 0.94) !important;
+}
+.dark .bg-card\/80 {
+  background-color: rgb(28 31 38 / 0.84) !important;
+}
+.dark .bg-card\/70 {
+  background-color: rgb(28 31 38 / 0.78) !important;
+}
+.dark .bg-card\/60 {
+  background-color: rgb(28 31 38 / 0.82) !important;
+}
+.dark .bg-card\/40 {
+  background-color: rgb(28 31 38 / 0.48) !important;
+}
+.dark .bg-white\/20 {
+  background-color: rgb(180 170 160 / 0.14) !important;
+}
+.dark .bg-white\/15 {
+  background-color: rgb(180 170 160 / 0.11) !important;
+}
+.dark .bg-white\/10 {
+  background-color: rgb(180 170 160 / 0.08) !important;
+}
+
+.dark .bg-gray-50,
+.dark .bg-slate-50 {
+  background-color: #1c1f26 !important;
+}
+
+.dark .bg-gray-100,
+.dark .bg-slate-100 {
+  background-color: #242830 !important;
+}
+
+.dark .bg-gray-200,
+.dark .bg-slate-200 {
+  background-color: #2e333e !important;
+}
+
+.dark .bg-gray-300,
+.dark .bg-slate-300 {
+  background-color: #2d323c !important;
+}
+
+.dark .bg-gray-400,
+.dark .bg-slate-400 {
+  background-color: #343a46 !important;
+}
+
+.dark .bg-gray-500,
+.dark .bg-slate-500 {
+  background-color: #3e4554 !important;
+}
+
+.dark .bg-gray-600,
+.dark .bg-slate-600 {
+  background-color: #353b47 !important;
+}
+
+.dark .bg-gray-700,
+.dark .bg-slate-700 {
+  background-color: #2a303b !important;
+}
+
+.dark .bg-gray-800,
+.dark .bg-slate-800 {
+  background-color: #1a1d23 !important;
+}
+
+.dark .bg-gray-900,
+.dark .bg-slate-900 {
+  background-color: #14171c !important;
+}
+
+.dark .bg-gray-950,
+.dark .bg-slate-950 {
+  background-color: #0c0e12 !important;
+}
+
+/* Tinted page backgrounds commonly used on dashboards/forms. */
+.dark .bg-blue-50 {
+  background-color: rgb(37 99 235 / 0.18) !important;
+}
+.dark .bg-blue-100 {
+  background-color: rgb(37 99 235 / 0.28) !important;
+}
+.dark .bg-green-50 {
+  background-color: rgb(22 163 74 / 0.16) !important;
+}
+.dark .bg-green-100 {
+  background-color: rgb(22 163 74 / 0.26) !important;
+}
+.dark .bg-yellow-50 {
+  background-color: rgb(202 138 4 / 0.17) !important;
+}
+.dark .bg-yellow-100 {
+  background-color: rgb(202 138 4 / 0.28) !important;
+}
+.dark .bg-amber-50 {
+  background-color: rgb(217 119 6 / 0.17) !important;
+}
+.dark .bg-amber-100 {
+  background-color: rgb(217 119 6 / 0.28) !important;
+}
+.dark .bg-purple-50 {
+  background-color: rgb(147 51 234 / 0.18) !important;
+}
+.dark .bg-purple-100 {
+  background-color: rgb(147 51 234 / 0.28) !important;
+}
+.dark .bg-indigo-50 {
+  background-color: rgb(79 70 229 / 0.18) !important;
+}
+.dark .bg-indigo-100 {
+  background-color: rgb(79 70 229 / 0.28) !important;
+}
+.dark .bg-orange-50 {
+  background-color: rgb(234 88 12 / 0.17) !important;
+}
+.dark .bg-orange-100 {
+  background-color: rgb(234 88 12 / 0.28) !important;
+}
+.dark .bg-fuchsia-50 {
+  background-color: rgb(192 38 211 / 0.18) !important;
+}
+.dark .bg-fuchsia-100 {
+  background-color: rgb(192 38 211 / 0.28) !important;
+}
+.dark .bg-violet-50 {
+  background-color: rgb(124 58 237 / 0.18) !important;
+}
+.dark .bg-violet-100 {
+  background-color: rgb(124 58 237 / 0.28) !important;
+}
+.dark .bg-red-50 {
+  background-color: rgb(220 38 38 / 0.17) !important;
+}
+.dark .bg-red-100 {
+  background-color: rgb(220 38 38 / 0.28) !important;
+}
+.dark .bg-red-50\/60 {
+  background-color: rgb(220 38 38 / 0.16) !important;
+}
+
+.dark .bg-red-50\/80 {
+  background-color: rgb(220 38 38 / 0.18) !important;
+}
+.dark .bg-red-50\/50 {
+  background-color: rgb(220 38 38 / 0.14) !important;
+}
+.dark .bg-rose-50 {
+  background-color: rgb(225 29 72 / 0.17) !important;
+}
+.dark .bg-rose-100 {
+  background-color: rgb(225 29 72 / 0.28) !important;
+}
+.dark .bg-slate-50 {
+  background-color: #1c1f26 !important;
+}
+.dark .bg-slate-100 {
+  background-color: #242830 !important;
+}
+.dark .bg-slate-200 {
+  background-color: #2e333e !important;
+}
+.dark .bg-slate-300 {
+  background-color: #2d323c !important;
+}
+
+/* Common page gradients (slate/white) softened for warm OLED. */
+.dark .from-white,
+.dark .from-slate-50,
+.dark .from-gray-50 {
+  --tw-gradient-from: #111418 var(--tw-gradient-from-position) !important;
+  --tw-gradient-to: rgb(17 20 24 / 0) var(--tw-gradient-to-position) !important;
+  --tw-gradient-stops: var(--tw-gradient-from), var(--tw-gradient-to) !important;
+}
+.dark .to-white,
+.dark .to-slate-50,
+.dark .to-gray-50 {
+  --tw-gradient-to: #111418 var(--tw-gradient-to-position) !important;
+}
+.dark .from-slate-100,
+.dark .from-gray-100 {
+  --tw-gradient-from: #1c1f26 var(--tw-gradient-from-position) !important;
+  --tw-gradient-to: rgb(28 31 38 / 0) var(--tw-gradient-to-position) !important;
+  --tw-gradient-stops: var(--tw-gradient-from), var(--tw-gradient-to) !important;
+}
+.dark .to-slate-100,
+.dark .to-gray-100 {
+  --tw-gradient-to: #1c1f26 var(--tw-gradient-to-position) !important;
+}
+.dark .via-white,
+.dark .via-slate-50,
+.dark .via-gray-50 {
+  --tw-gradient-via: #111418 var(--tw-gradient-via-position) !important;
+  --tw-gradient-stops: var(--tw-gradient-from), var(--tw-gradient-via),
+    var(--tw-gradient-to) !important;
+}
+
+/* Keep literal black utilities on warm OLED without pure-black slabs. */
+.dark .bg-black {
+  background-color: #14171c !important;
+}
+
+.dark .text-black {
+  color: #f8fafc !important;
+}
+
+.dark .text-gray-950,
+.dark .text-slate-950 {
+  color: #f8fafc !important;
+}
+
+.dark .text-gray-900,
+.dark .text-slate-900 {
+  color: #f8fafc !important;
+}
+
+.dark .text-gray-800,
+.dark .text-slate-800 {
+  color: #e7edf6 !important;
+}
+
+.dark .text-gray-700,
+.dark .text-slate-700 {
+  color: #d4deeb !important;
+}
+
+.dark .text-gray-600,
+.dark .text-slate-600 {
+  color: #bac7d8 !important;
+}
+
+.dark .text-gray-500,
+.dark .text-slate-500 {
+  color: #9aa8ba !important;
+}
+
+.dark .text-gray-400,
+.dark .text-slate-400 {
+  color: #b1bdce !important;
+}
+
+.dark .text-gray-300,
+.dark .text-slate-300 {
+  color: #c8d3e2 !important;
+}
+
+.dark .border-gray-100,
+.dark .border-slate-100 {
+  border-color: #2e333e !important;
+}
+
+.dark .border-gray-200,
+.dark .border-slate-200 {
+  border-color: #2d323c !important;
+}
+
+.dark .border-gray-300,
+.dark .border-slate-300 {
+  border-color: #2a303b !important;
+}
+
+.dark .border-gray-400,
+.dark .border-slate-400 {
+  border-color: #343a46 !important;
+}
+
+/* Normalize legacy white borders to warm zinc tones. */
+.dark .border-white {
+  border-color: #2d323c !important;
+}
+
+.dark .border-white\/5 {
+  border-color: rgb(180 170 160 / 0.10) !important;
+}
+
+.dark .border-white\/10 {
+  border-color: rgb(180 170 160 / 0.14) !important;
+}
+
+.dark .border-white\/20 {
+  border-color: rgb(180 170 160 / 0.18) !important;
+}
+
+.dark .border-white\/30 {
+  border-color: rgb(180 170 160 / 0.26) !important;
+}
+
+.dark .border-white\/40 {
+  border-color: rgb(180 170 160 / 0.34) !important;
+}
+
+.dark .border-white\/50 {
+  border-color: rgb(180 170 160 / 0.44) !important;
+}
+
+.dark .hover\:bg-gray-50:hover,
+.dark .hover\:bg-slate-50:hover {
+  background-color: #242830 !important;
+}
+
+.dark .hover\:bg-gray-100:hover,
+.dark .hover\:bg-slate-100:hover {
+  background-color: #2e333e !important;
+}
+
+.dark .hover\:bg-gray-200:hover,
+.dark .hover\:bg-slate-200:hover {
+  background-color: #2d323c !important;
+}
+
+.dark .hover\:text-gray-900:hover,
+.dark .hover\:text-slate-900:hover {
+  color: #f8fafc !important;
+}
+
+.dark .shadow-sm {
+  box-shadow: 0 1px 2px rgb(0 0 0 / 38%) !important;
+}
+.dark .shadow {
+  box-shadow: 0 2px 8px rgb(0 0 0 / 42%) !important;
+}
+.dark .shadow-md {
+  box-shadow: 0 8px 18px rgb(0 0 0 / 44%) !important;
+}
+.dark .shadow-lg {
+  box-shadow: 0 14px 28px rgb(0 0 0 / 48%) !important;
+}
+.dark .shadow-xl {
+  box-shadow: 0 20px 40px rgb(0 0 0 / 52%) !important;
+}
+.dark .shadow-2xl {
+  box-shadow: 0 28px 60px rgb(0 0 0 / 56%) !important;
+}
+
+
+
+/* Empty states dark mode — consolidated (removed duplicate above) */
+
+/* Empty state container improvements */
+.dark .text-muted-foreground {
+  color: var(--muted-foreground) !important;
+}
+
+/* Empty state icons - better visibility in dark mode */
+.dark [class*="text-gray-300"] {
+  color: #c8d3e2 !important;
+}
+
+.dark [class*="text-gray-400"] {
+  color: #a7b3c5 !important;
+}
+
+/* Empty state with icons and text */
+.dark .empty-state-icon {
+  color: var(--muted-foreground) !important;
+}
+
+/* Empty state containers */
+.dark .bg-gray-50.empty-state,
+.dark .bg-slate-50.empty-state {
+  background-color: var(--muted) !important;
+}
+
+/* Empty state with dashed borders */
+.dark .border-dashed {
+  border-color: var(--border) !important;
+}
+
+.dark .border-gray-200.empty-state,
+.dark .border-slate-200.empty-state {
+  border-color: var(--border) !important;
+}
+
+/* Additional color utilities for dark mode - improved contrast */
+.dark .text-orange-500 {
+  color: #fdba74 !important;
+}
+.dark .text-orange-600 {
+  color: #fb923c !important;
+}
+.dark .text-fuchsia-500 {
+  color: #e879f9 !important;
+}
+.dark .text-fuchsia-600 {
+  color: #d946ef !important;
+}
+.dark .text-violet-500 {
+  color: #a78bfa !important;
+}
+.dark .text-violet-600 {
+  color: #8b5cf6 !important;
+}
+.dark .text-teal-500 {
+  color: #5eead4 !important;
+}
+.dark .text-teal-600 {
+  color: #2dd4bf !important;
+}
+.dark .text-cyan-500 {
+  color: #67e8f9 !important;
+}
+.dark .text-cyan-600 {
+  color: #22d3ee !important;
+}
+.dark .text-pink-500 {
+  color: #f472b6 !important;
+}
+.dark .text-pink-600 {
+  color: #ec4899 !important;
+}
+.dark .text-rose-500 {
+  color: #fb7185 !important;
+}
+.dark .text-rose-600 {
+  color: #f43f5e !important;
+}
+.dark .text-blue-500 {
+  color: #93c5fd !important;
+}
+.dark .text-blue-600 {
+  color: #60a5fa !important;
+}
+/* Brand bg red stays #dc2626 in dark; text red lightened for AA on warm OLED #1c1f26
+   — #f87171 is ~5.2:1 vs #dc2626 at 3.9:1 on card. Buttons keep bg #dc2626. */
+.dark .text-red-500 {
+  color: #fca5a5 !important;
+}
+.dark .text-red-600 {
+  color: #f87171 !important;
+}
+.dark .text-red-700 {
+  color: #f87171 !important;
+}
+.dark .text-red-400 {
+  color: #fca5a5 !important;
+}
+.dark .text-green-500 {
+  color: #86efac !important;
+}
+.dark .text-green-600 {
+  color: #4ade80 !important;
+}
+.dark .text-yellow-500 {
+  color: #fde047 !important;
+}
+.dark .text-yellow-600 {
+  color: #facc15 !important;
+}
+.dark .text-amber-500 {
+  color: #fcd34d !important;
+}
+.dark .text-amber-600 {
+  color: #fbbf24 !important;
+}
+
+/* Improved hover states for warm OLED */
+.dark .hover\:bg-white\/10:hover {
+  background-color: rgb(180 170 160 / 0.12) !important;
+}
+.dark .hover\:bg-white\/20:hover {
+  background-color: rgb(180 170 160 / 0.18) !important;
+}
+.dark .hover\:text-gray-800:hover {
+  color: #e7edf6 !important;
+}
+.dark .hover\:text-gray-600:hover {
+  color: #d4deeb !important;
+}
+
+/* Focus states for dark mode */
+.dark .focus\:ring-white\/30:focus {
+  --tw-ring-color: rgb(255 255 255 / 0.3) !important;
+}
+.dark .focus\:ring-white\/40:focus {
+  --tw-ring-color: rgb(255 255 255 / 0.4) !important;
+}
+
+
+/* Additional border color overrides for dark mode */
+.dark .border-blue-100 {
+  border-color: rgb(59 130 246 / 0.3) !important;
+}
+.dark .border-blue-200 {
+  border-color: rgb(59 130 246 / 0.4) !important;
+}
+.dark .border-blue-300 {
+  border-color: rgb(59 130 246 / 0.5) !important;
+}
+.dark .border-red-100 {
+  border-color: rgb(248 113 113 / 0.28) !important;
+}
+.dark .border-red-200 {
+  border-color: rgb(248 113 113 / 0.38) !important;
+}
+.dark .border-red-300 {
+  border-color: rgb(248 113 113 / 0.48) !important;
+}
+.dark .border-green-100 {
+  border-color: rgb(34 197 94 / 0.3) !important;
+}
+.dark .border-green-200 {
+  border-color: rgb(34 197 94 / 0.4) !important;
+}
+.dark .border-yellow-100 {
+  border-color: rgb(234 179 8 / 0.3) !important;
+}
+.dark .border-yellow-200 {
+  border-color: rgb(234 179 8 / 0.4) !important;
+}
+.dark .border-orange-100 {
+  border-color: rgb(249 115 22 / 0.3) !important;
+}
+.dark .border-orange-200 {
+  border-color: rgb(249 115 22 / 0.4) !important;
+}
+.dark .border-purple-100 {
+  border-color: rgb(168 85 247 / 0.3) !important;
+}
+.dark .border-purple-200 {
+  border-color: rgb(168 85 247 / 0.4) !important;
+}
+.dark .border-pink-100 {
+  border-color: rgb(236 72 153 / 0.3) !important;
+}
+.dark .border-pink-200 {
+  border-color: rgb(236 72 153 / 0.4) !important;
+}
+
+/* Workload card specific dark mode improvements */
+.dark .bg-lime-500 {
+  background-color: #65a30d !important;
+}
+
+.dark .text-lime-700 {
+  color: #a3e635 !important;
+}
+
+.dark .border-lime-500 {
+  border-color: #65a30d !important;
+}
+
+.dark .bg-amber-500 {
+  background-color: #d97706 !important;
+}
+
+/* Workload card header — warm OLED, bumped +0.12 opacity for readability */
+.dark .bg-gray-50\/80 {
+  background-color: rgb(39 43 51 / 0.88) !important;
+}
+
+.dark .bg-gray-50\/70 {
+  background-color: rgb(39 43 51 / 0.80) !important;
+}
+
+/* Job order card details box + other gray-50 opacity variants — warm, more opaque */
+.dark .bg-gray-50\/60 {
+  background-color: rgb(39 43 51 / 0.74) !important;
+}
+
+.dark .bg-gray-50\/50 {
+  background-color: rgb(39 43 51 / 0.64) !important;
+}
+
+.dark .bg-gray-50\/90 {
+  background-color: rgb(39 43 51 / 0.94) !important;
+}
+
+.dark .bg-gray-50\/30 {
+  background-color: rgb(39 43 51 / 0.42) !important;
+}
+
+/* Hover variants — warm OLED */
+.dark .hover\:bg-gray-50\/80:hover {
+  background-color: rgb(39 43 51 / 0.88) !important;
+}
+.dark .hover\:bg-gray-50\/50:hover {
+  background-color: rgb(39 43 51 / 0.64) !important;
+}
+.dark .hover\:bg-gray-50\/90:hover {
+  background-color: rgb(39 43 51 / 0.94) !important;
+}
+
+/* Job order card hover gradient overlay — warm OLED friendly */
+.dark .from-red-50\/40 {
+  --tw-gradient-from: rgb(220 38 38 / 0.10) var(--tw-gradient-from-position) !important;
+  --tw-gradient-to: rgb(220 38 38 / 0) var(--tw-gradient-to-position) !important;
+  --tw-gradient-stops: var(--tw-gradient-from), var(--tw-gradient-to) !important;
+}
+
+.dark .to-gray-50\/50 {
+  --tw-gradient-to: rgb(28 31 38 / 0.62) var(--tw-gradient-to-position) !important;
+}
+
+/* Status badges keep their light-mode pastel colors in dark mode.
+   Scoped with compound selectors (bg-tint + matching border) so only
+   badge/pill elements are affected, not generic tinted surfaces. */
+.dark .bg-yellow-100.border-yellow-200 {
+  background-color: #fef9c3 !important;
+  border-color: #fef08a !important;
+}
+.dark .bg-blue-100.border-blue-200 {
+  background-color: #dbeafe !important;
+  border-color: #bfdbfe !important;
+}
+.dark .bg-violet-100.border-violet-200 {
+  background-color: #ede9fe !important;
+  border-color: #ddd6fe !important;
+}
+.dark .bg-amber-100.border-amber-200 {
+  background-color: #fef3c7 !important;
+  border-color: #fde68a !important;
+}
+.dark .bg-orange-100.border-orange-200 {
+  background-color: #ffedd5 !important;
+  border-color: #fed7aa !important;
+}
+.dark .bg-fuchsia-100.border-fuchsia-200 {
+  background-color: #fae8ff !important;
+  border-color: #f5d0fe !important;
+}
+.dark .bg-green-100.border-green-200 {
+  background-color: #dcfce7 !important;
+  border-color: #bbf7d0 !important;
+}
+.dark .bg-red-100.border-red-200 {
+  background-color: #fee2e2 !important;
+  border-color: #fecaca !important;
+}
+.dark .bg-amber-200.border-amber-300 {
+  background-color: #fde68a !important;
+  border-color: #fcd34d !important;
+}
+.dark .bg-sky-100.border-sky-200 {
+  background-color: #e0f2fe !important;
+  border-color: #bae6fd !important;
+}
+.dark .bg-emerald-100.border-emerald-200 {
+  background-color: #d1fae5 !important;
+  border-color: #a7f3d0 !important;
+}
+.dark .bg-gray-100.border-gray-200 {
+  background-color: #f3f4f6 !important;
+  border-color: #e5e7eb !important;
+}
+
+/* Restore readable dark-on-light text for status badges whose gray text
+   colors were overridden by the dark-mode compatibility layer. */
+.dark .bg-gray-100.text-gray-700 {
+  color: #374151 !important;
+}
+.dark .bg-gray-100.text-gray-800 {
+  color: #1f2937 !important;
+}
+
+/* Job order code badge uses a translucent gray border, so the
+   .bg-gray-100.border-gray-200 restorer above missed it. Keep it light. */
+.dark .bg-gray-100.border-gray-200\/80 {
+  background-color: #f3f4f6 !important;
+  border-color: #e5e7eb !important;
+}
+
+/* Job order category / type badges (gray-600 text) keep dark-on-light text. */
+.dark .bg-gray-100.text-gray-600 {
+  color: #374151 !important;
+}
+
+/* Job order category / type badges that rely on the Badge secondary variant
+   (no explicit gray text class) keep dark-on-light text in dark mode. */
+.dark .bg-gray-100.border-gray-200.text-secondary-foreground {
+  color: #374151 !important;
+}
+
+/* Workload card title - ensure visibility in dark mode */
+.dark .text-gray-700.uppercase {
+  color: #e7edf6 !important;
+}
+
+/* --- Recharts theming: grid / tick / cursor / tooltip / legend --- */
+.recharts-cartesian-grid line {
+  stroke: var(--chart-grid);
+}
+.recharts-cartesian-axis-line,
+.recharts-cartesian-axis line {
+  stroke: var(--chart-axis);
+}
+.recharts-cartesian-axis-tick text,
+.recharts-label {
+  fill: var(--chart-tick) !important;
+  font-weight: 400;
+}
+.recharts-legend-item-text {
+  color: var(--chart-tick) !important;
+}
+.recharts-tooltip-cursor {
+  fill: var(--chart-cursor) !important;
+}
+.recharts-default-tooltip {
+  background-color: var(--chart-tooltip-bg) !important;
+  border: 1px solid var(--chart-tooltip-border) !important;
+  border-radius: 14px !important;
+  box-shadow:
+    0 12px 32px -12px rgb(0 0 0 / 0.22),
+    0 4px 16px -6px rgb(0 0 0 / 0.1) !important;
+}
+.dark .recharts-default-tooltip {
+  box-shadow:
+    0 12px 32px -12px rgb(0 0 0 / 0.55),
+    0 4px 16px -4px rgb(0 0 0 / 0.35) !important;
+}
+.recharts-pie-label-text {
+  fill: var(--chart-tick) !important;
+  font-size: 12px;
+  font-weight: 500;
+}
+
+/* Shared headers and sidebar define their own softer dark gradients. */
+
+@keyframes spin {
+  from {
+    transform: rotate(0deg);
+  }
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+.logo-spin {
+  animation: spin 20s linear infinite;
+}
+
+@keyframes shimmer-pro {
+  0% {
+    background-position: 200% 0;
+  }
+  100% {
+    background-position: -200% 0;
+  }
+}
+.animate-shimmer {
+  background-image: linear-gradient(
+    90deg,
+    transparent 0%,
+    rgba(255, 255, 255, 0.5) 50%,
+    transparent 100%
+  );
+  background-size: 300% 100%;
+  animation: shimmer-pro 3s ease-in-out infinite;
+}
+
+.dark .animate-shimmer {
+  background-image: linear-gradient(
+    90deg,
+    transparent 0%,
+    rgba(180, 170, 160, 0.22) 50%,
+    transparent 100%
+  );
+}
+
+[data-radix-popper-content-wrapper] .day_today {
+  @apply bg-[#EE1D25] text-white font-extrabold shadow-md;
+}
+
+@keyframes fade-in {
+  from {
+    opacity: 0;
+    transform: translateY(10px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+.animate-fade-in {
+  animation: fade-in 0.4s ease-out forwards;
+}
+
+.scrollbar-hide {
+  -ms-overflow-style: none;
+  scrollbar-width: none;
+}
+.scrollbar-hide::-webkit-scrollbar {
+  display: none;
+}
+
+/* Sidebar scrollbar styling (unchanged in dark mode) */
+nav::-webkit-scrollbar {
+  width: 6px;
+}
+nav::-webkit-scrollbar-track {
+  background: transparent;
+}
+nav::-webkit-scrollbar-thumb {
+  background: rgba(255, 255, 255, 0.3);
+  border-radius: 3px;
+}
+nav::-webkit-scrollbar-thumb:hover {
+  background: rgba(255, 255, 255, 0.5);
+}
+
+/* Global scrollbar styling for light warm paper (excludes sidebar) */
+*:not(nav)::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+
+*:not(nav)::-webkit-scrollbar-track {
+  background: #fbfaf9;
+}
+
+*:not(nav)::-webkit-scrollbar-thumb {
+  background: #d6d3d1;
+  border-radius: 4px;
+}
+
+*:not(nav)::-webkit-scrollbar-thumb:hover {
+  background: #beb9b3;
+}
+
+/* Global scrollbar styling for warm OLED (excludes sidebar) */
+.dark *:not(nav)::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+
+.dark *:not(nav)::-webkit-scrollbar-track {
+  background: #0c0e12;
+}
+
+.dark *:not(nav)::-webkit-scrollbar-thumb {
+  background: #2d323c;
+  border-radius: 4px;
+}
+
+.dark *:not(nav)::-webkit-scrollbar-thumb:hover {
+  background: #343a46;
+}
+
+/* Dialog, Popover, Sheet — warm OLED */
+.dark [data-radix-dialog-overlay] {
+  background-color: rgb(12 14 18 / 0.68) !important;
+  backdrop-filter: blur(8px);
+}
+
+/* Sonner toast theming — aligns to warm OLED card/border (App.tsx Toaster richColors) */
+.dark [data-sonner-toaster] {
+  --normal-bg: var(--card);
+  --normal-border: var(--border);
+  --normal-text: var(--card-foreground);
+}
+.dark [data-sonner-toast] {
+  background-color: var(--card) !important;
+  border-color: var(--border) !important;
+  color: var(--card-foreground) !important;
+  box-shadow: 0 14px 28px rgb(0 0 0 / 0.48) !important;
+}
+
+.dark [data-radix-dialog-content],
+.dark [data-radix-dropdown-menu-content],
+.dark [data-radix-popover-content],
+.dark [data-radix-select-content] {
+  background-color: var(--card) !important;
+  border-color: var(--border) !important;
+  box-shadow: 0 20px 50px -12px rgb(0 0 0 / 0.5) !important;
+}
+
+/* Dialog content specific enhancements */
+.dark [data-radix-dialog-content] {
+  box-shadow: 0 25px 50px -12px rgb(0 0 0 / 0.6) !important;
+}
+
+/* Dialog close button dark mode */
+.dark [data-radix-dialog-close],
+.dark [data-radix-sheet-close] {
+  color: var(--foreground) !important;
+  opacity: 0.7;
+  transition: opacity 0.2s ease, background-color 0.2s ease;
+}
+
+.dark [data-radix-dialog-close]:hover,
+.dark [data-radix-sheet-close]:hover {
+  opacity: 1;
+  background-color: var(--accent) !important;
+}
+
+.dark [data-radix-dialog-close]:focus-visible,
+.dark [data-radix-sheet-close]:focus-visible {
+  outline: 2px solid var(--ring);
+  outline-offset: 2px;
+}
+
+/* Dropdown menu item hover states in dark mode */
+.dark [data-radix-dropdown-menu-item]:hover,
+.dark [data-radix-select-item]:hover {
+  background-color: var(--accent) !important;
+  color: var(--accent-foreground) !important;
+}
+
+.dark [data-radix-dropdown-menu-item]:focus-visible,
+.dark [data-radix-select-item]:focus-visible {
+  outline: 2px solid var(--ring);
+  outline-offset: -2px;
+}
+
+/* Calendar dark mode improvements */
+.dark [data-radix-calendar] {
+  background-color: var(--card) !important;
+  border-color: var(--border) !important;
+  box-shadow: 0 10px 30px -5px rgb(0 0 0 / 0.3) !important;
+}
+
+.dark [data-radix-calendar-cell] {
+  color: var(--foreground) !important;
+  transition: background-color 0.15s ease, color 0.15s ease;
+}
+
+.dark [data-radix-calendar-cell][data-state="selected"] {
+  background-color: var(--primary) !important;
+  color: var(--primary-foreground) !important;
+  box-shadow: 0 2px 8px -2px rgb(239 68 68 / 0.4) !important;
+}
+
+.dark [data-radix-calendar-cell][data-disabled] {
+  color: var(--muted-foreground) !important;
+  opacity: 0.5;
+}
+
+.dark [data-radix-calendar-cell]:hover:not([data-disabled]):not([data-state="selected"]) {
+  background-color: var(--accent) !important;
+}
+
+/* Tooltip dark mode */
+.dark [data-radix-tooltip-content] {
+  background-color: var(--popover) !important;
+  color: var(--popover-foreground) !important;
+  border-color: var(--border) !important;
+  box-shadow: 0 8px 20px -4px rgb(0 0 0 / 0.4) !important;
+}
+
+/* Alert dialog dark mode */
+.dark [data-radix-alert-dialog-content] {
+  background-color: var(--card) !important;
+  border-color: var(--border) !important;
+  box-shadow: 0 25px 50px -12px rgb(0 0 0 / 0.5) !important;
+}
+
+.dark [data-radix-alert-dialog-title] {
+  color: var(--foreground) !important;
+}
+
+.dark .auth-page .shadow-xl,
+.dark [class*="auth-page"] .shadow-xl {
+  box-shadow: 0 20px 25px -5px rgb(0 0 0 / 0.1), 0 8px 10px -6px rgb(0 0 0 / 0.1) !important;
+}
+
+/* Sidebar — warm OLED translucency */
+.dark .bg-white\/20 {
+  background-color: rgb(180 170 160 / 0.14) !important;
+}
+
+.dark .bg-white\/10 {
+  background-color: rgb(180 170 160 / 0.08) !important;
+}
+
+.dark .bg-white\/30 {
+  background-color: rgb(180 170 160 / 0.20) !important;
+}
+
+.dark .ring-white\/50 {
+  --tw-ring-color: rgba(255, 255, 255, 0.4) !important;
+}
+
+.dark .ring-white\/30 {
+  --tw-ring-color: rgba(255, 255, 255, 0.25) !important;
+}
+
+.dark .ring-white\/40 {
+  --tw-ring-color: rgba(255, 255, 255, 0.3) !important;
+}
+
+.dark .border-white\/10 {
+  border-color: rgb(180 170 160 / 0.14) !important;
+}
+
+.dark .text-white\/80 {
+  color: rgba(255, 255, 255, 0.85) !important;
+}
+
+.dark .text-white\/70 {
+  color: rgba(255, 255, 255, 0.75) !important;
+}
+
+
+/* Patch for JobOrderListSection opacity variants — warm OLED */
+.dark .border-gray-200\/80 {
+  border-color: rgb(45 50 60 / 0.8) !important;
+}
+.dark .border-gray-200\/60 {
+  border-color: rgb(45 50 60 / 0.6) !important;
+}
+.dark .border-gray-200\/70 {
+  border-color: rgb(45 50 60 / 0.7) !important;
+}
+.dark .from-amber-50\/40,
+.dark .from-sky-50\/40,
+.dark .from-violet-50\/40,
+.dark .from-blue-50\/40,
+.dark .from-purple-50\/40,
+.dark .from-emerald-50\/40,
+.dark .from-fuchsia-50\/40,
+.dark .from-red-50\/40,
+.dark .from-slate-50\/60 {
+  --tw-gradient-from: rgb(28 31 38 / 0.52) var(--tw-gradient-from-position) !important;
+  --tw-gradient-to: rgb(28 31 38 / 0) var(--tw-gradient-to-position) !important;
+  --tw-gradient-stops: var(--tw-gradient-from), var(--tw-gradient-to) !important;
+}
+.dark .via-white {
+  --tw-gradient-via: var(--card) var(--tw-gradient-via-position) !important;
+}
+.dark .to-white {
+  --tw-gradient-to: var(--card) var(--tw-gradient-to-position) !important;
+}
+.dark .bg-red-50\/35 {
+  background-color: rgb(220 38 38 / 0.14) !important;
+}
+.dark .bg-red-50\/30 {
+  background-color: rgb(220 38 38 / 0.12) !important;
+}
+.dark .bg-red-950\/20 {
+  background-color: rgb(69 10 10 / 0.28) !important;
+}
+.dark .bg-red-950\/15 {
+  background-color: rgb(69 10 10 / 0.22) !important;
+}
+.dark .hover\:bg-red-950\/15:hover {
+  background-color: rgb(69 10 10 / 0.22) !important;
+}
+.dark .hover\:bg-red-950\/30:hover {
+  background-color: rgb(69 10 10 / 0.38) !important;
+}
+
+/* --- Missing utility coverage: warm OLED complements --- */
+.dark .bg-white\/25 {
+  background-color: rgb(28 31 38 / 0.68) !important;
+}
+.dark .bg-white\/30 {
+  background-color: rgb(28 31 38 / 0.74) !important;
+}
+.dark .bg-white\/40 {
+  background-color: rgb(28 31 38 / 0.54) !important;
+}
+.dark .text-gray-200,
+.dark .text-slate-200 {
+  color: #d6dde8 !important;
+}
+.dark .text-gray-100,
+.dark .text-slate-100 {
+  color: #e7e9ee !important;
+}
+.dark .text-white {
+  color: #eceef2 !important;
+}
+.dark .text-slate-200 {
+  color: #d6dde8 !important;
+}
+.dark .border-gray-500,
+.dark .border-slate-500 {
+  border-color: #343a46 !important;
+}
+.dark .border-gray-600,
+.dark .border-slate-600 {
+  border-color: #2d323c !important;
+}
+.dark .border-gray-700,
+.dark .border-slate-700 {
+  border-color: #2a303b !important;
+}
+.dark .from-red-50\/80 {
+  --tw-gradient-from: rgb(220 38 38 / 0.18) var(--tw-gradient-from-position) !important;
+  --tw-gradient-to: rgb(220 38 38 / 0) var(--tw-gradient-to-position) !important;
+  --tw-gradient-stops: var(--tw-gradient-from), var(--tw-gradient-to) !important;
+}
+.dark .via-white\/20 {
+  --tw-gradient-via: rgb(28 31 38 / 0.20) var(--tw-gradient-via-position) !important;
+}
+.dark .placeholder\:text-gray-400::placeholder {
+  color: #b1bdce !important;
+}
+.dark .ring-white\/20 {
+  --tw-ring-color: rgb(180 170 160 / 0.18) !important;
+}
+
+/* Light solid glass — warm paper, defined borders (complement warm OLED dark).
+   Previous bg-card/60 (0.60) was milky over #fbfaf9; solid 0.95+ restores readability. */
+.bg-card\/60 {
+  background-color: rgb(254 252 251 / 0.95) !important;
+}
+.bg-card\/70 {
+  background-color: rgb(254 252 251 / 0.96) !important;
+}
+.bg-card\/80 {
+  background-color: rgb(254 252 251 / 0.97) !important;
+}
+.bg-card\/95 {
+  background-color: rgb(254 252 251 / 0.99) !important;
+}
+.bg-white\/60 {
+  background-color: rgb(254 252 251 / 0.95) !important;
+}
+.bg-white\/95 {
+  background-color: rgb(254 252 251 / 0.99) !important;
+}
+.border-white\/20 {
+  border-color: #e7e5e4 !important;
+}
+.border-white\/10 {
+  border-color: #e7e5e4 !important;
+}
+.ring-white\/10 {
+  --tw-ring-color: #e7e5e4 !important;
+}
+.shadow-xl {
+  box-shadow:
+    0 12px 24px -10px rgb(26 29 35 / 0.10),
+    0 4px 12px -4px rgb(26 29 35 / 0.06) !important;
 }

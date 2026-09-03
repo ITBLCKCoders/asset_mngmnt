@@ -32,6 +32,7 @@ export function IssueClearanceModal({
   const [checked, setChecked] = useState<Record<ClearanceScope, boolean>>({
     IT: true,
     Admin: true,
+    Unified: true,
   });
   const [isSubmitting, setIsSubmitting] = useState(false);
 
@@ -40,6 +41,7 @@ export function IssueClearanceModal({
       setChecked({
         IT: eligibleScopes.includes('IT'),
         Admin: eligibleScopes.includes('Admin'),
+        Unified: eligibleScopes.includes('Unified'),
       });
     }
   }, [open, eligibleScopes]);

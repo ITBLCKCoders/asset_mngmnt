@@ -6,7 +6,6 @@ import {
   type AssetChecklistSubmitPayload,
 } from '@/pages/assets/asset-issuance/components/AssetChecklistDialog';
 import { filterComputerTypeAssets } from '@/utils/assetTypeDetection';
-import { isIntangibleAssignedToUser } from '@/utils/intangibleAssets';
 import type { Department } from '@/types/assets';
 import { useNavigate } from 'react-router-dom';
 import {
@@ -20,8 +19,6 @@ import {
   RefreshCw,
   User,
   XCircle,
-  Layers,
-  Search,
   Download,
   LayoutGrid,
   List,
@@ -71,8 +68,6 @@ import {
 } from '@/pages/profile/profileComponents/tabs/documentsTab';
 import { generateAssetTransferPDF, downloadPDF } from '@/lib/pdfGenerator';
 import { proxyCloudinaryUrl } from '@/utils/cloudinaryProxy';
-import { IssueClearanceModal } from '@/pages/assets/accountability/components/IssueClearanceModal';
-import type { ClearanceScope } from '@/pages/assets/accountability/accountabilityFormTypes';
 
 const MAX_CONDITION_IMAGES = 5;
 const VALID_IMAGE_TYPES = [
@@ -118,14 +113,6 @@ interface ApprovedBatch {
         last_name?: string | null;
       };
     };
-  }>;
-  /** Intangible assets linked to this transfer form (persisted at creation) */
-  intangibleAssets?: Array<{
-    id: string;
-    name: string;
-    type: string;
-    description: string | null;
-    notes: string | null;
   }>;
 }
 
@@ -198,9 +185,6 @@ export default function TransferRequestsPage() {
     { id: string; name: string; type?: string; category?: string }[]
   >([]);
   const [departments, setDepartments] = useState<Department[]>([]);
-  const [intangibleAssets, setIntangibleAssets] = useState<any[]>([]);
-  const [selectedIntangibleAssetIds, setSelectedIntangibleAssetIds] = useState<string[]>([]);
-  const [intangibleNotes, setIntangibleNotes] = useState<Record<string, string>>({});
   const pendingTransferChecklistsRef = useRef<any[]>([]);
   const pendingExecuteTransferParamsRef = useRef<{
     formID: string;
@@ -208,14 +192,6 @@ export default function TransferRequestsPage() {
     transferType: string;
     receivedBy: string;
     newAssignment: any;
-    intangibleAssetItems?: { id: string; notes: string }[];
-  } | null>(null);
-  const [clearanceModal, setClearanceModal] = useState<{
-    open: boolean;
-    userId: string;
-    userName: string;
-    eligibleScopes: ClearanceScope[];
-    disabledFormNumbersByScope: Record<ClearanceScope, string[]>;
   } | null>(null);
 
   const fetchDepartments = async () => {
@@ -261,35 +237,15 @@ export default function TransferRequestsPage() {
     }
   };
 
-  const fetchIntangibleAssets = async () => {
-    try {
-      const response = await api.get('/intangible-assets');
-      setIntangibleAssets(response || []);
-    } catch (error) {
-      console.error('Failed to fetch intangible assets:', error);
-      setIntangibleAssets([]);
-    }
-  };
-
   useEffect(() => {
     fetchApproved();
     fetchProcessed();
     fetchDepartments();
-    fetchIntangibleAssets();
   }, [scope]);
 
   const handleView = (batch: ApprovedBatch, isReadOnly = false) => {
     setReadOnly(isReadOnly);
     setSelectedBatch(batch);
-    setSelectedIntangibleAssetIds(
-      (batch.intangibleAssets ?? []).map(ia => ia.id)
-    );
-    setIntangibleNotes(
-      (batch.intangibleAssets ?? []).reduce(
-        (acc, ia) => ({ ...acc, [ia.id]: ia.notes ?? '' }),
-        {} as Record<string, string>
-      )
-    );
     setConditions(
       (batch.returns || []).reduce(
         (acc, r) => ({
@@ -372,24 +328,6 @@ export default function TransferRequestsPage() {
     }
   };
 
-  const handleClearanceConfirm = async (scopes: ClearanceScope[]) => {
-    if (!clearanceModal) return;
-    try {
-      for (const scope of scopes) {
-        await api.post('/accountability-forms/clearance', {
-          userId: clearanceModal.userId,
-          clearanceScope: scope,
-          referenceDisabledFormNumbers: clearanceModal.disabledFormNumbersByScope[scope],
-          clearanceReason: 'transfer',
-        });
-      }
-      toast.success('Clearance issued successfully');
-    } catch (err: unknown) {
-      const e = err as { data?: { error?: string } };
-      toast.error(e?.data?.error ?? 'Failed to issue clearance');
-    }
-  };
-
   const handleExecuteTransfer = async () => {
     if (!selectedBatch) return;
     if (!receivedBy) {
@@ -452,29 +390,6 @@ export default function TransferRequestsPage() {
       setSelectedBatch(null);
       await fetchApproved();
       await fetchProcessed();
-      if (selectedBatch.user_id) {
-        const transferrerName = formatTransferFromNames(selectedBatch);
-        console.log('[clearance] checking eligibility for transferrer', selectedBatch.user_id);
-        try {
-          const elig = await api.get<{ eligibleScopes?: ClearanceScope[]; disabledFormNumbersByScope?: Record<ClearanceScope, string[]> }>('/accountability-forms/clearance/eligibility?userId=' + selectedBatch.user_id);
-          console.log('[clearance] eligibility response:', elig);
-          if (elig.eligibleScopes?.length) {
-            setClearanceModal({
-              open: true,
-              userId: selectedBatch.user_id,
-              userName: transferrerName || 'Employee',
-              eligibleScopes: elig.eligibleScopes,
-              disabledFormNumbersByScope: elig.disabledFormNumbersByScope ?? { IT: [], Admin: [] },
-            });
-          } else {
-            console.log('[clearance] no eligible scopes for transferrer', selectedBatch.user_id);
-          }
-        } catch (err) {
-          console.warn('[clearance] eligibility check failed (non-critical):', err);
-        }
-      } else {
-        console.log('[clearance] no selectedBatch.user_id, skipping eligibility check');
-      }
     } catch (err: any) {
       const msg =
         err?.data?.error ||
@@ -566,7 +481,6 @@ export default function TransferRequestsPage() {
             receivedBy: params.receivedBy,
             newAssignment: params.newAssignment,
             checklists: pendingTransferChecklistsRef.current,
-            intangibleAssetItems: params.intangibleAssetItems,
           }
         );
         toast.success('Transfer completed successfully');
@@ -574,30 +488,6 @@ export default function TransferRequestsPage() {
         setSelectedBatch(null);
         await fetchApproved();
         await fetchProcessed();
-        const transferrerId = selectedBatch?.user_id;
-        if (transferrerId) {
-          const transferrerName = selectedBatch ? formatTransferFromNames(selectedBatch) : '';
-          console.log('[clearance] checking eligibility for transferrer', transferrerId);
-          try {
-            const elig = await api.get<{ eligibleScopes?: ClearanceScope[]; disabledFormNumbersByScope?: Record<ClearanceScope, string[]> }>('/accountability-forms/clearance/eligibility?userId=' + transferrerId);
-            console.log('[clearance] eligibility response:', elig);
-            if (elig.eligibleScopes?.length) {
-              setClearanceModal({
-                open: true,
-                userId: transferrerId,
-                userName: transferrerName || 'Employee',
-                eligibleScopes: elig.eligibleScopes,
-                disabledFormNumbersByScope: elig.disabledFormNumbersByScope ?? { IT: [], Admin: [] },
-              });
-            } else {
-              console.log('[clearance] no eligible scopes for transferrer', transferrerId);
-            }
-          } catch (err) {
-            console.warn('[clearance] eligibility check failed (non-critical):', err);
-          }
-        } else {
-          console.log('[clearance] no selectedBatch.user_id, skipping eligibility check');
-        }
       } catch (err: any) {
         const msg =
           err?.data?.error ||
@@ -1252,7 +1142,7 @@ export default function TransferRequestsPage() {
             {selectedBatch && (
               <AppDialogBody className="max-h-[min(50vh,520px)] min-h-0 flex-1 space-y-4 overflow-y-auto overflow-x-hidden sm:space-y-6">
                 <div className="inline-block rounded-full border border-slate-200 bg-slate-50 px-3 py-1 text-sm font-semibold text-slate-800">
-                  Selected Assets: {(selectedBatch.returns || []).length + selectedIntangibleAssetIds.length}
+                  Selected Assets: {(selectedBatch.returns || []).length}
                 </div>
 
                 <div className="rounded-xl border border-slate-200 bg-white p-5 shadow-sm">
@@ -1309,22 +1199,7 @@ export default function TransferRequestsPage() {
                   </Label>
                 </div>
 
-                {(() => {
-                  const transferrerId = selectedBatch.returns[0]?.assignment?.user?.id || '';
-                  const assignedIntangibles = intangibleAssets.filter(a => isIntangibleAssignedToUser(a, transferrerId));
-                  return (
-                    <Tabs defaultValue="physical-assets" className="w-full">
-                      <TabsList className={segmentTabsListClassName + ' grid grid-cols-1 w-full'}>
-                        <TabsTrigger value="physical-assets" className={segmentTabsTriggerClassName + ' flex items-center gap-2'}>
-                          <Package className="h-4 w-4" />
-                          Physical Assets
-                          <Badge variant="secondary" className="ml-1 text-xs">
-                            {(selectedBatch.returns || []).length}
-                          </Badge>
-                        </TabsTrigger>
-                        </TabsList>
 
-                      <TabsContent value="physical-assets" className="mt-4 space-y-4">
                         {(selectedBatch.returns || []).map(r => (
                           <div
                             key={r.assignment_id}
@@ -1476,59 +1351,7 @@ export default function TransferRequestsPage() {
                             </div>
                           </div>
                         ))}
-                      </TabsContent>
-
-                    </Tabs>
-                  );
-                })()}
-
-                {selectedIntangibleAssetIds.length > 0 && (
-                  <div className="rounded-xl border border-slate-200 bg-white p-5 shadow-sm">
-                    <Label className="text-sm font-semibold text-slate-800 tracking-tight uppercase flex items-center gap-2 mb-4">
-                      <Layers className="h-4 w-4 text-red-500" />
-                      Intangible Asset ({selectedIntangibleAssetIds.length})
-                    </Label>
-                    <div className="overflow-x-auto">
-                      <table className="w-full text-sm">
-                        <thead>
-                          <tr className="border-b border-slate-200">
-                            <th className="text-left py-2 px-3 font-semibold text-slate-700">Name</th>
-                            <th className="text-left py-2 px-3 font-semibold text-slate-700">Type</th>
-                            <th className="text-left py-2 px-3 font-semibold text-slate-700">Description</th>
-                            <th className="text-left py-2 px-3 font-semibold text-slate-700">Notes</th>
-                          </tr>
-                        </thead>
-                        <tbody>
-                          {selectedIntangibleAssetIds.map(id => {
-                            const asset = intangibleAssets.find(a => a.id === id);
-                            if (!asset) return null;
-                            return (
-                              <tr key={id} className="border-b border-slate-100 last:border-0">
-                                <td className="py-2 px-3 text-slate-900 font-medium">{asset.name}</td>
-                                <td className="py-2 px-3">
-                                  <Badge variant="outline" className={asset.type === 'IT scope' ? 'bg-red-100 text-red-800 border-red-200' : 'bg-orange-100 text-orange-800 border-orange-200'}>
-                                    {asset.type}
-                                  </Badge>
-                                </td>
-                                <td className="py-2 px-3 text-slate-600">{asset.description || '—'}</td>
-                                <td className="py-2 px-3">
-                                  <Textarea
-                                    placeholder="Notes..."
-                                    value={intangibleNotes[id] ?? ''}
-                                    disabled={readOnly}
-                                    onChange={e => setIntangibleNotes(prev => ({ ...prev, [id]: e.target.value }))}
-                                    className="border-slate-200 focus:border-red-500 focus:ring-red-500/20 rounded-lg resize-none text-xs"
-                                    rows={2}
-                                  />
-                                </td>
-                              </tr>
-                            );
-                          })}
-                        </tbody>
-                      </table>
-                    </div>
-                  </div>
-                )}
+                      
 
                 <div className="rounded-xl border border-slate-200 bg-white p-5 shadow-sm space-y-4">
                   <Label className="text-sm font-semibold text-slate-800 uppercase">
@@ -1675,17 +1498,6 @@ export default function TransferRequestsPage() {
                         : []),
                   }));
 
-                  const intangibleAssetItems = selectedIntangibleAssetIds
-                    .filter(
-                      id =>
-                        intangibleAssets.some(ia => ia.id === id) ||
-                        selectedBatch.intangibleAssets?.some(ia => ia.id === id)
-                    )
-                    .map(id => ({
-                      id,
-                      notes: intangibleNotes[id] ?? '',
-                    }));
-
                   const newAssignment = {
                     userId: selectedBatch.new_assigned_user_id,
                     departmentId: null,
@@ -1714,7 +1526,6 @@ export default function TransferRequestsPage() {
                       transferType,
                       receivedBy,
                       newAssignment,
-                      intangibleAssetItems: intangibleAssetItems.length > 0 ? intangibleAssetItems : undefined,
                     };
                     setChecklistAssets(computerReturns);
                     setChecklistStepIndex(0);
@@ -1737,8 +1548,7 @@ export default function TransferRequestsPage() {
                           transferType,
                           receivedBy,
                           newAssignment,
-                          intangibleAssetItems: intangibleAssetItems.length > 0 ? intangibleAssetItems : undefined,
-                        }
+                            }
                       );
                       toast.success(
                         'Transfer completed successfully'
@@ -1938,17 +1748,6 @@ export default function TransferRequestsPage() {
           onFinalSubmit={handleTransferChecklistFinalSubmit}
         />
 
-        <IssueClearanceModal
-          open={!!clearanceModal?.open}
-          onOpenChange={open => {
-            if (!open) setClearanceModal(null);
-          }}
-          userId={clearanceModal?.userId ?? ''}
-          userName={clearanceModal?.userName ?? ''}
-          eligibleScopes={clearanceModal?.eligibleScopes ?? []}
-          disabledFormNumbersByScope={clearanceModal?.disabledFormNumbersByScope ?? { IT: [], Admin: [] }}
-          onConfirm={handleClearanceConfirm}
-        />
       </main>
     </div>
   );

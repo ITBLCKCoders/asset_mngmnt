@@ -27,6 +27,9 @@ import PasswordExpirationWarning from '@/components/auth/PasswordExpirationWarni
 import { AvatarPreviewProvider } from '@/hooks/avatarPreview';
 import { CompanyProvider, useCompanyContext } from '@/context/CompanyContext';
 import { CompanyFilter } from '@/components/CompanyFilter';
+import ThemeToggle from '@/components/common/ThemeToggle';
+import { useTheme } from '@/hooks/use-theme';
+import { TooltipProvider } from '@/components/ui/tooltip';
 
 import { Shimmer } from '@/components/ui/shimmer';
 
@@ -35,6 +38,7 @@ function ProtectedLayoutShell() {
   const location = useLocation();
   const today = useMemo(() => new Date(), []);
   const { loading: companyLoading } = useCompanyContext();
+  const { theme } = useTheme();
 
   const [isCalOpen, setIsCalOpen] = useState(false);
   const [isCalLoading, setIsCalLoading] = useState(false);
@@ -49,20 +53,23 @@ function ProtectedLayoutShell() {
   const { showDialog, setShowDialog, onStay, onLogout: onIdleLogout, warningTime } = useIdleTimer();
 
   const handleLogout = useCallback(() => {
-    localStorage.removeItem('token');
-    localStorage.removeItem('pendingVerificationChannel');
-    localStorage.removeItem('pendingVerificationEmail');
-    localStorage.removeItem('pendingVerificationContact');
+    const persistedTheme = localStorage.getItem("am-theme");
+    localStorage.clear();
+    if (persistedTheme === "light" || persistedTheme === "dark") {
+      localStorage.setItem("am-theme", persistedTheme);
+    }
+    sessionStorage.clear();
     navigate('/login', { replace: true });
   }, [navigate]);
 
   return (
-        <div className="relative flex h-screen bg-white overflow-hidden">
+        <TooltipProvider delayDuration={150}>
+        <div className="app-shell relative flex h-screen overflow-hidden bg-background">
         <div className="hidden md:flex items-center justify-center fixed bottom-[87vh] left-0 z-20 h-[18vh] min-h-[80px] pl-2 pt-4 w-[260px]">
           <img
             src={logo}
             alt="Blackcoders Logo"
-            className="h-20 w-auto object-contain drop-shadow-md"
+            className={`h-20 w-auto object-contain drop-shadow-md ${theme === "dark" ? "brightness-0 invert" : ""}`}
           />
         </div>
 
@@ -90,6 +97,7 @@ function ProtectedLayoutShell() {
 
         <header className="fixed top-0 left-0 md:left-64 right-0 h-24 z-30 px-4 md:px-9">
           <div className="flex items-center justify-end h-full gap-2 md:gap-4">
+            <ThemeToggle />
             {isHeaderLoading ? (
               <Button
                 variant="ghost"
@@ -114,9 +122,9 @@ function ProtectedLayoutShell() {
                 <input
                   type="text"
                   placeholder="Search..."
-                  className="w-40 md:w-60 h-14 pl-14 pr-6 rounded-full border border-white/20 bg-white/10 backdrop-blur text-sm font-medium text-gray-800 placeholder-gray-400 focus:outline-none focus:ring-4 focus:ring-[#EE1D25]/20 focus:border-[#EE1D25] transition-all shadow-lg"
+                  className="w-40 md:w-60 h-14 pl-14 pr-6 rounded-full border border-white/20 bg-white/10 backdrop-blur text-sm font-medium text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-4 focus:ring-primary/20 focus:border-primary transition-all shadow-lg hover:shadow-xl"
                 />
-                <Search className="absolute left-5 top-1/2 -translate-y-1/2 w-5 h-5 text-gray-500" />
+                <Search className="absolute left-5 top-1/2 -translate-y-1/2 w-5 h-5 text-muted-foreground" />
               </div>
             )}
 
@@ -154,16 +162,16 @@ function ProtectedLayoutShell() {
                       className="h-14 w-60 md:w-80 rounded-full border border-white/20 bg-white/10 backdrop-blur hover:shadow-xl transition-all duration-300 flex items-center justify-center gap-4 md:gap-6 px-4 md:px-6 shadow-lg"
                     >
                       <div className="flex items-center gap-3">
-                        <div className="w-10 h-10 rounded-full bg-[#EE1D25] flex items-center justify-center shadow-md">
+                        <div className="w-10 h-10 rounded-full bg-primary flex items-center justify-center shadow-md">
                           <span className="text-lg font-extrabold text-white">
                             {format(today, 'd')}
                           </span>
                         </div>
                         <div className="text-left hidden md:block">
-                          <div className="text-xs font-bold text-gray-600 uppercase tracking-wider">
+                          <div className="text-xs font-bold text-muted-foreground uppercase tracking-wider">
                             {format(today, 'EEEE')}
                           </div>
-                          <div className="text-lg font-bold text-gray-900">
+                          <div className="text-lg font-bold text-foreground">
                             {format(today, 'MMMM yyyy')}
                           </div>
                         </div>
@@ -177,19 +185,19 @@ function ProtectedLayoutShell() {
                   )}
                 </PopoverTrigger>
                 <PopoverContent
-                  className="w-auto p-0 mt-2 mr-3"
+                  className="w-auto p-0 mt-2 mr-3 border border-border bg-card"
                   align="end"
                   sideOffset={10}
                 >
                   {isCalLoading ? (
                     /* Calendar shimmer */
-                    <div className="p-4 bg-white rounded-xl shadow-2xl">
+                    <div className="p-4 bg-card rounded-xl shadow-2xl">
                       {' '}
                       {/* ... your shimmer ... */}{' '}
                     </div>
                   ) : (
                     <Card className="border-0 shadow-2xl overflow-hidden">
-                      <CardContent className="p-1 bg-white">
+                      <CardContent className="p-1 bg-card">
                         <Calendar
                           mode="single"
                           selected={today}
@@ -238,7 +246,7 @@ function ProtectedLayoutShell() {
         </header>
 
         {/* Main Content Area */}
-        <main className="flex-1 md:ml-64 pt-20 pb-8 px-0 overflow-auto bg-white">
+        <main className="app-main flex-1 md:ml-64 pt-20 pb-8 px-0 overflow-auto bg-background">
           <Suspense fallback={<RouteContentFallback />}>
             <Outlet />
           </Suspense>
@@ -256,6 +264,7 @@ function ProtectedLayoutShell() {
           onLogout={onIdleLogout}
         />
       </div>
+      </TooltipProvider>
   );
 }
 

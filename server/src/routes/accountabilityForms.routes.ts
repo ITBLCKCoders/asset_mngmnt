@@ -13,6 +13,12 @@ import {
   checkUnsignedAccountabilityFormsHandler,
   getClearanceEligibilityHandler,
   createClearanceHandler,
+  approveClearanceStageHandler,
+  signAdminCopyHandler,
+  approveAccountabilityFormHandler,
+  getPendingAdminCopySignaturesHandler,
+  getPendingAccountabilityApprovalsHandler,
+  getPendingClearanceApprovalsHandler,
 } from '../controllers/accountabilityForms.controller.js';
 import { authenticate } from '../middleware/authenticate.js';
 
@@ -52,6 +58,17 @@ router.get('/asset/:assetId', getAccountabilityFormsByAssetIdHandler);
 
 router.get('/clearance/eligibility', getClearanceEligibilityHandler);
 router.post('/clearance', createClearanceHandler);
+router.post('/clearance/:formId/approve', approveClearanceStageHandler);
+router.get('/pending-clearance', getPendingClearanceApprovalsHandler);
+
+// Approval flow: IT/Admin copy signing + final approver
+router.get(
+  '/pending-admin-copy-signatures',
+  getPendingAdminCopySignaturesHandler
+);
+router.get('/pending-approvals', getPendingAccountabilityApprovalsHandler);
+router.post('/:formId/sign-admin-copy', signAdminCopyHandler);
+router.post('/:formId/approve', approveAccountabilityFormHandler);
 
 router.get('/:formId/checklists', getAccountabilityFormChecklistsHandler);
 router.post(

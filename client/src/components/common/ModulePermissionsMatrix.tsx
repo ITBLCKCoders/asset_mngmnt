@@ -1,8 +1,18 @@
 import React, { useState } from 'react';
-import { ChevronDown } from 'lucide-react';
+import { ChevronDown, AlertTriangle } from 'lucide-react';
 import { Switch } from '@/components/ui/switch';
 import { cn } from '@/lib/utils';
 import { USER_MODULE_TREE, moduleChildLabel, type ModuleTreeNode } from '@/constants/userModuleTree';
+import {
+  AlertDialog,
+  AlertDialogContent,
+  AlertDialogHeader,
+  AlertDialogTitle,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogCancel,
+  AlertDialogAction,
+} from '@/components/ui/alert-dialog';
 
 export type ModulePermissionKey = 'view' | 'create' | 'edit' | 'delete';
 
@@ -36,11 +46,38 @@ const PERM_KEYS: ModulePermissionKey[] = [
   'delete',
 ];
 
+const SETTINGS_OR_USERS_MODULES = new Set([
+  'Settings',
+  'Asset Categories',
+  'Asset Types',
+  'Asset Brands',
+  'Suppliers',
+  'Intangible Asset Types',
+  'Risk Levels',
+  'Departments',
+  'Locations',
+  'Roles',
+  'Companies',
+  'Users',
+]);
+
+const isSettingsOrUsersModule = (moduleName: string): boolean => {
+  return SETTINGS_OR_USERS_MODULES.has(moduleName);
+};
+
 export interface ModulePermissionsMatrixProps {
   value: ModulePermissionsMap;
   onChange: (next: ModulePermissionsMap) => void;
   disabled?: boolean;
   className?: string;
+  isGlobalAdmin?: boolean;
+}
+
+interface PendingPermChange {
+  type: 'toggle' | 'all';
+  module: string;
+  perm?: string;
+  newValue?: boolean;
 }
 
 /**
@@ -51,8 +88,10 @@ export function ModulePermissionsMatrix({
   onChange,
   disabled = false,
   className,
+  isGlobalAdmin = false,
 }: ModulePermissionsMatrixProps) {
   const [openModules, setOpenModules] = useState<Set<string>>(new Set());
+  const [pendingChange, setPendingChange] = useState<PendingPermChange | null>(null);
 
   const get = (module: string, perm: string) => {
     const modPerm = value[module];
@@ -110,7 +149,7 @@ export function ModulePermissionsMatrix({
     return 'some';
   };
 
-  const toggle = (module: string, perm: string, newValue?: boolean) => {
+  const executeToggle = (module: string, perm: string, newValue?: boolean) => {
     if (disabled) return;
     const moduleData = USER_MODULE_TREE.find(m => m.name === module);
     const permissionKey = perm as ModulePermissionKey;
@@ -184,6 +223,27 @@ export function ModulePermissionsMatrix({
     }
   };
 
+  const toggle = (module: string, perm: string, newValue?: boolean) => {
+    if (disabled) return;
+    const moduleData = USER_MODULE_TREE.find(m => m.name === module);
+    const currentState = moduleData && moduleData.children.length > 0
+      ? getModulePermissionState(module, perm)
+      : null;
+    const valueToSet = newValue !== undefined
+      ? newValue
+      : currentState !== null
+        ? currentState !== 'all'
+        : !get(module, perm);
+
+    // If Global Admin and enabling create/edit/delete on a non-Settings/Users module, show warning
+    if (isGlobalAdmin && valueToSet === true && perm !== 'view' && !isSettingsOrUsersModule(module)) {
+      setPendingChange({ type: 'toggle', module, perm, newValue: true });
+      return;
+    }
+
+    executeToggle(module, perm, newValue);
+  };
+
   /** Roll up parent module flags from children (same rules as toggle). */
   const syncParentsFromChildren = (
     updated: ModulePermissionsMap,
@@ -235,8 +295,7 @@ export function ModulePermissionsMatrix({
     return 'some';
   };
 
-  /** Turn every permission on or off for this module (and all children if parent). */
-  const setModuleAllPerms = (module: string, full: boolean) => {
+  const executeSetModuleAllPerms = (module: string, full: boolean) => {
     if (disabled) return;
     const moduleData = USER_MODULE_TREE.find(m => m.name === module);
     const updated: ModulePermissionsMap = { ...value };
@@ -270,6 +329,16 @@ export function ModulePermissionsMatrix({
     }
 
     onChange(updated);
+  };
+
+  /** Turn every permission on or off for this module (and all children if parent). */
+  const setModuleAllPerms = (module: string, full: boolean) => {
+    if (disabled) return;
+    if (isGlobalAdmin && full && !isSettingsOrUsersModule(module)) {
+      setPendingChange({ type: 'all', module, newValue: true });
+      return;
+    }
+    executeSetModuleAllPerms(module, full);
   };
 
   const headerCell =
@@ -573,6 +642,58 @@ export function ModulePermissionsMatrix({
           })}
         </tbody>
       </table>
+
+      <AlertDialog open={!!pendingChange} onOpenChange={open => { if (!open) setPendingChange(null); }}>
+        <AlertDialogContent className="rounded-2xl border-0 shadow-2xl">
+          <AlertDialogHeader>
+            <div className="flex items-center gap-3">
+              <div className="p-2.5 bg-amber-100 rounded-xl text-amber-600">
+                <AlertTriangle className="h-5 w-5" />
+              </div>
+              <AlertDialogTitle className="text-lg font-bold text-gray-900">
+                Operational Permission Warning
+              </AlertDialogTitle>
+            </div>
+            <AlertDialogDescription className="text-sm text-gray-600 mt-2 space-y-2">
+              <span className="block">
+                By default, <strong>Global Admin</strong> is configured with full control only over <strong>Settings</strong> and <strong>Users</strong>, and <strong>View Only</strong> access on operational modules.
+              </span>
+              <span className="block font-medium text-gray-800">
+                {pendingChange?.type === 'all'
+                  ? `Enabling ALL permissions on "${pendingChange?.module}" grants full Create, Edit, and Delete operational modification rights.`
+                  : `Enabling ${pendingChange?.perm?.toUpperCase()} permission on "${pendingChange?.module}" grants administrative modification rights.`}
+              </span>
+              <span className="block text-xs text-amber-700 bg-amber-50 p-2.5 rounded-lg border border-amber-200">
+                Are you sure you want to grant this permission to Global Admin?
+              </span>
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter className="mt-4">
+            <AlertDialogCancel
+              onClick={() => setPendingChange(null)}
+              className="rounded-xl"
+            >
+              Cancel
+            </AlertDialogCancel>
+            <AlertDialogAction
+              onClick={() => {
+                if (pendingChange) {
+                  const pc = pendingChange;
+                  setPendingChange(null);
+                  if (pc.type === 'all') {
+                    executeSetModuleAllPerms(pc.module, true);
+                  } else if (pc.perm) {
+                    executeToggle(pc.module, pc.perm, true);
+                  }
+                }
+              }}
+              className="bg-red-600 hover:bg-red-700 text-white rounded-xl"
+            >
+              Proceed & Enable
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   );
 }

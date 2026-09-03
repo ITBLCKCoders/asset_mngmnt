@@ -14,7 +14,7 @@ import { signedRawUrlFromStoredSecureUrl } from '../utils/cloudinary.js';
 import { getAssetScope, classifyDepartmentScopeByName } from '../utils/assetScope.js';
 import { getClearanceEligibility, createClearanceForScope } from '../utils/accountabilityFormOnReturn.js';
 import { emitNotification } from '../sockets/socketHandlers.js';
-import { createNotificationForApi } from '../utils/notificationsApi.js';
+import { createNotificationForApi, type NotificationApiType } from '../utils/notificationsApi.js';
 import { getHrAccountabilityReceiverUserIds } from '../utils/approverNotifications.js';
 import { getIoInstance } from '../utils/socketManager.js';
 import { NotificationService } from '../services/notification.service.js';
@@ -281,11 +281,177 @@ async function signLinkedChecklistsForAccountabilityForm(params: {
   return signedCount;
 }
 
-export type ClearanceScope = 'IT' | 'Admin';
-export type ClearanceReason = 'return' | 'transfer';
+/**
+ * Classify the IT/Admin scope of a form based on its assets (or single asset).
+ * Returns 'IT' when any asset is IT-scoped, 'Admin' when admin-scoped,
+ * null when the form has no resolvable scope (e.g. clearance with no assets).
+ */
+export type ClearanceScope = 'IT' | 'Admin' | 'Unified';
+export type ClearanceReason = 'return' | 'transfer' | 'clearance';
+export type AdminCopyCopyType = 'IT' | 'Admin';
 
 /** Stored inside `assets_data` JSON alongside `assets` (not shown in PDF tables). */
 export type AccountabilityFormOrigin = 'processor_return' | 'clearance';
+
+function detectFormCopyScope(
+  assets: any[] | null | undefined,
+  formOrigin: AccountabilityFormOrigin | undefined,
+  clearanceScope: ClearanceScope | undefined
+): AdminCopyCopyType | null {
+  if (formOrigin === 'clearance') {
+    if (clearanceScope === 'Unified') return null;
+    return (clearanceScope as AdminCopyCopyType) ?? null;
+  }
+  if (!assets || assets.length === 0) return null;
+  let isIT = false;
+  let isAdmin = false;
+  for (const a of assets) {
+    const dept = (a?.department || a?.categoryDepartment || '').toString().toLowerCase();
+    const type = (a?.type || '').toString().toLowerCase();
+    if (dept.includes('it') || dept.includes('information technology')) {
+      isIT = true;
+    } else if (dept.includes('admin') || dept.includes('administration')) {
+      isAdmin = true;
+    } else if (
+      type.includes('computer') ||
+      type.includes('laptop') ||
+      type.includes('server')
+    ) {
+      isIT = true;
+    }
+  }
+  if (isIT && !isAdmin) return 'IT';
+  if (isAdmin && !isIT) return 'Admin';
+  // Mixed scopes → prefer the dominant one but still require a copy signer.
+  if (isIT) return 'IT';
+  if (isAdmin) return 'Admin';
+  return null;
+}
+
+/**
+ * Build the standard notification payload for "please sign the IT/Admin copy".
+ */
+function buildAdminCopySignNotification(args: {
+  signerUserId: string;
+  formNumber: string;
+  formId: string;
+  ownerName: string;
+  copyType: AdminCopyCopyType;
+  alsoApproves: boolean;
+}) {
+  const stepLabel = args.alsoApproves
+    ? 'sign and approve'
+    : `sign the ${args.copyType} copy`;
+  return {
+    user_id: args.signerUserId,
+    title: `Accountability form ${args.formNumber} needs ${args.copyType} copy signature`,
+    message: `Please ${stepLabel} for ${args.ownerName}'s accountability form (${args.formNumber}).`,
+    type: 'accountability_form',
+    data: {
+      route: '/approvals?tab=for-approval',
+      actionTarget: 'accountability_form_admin_copy',
+      formId: args.formId,
+      formNumber: args.formNumber,
+      copyType: args.copyType,
+      alsoApproves: args.alsoApproves,
+    },
+  };
+}
+
+/**
+ * Build the standard notification payload for "please approve the form".
+ */
+function buildApprovalRequestNotification(args: {
+  approverUserId: string;
+  formNumber: string;
+  formId: string;
+  ownerName: string;
+}) {
+  return {
+    user_id: args.approverUserId,
+    title: `Accountability form ${args.formNumber} needs your approval`,
+    message: `Please review and approve the accountability form for ${args.ownerName} (${args.formNumber}).`,
+    type: 'accountability_form',
+    data: {
+      route: '/approvals?tab=for-approval',
+      actionTarget: 'accountability_form_approval',
+      formId: args.formId,
+      formNumber: args.formNumber,
+    },
+  };
+}
+
+/**
+ * Build the standard notification payload for "form is ready for user to sign".
+ */
+function buildOwnerReadyNotification(args: {
+  ownerUserId: string;
+  formNumber: string;
+  formId: string;
+  assignerName: string;
+}) {
+  return {
+    user_id: args.ownerUserId,
+    title: 'New accountability form has been issued',
+    message: `by ${args.assignerName}. Review it and check your assets and sign the form`,
+    type: 'accountability_form',
+    status: 'unread',
+    data: JSON.stringify({
+      description: `by ${args.assignerName}. Review it and check your assets and sign the form`,
+      route: '/profile?tab=documents',
+      actionTarget: 'profile_documents',
+      formId: args.formId,
+      formNumber: args.formNumber,
+      assignedBy: args.assignerName,
+      timestamp: new Date().toISOString(),
+    }),
+  };
+}
+
+async function notifyUser(payload: {
+  userId: string;
+  title: string;
+  message: string;
+  type: NotificationApiType;
+  data: Record<string, unknown> | string;
+  createdBy: string;
+  req: AuthRequest;
+}): Promise<void> {
+  try {
+    const dataString =
+      typeof payload.data === 'string' ? payload.data : JSON.stringify(payload.data);
+    await NotificationService.createNotification(
+      {
+        user_id: payload.userId,
+        title: payload.title,
+        message: payload.message,
+        type: payload.type as
+          | 'asset_assignment'
+          | 'accountability_form'
+          | 'system'
+          | 'reminder'
+          | 'user_lockout',
+        status: 'unread',
+        data: dataString,
+      },
+      payload.createdBy,
+      payload.req.ip,
+      payload.req.get('User-Agent')
+    );
+    const io = getIoInstance();
+    if (io) {
+      emitNotification(io, payload.userId, 'notification', {
+        ...(typeof payload.data === 'object' ? payload.data : {}),
+        title: payload.title,
+        description: payload.message,
+        type: payload.type,
+        timestamp: new Date().toISOString(),
+      });
+    }
+  } catch (err) {
+    logger.error('Failed to send notification:', err);
+  }
+}
 
 function parseAccountabilityAssetsData(assetsDataRaw: unknown): {
   assets: any[];
@@ -296,6 +462,7 @@ function parseAccountabilityAssetsData(assetsDataRaw: unknown): {
   referenceDisabledFormNumbers?: string[];
   clearedAt?: string;
 } {
+
   const assets: any[] = [];
   const assignmentIds: string[] = [];
   if (assetsDataRaw == null || assetsDataRaw === '') {
@@ -345,11 +512,11 @@ function parseAccountabilityAssetsData(assetsDataRaw: unknown): {
         assignmentIds: [...new Set(assignmentIds)],
         formOrigin: 'clearance',
         clearanceScope:
-          clearedScope === 'IT' || clearedScope === 'Admin'
+          clearedScope === 'IT' || clearedScope === 'Admin' || clearedScope === 'Unified'
             ? (clearedScope as ClearanceScope)
             : undefined,
         clearanceReason:
-          clearedReason === 'return' || clearedReason === 'transfer'
+          clearedReason === 'return' || clearedReason === 'transfer' || clearedReason === 'clearance'
             ? (clearedReason as ClearanceReason)
             : undefined,
         referenceDisabledFormNumbers: Array.isArray(refDisabled)
@@ -434,14 +601,8 @@ async function generateFormNumber(
 
   let assetCode: string | null;
   if (options?.origin === 'clearance') {
-    // Clearance certificates use a distinct code so they never collide with
-    // standard IT/Admin accountability sequences.
-    assetCode =
-      options.clearanceScope === 'IT'
-        ? 'CLR-IT'
-        : options.clearanceScope === 'Admin'
-          ? 'CLR-ADM'
-          : 'CLR';
+    // Unified clearance uses CLR (single certificate). Legacy IT/Admin codes kept for history.
+    assetCode = 'CLR';
   } else {
     assetCode = isITAsset
       ? settings?.it_asset_code
@@ -503,6 +664,207 @@ async function getFormIdByFormNumber(
   return id != null && String(id).trim() !== '' ? String(id) : null;
 }
 
+/**
+ * Resolve the approval-flow parameters for a form. The form's status is
+ * decided by:
+ *   1. The IT/Admin copy scope of the assets (clearance uses its own scope)
+ *   2. The designated approver/sub-approver of the form's user
+ *   3. The adminCopySignerId supplied by the issuer (may be null when the
+ *      issuer chose the legacy `signITCopy` checkbox or for clearance)
+ *
+ * Returns null when the form does not need to go through the new flow
+ * (no IT/Admin copy, no clearance, no approver found).
+ */
+async function resolveApprovalParams(args: {
+  userId: string;
+  assetsForScope: any[];
+  formOrigin: AccountabilityFormOrigin | undefined;
+  clearanceScope: ClearanceScope | undefined;
+  adminCopySignerIdRaw: unknown;
+  adminCopyCopyTypeRaw: unknown;
+}): Promise<
+  | {
+      approvalStatus: 'pending_admin_copy_signature' | 'pending_approval' | 'approved';
+      adminCopySignerId: string | null;
+      adminCopyCopyType: AdminCopyCopyType | null;
+      ownerApproverId: string | null;
+      ownerSubApproverId: string | null;
+    }
+  | null
+> {
+  const copyType: AdminCopyCopyType | null =
+    args.adminCopyCopyTypeRaw === 'IT' || args.adminCopyCopyTypeRaw === 'Admin'
+      ? (args.adminCopyCopyTypeRaw as AdminCopyCopyType)
+      : detectFormCopyScope(
+          args.assetsForScope,
+          args.formOrigin,
+          args.clearanceScope
+        );
+
+  // Clearance uses the copy scope directly, but there's no IT/Admin copy to
+  // sign - clearance is a single certificate. We still need an approver
+  // (the form user's approver/sub-approver) to release it.
+  if (args.formOrigin === 'clearance') {
+    const approverId = await getDesignatedApproverUserIdForRequester(
+      args.userId
+    );
+    const subApproverId = await getDesignatedSubApproverUserIdForRequester(
+      args.userId
+    );
+    return {
+      approvalStatus: approverId || subApproverId ? 'pending_approval' : 'approved',
+      adminCopySignerId: null,
+      adminCopyCopyType: copyType,
+      ownerApproverId: approverId,
+      ownerSubApproverId: subApproverId,
+    };
+  }
+
+  // For tangible forms: if the form has no IT/Admin scope, the legacy flow
+  // (direct to user) still applies - no copy signer required.
+  if (copyType === null) {
+    return null;
+  }
+
+  // IT/Admin scope form: must have a copy signer.
+  const signerId =
+    typeof args.adminCopySignerIdRaw === 'string' &&
+    args.adminCopySignerIdRaw.trim() !== ''
+      ? args.adminCopySignerIdRaw.trim()
+      : null;
+
+  if (!signerId) {
+    throw Object.assign(new Error('NO_ADMIN_COPY_SIGNER'), {
+      code: 'NO_ADMIN_COPY_SIGNER',
+    });
+  }
+
+  const approverId = await getDesignatedApproverUserIdForRequester(args.userId);
+  const subApproverId = await getDesignatedSubApproverUserIdForRequester(
+    args.userId
+  );
+
+  return {
+    approvalStatus: 'pending_admin_copy_signature',
+    adminCopySignerId: signerId,
+    adminCopyCopyType: copyType,
+    ownerApproverId: approverId,
+    ownerSubApproverId: subApproverId,
+  };
+}
+
+/**
+ * Send the next-step notification after a form is created. When the form is
+ * in `pending_admin_copy_signature`, notify the IT/Admin copy signer. When in
+ * `pending_approval` (clearance), notify the owner's approver. When
+ * `approved`, notify the new asset owner.
+ */
+async function sendApprovalKickoffNotifications(args: {
+  formId: string;
+  formNumber: string;
+  ownerUserId: string;
+  ownerName: string;
+  assignerName: string;
+  approvalStatus: 'pending_admin_copy_signature' | 'pending_approval' | 'approved';
+  adminCopySignerId: string | null;
+  adminCopyCopyType: AdminCopyCopyType | null;
+  ownerApproverId: string | null;
+  ownerSubApproverId: string | null;
+  req: AuthRequest;
+}): Promise<void> {
+  const { req } = args;
+  if (args.approvalStatus === 'pending_admin_copy_signature' && args.adminCopySignerId) {
+    const alsoApproves =
+      !!args.ownerApproverId &&
+      args.adminCopySignerId === args.ownerApproverId;
+    await notifyUser({
+      userId: args.adminCopySignerId,
+      title: `Accountability form ${args.formNumber} needs ${args.adminCopyCopyType ?? 'IT'} copy signature`,
+      message: `Please ${alsoApproves ? 'sign and approve' : `sign the ${args.adminCopyCopyType ?? 'IT'} copy`} for ${args.ownerName}'s accountability form (${args.formNumber}).`,
+      type: 'accountability_form',
+      data: {
+        route: '/approvals?tab=for-approval',
+        actionTarget: 'accountability_form_admin_copy',
+        formId: args.formId,
+        formNumber: args.formNumber,
+        copyType: args.adminCopyCopyType,
+        alsoApproves,
+      },
+      createdBy: req.user!.userID,
+      req,
+    });
+    return;
+  }
+  if (args.approvalStatus === 'pending_approval') {
+    const recipients = [
+      args.ownerApproverId,
+      args.ownerSubApproverId,
+    ].filter((id): id is string => !!id && id !== args.ownerUserId);
+    for (const approverId of recipients) {
+      await notifyUser({
+        userId: approverId,
+        title: `Accountability form ${args.formNumber} needs your approval`,
+        message: `Please review and approve the accountability form for ${args.ownerName} (${args.formNumber}).`,
+        type: 'accountability_form',
+        data: {
+          route: '/approvals?tab=for-approval',
+          actionTarget: 'accountability_form_approval',
+          formId: args.formId,
+          formNumber: args.formNumber,
+        },
+        createdBy: req.user!.userID,
+        req,
+      });
+    }
+    return;
+  }
+  // 'approved' or fallback - notify the new asset owner.
+  const ownerPayload = buildOwnerReadyNotification({
+    ownerUserId: args.ownerUserId,
+    formNumber: args.formNumber,
+    formId: args.formId,
+    assignerName: args.assignerName,
+  });
+  try {
+    await NotificationService.createNotification(
+      {
+        user_id: ownerPayload.user_id,
+        title: ownerPayload.title,
+        message: ownerPayload.message,
+        type: ownerPayload.type as
+          | 'asset_assignment'
+          | 'accountability_form'
+          | 'system'
+          | 'reminder'
+          | 'user_lockout',
+        status: 'unread',
+        data: ownerPayload.data,
+      },
+      req.user!.userID,
+      req.ip,
+      req.get('User-Agent')
+    );
+    const io = getIoInstance();
+    if (!io) {
+      logger.error('[NOTIFICATION] Socket.IO instance not available');
+    } else {
+      emitNotification(io, args.ownerUserId, 'notification', {
+        title: ownerPayload.title,
+        description: ownerPayload.message,
+        type: ownerPayload.type,
+        route: '/profile?tab=documents',
+        actionTarget: 'profile_documents',
+        formId: args.formId,
+        formNumber: args.formNumber,
+        assignedBy: args.assignerName,
+        timestamp: new Date().toISOString(),
+      });
+    }
+  } catch (err) {
+    logger.error('Failed to send owner notification:', err);
+  }
+}
+
 export async function createAccountabilityFormHandler(
   req: AuthRequest,
   res: Response
@@ -520,6 +882,9 @@ export async function createAccountabilityFormHandler(
       issuerSignature,
       signITCopy,
       itCopySignature,
+      adminCopySignerId,
+      adminCopyCopyType: adminCopyCopyTypeBody,
+      adminCopySigner: adminCopySignerBody,
       formOrigin: formOriginBody,
       form_origin: formOriginSnake,
       clearanceScope: clearanceScopeBody,
@@ -574,18 +939,16 @@ export async function createAccountabilityFormHandler(
         : new Date().toISOString();
     const createdBy = req.user!.userID;
 
-    // Handle clearance certificates (zero-asset, per-scope) before the
-    // multi-asset branch so an empty `assets` array never silently bypasses
-    // the clearance flow.
+    // Handle clearance certificates (unified) - owner self-service via createClearanceHandler
+    // This legacy direct path is retained for backwards compat but now requires Unified scope
     if (formOriginStored === 'clearance') {
       if (!userId) {
         return res.status(400).json({ error: 'User ID is required' });
       }
-      if (!clearanceScopeStored) {
-        return res
-          .status(400)
-          .json({ error: 'clearance_scope (IT | Admin) is required' });
-      }
+      // Allow Unified or legacy IT/Admin for backward compat; normalize to Unified
+      const effectiveClearanceScope: ClearanceScope = (clearanceScopeStored as ClearanceScope) ?? 'Unified';
+      // re-assign for downstream usage
+      (clearanceScopeStored as any) = effectiveClearanceScope;
 
       const userDetails = await repo.getUserCompanyAndName(userId);
       let companyId: string | null =
@@ -603,6 +966,7 @@ export async function createAccountabilityFormHandler(
       let formNumber = '';
       let attempts = 0;
       const maxAttempts = 5;
+      let resolvedApprovalParams: Awaited<ReturnType<typeof resolveApprovalParams>> = null;
       while (attempts < maxAttempts) {
         try {
           formNumber = await generateFormNumber(
@@ -625,6 +989,25 @@ export async function createAccountabilityFormHandler(
             cleared_at: clearedAtStored,
           };
 
+          // Resolve approval parameters for the clearance form.
+          try {
+            resolvedApprovalParams = await resolveApprovalParams({
+              userId,
+              assetsForScope: [],
+              formOrigin: 'clearance',
+              clearanceScope: clearanceScopeStored,
+              adminCopySignerIdRaw: adminCopySignerId,
+              adminCopyCopyTypeRaw: adminCopyCopyTypeBody,
+            });
+          } catch (approvalErr: any) {
+            if (approvalErr?.code === 'NO_ADMIN_COPY_SIGNER') {
+              return res.status(400).json({
+                error: `No designated approver/sub-approver found for this user; cannot create clearance that requires approval`,
+              });
+            }
+            throw approvalErr;
+          }
+
           await repo.insertAccountabilityFormMulti({
             formNumber,
             userId,
@@ -635,6 +1018,9 @@ export async function createAccountabilityFormHandler(
             issuerSignature: issuerSignature || null,
             itCopySignature: itCopySignature || null,
             assignmentId: null,
+            approvalStatus: resolvedApprovalParams?.approvalStatus ?? 'approved',
+            adminCopySignerId: resolvedApprovalParams?.adminCopySignerId ?? null,
+            adminCopyCopyType: resolvedApprovalParams?.adminCopyCopyType ?? null,
           });
           break;
         } catch (error: any) {
@@ -687,15 +1073,54 @@ export async function createAccountabilityFormHandler(
               createdBy
             : createdBy;
 
-          await NotificationService.createNotification(
-            {
-              user_id: userId,
-              title: 'Asset clearance certificate issued',
-              message: `by ${assignerName}. You are now cleared of all ${clearanceScopeStored} asset accountabilities. Download your clearance from your profile.`,
-              type: 'accountability_form',
-              status: 'unread',
-              data: JSON.stringify({
+          if (resolvedApprovalParams && resolvedApprovalParams.approvalStatus !== 'approved') {
+            // Defer the user-facing notification; kick off the approval flow.
+            await sendApprovalKickoffNotifications({
+              formId: resolvedFormId,
+              formNumber,
+              ownerUserId: userId,
+              ownerName: userName,
+              assignerName,
+              approvalStatus: resolvedApprovalParams.approvalStatus,
+              adminCopySignerId: resolvedApprovalParams.adminCopySignerId,
+              adminCopyCopyType: resolvedApprovalParams.adminCopyCopyType,
+              ownerApproverId: resolvedApprovalParams.ownerApproverId,
+              ownerSubApproverId: resolvedApprovalParams.ownerSubApproverId,
+              req,
+            });
+          } else {
+            // Legacy path: directly notify the new asset owner.
+            await NotificationService.createNotification(
+              {
+                user_id: userId,
+                title: 'Asset clearance certificate issued',
+                message: `by ${assignerName}. You are now cleared of all ${clearanceScopeStored} asset accountabilities. Download your clearance from your profile.`,
+                type: 'accountability_form',
+                status: 'unread',
+                data: JSON.stringify({
+                  description: `by ${assignerName}. You are now cleared of all ${clearanceScopeStored} asset accountabilities. Download your clearance from your profile.`,
+                  route: '/profile?tab=documents',
+                  actionTarget: 'profile_documents',
+                  formId: resolvedFormId,
+                  formNumber: formNumber,
+                  assignedBy: assignerName,
+                  clearanceScope: clearanceScopeStored,
+                  timestamp: new Date().toISOString(),
+                }),
+              },
+              createdBy,
+              req.ip,
+              req.get('User-Agent')
+            );
+
+            const io = getIoInstance();
+            if (!io) {
+              logger.error('[NOTIFICATION] Socket.IO instance not available');
+            } else {
+              emitNotification(io, userId, 'notification', {
+                title: 'Asset clearance certificate issued',
                 description: `by ${assignerName}. You are now cleared of all ${clearanceScopeStored} asset accountabilities. Download your clearance from your profile.`,
+                type: 'accountability_form',
                 route: '/profile?tab=documents',
                 actionTarget: 'profile_documents',
                 formId: resolvedFormId,
@@ -703,29 +1128,8 @@ export async function createAccountabilityFormHandler(
                 assignedBy: assignerName,
                 clearanceScope: clearanceScopeStored,
                 timestamp: new Date().toISOString(),
-              }),
-            },
-            createdBy,
-            req.ip,
-            req.get('User-Agent')
-          );
-
-          const io = getIoInstance();
-          if (!io) {
-            logger.error('[NOTIFICATION] Socket.IO instance not available');
-          } else {
-            emitNotification(io, userId, 'notification', {
-              title: 'Asset clearance certificate issued',
-              description: `by ${assignerName}. You are now cleared of all ${clearanceScopeStored} asset accountabilities. Download your clearance from your profile.`,
-              type: 'accountability_form',
-              route: '/profile?tab=documents',
-              actionTarget: 'profile_documents',
-              formId: resolvedFormId,
-              formNumber: formNumber,
-              assignedBy: assignerName,
-              clearanceScope: clearanceScopeStored,
-              timestamp: new Date().toISOString(),
-            });
+              });
+            }
           }
         } catch (socketError) {
           logger.error('Failed to send clearance notification:', socketError);
@@ -741,6 +1145,7 @@ export async function createAccountabilityFormHandler(
           department_id: departmentId ?? null,
           location_id: locationId ?? null,
           status: 'Pending',
+          approvalStatus: resolvedApprovalParams?.approvalStatus ?? 'approved',
           created_at: new Date(),
           created_by: createdBy,
           formOrigin: 'clearance',
@@ -818,6 +1223,7 @@ export async function createAccountabilityFormHandler(
       let formNumber: string = '';
       let attempts = 0;
       const maxAttempts = 5;
+      let multiResolvedApproval: Awaited<ReturnType<typeof resolveApprovalParams>> = null;
 
       while (attempts < maxAttempts) {
         try {
@@ -857,7 +1263,7 @@ export async function createAccountabilityFormHandler(
                 AND aa.deleted_at IS NULL
               `;
               const [assignmentRows] = await pool.execute(assignmentsQuery, assignmentIds);
-              
+
               // Find the assignment with a computer-type asset
               const computerAssignment = (assignmentRows as any[]).find((row: any) => {
                 const type = (row.type_name || '').toLowerCase();
@@ -865,16 +1271,42 @@ export async function createAccountabilityFormHandler(
                        type.includes('laptop') ||
                        type.includes('server');
               });
-              
+
               if (computerAssignment) {
                 selectedAssignmentId = computerAssignment.assignmentID;
               }
             }
-            
+
             // Fall back to first assignment_id if no computer asset found
             if (!selectedAssignmentId) {
               selectedAssignmentId = assignmentIds[0];
             }
+          }
+
+          // Resolve approval parameters for the form. If the form has an
+          // IT/Admin copy column and no admin copy signer is provided, this
+          // throws to surface a 400 response. The legacy `signITCopy` flag
+          // falls back to the issuer auto-signing (no copy signer required).
+          try {
+            if (adminCopySignerId || adminCopyCopyTypeBody) {
+              multiResolvedApproval = await resolveApprovalParams({
+                userId,
+                assetsForScope: assets,
+                formOrigin: formOriginStored,
+                clearanceScope: clearanceScopeStored,
+                adminCopySignerIdRaw: adminCopySignerId,
+                adminCopyCopyTypeRaw: adminCopyCopyTypeBody ?? adminCopySignerBody,
+              });
+            } else {
+              multiResolvedApproval = null;
+            }
+          } catch (approvalErr: any) {
+            if (approvalErr?.code === 'NO_ADMIN_COPY_SIGNER') {
+              return res.status(400).json({
+                error: 'No designated approver/sub-approver found for this user; an IT/Admin copy signer must be selected for this form',
+              });
+            }
+            throw approvalErr;
           }
 
           // Create accountability form with assets stored in separate column
@@ -888,6 +1320,9 @@ export async function createAccountabilityFormHandler(
             issuerSignature: issuerSignature || null,
             itCopySignature: itCopySignature || null,
             assignmentId: selectedAssignmentId,
+            approvalStatus: multiResolvedApproval?.approvalStatus ?? 'approved',
+            adminCopySignerId: multiResolvedApproval?.adminCopySignerId ?? null,
+            adminCopyCopyType: multiResolvedApproval?.adminCopyCopyType ?? null,
           });
 
           break; // Success, exit retry loop
@@ -940,44 +1375,62 @@ export async function createAccountabilityFormHandler(
             ? `${createdByRow.first_name ?? ''} ${createdByRow.last_name ?? ''}`.trim() || createdBy
             : createdBy;
 
-          // Create database notification entry
-          await NotificationService.createNotification(
-            {
-              user_id: userId,
-              title: 'New accountability form has been issued',
-              message: `by ${assignerName}. Review it and check your assets and sign the form`,
-              type: 'accountability_form',
-              status: 'unread',
-              data: JSON.stringify({
+          if (multiResolvedApproval && multiResolvedApproval.approvalStatus !== 'approved') {
+            // Defer the user-facing notification; kick off the approval flow.
+            await sendApprovalKickoffNotifications({
+              formId: resolvedFormId,
+              formNumber,
+              ownerUserId: userId,
+              ownerName: userName,
+              assignerName,
+              approvalStatus: multiResolvedApproval.approvalStatus,
+              adminCopySignerId: multiResolvedApproval.adminCopySignerId,
+              adminCopyCopyType: multiResolvedApproval.adminCopyCopyType,
+              ownerApproverId: multiResolvedApproval.ownerApproverId,
+              ownerSubApproverId: multiResolvedApproval.ownerSubApproverId,
+              req,
+            });
+          } else {
+            // Legacy path: directly notify the new asset owner.
+            // Create database notification entry
+            await NotificationService.createNotification(
+              {
+                user_id: userId,
+                title: 'New accountability form has been issued',
+                message: `by ${assignerName}. Review it and check your assets and sign the form`,
+                type: 'accountability_form',
+                status: 'unread',
+                data: JSON.stringify({
+                  description: `by ${assignerName}. Review it and check your assets and sign the form`,
+                  route: '/profile?tab=documents',
+                  actionTarget: 'profile_documents',
+                  formId: resolvedFormId,
+                  formNumber: formNumber,
+                  assignedBy: assignerName,
+                  timestamp: new Date().toISOString(),
+                }),
+              },
+              createdBy,
+              req.ip,
+              req.get('User-Agent')
+            );
+
+            const io = getIoInstance();
+            if (!io) {
+              logger.error('[NOTIFICATION] Socket.IO instance not available');
+            } else {
+              emitNotification(io, userId, 'notification', {
+                title: 'New accountability form has been issued',
                 description: `by ${assignerName}. Review it and check your assets and sign the form`,
+                type: 'accountability_form',
                 route: '/profile?tab=documents',
                 actionTarget: 'profile_documents',
                 formId: resolvedFormId,
                 formNumber: formNumber,
                 assignedBy: assignerName,
                 timestamp: new Date().toISOString(),
-              }),
-            },
-            createdBy,
-            req.ip,
-            req.get('User-Agent')
-          );
-
-          const io = getIoInstance();
-          if (!io) {
-            logger.error('[NOTIFICATION] Socket.IO instance not available');
-          } else {
-            emitNotification(io, userId, 'notification', {
-              title: 'New accountability form has been issued',
-              description: `by ${assignerName}. Review it and check your assets and sign the form`,
-              type: 'accountability_form',
-              route: '/profile?tab=documents',
-              actionTarget: 'profile_documents',
-              formId: resolvedFormId,
-              formNumber: formNumber,
-              assignedBy: assignerName,
-              timestamp: new Date().toISOString(),
-            });
+              });
+            }
           }
         } catch (socketError) {
           logger.error('Failed to send WebSocket notification:', socketError);
@@ -994,6 +1447,7 @@ export async function createAccountabilityFormHandler(
           department_id: departmentId,
           location_id: locationId,
           status: 'Pending',
+          approvalStatus: multiResolvedApproval?.approvalStatus ?? 'approved',
           created_at: new Date(),
           created_by: createdBy,
           assets: assets,
@@ -1050,23 +1504,49 @@ export async function createAccountabilityFormHandler(
     let formNumber: string = '';
     let attempts = 0;
     const maxAttempts = 5;
+    let singleResolvedApproval: Awaited<ReturnType<typeof resolveApprovalParams>> = null;
+    const assetScopeArray = assetInfo
+      ? [
+          {
+            category: assetInfo.category_name,
+            type: assetInfo.type_name,
+            department: assetInfo.department_name,
+          },
+        ]
+      : [];
 
     while (attempts < maxAttempts) {
       try {
-        const assetArray = assetInfo
-          ? [
-              {
-                category: assetInfo.category_name,
-                type: assetInfo.type_name,
-                department: assetInfo.department_name,
-              },
-            ]
-          : [];
         formNumber = await generateFormNumber(
           companyId,
-          assetArray,
+          assetScopeArray,
           departmentId
         );
+
+        // Resolve approval parameters for the form. If the form has an
+        // IT/Admin copy column and no admin copy signer is provided, this
+        // throws to surface a 400 response.
+        try {
+          if (adminCopySignerId || adminCopyCopyTypeBody) {
+            singleResolvedApproval = await resolveApprovalParams({
+              userId,
+              assetsForScope: assetScopeArray,
+              formOrigin: formOriginStored,
+              clearanceScope: clearanceScopeStored,
+              adminCopySignerIdRaw: adminCopySignerId,
+              adminCopyCopyTypeRaw: adminCopyCopyTypeBody ?? adminCopySignerBody,
+            });
+          } else {
+            singleResolvedApproval = null;
+          }
+        } catch (approvalErr: any) {
+          if (approvalErr?.code === 'NO_ADMIN_COPY_SIGNER') {
+            return res.status(400).json({
+              error: 'No designated approver/sub-approver found for this user; an IT/Admin copy signer must be selected for this form',
+            });
+          }
+          throw approvalErr;
+        }
 
         // Create accountability form
         await repo.insertAccountabilityFormSingle({
@@ -1079,6 +1559,9 @@ export async function createAccountabilityFormHandler(
           createdBy,
           issuerSignature: issuerSignature || null,
           itCopySignature: itCopySignature || null,
+          approvalStatus: singleResolvedApproval?.approvalStatus ?? 'approved',
+          adminCopySignerId: singleResolvedApproval?.adminCopySignerId ?? null,
+          adminCopyCopyType: singleResolvedApproval?.adminCopyCopyType ?? null,
         });
 
         break; // Success, exit retry loop
@@ -1132,44 +1615,62 @@ export async function createAccountabilityFormHandler(
           ? `${createdByRow.first_name ?? ''} ${createdByRow.last_name ?? ''}`.trim() || createdBy
           : createdBy;
 
-        // Create database notification entry
-        await NotificationService.createNotification(
-          {
-            user_id: userId,
-            title: 'New accountability form has been issued',
-            message: `by ${assignerName}. Review it and check your assets and sign the form`,
-            type: 'accountability_form',
-            status: 'unread',
-            data: JSON.stringify({
+        if (singleResolvedApproval && singleResolvedApproval.approvalStatus !== 'approved') {
+          // Defer the user-facing notification; kick off the approval flow.
+          await sendApprovalKickoffNotifications({
+            formId: resolvedFormIdSingle,
+            formNumber,
+            ownerUserId: userId,
+            ownerName: userName,
+            assignerName,
+            approvalStatus: singleResolvedApproval.approvalStatus,
+            adminCopySignerId: singleResolvedApproval.adminCopySignerId,
+            adminCopyCopyType: singleResolvedApproval.adminCopyCopyType,
+            ownerApproverId: singleResolvedApproval.ownerApproverId,
+            ownerSubApproverId: singleResolvedApproval.ownerSubApproverId,
+            req,
+          });
+        } else {
+          // Legacy path: directly notify the new asset owner.
+          // Create database notification entry
+          await NotificationService.createNotification(
+            {
+              user_id: userId,
+              title: 'New accountability form has been issued',
+              message: `by ${assignerName}. Review it and check your assets and sign the form`,
+              type: 'accountability_form',
+              status: 'unread',
+              data: JSON.stringify({
+                description: `by ${assignerName}. Review it and check your assets and sign the form`,
+                route: '/profile?tab=documents',
+                actionTarget: 'profile_documents',
+                formId: resolvedFormIdSingle,
+                formNumber: formNumber,
+                assignedBy: assignerName,
+                timestamp: new Date().toISOString(),
+              }),
+            },
+            createdBy,
+            req.ip,
+            req.get('User-Agent')
+          );
+
+          const io = getIoInstance();
+          if (!io) {
+            logger.error('[NOTIFICATION] Socket.IO instance not available');
+          } else {
+            emitNotification(io, userId, 'notification', {
+              title: 'New accountability form has been issued',
               description: `by ${assignerName}. Review it and check your assets and sign the form`,
+              type: 'accountability_form',
               route: '/profile?tab=documents',
               actionTarget: 'profile_documents',
               formId: resolvedFormIdSingle,
               formNumber: formNumber,
               assignedBy: assignerName,
               timestamp: new Date().toISOString(),
-            }),
-          },
-          createdBy,
-          req.ip,
-          req.get('User-Agent')
-        );
-
-        const io = getIoInstance();
-        if (!io) {
-          logger.error('[NOTIFICATION] Socket.IO instance not available');
-        } else {
-          emitNotification(io, userId, 'notification', {
-            title: 'New accountability form has been issued',
-            description: `by ${assignerName}. Review it and check your assets and sign the form`,
-            type: 'accountability_form',
-            route: '/profile?tab=documents',
-            actionTarget: 'profile_documents',
-            formId: resolvedFormIdSingle,
-            formNumber: formNumber,
-            assignedBy: assignerName,
-            timestamp: new Date().toISOString(),
-          });
+            });
+          }
         }
       } catch (socketError) {
         logger.error('Failed to send WebSocket notification:', socketError);
@@ -1188,6 +1689,7 @@ export async function createAccountabilityFormHandler(
         department_id: departmentId,
         location_id: locationId,
         status: 'Pending',
+        approvalStatus: singleResolvedApproval?.approvalStatus ?? 'approved',
         created_at: new Date(),
         created_by: createdBy,
       },
@@ -1309,6 +1811,13 @@ export async function getAccountabilityFormsByAssetIdHandler(
             }
           : null,
         status: row.status,
+        approvalStatus: row.approval_status ?? 'approved',
+        adminCopySignerId: row.admin_copy_signer_id ?? null,
+        adminCopyCopyType: row.admin_copy_copy_type ?? null,
+        adminCopySignedAt: row.admin_copy_signed_at ?? null,
+        approvedBy: row.approved_by ?? null,
+        approvedAt: row.approved_at ?? null,
+        approvalNotes: row.approval_notes ?? null,
         declineReason: row.decline_reason ?? null,
         acknowledgments: parseMysqlJsonColumn(row.acknowledgments),
         issuerSignature: row.issuer_signature,
@@ -1471,6 +1980,13 @@ export async function getAccountabilityFormsHandler(
             }
           : null,
         status: row.status,
+        approvalStatus: row.approval_status ?? 'approved',
+        adminCopySignerId: row.admin_copy_signer_id ?? null,
+        adminCopyCopyType: row.admin_copy_copy_type ?? null,
+        adminCopySignedAt: row.admin_copy_signed_at ?? null,
+        approvedBy: row.approved_by ?? null,
+        approvedAt: row.approved_at ?? null,
+        approvalNotes: row.approval_notes ?? null,
         declineReason: row.decline_reason ?? null,
         acknowledgments: parseMysqlJsonColumn(row.acknowledgments),
         issuerSignature: row.issuer_signature,
@@ -1986,6 +2502,431 @@ export async function declineAccountabilityFormHandler(
   }
 }
 
+/**
+ * POST /api/accountability-forms/:formId/sign-admin-copy
+ *
+ * Sign the IT/Admin copy of an accountability form. The current user must be
+ * the assigned `admin_copy_signer_id` for the form, and the form must be in
+ * `pending_admin_copy_signature` status.
+ *
+ * If the signer is also the asset owner's designated approver, the form
+ * transitions directly to `approved` (combined-step flow per user decision).
+ * Otherwise it transitions to `pending_approval` and the owner's approver is
+ * notified.
+ */
+export async function signAdminCopyHandler(req: AuthRequest, res: Response) {
+  try {
+    const { formId } = req.params;
+    const { digitalSignature } = req.body ?? {};
+    const currentUserId = req.user!.userID;
+
+    if (!formId) {
+      return res.status(400).json({ error: 'Form ID is required' });
+    }
+
+    const form = await repo.getFormById(formId);
+    if (!form) {
+      return res.status(404).json({ error: 'Accountability form not found' });
+    }
+
+    if (form.approval_status !== 'pending_admin_copy_signature') {
+      return res.status(400).json({
+        error: 'Form is not awaiting an IT/Admin copy signature',
+      });
+    }
+
+    if (form.admin_copy_signer_id !== currentUserId) {
+      return res.status(403).json({
+        error: 'You are not the designated IT/Admin copy signer for this form',
+      });
+    }
+
+    const signature = await resolveSigningDigitalSignature(
+      currentUserId,
+      typeof digitalSignature === 'string' ? digitalSignature : null
+    );
+
+    // Decide the next status: combine with the approval step if the signer is
+    // also the asset owner's designated approver.
+    const ownerApproverId = await getDesignatedApproverUserIdForRequester(
+      form.user_id
+    );
+    const ownerSubApproverId = await getDesignatedSubApproverUserIdForRequester(
+      form.user_id
+    );
+    const isAlsoApprover =
+      !!ownerApproverId && ownerApproverId === currentUserId;
+
+    const nextStatus: 'pending_approval' | 'approved' = isAlsoApprover
+      ? 'approved'
+      : 'pending_approval';
+
+    const affected = await repo.updateAdminCopySignature(
+      formId,
+      signature,
+      nextStatus
+    );
+    if (affected === 0) {
+      return res.status(409).json({
+        error: 'Form state changed during admin copy sign',
+      });
+    }
+
+    if (isAlsoApprover) {
+      // Combined step: also stamp approved_by/approved_at and notify the
+      // owner directly.
+      await pool.execute(
+        `UPDATE accountability_forms
+         SET approved_by = ?, approved_at = NOW(), updated_at = NOW()
+         WHERE formID = ?`,
+        [currentUserId, formId]
+      );
+    }
+
+    await createAuditLog({
+      userId: currentUserId,
+      action: 'Signed IT/Admin Copy',
+      resourceType: 'accountability_form',
+      resourceId: formId,
+      resourceName: form.form_number,
+      details: `IT/Admin copy signed for accountability form ${form.form_number}${isAlsoApprover ? ' (combined with approval)' : ''}`,
+      newValues: {
+        admin_copy_signature: signature,
+        admin_copy_signed_at: new Date(),
+        approval_status: nextStatus,
+        ...(isAlsoApprover
+          ? { approved_by: currentUserId, approved_at: new Date() }
+          : {}),
+      },
+      ipAddress: req.ip,
+      userAgent: req.get ? req.get('User-Agent') : 'Unknown',
+    });
+
+    // Notify the next actor in the chain.
+    if (isAlsoApprover) {
+      // Notify the new asset owner that the form is ready.
+      const ownerNameRow = await repo.getUserNameById(form.user_id);
+      const ownerName = ownerNameRow
+        ? `${ownerNameRow.first_name ?? ''} ${ownerNameRow.last_name ?? ''}`.trim() ||
+          form.user_id
+        : form.user_id;
+      const signerRow = await repo.getUserNameById(currentUserId);
+      const assignerName = signerRow
+        ? `${signerRow.first_name ?? ''} ${signerRow.last_name ?? ''}`.trim() ||
+          currentUserId
+        : currentUserId;
+      const payload = buildOwnerReadyNotification({
+        ownerUserId: form.user_id,
+        formNumber: form.form_number,
+        formId,
+        assignerName,
+      });
+      try {
+        await NotificationService.createNotification(
+          {
+            user_id: payload.user_id,
+            title: payload.title,
+            message: payload.message,
+            type: payload.type as
+              | 'asset_assignment'
+              | 'accountability_form'
+              | 'system'
+              | 'reminder'
+              | 'user_lockout',
+            status: 'unread',
+            data: payload.data,
+          },
+          currentUserId,
+          req.ip,
+          req.get('User-Agent')
+        );
+        const io = getIoInstance();
+        if (io) {
+          emitNotification(io, form.user_id, 'notification', {
+            title: payload.title,
+            description: payload.message,
+            type: payload.type,
+            route: '/profile?tab=documents',
+            actionTarget: 'profile_documents',
+            formId,
+            formNumber: form.form_number,
+            assignedBy: assignerName,
+            timestamp: new Date().toISOString(),
+          });
+        }
+      } catch (notifErr) {
+        logger.error('Failed to notify owner after combined approval:', notifErr);
+      }
+      return res.json({
+        message: 'IT/Admin copy signed and form approved (combined step)',
+        formId,
+        approvalStatus: 'approved',
+        combinedApproval: true,
+        ownerName,
+      });
+    }
+
+    // Notify the owner's approver(s). Notify both approver and sub-approver
+    // when they are different; suppress duplicate notifications.
+    const ownerRow = await repo.getUserNameById(form.user_id);
+    const ownerName = ownerRow
+      ? `${ownerRow.first_name ?? ''} ${ownerRow.last_name ?? ''}`.trim() ||
+        form.user_id
+      : form.user_id;
+
+    const recipients = [ownerApproverId, ownerSubApproverId].filter(
+      (id): id is string => !!id && id !== currentUserId
+    );
+    // Deduplicate while preserving order.
+    const seen = new Set<string>();
+    const uniqueRecipients = recipients.filter(id => {
+      if (seen.has(id)) return false;
+      seen.add(id);
+      return true;
+    });
+    for (const approverId of uniqueRecipients) {
+      await notifyUser({
+        userId: approverId,
+        title: `Accountability form ${form.form_number} needs your approval`,
+        message: `Please review and approve the accountability form for ${ownerName} (${form.form_number}).`,
+        type: 'accountability_form',
+        data: {
+          route: '/approvals?tab=for-approval',
+          actionTarget: 'accountability_form_approval',
+          formId,
+          formNumber: form.form_number,
+        },
+        createdBy: currentUserId,
+        req,
+      });
+    }
+
+    return res.json({
+      message: 'IT/Admin copy signed; awaiting final approval',
+      formId,
+      approvalStatus: 'pending_approval',
+    });
+  } catch (error: any) {
+    logger.error('Sign admin copy failed:', error);
+    return res.status(500).json({ error: 'Failed to sign IT/Admin copy' });
+  }
+}
+
+/**
+ * POST /api/accountability-forms/:formId/approve
+ *
+ * Approve an accountability form. The current user must be the asset owner's
+ * designated approver OR sub-approver. The form must be in
+ * `pending_approval` status (i.e. the IT/Admin copy step has been completed).
+ */
+export async function approveAccountabilityFormHandler(
+  req: AuthRequest,
+  res: Response
+) {
+  try {
+    const { formId } = req.params;
+    const { approvalNotes } = req.body ?? {};
+    const currentUserId = req.user!.userID;
+
+    if (!formId) {
+      return res.status(400).json({ error: 'Form ID is required' });
+    }
+
+    const form = await repo.getFormById(formId);
+    if (!form) {
+      return res.status(404).json({ error: 'Accountability form not found' });
+    }
+
+    if (form.approval_status !== 'pending_approval') {
+      return res.status(400).json({
+        error: 'Form is not awaiting approval',
+      });
+    }
+
+    // Authorize: current user must be the owner's designated approver or
+    // sub-approver.
+    const [isApprover, isSubApprover] = await Promise.all([
+      isDesignatedApprover(currentUserId, form.user_id),
+      isDesignatedSubApprover(currentUserId, form.user_id),
+    ]);
+    if (!isApprover && !isSubApprover) {
+      return res.status(403).json({
+        error: 'You are not the designated approver/sub-approver for this user',
+      });
+    }
+
+    const notes =
+      typeof approvalNotes === 'string' && approvalNotes.trim() !== ''
+        ? approvalNotes.trim()
+        : null;
+
+    const affected = await repo.updateFormApproval({
+      formId,
+      approvedBy: currentUserId,
+      approvalNotes: notes,
+    });
+    if (affected === 0) {
+      return res.status(409).json({
+        error: 'Form state changed during approval',
+      });
+    }
+
+    await createAuditLog({
+      userId: currentUserId,
+      action: 'Approved Accountability Form',
+      resourceType: 'accountability_form',
+      resourceId: formId,
+      resourceName: form.form_number,
+      details: `Accountability form ${form.form_number} approved`,
+      newValues: {
+        approval_status: 'approved',
+        approved_by: currentUserId,
+        approved_at: new Date(),
+        approval_notes: notes,
+      },
+      ipAddress: req.ip,
+      userAgent: req.get ? req.get('User-Agent') : 'Unknown',
+    });
+
+    // Notify the new asset owner that the form is ready for signing.
+    const ownerRow = await repo.getUserNameById(form.user_id);
+    const ownerName = ownerRow
+      ? `${ownerRow.first_name ?? ''} ${ownerRow.last_name ?? ''}`.trim() ||
+        form.user_id
+      : form.user_id;
+    const signerRow = await repo.getUserNameById(currentUserId);
+    const assignerName = signerRow
+      ? `${signerRow.first_name ?? ''} ${signerRow.last_name ?? ''}`.trim() ||
+        currentUserId
+      : currentUserId;
+    const payload = buildOwnerReadyNotification({
+      ownerUserId: form.user_id,
+      formNumber: form.form_number,
+      formId,
+      assignerName,
+    });
+    try {
+      await NotificationService.createNotification(
+        {
+          user_id: payload.user_id,
+          title: payload.title,
+          message: payload.message,
+          type: payload.type as
+            | 'asset_assignment'
+            | 'accountability_form'
+            | 'system'
+            | 'reminder'
+            | 'user_lockout',
+          status: 'unread',
+          data: payload.data,
+        },
+        currentUserId,
+        req.ip,
+        req.get('User-Agent')
+      );
+      const io = getIoInstance();
+      if (io) {
+        emitNotification(io, form.user_id, 'notification', {
+          title: payload.title,
+          description: payload.message,
+          type: payload.type,
+          route: '/profile?tab=documents',
+          actionTarget: 'profile_documents',
+          formId,
+          formNumber: form.form_number,
+          assignedBy: assignerName,
+          timestamp: new Date().toISOString(),
+        });
+      }
+    } catch (notifErr) {
+      logger.error('Failed to notify owner after approval:', notifErr);
+    }
+
+    return res.json({
+      message: 'Accountability form approved',
+      formId,
+      approvalStatus: 'approved',
+      ownerName,
+    });
+  } catch (error: any) {
+    logger.error('Approve accountability form failed:', error);
+    return res.status(500).json({ error: 'Failed to approve accountability form' });
+  }
+}
+
+/**
+ * GET /api/accountability-forms/pending-admin-copy-signatures
+ *
+ * Lists forms where the current user is the designated IT/Admin copy signer
+ * and the form is awaiting their signature.
+ */
+export async function getPendingAdminCopySignaturesHandler(
+  req: AuthRequest,
+  res: Response
+) {
+  try {
+    const currentUserId = req.user!.userID;
+    const rows = await repo.listFormsPendingAdminCopySignature(currentUserId);
+    return res.json({ forms: rows });
+  } catch (error: any) {
+    logger.error('Get pending admin copy signatures failed:', error);
+    return res
+      .status(500)
+      .json({ error: 'Failed to load pending admin copy signatures' });
+  }
+}
+
+/**
+ * GET /api/accountability-forms/pending-approvals
+ *
+ * Lists forms where the current user is the asset owner's designated
+ * approver or sub-approver and the form is awaiting final approval.
+ */
+export async function getPendingAccountabilityApprovalsHandler(
+  req: AuthRequest,
+  res: Response
+) {
+  try {
+    const currentUserId = req.user!.userID;
+    const rows = await repo.listFormsPendingApprovalForApprover(currentUserId);
+    return res.json({ forms: rows });
+  } catch (error: any) {
+    logger.error('Get pending accountability approvals failed:', error);
+    return res
+      .status(500)
+      .json({ error: 'Failed to load pending accountability approvals' });
+  }
+}
+
+export async function getPendingClearanceApprovalsHandler(req: AuthRequest, res: Response) {
+  try {
+    const currentUserId = req.user!.userID;
+    const result: any[] = [];
+    // Stage 1: owner approver
+    try { const rows = await repo.listFormsPendingClearanceForApprover(currentUserId); result.push(...rows.map((r:any)=>({...r, _clearanceStage: 'pending_approval'}))); } catch {}
+    // Stage 2/3/4: role based
+    const hasIt = await repo.hasRole(currentUserId, 'IT Asset');
+    if (hasIt) {
+      try { const rows = await repo.listFormsPendingItForUser(currentUserId); result.push(...rows.map((r:any)=>({...r, _clearanceStage: 'pending_it'}))); } catch {}
+    }
+    const hasAdmin = await repo.hasRole(currentUserId, 'Admin Asset');
+    if (hasAdmin) {
+      try { const rows = await repo.listFormsPendingAdminForUser(currentUserId); result.push(...rows.map((r:any)=>({...r, _clearanceStage: 'pending_admin'}))); } catch {}
+    }
+    const hasHr = await userHasHrAccountabilityReceiverAccess(currentUserId);
+    if (hasHr) {
+      try { const rows = await repo.listFormsPendingHrForUser(currentUserId); result.push(...rows.map((r:any)=>({...r, _clearanceStage: 'pending_hr'}))); } catch {}
+    }
+    // dedupe by formID
+    const seen = new Set<string>();
+    const deduped = result.filter(r=>{ const id=String((r as any).formID); if(seen.has(id)) return false; seen.add(id); return true; });
+    return res.json({ forms: deduped });
+  } catch (error:any) {
+    logger.error('Get pending clearance approvals failed:', error);
+    return res.status(500).json({ error: 'Failed to load pending clearance approvals' });
+  }
+}
+
 export async function signReceivedCopyHandler(req: AuthRequest, res: Response) {
   try {
     const { formId } = req.params;
@@ -2224,12 +3165,21 @@ export async function getAccountabilityFormByIdHandler(
       return res.status(404).json({ error: 'Accountability form not found' });
     }
 
-    const hrAccess = await userHasHrAccountabilityFullAccess(currentUserId);
-    // Assignee may view; issuer (created_by) may view; HR with full Accountability Form perms may view
+    // Visibility mirrors the list endpoints (pending-approvals and
+    // pending-admin-copy-signatures): assignee, issuer, HR full-access, HR
+    // accountability receivers, anyone with Accountability Form perms, the
+    // designated IT/Admin copy signer, and the form user's designated approver
+    // or sub-approver may view.
+    const isCopySigner = row.admin_copy_signer_id === currentUserId;
+    const isApprover =
+      (await isDesignatedApprover(currentUserId, row.user_id)) ||
+      (await isDesignatedSubApprover(currentUserId, row.user_id));
     if (
       row.user_id !== currentUserId &&
       row.created_by !== currentUserId &&
-      !hrAccess
+      !isCopySigner &&
+      !isApprover &&
+      !(await userCanViewAccountabilityFormRow(row as any, currentUserId))
     ) {
       return res.status(403).json({
         error: 'You can only view forms assigned to you or that you issued',
@@ -2322,6 +3272,13 @@ export async function getAccountabilityFormByIdHandler(
           }
         : null,
       status: row.status,
+      approvalStatus: row.approval_status ?? 'approved',
+      adminCopySignerId: row.admin_copy_signer_id ?? null,
+      adminCopyCopyType: row.admin_copy_copy_type ?? null,
+      adminCopySignedAt: row.admin_copy_signed_at ?? null,
+      approvedBy: row.approved_by ?? null,
+      approvedAt: row.approved_at ?? null,
+      approvalNotes: row.approval_notes ?? null,
       declineReason: row.decline_reason ?? null,
       acknowledgments: parseMysqlJsonColumn(row.acknowledgments),
       issuerSignature: row.issuer_signature,
@@ -2377,11 +3334,17 @@ export async function getAccountabilityFormMovementHandler(
       return res.status(404).json({ error: 'Accountability form not found' });
     }
 
-    const hrAccess = await userHasHrAccountabilityFullAccess(currentUserId);
+    // Same visibility rules as GET /accountability-forms/:formId
+    const isCopySigner = row.admin_copy_signer_id === currentUserId;
+    const isApprover =
+      (await isDesignatedApprover(currentUserId, row.user_id)) ||
+      (await isDesignatedSubApprover(currentUserId, row.user_id));
     if (
       row.user_id !== currentUserId &&
       row.created_by !== currentUserId &&
-      !hrAccess
+      !isCopySigner &&
+      !isApprover &&
+      !(await userCanViewAccountabilityFormRow(row as any, currentUserId))
     ) {
       return res.status(403).json({
         error: 'You can only view forms assigned to you or that you issued',
@@ -2760,10 +3723,9 @@ export async function getAssetMovementHandler(
 }
 
 /**
- * Opt-in clearance: GET /api/accountability-forms/clearance/eligibility?userId=
- * Returns which scopes (IT/Admin) are currently clear and eligible for a
- * clearance certificate. Used by the `Issue an accountability clearance`
- * modal (checkbox default checked) and the DocumentsTab banner.
+ * Unified clearance: GET /api/accountability-forms/clearance/eligibility?userId=
+ * Returns whether user has 0 active accountability forms and 0 remaining
+ * assignments. Used by Profile > Documents generate button.
  */
 export async function getClearanceEligibilityHandler(
   req: AuthRequest,
@@ -2775,70 +3737,71 @@ export async function getClearanceEligibilityHandler(
       return res.status(400).json({ error: 'userId query param is required' });
     }
 
-    // Reuse the same eligibility logic as the return/transfer flow, but
-    // derive `disabledFormNumbersByScope` from recently disabled forms
-    // (last 7 days). If no recent disable, still check current clear state.
+    // Disabled forms in last 30 days - for reference list
     const [recentDisabled] = (await pool.execute(
-      `SELECT form_number, assets_data, status, updated_at
-       FROM accountability_forms
-       WHERE user_id = ? AND deleted_at IS NULL
-         AND status = 'Disabled'
-         AND updated_at >= DATE_SUB(NOW(), INTERVAL 7 DAY)
+      `SELECT form_number FROM accountability_forms
+       WHERE user_id = ? AND deleted_at IS NULL AND status = 'Disabled'
+         AND updated_at >= DATE_SUB(NOW(), INTERVAL 30 DAY)
        ORDER BY updated_at DESC`,
       [userId]
     )) as any[];
 
-    const disabledByScope: Record<string, string[]> = { IT: [], Admin: [] };
-    for (const row of recentDisabled as any[]) {
-      try {
-        const data =
-          typeof row.assets_data === 'string'
-            ? JSON.parse(row.assets_data)
-            : row.assets_data;
-        const assets = Array.isArray(data?.assets) ? data.assets : [];
-        for (const a of assets) {
-          const scope = classifyDepartmentScopeByName(
-            a?.department || a?.categoryDepartment || ''
-          );
-          if (scope === 'IT' || scope === 'Admin') {
-            (disabledByScope[scope as string] as string[]).push(String(row.form_number));
-          }
-        }
-      } catch {
-        /* ignore */
-      }
-    }
+    const disabledFormNumbers: string[] = (recentDisabled as any[]).map(r => String(r.form_number));
 
-    const eligibility = await getClearanceEligibility({
-      userId,
-      disabledFormNumbersByScope: {
-        IT: [...new Set(disabledByScope.IT)],
-        Admin: [...new Set(disabledByScope.Admin)],
-      },
-    });
+    // Check for any active accountability form (Pending or Signed)
+    const [activeForms] = (await pool.execute(
+      `SELECT formID FROM accountability_forms WHERE user_id=? AND deleted_at IS NULL AND status IN ('Pending','Signed') LIMIT 1`,
+      [userId]
+    )) as any[];
+    const hasActiveForm = (activeForms as any[]).length > 0;
 
-    // If no recent disable but user is currently 0/0/0, still consider
-    // eligible (so the banner can appear even days after the return).
-    // Fall back to a direct current-state check when helper returns empty
-    // due to lack of recent disable.
-    if (eligibility.eligibleScopes.length === 0) {
-      for (const scope of ['IT', 'Admin'] as const) {
-        const hasRecent = eligibility.detailsByScope[scope].hasRecentClearance;
-        const hasOther = eligibility.detailsByScope[scope].hasOtherActiveForm;
-        const remT = eligibility.detailsByScope[scope].remainingTangible;
-        const remI = eligibility.detailsByScope[scope].remainingIntangible;
-        if (!hasRecent && !hasOther && remT === 0 && remI === 0) {
-          // No active accountability for this scope — user is clear
-          eligibility.eligibleScopes.push(scope);
-        }
-      }
-    }
+    // Check remaining tangible
+    const [remainingTangibles] = (await pool.execute(
+      `SELECT asset_id FROM asset_assignments WHERE user_id=? AND status='Active' AND deleted_at IS NULL LIMIT 1`,
+      [userId]
+    )) as any[];
+    const remainingTangible = (remainingTangibles as any[]).length;
+
+    // Check remaining intangible
+    const [remainingIntangibles] = (await pool.execute(
+      `SELECT intangible_asset_id FROM intangible_asset_assignments WHERE user_id=? AND status='Active' AND deleted_at IS NULL LIMIT 1`,
+      [userId]
+    )) as any[];
+    const remainingIntangible = (remainingIntangibles as any[]).length;
+
+    // Recent unified clearance dedup (90 days)
+    const [recentClearance] = (await pool.execute(
+      `SELECT formID FROM accountability_forms WHERE user_id=? AND deleted_at IS NULL
+         AND JSON_UNQUOTE(JSON_EXTRACT(assets_data, '$.form_origin'))='clearance'
+         AND status IN ('Pending','Signed','pending_approval','pending_it','pending_admin','pending_hr')
+         AND created_at >= DATE_SUB(NOW(), INTERVAL 90 DAY) LIMIT 1`,
+      [userId]
+    )) as any[];
+    const hasRecentClearance = (recentClearance as any[]).length > 0;
+
+    const canGenerate = !hasActiveForm && remainingTangible===0 && remainingIntangible===0 && !hasRecentClearance;
+    let reason: string | null = null;
+    if (hasRecentClearance) reason = 'A clearance is already pending or signed within last 90 days';
+    else if (hasActiveForm) reason = 'You still have active accountability forms';
+    else if (remainingTangible>0 || remainingIntangible>0) reason = 'You still have assigned assets';
 
     return res.json({
       userId,
-      eligibleScopes: eligibility.eligibleScopes,
-      disabledFormNumbersByScope: eligibility.disabledFormNumbersByScope,
-      detailsByScope: eligibility.detailsByScope,
+      canGenerate,
+      reason,
+      disabledFormNumbers,
+      hasActiveForm,
+      remainingTangible,
+      remainingIntangible,
+      hasRecentClearance,
+      // backward compat for old clients
+      eligibleScopes: canGenerate ? ['Unified'] : [],
+      disabledFormNumbersByScope: { IT: disabledFormNumbers, Admin: disabledFormNumbers, Unified: disabledFormNumbers },
+      detailsByScope: {
+        IT: { remainingTangible, remainingIntangible, hasOtherActiveForm: hasActiveForm, hasRecentClearance },
+        Admin: { remainingTangible, remainingIntangible, hasOtherActiveForm: hasActiveForm, hasRecentClearance },
+        Unified: { remainingTangible, remainingIntangible, hasOtherActiveForm: hasActiveForm, hasRecentClearance },
+      },
     });
   } catch (error: any) {
     logger.error('Get clearance eligibility failed:', error);
@@ -2846,131 +3809,279 @@ export async function getClearanceEligibilityHandler(
   }
 }
 
-async function isProcessorAllowedForScope(
-  processorUserId: string,
-  scope: ClearanceScope
-): Promise<boolean> {
-  const [rows] = (await pool.execute(
-    `SELECT r.name as role_name, r.asset_type, r.manager_role
-     FROM users u
-     LEFT JOIN asset_mngmnt_roles r ON u.role_id = r.roleID AND r.deleted_at IS NULL
-     WHERE u.userID = ? LIMIT 1`,
-    [processorUserId]
-  )) as any[];
-  const row = (rows as any[])[0];
-  if (!row) return false;
-  const roleName = String(row.role_name ?? '').toLowerCase();
-  if (roleName === 'global admin' || roleName === 'admin') return true;
-  const assetType = String(row.asset_type ?? '').toLowerCase();
-  const managerRole = String(row.manager_role ?? '').toLowerCase();
-  if (managerRole === 'overallmanager') return true;
-  if (scope === 'IT') {
-    return managerRole === 'itmanager' || assetType === 'it';
-  }
-  if (scope === 'Admin') {
-    return managerRole === 'adminmanager' || assetType === 'admin';
-  }
-  return false;
-}
-
 /**
- * Opt-in clearance: POST /api/accountability-forms/clearance
- * Body: { userId, clearanceScope: 'IT'|'Admin', referenceDisabledFormNumbers?, clearanceReason? }
- * Creates a single-scope clearance; `Issued by:` will be the processor
- * (req.user) with their signature/date/time.
+ * Unified clearance: POST /api/accountability-forms/clearance
+ * Body: { userId } - owner only (req.user must equal userId) or admin generating for self
+ * Creates a single unified clearance with 4-step approval: approver -> IT -> Admin -> HR
  */
 export async function createClearanceHandler(req: AuthRequest, res: Response) {
   try {
-    const processorUserId = req.user!.userID;
-    const { userId, clearanceScope, referenceDisabledFormNumbers, clearanceReason } =
-      req.body as {
-        userId?: string;
-        clearanceScope?: string;
-        referenceDisabledFormNumbers?: string[];
-        clearanceReason?: string;
-      };
-
-    if (!userId || !clearanceScope) {
-      return res.status(400).json({ error: 'userId and clearanceScope are required' });
-    }
-    if (clearanceScope !== 'IT' && clearanceScope !== 'Admin') {
-      return res.status(400).json({ error: 'clearanceScope must be IT or Admin' });
+    const requesterId = req.user!.userID;
+    const { userId } = req.body as { userId?: string };
+    if (!userId) return res.status(400).json({ error: 'userId is required' });
+    const targetUserId = String(userId).trim();
+    // Only owner can generate for themselves (strict owner via profile document)
+    if (targetUserId !== requesterId) {
+      const roleName = String((req.user as any)?.role?.name ?? '').toLowerCase();
+      if (roleName !== 'global admin' && roleName !== 'admin') {
+        return res.status(403).json({ error: 'Only the owner can generate their own clearance' });
+      }
     }
 
-    const allowed = await isProcessorAllowedForScope(
-      processorUserId,
-      clearanceScope as ClearanceScope
-    );
-    if (!allowed) {
-      return res.status(403).json({
-        error: `You are not authorized to issue ${clearanceScope} clearance`,
-      });
-    }
+    // Verify eligibility
+    const [activeForms] = (await pool.execute(
+      `SELECT formID FROM accountability_forms WHERE user_id=? AND deleted_at IS NULL AND status IN ('Pending','Signed') LIMIT 1`,
+      [targetUserId]
+    )) as any[];
+    if ((activeForms as any[]).length>0) return res.status(400).json({ error: 'You still have active accountability forms - cannot generate clearance' });
 
-    // Verify eligibility still holds at issuance time
-    const eligibility = await getClearanceEligibility({
-      userId: String(userId),
-      disabledFormNumbersByScope: {
-        IT: clearanceScope === 'IT' ? (referenceDisabledFormNumbers ?? ['manual']) : [],
-        Admin: clearanceScope === 'Admin' ? (referenceDisabledFormNumbers ?? ['manual']) : [],
-      },
-    });
+    const [remainingTangibles] = (await pool.execute(
+      `SELECT asset_id FROM asset_assignments WHERE user_id=? AND status='Active' AND deleted_at IS NULL LIMIT 1`,
+      [targetUserId]
+    )) as any[];
+    if ((remainingTangibles as any[]).length>0) return res.status(400).json({ error: 'You still have assigned tangible assets' });
 
-    // Also allow issuance when current state is clear even without recent disable
-    const detail = eligibility.detailsByScope[clearanceScope as ClearanceScope];
-    const isCurrentlyClear =
-      !detail.hasRecentClearance &&
-      !detail.hasOtherActiveForm &&
-      detail.remainingTangible === 0 &&
-      detail.remainingIntangible === 0;
-    const isEligible =
-      eligibility.eligibleScopes.includes(clearanceScope as ClearanceScope) ||
-      isCurrentlyClear;
+    const [remainingIntangibles] = (await pool.execute(
+      `SELECT intangible_asset_id FROM intangible_asset_assignments WHERE user_id=? AND status='Active' AND deleted_at IS NULL LIMIT 1`,
+      [targetUserId]
+    )) as any[];
+    if ((remainingIntangibles as any[]).length>0) return res.status(400).json({ error: 'You still have assigned intangible assets' });
 
-    if (!isEligible) {
-      return res.status(400).json({
-        error: `User is not eligible for ${clearanceScope} clearance (active assets or forms remain)`,
-      });
-    }
+    const [recentClearance] = (await pool.execute(
+      `SELECT formID, form_number FROM accountability_forms WHERE user_id=? AND deleted_at IS NULL
+         AND JSON_UNQUOTE(JSON_EXTRACT(assets_data, '$.form_origin'))='clearance'
+         AND approval_status IN ('pending_approval','pending_it','pending_admin','pending_hr')
+         AND created_at >= DATE_SUB(NOW(), INTERVAL 90 DAY) LIMIT 1`,
+      [targetUserId]
+    )) as any[];
+    if ((recentClearance as any[]).length>0) return res.status(400).json({ error: `Clearance already pending: ${(recentClearance as any[])[0].form_number}` });
 
-    // Prefer the signature that was used on the return/transfer form if
-    // provided; otherwise fall back to the processor's stored digital_signature.
+    // Gather disabled form numbers for reference
+    const [recentDisabled] = (await pool.execute(
+      `SELECT form_number FROM accountability_forms WHERE user_id=? AND deleted_at IS NULL AND status='Disabled' ORDER BY updated_at DESC LIMIT 20`,
+      [targetUserId]
+    )) as any[];
+    const referenceDisabledFormNumbers: string[] = (recentDisabled as any[]).map(r => String(r.form_number));
+
+    // Get user company/company details for form number generation
+    const userDetails = await repo.getUserCompanyAndName(targetUserId);
+    let companyId: string | null = userDetails?.company_id ?? null;
+    if (!companyId) return res.status(400).json({ error: 'Could not determine company for clearance creation' });
+
+    // Resolve processor signature (requester's signature)
     let processorSignature: string | null = null;
-    const bodySig = (req.body as any)?.issuerSignature ?? (req.body as any)?.processorSignature;
-    if (typeof bodySig === 'string' && bodySig.trim() !== '') {
-      processorSignature = bodySig.trim();
-    } else {
-      const [sigRows] = (await pool.execute(
-        'SELECT digital_signature FROM users WHERE userID = ?',
-        [processorUserId]
-      )) as any[];
+    const bodySig = (req.body as any)?.issuerSignature;
+    if (typeof bodySig === 'string' && bodySig.trim() !== '') processorSignature = bodySig.trim();
+    else {
+      const [sigRows] = (await pool.execute('SELECT digital_signature FROM users WHERE userID=?', [targetUserId])) as any[];
       processorSignature = sigRows[0]?.digital_signature ?? null;
     }
 
-    await createClearanceForScope({
-      userId: String(userId),
-      scope: clearanceScope as ClearanceScope,
-      createdBy: processorUserId,
-      req,
-      processorDigitalSignature: processorSignature,
-      referenceDisabledFormNumbers:
-        Array.isArray(referenceDisabledFormNumbers) && referenceDisabledFormNumbers.length > 0
-          ? referenceDisabledFormNumbers.map((v: any) => String(v))
-          : eligibility.disabledFormNumbersByScope[clearanceScope as ClearanceScope] ?? [],
-      clearanceReason:
-        clearanceReason === 'transfer' ? 'transfer' : 'return',
+    // Determine department for form (use user's department)
+    const [userDeptRows] = (await pool.execute('SELECT department_id FROM users WHERE userID=? LIMIT 1', [targetUserId])) as any[];
+    const departmentId = (userDeptRows as any[])[0]?.department_id ?? null;
+
+    const clearanceScope: ClearanceScope = 'Unified';
+    let formNumber = '';
+    let attempts = 0;
+    let resolvedApprovalParams: Awaited<ReturnType<typeof resolveApprovalParams>> = null;
+    while (attempts < 5) {
+      try {
+        formNumber = await generateFormNumber(companyId, [], departmentId, { origin: 'clearance', clearanceScope });
+        const assetsDataPayload: Record<string, unknown> = {
+          assets: [],
+          form_origin: 'clearance',
+          clearance_scope: clearanceScope,
+          clearance_reason: 'clearance',
+          reference_disabled_form_numbers: referenceDisabledFormNumbers,
+          cleared_at: new Date().toISOString(),
+        };
+        try {
+          resolvedApprovalParams = await resolveApprovalParams({
+            userId: targetUserId,
+            assetsForScope: [],
+            formOrigin: 'clearance',
+            clearanceScope,
+            adminCopySignerIdRaw: null,
+            adminCopyCopyTypeRaw: null,
+          });
+        } catch (approvalErr: any) {
+          if (approvalErr?.code === 'NO_ADMIN_COPY_SIGNER') {
+            return res.status(400).json({ error: 'No designated approver found for this user; cannot create clearance that requires approval' });
+          }
+          throw approvalErr;
+        }
+        await repo.insertAccountabilityFormMulti({
+          formNumber,
+          userId: targetUserId,
+          departmentId: departmentId || null,
+          locationId: null,
+          createdBy: requesterId,
+          assetsDataJson: JSON.stringify(assetsDataPayload),
+          issuerSignature: processorSignature,
+          itCopySignature: processorSignature,
+          assignmentId: null,
+          approvalStatus: resolvedApprovalParams?.approvalStatus ?? 'approved',
+          adminCopySignerId: null,
+          adminCopyCopyType: null,
+        });
+        break;
+      } catch (error: any) {
+        attempts++;
+        if (error.code === 'ER_DUP_ENTRY' && attempts < 5) { await new Promise(r=>setTimeout(r, 100*attempts)); continue; }
+        throw error;
+      }
+    }
+
+    const resolvedFormId = await getFormIdByFormNumber(formNumber);
+    if (!resolvedFormId) return res.status(500).json({ error: 'Failed to create clearance certificate' });
+
+    const userName = `${userDetails?.first_name || ''} ${userDetails?.last_name || ''}`.trim() || targetUserId;
+    await createAuditLog({
+      userId: requesterId,
+      action: 'Created Clearance Certificate (Unified)',
+      resourceType: 'accountability_form',
+      resourceId: resolvedFormId,
+      resourceName: formNumber,
+      details: `Unified clearance ${formNumber} created for ${userName}`,
+      newValues: { form_number: formNumber, user_id: targetUserId, clearance_scope: clearanceScope, reference_disabled_form_numbers: referenceDisabledFormNumbers },
+      ipAddress: req.ip,
+      userAgent: req.get ? req.get('User-Agent') : 'Unknown',
     });
 
-    const formNumber = `clearance-${clearanceScope}`;
-    return res.status(201).json({
-      message: `${clearanceScope} clearance created`,
-      clearanceScope,
-      userId,
-      issuedBy: processorUserId,
-    });
+    // Notify first approver (owner's designated approver/sub-approver)
+    try {
+      const createdByRow = await repo.getUserNameById(requesterId);
+      const assignerName = createdByRow ? `${createdByRow.first_name ?? ''} ${createdByRow.last_name ?? ''}`.trim() || requesterId : requesterId;
+      if (resolvedApprovalParams && resolvedApprovalParams.approvalStatus !== 'approved') {
+        await sendApprovalKickoffNotifications({
+          formId: resolvedFormId,
+          formNumber,
+          ownerUserId: targetUserId,
+          ownerName: userName,
+          assignerName,
+          approvalStatus: resolvedApprovalParams.approvalStatus,
+          adminCopySignerId: resolvedApprovalParams.adminCopySignerId,
+          adminCopyCopyType: resolvedApprovalParams.adminCopyCopyType,
+          ownerApproverId: resolvedApprovalParams.ownerApproverId,
+          ownerSubApproverId: resolvedApprovalParams.ownerSubApproverId,
+          req,
+        });
+      } else {
+        // No approver configured -> directly to IT (or approved)
+        await NotificationService.createNotification({
+          user_id: targetUserId,
+          title: 'Accountability clearance form submitted',
+          message: `Your clearance ${formNumber} has been submitted and is awaiting IT review.`,
+          type: 'accountability_form',
+          status: 'unread',
+          data: JSON.stringify({ route: '/profile?tab=documents', actionTarget: 'profile_documents', formId: resolvedFormId, formNumber }),
+        }, requesterId, req.ip, req.get('User-Agent'));
+      }
+    } catch (e) { logger.error('Failed to send clearance creation notification', e); }
+
+    return res.status(201).json({ message: 'Clearance created', form: { formID: resolvedFormId, form_number: formNumber, user_id: targetUserId, clearanceScope } });
   } catch (error: any) {
-    logger.error('Create clearance failed:', error);
+    logger.error('Create unified clearance failed:', error);
     return res.status(500).json({ error: 'Failed to create clearance' });
+  }
+}
+
+/**
+ * Unified clearance 4-step approve handler: POST /api/accountability-forms/clearance/:formId/approve
+ * Stages: pending_approval (owner approver) -> pending_it (IT Asset) -> pending_admin (Admin Asset) -> pending_hr (HR Receiver) -> approved
+ */
+export async function approveClearanceStageHandler(req: AuthRequest, res: Response) {
+  try {
+    const formId = String((req.params as any).formId ?? '').trim();
+    if (!formId) return res.status(400).json({ error: 'formId required' });
+    const { digitalSignature } = req.body as { digitalSignature?: string };
+    const signerId = req.user!.userID;
+    const signature = await resolveSigningDigitalSignature(signerId, digitalSignature ?? null);
+    if (!signature) return res.status(400).json({ error: 'Digital signature required' });
+
+    const row = await repo.getFormById(formId);
+    if (!row) return res.status(404).json({ error: 'Form not found' });
+    const assetsData = parseMysqlJsonColumn<{ form_origin?: string; clearance_scope?: string }>(row.assets_data);
+    if (assetsData?.form_origin !== 'clearance') return res.status(400).json({ error: 'Not a clearance form' });
+
+    const status = String((row as any).approval_status ?? 'approved');
+    const ownerId = String((row as any).user_id);
+
+    // Stage 1: pending_approval -> pending_it (owner's approver/sub-approver)
+    if (status === 'pending_approval') {
+      const isApprover = await isDesignatedApprover(ownerId, signerId);
+      const isSub = await isDesignatedSubApprover(ownerId, signerId);
+      if (!isApprover && !isSub) return res.status(403).json({ error: 'Only the requester approver/sub-approver can approve this stage' });
+      const affected = await repo.updateClearanceApproverToIt(formId, signerId, signature);
+      if (!affected) return res.status(400).json({ error: 'Failed to approve (already processed)' });
+      // Notify IT Asset users
+      try {
+        const [itUsers] = await pool.execute(`SELECT u.userID FROM users u LEFT JOIN asset_mngmnt_roles r ON u.role_id=r.roleID WHERE LOWER(r.name)='it asset' AND u.deleted_at IS NULL`) as any[];
+        for (const u of (itUsers as any[])) {
+          await createNotificationForApi({ user_id: u.userID, title: `Clearance ${row.form_number} awaiting IT approval`, message: `Please review Unified clearance ${row.form_number}`, type: 'system', data: { route: '/approvals?tab=for-approval', actionTarget: 'clearance_it', formId, formNumber: row.form_number } });
+          const io = getIoInstance(); if (io) emitNotification(io, u.userID, 'notification', { title: `Clearance ${row.form_number} awaiting IT approval`, description: 'Unified clearance needs IT sign', type:'system', route:'/approvals?tab=for-approval', formId });
+        }
+      } catch {}
+      await createAuditLog({ userId: signerId, action: 'Approved Clearance (Approver -> IT)', resourceType: 'accountability_form', resourceId: formId, resourceName: row.form_number, details: `Approver ${signerId} approved clearance ${row.form_number}`, ipAddress: req.ip, userAgent: req.get('User-Agent') ?? 'Unknown' });
+      return res.json({ message: 'Approved, forwarded to IT department', nextStage: 'pending_it' });
+    }
+
+    // Stage 2: pending_it -> pending_admin (IT Asset role)
+    if (status === 'pending_it') {
+      const hasItRole = await repo.hasRole(signerId, 'IT Asset');
+      if (!hasItRole) return res.status(403).json({ error: 'Only IT Asset role can approve this stage' });
+      const affected = await repo.updateClearanceItApproval(formId, signerId, signature);
+      if (!affected) return res.status(400).json({ error: 'Failed to approve IT stage' });
+      // Notify Admin Asset users
+      try {
+        const [adminUsers] = await pool.execute(`SELECT u.userID FROM users u LEFT JOIN asset_mngmnt_roles r ON u.role_id=r.roleID WHERE LOWER(r.name)='admin asset' AND u.deleted_at IS NULL`) as any[];
+        for (const u of (adminUsers as any[])) {
+          await createNotificationForApi({ user_id: u.userID, title: `Clearance ${row.form_number} awaiting Admin approval`, message: `Please review Unified clearance ${row.form_number}`, type: 'system', data: { route: '/approvals?tab=for-approval', actionTarget: 'clearance_admin', formId, formNumber: row.form_number } });
+          const io = getIoInstance(); if (io) emitNotification(io, u.userID, 'notification', { title: `Clearance ${row.form_number} awaiting Admin approval`, description: 'Unified clearance needs Admin sign', type:'system', route:'/approvals?tab=for-approval', formId });
+        }
+      } catch {}
+      await createAuditLog({ userId: signerId, action: 'Approved Clearance (IT -> Admin)', resourceType: 'accountability_form', resourceId: formId, resourceName: row.form_number, details: `IT ${signerId} approved clearance ${row.form_number}`, ipAddress: req.ip, userAgent: req.get('User-Agent') ?? 'Unknown' });
+      return res.json({ message: 'IT approved, forwarded to Admin', nextStage: 'pending_admin' });
+    }
+
+    // Stage 3: pending_admin -> pending_hr (Admin Asset role)
+    if (status === 'pending_admin') {
+      const hasAdminRole = await repo.hasRole(signerId, 'Admin Asset');
+      if (!hasAdminRole) return res.status(403).json({ error: 'Only Admin Asset role can approve this stage' });
+      const affected = await repo.updateClearanceAdminApproval(formId, signerId, signature);
+      if (!affected) return res.status(400).json({ error: 'Failed to approve Admin stage' });
+      // Notify HR receivers
+      try {
+        const hrIds = await getHrAccountabilityReceiverUserIds();
+        for (const hrId of hrIds) {
+          await createNotificationForApi({ user_id: hrId, title: `Clearance ${row.form_number} awaiting HR approval`, message: `Please review Unified clearance ${row.form_number}`, type: 'system', data: { route: '/approvals?tab=for-approval', actionTarget: 'clearance_hr', formId, formNumber: row.form_number } });
+          const io = getIoInstance(); if (io) emitNotification(io, hrId, 'notification', { title: `Clearance ${row.form_number} awaiting HR approval`, description: 'Unified clearance needs HR sign', type:'system', route:'/approvals?tab=for-approval', formId });
+        }
+      } catch {}
+      await createAuditLog({ userId: signerId, action: 'Approved Clearance (Admin -> HR)', resourceType: 'accountability_form', resourceId: formId, resourceName: row.form_number, details: `Admin ${signerId} approved clearance ${row.form_number}`, ipAddress: req.ip, userAgent: req.get('User-Agent') ?? 'Unknown' });
+      return res.json({ message: 'Admin approved, forwarded to HR', nextStage: 'pending_hr' });
+    }
+
+    // Stage 4: pending_hr -> approved (HR Receiver)
+    if (status === 'pending_hr') {
+      const hasHr = await userHasHrAccountabilityReceiverAccess(signerId);
+      if (!hasHr) return res.status(403).json({ error: 'Only HR Receiver can approve this stage' });
+      const affected = await repo.updateClearanceHrApproval(formId, signerId, signature);
+      if (!affected) return res.status(400).json({ error: 'Failed to approve HR stage' });
+      // Notify owner: approved by all
+      try {
+        await NotificationService.createNotification({ user_id: ownerId, title: `Accountability clearance ${row.form_number} approved`, message: `Your accountability clearance form has been approved by all participating departments. You can now print it.`, type: 'accountability_form', status: 'unread', data: JSON.stringify({ route: '/profile?tab=documents', actionTarget: 'profile_documents', formId, formNumber: row.form_number }) }, signerId, req.ip, req.get('User-Agent') ?? 'Unknown');
+        const io = getIoInstance(); if (io) emitNotification(io, ownerId, 'notification', { title: `Clearance ${row.form_number} approved`, description: 'Approved by all departments. You can now print it.', type:'accountability_form', route:'/profile?tab=documents', formId });
+      } catch {}
+      await createAuditLog({ userId: signerId, action: 'Approved Clearance (HR -> Approved)', resourceType: 'accountability_form', resourceId: formId, resourceName: row.form_number, details: `HR ${signerId} approved clearance ${row.form_number} - fully approved`, ipAddress: req.ip, userAgent: req.get('User-Agent') ?? 'Unknown' });
+      return res.json({ message: 'HR approved - clearance fully approved', nextStage: 'approved' });
+    }
+
+    return res.status(400).json({ error: `Cannot approve form with status ${status}` });
+  } catch (error: any) {
+    logger.error('Approve clearance stage failed:', error);
+    return res.status(500).json({ error: 'Failed to approve clearance' });
   }
 }
 

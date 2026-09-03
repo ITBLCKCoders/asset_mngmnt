@@ -12,11 +12,13 @@ jest.mock('../../db/ensureRolePermissionsTable.js', () => ({
   ensureRolePermissionsTable: jest.fn(),
 }));
 
-const mockPool = jest.requireMock('../../db.js') as { pool: { query: jest.Mock; execute: jest.Mock } };
+const mockPool = jest.requireMock('../../db.js') as {
+  pool: { query: jest.Mock<any>; execute: jest.Mock<any> };
+};
 
 describe('permissions.controller', () => {
   let req: any;
-  let res: ReturnType<typeof createMockRes>;
+  let res: any;
 
   beforeEach(() => {
     jest.resetAllMocks();
@@ -94,6 +96,32 @@ describe('permissions.controller', () => {
       mockPool.pool.execute.mockResolvedValue([[]]);
       await permissionsController.getRolePermissionsHandler(req, res);
       expect(res._json.permissions).toBeDefined();
+    });
+
+    it('returns global admin default permissions with Settings/Users full and other modules view only', async () => {
+      req.params = { roleID: 'r-global' };
+      mockPool.pool.execute
+        .mockResolvedValueOnce([[{ name: 'Global Admin' }]])
+        .mockResolvedValueOnce([[]]);
+      await permissionsController.getRolePermissionsHandler(req, res);
+      expect(res._json.permissions.Settings).toEqual({
+        view: true,
+        create: true,
+        edit: true,
+        delete: true,
+      });
+      expect(res._json.permissions.Users).toEqual({
+        view: true,
+        create: true,
+        edit: true,
+        delete: true,
+      });
+      expect(res._json.permissions.Assets).toEqual({
+        view: true,
+        create: false,
+        edit: false,
+        delete: false,
+      });
     });
   });
 

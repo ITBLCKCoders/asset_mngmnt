@@ -108,6 +108,7 @@ const Sidebar = memo(function Sidebar({ onLogout, currentPath = '', currentSearc
       p === '/forms/checklist' ||
       p === '/forms/return' ||
       p === '/forms/transfer' ||
+      p === '/forms/intangible-deactivation' ||
       p === '/approvals'
     );
   }, [currentPath]);
@@ -207,7 +208,13 @@ const Sidebar = memo(function Sidebar({ onLogout, currentPath = '', currentSearc
       await api.post('/auth/logout').catch(() => {});
     } finally {
       clearCurrentUserCache();
-      localStorage.removeItem('mfaTempToken');
+      const persistedTheme = localStorage.getItem("am-theme");
+      localStorage.clear();
+      if (persistedTheme === "light" || persistedTheme === "dark") {
+        localStorage.setItem("am-theme", persistedTheme);
+      } else {
+        localStorage.removeItem('mfaTempToken');
+      }
       sessionStorage.clear();
       document.cookie.split(';').forEach(c => {
         document.cookie = c
@@ -490,6 +497,20 @@ const Sidebar = memo(function Sidebar({ onLogout, currentPath = '', currentSearc
                           </button>
                         </SidebarHoverItem>
                       )}
+                      <SidebarHoverItem active={currentPath === '/forms/intangible-deactivation'}>
+                        <button
+                          onClick={() => go('/forms/intangible-deactivation')} {...prefetch('/forms/intangible-deactivation')}
+                          className={cn(
+                            'flex items-center gap-3 px-3 py-2 rounded-lg text-sm w-full transition-all duration-200',
+                            currentPath === '/forms/intangible-deactivation'
+                              ? 'bg-white/15 text-white font-medium'
+                              : 'text-white/70 hover:bg-white/10 hover:text-white'
+                          )}
+                        >
+                          <FileText className="h-4 w-4 flex-shrink-0" />
+                          <span>Intangible Deactivation</span>
+                        </button>
+                      </SidebarHoverItem>
                       {hasPermission('Approvals', 'view') && (
                         <SidebarHoverItem
                           active={currentPath === '/approvals'}

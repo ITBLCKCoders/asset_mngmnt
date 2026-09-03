@@ -246,6 +246,8 @@ export const assignIntangibleAsset = async (req: AuthRequest, res: Response) => 
       signITCopy,
       itCopySignature,
       tempAccountability,
+      adminCopySignerId,
+      adminCopyCopyType,
     } = req.body;
 
     if (!assignedTo) {
@@ -420,6 +422,8 @@ export const assignIntangibleAsset = async (req: AuthRequest, res: Response) => 
               issuerSignature: issuerSignature || null,
               itCopySignature: itCopySignature || null,
               assignmentId: null,
+              adminCopySignerId: adminCopySignerId ?? null,
+              adminCopyCopyType: adminCopyCopyType ?? null,
             });
 
             const resolvedFormId = await formRepo.findFormIdByFormNumber(formNumber);
@@ -561,8 +565,33 @@ export const batchAssignIntangibleAssets = async (req: AuthRequest, res: Respons
       return res.status(400).json({ error: 'No active company found' });
     }
 
-    const { assetIds, assignedTo, assignmentId, departmentId, locationId, locationRoomId,
-            signAsIssuer, issuerSignature, signITCopy, itCopySignature } = req.body;
+    const {
+      assetIds,
+      assignedTo,
+      assignmentId,
+      departmentId,
+      locationId,
+      locationRoomId,
+      signAsIssuer,
+      issuerSignature,
+      signITCopy,
+      itCopySignature,
+      adminCopySignerId,
+      adminCopyCopyType,
+    } = req.body as {
+      assetIds?: string[];
+      assignedTo?: string;
+      assignmentId?: string;
+      departmentId?: string | null;
+      locationId?: string | null;
+      locationRoomId?: string | null;
+      signAsIssuer?: boolean;
+      issuerSignature?: string | null;
+      signITCopy?: boolean;
+      itCopySignature?: string | null;
+      adminCopySignerId?: string | null;
+      adminCopyCopyType?: 'IT' | 'Admin' | null;
+    };
 
     if (!assetIds || !Array.isArray(assetIds) || assetIds.length === 0) {
       return res.status(400).json({ error: 'Asset IDs are required' });
@@ -749,6 +778,8 @@ export const batchAssignIntangibleAssets = async (req: AuthRequest, res: Respons
               issuerSignature: issuerSignature || null,
               itCopySignature: itCopySignature || null,
               assignmentId: null,
+              adminCopySignerId: adminCopySignerId ?? null,
+              adminCopyCopyType: adminCopyCopyType ?? null,
             });
 
             const resolvedFormId = await formRepo.findFormIdByFormNumber(formNumber);

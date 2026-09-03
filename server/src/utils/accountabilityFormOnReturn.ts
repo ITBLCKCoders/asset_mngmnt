@@ -43,11 +43,12 @@ export async function handleAccountabilityFormOnAssetReturn(
   locationRoomId: string | null,
   createdBy: string,
   req: Request,
-  _processSignature?: ProcessSignature
+  _processSignature?: ProcessSignature,
+  options?: { adminCopySignerId?: string | null; adminCopyCopyType?: 'IT' | 'Admin' | null }
 ): Promise<ClearanceEligibility> {
   const emptyEligibility: ClearanceEligibility = {
     eligibleScopes: [],
-    disabledFormNumbersByScope: { IT: [], Admin: [] },
+    disabledFormNumbersByScope: { IT: [], Admin: [], Unified: [] } as Record<ClearanceScope, string[]>,
     detailsByScope: {
       IT: {
         remainingTangible: 0,
@@ -61,7 +62,13 @@ export async function handleAccountabilityFormOnAssetReturn(
         hasOtherActiveForm: false,
         hasRecentClearance: false,
       },
-    },
+      Unified: {
+        remainingTangible: 0,
+        remainingIntangible: 0,
+        hasOtherActiveForm: false,
+        hasRecentClearance: false,
+      },
+    } as Record<ClearanceScope, { remainingTangible: number; remainingIntangible: number; hasOtherActiveForm: boolean; hasRecentClearance: boolean }>,
   };
 
   if (returnedAssetIds.length === 0) return emptyEligibility;
@@ -97,6 +104,7 @@ export async function handleAccountabilityFormOnAssetReturn(
   const disabledFormNumbersByScope: Record<ClearanceScope, string[]> = {
     IT: [],
     Admin: [],
+    Unified: [],
   };
 
   for (const form of formRows) {
@@ -254,6 +262,8 @@ export async function handleAccountabilityFormOnAssetReturn(
           locationRoomId: first.location_room_id ?? null,
           issuerSignature: processorDigitalSignature,
           itCopySignature: processorDigitalSignature,
+          adminCopySignerId: options?.adminCopySignerId ?? null,
+          adminCopyCopyType: options?.adminCopyCopyType ?? null,
         },
       } as AuthRequest;
 
@@ -375,6 +385,8 @@ export async function handleAccountabilityFormOnAssetReturn(
         locationRoomId: assignmentRoom,
         issuerSignature: processorDigitalSignature,
         itCopySignature: processorDigitalSignature,
+        adminCopySignerId: options?.adminCopySignerId ?? null,
+        adminCopyCopyType: options?.adminCopyCopyType ?? null,
       },
     } as AuthRequest;
 
@@ -451,6 +463,8 @@ export async function handleAccountabilityFormOnAssetReturn(
           locationRoomId: assignmentRoom,
           issuerSignature: processorDigitalSignature,
           itCopySignature: processorDigitalSignature,
+          adminCopySignerId: options?.adminCopySignerId ?? null,
+          adminCopyCopyType: options?.adminCopyCopyType ?? null,
         },
       } as AuthRequest;
 
@@ -502,7 +516,13 @@ export async function getClearanceEligibility(params: {
         hasOtherActiveForm: false,
         hasRecentClearance: false,
       },
-    },
+      Unified: {
+        remainingTangible: 0,
+        remainingIntangible: 0,
+        hasOtherActiveForm: false,
+        hasRecentClearance: false,
+      },
+    } as Record<ClearanceScope, { remainingTangible: number; remainingIntangible: number; hasOtherActiveForm: boolean; hasRecentClearance: boolean }>,
   };
 
   const scopes: ClearanceScope[] = ['IT', 'Admin'];

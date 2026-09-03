@@ -520,7 +520,7 @@ export default function AssetsAssignment() {
     setConfirmModalOpen(true);
   };
 
-  const handleAssign = async (signAsIssuer: boolean, signITCopy: boolean, tempAccountability: boolean) => {
+  const handleAssign = async (signAsIssuer: boolean, adminCopySignerId: string | null, tempAccountability: boolean) => {
     if (selectedAssets.length === 0) {
       toast.error('Please select at least one asset');
       return;
@@ -555,8 +555,10 @@ export default function AssetsAssignment() {
           assignmentNotes: `Assigned via asset issuance`,
           signAsIssuer: signAsIssuer,
           issuerSignature: signAsIssuer ? currentUser?.digitalSignature || null : null,
-          signITCopy: signITCopy,
-          itCopySignature: signITCopy ? currentUser?.digitalSignature || null : null,
+          signITCopy: false,
+          itCopySignature: null,
+          adminCopySignerId: adminCopySignerId || null,
+          adminCopyCopyType: adminCopySignerId ? null : null,
           tempAccountability: tempAccountability || undefined,
         };
 
@@ -598,8 +600,10 @@ export default function AssetsAssignment() {
               locationId: selectedLocation || undefined,
               signAsIssuer,
               issuerSignature: signAsIssuer ? currentUser?.digitalSignature || null : null,
-              signITCopy,
-              itCopySignature: signITCopy ? currentUser?.digitalSignature || null : null,
+              signITCopy: false,
+              itCopySignature: null,
+              adminCopySignerId: adminCopySignerId || null,
+              adminCopyCopyType: adminCopySignerId ? null : null,
               tempAccountability: tempAccountability || undefined,
             });
             if (batchResult?.formError) {
@@ -647,8 +651,10 @@ export default function AssetsAssignment() {
               locationId: selectedLocation || undefined,
               signAsIssuer,
               issuerSignature: signAsIssuer ? currentUser?.digitalSignature || null : null,
-              signITCopy,
-              itCopySignature: signITCopy ? currentUser?.digitalSignature || null : null,
+              signITCopy: false,
+              itCopySignature: null,
+              adminCopySignerId: adminCopySignerId || null,
+              adminCopyCopyType: adminCopySignerId ? null : null,
               tempAccountability: tempAccountability || undefined,
             });
             if (batchResult?.formError) {

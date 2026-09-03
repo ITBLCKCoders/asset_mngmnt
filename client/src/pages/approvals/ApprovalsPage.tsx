@@ -46,6 +46,20 @@ import {
   ChecklistApprovalCard,
   type ChecklistApprovalBatch,
 } from '@/pages/approvals/ChecklistApprovalCard';
+import {
+  AccountabilityFormApprovalCard,
+  type AccountabilityApprovalBatch,
+  type AccountabilityApprovalFormType,
+} from '@/pages/approvals/AccountabilityFormApprovalCard';
+import {
+  IntangibleDeactivationApprovalCard,
+  type IntangibleDeactivationBatch,
+  mapIntangibleDeactivationRow,
+} from '@/pages/approvals/IntangibleDeactivationApprovalCard';
+import {
+  AccountabilityFormDetail,
+  type AccountabilityForm,
+} from '@/pages/assets/accountability/accountabilityForm';
 import { PDFViewer } from '@/components/PDFViewer';
 import type { BorrowRequestRow } from '@/pages/assets/borrowRequestsPage';
 import { useCurrentUser } from '@/hooks/useCurrentUser';
@@ -74,7 +88,12 @@ type FormApprovalBatch = (AssetReturnFormBatch | AssetTransferFormBatch) & {
   formType?: 'return' | 'transfer';
 };
 
-type ApprovalBatch = FormApprovalBatch | ChecklistApprovalBatch | BorrowRequestBatch;
+type ApprovalBatch =
+  | FormApprovalBatch
+  | ChecklistApprovalBatch
+  | BorrowRequestBatch
+  | AccountabilityApprovalBatch
+  | IntangibleDeactivationBatch;
 
 function mapChecklistApiBatches(
   rows: ChecklistApprovalBatch[],
@@ -92,6 +111,47 @@ function mapChecklistApiBatches(
       ? (b.checklists[0]?.sub_approver_1_signed_at ?? null)
       : null,
   }));
+}
+
+function mapAccountabilityApiBatch(
+  row: any,
+  formType: AccountabilityApprovalFormType
+): AccountabilityApprovalBatch {
+  let assets: AccountabilityApprovalBatch['assets'] = [];
+  const raw = row?.assets_data;
+  if (raw) {
+    try {
+      const data = typeof raw === 'string' ? JSON.parse(raw) : raw;
+      if (Array.isArray(data?.assets)) {
+        assets = data.assets.map((a: any) => ({
+          id: String(a?.id ?? a?.assetID ?? ''),
+          code: a?.code ?? a?.asset_code ?? null,
+          name: a?.name ?? a?.asset_name ?? null,
+          category: a?.category ?? a?.category_name ?? null,
+          serialNo: a?.serialNo ?? a?.serial ?? null,
+        })).filter((a: { id: string }) => a.id);
+      }
+    } catch {
+      /* ignore */
+    }
+  }
+  return {
+    formType,
+    formID: row.formID ?? row.id,
+    form_number: row.form_number ?? row.formNumber,
+    user_id: row.user_id,
+    user_first_name: row.first_name ?? null,
+    user_last_name: row.last_name ?? null,
+    user_email: row.email ?? null,
+    admin_copy_copy_type: row.admin_copy_copy_type ?? null,
+    admin_copy_signed_at: row.admin_copy_signed_at ?? null,
+    approval_status: row.approval_status ?? null,
+    created_at: row.created_at,
+    assets,
+    // The "new asset owner" is the form's user; their department is what the
+    // accountability card should show (matches the form card display).
+    department_name: row.user_department_name ?? row.department_name ?? null,
+  };
 }
 
 export default function ApprovalsPage() {
@@ -157,6 +217,14 @@ export default function ApprovalsPage() {
   const [checklistPreviewUrl, setChecklistPreviewUrl] = useState('');
   const [checklistPreviewIndex, setChecklistPreviewIndex] = useState(0);
 
+  // ---------- Accountability form PDF preview ----------
+  const [accountabilityPreviewForm, setAccountabilityPreviewForm] =
+    useState<AccountabilityForm | null>(null);
+  const [showAccountabilityPreview, setShowAccountabilityPreview] =
+    useState(false);
+  const [accountabilityPreviewLoading, setAccountabilityPreviewLoading] =
+    useState(false);
+
   // ---------- Permissions ----------
   const normalizedRoleName = (currentUser?.role?.name ?? '')
     .trim()
@@ -197,7 +265,16 @@ export default function ApprovalsPage() {
   const fetchPendingApprovals = async () => {
     try {
       setLoading(true);
-      const [returnRes, transferRes, checklistRes, borrowRes] = await Promise.all([
+      const [
+        returnRes,
+        transferRes,
+        checklistRes,
+        borrowRes,
+        adminCopyRes,
+        approvalRes,
+        intangibleDeactRes,
+        clearanceRes,
+      ] = await Promise.all([
         api.get<{ assetReturnForms?: AssetReturnFormBatch[] }>(
           '/asset-returns/forms/pending-approvals'
         ),
@@ -210,6 +287,18 @@ export default function ApprovalsPage() {
         api.get<{ success: boolean; data: { borrowRequests?: any[] } }>(
           '/asset-borrow-requests/pending-dept-approvals'
         ),
+        api.get<{ forms?: any[] }>(
+          '/accountability-forms/pending-admin-copy-signatures'
+        ),
+        api.get<{ forms?: any[] }>(
+          '/accountability-forms/pending-approvals'
+        ),
+        api.get<{ forms?: any[] }>(
+          '/intangible-deactivations/forms/pending-approvals'
+        ).catch(()=> ({ forms: [] } as any)),
+        api.get<{ forms?: any[] }>(
+          '/accountability-forms/pending-clearance'
+        ).catch(()=> ({ forms: [] } as any)),
       ]);
       const returns = (returnRes.assetReturnForms ?? []).map(b => ({
         ...b,
@@ -227,8 +316,34 @@ export default function ApprovalsPage() {
         ...b,
         formType: 'borrow' as const,
       })) as ApprovalBatch[];
+      const adminCopyBatches = (adminCopyRes.forms ?? []).map(row =>
+        mapAccountabilityApiBatch(row, 'admin_copy_signature')
+      );
+      const approvalBatches = (approvalRes.forms ?? []).map(row =>
+        mapAccountabilityApiBatch(row, 'accountability_approval')
+      );
+      const intangibleDeactBatches = ((intangibleDeactRes as any)?.forms ?? []).map((row: any) =>
+        mapIntangibleDeactivationRow(row, 'intangible_deactivation')
+      );
+      const clearanceBatches = ((clearanceRes as any)?.forms ?? []).map((row: any) => {
+        const stage = row._clearanceStage ?? row.approval_status ?? 'pending_approval';
+        let ft: any = 'clearance_approver';
+        if (stage==='pending_it') ft='clearance_it';
+        else if (stage==='pending_admin') ft='clearance_admin';
+        else if (stage==='pending_hr') ft='clearance_hr';
+        return mapAccountabilityApiBatch(row, ft);
+      });
       setBatches(
-        ([...returns, ...transfers, ...checklists, ...borrowRequests] as ApprovalBatch[]).sort(
+        ([
+          ...returns,
+          ...transfers,
+          ...checklists,
+          ...borrowRequests,
+          ...adminCopyBatches,
+          ...approvalBatches,
+          ...intangibleDeactBatches,
+          ...clearanceBatches,
+        ] as ApprovalBatch[]).sort(
           (a, b) =>
             new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
         )
@@ -245,7 +360,7 @@ export default function ApprovalsPage() {
   const fetchApprovedByMe = async () => {
     try {
       setApprovedLoading(true);
-      const [returnRes, transferRes, checklistRes, borrowRes] = await Promise.all([
+      const [returnRes, transferRes, checklistRes, borrowRes, intangibleApprovedRes] = await Promise.all([
         api.get<{ assetReturnForms?: AssetReturnFormBatch[] }>(
           '/asset-returns/forms/approved-by-me'
         ),
@@ -258,6 +373,7 @@ export default function ApprovalsPage() {
         api.get<{ success: boolean; data: { borrowRequests?: any[] } }>(
           '/asset-borrow-requests/received-by-me'
         ),
+        api.get<{ forms?: any[] }>('/intangible-deactivations/forms/approved-by-me').catch(()=> ({ forms: [] } as any)),
       ]);
       const returns = (returnRes.assetReturnForms ?? []).map(b => ({
         ...b,
@@ -275,8 +391,9 @@ export default function ApprovalsPage() {
         ...b,
         formType: 'borrow' as const,
       })) as ApprovalBatch[];
+      const intangibleApproved = ((intangibleApprovedRes as any)?.forms ?? []).map((row: any)=> mapIntangibleDeactivationRow(row, 'intangible_deactivation'));
       setApprovedBatches(
-        ([...returns, ...transfers, ...checklists, ...borrowRequests] as ApprovalBatch[]).sort(
+        ([...returns, ...transfers, ...checklists, ...borrowRequests, ...intangibleApproved] as ApprovalBatch[]).sort(
           (a, b) =>
             new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
         )
@@ -338,8 +455,10 @@ export default function ApprovalsPage() {
         ...b,
         formType: 'borrow' as const,
       })) as ApprovalBatch[];
+      let intangibleHrBatches: IntangibleDeactivationBatch[] = [];
+      try { const hrRes: any = await api.get('/intangible-deactivations/forms/pending-hr-approvals'); intangibleHrBatches = (hrRes.forms ?? []).map((row: any)=> mapIntangibleDeactivationRow(row, 'intangible_deactivation_hr')); } catch {}
       setReceiveBatches(
-        ([...returns, ...transfers, ...checklists, ...borrowRequests] as ApprovalBatch[]).sort(
+        ([...returns, ...transfers, ...checklists, ...borrowRequests, ...intangibleHrBatches] as ApprovalBatch[]).sort(
           (a, b) =>
             new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
         )
@@ -385,6 +504,22 @@ export default function ApprovalsPage() {
       );
       return name.includes(q) || dept.includes(q) || assets;
     }
+    if (batch.formType === 'intangible_deactivation' || batch.formType === 'intangible_deactivation_hr') {
+      const ib = batch as IntangibleDeactivationBatch;
+      return (ib.form_number || '').toLowerCase().includes(q) || (ib.user_first_name || '').toLowerCase().includes(q) || (ib.user_last_name || '').toLowerCase().includes(q);
+    }
+    if (batch.formType === 'admin_copy_signature' ||
+        batch.formType === 'accountability_approval') {
+      const ab = batch as AccountabilityApprovalBatch;
+      const userName =
+        `${ab.user_first_name ?? ''} ${ab.user_last_name ?? ''}`.trim().toLowerCase();
+      return (
+        (ab.form_number || '').toLowerCase().includes(q) ||
+        userName.includes(q) ||
+        (ab.user_email || '').toLowerCase().includes(q) ||
+        (ab.admin_copy_copy_type || '').toLowerCase().includes(q)
+      );
+    }
     // Handle borrow requests
     if (batch.formType === 'borrow') {
       const borrowBatch = batch as BorrowRequestBatch;
@@ -396,7 +531,7 @@ export default function ApprovalsPage() {
       );
     }
     const base =
-      batch.returns?.some(
+      (batch as FormApprovalBatch).returns?.some(
         (r: any) =>
           r.assignment?.asset?.name?.toLowerCase().includes(q) ||
           r.assignment?.asset?.code?.toLowerCase().includes(q) ||
@@ -586,6 +721,26 @@ export default function ApprovalsPage() {
     }
   };
 
+  const openAccountabilityPreview = async (formId: string) => {
+    if (!formId) return;
+    setShowAccountabilityPreview(true);
+    setAccountabilityPreviewLoading(true);
+    setAccountabilityPreviewForm(null);
+    try {
+      const response = await api.get<{ form?: AccountabilityForm }>(
+        `/accountability-forms/${formId}`
+      );
+      const form = response?.form ?? null;
+      setAccountabilityPreviewForm(form);
+    } catch (error) {
+      console.error('Failed to load accountability form:', error);
+      toast.error('Failed to load accountability form preview');
+      setShowAccountabilityPreview(false);
+    } finally {
+      setAccountabilityPreviewLoading(false);
+    }
+  };
+
   const handleApprove = async () => {
     if (!selectedBatch) return;
     
@@ -595,6 +750,67 @@ export default function ApprovalsPage() {
     // Set up the actual approval action as a pending action
     pendingActionRef.current = async () => {
       if (!selectedBatch) return;
+      if (selectedBatch.formType === 'intangible_deactivation') {
+        try { setApproving(true); const sig = (currentUser as any)?.digitalSignature || ''; await api.post('/intangible-deactivations/forms/' + (selectedBatch as any).formID + '/approve', { digitalSignature: sig || undefined }); toast.success('Intangible deactivation approved, forwarded to HR'); setShowDetail(false); setSelectedBatch(null); await refreshAll(); } catch(e:any){ toast.error(e?.data?.error || e?.message || 'Failed'); } finally { setApproving(false); } return;
+      }
+      if ((selectedBatch as any).formType === 'intangible_deactivation_hr') {
+        try { setApproving(true); const sig = (currentUser as any)?.digitalSignature || ''; await api.post('/intangible-deactivations/forms/' + (selectedBatch as any).formID + '/hr-approve', { digitalSignature: sig || undefined }); toast.success('HR approved'); setShowDetail(false); setSelectedBatch(null); await refreshAll(); } catch(e:any){ toast.error(e?.data?.error || e?.message || 'Failed'); } finally { setApproving(false); } return;
+      }
+      if (String(selectedBatch.formType).startsWith('clearance_')) {
+        const ab = selectedBatch as any;
+        try {
+          setApproving(true);
+          const sig = (currentUser as { digitalSignature?: string })?.digitalSignature || '';
+          await api.post(`/accountability-forms/clearance/${ab.formID}/approve`, { digitalSignature: sig || undefined });
+          toast.success('Clearance approved - forwarded to next department');
+          setShowDetail(false);
+          setSelectedBatch(null);
+          await refreshAll();
+        } catch (error: any) {
+          toast.error(error?.data?.error || error?.message || 'Failed to approve clearance');
+        } finally { setApproving(false); }
+        return;
+      }
+      if (selectedBatch.formType === 'admin_copy_signature' ||
+          selectedBatch.formType === 'accountability_approval') {
+        const ab = selectedBatch as AccountabilityApprovalBatch;
+        try {
+          setApproving(true);
+          const sig =
+            (currentUser as { digitalSignature?: string })?.digitalSignature || '';
+          if (ab.formType === 'admin_copy_signature') {
+            await api.post(
+              `/accountability-forms/${ab.formID}/sign-admin-copy`,
+              { digitalSignature: sig || undefined }
+            );
+            toast.success(
+              ab.admin_copy_copy_type
+                ? `${ab.admin_copy_copy_type} copy signed; awaiting final approval`
+                : 'IT/Admin copy signed; awaiting final approval'
+            );
+          } else {
+            await api.post(
+              `/accountability-forms/${ab.formID}/approve`,
+              {
+                digitalSignature: sig || undefined,
+              }
+            );
+            toast.success('Accountability form approved');
+          }
+          setShowDetail(false);
+          setSelectedBatch(null);
+          await refreshAll();
+        } catch (error: any) {
+          const msg =
+            error?.response?.data?.error ||
+            error?.message ||
+            'Failed to update accountability form';
+          toast.error(msg);
+        } finally {
+          setApproving(false);
+        }
+        return;
+      }
       if (selectedBatch.formType === 'checklist') {
         const cb = selectedBatch as ChecklistApprovalBatch;
         try {
@@ -759,6 +975,9 @@ export default function ApprovalsPage() {
     // Set up the actual decline action as a pending action
     pendingActionRef.current = async () => {
       if (!selectedBatch) return;
+      if ((selectedBatch as any).formType === 'intangible_deactivation' || (selectedBatch as any).formType === 'intangible_deactivation_hr') {
+        try { setDeclining(true); await api.post('/intangible-deactivations/forms/' + (selectedBatch as any).formID + '/decline', { reason: declineReason }); toast.success('Declined'); setShowDetail(false); setSelectedBatch(null); await refreshAll(); } catch(e:any){ toast.error(e?.data?.error || e?.message || 'Failed'); } finally { setDeclining(false); } return;
+      }
       if (selectedBatch.formType === 'borrow') {
         const borrowBatch = selectedBatch as BorrowRequestBatch;
         const borrowRequestId = borrowBatch.borrow_request_id;
@@ -831,6 +1050,9 @@ export default function ApprovalsPage() {
         return;
       }
 
+      if ((selectedBatch as any).formType === 'intangible_deactivation_hr') {
+        try { setReceiving(true); const sig = (currentUser as any)?.digitalSignature || ''; await api.post('/intangible-deactivations/forms/' + (selectedBatch as any).formID + '/hr-approve', { digitalSignature: sig || undefined }); toast.success('HR approved'); setShowDetail(false); setSelectedBatch(null); await refreshAll(); } catch(e:any){ toast.error(e?.data?.error || e?.message || 'Failed'); } finally { setReceiving(false); } return;
+      }
       if (selectedBatch.formType === 'checklist') {
         const cb = selectedBatch as ChecklistApprovalBatch;
         try {
@@ -982,11 +1204,14 @@ export default function ApprovalsPage() {
         !(selectedBatch as ChecklistApprovalBatch).it_manager_signed_at
       : selectedBatch.formType === 'borrow'
         ? !!(selectedBatch as any).approved_at && !(selectedBatch as any).received_at
-        : !!(selectedBatch as FormApprovalBatch).dept_head_signed_at &&
-          (!!(selectedBatch as FormApprovalBatch).process_signed_at ||
-            !!(selectedBatch as AssetTransferFormBatch).processor_pending_signed_at ||
-            !!(selectedBatch as AssetReturnFormBatch).processor_pending_signed_at) &&
-          !(selectedBatch as FormApprovalBatch).it_manager_signed_at);
+        : selectedBatch.formType === 'admin_copy_signature' ||
+            selectedBatch.formType === 'accountability_approval'
+          ? false
+          : !!(selectedBatch as FormApprovalBatch).dept_head_signed_at &&
+            (!!(selectedBatch as FormApprovalBatch).process_signed_at ||
+              !!(selectedBatch as AssetTransferFormBatch).processor_pending_signed_at ||
+              !!(selectedBatch as AssetReturnFormBatch).processor_pending_signed_at) &&
+            !(selectedBatch as FormApprovalBatch).it_manager_signed_at);
 
   const handleDownloadCurrent = async () => {
     if (!selectedBatch) return;
@@ -1029,10 +1254,13 @@ export default function ApprovalsPage() {
             ? (batch as ChecklistApprovalBatch).batchKey
             : batch.formType === 'borrow'
               ? (batch as BorrowRequestBatch).borrow_request_id
-              : (batch as FormApprovalBatch).formID ??
-                  (batch as FormApprovalBatch).return_batch_id ??
-                  (batch as FormApprovalBatch).returns?.[0]?.return_id ??
-                  '';
+              : batch.formType === 'admin_copy_signature' ||
+                  batch.formType === 'accountability_approval'
+                ? (batch as AccountabilityApprovalBatch).formID
+                : (batch as FormApprovalBatch).formID ??
+                    (batch as FormApprovalBatch).return_batch_id ??
+                    (batch as FormApprovalBatch).returns?.[0]?.return_id ??
+                    '';
         if (batch.formType === 'checklist') {
           const cb = batch as ChecklistApprovalBatch;
           return (
@@ -1047,6 +1275,35 @@ export default function ApprovalsPage() {
                 void loadChecklistPreview(cb, 0);
               }}
               onDownload={() => void downloadChecklistBatch(cb)}
+            />
+          );
+        }
+        if (batch.formType === 'admin_copy_signature' ||
+            batch.formType === 'accountability_approval') {
+          return (
+            <AccountabilityFormApprovalCard
+              key={key}
+              batch={batch as AccountabilityApprovalBatch}
+              onView={() => {
+                void openAccountabilityPreview(
+                  (batch as AccountabilityApprovalBatch).formID
+                );
+              }}
+              onAction={() => {
+                void openAccountabilityPreview(
+                  (batch as AccountabilityApprovalBatch).formID
+                );
+              }}
+            />
+          );
+        }
+        if (batch.formType === 'intangible_deactivation' || batch.formType === 'intangible_deactivation_hr') {
+          const ib = batch as IntangibleDeactivationBatch;
+          return (
+            <IntangibleDeactivationApprovalCard
+              key={key}
+              batch={ib}
+              onView={() => { setDetailSourceTab(sourceTab); setSelectedBatch(batch); setShowDetail(true); }}
             />
           );
         }
@@ -1327,19 +1584,37 @@ export default function ApprovalsPage() {
                             const requesterName = `${borrowBatch.requester_first_name || ''} ${borrowBatch.requester_last_name || ''}`.trim() || borrowBatch.requester_email || 'Borrow Request';
                             return `${requesterName} — Asset Borrow`;
                           })()
-                        : (selectedBatch as FormApprovalBatch).returns?.[0]?.assignment?.user
-                          ? `${(selectedBatch as FormApprovalBatch).returns![0].assignment!.user!.first_name || ''} ${(selectedBatch as FormApprovalBatch).returns![0].assignment!.user!.last_name || ''}`.trim() ||
-                            (selectedBatch.formType === 'transfer'
+                        : selectedBatch.formType === 'admin_copy_signature' ||
+                            selectedBatch.formType === 'accountability_approval'
+                          ? (() => {
+                              const ab = selectedBatch as AccountabilityApprovalBatch;
+                              const userName = `${ab.user_first_name || ''} ${ab.user_last_name || ''}`.trim() || ab.user_email || 'Employee';
+                              return `${userName} — Accountability Form`;
+                            })()
+                          : (selectedBatch as any).formType === 'intangible_deactivation' || (selectedBatch as any).formType === 'intangible_deactivation_hr'
+                            ? `${(selectedBatch as any).user_first_name || ''} ${(selectedBatch as any).user_last_name || ''}`.trim() + ' — Intangible Deactivation'
+                            : (selectedBatch as FormApprovalBatch).returns?.[0]?.assignment?.user
+                            ? `${(selectedBatch as FormApprovalBatch).returns![0].assignment!.user!.first_name || ''} ${(selectedBatch as FormApprovalBatch).returns![0].assignment!.user!.last_name || ''}`.trim() ||
+                              (selectedBatch.formType === 'transfer'
+                                ? 'Transfer'
+                                : 'Return')
+                            : selectedBatch.formType === 'transfer'
                               ? 'Transfer'
-                              : 'Return')
-                          : selectedBatch.formType === 'transfer'
-                            ? 'Transfer'
-                            : 'Return'}{' '}
-                    {selectedBatch.formType !== 'checklist' && selectedBatch.formType !== 'borrow' && (
+                              : 'Return'}{' '}
+                    {selectedBatch.formType !== 'checklist' &&
+                      selectedBatch.formType !== 'borrow' &&
+                      selectedBatch.formType !== 'admin_copy_signature' &&
+                      selectedBatch.formType !== 'accountability_approval' && (
+                        <>
+                          -{' '}
+                          {(selectedBatch as FormApprovalBatch).form_number ??
+                            `${selectedBatch.formType === 'transfer' ? 'Transfer' : 'Return'} of ${(selectedBatch as FormApprovalBatch).returns?.length ?? 0} assets`}
+                        </>
+                      )}
+                    {(selectedBatch.formType === 'admin_copy_signature' ||
+                      selectedBatch.formType === 'accountability_approval') && (
                       <>
-                        -{' '}
-                        {(selectedBatch as FormApprovalBatch).form_number ??
-                          `${selectedBatch.formType === 'transfer' ? 'Transfer' : 'Return'} of ${(selectedBatch as FormApprovalBatch).returns?.length ?? 0} assets`}
+                        - {(selectedBatch as AccountabilityApprovalBatch).form_number}
                       </>
                     )}
                   </>
@@ -1349,9 +1624,15 @@ export default function ApprovalsPage() {
                     ? 'Asset Checklist Form Preview'
                     : selectedBatch.formType === 'transfer'
                       ? 'Asset Transfer Form Preview'
-                      : selectedBatch.formType === 'borrow'
+                      : (selectedBatch as any).formType === 'intangible_deactivation' || (selectedBatch as any).formType === 'intangible_deactivation_hr'
+                        ? 'Intangible Deactivation Request'
+                        : selectedBatch.formType === 'borrow'
                         ? 'Asset Borrow Request Details'
-                        : 'Asset Return Form Preview'
+                        : selectedBatch.formType === 'admin_copy_signature'
+                          ? `Sign ${(selectedBatch as AccountabilityApprovalBatch).admin_copy_copy_type ?? 'IT'} copy of accountability form`
+                          : selectedBatch.formType === 'accountability_approval'
+                            ? 'Approve accountability form'
+                            : 'Asset Return Form Preview'
                 }
               />
               <div className="min-h-0 flex-1 flex flex-col overflow-hidden bg-white px-4 sm:px-6">
@@ -1384,6 +1665,67 @@ export default function ApprovalsPage() {
                     <PDFViewer pdfUrl={checklistPreviewUrl} className="h-full w-full" />
                   </div>
                 </div>
+              ) : selectedBatch.formType === 'admin_copy_signature' ||
+                selectedBatch.formType === 'accountability_approval' ? (
+                <div className="flex min-h-0 flex-1 flex-col gap-3 py-4 overflow-y-auto">
+                  {(() => {
+                    const ab = selectedBatch as AccountabilityApprovalBatch;
+                    const userName =
+                      `${ab.user_first_name ?? ''} ${ab.user_last_name ?? ''}`.trim() ||
+                      ab.user_email ||
+                      'Employee';
+                    return (
+                      <>
+                        <div className="rounded-lg border bg-slate-50 p-4">
+                          <p className="text-xs uppercase tracking-wider text-gray-500">
+                            Employee
+                          </p>
+                          <p className="text-base font-semibold text-gray-900 mt-1">
+                            {userName}
+                          </p>
+                          {ab.user_email && (
+                            <p className="text-sm text-gray-500">{ab.user_email}</p>
+                          )}
+                        </div>
+                        {ab.admin_copy_copy_type && (
+                          <div className="rounded-lg border bg-slate-50 p-4">
+                            <p className="text-xs uppercase tracking-wider text-gray-500">
+                              Copy Type
+                            </p>
+                            <p className="text-base font-semibold text-gray-900 mt-1">
+                              {ab.admin_copy_copy_type} Copy
+                            </p>
+                          </div>
+                        )}
+                        {ab.assets && ab.assets.length > 0 && (
+                          <div className="rounded-lg border bg-slate-50 p-4">
+                            <p className="text-xs uppercase tracking-wider text-gray-500 mb-2">
+                              Assets ({ab.assets.length})
+                            </p>
+                            <ul className="text-sm text-gray-800 space-y-1">
+                              {ab.assets.map((a, i) => (
+                                <li
+                                  key={`${a.id}-${i}`}
+                                  className="flex items-start"
+                                >
+                                  <span className="w-1 h-1 bg-gray-400 rounded-full mr-2 mt-2 flex-shrink-0" />
+                                  <span className="font-medium break-words">
+                                    {a.name || a.code || a.id}
+                                  </span>
+                                </li>
+                              ))}
+                            </ul>
+                          </div>
+                        )}
+                        <div className="rounded-lg border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900">
+                          {ab.formType === 'admin_copy_signature'
+                            ? `Signing this will release the form to the next approver.`
+                            : `Approving this will release the form to the new asset owner for signing.`}
+                        </div>
+                      </>
+                    );
+                  })()}
+                </div>
               ) : selectedBatch.formType === 'transfer' ? (
                 <TransferFormDetail
                   key={
@@ -1400,6 +1742,29 @@ export default function ApprovalsPage() {
                   onDownload={handleDownloadCurrent}
                   contentOnly
                 />
+              ) : (selectedBatch.formType === 'intangible_deactivation' || selectedBatch.formType === 'intangible_deactivation_hr') ? (
+                <div className="flex min-h-0 flex-1 flex-col gap-3 py-4 overflow-y-auto">
+                  <div className="rounded-lg border bg-slate-50 p-4">
+                    <p className="text-xs uppercase tracking-wider text-gray-500">Form Number</p>
+                    <p className="text-base font-mono font-semibold">{(selectedBatch as any).form_number}</p>
+                    <p className="text-sm mt-1">{(selectedBatch as any).user_first_name} {(selectedBatch as any).user_last_name} — {(selectedBatch as any).user_email}</p>
+                    <p className="text-xs text-muted-foreground">{(selectedBatch as any).status}</p>
+                  </div>
+                  <div className="rounded-lg border p-3">
+                    <p className="text-xs font-semibold mb-2">Assets ({(selectedBatch as any).assets?.length ?? 0})</p>
+                    <ul className="text-sm space-y-1">{((selectedBatch as any).assets ?? []).map((a:any,i:number)=>(<li key={i} className="flex gap-2"><span className="w-1 h-1 bg-gray-400 rounded-full mt-2"/>{a.name} — {a.type}</li>))}</ul>
+                  </div>
+                  <div className="border rounded-lg overflow-hidden text-sm divide-y">
+                    <div className="grid grid-cols-2 divide-x">
+                      <div className="p-3 bg-slate-50"><div className="text-[11px] font-semibold text-muted-foreground uppercase">Requested By</div><div className="font-medium text-xs mt-1">User signature on file</div><div className="text-[11px] text-muted-foreground">{new Date((selectedBatch as any).created_at).toLocaleString()}</div></div>
+                      <div className="p-3"><div className="text-[11px] font-semibold text-muted-foreground uppercase">Department Head</div><div className="text-xs">{(selectedBatch as any).formType === 'intangible_deactivation_hr' ? 'Approved' : 'Pending'}</div></div>
+                    </div>
+                    <div className="grid grid-cols-2 divide-x">
+                      <div className="p-3 bg-slate-50"><div className="text-[11px] font-semibold text-muted-foreground uppercase">HR (Custodian Copy)</div><div className="text-xs">{(selectedBatch as any).status === 'Approved' ? 'Signed' : 'Pending'}</div></div>
+                      <div className="p-3 flex items-center text-[11px] text-muted-foreground">HR approval finalizes deactivation</div>
+                    </div>
+                  </div>
+                </div>
               ) : selectedBatch.formType === 'borrow' ? (
                 <BorrowFormDetail
                   key={(selectedBatch as BorrowRequestBatch).borrow_request_id}
@@ -1414,9 +1779,9 @@ export default function ApprovalsPage() {
               ) : (
                 <ReturnFormDetail
                   key={
-                    selectedBatch.formID ??
-                    selectedBatch.return_batch_id ??
-                    selectedBatch.returns?.[0]?.return_id ??
+                    (selectedBatch as AssetReturnFormBatch).formID ??
+                    (selectedBatch as AssetReturnFormBatch).return_batch_id ??
+                    (selectedBatch as AssetReturnFormBatch).returns?.[0]?.return_id ??
                     'return-form'
                   }
                   returnFormBatch={selectedBatch as AssetReturnFormBatch}
@@ -1429,7 +1794,7 @@ export default function ApprovalsPage() {
                   showApproveButton={
                     detailSourceTab !== 'approved' &&
                     canApprove &&
-                    !selectedBatch.dept_head_signed_at &&
+                    !(selectedBatch as AssetReturnFormBatch).dept_head_signed_at &&
                     !(
                       selectedBatch as { sub_approver_1_signed_at?: string | null }
                     ).sub_approver_1_signed_at
@@ -1454,12 +1819,15 @@ export default function ApprovalsPage() {
                   (selectedBatch.formType === 'checklist'
                     ? !(selectedBatch as ChecklistApprovalBatch).dept_head_signed_at &&
                       !(selectedBatch as ChecklistApprovalBatch).sub_approver_1_signed_at
-                    : !(
-                        selectedBatch as {
-                          dept_head_signed_at?: string | null;
-                          sub_approver_1_signed_at?: string | null;
-                        }
-                      ).dept_head_signed_at &&
+                    : selectedBatch.formType === 'admin_copy_signature' ||
+                        selectedBatch.formType === 'accountability_approval'
+                      ? true
+                      : !(
+                          selectedBatch as {
+                            dept_head_signed_at?: string | null;
+                            sub_approver_1_signed_at?: string | null;
+                          }
+                        ).dept_head_signed_at &&
                       !(
                         selectedBatch as {
                           dept_head_signed_at?: string | null;
@@ -1467,24 +1835,32 @@ export default function ApprovalsPage() {
                         }
                       ).sub_approver_1_signed_at) && (
                     <>
-                      {selectedBatch.formType !== 'checklist' && (
-                        <Button
-                          size="sm"
-                          variant="outline"
-                          onClick={handleDecline}
-                          disabled={declining || approving}
-                          className="border-red-500 text-red-600 hover:bg-red-50"
-                        >
-                          {declining ? 'Declining...' : 'Decline'}
-                        </Button>
-                      )}
+                      {selectedBatch.formType !== 'checklist' &&
+                        selectedBatch.formType !== 'admin_copy_signature' &&
+                        selectedBatch.formType !== 'accountability_approval' && (
+                          <Button
+                            size="sm"
+                            variant="outline"
+                            onClick={handleDecline}
+                            disabled={declining || approving}
+                            className="border-red-500 text-red-600 hover:bg-red-50"
+                          >
+                            {declining ? 'Declining...' : 'Decline'}
+                          </Button>
+                        )}
                       <Button
                         size="sm"
                         onClick={handleApprove}
                         disabled={approving || declining}
                         className="bg-blue-600 hover:bg-blue-700 text-white"
                       >
-                        {approving ? 'Approving...' : 'Approve'}
+                        {approving
+                          ? 'Working...'
+                          : selectedBatch.formType === 'admin_copy_signature'
+                            ? 'Sign Copy'
+                            : selectedBatch.formType === 'accountability_approval'
+                              ? 'Approve'
+                              : 'Approve'}
                       </Button>
                     </>
                   )}
@@ -1510,6 +1886,53 @@ export default function ApprovalsPage() {
             </AppDialogFrame>
           </Dialog>
         )}
+
+        {/* Accountability Form PDF Preview (View action) */}
+        <Dialog
+          open={showAccountabilityPreview}
+          onOpenChange={open => {
+            setShowAccountabilityPreview(open);
+            if (!open) {
+              setAccountabilityPreviewForm(null);
+            }
+          }}
+        >
+          <AppDialogFrame
+            showCloseButton={false}
+            className="max-w-3xl max-h-[90vh] overflow-hidden !flex !flex-col !gap-0 !rounded-lg !p-0 !shadow-md"
+          >
+            <AppDialogGradientHeader
+              showCloseButton={false}
+              className="!px-4 !pb-4 !pt-4 sm:!px-5 sm:!pb-5 sm:!pt-5"
+              title="Accountability form"
+              description="View and manage accountability forms"
+            />
+            {accountabilityPreviewLoading ? (
+              <div className="flex items-center justify-center py-16 text-sm text-muted-foreground">
+                Loading accountability form...
+              </div>
+            ) : accountabilityPreviewForm ? (
+              <AccountabilityFormDetail
+                form={accountabilityPreviewForm}
+                onClose={() => {
+                  setShowAccountabilityPreview(false);
+                  setAccountabilityPreviewForm(null);
+                }}
+                onSign={async () => {
+                  setShowAccountabilityPreview(false);
+                  setAccountabilityPreviewForm(null);
+                }}
+                headerInParentChrome
+                viewContext="all"
+                readOnly
+              />
+            ) : (
+              <div className="flex items-center justify-center py-16 text-sm text-muted-foreground">
+                Form could not be loaded.
+              </div>
+            )}
+          </AppDialogFrame>
+        </Dialog>
 
         {/* Decline Reason Dialog */}
         <Dialog open={showDeclineReasonDialog} onOpenChange={setShowDeclineReasonDialog}>

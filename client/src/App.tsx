@@ -9,6 +9,7 @@ import { SonnerToaster } from '@/components/ui/sonner';
 import { NotificationProvider } from '@/context/NotificationContext';
 import { AuthProvider } from '@/context/AuthContext';
 import { PermissionsProvider } from '@/context/PermissionsContext';
+import { useTheme, useIsPublicRoute } from '@/hooks/use-theme';
 
 // Public Pages (eager — first paint)
 import Login from './pages/login';
@@ -61,6 +62,8 @@ const BorrowFormsPage = lazy(() => import('./pages/forms/BorrowFormsPage'));
 const AssetChecklistFormsPage = lazy(() => import('./pages/forms/AssetChecklistFormsPage'));
 const AssetReturnFormsPage = lazy(() => import('./pages/forms/AssetReturnFormsPage'));
 const AssetTransferFormsPage = lazy(() => import('./pages/forms/AssetTransferFormsPage'));
+const IntangibleDeactivationRequest = lazy(() => import('./pages/assets/intangibleDeactivation/IntangibleDeactivationRequest'));
+const IntangibleDeactivationFormsPage = lazy(() => import('./pages/forms/IntangibleDeactivationFormsPage'));
 const ApprovalsPage = lazy(() => import('./pages/approvals/ApprovalsPage'));
 const ReportsPage = lazy(() => import('./pages/reports/reportsPage'));
 
@@ -97,15 +100,62 @@ const privateRoutes: RouteConfig[] = [
   { path: '/assets/tagging',         module: 'Asset Tagging',    component: AssetTagging },
   { path: '/assets/builder',         module: 'Asset List',       component: AssetBuilder },
   { path: '/audit',                  module: 'Audit Trail',      component: AuditTrail },
+  { path: '/assets/intangible-deactivation', module: 'Intangible Deactivation', component: IntangibleDeactivationRequest },
   { path: '/forms/accountability',   module: 'Accountability Form', component: AccountabilityFormsPage },
   { path: '/forms/borrow',           module: 'Borrow Form',      component: BorrowFormsPage },
   { path: '/forms/checklist',        module: 'Checklist Form',   component: AssetChecklistFormsPage },
   { path: '/forms/return',           module: 'Return Form',      component: AssetReturnFormsPage },
   { path: '/forms/transfer',         module: 'Transfer Form',    component: AssetTransferFormsPage },
+  { path: '/forms/intangible-deactivation', module: 'Intangible Deactivation Form', component: IntangibleDeactivationFormsPage },
   { path: '/approvals',              module: 'Approvals',        component: ApprovalsPage },
   { path: '/user-manual',            module: 'UserManual',       component: UserManual },
   { path: '/flow-diagrams',          module: 'FlowDiagrams',     component: FlowDiagrams },
 ];
+
+function AppRoutes() {
+  const { theme } = useTheme();
+  const isPublicRoute = useIsPublicRoute();
+  return (
+    <>
+      <Routes>
+        {/* Public Routes */}
+        <Route path="/login" element={<PublicRoute><Login /></PublicRoute>} />
+        <Route path="/register" element={<PublicRoute><Register /></PublicRoute>} />
+        <Route path="/forgot-password" element={<PublicRoute><ForgotPassword /></PublicRoute>} />
+        <Route path="/reset-method-selection" element={<PublicRoute><ResetMethodSelection /></PublicRoute>} />
+        <Route path="/verify-reset-otp" element={<PublicRoute><VerifyResetOTP /></PublicRoute>} />
+        <Route path="/reset-password" element={<PublicRoute><ResetPassword /></PublicRoute>} />
+        <Route path="/assets/details/:assetId" element={<PublicRoute><AssetDetails /></PublicRoute>} />
+        <Route path="/public/manual" element={<PublicUserManual />} />
+
+        <Route path="/verify-otp" element={<VerifyOtpRoute />} />
+        <Route path="/verify-mfa" element={<Navigate to="/login" replace />} />
+
+        {/* Authenticated routes — layout persists across navigation */}
+        <Route element={<PrivateRoute />}>
+          <Route element={<ProtectedLayout />}>
+            {privateRoutes.map(({ path, module, component: Component }) => (
+              <Route
+                key={path}
+                path={path}
+                element={
+                  <PermissionRoute module={module}>
+                    <Component />
+                  </PermissionRoute>
+                }
+              />
+            ))}
+          </Route>
+        </Route>
+
+        <Route path="/" element={<LandingRedirect />} />
+        <Route path="*" element={<Navigate to="/login" replace />} />
+      </Routes>
+
+      <SonnerToaster theme={isPublicRoute ? "light" : theme} />
+    </>
+  );
+}
 
 export default function App() {
   return (
@@ -114,42 +164,7 @@ export default function App() {
         <NotificationProvider>
           <PermissionsProvider>
             <BrowserRouter unstable_useTransitions={false}>
-            <Routes>
-              {/* Public Routes */}
-              <Route path="/login" element={<PublicRoute><Login /></PublicRoute>} />
-              <Route path="/register" element={<PublicRoute><Register /></PublicRoute>} />
-              <Route path="/forgot-password" element={<PublicRoute><ForgotPassword /></PublicRoute>} />
-              <Route path="/reset-method-selection" element={<PublicRoute><ResetMethodSelection /></PublicRoute>} />
-              <Route path="/verify-reset-otp" element={<PublicRoute><VerifyResetOTP /></PublicRoute>} />
-              <Route path="/reset-password" element={<PublicRoute><ResetPassword /></PublicRoute>} />
-              <Route path="/assets/details/:assetId" element={<PublicRoute><AssetDetails /></PublicRoute>} />
-              <Route path="/public/manual" element={<PublicUserManual />} />
-
-              <Route path="/verify-otp" element={<VerifyOtpRoute />} />
-              <Route path="/verify-mfa" element={<Navigate to="/login" replace />} />
-
-              {/* Authenticated routes — layout persists across navigation */}
-              <Route element={<PrivateRoute />}>
-                <Route element={<ProtectedLayout />}>
-                  {privateRoutes.map(({ path, module, component: Component }) => (
-                    <Route
-                      key={path}
-                      path={path}
-                      element={
-                        <PermissionRoute module={module}>
-                          <Component />
-                        </PermissionRoute>
-                      }
-                    />
-                  ))}
-                </Route>
-              </Route>
-
-              <Route path="/" element={<LandingRedirect />} />
-              <Route path="*" element={<Navigate to="/login" replace />} />
-            </Routes>
-
-            <SonnerToaster />
+              <AppRoutes />
           </BrowserRouter>
         </PermissionsProvider>
       </NotificationProvider>

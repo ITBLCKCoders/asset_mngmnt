@@ -20,8 +20,15 @@ import {
 } from 'lucide-react';
 import { Checkbox } from '@/components/ui/checkbox';
 import { Switch } from '@/components/ui/switch';
-// import { api } from '@/lib/api';
-// import { toast } from 'sonner';
+import { api } from '@/lib/api';
+import { toast } from 'sonner';
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select';
 import SmsOtpDialog from '@/components/auth/SmsOtpDialog';
 import { useCurrentUser } from '@/hooks/useCurrentUser';
 
@@ -49,6 +56,20 @@ interface User {
   last_name: string;
 }
 
+interface ApproverOption {
+  user_id: string;
+  first_name: string;
+  last_name: string;
+  email: string;
+}
+
+interface ApproversResponse {
+  approvers?: {
+    approver?: ApproverOption | null;
+    sub_approver?: ApproverOption | null;
+  };
+}
+
 interface ConfirmationModalProps {
   isOpen: boolean;
   onOpenChange: (open: boolean) => void;
@@ -63,7 +84,11 @@ interface ConfirmationModalProps {
   selectedRoom: string;
   selectedUser: string;
   assigning: boolean;
-  onConfirm: (signAsIssuer: boolean, signITCopy: boolean, tempAccountability: boolean) => Promise<void>;
+  onConfirm: (
+    signAsIssuer: boolean,
+    adminCopySignerId: string | null,
+    tempAccountability: boolean
+  ) => Promise<void>;
 }
 
 export function ConfirmationModal({
@@ -84,38 +109,163 @@ export function ConfirmationModal({
 }: ConfirmationModalProps) {
   const { user } = useCurrentUser();
   const [signAsIssuer, setSignAsIssuer] = useState(true);
-  const [signITCopy, setSignITCopy] = useState(true);
+  const [adminCopySignerId, setAdminCopySignerId] = useState('');
   const [tempAccountability, setTempAccountability] = useState(false);
+  const [approverOptions, setApproverOptions] = useState<{
+    approver: ApproverOption | null;
+    subApprover: ApproverOption | null;
+  }>({ approver: null, subApprover: null });
+  const [approverOptionsLoading, setApproverOptionsLoading] = useState(false);
   const selectedUserData = users?.find(u => u.userID === selectedUser);
   const assigneeRoleName = (selectedUserData as any)?.role?.name;
   const allowedRoles = ['IT Asset Manager', 'Admin Asset Manager', 'Admin', 'Global Admin'];
   const showTempAccountability = assigneeRoleName ? allowedRoles.includes(assigneeRoleName) : false;
-  const canConfirmAssignment = signAsIssuer && signITCopy && !assigning;
+
+  // Determine copy scope (IT vs Admin) based on the selected assets' department, category, type, name, or code.
+  // The dropdown label updates accordingly.
+  const hasItAsset = selectedAssets.some(assetId => {
+    const asset = assets.find(
+      a => a.id === assetId || (a as any).asset_code === assetId || (a as any).assetID === assetId
+    );
+    if (!asset) return false;
+    const dept = (
+      (asset as any).department ||
+      (asset as any).categoryDepartment ||
+      (asset as any).department_name ||
+      ''
+    ).toLowerCase();
+    const t = (asset.type || '').toLowerCase();
+    const c = (asset.category || '').toLowerCase();
+    const n = (asset.name || '').toLowerCase();
+    const code = (asset.id || '').toLowerCase();
+
+    return (
+      dept.includes('it') ||
+      dept.includes('information technology') ||
+      t.includes('it') ||
+      c.includes('it') ||
+      t.includes('computer') ||
+      c.includes('computer') ||
+      t.includes('laptop') ||
+      c.includes('laptop') ||
+      t.includes('server') ||
+      c.includes('server') ||
+      t.includes('cpu') ||
+      c.includes('cpu') ||
+      code.includes('cpu') ||
+      t.includes('desktop') ||
+      c.includes('desktop') ||
+      t.includes('hardware') ||
+      c.includes('hardware') ||
+      t.includes('workstation') ||
+      c.includes('workstation') ||
+      t.includes('monitor') ||
+      c.includes('monitor') ||
+      n.includes('cpu') ||
+      n.includes('computer') ||
+      n.includes('laptop')
+    );
+  });
+  const hasAdminAsset = selectedAssets.some(assetId => {
+    const asset = assets.find(
+      a => a.id === assetId || (a as any).asset_code === assetId || (a as any).assetID === assetId
+    );
+    if (!asset) return false;
+    const dept = (
+      (asset as any).department ||
+      (asset as any).categoryDepartment ||
+      (asset as any).department_name ||
+      ''
+    ).toLowerCase();
+    const t = (asset.type || '').toLowerCase();
+    const c = (asset.category || '').toLowerCase();
+
+    return (
+      dept.includes('admin') ||
+      dept.includes('administration') ||
+      t.includes('admin') ||
+      c.includes('admin') ||
+      t.includes('administration') ||
+      c.includes('administration')
+    );
+  });
+  const hasCopyScope = hasItAsset || hasAdminAsset;
+  const copyType: 'IT' | 'Admin' | null = hasItAsset
+    ? 'IT'
+    : hasAdminAsset
+      ? 'Admin'
+      : null;
+  const dropdownLabel = copyType === 'IT'
+    ? 'Who should sign this accountability form for IT copy?'
+    : copyType === 'Admin'
+      ? 'Who should sign this accountability form for Admin copy?'
+      : 'Who should sign this accountability form for the copy?';
+
+  // Load designated approver / sub-approver for the issuer (logged-in user).
+  useEffect(() => {
+    if (!isOpen || !user?.id) {
+      return;
+    }
+    let cancelled = false;
+    const load = async () => {
+      try {
+        setApproverOptionsLoading(true);
+        const response = await api.get<ApproversResponse>(
+          `/users/${user.id}/approvers`
+        );
+        if (cancelled) return;
+        const data = response?.approvers;
+        setApproverOptions({
+          approver: data?.approver ?? null,
+          subApprover: data?.sub_approver ?? null,
+        });
+      } catch (err: any) {
+        if (cancelled) return;
+        console.error('Failed to load approver options:', err);
+        toast.error('Failed to load approver options for issuer');
+        setApproverOptions({ approver: null, subApprover: null });
+      } finally {
+        if (!cancelled) setApproverOptionsLoading(false);
+      }
+    };
+    load();
+    return () => {
+      cancelled = true;
+    };
+  }, [isOpen, user?.id]);
+
+  // Confirm allowed when: signing as issuer, copy scope handled (either no
+  // copy scope, or a signer has been selected), not currently assigning.
+  const hasCopySigner =
+    !hasCopyScope ||
+    (adminCopySignerId !== '' &&
+      (adminCopySignerId === '__approver__' ||
+        adminCopySignerId === '__sub_approver__'));
+  const canConfirmAssignment = signAsIssuer && hasCopySigner && !assigning;
 
   // OTP verification state
   const [showOtpDialog, setShowOtpDialog] = useState(false);
-  const pendingConfirmRef = useRef<((signAsIssuer: boolean, signITCopy: boolean) => Promise<void>) | null>(null);
   const pendingActionRef = useRef<(() => Promise<void>) | null>(null);
 
   useEffect(() => {
     if (!isOpen) {
       return;
     }
-
     setSignAsIssuer(true);
-    setSignITCopy(true);
+    setAdminCopySignerId('');
     setTempAccountability(false);
   }, [isOpen]);
 
-  // const checkUnsignedAccountabilityForms = async (userId: string) => {
-  //   try {
-  //     const response = await api.get(`/accountability-forms/check-unsigned/${userId}`);
-  //     return response;
-  //   } catch (err: any) {
-  //     console.error('Failed to check unsigned accountability forms:', err);
-  //     return { hasUnsignedForms: false, unsignedForms: [] };
-  //   }
-  // };
+  const resolveSignerId = (): string | null => {
+    if (!hasCopyScope) return null;
+    if (adminCopySignerId === '__approver__') {
+      return approverOptions.approver?.user_id ?? null;
+    }
+    if (adminCopySignerId === '__sub_approver__') {
+      return approverOptions.subApprover?.user_id ?? null;
+    }
+    return null;
+  };
 
   return (
     <>
@@ -242,36 +392,63 @@ export function ConfirmationModal({
               </div>
             </div>
 
-            {/* Sign IT Copy Option */}
+            {/* IT/Admin Copy Signer Selection (replaces the old checkbox) */}
             <div className="p-4 bg-blue-50 rounded-lg border border-blue-200">
-              <div className="flex items-start gap-3">
-                <Checkbox
-                  id="sign-it-copy"
-                  checked={signITCopy}
-                  onCheckedChange={checked => setSignITCopy(!!checked)}
-                  className="mt-0.5"
-                />
-                <div className="space-y-1">
-                  <label
-                    htmlFor="sign-it-copy"
-                    className="text-sm font-medium text-gray-900"
-                  >
-                    {selectedAssets.some(assetId => {
-                      const asset = assets.find(a => a.id === assetId);
-                      return (
-                        asset &&
-                        (asset.type?.toLowerCase().includes('it') ||
-                          asset.category?.toLowerCase().includes('it'))
-                      );
-                    })
-                      ? 'Sign this accountability form for IT copy?'
-                      : 'Sign this accountability form for Admin copy?'}
-                  </label>
+              <div className="space-y-2">
+                <label className="text-sm font-medium text-gray-900">
+                  {dropdownLabel}
+                </label>
+                {!hasCopyScope ? (
                   <p className="text-xs text-gray-600">
-                    When checked, your digital initials will be added to the
-                    accountability form under the "Copy for IT" section.
+                    The selected assets do not require an IT/Admin copy
+                    signature; proceeding will issue the form directly to the
+                    new owner.
                   </p>
-                </div>
+                ) : approverOptionsLoading ? (
+                  <p className="text-xs text-gray-500">Loading approvers…</p>
+                ) : !approverOptions.approver && !approverOptions.subApprover ? (
+                  <div className="space-y-1">
+                    <p className="text-xs font-medium text-red-600">
+                      No designated approver or sub-approver found for your account (issuer). Please assign one before continuing.
+                    </p>
+                  </div>
+                ) : (
+                  <Select
+                    value={adminCopySignerId}
+                    onValueChange={setAdminCopySignerId}
+                  >
+                    <SelectTrigger className="w-full bg-white">
+                      <SelectValue placeholder="Select a signer…" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {approverOptions.approver && (
+                        <SelectItem value="__approver__">
+                          Approver: {approverOptions.approver.first_name}{' '}
+                          {approverOptions.approver.last_name}
+                        </SelectItem>
+                      )}
+                      {approverOptions.subApprover && (
+                        <SelectItem value="__sub_approver__">
+                          Sub-approver:{' '}
+                          {approverOptions.subApprover.first_name}{' '}
+                          {approverOptions.subApprover.last_name}
+                        </SelectItem>
+                      )}
+                    </SelectContent>
+                  </Select>
+                )}
+                {hasCopyScope && (
+                  <p className="text-xs text-gray-600">
+                    The selected approver/sub-approver will sign the
+                    {' '}
+                    {copyType === 'IT'
+                      ? 'IT'
+                      : copyType === 'Admin'
+                        ? 'Admin'
+                        : ''}{' '}
+                    copy. The form will then be routed to the new asset owner's approver/sub-approver for final approval before being issued to the owner.
+                  </p>
+                )}
               </div>
             </div>
             {/* Temp Accountability Option */}
@@ -307,35 +484,8 @@ export function ConfirmationModal({
             </Button>
             <Button
               onClick={async () => {
-                // ── BLOCK: unsigned accountability forms check ──
-                // if (selectedUser) {
-                //   const checkResult = await checkUnsignedAccountabilityForms(selectedUser);
-                //   if (checkResult.hasUnsignedForms && checkResult.unsignedForms.length > 0) {
-                //     try {
-                //       await api.post('/notifications/accountability-unsigned', {
-                //         userId: selectedUser,
-                //         unsignedForms: checkResult.unsignedForms,
-                //       });
-                //     } catch (err: any) {
-                //       console.error('Failed to send notification:', err);
-                //     }
-                //     const receivingUser = users?.find(u => u.userID === selectedUser);
-                //     const userName = receivingUser
-                //       ? `${receivingUser.first_name} ${receivingUser.last_name}`
-                //       : 'the user';
-                //     toast.error('Assignment blocked', {
-                //       description: `${userName} has an accountability form that has not been signed yet. A notification has been sent to them to sign it before they can receive new assets.`,
-                //       duration: 6000,
-                //     });
-                //     onOpenChange(false);
-                //     return;
-                //   }
-                // }
-                // ─────────────────────────────────────────────────
-
-                // Store the confirm action for SmsOtpDialog
                 pendingActionRef.current = async () => {
-                  await onConfirm(signAsIssuer, signITCopy, tempAccountability);
+                  await onConfirm(signAsIssuer, resolveSignerId(), tempAccountability);
                 };
 
                 // Close confirmation modal and show OTP dialog
@@ -343,7 +493,7 @@ export function ConfirmationModal({
                 setShowOtpDialog(true);
               }}
               disabled={!canConfirmAssignment}
-              className="bg-gradient-to-r from-red-500 to-red-600 hover:from-red-600 hover:to-red-700 disabled:from-gray-300 disabled:to-gray-400"
+              className="bg-gradient-to-r from-red-500 to-red-600 hover:from-red-600 hover:from-red-700 disabled:from-gray-300 disabled:to-gray-400"
             >
               {assigning ? (
                 <div className="flex items-center gap-2 text-white">

@@ -40,6 +40,7 @@ import riskLevelsRoutes from './routes/riskLevels.routes.js';
 import dashboardRoutes from './routes/dashboard.routes.js';
 import reportsRoutes from './routes/reports.routes.js';
 import proxyRoutes from './routes/proxy.routes.js';
+import intangibleDeactivationsRoutes from './routes/intangibleDeactivations.routes.js';
 import { cleanupExpiredSessions } from './auth/cleanup.js';
 import cors from 'cors';
 import { Server as SocketIOServer } from 'socket.io';
@@ -186,6 +187,7 @@ app.use('/api/gate-passes', gatePassRoutes);
 app.use('/api/dashboard', dashboardRoutes);
 app.use('/api/reports', reportsRoutes);
 app.use('/api/proxy', proxyRoutes);
+app.use('/api/intangible-deactivations', intangibleDeactivationsRoutes);
 app.get('/api/hello', (_req: Request, res: Response) =>
   res.json({ message: 'Hello from server!' })
 );

@@ -103,11 +103,34 @@ export function PermissionsProvider({ children }: { children: ReactNode }) {
     (module: string, permission: string) => {
       const normalizedRoleName = (user?.role?.name ?? '').trim().toLowerCase();
 
-      if (
-        normalizedRoleName === 'admin' ||
-        normalizedRoleName === 'global admin'
-      ) {
+      if (normalizedRoleName === 'admin') {
         return true;
+      }
+
+      if (normalizedRoleName === 'global admin') {
+        const modPerms = permissions[module];
+        if (modPerms && permission in modPerms) {
+          return Boolean(modPerms[permission]);
+        }
+        const isSettingsOrUsers =
+          module === 'Settings' ||
+          module === 'Users' ||
+          [
+            'Asset Categories',
+            'Asset Types',
+            'Asset Brands',
+            'Suppliers',
+            'Intangible Asset Types',
+            'Risk Levels',
+            'Departments',
+            'Locations',
+            'Roles',
+            'Companies',
+          ].includes(module);
+        if (isSettingsOrUsers) {
+          return true;
+        }
+        return permission === 'view';
       }
 
       if (
