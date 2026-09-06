@@ -70,7 +70,7 @@ export function DashboardMultiSeriesChart({
   chartConfig,
   variant,
   stacked = false,
-  className = 'min-h-[280px] w-full',
+  className = 'h-[280px] w-full',
   barLayout = 'horizontal',
   maxRadarPoints = 10,
   rowFills,

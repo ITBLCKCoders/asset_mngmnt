@@ -1030,12 +1030,12 @@ export default function AssetsTransfer() {
           const isTransferred = status === 'Transferred';
           const isPending = status === 'Pending';
           const badgeClass = isDeclined
-            ? 'bg-red-100 text-red-800'
+            ? 'bg-red-100 text-red-800 dark:bg-red-900/30 dark:text-red-200'
             : isApproved || isTransferred
-              ? 'bg-green-100 text-green-800'
+              ? 'bg-green-100 text-green-800 dark:bg-green-900/30 dark:text-green-200'
               : isPending
-                ? 'bg-amber-100 text-amber-800'
-                : 'bg-gray-100 text-gray-800';
+                ? 'bg-amber-100 text-amber-800 dark:bg-amber-900/30 dark:text-amber-200'
+                : 'bg-gray-100 text-gray-800 dark:bg-gray-800 dark:text-gray-200';
           return (
             <Badge variant="secondary" className={badgeClass}>
               {status}
@@ -1589,14 +1589,14 @@ export default function AssetsTransfer() {
                                   {isTemporaryCustodyAssignment(assignment) && (
                                     <Badge
                                       variant="outline"
-                                      className="text-xs border-amber-300 bg-amber-50 text-amber-800"
+                                      className="text-xs border-amber-300 bg-amber-50 text-amber-800 dark:bg-amber-900/20 dark:text-amber-200 dark:border-amber-800"
                                     >
                                       Temporary Custody
                                     </Badge>
                                   )}
                                   <Badge
                                     variant="default"
-                                    className="text-xs bg-red-100 text-red-800 border-red-200"
+                                    className="text-xs bg-red-100 text-red-800 border-red-200 dark:bg-red-900/30 dark:text-red-200 dark:border-red-800"
                                   >
                                     {assignment.status}
                                   </Badge>
@@ -1819,10 +1819,10 @@ export default function AssetsTransfer() {
                                         variant="outline"
                                         className={
                                           asset.source === 'temporary_custody'
-                                            ? 'text-xs border-amber-300 bg-amber-50 text-amber-800'
-                                            : asset.source === 'assigned'
-                                              ? 'text-xs border-blue-300 bg-blue-50 text-blue-800'
-                                              : 'text-xs border-green-300 bg-green-50 text-green-800'
+? 'text-xs border-amber-300 bg-amber-50 text-amber-800 dark:bg-amber-900/20 dark:text-amber-200 dark:border-amber-800'
+                                              : asset.source === 'assigned'
+                                                ? 'text-xs border-blue-300 bg-blue-50 text-blue-800 dark:bg-blue-900/20 dark:text-blue-200 dark:border-blue-800'
+                                              : 'text-xs border-green-300 bg-green-50 text-green-800 dark:bg-green-900/20 dark:text-green-200 dark:border-green-800'
                                         }
                                       >
                                         {asset.source === 'temporary_custody'
@@ -1892,7 +1892,7 @@ export default function AssetsTransfer() {
                                             {builder.description}
                                           </p>
                                         )}
-                                        <Badge variant="secondary" className="text-xs bg-blue-100 text-blue-800">
+                                        <Badge variant="secondary" className="text-xs bg-blue-100 text-blue-800 dark:bg-blue-900/30 dark:text-blue-200">
                                           {assets.length} eligible asset
                                           {assets.length !== 1 ? 's' : ''}
                                         </Badge>
@@ -1907,10 +1907,10 @@ export default function AssetsTransfer() {
                                                 variant="outline"
                                                 className={
                                                   asset.source === 'temporary_custody'
-                                                    ? 'text-[10px] border-amber-300 bg-amber-50 text-amber-800'
+                                                    ? 'text-[10px] border-amber-300 bg-amber-50 text-amber-800 dark:bg-amber-900/20 dark:text-amber-200 dark:border-amber-800'
                                                     : asset.source === 'assigned'
-                                                      ? 'text-[10px] border-blue-300 bg-blue-50 text-blue-800'
-                                                      : 'text-[10px] border-green-300 bg-green-50 text-green-800'
+                                                      ? 'text-[10px] border-blue-300 bg-blue-50 text-blue-800 dark:bg-blue-900/20 dark:text-blue-200 dark:border-blue-800'
+                                                      : 'text-[10px] border-green-300 bg-green-50 text-green-800 dark:bg-green-900/20 dark:text-green-200 dark:border-green-800'
                                                 }
                                               >
                                                 {asset.source === 'temporary_custody'
@@ -2237,7 +2237,7 @@ export default function AssetsTransfer() {
                                                   ) && (
                                                     <Badge
                                                       variant="outline"
-                                                      className="mt-1 text-xs border-amber-300 bg-amber-50 text-amber-800"
+                                                      className="mt-1 text-xs border-amber-300 bg-amber-50 text-amber-800 dark:bg-amber-900/20 dark:text-amber-200 dark:border-amber-800"
                                                     >
                                                       Temporary Custody
                                                     </Badge>
@@ -2594,7 +2594,7 @@ export default function AssetsTransfer() {
                             isTemporaryCustodyAssignment(assignment) && (
                               <Badge
                                 variant="outline"
-                                className="mt-1 text-xs border-amber-300 bg-amber-50 text-amber-800"
+                                className="mt-1 text-xs border-amber-300 bg-amber-50 text-amber-800 dark:bg-amber-900/20 dark:text-amber-200 dark:border-amber-800"
                               >
                                 Temporary Custody
                               </Badge>
@@ -2906,10 +2906,10 @@ export default function AssetsTransfer() {
                 </div>
               </div>
 
-              {/* Received by - required */}
+              {/* Reviewed / Checked by - required */}
               <div className="rounded-xl border border-slate-200 bg-white p-5 shadow-sm">
                 <Label className="text-sm font-semibold text-slate-800 uppercase">
-                  Received by <span className="text-red-500">*</span>
+                  Reviewed / Checked by <span className="text-red-500">*</span>
                 </Label>
                 <p className="text-xs text-slate-500 mt-1">
                   Auto-filled from your profile position; edit if needed.

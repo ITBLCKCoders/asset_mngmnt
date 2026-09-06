@@ -161,6 +161,33 @@ export function AssetsPage() {
     }
     return activeCompany;
   }, [isSuperAdmin, activeCompany, user]);
+  // Authoritative scoped-company name for the import lock.
+  // Global Admin imports into the switcher company; everyone else (incl. local
+  // Admin) is locked server-side to their own users.company_id company, so the
+  // preview must compare against the DB name from /companies/my — not the
+  // possibly-stale user.company profile string.
+  const [scopedCompanyName, setScopedCompanyName] = useState<string | null>(null);
+  useEffect(() => {
+    let cancelled = false;
+    if (isSuperAdmin || !user?.company_id) {
+      setScopedCompanyName(null);
+    } else {
+      api
+        .get<{ data?: { name?: string }[] }>('/companies/my')
+        .then(r => {
+          if (!cancelled) setScopedCompanyName(r.data?.[0]?.name ?? null);
+        })
+        .catch(() => {
+          if (!cancelled) setScopedCompanyName(null);
+        });
+    }
+    return () => {
+      cancelled = true;
+    };
+  }, [isSuperAdmin, user?.company_id]);
+  const importCompanyName = isSuperAdmin
+    ? exportCompany?.name
+    : (scopedCompanyName ?? exportCompany?.name);
   const [scope, setScope] = useState<'it' | 'admin'>('it');
   const [pageIndex, setPageIndex] = useState(0);
   const [pageSize, setPageSize] = useState(10);
@@ -406,10 +433,10 @@ export function AssetsPage() {
         cell: ({ row }) => {
           const type = row.original.type;
           const badgeClass = type === 'IT scope'
-            ? 'bg-blue-100 text-blue-800 hover:bg-blue-200'
+            ? 'bg-blue-100 text-blue-800 hover:bg-blue-200 dark:bg-blue-900/30 dark:text-blue-200 dark:hover:bg-blue-900/30'
             : type === 'HR scope'
-              ? 'bg-green-100 text-green-800 hover:bg-green-200'
-              : 'bg-purple-100 text-purple-800 hover:bg-purple-200';
+              ? 'bg-green-100 text-green-800 hover:bg-green-200 dark:bg-green-900/30 dark:text-green-200 dark:hover:bg-green-900/30'
+              : 'bg-purple-100 text-purple-800 hover:bg-purple-200 dark:bg-purple-900/30 dark:text-purple-200 dark:hover:bg-purple-900/30';
           return (
             <Badge variant="secondary" className={badgeClass}>
               {type}
@@ -658,7 +685,16 @@ export function AssetsPage() {
     handleImport,
     downloadTemplate,
     reset: resetImport,
-  } = useAssetImport();
+    masters,
+    departments,
+    masterReport,
+    activeAddDialog,
+    skipUnresolved,
+    setSkipUnresolved,
+    openAddDialog,
+    closeAddDialog,
+    handleSaveMaster,
+  } = useAssetImport({ activeCompanyName: importCompanyName });
 
   // Server handles filtering by active company (Global Admin) or user company + asset type (other roles)
   const displayAssets = useMemo(
@@ -731,40 +767,40 @@ export function AssetsPage() {
   const getStatusBadgeClassName = (status: string) => {
     switch (status) {
       case 'Assigned':
-        return 'bg-emerald-50 text-emerald-700 border border-emerald-200';
+        return 'bg-emerald-50 text-emerald-700 border border-emerald-200 dark:bg-emerald-900/20 dark:text-emerald-200 dark:border-emerald-800';
       case 'Available':
-        return 'bg-blue-50 text-blue-700 border border-blue-200';
+        return 'bg-blue-50 text-blue-700 border border-blue-200 dark:bg-blue-900/20 dark:text-blue-200 dark:border-blue-800';
       case 'In Maintenance':
-        return 'bg-orange-50 text-orange-700 border border-orange-200';
+        return 'bg-orange-50 text-orange-700 border border-orange-200 dark:bg-orange-900/20 dark:text-orange-200 dark:border-orange-800';
       case 'Partial':
-        return 'bg-yellow-50 text-yellow-700 border border-yellow-200';
+        return 'bg-yellow-50 text-yellow-700 border border-yellow-200 dark:bg-yellow-900/20 dark:text-yellow-200 dark:border-yellow-800';
       default:
-        return 'bg-gray-100 text-gray-700 border border-gray-200';
+        return 'bg-gray-100 text-gray-700 border border-gray-200 dark:bg-gray-800 dark:text-gray-200 dark:border-gray-700';
     }
   };
 
   const getConditionBadgeClassName = (condition: string) => {
     switch (condition) {
       case 'New':
-        return 'bg-green-50 text-green-700 border border-green-200';
+        return 'bg-green-50 text-green-700 border border-green-200 dark:bg-green-900/20 dark:text-green-200 dark:border-green-800';
       case 'Excellent':
-        return 'bg-emerald-50 text-emerald-700 border border-emerald-200';
+        return 'bg-emerald-50 text-emerald-700 border border-emerald-200 dark:bg-emerald-900/20 dark:text-emerald-200 dark:border-emerald-800';
       case 'Good':
-        return 'bg-blue-50 text-blue-700 border border-blue-200';
+        return 'bg-blue-50 text-blue-700 border border-blue-200 dark:bg-blue-900/20 dark:text-blue-200 dark:border-blue-800';
       case 'Fair':
-        return 'bg-cyan-50 text-cyan-700 border border-cyan-200';
+        return 'bg-cyan-50 text-cyan-700 border border-cyan-200 dark:bg-cyan-900/20 dark:text-cyan-200 dark:border-cyan-800';
       case 'Poor':
-        return 'bg-amber-50 text-amber-700 border border-amber-200';
+        return 'bg-amber-50 text-amber-700 border border-amber-200 dark:bg-amber-900/20 dark:text-amber-200 dark:border-amber-800';
       case 'Bad':
-        return 'bg-red-50 text-red-700 border border-red-200';
+        return 'bg-red-50 text-red-700 border border-red-200 dark:bg-red-900/20 dark:text-red-200 dark:border-red-800';
       case 'Needs Repair':
-        return 'bg-orange-50 text-orange-700 border border-orange-200';
+        return 'bg-orange-50 text-orange-700 border border-orange-200 dark:bg-orange-900/20 dark:text-orange-200 dark:border-orange-800';
       case 'Damaged':
-        return 'bg-red-100 text-red-800 border border-red-300';
+        return 'bg-red-100 text-red-800 border border-red-300 dark:bg-red-900/30 dark:text-red-200 dark:border-red-800';
       case 'Obsolete':
-        return 'bg-gray-100 text-gray-700 border border-gray-200';
+        return 'bg-gray-100 text-gray-700 border border-gray-200 dark:bg-gray-800 dark:text-gray-200 dark:border-gray-700';
       default:
-        return 'bg-gray-100 text-gray-700 border border-gray-200';
+        return 'bg-gray-100 text-gray-700 border border-gray-200 dark:bg-gray-800 dark:text-gray-200 dark:border-gray-700';
     }
   };
 
@@ -2014,7 +2050,7 @@ export function AssetsPage() {
                 <div>
                   <h2 className="text-xl font-bold text-gray-900">
                     Asset Built
-                    <span className="ml-2 inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-red-100 text-red-800">
+                    <span className="ml-2 inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-red-100 text-red-800 dark:bg-red-900/30 dark:text-red-200">
                       {filteredBuilders.length} builders
                     </span>
                   </h2>
@@ -2091,8 +2127,8 @@ export function AssetsPage() {
                                 <span
                                   className={`px-2 py-1 text-xs font-medium rounded-full ${
                                     isAvailable
-                                      ? 'bg-green-100 text-green-800'
-                                      : 'bg-orange-100 text-orange-800'
+                                      ? 'bg-green-100 text-green-800 dark:bg-green-900/30 dark:text-green-200'
+                                      : 'bg-orange-100 text-orange-800 dark:bg-orange-900/30 dark:text-orange-200'
                                   }`}
                                 >
                                   {isAvailable ? 'Available' : 'Assigned'}
@@ -2307,6 +2343,15 @@ export function AssetsPage() {
         importResult={importResult}
         isUploading={isUploading}
         fileName={fileName}
+        masters={masters}
+        departments={departments}
+        masterReport={masterReport}
+        activeAddDialog={activeAddDialog}
+        skipUnresolved={skipUnresolved}
+        onToggleSkipUnresolved={setSkipUnresolved}
+        onOpenAdd={openAddDialog}
+        onCloseAdd={closeAddDialog}
+        onSaveMaster={handleSaveMaster}
         onFileUpload={handleFileUpload}
         onImport={handleImport}
         onDownloadTemplate={downloadTemplate}
@@ -3289,7 +3334,7 @@ export function AssetsPage() {
                         <AlertTriangle className="h-4 w-4 text-red-700" />
                       </div>
                       <div>
-                        <p className="text-sm font-bold text-red-800">Validation Errors</p>
+                        <p className="text-sm font-bold text-red-800 dark:text-red-200">Validation Errors</p>
                         <p className="text-xs text-red-600">{intangibleImportErrors.length} issue(s) found</p>
                       </div>
                     </div>

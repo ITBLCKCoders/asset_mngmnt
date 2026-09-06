@@ -203,6 +203,12 @@ function mapDtoToAsset(dto: AssetResponseDto): Asset {
     salvageValue: dto.salvage_value || 0,
     depreciationMethod: dto.depreciation_method || '',
     annualDepreciation: dto.annual_depreciation || 0,
+    bookValue: dto.book_value ?? undefined,
+    accumulatedDepreciation: dto.accumulated_depreciation ?? undefined,
+    monthlyDepreciation: dto.monthly_depreciation ?? undefined,
+    pastBookValue: dto.past_book_value ?? undefined,
+    pastAccumulatedDepreciation: dto.past_accumulated_depreciation ?? undefined,
+    pastMonthlyDepreciation: dto.past_monthly_depreciation ?? undefined,
     depreciationStartDate: dto.depreciation_start_date
       ? new Date(dto.depreciation_start_date)
       : null,
@@ -354,6 +360,9 @@ export const useAssetExport = () => {
       'bookValue',
       'accumulatedDepreciation',
       'monthlyDepreciation',
+      'pastBookValue',
+      'pastAccumulatedDepreciation',
+      'pastMonthlyDepreciation',
     ])
   );
 
@@ -385,9 +394,12 @@ export const useAssetExport = () => {
     { key: 'depreciationMethod', label: 'Depreciation Method' },
     { key: 'depreciationStartDate', label: 'Depreciation Start Date' },
     { key: 'annualDepreciation', label: 'Annual Depreciation' },
-    { key: 'bookValue', label: 'Book Value' },
-    { key: 'accumulatedDepreciation', label: 'Accumulated Depreciation' },
-    { key: 'monthlyDepreciation', label: 'Depreciation / Month' },
+    { key: 'bookValue', label: 'Current Book Value' },
+    { key: 'accumulatedDepreciation', label: 'Current Accumulated Depreciation' },
+    { key: 'monthlyDepreciation', label: 'Current Depreciation / Month' },
+    { key: 'pastBookValue', label: 'Past Book Value' },
+    { key: 'pastAccumulatedDepreciation', label: 'Past Accumulated Depreciation' },
+    { key: 'pastMonthlyDepreciation', label: 'Past Depreciation / Month' },
     { key: 'company', label: 'Company' },
     { key: 'building', label: 'Building' },
     { key: 'createdBy', label: 'Created By' },
@@ -435,6 +447,12 @@ export const useAssetExport = () => {
     if (colKey === 'accumulatedDepreciation' && value)
       return formatCurrency(value);
     if (colKey === 'monthlyDepreciation' && value)
+      return formatCurrency(value);
+    if (colKey === 'pastBookValue' && value != null)
+      return formatCurrency(value);
+    if (colKey === 'pastAccumulatedDepreciation' && value != null)
+      return formatCurrency(value);
+    if (colKey === 'pastMonthlyDepreciation' && value != null)
       return formatCurrency(value);
     return value ?? '';
   };
@@ -716,6 +734,9 @@ builderGroups.forEach(group => {
       bookValue: 18,
       accumulatedDepreciation: 20,
       monthlyDepreciation: 18,
+      pastBookValue: 18,
+      pastAccumulatedDepreciation: 20,
+      pastMonthlyDepreciation: 18,
       company: 25,
       building: 20,
       createdBy: 25,
@@ -881,6 +902,9 @@ filterLabel?: string
       bookValue: 18,
       accumulatedDepreciation: 20,
       monthlyDepreciation: 18,
+      pastBookValue: 18,
+      pastAccumulatedDepreciation: 20,
+      pastMonthlyDepreciation: 18,
       company: 25,
       building: 20,
       createdBy: 25,
@@ -1201,6 +1225,9 @@ filterLabel?: string
       'bookValue',
       'accumulatedDepreciation',
       'monthlyDepreciation',
+      'pastBookValue',
+      'pastAccumulatedDepreciation',
+      'pastMonthlyDepreciation',
     ])
   );
 

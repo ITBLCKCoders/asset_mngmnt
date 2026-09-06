@@ -2,11 +2,14 @@ import { jsPDF } from 'jspdf';
 import {
   addCompanyLogoToPDF,
   autoTable,
+  cropSignatureToInk,
   getCompanyAccentColor,
   getBlackCodersFooterGradient,
   isBlackCoders,
   resolveCompanyBranding,
   sortAssetsByLast5Digits,
+  PDF_SIGNATURE_FILL_RATIO,
+  PDF_SIGNATURE_NUDGE_X_MM,
 } from './shared';
 
 export interface AssetBorrowingData {
@@ -86,7 +89,8 @@ function removeSignatureBackground(img: HTMLImageElement): string {
   }
 
   ctx.putImageData(imageData, 0, 0);
-  return canvas.toDataURL('image/png');
+  // Trim scan whitespace so the ink fills the box (bigger render)
+  return cropSignatureToInk(canvas).toDataURL('image/png');
 }
 
 export const generateAssetBorrowingPDF = async (
@@ -408,16 +412,17 @@ export const generateAssetBorrowingPDF = async (
       const cell = data.cell;
 
       if (data.column.index === 0 && sigImg) {
-        // Draw signature image in the top-left portion of the cell
-        const sigMaxH = 35;
-        const aspectRatio = sigImg.width / sigImg.height;
-        let sigW = sigMaxH * aspectRatio;
-        let sigH = sigMaxH;
-        if (sigW > cell.width - 4) {
-          sigW = cell.width - 4;
-          sigH = sigW / aspectRatio;
+        // Draw signature image centered in the cell
+        // Uniform size: scale the signature to a fixed fraction of the cell width
+        const aspectRatio = sigImg.width / sigImg.height || 1;
+        let sigW = (cell.width - 6) * PDF_SIGNATURE_FILL_RATIO;
+        let sigH = sigW / aspectRatio;
+        if (sigH > 35) {
+          sigH = 35;
+          sigW = sigH * aspectRatio;
         }
-        const sigX = cell.x - 3;
+        // Uniform position: center the signature horizontally within the cell
+        const sigX = cell.x + (cell.width - sigW) / 2 + PDF_SIGNATURE_NUDGE_X_MM;
         const sigY = cell.y + 12;
 
         // Date/time above signature
@@ -456,15 +461,16 @@ export const generateAssetBorrowingPDF = async (
         let sigY = cell.y + 5;
         let sigH = 0;
         if (deptHeadSigImg) {
-          const sigMaxH = 35;
-          const aspectRatio = deptHeadSigImg.width / deptHeadSigImg.height;
-          let sigW = sigMaxH * aspectRatio;
-          sigH = sigMaxH;
-          if (sigW > cell.width - 4) {
-            sigW = cell.width - 4;
-            sigH = sigW / aspectRatio;
+          // Uniform size: scale the signature to a fixed fraction of the cell width
+          const aspectRatio = deptHeadSigImg.width / deptHeadSigImg.height || 1;
+          let sigW = (cell.width - 6) * PDF_SIGNATURE_FILL_RATIO;
+          sigH = sigW / aspectRatio;
+          if (sigH > 35) {
+            sigH = 35;
+            sigW = sigH * aspectRatio;
           }
-          const sigX = cell.x - 3;
+          // Uniform position: center the signature horizontally within the cell
+          const sigX = cell.x + (cell.width - sigW) / 2 + PDF_SIGNATURE_NUDGE_X_MM;
 
           const signedDate = deptHeadSignedAt ? new Date(deptHeadSignedAt) : null;
           if (signedDate) {
@@ -517,15 +523,16 @@ export const generateAssetBorrowingPDF = async (
         let sigY = cell.y + 5;
         let sigH = 0;
         if (itReceivedSigImg) {
-          const sigMaxH = 35;
-          const aspectRatio = itReceivedSigImg.width / itReceivedSigImg.height;
-          let sigW = sigMaxH * aspectRatio;
-          sigH = sigMaxH;
-          if (sigW > cell.width - 4) {
-            sigW = cell.width - 4;
-            sigH = sigW / aspectRatio;
+          // Uniform size: scale the signature to a fixed fraction of the cell width
+          const aspectRatio = itReceivedSigImg.width / itReceivedSigImg.height || 1;
+          let sigW = (cell.width - 6) * PDF_SIGNATURE_FILL_RATIO;
+          sigH = sigW / aspectRatio;
+          if (sigH > 35) {
+            sigH = 35;
+            sigW = sigH * aspectRatio;
           }
-          const sigX = cell.x - 3;
+          // Uniform position: center the signature horizontally within the cell
+          const sigX = cell.x + (cell.width - sigW) / 2 + PDF_SIGNATURE_NUDGE_X_MM;
 
           // Date on the right of signature, time below the date
           const signedDate = borrowData.itReceivedBySignedAt
@@ -573,15 +580,16 @@ export const generateAssetBorrowingPDF = async (
         let sigY = cell.y + 5;
         let sigH = 0;
         if (itApprovedSigImg) {
-          const sigMaxH = 35;
-          const aspectRatio = itApprovedSigImg.width / itApprovedSigImg.height;
-          let sigW = sigMaxH * aspectRatio;
-          sigH = sigMaxH;
-          if (sigW > cell.width - 4) {
-            sigW = cell.width - 4;
-            sigH = sigW / aspectRatio;
+          // Uniform size: scale the signature to a fixed fraction of the cell width
+          const aspectRatio = itApprovedSigImg.width / itApprovedSigImg.height || 1;
+          let sigW = (cell.width - 6) * PDF_SIGNATURE_FILL_RATIO;
+          sigH = sigW / aspectRatio;
+          if (sigH > 35) {
+            sigH = 35;
+            sigW = sigH * aspectRatio;
           }
-          const sigX = cell.x - 3;
+          // Uniform position: center the signature horizontally within the cell
+          const sigX = cell.x + (cell.width - sigW) / 2 + PDF_SIGNATURE_NUDGE_X_MM;
 
           const signedDate = borrowData.itApprovedBySignedAt
             ? new Date(borrowData.itApprovedBySignedAt)

@@ -40,19 +40,19 @@ export function TaggingColumns({
             label: 'Assigned',
             variant: 'default' as const,
             className:
-              'bg-emerald-500/15 text-emerald-700 border-emerald-500/30 hover:bg-emerald-500/25',
+              'bg-emerald-500/15 text-emerald-700 border-emerald-500/30 hover:bg-emerald-500/25 dark:text-emerald-300',
           },
           Available: {
             label: 'Available',
             variant: 'outline' as const,
             className:
-              'bg-blue-500/10 text-blue-700 border-blue-500/30 hover:bg-blue-500/20',
+              'bg-blue-500/10 text-blue-700 border-blue-500/30 hover:bg-blue-500/20 dark:text-blue-300',
           },
           'In Maintenance': {
             label: 'In Maintenance',
             variant: 'secondary' as const,
             className:
-              'bg-orange-500/10 text-orange-700 border-orange-500/40 hover:bg-orange-500/20',
+              'bg-orange-500/10 text-orange-700 border-orange-500/40 hover:bg-orange-500/20 dark:text-orange-300',
           },
         } as const;
 

@@ -2,6 +2,7 @@ import { BaseRepository } from './BaseRepository.js';
 import { pool } from '../db.js';
 import logger from '../logger.js';
 import { AppError } from '../middleware/enhancedErrorHandling.js';
+import { withPastAndPresentDepreciationFields } from '../utils/depreciation.js';
 
 export class AssetRepository extends BaseRepository<any> {
   constructor() {
@@ -97,6 +98,7 @@ export class AssetRepository extends BaseRepository<any> {
         depreciation_method: row.depreciation_method,
         useful_life_years: row.useful_life_years,
         annual_depreciation: row.annual_depreciation,
+        ...withPastAndPresentDepreciationFields(row),
         depreciation_start_date: row.depreciation_start_date,
         company_id: row.company_id,
         company: row.company_name
@@ -213,6 +215,7 @@ export class AssetRepository extends BaseRepository<any> {
         depreciation_method: row.depreciation_method,
         useful_life_years: row.useful_life_years,
         annual_depreciation: row.annual_depreciation,
+        ...withPastAndPresentDepreciationFields(row),
         depreciation_start_date: row.depreciation_start_date,
         company_id: row.company_id,
         company: row.company_name

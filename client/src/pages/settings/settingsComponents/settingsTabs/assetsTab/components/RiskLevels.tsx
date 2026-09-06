@@ -18,11 +18,26 @@ import {
   AlertDialogCancel,
   AlertDialogDescription,
 } from '@/components/ui/alert-dialog';
-import { Plus, Edit, Trash2, ShieldAlert, AlertTriangle } from 'lucide-react';
+import { Plus, Edit, Trash2, ShieldAlert, AlertTriangle, Download, Upload } from 'lucide-react';
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from '@/components/ui/dropdown-menu';
+import {
+  exportToCSV,
+  exportToExcel,
+  checkDuplicates,
+  resolveImportIds,
+  importRows,
+  type ImportResult,
+} from '../utils/importExportUtils';
+import { AssetSettingsImportDialog } from './AssetSettingsImportDialog';
 import { Shimmer } from '@/components/ui/shimmer';
 import { useRiskLevels } from '../hooks/useRiskLevels';
 import { RiskLevel } from '../types';
-import { useMemo } from 'react';
+import { useMemo, useState } from 'react';
 import { useUserPermissions } from '@/hooks/useUserPermissions';
 import { DataTable } from '@/components/ui/dataTable';
 import type { ColumnDef } from '@tanstack/react-table';
@@ -48,7 +63,38 @@ export function RiskLevels({ onAfterSave }: { onAfterSave?: () => void }) {
     handleSave,
     handleDelete,
     openEdit,
+    fetchRiskLevels,
   } = useRiskLevels({ onAfterSave });
+
+  const [importDialogOpen, setImportDialogOpen] = useState(false);
+
+  const handleExportCSV = () => {
+    const exportData = riskLevels.map(r => ({
+      name: r.name,
+      color: r.color || '',
+    }));
+    exportToCSV('risk-levels', exportData);
+  };
+
+  const handleExportExcel = () => {
+    const exportData = riskLevels.map(r => ({
+      name: r.name,
+      color: r.color || '',
+    }));
+    exportToExcel('risk-levels', exportData);
+  };
+
+  const handleImport = async (rows: Record<string, string>[]): Promise<ImportResult> => {
+    const resolvedRows = await resolveImportIds('risk-levels', rows);
+    const existingNames = riskLevels.map(r => r.name);
+    const { uniqueRows } = checkDuplicates('risk-levels', resolvedRows, existingNames);
+    const result = await importRows('risk-levels', uniqueRows);
+    if (result.created > 0) {
+      fetchRiskLevels();
+      if (onAfterSave) onAfterSave();
+    }
+    return result;
+  };
 
   const levelColumns = useMemo<ColumnDef<RiskLevel>[]>(
     () => [
@@ -115,7 +161,7 @@ export function RiskLevels({ onAfterSave }: { onAfterSave?: () => void }) {
   return (
     <section className="flex flex-col h-full min-h-[24rem]">
       <div className="bg-red-600 rounded-t-2xl p-6 mb-0 shrink-0">
-        <div className="flex items-start justify-between gap-6">
+        <div className="flex items-start gap-6">
           <div>
             <h2 className="text-2xl font-bold tracking-tight text-white">
               Risk Levels
@@ -123,6 +169,39 @@ export function RiskLevels({ onAfterSave }: { onAfterSave?: () => void }) {
             <p className="text-white/80 mt-2">
               Define risk classifications such as Low, Medium, High
             </p>
+          </div>
+
+          <div className="flex items-center gap-2 ml-auto">
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <Button
+                  size="lg"
+                  variant="outline"
+                  className="shadow-sm hover:shadow-md transition-all duration-300 bg-white/90 hover:bg-white text-gray-700 font-medium rounded-xl border-gray-200"
+                >
+                  <Download className="mr-2 h-4 w-4" />
+                  Export
+                </Button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="end" className="bg-white border-gray-200">
+                <DropdownMenuItem onClick={handleExportCSV} className="cursor-pointer">
+                  Export as CSV
+                </DropdownMenuItem>
+                <DropdownMenuItem onClick={handleExportExcel} className="cursor-pointer">
+                  Export as Excel
+                </DropdownMenuItem>
+              </DropdownMenuContent>
+            </DropdownMenu>
+
+            <Button
+              size="lg"
+              variant="outline"
+              onClick={() => setImportDialogOpen(true)}
+              className="shadow-sm hover:shadow-md transition-all duration-300 bg-white/90 hover:bg-white text-gray-700 font-medium rounded-xl border-gray-200"
+            >
+              <Upload className="mr-2 h-4 w-4" />
+              Import
+            </Button>
           </div>
 
           <Dialog open={isOpen} onOpenChange={setIsOpen}>
@@ -338,6 +417,14 @@ export function RiskLevels({ onAfterSave }: { onAfterSave?: () => void }) {
           </AppAlertDialogChromeFooter>
         </AppAlertDialogFrame>
       </AlertDialog>
+
+      <AssetSettingsImportDialog
+        open={importDialogOpen}
+        onOpenChange={setImportDialogOpen}
+        entityType="risk-levels"
+        onImport={handleImport}
+        onAfterImport={onAfterSave}
+      />
     </section>
   );
 }

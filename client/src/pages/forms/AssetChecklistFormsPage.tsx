@@ -274,7 +274,7 @@ export default function AssetChecklistFormsPage() {
                 selectedFilters={searchFilters}
                 onSelectedFiltersChange={setSearchFilters}
                 filterOptions={CHECKLIST_FILTER_OPTIONS}
-                placeholder="Search form number, employee, asset, received by..."
+                placeholder="Search form number, employee, asset, reviewed / checked by..."
                 className="max-w-md"
               />
             </div>
@@ -431,7 +431,7 @@ export default function AssetChecklistFormsPage() {
                         </p>
                       </div>
                     </div>
-                    <Badge className="bg-red-100 text-red-800 hover:bg-red-100">
+                    <Badge className="bg-red-100 text-red-800 hover:bg-red-100 dark:bg-red-900/30 dark:text-red-200 dark:hover:bg-red-900/30">
                       {checklistTypeLabel(row)}
                     </Badge>
                   </div>
@@ -470,7 +470,7 @@ export default function AssetChecklistFormsPage() {
                       <User className="h-4 w-4 text-gray-400 mt-0.5 flex-shrink-0" />
                       <div className="flex-1 min-w-0">
                         <p className="text-sm text-gray-600">
-                          Received by: {row.received_by}
+                          Reviewed / Checked by: {row.received_by}
                         </p>
                       </div>
                     </div>

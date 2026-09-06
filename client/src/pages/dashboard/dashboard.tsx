@@ -32,9 +32,11 @@ import {
   Loader2,
   Wrench,
   FileDown,
-  FileText,
   HandHelping,
   XCircle,
+  TrendingUp,
+  TrendingDown,
+  Minus,
 } from 'lucide-react';
 import { api } from '@/lib/api';
 import {
@@ -56,13 +58,6 @@ import EmployeeAssetStatusChart from './components/employeeAssetStatusChart';
 import EmployeeRequestTimeline from './components/employeeRequestTimeline';
 import PendingRequestsWidget from './components/pendingRequestsWidget';
 import QuickActions from './components/quickActions';
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from '@/components/ui/select';
 import { generateDashboardPDF } from '@/lib/pdfGenerator/dashboardPdf';
 import { downloadPDF } from '@/lib/pdfGenerator';
 
@@ -120,6 +115,15 @@ export interface NamedValueItem {
   value: number;
 }
 
+export interface DashboardTrend {
+  delta: number;
+  pct: number | null;
+}
+
+export type DashboardTrends = Partial<
+  Record<keyof DashboardStats, DashboardTrend>
+>;
+
 export interface RequestPipelineRow {
   stage: string;
   returnCount: number;
@@ -129,6 +133,7 @@ export interface RequestPipelineRow {
 
 export interface DashboardData {
   stats: DashboardStats;
+  trends?: DashboardTrends;
   assetByType: AssetByTypeItem[];
   movement: {
     weekly: MovementDataPoint[];
@@ -171,6 +176,7 @@ const STAT_CARDS: Array<{
   title: string;
   icon: React.ComponentType<{ className?: string }>;
   color: string;
+  invertTrend?: boolean;
 }> = [
   {
     key: 'totalAssets',
@@ -207,12 +213,14 @@ const STAT_CARDS: Array<{
     title: 'Under Maintenance',
     icon: Wrench,
     color: 'text-amber-600',
+    invertTrend: true,
   },
   {
     key: 'underRepair',
     title: 'Under Repair',
     icon: Loader2,
     color: 'text-gray-600',
+    invertTrend: true,
   },
   {
     key: 'borrowRequestsCount',
@@ -275,6 +283,7 @@ const MANAGER_STAT_CARDS: Array<{
   title: string;
   icon: React.ComponentType<{ className?: string }>;
   color: string;
+  invertTrend?: boolean;
 }> = [
   {
     key: 'totalAssets',
@@ -305,12 +314,14 @@ const MANAGER_STAT_CARDS: Array<{
     title: 'Under Maintenance',
     icon: Wrench,
     color: 'text-amber-600',
+    invertTrend: true,
   },
   {
     key: 'underRepair',
     title: 'Under Repair',
     icon: Loader2,
     color: 'text-gray-600',
+    invertTrend: true,
   },
   {
     key: 'pendingReturnCount',
@@ -332,27 +343,59 @@ const MANAGER_STAT_CARDS: Array<{
   },
 ];
 
-const StatsCard = memo(function StatsCard({
+export const StatsCard = memo(function StatsCard({
   title,
   value,
   icon: Icon,
   color,
+  trend,
+  invertTrend = false,
 }: {
   title: string;
   value: number;
   icon: React.ComponentType<{ className?: string }>;
   color: string;
+  trend?: DashboardTrend;
+  invertTrend?: boolean;
 }) {
+  const delta = trend?.delta ?? 0;
+  const isUp = delta > 0;
+  const good = isUp !== invertTrend;
+  const trendColor = !trend || delta === 0
+    ? 'text-muted-foreground'
+    : good
+      ? 'text-green-600'
+      : 'text-red-600';
+  const TrendIcon = delta === 0 ? Minus : isUp ? TrendingUp : TrendingDown;
+  const trendLabel = trend
+    ? trend.pct === null
+      ? `${Math.abs(delta)}`
+      : `${Math.abs(delta)} (${Math.abs(trend.pct)}%)`
+    : null;
+
   return (
-    <Card className="hover:shadow-md transition-shadow">
+    <Card className="h-full hover:shadow-md transition-shadow">
       <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-        <CardTitle className="text-sm font-medium text-muted-foreground">
+        <CardTitle className="text-sm font-medium text-muted-foreground truncate pr-2">
           {title}
         </CardTitle>
-        <Icon className={`h-4 w-4 ${color}`} />
+        <div className="rounded-lg bg-muted p-1.5 shrink-0">
+          <Icon className={`h-4 w-4 ${color}`} />
+        </div>
       </CardHeader>
-      <CardContent>
-        <div className="text-2xl font-bold">{value}</div>
+      <CardContent className="flex flex-col gap-1.5">
+        <div className="text-2xl font-bold tabular-nums leading-none">
+          {value.toLocaleString()}
+        </div>
+        <div className="h-4 flex items-center">
+          {trendLabel ? (
+            <div className={`flex items-center gap-1 text-xs font-medium ${trendColor}`}>
+              <TrendIcon className="h-3.5 w-3.5 shrink-0" />
+              <span>{trendLabel}</span>
+              <span className="text-muted-foreground font-normal">vs prev week</span>
+            </div>
+          ) : null}
+        </div>
       </CardContent>
     </Card>
   );
@@ -892,8 +935,8 @@ export default function Dashboard() {
         <div
           className={
             isEmployee
-              ? 'grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-3'
-              : 'grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4'
+              ? 'grid grid-cols-1 auto-rows-fr gap-4 sm:grid-cols-2 lg:grid-cols-3'
+              : 'grid grid-cols-1 auto-rows-fr gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4'
           }
         >
           {loading ? (
@@ -912,30 +955,34 @@ export default function Dashboard() {
                 <button
                   key={title}
                   type="button"
-                  className="text-left"
+                  className="h-full text-left"
                   onClick={() => navigate(path)}
                 >
                   <StatsCard title={title} value={value} icon={icon} color={color} />
                 </button>
               ))
             ) : isITManager || isAdminManager ? (
-              MANAGER_STAT_CARDS.map(({ key, title, icon, color }) => (
+              MANAGER_STAT_CARDS.map(({ key, title, icon, color, invertTrend }) => (
                 <StatsCard
                   key={key}
                   title={title}
                   value={dashboardData.stats[key] ?? 0}
                   icon={icon}
                   color={color}
+                  trend={dashboardData.trends?.[key]}
+                  invertTrend={invertTrend}
                 />
               ))
             ) : (
-              STAT_CARDS.map(({ key, title, icon, color }) => (
+              STAT_CARDS.map(({ key, title, icon, color, invertTrend }) => (
                 <StatsCard
                   key={key}
                   title={title}
                   value={dashboardData.stats[key] ?? 0}
                   icon={icon}
                   color={color}
+                  trend={dashboardData.trends?.[key]}
+                  invertTrend={invertTrend}
                 />
               ))
             )
@@ -949,6 +996,7 @@ export default function Dashboard() {
                 defaultTitle="My Request Type Breakdown"
                 defaultDescription="Return, transfer, asset, and borrowing requests"
                 defaultVariant="bar"
+                chartId="myRequestTypeBreakdown"
                 empty={!employeeRequestTypeRows.some(row => row.value > 0)}
                 emptyMessage="No request type data"
               >
@@ -959,12 +1007,12 @@ export default function Dashboard() {
                     indexKey="name"
                     series={[...employeeRequestTypeSeries]}
                     chartConfig={employeeRequestTypeConfig}
-                    className="min-h-[280px] w-full"
+                    className="h-[280px] w-full"
                   />
                 )}
               </DashboardChartShell>
 
-              <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+              <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 items-stretch">
                 <EmployeeAssetStatusChart
                   data={employeeAssetStatus}
                   loading={loading}
@@ -975,14 +1023,14 @@ export default function Dashboard() {
                 />
               </div>
 
-              <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-                <div className="md:col-span-2">
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-6 items-stretch">
+                <div className="md:col-span-2 min-h-0">
                   <EmployeeRecentActivity
                     activities={employeeActivity}
                     loading={loading}
                   />
                 </div>
-                <div>
+                <div className="min-h-0">
                   <QuickActions />
                 </div>
               </div>
@@ -999,6 +1047,7 @@ export default function Dashboard() {
                   defaultTitle="Asset Status Distribution"
                   defaultDescription="Current status breakdown"
                   defaultVariant="bar"
+                  chartId="statusDistribution"
                   empty={!statusRows.length}
                 >
                   {v => (
@@ -1009,7 +1058,7 @@ export default function Dashboard() {
                       series={[...statusSeries]}
                       chartConfig={statusConfig}
                       rowFills={statusRowFills}
-                      className="min-h-[280px] w-full"
+                      className="h-[280px] w-full"
                     />
                   )}
                 </DashboardChartShell>
@@ -1041,6 +1090,7 @@ export default function Dashboard() {
                   defaultTitle="Requests Over Time"
                   defaultDescription="Borrow requests, transfers, and repairs per period"
                   defaultVariant="bar"
+                  chartId="requestsOverTime"
                   empty={!requestsOverTimeRows.length}
                   emptyMessage="No request data"
                   headerActions={
@@ -1074,7 +1124,7 @@ export default function Dashboard() {
                       indexKey="label"
                       series={[...requestsOverTimeSeries]}
                       chartConfig={requestsOverTimeConfig}
-                      className="min-h-[280px] w-full"
+                      className="h-[280px] w-full"
                     />
                   )}
                 </DashboardChartShell>
@@ -1089,7 +1139,7 @@ export default function Dashboard() {
 
               {(isITManager || isAdminManager) && !loading && (
                 <PendingRequestsWidget
-                  requests={[]}
+                  pipeline={dashboardData?.requestPipeline ?? []}
                   scopeLabel={isITManager ? 'Pending IT Requests' : 'Pending Admin Requests'}
                 />
               )}

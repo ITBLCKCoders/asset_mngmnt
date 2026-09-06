@@ -49,7 +49,7 @@ export default function DigitalInitialsRequiredDialog({
         />
         <AppDialogBody className="space-y-4">
           <Alert className="bg-amber-50 border-amber-200">
-            <AlertDescription className="text-amber-800">
+            <AlertDescription className="text-amber-800 dark:text-amber-200">
               Your digital initials are required to sign and approve forms within the system. 
               Please configure them to continue using all features securely.
             </AlertDescription>

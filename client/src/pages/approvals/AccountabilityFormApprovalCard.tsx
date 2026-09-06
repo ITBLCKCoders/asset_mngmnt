@@ -35,12 +35,12 @@ function getStatusBadge(batch: AccountabilityApprovalBatch) {
   if (batch.formType === 'admin_copy_signature') {
     return {
       label: 'Awaiting Copy Signature',
-      className: 'bg-amber-100 text-amber-800',
+      className: 'bg-amber-100 text-amber-800 dark:bg-amber-900/30 dark:text-amber-200',
     };
   }
   return {
     label: 'Awaiting Final Approval',
-    className: 'bg-blue-100 text-blue-800',
+    className: 'bg-blue-100 text-blue-800 dark:bg-blue-900/30 dark:text-blue-200',
   };
 }
 
@@ -94,7 +94,7 @@ export function AccountabilityFormApprovalCard({
               {statusBadge.label}
             </Badge>
             {batch.admin_copy_copy_type && (
-              <Badge className="bg-red-100 text-red-800 hover:bg-red-100">
+              <Badge className="bg-red-100 text-red-800 hover:bg-red-100 dark:bg-red-900/30 dark:text-red-200 dark:hover:bg-red-900/30">
                 {batch.admin_copy_copy_type} Copy
               </Badge>
             )}

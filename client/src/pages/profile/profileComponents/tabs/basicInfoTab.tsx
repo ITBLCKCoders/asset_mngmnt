@@ -887,7 +887,7 @@ const BasicInfoTab = forwardRef<BasicInfoTabHandle, BasicInfoTabProps>(
           </h3>
           <Alert className="border-red-200 bg-red-50">
             <AlertCircle className="h-5 w-5 text-red-600" />
-            <AlertTitle className="text-red-800">Michael Johnson</AlertTitle>
+            <AlertTitle className="text-red-800 dark:text-red-200">Michael Johnson</AlertTitle>
             <AlertDescription className="text-gray-700">
               Relationship: Spouse · +63 998 777 8888 · Same address
             </AlertDescription>

@@ -147,25 +147,25 @@ export const assetColumns = [
           label: 'Assigned',
           variant: 'default' as const,
           className:
-            'bg-emerald-500/15 text-emerald-700 border-emerald-500/30 hover:bg-emerald-500/25',
+            'bg-emerald-500/15 text-emerald-700 border-emerald-500/30 hover:bg-emerald-500/25 dark:text-emerald-300',
         },
         Available: {
           label: 'Available',
           variant: 'outline' as const,
           className:
-            'bg-blue-500/10 text-blue-700 border-blue-500/30 hover:bg-blue-500/20',
+            'bg-blue-500/10 text-blue-700 border-blue-500/30 hover:bg-blue-500/20 dark:text-blue-300',
         },
         'In Maintenance': {
           label: 'In Maintenance',
           variant: 'secondary' as const,
           className:
-            'bg-orange-500/10 text-orange-700 border-orange-500/40 hover:bg-orange-500/20',
+            'bg-orange-500/10 text-orange-700 border-orange-500/40 hover:bg-orange-500/20 dark:text-orange-300',
         },
         Partial: {
           label: 'Partial',
           variant: 'secondary' as const,
           className:
-            'bg-yellow-500/15 text-yellow-700 border-yellow-500/30 hover:bg-yellow-500/25',
+            'bg-yellow-500/15 text-yellow-700 border-yellow-500/30 hover:bg-yellow-500/25 dark:text-yellow-300',
         },
       } as const;
 
@@ -387,55 +387,55 @@ export const assetColumns = [
           label: 'New',
           variant: 'default',
           className:
-            'bg-green-500/15 text-green-700 border-green-500/30 hover:bg-green-500/25',
+            'bg-green-500/15 text-green-700 border-green-500/30 hover:bg-green-500/25 dark:text-green-300',
         },
         Excellent: {
           label: 'Excellent',
           variant: 'default',
           className:
-            'bg-emerald-500/15 text-emerald-700 border-emerald-500/30 hover:bg-emerald-500/25',
+            'bg-emerald-500/15 text-emerald-700 border-emerald-500/30 hover:bg-emerald-500/25 dark:text-emerald-300',
         },
         Good: {
           label: 'Good',
           variant: 'default',
           className:
-            'bg-blue-500/15 text-blue-700 border-blue-500/30 hover:bg-blue-500/25',
+            'bg-blue-500/15 text-blue-700 border-blue-500/30 hover:bg-blue-500/25 dark:text-blue-300',
         },
         Fair: {
           label: 'Fair',
           variant: 'outline',
           className:
-            'bg-cyan-500/10 text-cyan-700 border-cyan-500/30 hover:bg-cyan-500/20',
+            'bg-cyan-500/10 text-cyan-700 border-cyan-500/30 hover:bg-cyan-500/20 dark:text-cyan-300',
         },
         Poor: {
           label: 'Poor',
           variant: 'outline',
           className:
-            'bg-amber-500/15 text-amber-700 border-amber-500/30 hover:bg-amber-500/25',
+            'bg-amber-500/15 text-amber-700 border-amber-500/30 hover:bg-amber-500/25 dark:text-amber-300',
         },
         Bad: {
           label: 'Bad',
           variant: 'destructive',
           className:
-            'bg-red-500/15 text-red-700 border-red-500/30 hover:bg-red-500/25',
+            'bg-red-500/15 text-red-700 border-red-500/30 hover:bg-red-500/25 dark:text-red-300',
         },
         'Needs Repair': {
           label: 'Needs Repair',
           variant: 'outline',
           className:
-            'bg-orange-500/10 text-orange-700 border-orange-500/40 hover:bg-orange-500/20',
+            'bg-orange-500/10 text-orange-700 border-orange-500/40 hover:bg-orange-500/20 dark:text-orange-300',
         },
         Damaged: {
           label: 'Damaged',
           variant: 'destructive',
           className:
-            'bg-red-500/15 text-red-700 border-red-500/30 hover:bg-red-500/25',
+            'bg-red-500/15 text-red-700 border-red-500/30 hover:bg-red-500/25 dark:text-red-300',
         },
         Obsolete: {
           label: 'Obsolete',
           variant: 'secondary',
           className:
-            'bg-gray-500/15 text-gray-700 border-gray-500/30 hover:bg-gray-500/25',
+            'bg-gray-500/15 text-gray-700 border-gray-500/30 hover:bg-gray-500/25 dark:text-gray-300',
         },
       };
 
@@ -548,32 +548,68 @@ export const assetColumns = [
     cell: ({ row }: any) => formatCurrency(row.original.annualDepreciation),
   },
 
-  // Book Value
+  // Current Book Value (live auto-calculated as of today)
   {
     id: 'bookValue',
-    header: 'Book Value',
+    header: 'Current Book Value',
     accessorKey: 'bookValue',
     size: 150,
     cell: ({ row }: any) => formatCurrency(row.original.bookValue ?? 0),
   },
 
-  // Accumulated Depreciation
+  // Current Accumulated Depreciation (live auto-calculated as of today)
   {
     id: 'accumulatedDepreciation',
-    header: 'Accumulated Depreciation',
+    header: 'Current Accumulated Depreciation',
     accessorKey: 'accumulatedDepreciation',
     size: 190,
     cell: ({ row }: any) =>
       formatCurrency(row.original.accumulatedDepreciation ?? 0),
   },
 
-  // Depreciation / Month
+  // Current Depreciation / Month (live auto-calculated)
   {
     id: 'monthlyDepreciation',
-    header: 'Depreciation / Month',
+    header: 'Current Depreciation / Month',
     accessorKey: 'monthlyDepreciation',
     size: 180,
     cell: ({ row }: any) => formatCurrency(row.original.monthlyDepreciation ?? 0),
+  },
+
+  // Past Book Value (frozen stored value from creation / last edit)
+  {
+    id: 'pastBookValue',
+    header: 'Past Book Value',
+    accessorKey: 'pastBookValue',
+    size: 150,
+    cell: ({ row }: any) =>
+      row.original.pastBookValue != null
+        ? formatCurrency(row.original.pastBookValue)
+        : '—',
+  },
+
+  // Past Accumulated Depreciation (frozen stored value from creation / last edit)
+  {
+    id: 'pastAccumulatedDepreciation',
+    header: 'Past Accumulated Depreciation',
+    accessorKey: 'pastAccumulatedDepreciation',
+    size: 190,
+    cell: ({ row }: any) =>
+      row.original.pastAccumulatedDepreciation != null
+        ? formatCurrency(row.original.pastAccumulatedDepreciation)
+        : '—',
+  },
+
+  // Past Depreciation / Month (frozen stored value from creation / last edit)
+  {
+    id: 'pastMonthlyDepreciation',
+    header: 'Past Depreciation / Month',
+    accessorKey: 'pastMonthlyDepreciation',
+    size: 180,
+    cell: ({ row }: any) =>
+      row.original.pastMonthlyDepreciation != null
+        ? formatCurrency(row.original.pastMonthlyDepreciation)
+        : '—',
   },
 
   // Company

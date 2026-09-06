@@ -41,7 +41,7 @@ export default function MFARequiredDialog({
         />
         <AppDialogBody className="space-y-4">
           <Alert className="bg-amber-50 border-amber-200">
-            <AlertDescription className="text-amber-800">
+            <AlertDescription className="text-amber-800 dark:text-amber-200">
               Two-Factor Authentication (MFA) is strongly recommended to protect your account from unauthorized access. 
               Enable MFA to keep your account secure.
             </AlertDescription>

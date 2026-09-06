@@ -60,7 +60,7 @@ export function UserTable({ users, loading, openEdit }: UserTableProps) {
         cell: ({ row }) => (
           <Badge
             variant="secondary"
-            className="font-mono text-sm px-4 py-1.5 bg-red-100 text-red-800 border-red-300"
+            className="font-mono text-sm px-4 py-1.5 bg-red-100 text-red-800 border-red-300 dark:bg-red-900/30 dark:text-red-200 dark:border-red-800"
           >
             {getRoleDisplayName(row.original.role?.name) || 'No Role'}
           </Badge>

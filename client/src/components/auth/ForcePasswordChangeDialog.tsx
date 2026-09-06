@@ -141,7 +141,7 @@ export default function ForcePasswordChangeDialog({
         <AppDialogBody className="space-y-4">
           <Alert className="border-amber-200 bg-amber-50">
             <AlertTriangle className="h-4 w-4 text-amber-600" />
-            <AlertDescription className="text-amber-800 text-sm">
+            <AlertDescription className="text-amber-800 text-sm dark:text-amber-200">
               {mfaEnabled
                 ? 'For security, your new password requires 2FA verification. You can use your authenticator app (TOTP) or email OTP as a backup.'
                 : 'For security, a verification code has been sent to your email. Enter it below to confirm your new password.'}

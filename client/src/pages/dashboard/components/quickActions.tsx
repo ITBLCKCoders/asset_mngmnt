@@ -46,7 +46,7 @@ export default function QuickActions() {
   const navigate = useNavigate();
 
   return (
-    <Card>
+    <Card className="h-full">
       <CardHeader>
         <CardTitle className="text-sm font-medium">Quick Actions</CardTitle>
       </CardHeader>

@@ -1,13 +1,13 @@
 import { useState, useEffect, useMemo } from 'react';
-import { TabsContent } from '@/components/ui/tabs';
 import {
-  Card,
-  CardContent,
-  CardHeader,
-  CardFooter,
-} from '@/components/ui/card';
+  Tabs,
+  TabsContent,
+  TabsList,
+  TabsTrigger,
+  segmentTabsListClassName,
+  segmentTabsTriggerClassName,
+} from '@/components/ui/tabs';
 import { Button } from '@/components/ui/button';
-import { cn } from '@/lib/utils';
 import { api } from '@/lib/api';
 import { toast } from 'sonner';
 import { Sparkles } from 'lucide-react';
@@ -27,7 +27,7 @@ import { AssetBrands } from './components/AssetBrands';
 import { IntangibleAssetTypes } from './components/IntangibleAssetTypes';
 import { RiskLevels } from './components/RiskLevels';
 import { SmartAssetIdFormat } from './components/SmartAssetIdFormat';
-import { Shimmer } from '@/components/ui/shimmer';
+import { SettingsAssetsTabSkeleton } from '@/components/common/pageSkeletons';
 import { useCurrentUser } from '@/hooks/useCurrentUser';
 import { classifyDepartmentScopeByName } from '@/lib/assetScope';
 
@@ -44,14 +44,19 @@ export function AssetsTab({ isActive }: { isActive?: boolean }) {
     loading: categoriesLoading,
     fetchCategories,
   } = useCategories();
-  const { suppliers, fetchSuppliers } = useSuppliers();
-  const { types, fetchTypes } = useAssetTypes();
-  const { brands, fetchBrands } = useAssetBrands();
+  const { suppliers, loading: suppliersLoading, fetchSuppliers } = useSuppliers();
+  const { types, loading: typesLoading, fetchTypes } = useAssetTypes();
+  const { brands, loading: brandsLoading, fetchBrands } = useAssetBrands();
   const {
     types: intangibleAssetTypes,
+    loading: intangibleTypesLoading,
     fetchTypes: fetchIntangibleAssetTypes,
   } = useIntangibleAssetTypes();
-  const { riskLevels, fetchRiskLevels } = useRiskLevels();
+  const {
+    riskLevels,
+    loading: riskLevelsLoading,
+    fetchRiskLevels,
+  } = useRiskLevels();
   const smartIdFormatState = useSmartIdFormat(activeCompany);
   const { fetchAssetIdFormatSettings } = smartIdFormatState;
 
@@ -90,10 +95,23 @@ export function AssetsTab({ isActive }: { isActive?: boolean }) {
   useEffect(() => {
     if (isActive) {
       setIsTabLoading(true);
-      const timer = setTimeout(() => setIsTabLoading(false), 2000);
+      const timer = setTimeout(() => setIsTabLoading(false), 800);
       return () => clearTimeout(timer);
     }
   }, [isActive]);
+
+  // Skeleton stays until the minimum display time passes AND all real
+  // section fetches have resolved — avoids the flash where the skeleton
+  // vanishes while tables are still loading their own shimmers.
+  const isFetchingSections =
+    categoriesLoading ||
+    suppliersLoading ||
+    typesLoading ||
+    brandsLoading ||
+    intangibleTypesLoading ||
+    riskLevelsLoading ||
+    smartIdFormatState.settingsLoading;
+  const showSkeleton = isTabLoading || isFetchingSections;
 
   useEffect(() => {
     if (isActive) fetchCategories();
@@ -166,208 +184,8 @@ export function AssetsTab({ isActive }: { isActive?: boolean }) {
     }
   };
 
-  if (isTabLoading) {
-    return (
-      <TabsContent value="assets" className="mt-0">
-        {/* All Tables Grid */}
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-8 mb-10">
-          {/* Asset Categories Card */}
-          <Card className="shadow-lg border-0 rounded-2xl overflow-hidden bg-card/95 backdrop-blur h-[28rem] flex flex-col">
-            <CardHeader className=" bg-red-600 rounded-t-2xl flex-shrink-0">
-              <div className="flex items-start justify-between gap-6">
-                <div>
-                  <Shimmer className="h-8 w-48 rounded bg-white/20" />
-                  <Shimmer className="h-5 w-80 rounded mt-2 bg-white/20" />
-                </div>
-                <Shimmer className="h-12 w-48 rounded-xl bg-white/20" />
-              </div>
-            </CardHeader>
-            <CardContent className="p-5 flex-1 overflow-y-auto">
-              {/* Table Header Shimmer */}
-              <div className="mb-4">
-                <div className="flex space-x-4 mb-4">
-                  <Shimmer className="h-6 w-32" />
-                  <Shimmer className="h-6 w-16" />
-                  <Shimmer className="h-6 w-20" />
-                  <div className="ml-auto">
-                    <Shimmer className="h-6 w-16" />
-                  </div>
-                </div>
-              </div>
-              {/* Table Rows Shimmer */}
-              <div className="space-y-4">
-                {[...Array(3)].map((_, i) => (
-                  <div
-                    key={i}
-                    className="h-20 border-b flex items-center space-x-4 p-4"
-                  >
-                    <Shimmer className="h-6 w-32" />
-                    <Shimmer className="h-6 w-16 rounded" />
-                    <Shimmer className="h-6 w-20 rounded" />
-                    <div className="flex space-x-2 ml-auto">
-                      <Shimmer className="h-8 w-8 rounded" />
-                      <Shimmer className="h-8 w-8 rounded" />
-                    </div>
-                  </div>
-                ))}
-              </div>
-            </CardContent>
-            <CardFooter></CardFooter>
-          </Card>
-
-          {/* Suppliers Card */}
-          <Card className="shadow-lg border-0 rounded-2xl overflow-hidden mb-10 bg-card/95 backdrop-blur h-[28rem] flex flex-col">
-            <CardHeader className=" bg-red-600 rounded-t-2xl flex-shrink-0">
-              <div className="flex items-start justify-between gap-6">
-                <div>
-                  <Shimmer className="h-8 w-32 rounded bg-white/20" />
-                  <Shimmer className="h-5 w-80 rounded mt-2 bg-white/20" />
-                </div>
-                <Shimmer className="h-12 w-48 rounded-xl bg-white/20" />
-              </div>
-            </CardHeader>
-            <CardContent className="p-5 flex-1 overflow-y-auto">
-              {/* Table Header Shimmer */}
-              <div className="mb-4">
-                <div className="flex space-x-4 mb-4">
-                  <Shimmer className="h-6 w-32" />
-                  <Shimmer className="h-6 w-24" />
-                  <Shimmer className="h-6 w-24" />
-                  <Shimmer className="h-6 w-32" />
-                  <div className="ml-auto">
-                    <Shimmer className="h-6 w-16" />
-                  </div>
-                </div>
-              </div>
-              {/* Table Rows Shimmer */}
-              <div className="space-y-4">
-                {[...Array(3)].map((_, i) => (
-                  <div
-                    key={i}
-                    className="h-20 border-b flex items-center space-x-4 p-4"
-                  >
-                    <Shimmer className="h-6 w-32" />
-                    <Shimmer className="h-6 w-24 rounded" />
-                    <Shimmer className="h-6 w-24 rounded" />
-                    <Shimmer className="h-6 w-32 rounded" />
-                    <div className="flex space-x-2 ml-auto">
-                      <Shimmer className="h-8 w-8 rounded" />
-                      <Shimmer className="h-8 w-8 rounded" />
-                    </div>
-                  </div>
-                ))}
-              </div>
-            </CardContent>
-            <CardFooter></CardFooter>
-          </Card>
-
-          {/* Asset Types Card */}
-          <Card className="shadow-lg border-0 rounded-2xl overflow-hidden mb-10 bg-card/95 backdrop-blur h-[28rem] flex flex-col">
-            <CardHeader className=" bg-red-600 rounded-t-2xl flex-shrink-0">
-              <div className="flex items-start justify-between gap-6">
-                <div>
-                  <Shimmer className="h-8 w-32 rounded bg-white/20" />
-                  <Shimmer className="h-5 w-80 rounded mt-2 bg-white/20" />
-                </div>
-                <Shimmer className="h-12 w-40 rounded-xl bg-white/20" />
-              </div>
-            </CardHeader>
-            <CardContent className="p-5 flex-1 overflow-y-auto">
-              {/* Table Header Shimmer */}
-              <div className="mb-4">
-                <div className="flex space-x-4 mb-4">
-                  <Shimmer className="h-6 w-24" />
-                  <Shimmer className="h-6 w-20" />
-                  <div className="ml-auto">
-                    <Shimmer className="h-6 w-16" />
-                  </div>
-                </div>
-              </div>
-              {/* Table Rows Shimmer */}
-              <div className="space-y-4">
-                {[...Array(3)].map((_, i) => (
-                  <div
-                    key={i}
-                    className="h-20 border-b flex items-center space-x-4 p-4"
-                  >
-                    <Shimmer className="h-6 w-24" />
-                    <Shimmer className="h-6 w-20 rounded" />
-                    <div className="flex space-x-2 ml-auto">
-                      <Shimmer className="h-8 w-8 rounded" />
-                      <Shimmer className="h-8 w-8 rounded" />
-                    </div>
-                  </div>
-                ))}
-              </div>
-            </CardContent>
-            <CardFooter></CardFooter>
-          </Card>
-
-          {/* Asset Brands Card */}
-          <Card className="shadow-lg border-0 rounded-2xl overflow-hidden mb-10 bg-card/95 backdrop-blur h-[28rem] flex flex-col">
-            <CardHeader className=" bg-red-600 rounded-t-2xl">
-              <div className="flex items-start justify-between gap-6">
-                <div>
-                  <Shimmer className="h-8 w-32 rounded bg-white/20" />
-                  <Shimmer className="h-5 w-80 rounded mt-2 bg-white/20" />
-                </div>
-                <Shimmer className="h-12 w-40 rounded-xl bg-white/20" />
-              </div>
-            </CardHeader>
-            <CardContent className="p-5 flex-1 overflow-y-auto">
-              {/* Table Header Shimmer */}
-              <div className="mb-4">
-                <div className="flex space-x-4 mb-4">
-                  <Shimmer className="h-6 w-24" />
-                  <Shimmer className="h-6 w-20" />
-                  <div className="ml-auto">
-                    <Shimmer className="h-6 w-16" />
-                  </div>
-                </div>
-              </div>
-              {/* Table Rows Shimmer */}
-              <div className="space-y-4">
-                {[...Array(3)].map((_, i) => (
-                  <div
-                    key={i}
-                    className="h-20 border-b flex items-center space-x-4 p-4"
-                  >
-                    <Shimmer className="h-6 w-24" />
-                    <Shimmer className="h-6 w-16 rounded" />
-                    <div className="flex space-x-2 ml-auto">
-                      <Shimmer className="h-8 w-8 rounded" />
-                      <Shimmer className="h-8 w-8 rounded" />
-                    </div>
-                  </div>
-                ))}
-              </div>
-            </CardContent>
-            <CardFooter></CardFooter>
-          </Card>
-        </div>
-
-        <div className="mb-12">
-          <Card className="relative overflow-hidden border-2 border-red-500/30 bg-gradient-to-br from-red-50 to-white shadow-xl rounded-2xl">
-            <CardHeader>
-              <div className="flex items-center gap-4">
-                <Shimmer className="h-10 w-10 rounded-xl" />
-                <Shimmer className="h-8 w-48" />
-              </div>
-            </CardHeader>
-            <CardContent>
-              <Shimmer className="h-5 w-full mb-6" />
-              <div className="p-8 bg-card border rounded-2xl">
-                <div className="space-y-2">
-                  <Shimmer className="h-6 w-32" />
-                  <Shimmer className="h-6 w-40" />
-                  <Shimmer className="h-6 w-36" />
-                </div>
-              </div>
-            </CardContent>
-          </Card>
-        </div>
-      </TabsContent>
-    );
+  if (showSkeleton) {
+    return <SettingsAssetsTabSkeleton />;
   }
 
   return (
@@ -403,33 +221,116 @@ export function AssetsTab({ isActive }: { isActive?: boolean }) {
           </div>
         )}
 
-      {/* All Tables Grid — equal row heights on large screens */}
-      <div className="grid grid-cols-1 gap-8 mb-10 lg:grid-cols-2 lg:min-h-[54rem] lg:[grid-template-rows:repeat(3,minmax(0,1fr))]">
-        <AssetCategories
-          onAfterSave={fetchCategories}
-          categories={filteredCategories}
-        />
-        <Suppliers
-          categories={filteredCategories}
-          categoriesLoading={categoriesLoading}
-        />
-        <AssetTypes categories={filteredCategories} onAfterSave={fetchTypes} />
-        <AssetBrands types={filteredTypes} />
-        <IntangibleAssetTypes onAfterSave={fetchIntangibleAssetTypes} />
-        <RiskLevels onAfterSave={fetchRiskLevels} />
-      </div>
+      {/* Nested sub-tabs — one section per tab, Intangibles groups two inner tabs (same pattern as FormsTab) */}
+      <Tabs defaultValue="categories" className="space-y-6">
+        <TabsList
+          className={segmentTabsListClassName + ' flex w-full overflow-x-auto scrollbar-hide'}
+        >
+          <TabsTrigger
+            value="categories"
+            className={segmentTabsTriggerClassName + ' flex-1 whitespace-nowrap'}
+          >
+            Categories
+          </TabsTrigger>
+          <TabsTrigger
+            value="suppliers"
+            className={segmentTabsTriggerClassName + ' flex-1 whitespace-nowrap'}
+          >
+            Suppliers
+          </TabsTrigger>
+          <TabsTrigger
+            value="types"
+            className={segmentTabsTriggerClassName + ' flex-1 whitespace-nowrap'}
+          >
+            Types
+          </TabsTrigger>
+          <TabsTrigger
+            value="brands"
+            className={segmentTabsTriggerClassName + ' flex-1 whitespace-nowrap'}
+          >
+            Brands
+          </TabsTrigger>
+          <TabsTrigger
+            value="intangibles"
+            className={segmentTabsTriggerClassName + ' flex-1 whitespace-nowrap'}
+          >
+            Intangibles
+          </TabsTrigger>
+          <TabsTrigger
+            value="id-format"
+            className={segmentTabsTriggerClassName + ' flex-1 whitespace-nowrap'}
+          >
+            ID Format
+          </TabsTrigger>
+        </TabsList>
 
-      <div className="mb-12">
-        <SmartAssetIdFormat
-          activeCompany={activeCompany}
-          smartIdFormat={smartIdFormatState.smartIdFormat}
-          setSmartIdFormat={smartIdFormatState.setSmartIdFormat}
-          settingsLoading={smartIdFormatState.settingsLoading}
-          hasUnsavedChanges={smartIdFormatState.hasUnsavedChanges}
-          save={smartIdFormatState.save}
-          cancel={smartIdFormatState.cancel}
-        />
-      </div>
+        <TabsContent value="categories" className="mt-0">
+          <AssetCategories
+            onAfterSave={fetchCategories}
+            categories={filteredCategories}
+          />
+        </TabsContent>
+
+        <TabsContent value="suppliers" className="mt-0">
+          <Suppliers
+            categories={filteredCategories}
+            categoriesLoading={categoriesLoading}
+          />
+        </TabsContent>
+
+        <TabsContent value="types" className="mt-0">
+          <AssetTypes
+            categories={filteredCategories}
+            onAfterSave={fetchTypes}
+          />
+        </TabsContent>
+
+        <TabsContent value="brands" className="mt-0">
+          <AssetBrands types={filteredTypes} />
+        </TabsContent>
+
+        <TabsContent value="intangibles" className="mt-0">
+          {/* Nested inner tabs — Intangible Types / Risk Levels */}
+          <Tabs defaultValue="intangible-types" className="space-y-6">
+            <TabsList
+              className={segmentTabsListClassName + ' flex w-full overflow-x-auto scrollbar-hide'}
+            >
+              <TabsTrigger
+                value="intangible-types"
+                className={segmentTabsTriggerClassName + ' flex-1 whitespace-nowrap'}
+              >
+                Intangible Types
+              </TabsTrigger>
+              <TabsTrigger
+                value="risk-levels"
+                className={segmentTabsTriggerClassName + ' flex-1 whitespace-nowrap'}
+              >
+                Risk Levels
+              </TabsTrigger>
+            </TabsList>
+
+            <TabsContent value="intangible-types" className="mt-0">
+              <IntangibleAssetTypes onAfterSave={fetchIntangibleAssetTypes} />
+            </TabsContent>
+
+            <TabsContent value="risk-levels" className="mt-0">
+              <RiskLevels onAfterSave={fetchRiskLevels} />
+            </TabsContent>
+          </Tabs>
+        </TabsContent>
+
+        <TabsContent value="id-format" className="mt-0">
+          <SmartAssetIdFormat
+            activeCompany={activeCompany}
+            smartIdFormat={smartIdFormatState.smartIdFormat}
+            setSmartIdFormat={smartIdFormatState.setSmartIdFormat}
+            settingsLoading={smartIdFormatState.settingsLoading}
+            hasUnsavedChanges={smartIdFormatState.hasUnsavedChanges}
+            save={smartIdFormatState.save}
+            cancel={smartIdFormatState.cancel}
+          />
+        </TabsContent>
+      </Tabs>
     </TabsContent>
   );
 }

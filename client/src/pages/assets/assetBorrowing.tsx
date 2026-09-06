@@ -600,7 +600,7 @@ const loadMyRequests = useCallback(async () => {
                                 </p>
                               </div>
                             </div>
-                            <Badge variant="secondary" className="bg-amber-100 text-amber-800">
+                            <Badge variant="secondary" className="bg-amber-100 text-amber-800 dark:bg-amber-900/30 dark:text-amber-200">
                               {borrowRequestStatusLabel(request)}
                             </Badge>
                           </div>

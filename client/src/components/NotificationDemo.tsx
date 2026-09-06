@@ -124,8 +124,8 @@ export default function NotificationDemo() {
         </div>
 
         <div className="mt-4 p-4 bg-blue-50 rounded-lg border border-blue-200">
-          <h4 className="font-medium mb-2 text-blue-900">Integration Notes:</h4>
-          <ul className="text-sm text-blue-800 space-y-1">
+          <h4 className="font-medium mb-2 text-blue-900 dark:text-blue-200">Integration Notes:</h4>
+          <ul className="text-sm text-blue-800 dark:text-blue-200 space-y-1">
             <li>• Backend should emit 'asset-assigned' events via Socket.IO</li>
             <li>• Configure VITE_SOCKET_URL environment variable</li>
             <li>• Notifications persist in context state during session</li>

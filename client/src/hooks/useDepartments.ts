@@ -30,7 +30,7 @@ export function useDepartments(isActive: boolean, action?: string) {
   useEffect(() => {
     if (isActive) {
       setIsTabLoading(true);
-      const timer = setTimeout(() => setIsTabLoading(false), 2000);
+      const timer = setTimeout(() => setIsTabLoading(false), 800);
       return () => clearTimeout(timer);
     }
   }, [isActive]);

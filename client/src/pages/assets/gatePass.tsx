@@ -269,11 +269,11 @@ export default function GatePass() {
         size: 120,
         cell: ({ row }) => {
           const status = row.original.status;
-          const badgeClass = 
-            status === 'Completed' ? 'bg-green-100 text-green-800' :
-            status === 'Pending' ? 'bg-amber-100 text-amber-800' :
-            status === 'Cancelled' ? 'bg-red-100 text-red-800' :
-            'bg-gray-100 text-gray-800';
+          const badgeClass =
+            status === 'Completed' ? 'bg-green-100 text-green-800 dark:bg-green-900/30 dark:text-green-200' :
+            status === 'Pending' ? 'bg-amber-100 text-amber-800 dark:bg-amber-900/30 dark:text-amber-200' :
+            status === 'Cancelled' ? 'bg-red-100 text-red-800 dark:bg-red-900/30 dark:text-red-200' :
+            'bg-gray-100 text-gray-800 dark:bg-gray-800 dark:text-gray-200';
           return (
             <Badge variant="secondary" className={badgeClass}>
               {status}
@@ -698,7 +698,7 @@ export default function GatePass() {
                                   </div>
 
                                   <div className="flex flex-wrap gap-2">
-                                    <Badge variant="default" className="text-xs bg-red-100 text-red-800 border-red-200">
+                                    <Badge variant="default" className="text-xs bg-red-100 text-red-800 border-red-200 dark:bg-red-900/30 dark:text-red-200 dark:border-red-800">
                                       {assignment.status}
                                     </Badge>
                                     <Badge variant="outline" className="text-xs border-gray-300">
@@ -842,7 +842,7 @@ export default function GatePass() {
                                       </p>
                                     )}
                                     <div className="flex flex-wrap gap-2">
-                                      <Badge variant="secondary" className="text-xs bg-blue-100 text-blue-800">
+                                      <Badge variant="secondary" className="text-xs bg-blue-100 text-blue-800 dark:bg-blue-900/30 dark:text-blue-200">
                                         {builderAssignments.length} assigned
                                       </Badge>
                                     </div>

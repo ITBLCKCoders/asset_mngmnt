@@ -13,8 +13,10 @@ import {
   HelpCircle,
   ChevronRight,
   X,
+  Plus,
 } from 'lucide-react';
 import { Dialog } from '@/components/ui/dialog';
+import { Checkbox } from '@/components/ui/checkbox';
 import {
   AppDialogFrame,
   AppDialogGradientHeader,
@@ -25,7 +27,9 @@ import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { cn } from '@/lib/utils';
-import type { ParsedAssetRow, ParsedBuilderRow, ImportResult } from '@/hooks/useAssetImport';
+import type { ParsedAssetRow, ParsedBuilderRow, ImportResult, ActiveAddDialog, AddDialogField } from '@/hooks/useAssetImport';
+import type { MasterReport, MissingRef } from './importMasterValidation';
+import { ImportAddDialogs } from './ImportAddDialogs';
 
 interface ImportDialogProps {
   open: boolean;
@@ -36,6 +40,15 @@ interface ImportDialogProps {
   importResult: ImportResult | null;
   isUploading: boolean;
   fileName: string | null;
+  masters: { categories: any[]; types: any[]; brands: any[]; suppliers: any[] };
+  departments: any[];
+  masterReport: MasterReport | null;
+  activeAddDialog: ActiveAddDialog | null;
+  skipUnresolved: boolean;
+  onToggleSkipUnresolved: (value: boolean) => void;
+  onOpenAdd: (field: AddDialogField, value: string, parentValue?: string) => void;
+  onCloseAdd: () => void;
+  onSaveMaster: (field: AddDialogField, payload: Record<string, any>) => Promise<boolean>;
   onFileUpload: (file: File) => Promise<void>;
   onImport: () => Promise<ImportResult | null>;
   onDownloadTemplate: () => Promise<void>;
@@ -72,7 +85,7 @@ const FINANCIAL_COLUMNS: ColumnGuide[] = [
 ];
 
 const LOCATION_COLUMNS: ColumnGuide[] = [
-  { field: 'company', required: true, type: 'Text', example: 'ACME Corp', description: 'Company name (must exist in system)' },
+  { field: 'company', required: true, type: 'Text', example: 'ACME Corp', description: 'Company name (must be your active company; other rows are skipped)' },
   { field: 'building', required: false, type: 'Text', example: 'Main Building', description: 'Building name' },
   { field: 'department', required: false, type: 'Text', example: 'IT Department', description: 'Department name (must exist in system)' },
   { field: 'location_site', required: false, type: 'Text', example: 'Head Office', description: 'Location site name' },
@@ -169,6 +182,209 @@ function SectionCard({ icon: Icon, title, description, children, className }: {
   );
 }
 
+function MissingRefList({
+  header,
+  icon,
+  refs,
+  onAdd,
+  addLabel,
+}: {
+  header: string;
+  icon: React.ElementType;
+  refs: MissingRef[];
+  onAdd: (ref: MissingRef) => void;
+  addLabel: string;
+}) {
+  if (refs.length === 0) return null;
+  const Icon = icon;
+  return (
+    <div className="rounded-lg bg-white/70 border border-gray-200 overflow-hidden">
+      <div className="flex items-center gap-2 px-3 py-2 bg-gray-50 border-b border-gray-200">
+        <Icon className="h-3.5 w-3.5 text-red-500" />
+        <span className="text-xs font-bold text-gray-800">{header}</span>
+      </div>
+      <div className="divide-y divide-gray-100">
+        {refs.map((ref, i) => (
+          <div key={i} className="flex items-center justify-between gap-2 px-3 py-2">
+            <div className="min-w-0">
+              <p className="text-xs font-semibold text-gray-900 truncate">
+                "{ref.value}"
+                {ref.parentValue && (
+                  <span className="font-normal text-gray-500">
+                    {' '}· {ref.parentValue}
+                  </span>
+                )}
+              </p>
+              <p className="text-[10px] text-gray-400">
+                Row{ref.rows.length > 1 ? 's' : ''} {ref.rows.join(', ')}
+              </p>
+            </div>
+            <Button
+              size="sm"
+              variant="outline"
+              onClick={() => onAdd(ref)}
+              className="shrink-0 rounded-lg text-xs gap-1"
+            >
+              <Plus className="h-3 w-3" />
+              {addLabel}
+            </Button>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function ReferenceCheckPanel({
+  report,
+  skipUnresolved,
+  onToggleSkipUnresolved,
+  onOpenAdd,
+}: {
+  report: MasterReport;
+  skipUnresolved: boolean;
+  onToggleSkipUnresolved: (value: boolean) => void;
+  onOpenAdd: (field: AddDialogField, value: string, parentValue?: string) => void;
+}) {
+  const emptyFields: { key: AddDialogField; label: string; addLabel: string }[] = [];
+  if (report.empty.category)
+    emptyFields.push({ key: 'category', label: 'Categories', addLabel: 'Add Category' });
+  if (report.empty.type)
+    emptyFields.push({ key: 'type', label: 'Types', addLabel: 'Add Type' });
+  if (report.empty.brand)
+    emptyFields.push({ key: 'brand', label: 'Brands', addLabel: 'Add Brand' });
+  if (report.empty.supplier)
+    emptyFields.push({ key: 'supplier', label: 'Suppliers', addLabel: 'Add Supplier' });
+
+  const issueCount =
+    emptyFields.length +
+    report.missing.categories.length +
+    report.missing.types.length +
+    report.missing.brands.length +
+    report.missing.suppliers.length +
+    report.mismatches.length +
+    report.companyMismatches.length;
+
+  if (issueCount === 0) return null;
+
+  return (
+    <motion.div
+      initial={{ opacity: 0, y: -8 }}
+      animate={{ opacity: 1, y: 0 }}
+      className={cn(
+        'border-2 rounded-2xl p-5',
+        report.blocked && !skipUnresolved
+          ? 'bg-amber-50 border-amber-300'
+          : 'bg-gray-50 border-gray-200'
+      )}
+    >
+      <div className="flex items-center gap-2.5 mb-3">
+        <div className="shrink-0 w-8 h-8 rounded-full bg-amber-200 flex items-center justify-center">
+          <AlertTriangle className="h-4 w-4 text-amber-700" />
+        </div>
+        <div>
+          <p className="text-sm font-bold text-gray-900">Linked Entries Check</p>
+          <p className="text-xs text-gray-600">
+            Category, Type, Brand, and Supplier must exist and match each other
+            (Type under Category, Brand under Type, Supplier under Category)
+            for the company you are importing into.
+          </p>
+        </div>
+      </div>
+
+      {emptyFields.length > 0 && (
+        <div className="rounded-lg bg-white/70 border border-amber-300 overflow-hidden mb-3">
+          <div className="flex flex-wrap items-center justify-between gap-3 px-3 py-2.5 bg-amber-100/60">
+            <p className="text-xs font-bold text-amber-900">
+              Please add entries in{' '}
+              {emptyFields.map(f => f.label).join(', ')} first
+            </p>
+            <div className="flex flex-wrap gap-2">
+              {emptyFields.map(f => (
+                <Button
+                  key={f.key}
+                  size="sm"
+                  onClick={() => onOpenAdd(f.key, '')}
+                  className="rounded-lg text-xs gap-1"
+                >
+                  <Plus className="h-3 w-3" />
+                  {f.addLabel}
+                </Button>
+              ))}
+            </div>
+          </div>
+        </div>
+      )}
+
+      <div className="space-y-3">
+        <MissingRefList
+          header="Categories referenced but not found"
+          icon={AlertTriangle}
+          refs={report.missing.categories}
+          onAdd={ref => onOpenAdd('category', ref.value)}
+          addLabel="Add Category"
+        />
+        <MissingRefList
+          header="Types referenced but not found / mismatched"
+          icon={AlertTriangle}
+          refs={report.missing.types}
+          onAdd={ref => onOpenAdd('type', ref.value, ref.parentValue)}
+          addLabel="Add Type"
+        />
+        <MissingRefList
+          header="Brands referenced but not found / mismatched"
+          icon={AlertTriangle}
+          refs={report.missing.brands}
+          onAdd={ref => onOpenAdd('brand', ref.value, ref.parentValue)}
+          addLabel="Add Brand"
+        />
+        <MissingRefList
+          header="Suppliers referenced but not found / mismatched"
+          icon={AlertTriangle}
+          refs={report.missing.suppliers}
+          onAdd={ref => onOpenAdd('supplier', ref.value, ref.parentValue)}
+          addLabel="Add Supplier"
+        />
+      </div>
+
+      {(report.mismatches.length > 0 || report.companyMismatches.length > 0) && (
+        <ScrollArea className="max-h-32 mt-3">
+          <div className="space-y-1.5">
+            {report.mismatches.map((m, i) => (
+              <div key={`m-${i}`} className="flex items-start gap-2 text-xs text-red-700 bg-red-100/60 rounded-lg px-3 py-2">
+                <span className="shrink-0 font-semibold mt-0.5">Row {m.row}:</span>
+                <span>{m.message}</span>
+              </div>
+            ))}
+            {report.companyMismatches.map((m, i) => (
+              <div key={`c-${i}`} className="flex items-start gap-2 text-xs text-amber-700 bg-amber-100/60 rounded-lg px-3 py-2">
+                <span className="shrink-0 font-semibold mt-0.5">Row {m.row}:</span>
+                <span>
+                  Company "{m.company}" does not match your active company. This row will be skipped.
+                </span>
+              </div>
+            ))}
+          </div>
+        </ScrollArea>
+      )}
+
+      {report.blocked && (
+        <label className="flex items-start gap-2.5 mt-4 cursor-pointer select-none">
+          <Checkbox
+            checked={skipUnresolved}
+            onCheckedChange={v => onToggleSkipUnresolved(v === true)}
+            className="mt-0.5"
+          />
+          <span className="text-xs text-gray-700 leading-relaxed">
+            <span className="font-semibold">Skip unresolved rows and import valid ones.</span>{' '}
+            Rows referencing missing/mismatched entries will be excluded; the rest will be imported.
+          </span>
+        </label>
+      )}
+    </motion.div>
+  );
+}
+
 export function ImportDialog({
   open,
   onOpenChange,
@@ -178,6 +394,15 @@ export function ImportDialog({
   importResult,
   isUploading,
   fileName,
+  masters,
+  departments,
+  masterReport,
+  activeAddDialog,
+  skipUnresolved,
+  onToggleSkipUnresolved,
+  onOpenAdd,
+  onCloseAdd,
+  onSaveMaster,
   onFileUpload,
   onImport,
   onDownloadTemplate,
@@ -326,40 +551,40 @@ export function ImportDialog({
                 initial={{ opacity: 0, y: 8 }}
                 animate={{ opacity: 1, y: 0 }}
                 transition={{ delay: 0.2 }}
-                className="relative overflow-hidden rounded-2xl border border-blue-200 bg-gradient-to-br from-blue-50 to-white p-5 sm:p-6"
+                className="relative overflow-hidden rounded-2xl border border-blue-200 bg-gradient-to-br from-blue-50 to-white p-5 sm:p-6 dark:border-blue-800 dark:from-blue-950/40 dark:to-card"
               >
                 <div className="absolute top-0 right-0 w-32 h-32 bg-blue-500/5 rounded-full -translate-y-1/2 translate-x-1/2" />
                 <div className="relative flex items-start gap-4">
-                  <div className="shrink-0 w-10 h-10 rounded-xl bg-blue-100 flex items-center justify-center">
+                  <div className="shrink-0 w-10 h-10 rounded-xl bg-blue-100 flex items-center justify-center dark:bg-blue-900/30">
                     <Table className="h-5 w-5 text-blue-600" />
                   </div>
                   <div className="min-w-0 flex-1">
-                    <h4 className="text-sm font-bold text-blue-900 mb-1">Optional: "Builders" Sheet</h4>
-                    <p className="text-xs text-blue-700/80 mb-4 leading-relaxed">
-                      To create asset builder groups (composite assets), add a second sheet named <span className="font-semibold text-blue-800">"Builders"</span>.
+                    <h4 className="text-sm font-bold text-blue-900 mb-1 dark:text-blue-200">Optional: "Builders" Sheet</h4>
+                    <p className="text-xs text-blue-700/80 mb-4 leading-relaxed dark:text-blue-300/80">
+                      To create asset builder groups (composite assets), add a second sheet named <span className="font-semibold text-blue-800 dark:text-blue-200">"Builders"</span>.
                       Each row links one asset code to a builder group. Multiple rows with the same builder name are grouped together.
                     </p>
-                    <div className="overflow-x-auto rounded-xl border border-blue-200/60 bg-white/80">
+                    <div className="overflow-x-auto rounded-xl border border-blue-200/60 bg-white/80 dark:border-blue-800 dark:bg-blue-950/20">
                       <table className="w-full text-left text-xs">
                         <thead>
-                          <tr className="bg-blue-50 border-b border-blue-100">
-                            <th className="px-3 py-2.5 font-semibold text-blue-800 uppercase tracking-wider">Column</th>
-                            <th className="px-3 py-2.5 font-semibold text-blue-800 uppercase tracking-wider">Required</th>
-                            <th className="px-3 py-2.5 font-semibold text-blue-800 uppercase tracking-wider">Example</th>
-                            <th className="px-3 py-2.5 font-semibold text-blue-800 uppercase tracking-wider">Description</th>
+                          <tr className="bg-blue-50 border-b border-blue-100 dark:bg-blue-900/20 dark:border-blue-800">
+                            <th className="px-3 py-2.5 font-semibold text-blue-800 uppercase tracking-wider dark:text-blue-200">Column</th>
+                            <th className="px-3 py-2.5 font-semibold text-blue-800 uppercase tracking-wider dark:text-blue-200">Required</th>
+                            <th className="px-3 py-2.5 font-semibold text-blue-800 uppercase tracking-wider dark:text-blue-200">Example</th>
+                            <th className="px-3 py-2.5 font-semibold text-blue-800 uppercase tracking-wider dark:text-blue-200">Description</th>
                           </tr>
                         </thead>
-                        <tbody className="divide-y divide-blue-100">
+                        <tbody className="divide-y divide-blue-100 dark:divide-blue-800">
                           {[
                             { col: 'builder_name', req: true, ex: 'Workstation Set A', desc: 'Builder group name — rows sharing this name become one builder' },
                             { col: 'builder_description', req: false, ex: 'Complete workstation setup', desc: 'Optional builder description' },
                             { col: 'asset_code', req: true, ex: 'AST-001', desc: 'Asset code to include in the builder (one row per asset)' },
                             { col: 'is_parent', req: false, ex: 'yes', desc: 'Mark this asset as the parent component (yes/no)' },
                           ].map((row, i) => (
-                            <tr key={i} className="hover:bg-blue-50/50 transition-colors">
-                              <td className="px-3 py-2"><code className="font-mono font-semibold text-blue-800 bg-blue-100/60 px-1.5 py-0.5 rounded">{row.col}</code></td>
+                            <tr key={i} className="hover:bg-blue-50/50 transition-colors dark:hover:bg-blue-900/20">
+                              <td className="px-3 py-2"><code className="font-mono font-semibold text-blue-800 bg-blue-100/60 px-1.5 py-0.5 rounded dark:text-blue-200 dark:bg-blue-900/30">{row.col}</code></td>
                               <td className="px-3 py-2">{row.req ? <Badge variant="destructive" className="text-[10px] px-1.5 py-0">Required</Badge> : <span className="text-gray-400">Optional</span>}</td>
-                              <td className="px-3 py-2"><code className="text-gray-500 font-mono bg-white px-1.5 py-0.5 rounded border border-blue-100">{row.ex}</code></td>
+                              <td className="px-3 py-2"><code className="text-gray-500 font-mono bg-white px-1.5 py-0.5 rounded border border-blue-100 dark:bg-card dark:border-blue-800">{row.ex}</code></td>
                               <td className="px-3 py-2 text-gray-600">{row.desc}</td>
                             </tr>
                           ))}
@@ -429,6 +654,15 @@ export function ImportDialog({
                     </div>
                   </ScrollArea>
                 </motion.div>
+              )}
+
+              {masterReport && (
+                <ReferenceCheckPanel
+                  report={masterReport}
+                  skipUnresolved={skipUnresolved}
+                  onToggleSkipUnresolved={onToggleSkipUnresolved}
+                  onOpenAdd={onOpenAdd}
+                />
               )}
 
               {/* Asset preview */}
@@ -605,7 +839,7 @@ export function ImportDialog({
             <Button
               size="lg"
               onClick={handleImport}
-              disabled={!hasData || hasValidationErrors || importing || isUploading}
+              disabled={!hasData || hasValidationErrors || importing || isUploading || (!!masterReport?.blocked && !skipUnresolved)}
               className="bg-red-600 hover:bg-red-700 text-white rounded-xl px-8 shadow-md hover:shadow-lg gap-2 transition-all"
             >
               {importing ? (
@@ -618,6 +852,16 @@ export function ImportDialog({
           )}
         </AppDialogChromeFooter>
       </AppDialogFrame>
+      <ImportAddDialogs
+        activeDialog={activeAddDialog}
+        categories={masters.categories}
+        types={masters.types}
+        brands={masters.brands}
+        suppliers={masters.suppliers}
+        departments={departments}
+        onClose={onCloseAdd}
+        onSave={onSaveMaster}
+      />
     </Dialog>
   );
 }

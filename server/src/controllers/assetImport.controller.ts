@@ -6,6 +6,7 @@ import logger from '../logger.js';
 import { createAuditLog } from '../utils/audit.js';
 import { ImportAssetsRequestSchema } from '../dtos/assets/ImportAssetDto.js';
 import { createErrorResponse } from '../utils/responseWrapper.js';
+import { getScopedActiveCompany } from '../utils/activeCompany.js';
 
 const STORED_PROC_CONDITIONS = new Set(['Excellent', 'Good', 'Fair', 'Poor', 'Damaged']);
 
@@ -67,64 +68,124 @@ export async function importAssetsHandler(
     const { assets, builders } = parsed.data;
     const created: { row: number; assetCode: string; name: string }[] = [];
     const errors: { row: number; message: string }[] = [];
-    let importCompanyId: string | null = null;
+
+    const activeCompany = await getScopedActiveCompany(pool, userId);
+    if (!activeCompany) {
+      createErrorResponse(res, 'No active company found', [], 400);
+      return;
+    }
+    const companyId: string = activeCompany.id;
+    const companyName: string =
+      typeof activeCompany.name === 'string' ? activeCompany.name : '';
 
     for (let i = 0; i < assets.length; i++) {
       const row = assets[i]!;
       const rowNum = i + 1;
 
       try {
-        const categoryId = await assetRepo.getCategoryIdByIdOrName(row.category);
+        const rowCompany = (row.company ?? '').trim();
+        if (
+          rowCompany &&
+          rowCompany.toLowerCase() !== companyName.toLowerCase() &&
+          rowCompany !== companyId
+        ) {
+          errors.push({
+            row: rowNum,
+            message: `Company "${row.company}" does not match your active company "${companyName}". Imports are only allowed for the company you are currently using.`,
+          });
+          continue;
+        }
+
+        const categoryId = await assetRepo.getCategoryIdByIdOrName(row.category, companyId);
         if (!categoryId) {
-          errors.push({ row: rowNum, message: `Category "${row.category}" not found` });
+          errors.push({
+            row: rowNum,
+            message: `Category "${row.category}" not found for company "${companyName}". Add it first under Settings > Assets > Categories.`,
+          });
           continue;
         }
 
         let typeId: string | null = null;
         if (row.type) {
-          typeId = await assetRepo.getTypeIdByIdOrName(row.type);
+          typeId = await assetRepo.getTypeIdByIdOrName(row.type, companyId);
           if (!typeId) {
-            errors.push({ row: rowNum, message: `Type "${row.type}" not found` });
+            errors.push({
+              row: rowNum,
+              message: `Type "${row.type}" not found for company "${companyName}". Add it first under Settings > Assets > Types.`,
+            });
+            continue;
+          }
+          if (!(await assetRepo.typeMatchesCategory(typeId, categoryId, companyId))) {
+            errors.push({
+              row: rowNum,
+              message: `Type "${row.type}" does not belong to category "${row.category}". Please select a type under that category.`,
+            });
             continue;
           }
         }
 
-        let companyId: string | null = null;
-        if (row.company) {
-          companyId = await assetRepo.getCompanyIdByIdOrName(row.company);
-          if (!companyId) {
-            errors.push({ row: rowNum, message: `Company "${row.company}" not found` });
+        if (row.brand) {
+          const brandOk = typeId
+            ? await assetRepo.brandExistsForType(row.brand, typeId, companyId)
+            : await assetRepo.brandExistsByName(row.brand, companyId);
+          if (!brandOk) {
+            errors.push({
+              row: rowNum,
+              message: `Brand "${row.brand}" not found${typeId ? ` for type "${row.type}"` : ''} for company "${companyName}". Add it first under Settings > Assets > Brands.`,
+            });
             continue;
           }
         }
-        importCompanyId = companyId;
 
-        const formatSettings = await assetRepo.getAssetIdFormatSettings(companyId!);
+        if (row.supplier) {
+          const supplierOk = await assetRepo.supplierExistsForCategory(
+            row.supplier,
+            categoryId,
+            companyId
+          );
+          if (!supplierOk) {
+            errors.push({
+              row: rowNum,
+              message: `Supplier "${row.supplier}" not found for category "${row.category}" for company "${companyName}". Add it first under Settings > Assets > Suppliers.`,
+            });
+            continue;
+          }
+        }
+
+        const formatSettings = await assetRepo.getAssetIdFormatSettings(companyId);
         if (!formatSettings) {
           errors.push({
             row: rowNum,
-            message: `Smart Asset ID Format not configured for company "${row.company}"`,
+            message: `Smart Asset ID Format not configured for company "${companyName}"`,
           });
           continue;
         }
 
         let locationId: string | null = null;
         if (row.locationSite) {
-          locationId = await assetRepo.getLocationIdByIdOrName(row.locationSite);
+          locationId = await assetRepo.getLocationIdByIdOrName(row.locationSite, companyId);
           if (!locationId) {
-            errors.push({ row: rowNum, message: `Location "${row.locationSite}" not found` });
+            errors.push({ row: rowNum, message: `Location "${row.locationSite}" not found for company "${companyName}"` });
             continue;
           }
         }
 
         let locationRoomId: string | null = null;
         if (row.locationRoom) {
-          locationRoomId = await assetRepo.getRoomIdByIdOrName(row.locationRoom);
+          locationRoomId = await assetRepo.getRoomIdByIdOrName(row.locationRoom, companyId);
+          if (!locationRoomId) {
+            errors.push({ row: rowNum, message: `Room "${row.locationRoom}" not found for company "${companyName}"` });
+            continue;
+          }
         }
 
         let departmentId: string | null = null;
         if (row.department) {
-          departmentId = await assetRepo.getDepartmentIdByIdOrName(row.department);
+          departmentId = await assetRepo.getDepartmentIdByIdOrName(row.department, companyId);
+          if (!departmentId) {
+            errors.push({ row: rowNum, message: `Department "${row.department}" not found for company "${companyName}"` });
+            continue;
+          }
         }
 
         const purchaseDate = row.purchaseDate
@@ -219,7 +280,7 @@ export async function importAssetsHandler(
         try {
           const [builderRows] = (await pool.execute(
             'CALL sp_create_asset_builder(?, ?, ?, ?, ?)',
-            [name, entry.description || null, importCompanyId, userId, userId]
+            [name, entry.description || null, companyId, userId, userId]
           )) as any[];
 
           const builderRecord = builderRows[0]?.[0];
@@ -254,7 +315,7 @@ export async function importAssetsHandler(
               newValues: { asset_code: codeTrimmed, is_parent: isParent },
               ipAddress: req.ip,
               userAgent: req.get('User-Agent'),
-              companyId: importCompanyId ?? undefined,
+              companyId: companyId ?? undefined,
             });
           }
 

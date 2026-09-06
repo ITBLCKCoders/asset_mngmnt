@@ -31,6 +31,32 @@ const signatureImageCache = new Map<string, string>();
 export const PDF_SIGNATURE_MAX_WIDTH_MM = 122;
 export const PDF_SIGNATURE_MAX_HEIGHT_MM = 74;
 
+/**
+ * Uniform signature layout (mm).
+ * Every PDF template trims the scan whitespace around the ink, sizes the
+ * signature to a fixed fraction of the column/cell width (equal
+ * prominence everywhere), nudges it slightly left, and bottom-anchors it
+ * on a shared line just below the printed-name baseline so the lower
+ * strokes slightly overlap the name.
+ */
+export const PDF_SIGNATURE_NAME_GAP_MM = 2;
+/** How far (mm) the signature bottom sits below the printed-name baseline */
+export const PDF_SIGNATURE_NAME_OVERLAP_MM = 3;
+/** Side padding kept between a centered signature and its cell borders */
+export const PDF_SIGNATURE_CELL_PADDING_MM = 2;
+/** Slight horizontal shift (mm) applied to centered signatures */
+export const PDF_SIGNATURE_NUDGE_X_MM = -2;
+/** Fraction of the column/cell width a centered signature should occupy */
+export const PDF_SIGNATURE_FILL_RATIO = 0.5;
+
+/** Horizontal bounds (mm) used to center a signature within its column/cell */
+export interface PdfSignatureCenterBounds {
+  /** Left edge of the column/cell (mm) */
+  x: number;
+  /** Width of the column/cell (mm) */
+  width: number;
+}
+
 export { autoTable };
 
 export interface PdfCompanyBranding {
@@ -206,6 +232,47 @@ export const addCompanyLogoToPDF = async (
   }
 };
 
+/**
+ * Crop a signature canvas down to its ink bounding box (plus a small pad).
+ * Scanned signature files usually carry large white margins that would make
+ * the placed image look tiny — trimming them lets the ink fill the box.
+ * Returns the original canvas when no ink pixels are found.
+ */
+export const cropSignatureToInk = (
+  src: HTMLCanvasElement,
+  pad = 8
+): HTMLCanvasElement => {
+  const sctx = src.getContext('2d');
+  if (!sctx || !src.width || !src.height) return src;
+  const w = src.width;
+  const h = src.height;
+  const px = sctx.getImageData(0, 0, w, h).data;
+  let minX = w;
+  let minY = h;
+  let maxX = -1;
+  let maxY = -1;
+  for (let yy = 0; yy < h; yy++) {
+    for (let xx = 0; xx < w; xx++) {
+      if (px[(yy * w + xx) * 4 + 3] > 12) {
+        if (xx < minX) minX = xx;
+        if (xx > maxX) maxX = xx;
+        if (yy < minY) minY = yy;
+        if (yy > maxY) maxY = yy;
+      }
+    }
+  }
+  if (maxX < 0) return src;
+  minX = Math.max(0, minX - pad);
+  minY = Math.max(0, minY - pad);
+  maxX = Math.min(w - 1, maxX + pad);
+  maxY = Math.min(h - 1, maxY + pad);
+  const out = document.createElement('canvas');
+  out.width = maxX - minX + 1;
+  out.height = maxY - minY + 1;
+  out.getContext('2d')?.drawImage(src, minX, minY, out.width, out.height, 0, 0, out.width, out.height);
+  return out;
+};
+
 export const addSignatureToPDF = async (
   doc: jsPDF,
   signatureData: string | undefined,
@@ -214,7 +281,9 @@ export const addSignatureToPDF = async (
   maxWidth: number = 50,
   maxHeight: number = 20,
   /** When set, bottom edge of the image aligns to this Y (mm) instead of using `y` as top */
-  anchorBottomY?: number
+  anchorBottomY?: number,
+  /** When set, the image is centered horizontally within these bounds (ignores `x`) */
+  centerWithin?: PdfSignatureCenterBounds
 ): Promise<void> => {
   try {
     if (!signatureData) {
@@ -235,6 +304,11 @@ export const addSignatureToPDF = async (
 
     const img = new Image();
     img.crossOrigin = 'anonymous';
+
+    // Pixel dimensions of the processed (possibly cropped) image — the
+    // cropped data URL has a different aspect than the raw file.
+    let inkWidth = 0;
+    let inkHeight = 0;
 
     if (proxiedSignatureUrl.startsWith('http://') || proxiedSignatureUrl.startsWith('https://')) {
       const cached = signatureImageCache.get(proxiedSignatureUrl);
@@ -267,7 +341,10 @@ export const addSignatureToPDF = async (
           }
 
           ctx.putImageData(imageData, 0, 0);
-          const processedDataUrl = canvas.toDataURL('image/png');
+          const cropped = cropSignatureToInk(canvas);
+          inkWidth = cropped.width;
+          inkHeight = cropped.height;
+          const processedDataUrl = cropped.toDataURL('image/png');
 
           if (
             signatureData.startsWith('http://') ||
@@ -287,16 +364,40 @@ export const addSignatureToPDF = async (
     });
 
     const pixelsToMm = 0.264583;
-    const sigWidth = img.width * pixelsToMm;
-    const sigHeight = img.height * pixelsToMm;
+    const sigWidth = inkWidth * pixelsToMm;
+    const sigHeight = inkHeight * pixelsToMm;
 
-    let finalSigWidth = sigWidth;
-    let finalSigHeight = sigHeight;
+    if (!sigWidth || !sigHeight) {
+      return;
+    }
 
-    if (sigWidth > maxWidth) {
-      const scale = maxWidth / sigWidth;
-      finalSigWidth = maxWidth;
+    // Keep centered signatures inside their column at a moderate size —
+    // a fixed `x` cannot stay centered when image aspects differ.
+    const effectiveMaxWidth =
+      centerWithin && centerWithin.width > 0
+        ? Math.min(
+            maxWidth,
+            (centerWithin.width - PDF_SIGNATURE_CELL_PADDING_MM * 2) *
+              PDF_SIGNATURE_FILL_RATIO
+          )
+        : maxWidth;
+
+    let finalSigWidth: number;
+    let finalSigHeight: number;
+
+    if (centerWithin && centerWithin.width > 0) {
+      // Uniform size: stretch/shrink every signature to the same
+      // fraction of the column width so all render at equal prominence.
+      const scale = effectiveMaxWidth / sigWidth;
+      finalSigWidth = effectiveMaxWidth;
       finalSigHeight = sigHeight * scale;
+    } else if (sigWidth > effectiveMaxWidth) {
+      const scale = effectiveMaxWidth / sigWidth;
+      finalSigWidth = effectiveMaxWidth;
+      finalSigHeight = sigHeight * scale;
+    } else {
+      finalSigWidth = sigWidth;
+      finalSigHeight = sigHeight;
     }
 
     if (finalSigHeight > maxHeight) {
@@ -306,9 +407,15 @@ export const addSignatureToPDF = async (
     }
 
     const format = img.src.startsWith('data:image/jpeg') ? 'JPEG' : 'PNG';
+    const drawX =
+      centerWithin && centerWithin.width > 0
+        ? centerWithin.x +
+          (centerWithin.width - finalSigWidth) / 2 +
+          PDF_SIGNATURE_NUDGE_X_MM
+        : x;
     const drawY =
       anchorBottomY != null ? anchorBottomY - finalSigHeight : y;
-    doc.addImage(img.src, format, x, drawY, finalSigWidth, finalSigHeight);
+    doc.addImage(img.src, format, drawX, drawY, finalSigWidth, finalSigHeight);
   } catch (error) {
     pdfLogger.debug(
       'Failed to add signature to PDF',

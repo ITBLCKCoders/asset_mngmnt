@@ -96,6 +96,9 @@ export function transformApiAssetToAsset(asset: AssetResponseDto): Asset {
     bookValue: asset.book_value ?? undefined,
     accumulatedDepreciation: asset.accumulated_depreciation ?? 0,
     monthlyDepreciation: asset.monthly_depreciation ?? undefined,
+    pastBookValue: asset.past_book_value ?? undefined,
+    pastAccumulatedDepreciation: asset.past_accumulated_depreciation ?? undefined,
+    pastMonthlyDepreciation: asset.past_monthly_depreciation ?? undefined,
     depreciationStartDate: asset.depreciation_start_date
       ? new Date(asset.depreciation_start_date)
       : null,

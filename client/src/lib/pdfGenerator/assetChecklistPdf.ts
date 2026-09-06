@@ -5,6 +5,7 @@ import {
   autoTable,
   PDF_SIGNATURE_MAX_HEIGHT_MM,
   PDF_SIGNATURE_MAX_WIDTH_MM,
+  PDF_SIGNATURE_NAME_OVERLAP_MM,
   getCompanyAccentColor,
   getBlackCodersFooterGradient,
   isBlackCoders,
@@ -170,7 +171,7 @@ export const generateAssetChecklistPDF = async (
   const tableBodyLabels = [
     ['Employee: ' + checklistData.employee_name, 'Designation: ' + (checklistData.employee_designation || '—')],
     [{ content: 'Department / Company: ' + (checklistData.employee_department || '—'), colSpan: 2 }],
-    [{ content: 'Received by: ' + (checklistData.received_by || '—'), colSpan: 2 }],
+    [{ content: 'Reviewed / Checked by: ' + (checklistData.received_by || '—'), colSpan: 2 }],
   ];
 
   doc.setDrawColor(0, 0, 0);
@@ -444,8 +445,9 @@ export const generateAssetChecklistPDF = async (
   const approvalSignatureRowHeight = 40;
   /** Push digital signatures lower within each approval cell (mm) */
   const approvalSignatureDownOffsetMm = 8;
+  /** Uniform position: bottom edge sits just below the printed-name baseline */
   const signatureAnchorBottomY = (nameY: number) =>
-    nameY - 2 + approvalSignatureDownOffsetMm;
+    nameY + PDF_SIGNATURE_NAME_OVERLAP_MM;
 
   const employeeName = checklistData.employee_name || '';
   const employeeDigitalSignature =
@@ -526,7 +528,8 @@ export const generateAssetChecklistPDF = async (
 
   type PendingChecklistSignature = {
     data: string;
-    x: number;
+    /** Column bounds the signature is centered within */
+    centerWithin: { x: number; width: number };
     y: number;
     maxWidth: number;
     maxHeight: number;
@@ -596,7 +599,7 @@ export const generateAssetChecklistPDF = async (
         if (itManagerDigitalSignature) {
           pendingSignatures.push({
             data: itManagerDigitalSignature,
-            x: cell.x + 1 - 30,
+            centerWithin: { x: cell.x, width: cell.width },
             y: yTop + 25,
             anchorBottomY: signatureAnchorBottomY(nameY),
             maxWidth: PDF_SIGNATURE_MAX_WIDTH_MM,
@@ -652,7 +655,7 @@ export const generateAssetChecklistPDF = async (
         if (creatorDigitalSignature) {
           pendingSignatures.push({
             data: creatorDigitalSignature,
-            x: cell.x + 1 - 30,
+            centerWithin: { x: cell.x, width: cell.width },
             y: yTop + 25,
             anchorBottomY: signatureAnchorBottomY(nameY),
             maxWidth: PDF_SIGNATURE_MAX_WIDTH_MM,
@@ -695,7 +698,7 @@ export const generateAssetChecklistPDF = async (
         if (displayDeptHeadDigitalSignature) {
           pendingSignatures.push({
             data: displayDeptHeadDigitalSignature,
-            x: cell.x + 1 - 30,
+            centerWithin: { x: cell.x, width: cell.width },
             y: yTop + 25,
             anchorBottomY: signatureAnchorBottomY(nameY),
             maxWidth: PDF_SIGNATURE_MAX_WIDTH_MM,
@@ -757,7 +760,7 @@ export const generateAssetChecklistPDF = async (
           if (isImageSignature) {
             pendingSignatures.push({
               data: employeeDigitalSignature,
-              x: cell.x + 1 - 30,
+              centerWithin: { x: cell.x, width: cell.width },
               y: yTop + 25,
               anchorBottomY: signatureAnchorBottomY(nameY),
               maxWidth: PDF_SIGNATURE_MAX_WIDTH_MM,
@@ -827,11 +830,12 @@ export const generateAssetChecklistPDF = async (
     await addSignatureToPDF(
       doc,
       sig.data,
-      sig.x,
+      0,
       sig.y,
       sig.maxWidth,
       sig.maxHeight,
-      sig.anchorBottomY
+      sig.anchorBottomY,
+      sig.centerWithin
     );
   }
 

@@ -13,6 +13,7 @@ import {
   applyRolePermissionsHandler,
 } from '../controllers/permissions.controller.js';
 import { authenticate } from '../middleware/authenticate.js';
+import { requireUsersManage } from '../middleware/requirePermission.js';
 import { validateDto } from '../utils/validation.js';
 import {
   UserDtoSchema,
@@ -92,7 +93,12 @@ router.post('/', validateDto(UserDtoSchema), createUserHandler);
  *       401: { description: Unauthorized }
  *       404: { description: User not found }
  */
-router.patch('/:id', validateDto(UpdateUserDtoSchema), updateUserHandler);
+router.patch(
+  '/:id',
+  validateDto(UpdateUserDtoSchema),
+  requireUsersManage(),
+  updateUserHandler
+);
 
 /**
  * @swagger
@@ -153,7 +159,11 @@ router.get('/:userId/permissions', getUserPermissionsHandler);
  *       401: { description: Unauthorized }
  *       404: { description: User not found }
  */
-router.put('/:userId/permissions', updateUserPermissionsHandler);
+router.put(
+  '/:userId/permissions',
+  requireUsersManage(),
+  updateUserPermissionsHandler
+);
 
 /**
  * @swagger
@@ -170,7 +180,11 @@ router.put('/:userId/permissions', updateUserPermissionsHandler);
  *       200: { description: Role permissions applied }
  *       401: { description: Unauthorized }
  */
-router.post('/:userId/apply-role-permissions', applyRolePermissionsHandler);
+router.post(
+  '/:userId/apply-role-permissions',
+  requireUsersManage(),
+  applyRolePermissionsHandler
+);
 
 /**
  * @swagger

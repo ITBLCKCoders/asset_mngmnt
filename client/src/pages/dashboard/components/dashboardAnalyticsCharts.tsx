@@ -114,11 +114,12 @@ export function DashboardAnalyticsCharts({
   return (
     <div className="space-y-6">
       <h2 className="text-lg font-semibold tracking-tight">Analytics</h2>
-      <div className="grid grid-cols-1 xl:grid-cols-3 gap-6">
+      <div className="grid grid-cols-1 xl:grid-cols-3 gap-6 items-stretch">
         <DashboardChartShell
           defaultTitle="Utilization by type"
           defaultDescription="In use vs not in use, stacked by asset type"
           defaultVariant="area"
+          chartId="utilizationByType"
           empty={!byType.length}
         >
           {v => (
@@ -129,7 +130,7 @@ export function DashboardAnalyticsCharts({
               series={[...utilizationSeries]}
               chartConfig={utilizationConfig}
               stacked
-              className="min-h-[300px] w-full"
+              className="h-[280px] w-full"
             />
           )}
         </DashboardChartShell>
@@ -138,6 +139,7 @@ export function DashboardAnalyticsCharts({
           defaultTitle="Request pipeline"
           defaultDescription="Return, transfer, and borrow requests by workflow stage"
           defaultVariant="bar"
+          chartId="requestPipeline"
           empty={!pipeline.length}
         >
           {v => (
@@ -147,7 +149,7 @@ export function DashboardAnalyticsCharts({
               indexKey="stage"
               series={[...pipelineSeries]}
               chartConfig={pipelineConfig}
-              className="min-h-[300px] w-full"
+              className="h-[280px] w-full"
             />
           )}
         </DashboardChartShell>
@@ -156,6 +158,7 @@ export function DashboardAnalyticsCharts({
           defaultTitle="Assets by department"
           defaultDescription="Top departments by asset count"
           defaultVariant="bar"
+          chartId="assetsByDepartment"
           empty={!dept.length}
         >
           {v => (
@@ -166,7 +169,7 @@ export function DashboardAnalyticsCharts({
               series={[...countSeries]}
               chartConfig={countConfig}
               barLayout="vertical"
-              className="min-h-[280px] w-full"
+              className="h-[280px] w-full"
             />
           )}
         </DashboardChartShell>
@@ -175,6 +178,7 @@ export function DashboardAnalyticsCharts({
           defaultTitle="Fleet age (purchase date)"
           defaultDescription="Age buckets from recorded purchase date"
           defaultVariant="bar"
+          chartId="fleetAge"
           empty={agingEmpty}
         >
           {v => (
@@ -184,7 +188,7 @@ export function DashboardAnalyticsCharts({
               indexKey="name"
               series={[...valueSeries]}
               chartConfig={valueConfig}
-              className="min-h-[260px] w-full"
+              className="h-[280px] w-full"
             />
           )}
         </DashboardChartShell>
@@ -194,6 +198,7 @@ export function DashboardAnalyticsCharts({
             defaultTitle="Warranty runway"
             defaultDescription="Time to warranty end from purchase + warranty months"
             defaultVariant="bar"
+            chartId="warrantyRunway"
             empty={warrantyEmpty}
           >
             {v => (
@@ -203,7 +208,7 @@ export function DashboardAnalyticsCharts({
                 indexKey="name"
                 series={[...valueSeries]}
                 chartConfig={valueConfig}
-                className="min-h-[260px] w-full"
+                className="h-[280px] w-full"
               />
             )}
           </DashboardChartShell>
@@ -214,6 +219,7 @@ export function DashboardAnalyticsCharts({
             defaultTitle="Assets by location"
             defaultDescription="Top locations by asset count"
             defaultVariant="bar"
+            chartId="assetsByLocation"
             empty={!location.length}
           >
             {v => (
@@ -224,7 +230,7 @@ export function DashboardAnalyticsCharts({
                 series={[...countSeries]}
                 chartConfig={countConfig}
                 barLayout="vertical"
-                className="min-h-[280px] w-full"
+                className="h-[280px] w-full"
               />
             )}
           </DashboardChartShell>
@@ -235,6 +241,7 @@ export function DashboardAnalyticsCharts({
             defaultTitle="Category mix"
             defaultDescription="Top categories by asset count"
             defaultVariant="bar"
+            chartId="categoryMix"
             empty={!categoryMix.length}
           >
             {v => (
@@ -244,7 +251,7 @@ export function DashboardAnalyticsCharts({
                 indexKey="name"
                 series={[...valueSeries]}
                 chartConfig={valueConfig}
-                className="min-h-[260px] w-full"
+                className="h-[280px] w-full"
               />
             )}
           </DashboardChartShell>
@@ -255,6 +262,7 @@ export function DashboardAnalyticsCharts({
             defaultTitle="Brand mix"
             defaultDescription="Top brands by asset count"
             defaultVariant="bar"
+            chartId="brandMix"
             empty={!brandMix.length}
           >
             {v => (
@@ -264,7 +272,7 @@ export function DashboardAnalyticsCharts({
                 indexKey="name"
                 series={[...valueSeries]}
                 chartConfig={valueConfig}
-                className="min-h-[260px] w-full"
+                className="h-[280px] w-full"
               />
             )}
           </DashboardChartShell>
@@ -275,6 +283,7 @@ export function DashboardAnalyticsCharts({
             defaultTitle="Assignment flow vs returns"
             defaultDescription="New assignments and returns completed in each period"
             defaultVariant="area"
+            chartId="assignmentFlow"
             empty={!movement.length}
           >
             {v => (
@@ -284,7 +293,7 @@ export function DashboardAnalyticsCharts({
                 indexKey="label"
                 series={[...netSeries]}
                 chartConfig={netConfig}
-                className="min-h-[280px] w-full"
+                className="h-[280px] w-full"
               />
             )}
           </DashboardChartShell>

@@ -846,7 +846,7 @@ export function Step1AssetInfo({
                 {progress === 100 && (
                   <button
                     onClick={() => removeDocument(id)}
-                    className="text-red-600 hover:text-red-800"
+                    className="text-red-600 hover:text-red-800 dark:hover:text-red-300"
                   >
                     <X className="h-5 w-5" />
                   </button>

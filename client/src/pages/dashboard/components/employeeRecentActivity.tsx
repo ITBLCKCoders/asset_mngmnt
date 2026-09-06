@@ -35,7 +35,7 @@ export default function EmployeeRecentActivity({
 }) {
   if (loading) {
     return (
-      <Card>
+      <Card className="h-full">
         <CardHeader>
           <CardTitle className="flex items-center gap-2">
             <Activity className="h-5 w-5" />
@@ -56,7 +56,7 @@ export default function EmployeeRecentActivity({
 
   if (!activities?.length) {
     return (
-      <Card>
+      <Card className="h-full">
         <CardHeader>
           <CardTitle className="flex items-center gap-2">
             <Activity className="h-5 w-5" />
@@ -74,7 +74,7 @@ export default function EmployeeRecentActivity({
   }
 
   return (
-    <Card>
+    <Card className="h-full">
       <CardHeader>
         <CardTitle className="flex items-center gap-2">
           <Activity className="h-5 w-5" />

@@ -39,6 +39,7 @@ describe('dashboard.service', () => {
       expect(result.stats.returnedAssets).toBe(0);
       expect(result.stats.underRepair).toBe(0);
       expect(result.assetByType).toEqual([]);
+      expect(result.trends).toEqual({});
       expect(result.movement.weekly).toEqual([]);
       expect(result.movement.monthly).toEqual([]);
       expect(result.statusDistribution).toEqual([]);
@@ -83,6 +84,12 @@ describe('dashboard.service', () => {
       expect(result.statusDistribution).toEqual(expect.any(Array));
       expect(result.categoryMix).toEqual(expect.any(Array));
       expect(result.requestPipeline).toEqual(expect.any(Array));
+      expect(result.trends).toEqual(
+        expect.objectContaining({
+          availableAssets: { delta: 0, pct: null },
+          activeAssignments: { delta: 0, pct: null },
+        })
+      );
     });
 
     it('should count assets owned or originated in company scope', async () => {

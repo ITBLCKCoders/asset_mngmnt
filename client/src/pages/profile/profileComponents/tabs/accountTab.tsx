@@ -762,7 +762,7 @@ export default function AccountTab() {
                     </div>
                   </div>
                   <Alert variant="destructive" className="bg-amber-50 border-amber-200">
-                    <AlertDescription className="text-amber-800">
+                    <AlertDescription className="text-amber-800 dark:text-amber-200">
                       These codes can be used to recover your account if you lose access to your authenticator app. They will only be shown once!
                     </AlertDescription>
                   </Alert>

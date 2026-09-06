@@ -16,6 +16,7 @@ import {
   sortAssetsByLast5Digits,
   PDF_SIGNATURE_MAX_HEIGHT_MM,
   PDF_SIGNATURE_MAX_WIDTH_MM,
+  PDF_SIGNATURE_NAME_OVERLAP_MM,
 } from './shared';
 
 /** Format signed timestamp date (e.g. 02/15/2026). Returns '' when null/invalid. */
@@ -319,7 +320,7 @@ export const generateAssetReturnPDF = async (
     },
   });
 
-  // Table 2a: Designation through Return Type - col0 small (Received by:, Return Type: labels)
+  // Table 2a: Designation through Return Type - col0 small (Reviewed / Checked by:, Return Type: labels)
   const sectionAStartY = (doc as any).lastAutoTable.finalY;
   const labelColWidth = 38;
   const labelTableCol1Width = (tableWidth - labelColWidth) / 2;
@@ -335,7 +336,7 @@ export const generateAssetReturnPDF = async (
             colSpan: 3,
           },
         ]
-      : ['Received by:', { content: '', colSpan: 2 }],
+      : ['Reviewed / Checked by:', { content: '', colSpan: 2 }],
     [{ content: 'Section A: Return Details', colSpan: 3 }],
     ['Return Type:', { content: '', colSpan: 2 }],
   ];
@@ -464,11 +465,13 @@ export const generateAssetReturnPDF = async (
   const processUserNameForCell = (returnData.process_user_name ?? '').trim();
   const approvalSignatureRowHeight = 40;
   const approvalSignatureDownOffsetMm = 8;
+  /** Uniform position: bottom edge sits just below the printed-name baseline */
   const signatureAnchorBottomY = (nameY: number) =>
-    nameY - 2 + approvalSignatureDownOffsetMm;
+    nameY + PDF_SIGNATURE_NAME_OVERLAP_MM;
   type PendingReturnSignature = {
     data: string;
-    x: number;
+    /** Column bounds the signature is centered within */
+    centerWithin: { x: number; width: number };
     y: number;
     maxWidth: number;
     maxHeight: number;
@@ -560,7 +563,7 @@ export const generateAssetReturnPDF = async (
         if (itManagerSignature) {
           pendingReturnSignatures.push({
             data: itManagerSignature,
-            x: cell.x + 1 - 30,
+            centerWithin: { x: cell.x, width: cell.width },
             y: yTop + 25,
             anchorBottomY: signatureAnchorBottomY(nameY),
             maxWidth: PDF_SIGNATURE_MAX_WIDTH_MM,
@@ -625,7 +628,7 @@ export const generateAssetReturnPDF = async (
         if (returnData.process_digital_signature) {
           pendingReturnSignatures.push({
             data: returnData.process_digital_signature,
-            x: cell.x + 1 - 30,
+            centerWithin: { x: cell.x, width: cell.width },
             y: yTop + 25,
             anchorBottomY: signatureAnchorBottomY(nameY),
             maxWidth: PDF_SIGNATURE_MAX_WIDTH_MM,
@@ -686,7 +689,7 @@ export const generateAssetReturnPDF = async (
         if (deptHeadDigitalSignature) {
           pendingReturnSignatures.push({
             data: deptHeadDigitalSignature,
-            x: cell.x + 1 - 30,
+            centerWithin: { x: cell.x, width: cell.width },
             y: yTop + 25,
             anchorBottomY: signatureAnchorBottomY(nameY),
             maxWidth: PDF_SIGNATURE_MAX_WIDTH_MM,
@@ -753,7 +756,7 @@ export const generateAssetReturnPDF = async (
         if (returnData.digital_signature) {
           pendingReturnSignatures.push({
             data: returnData.digital_signature,
-            x: cell.x + 1 - 30,
+            centerWithin: { x: cell.x, width: cell.width },
             y: yTop + 25,
             anchorBottomY: signatureAnchorBottomY(nameY),
             maxWidth: PDF_SIGNATURE_MAX_WIDTH_MM,
@@ -806,11 +809,12 @@ export const generateAssetReturnPDF = async (
     await addSignatureToPDF(
       doc,
       sig.data,
-      sig.x,
+      0,
       sig.y,
       sig.maxWidth,
       sig.maxHeight,
-      sig.anchorBottomY
+      sig.anchorBottomY,
+      sig.centerWithin
     );
   }
   doc.setPage(1);

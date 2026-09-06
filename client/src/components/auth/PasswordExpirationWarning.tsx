@@ -88,7 +88,7 @@ export default function PasswordExpirationWarning() {
               className={`h-4 w-4 ${isUrgent ? 'text-red-600' : 'text-amber-600'}`}
             />
             <AlertDescription
-              className={isUrgent ? 'text-red-800' : 'text-amber-800'}
+              className={isUrgent ? 'text-red-800 dark:text-red-200' : 'text-amber-800 dark:text-amber-200'}
             >
               {isUrgent ? (
                 <span className="font-medium">

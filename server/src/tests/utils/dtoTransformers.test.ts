@@ -5,7 +5,7 @@ const { DtoTransformers } = require('../../utils/dtoTransformers.js');
 describe('DtoTransformers', () => {
   describe('transformAsset', () => {
     it('should map asset fields to DTO', () => {
-      const asset = { assetID: 'a1', name: 'Laptop', asset_code: 'LAP-001', category_id: 'c1', category_name: 'Electronics', book_value: 8000, accumulated_depreciation: 2000, monthly_depreciation: 166.67 };
+      const asset = { assetID: 'a1', name: 'Laptop', asset_code: 'LAP-001', category_id: 'c1', category_name: 'Electronics', book_value: 8000, accumulated_depreciation: 2000, monthly_depreciation: 166.67, past_book_value: 9500, past_accumulated_depreciation: 500, past_monthly_depreciation: 166.67 };
       const result = DtoTransformers.transformAsset(asset);
       expect(result.assetID).toBe('a1');
       expect(result.name).toBe('Laptop');
@@ -13,6 +13,9 @@ describe('DtoTransformers', () => {
       expect(result.book_value).toBe(8000);
       expect(result.accumulated_depreciation).toBe(2000);
       expect(result.monthly_depreciation).toBe(166.67);
+      expect(result.past_book_value).toBe(9500);
+      expect(result.past_accumulated_depreciation).toBe(500);
+      expect(result.past_monthly_depreciation).toBe(166.67);
       expect(result.documents).toEqual([]);
       expect(result.currentAssignment).toBeNull();
     });

@@ -383,22 +383,22 @@ const [searchColumn, setSearchColumn] = useState('all');
     {
       value: 'Critical',
       label: 'Critical - System Down',
-      color: 'bg-red-100 text-red-800',
+      color: 'bg-red-100 text-red-800 dark:bg-red-900/30 dark:text-red-200',
     },
     {
       value: 'High',
       label: 'High - Affects Operations',
-      color: 'bg-orange-100 text-orange-800',
+      color: 'bg-orange-100 text-orange-800 dark:bg-orange-900/30 dark:text-orange-200',
     },
     {
       value: 'Medium',
       label: 'Medium - Minor Impact',
-      color: 'bg-yellow-100 text-yellow-800',
+      color: 'bg-yellow-100 text-yellow-800 dark:bg-yellow-900/30 dark:text-yellow-200',
     },
     {
       value: 'Low',
       label: 'Low - Cosmetic/Optional',
-      color: 'bg-blue-100 text-blue-800',
+      color: 'bg-blue-100 text-blue-800 dark:bg-blue-900/30 dark:text-blue-200',
     },
   ];
 
@@ -540,10 +540,10 @@ const [searchColumn, setSearchColumn] = useState('all');
                                 }
                                 className={`text-xs ${
                                   asset.status === 'Available'
-                                    ? 'bg-green-100 text-green-800 border-green-200'
+                                    ? 'bg-green-100 text-green-800 border-green-200 dark:bg-green-900/30 dark:text-green-200 dark:border-green-800'
                                     : asset.status === 'In Maintenance'
-                                      ? 'bg-blue-100 text-blue-800 border-blue-200'
-                                      : 'bg-gray-100 text-gray-800 border-gray-200'
+                                      ? 'bg-blue-100 text-blue-800 border-blue-200 dark:bg-blue-900/30 dark:text-blue-200 dark:border-blue-800'
+                                      : 'bg-gray-100 text-gray-800 border-gray-200 dark:bg-gray-800 dark:text-gray-200 dark:border-gray-700'
                                 }`}
                               >
                                 {asset.status}

@@ -52,12 +52,24 @@ describe('permissions.controller', () => {
       req.params = { userId: 'u-1' };
       req.body = { permissions: { Assets: { view: true, create: false, edit: false, delete: false } } };
       mockPool.pool.execute
+        // actor guard lookup (non-admin bypasses company check)
+        .mockResolvedValueOnce([[{ role_name: 'IT Asset Manager', company_id: 'c-1' }]])
         .mockResolvedValueOnce([[]])
         .mockResolvedValueOnce([{ affectedRows: 0 }])
         .mockResolvedValueOnce([['u-1', 'Assets', 'view', 1]])
         .mockResolvedValueOnce([{ insertId: 1 }]);
       await permissionsController.updateUserPermissionsHandler(req, res);
       expect(res._json.message).toBe('Permissions updated successfully');
+    });
+
+    it('returns 403 when local admin manages a user outside its company', async () => {
+      req.params = { userId: 'u-1' };
+      req.body = { permissions: { Assets: { view: true } } };
+      mockPool.pool.execute
+        .mockResolvedValueOnce([[{ role_name: 'Admin', company_id: 'c-1' }]])
+        .mockResolvedValueOnce([[{ company_id: 'c-2', role_name: 'User' }]]);
+      await permissionsController.updateUserPermissionsHandler(req, res);
+      expect(res._status).toBe(403);
     });
 
     it('returns 500 on error', async () => {
@@ -73,8 +85,10 @@ describe('permissions.controller', () => {
     it('applies role permissions successfully', async () => {
       req.params = { userId: 'u-1' };
       mockPool.pool.execute
+        // actor guard lookup (non-admin bypasses company check)
+        .mockResolvedValueOnce([[{ role_name: 'IT Asset Manager', company_id: 'c-1' }]])
         .mockResolvedValueOnce([[{ role_id: 'r-1' }]])
-        .mockResolvedValueOnce([[{ hr_accountability_receiver: 0 }]])
+        .mockResolvedValueOnce([[{ name: 'User', hr_accountability_receiver: 0 }]])
         .mockResolvedValueOnce([[]])
         .mockResolvedValueOnce([{ affectedRows: 0 }])
         .mockResolvedValueOnce([{ insertId: 1 }]);
@@ -84,7 +98,9 @@ describe('permissions.controller', () => {
 
     it('returns message when user has no role', async () => {
       req.params = { userId: 'u-1' };
-      mockPool.pool.execute.mockResolvedValueOnce([[]]);
+      mockPool.pool.execute
+        .mockResolvedValueOnce([[{ role_name: 'IT Asset Manager', company_id: 'c-1' }]])
+        .mockResolvedValueOnce([[]]);
       await permissionsController.applyRolePermissionsHandler(req, res);
       expect(res._json.message).toContain('No role assigned');
     });

@@ -13,7 +13,7 @@ export default function EmployeeRequestTimeline({
 }) {
   if (loading) {
     return (
-      <div className="h-[300px] bg-muted rounded-lg animate-pulse" />
+      <div className="h-[280px] bg-muted rounded-lg animate-pulse" />
     );
   }
 
@@ -25,6 +25,7 @@ export default function EmployeeRequestTimeline({
       defaultTitle="My Request Timeline"
       defaultDescription="Asset and borrowing requests over recent weeks"
       defaultVariant="area"
+      chartId="myRequestTimeline"
       empty={!data.length}
       emptyMessage="No request activity"
     >
@@ -35,7 +36,7 @@ export default function EmployeeRequestTimeline({
           indexKey="label"
           series={[...series]}
           chartConfig={config}
-          className="min-h-[280px] w-full"
+          className="h-[280px] w-full"
         />
       )}
     </DashboardChartShell>

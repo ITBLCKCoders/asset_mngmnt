@@ -1132,8 +1132,8 @@ export const ReturnFormCard: React.FC<{
             variant="secondary"
             className={
               isSignedForBadge
-                ? 'bg-blue-100 text-blue-800'
-                : 'bg-amber-100 text-amber-800'
+                ? 'bg-blue-100 text-blue-800 dark:bg-blue-900/30 dark:text-blue-200'
+                : 'bg-amber-100 text-amber-800 dark:bg-amber-900/30 dark:text-amber-200'
             }
           >
             {isSignedForBadge ? 'Signed' : 'Pending'}
@@ -1223,13 +1223,13 @@ export const ReturnFormCard: React.FC<{
               </div>
             )}
 
-            {/* Received by (IT Manager / IT Department Head) */}
+            {/* Reviewed / Checked by (IT Manager / IT Department Head) */}
             {batch.it_manager_signed_at && (
               <div className="flex items-start gap-3">
                 <User className="h-4 w-4 text-gray-400 mt-0.5 flex-shrink-0" />
                 <div className="flex-1 min-w-0">
                   <p className="font-medium text-sm">
-                    Received by: {batch.it_manager_user_name ?? '—'}
+                    Reviewed / Checked by: {batch.it_manager_user_name ?? '—'}
                   </p>
                 </div>
               </div>
@@ -1561,7 +1561,7 @@ export const BorrowRequestCard: React.FC<{
             </p>
           </div>
         </div>
-        <Badge variant="secondary" className="bg-green-100 text-green-800">
+        <Badge variant="secondary" className="bg-green-100 text-green-800 dark:bg-green-900/30 dark:text-green-200">
           Approved
         </Badge>
       </div>
@@ -1743,8 +1743,8 @@ export const TransferFormCard: React.FC<{
             variant="secondary"
             className={
               batch.signed_at
-                ? 'bg-blue-100 text-blue-800'
-                : 'bg-amber-100 text-amber-800'
+                ? 'bg-blue-100 text-blue-800 dark:bg-blue-900/30 dark:text-blue-200'
+                : 'bg-amber-100 text-amber-800 dark:bg-amber-900/30 dark:text-amber-200'
             }
           >
             {batch.signed_at ? 'Signed' : 'Pending'}
@@ -1840,13 +1840,13 @@ export const TransferFormCard: React.FC<{
               </div>
             )}
 
-            {/* Received by (IT Manager) */}
+            {/* Reviewed / Checked by (IT Manager) */}
             {batch.it_manager_signed_at && (
               <div className="flex items-start gap-3">
                 <User className="h-4 w-4 text-gray-400 mt-0.5 flex-shrink-0" />
                 <div className="flex-1 min-w-0">
                   <p className="font-medium text-sm">
-                    Received by: {batch.it_manager_user_name ?? '—'}
+                    Reviewed / Checked by: {batch.it_manager_user_name ?? '—'}
                   </p>
                 </div>
               </div>
@@ -2383,25 +2383,25 @@ export const BorrowFormCard: React.FC<{
     (batch.received_by_name && batch.received_by_name.trim())
   );
 
-  let badgeClass = 'bg-amber-100 text-amber-800';
+  let badgeClass = 'bg-amber-100 text-amber-800 dark:bg-amber-900/30 dark:text-amber-200';
   let badgeLabel = 'Pending approval';
   if (declined) {
-    badgeClass = 'bg-red-100 text-red-800';
+    badgeClass = 'bg-red-100 text-red-800 dark:bg-red-900/30 dark:text-red-200';
     badgeLabel = 'Declined';
   } else if (returned) {
-    badgeClass = 'bg-green-100 text-green-800';
+    badgeClass = 'bg-green-100 text-green-800 dark:bg-green-900/30 dark:text-green-200';
     badgeLabel = 'Returned';
   } else if (received) {
-    badgeClass = 'bg-green-100 text-green-800';
+    badgeClass = 'bg-green-100 text-green-800 dark:bg-green-900/30 dark:text-green-200';
     badgeLabel = 'Approved';
   } else if (completed) {
-    badgeClass = 'bg-green-100 text-green-800';
+    badgeClass = 'bg-green-100 text-green-800 dark:bg-green-900/30 dark:text-green-200';
     badgeLabel = 'Approved';
   } else if (pendingStaff) {
-    badgeClass = 'bg-blue-100 text-blue-800';
+    badgeClass = 'bg-blue-100 text-blue-800 dark:bg-blue-900/30 dark:text-blue-200';
     badgeLabel = 'Pending IT/Admin';
   } else if (pendingDept) {
-    badgeClass = 'bg-amber-100 text-amber-800';
+    badgeClass = 'bg-amber-100 text-amber-800 dark:bg-amber-900/30 dark:text-amber-200';
     badgeLabel = 'Pending approval';
   }
 
@@ -2995,16 +2995,16 @@ function ReturnChecklistCard({
           </div>
           <div className="flex flex-wrap justify-end gap-1.5">
             {checklist.type_onboarding && (
-              <Badge className="bg-emerald-100 text-emerald-800 hover:bg-emerald-100">Onboarding</Badge>
+              <Badge className="bg-emerald-100 text-emerald-800 hover:bg-emerald-100 dark:bg-emerald-900/30 dark:text-emerald-200 dark:hover:bg-emerald-900/30">Onboarding</Badge>
             )}
             {checklist.type_offboarding && (
-              <Badge className="bg-blue-100 text-blue-800 hover:bg-blue-100">Offboarding</Badge>
+              <Badge className="bg-blue-100 text-blue-800 hover:bg-blue-100 dark:bg-blue-900/30 dark:text-blue-200 dark:hover:bg-blue-900/30">Offboarding</Badge>
             )}
             {checklist.employee_signed_at && (
-              <Badge className="bg-green-100 text-green-800 hover:bg-green-100">Employee Signed</Badge>
+              <Badge className="bg-green-100 text-green-800 hover:bg-green-100 dark:bg-green-900/30 dark:text-green-200 dark:hover:bg-green-900/30">Employee Signed</Badge>
             )}
             {checklist.dept_head_signed_at && (
-              <Badge className="bg-purple-100 text-purple-800 hover:bg-purple-100">Dept Head Approved</Badge>
+              <Badge className="bg-purple-100 text-purple-800 hover:bg-purple-100 dark:bg-purple-900/30 dark:text-purple-200 dark:hover:bg-purple-900/30">Dept Head Approved</Badge>
             )}
             {checklist.it_manager_signed_at && (
               <Badge className="bg-indigo-100 text-indigo-800 hover:bg-indigo-100">IT Manager Received</Badge>
@@ -3031,7 +3031,7 @@ function ReturnChecklistCard({
         </div>
 
         <div className="rounded-lg border border-slate-200 bg-white/80 p-3 text-sm">
-          <p className="text-xs font-medium uppercase tracking-wide text-slate-500">Received By</p>
+          <p className="text-xs font-medium uppercase tracking-wide text-slate-500">Reviewed / Checked By</p>
           <p className="mt-1 font-medium text-slate-900">{checklist.received_by || 'N/A'}</p>
         </div>
 
@@ -3830,7 +3830,7 @@ export default function DocumentsTab({
                 <h3 className="text-xl font-semibold text-gray-900">
                   Asset Accountability Forms
                 </h3>
-                <span className="bg-blue-100 text-blue-800 text-sm px-2 py-1 rounded-full">
+                <span className="bg-blue-100 text-blue-800 text-sm px-2 py-1 rounded-full dark:bg-blue-900/30 dark:text-blue-200">
                   {filteredForms.length}
                 </span>
                 {clearanceEligibility?.canGenerate && (
@@ -3951,7 +3951,7 @@ export default function DocumentsTab({
                 <h3 className="text-xl font-semibold text-gray-900">
                   Asset Return Forms
                 </h3>
-                <span className="bg-green-100 text-green-800 text-sm px-2 py-1 rounded-full">
+                <span className="bg-green-100 text-green-800 text-sm px-2 py-1 rounded-full dark:bg-green-900/30 dark:text-green-200">
                   {filteredReturnForms.length}
                 </span>
               </div>
@@ -4147,7 +4147,7 @@ export default function DocumentsTab({
                 <h3 className="text-xl font-semibold text-gray-900">
                   Asset Borrow Forms
                 </h3>
-                <span className="bg-amber-100 text-amber-800 text-sm px-2 py-1 rounded-full">
+                <span className="bg-amber-100 text-amber-800 text-sm px-2 py-1 rounded-full dark:bg-amber-900/30 dark:text-amber-200">
                   {filteredBorrowForms.length}
                 </span>
               </div>
@@ -4229,7 +4229,7 @@ export default function DocumentsTab({
                 <h3 className="text-xl font-semibold text-gray-900">
                   Asset Checklist Forms
                 </h3>
-                <span className="bg-red-100 text-red-800 text-sm px-2 py-1 rounded-full">
+                <span className="bg-red-100 text-red-800 text-sm px-2 py-1 rounded-full dark:bg-red-900/30 dark:text-red-200">
                   {filteredChecklistForms.length}
                 </span>
               </div>
@@ -4285,7 +4285,7 @@ export default function DocumentsTab({
                               </p>
                             </div>
                           </div>
-                          <Badge className="bg-red-100 text-red-800 hover:bg-red-100">
+                          <Badge className="bg-red-100 text-red-800 hover:bg-red-100 dark:bg-red-900/30 dark:text-red-200 dark:hover:bg-red-900/30">
                             {row.type_onboarding && row.type_offboarding
                               ? 'Onboarding/Offboarding'
                               : row.type_onboarding
@@ -4332,7 +4332,7 @@ export default function DocumentsTab({
                             <User className="h-4 w-4 text-gray-400 mt-0.5 flex-shrink-0" />
                             <div className="flex-1 min-w-0">
                               <p className="text-sm text-gray-600">
-                                Received by: {row.received_by}
+                                Reviewed / Checked by: {row.received_by}
                               </p>
                             </div>
                           </div>

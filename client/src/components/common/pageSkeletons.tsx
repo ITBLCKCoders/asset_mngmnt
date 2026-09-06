@@ -247,21 +247,46 @@ export function SettingsLocationsTabSkeleton() {
   );
 }
 
+/**
+ * Shimmer for the nested sub-tab bar (matches the segmented tab list chrome).
+ * Rendered above the section shell so the skeleton mirrors the real sub-tab layout.
+ */
+function SettingsSubTabsBarSkeleton({ count }: { count: number }) {
+  return (
+    <div
+      aria-hidden
+      className="flex w-full gap-1 overflow-x-auto rounded-xl border border-slate-200 bg-slate-100/90 p-1 shadow-sm"
+    >
+      {Array.from({ length: count }).map((_, index) => (
+        <Shimmer key={index} className="h-9 flex-1 rounded-lg min-w-24" />
+      ))}
+    </div>
+  );
+}
+
+export function SettingsAssetsTabSkeleton() {
+  return (
+    <TabsContent value="assets" className="mt-0 space-y-6">
+      <SettingsSubTabsBarSkeleton count={6} />
+      <SettingsSectionShell
+        titleWidth="w-48"
+        descriptionWidth="w-full max-w-md"
+        actionWidth="h-11 w-44"
+      >
+        <SettingsTableBodySkeleton rows={4} />
+      </SettingsSectionShell>
+    </TabsContent>
+  );
+}
+
 export function SettingsDepartmentsTabSkeleton() {
   return (
-    <TabsContent value="departments" className="mt-0">
+    <TabsContent value="departments" className="mt-0 space-y-6">
+      <SettingsSubTabsBarSkeleton count={2} />
       <SettingsSectionShell
         titleWidth="w-56"
         descriptionWidth="w-full max-w-md"
         actionWidth="h-11 w-52"
-      >
-        <SettingsTableBodySkeleton rows={4} />
-      </SettingsSectionShell>
-
-      <SettingsSectionShell
-        titleWidth="w-48"
-        descriptionWidth="w-full max-w-lg"
-        actionWidth="h-11 w-48"
       >
         <SettingsTableBodySkeleton rows={4} />
       </SettingsSectionShell>
@@ -271,21 +296,14 @@ export function SettingsDepartmentsTabSkeleton() {
 
 export function SettingsUsersTabSkeleton() {
   return (
-    <TabsContent value="users" className="mt-0">
+    <TabsContent value="users" className="mt-0 space-y-6">
+      <SettingsSubTabsBarSkeleton count={2} />
       <SettingsSectionShell
-        titleWidth="w-72"
-        descriptionWidth="w-full max-w-xl"
-        actionWidth="h-9 w-36"
+        titleWidth="w-56"
+        descriptionWidth="w-full max-w-md"
+        actionWidth="h-9 w-40"
       >
-        <div className="flex flex-wrap items-center justify-end gap-2 mb-4">
-          <Shimmer className="h-9 w-28 rounded-md" />
-          <Shimmer className="h-9 w-32 rounded-md" />
-          <Shimmer className="h-9 w-36 rounded-md" />
-        </div>
-        <div className="relative mb-4">
-          <Shimmer className="h-10 w-full rounded-xl" />
-        </div>
-        <div className="rounded-xl overflow-hidden max-h-[calc(10*5rem+3rem)] border border-border/60">
+        <div className="rounded-xl overflow-hidden border border-border/60">
           <div className="flex gap-3 px-4 py-3 bg-muted/40 border-b shrink-0">
             <Shimmer className="h-4 w-24" />
             <Shimmer className="h-4 w-40" />
@@ -307,42 +325,6 @@ export function SettingsUsersTabSkeleton() {
                 <Shimmer className="h-5 w-24 rounded-full" />
                 <Shimmer className="h-5 w-20 rounded-full" />
                 <Shimmer className="h-4 w-16" />
-                <div className="flex gap-2 ml-auto shrink-0">
-                  <Shimmer className="h-8 w-8 rounded-md" />
-                  <Shimmer className="h-8 w-8 rounded-md" />
-                </div>
-              </div>
-            ))}
-          </div>
-        </div>
-      </SettingsSectionShell>
-
-      <SettingsSectionShell
-        titleWidth="w-56"
-        descriptionWidth="w-full max-w-lg"
-        actionWidth="h-9 w-32"
-      >
-        <div className="relative mb-4">
-          <Shimmer className="h-10 w-full rounded-xl" />
-        </div>
-        <div className="rounded-xl overflow-hidden max-h-[calc(10*5rem+3rem)] border border-border/60">
-          <div className="flex gap-3 px-4 py-3 bg-muted/40 border-b">
-            <Shimmer className="h-4 w-28" />
-            <Shimmer className="h-4 w-48" />
-            <Shimmer className="h-4 w-24" />
-            <div className="ml-auto">
-              <Shimmer className="h-4 w-16" />
-            </div>
-          </div>
-          <div className="divide-y divide-border/60 bg-card">
-            {Array.from({ length: 4 }).map((_, index) => (
-              <div
-                key={index}
-                className="flex items-center gap-3 px-4 py-4 min-h-[5rem]"
-              >
-                <Shimmer className="h-5 w-40" />
-                <Shimmer className="h-4 flex-1 max-w-sm" />
-                <Shimmer className="h-5 w-20 rounded-full" />
                 <div className="flex gap-2 ml-auto shrink-0">
                   <Shimmer className="h-8 w-8 rounded-md" />
                   <Shimmer className="h-8 w-8 rounded-md" />
@@ -483,7 +465,7 @@ export function RouteContentFallback() {
 
 export function AssetDetailsPageSkeleton() {
   return (
-    <div className="flex flex-col min-h-screen bg-[#FFFFFF]">
+    <div className="flex flex-col min-h-screen bg-background dark:bg-transparent">
       <main className="flex-1 w-full min-w-0 p-4 sm:p-6 md:p-8 lg:p-10 space-y-4 sm:space-y-6">
         <PageHeader
           icon={Package}

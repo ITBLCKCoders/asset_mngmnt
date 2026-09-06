@@ -1390,10 +1390,10 @@ export default function AssetsAssignment() {
                                         <span
                                           className={`px-2 py-1 text-xs font-medium rounded-full ${
                                             builder.status === 'Available'
-                                              ? 'bg-green-100 text-green-800'
+                                              ? 'bg-green-100 text-green-800 dark:bg-green-900/30 dark:text-green-200'
                                               : builder.status === 'Assigned'
-                                                ? 'bg-blue-100 text-blue-800'
-                                                : 'bg-gray-100 text-gray-800'
+                                                ? 'bg-blue-100 text-blue-800 dark:bg-blue-900/30 dark:text-blue-200'
+                                                : 'bg-gray-100 text-gray-800 dark:bg-gray-800 dark:text-gray-200'
                                           }`}
                                         >
                                           {builder.status || 'Available'}
@@ -1549,8 +1549,8 @@ export default function AssetsAssignment() {
                           const isSelected = selectedAssets.includes(asset.id);
                           const assigneeCount = asset.assignees?.length ?? (asset.assigned_to ? 1 : 0);
                           const typeColor = asset.type === 'IT scope' 
-                            ? 'bg-red-100 text-red-800 border-red-200' 
-                            : 'bg-orange-100 text-orange-800 border-orange-200';
+                            ? 'bg-red-100 text-red-800 border-red-200 dark:bg-red-900/30 dark:text-red-200 dark:border-red-800' 
+                            : 'bg-orange-100 text-orange-800 border-orange-200 dark:bg-orange-900/30 dark:text-orange-200 dark:border-orange-800';
                           return (
                             <div
                               key={asset.id}

@@ -15,6 +15,7 @@ import {
   sortAssetsByLast5Digits,
   PDF_SIGNATURE_MAX_HEIGHT_MM,
   PDF_SIGNATURE_MAX_WIDTH_MM,
+  PDF_SIGNATURE_NAME_OVERLAP_MM,
 } from './shared';
 
 export interface AssetTransferData {
@@ -243,7 +244,7 @@ export const generateAssetTransferPDF = async (
   const tableBodyLabels: (string | { content: string; colSpan: number })[][] = [
     [{ content: 'Designation: ' + designation, colSpan: 3 }],
     [{ content: 'Department/Company: ' + deptCompany, colSpan: 3 }],
-    ['Received by:', { content: '', colSpan: 2 }],
+    ['Reviewed / Checked by:', { content: '', colSpan: 2 }],
     [{ content: 'Section A: Transfer Details', colSpan: 3 }],
     ['Transfer Type:', { content: '', colSpan: 2 }],
     ['Transfer to:', { content: transfereeName, colSpan: 2 }],
@@ -362,11 +363,13 @@ export const generateAssetTransferPDF = async (
     ? processUserNameForCell.charAt(0).toUpperCase()
     : '';
   const approvalSignatureDownOffsetMm = 8;
+  /** Uniform position: bottom edge sits just below the printed-name baseline */
   const signatureAnchorBottomY = (nameY: number) =>
-    nameY - 2 + approvalSignatureDownOffsetMm;
+    nameY + PDF_SIGNATURE_NAME_OVERLAP_MM;
   type PendingTransferSignature = {
     data: string;
-    x: number;
+    /** Column bounds the signature is centered within */
+    centerWithin: { x: number; width: number };
     y: number;
     maxWidth: number;
     maxHeight: number;
@@ -460,7 +463,7 @@ export const generateAssetTransferPDF = async (
         if (itManagerSignature) {
           pendingTransferSignatures.push({
             data: itManagerSignature,
-            x: cell.x + 1 - 30,
+            centerWithin: { x: cell.x, width: cell.width },
             y: yTop + 25,
             anchorBottomY: signatureAnchorBottomY(nameY),
             maxWidth: PDF_SIGNATURE_MAX_WIDTH_MM,
@@ -537,7 +540,7 @@ export const generateAssetTransferPDF = async (
         if (transferData.process_digital_signature) {
           pendingTransferSignatures.push({
             data: transferData.process_digital_signature,
-            x: cell.x + 1 - 30,
+            centerWithin: { x: cell.x, width: cell.width },
             y: yTop + 25,
             anchorBottomY: signatureAnchorBottomY(nameY),
             maxWidth: PDF_SIGNATURE_MAX_WIDTH_MM,
@@ -619,7 +622,7 @@ export const generateAssetTransferPDF = async (
         if (digitalSignature) {
           pendingTransferSignatures.push({
             data: digitalSignature,
-            x: cell.x + 1 - 30,
+            centerWithin: { x: cell.x, width: cell.width },
             y: yTop + 25,
             anchorBottomY: signatureAnchorBottomY(nameY),
             maxWidth: PDF_SIGNATURE_MAX_WIDTH_MM,
@@ -704,7 +707,7 @@ export const generateAssetTransferPDF = async (
         if (transferData.digital_signature) {
           pendingTransferSignatures.push({
             data: transferData.digital_signature,
-            x: cell.x + 1 - 30,
+            centerWithin: { x: cell.x, width: cell.width },
             y: yTop + 25,
             anchorBottomY: signatureAnchorBottomY(nameY),
             maxWidth: PDF_SIGNATURE_MAX_WIDTH_MM,
@@ -758,11 +761,12 @@ export const generateAssetTransferPDF = async (
     await addSignatureToPDF(
       doc,
       sig.data,
-      sig.x,
+      0,
       sig.y,
       sig.maxWidth,
       sig.maxHeight,
-      sig.anchorBottomY
+      sig.anchorBottomY,
+      sig.centerWithin
     );
   }
   doc.setPage(1);

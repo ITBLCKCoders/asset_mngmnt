@@ -5,6 +5,8 @@ const {
   calculateStraightLineAccumulatedDepreciation,
   calculateYearsDepreciated,
   computeAssetDepreciationFields,
+  readStoredDepreciationFields,
+  withPastAndPresentDepreciationFields,
 } = require('../../utils/depreciation.js');
 
 const AS_OF = new Date('2026-01-01T00:00:00Z');
@@ -102,6 +104,83 @@ describe('depreciation utils', () => {
       expect(result.book_value).toBe(5000);
       expect(result.accumulated_depreciation).toBe(700);
       expect(result.monthly_depreciation).toBe(10);
+    });
+
+    it('advances automatically week-over-week with no stored writes', () => {
+      // Present values are computed on every read as-of now, so a week
+      // later the accumulated depreciation must be higher (proves the
+      // "computes every week" requirement without any scheduled job).
+      const now = computeAssetDepreciationFields(baseAsset, AS_OF);
+      const oneWeekLater = new Date(AS_OF.getTime() + 7 * 86_400_000);
+      const later = computeAssetDepreciationFields(baseAsset, oneWeekLater);
+      const expectedWeeklyIncrease = (24000 * 7) / 365.25;
+      expect(later.accumulated_depreciation).toBeCloseTo(
+        now.accumulated_depreciation + expectedWeeklyIncrease,
+        0
+      );
+      expect(later.book_value).toBeLessThan(now.book_value);
+    });
+  });
+
+  describe('withPastAndPresentDepreciationFields (past + present list rows)', () => {
+    it('keeps frozen stored values as past_* and computes live present values', () => {
+      const row = {
+        ...baseAsset,
+        book_value: 110000,
+        accumulated_depreciation: 10000,
+        monthly_depreciation: 2000,
+      };
+      const result = withPastAndPresentDepreciationFields(row, AS_OF);
+      // Past: untouched creation-time record
+      expect(result.past_book_value).toBe(110000);
+      expect(result.past_accumulated_depreciation).toBe(10000);
+      expect(result.past_monthly_depreciation).toBe(2000);
+      // Present: freshly computed as-of AS_OF
+      const expectedAccumulated = (24000 * 365) / 365.25;
+      expect(result.accumulated_depreciation).toBeCloseTo(expectedAccumulated, 0);
+      expect(result.book_value).toBeCloseTo(120000 - expectedAccumulated, 0);
+      expect(result.monthly_depreciation).toBeCloseTo(2000, 2);
+    });
+
+    it('returns null past values when nothing was stored', () => {
+      const result = withPastAndPresentDepreciationFields(baseAsset, AS_OF);
+      expect(result.past_book_value).toBeNull();
+      expect(result.past_accumulated_depreciation).toBeNull();
+      expect(result.past_monthly_depreciation).toBeNull();
+      expect(result.book_value).not.toBeNull();
+    });
+
+    it('keeps past and present identical for old units', () => {
+      const row = {
+        ...baseAsset,
+        is_old_unit: 1,
+        book_value: 5000,
+        accumulated_depreciation: 700,
+        monthly_depreciation: 10,
+      };
+      const result = withPastAndPresentDepreciationFields(row, AS_OF);
+      expect(result.past_book_value).toBe(5000);
+      expect(result.past_accumulated_depreciation).toBe(700);
+      expect(result.past_monthly_depreciation).toBe(10);
+      expect(result.book_value).toBe(5000);
+      expect(result.accumulated_depreciation).toBe(700);
+      expect(result.monthly_depreciation).toBe(10);
+    });
+  });
+
+  describe('readStoredDepreciationFields', () => {
+    it('reads stored values without recomputing', () => {
+      expect(
+        readStoredDepreciationFields({
+          book_value: '9000.5',
+          accumulated_depreciation: 100,
+          monthly_depreciation: null,
+        })
+      ).toEqual({
+        past_book_value: 9000.5,
+        past_accumulated_depreciation: 100,
+        past_monthly_depreciation: null,
+      });
     });
   });
 });

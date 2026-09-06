@@ -8,6 +8,7 @@ jest.mock('../../logger.js', () => ({ __esModule: true, default: { info: jest.fn
 const {
   userHasPermission,
   requirePermission,
+  requireUsersManage,
 } = require('../../middleware/requirePermission.js');
 
 describe('requirePermission middleware', () => {
@@ -80,6 +81,43 @@ describe('requirePermission middleware', () => {
       const middleware = requirePermission('Assets', 'view');
       await middleware(req, res, next);
       expect(res.status).toHaveBeenCalledWith(500);
+      expect(next).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('requireUsersManage middleware', () => {
+    it('should call next when user has explicit Users:edit permission', async () => {
+      mockPool.execute.mockResolvedValue([[{ granted: 1 }], []]);
+      await requireUsersManage()(req, res, next);
+      expect(next).toHaveBeenCalled();
+    });
+
+    it('should call next for global admin without explicit permission', async () => {
+      mockPool.execute
+        .mockResolvedValueOnce([[], []])
+        .mockResolvedValueOnce([[{ role_name: 'Global Admin', company_id: 'c-1' }], []]);
+      await requireUsersManage()(req, res, next);
+      expect(next).toHaveBeenCalled();
+    });
+
+    it('should call next for local admin managing same-company user', async () => {
+      req.params = { userId: 'u-target' };
+      mockPool.execute
+        .mockResolvedValueOnce([[], []])
+        .mockResolvedValueOnce([[{ role_name: 'Admin', company_id: 'c-1' }], []])
+        .mockResolvedValueOnce([[{ company_id: 'c-1' }], []]);
+      await requireUsersManage()(req, res, next);
+      expect(next).toHaveBeenCalled();
+    });
+
+    it('should return 403 for local admin managing outside its company', async () => {
+      req.params = { userId: 'u-target' };
+      mockPool.execute
+        .mockResolvedValueOnce([[], []])
+        .mockResolvedValueOnce([[{ role_name: 'Admin', company_id: 'c-1' }], []])
+        .mockResolvedValueOnce([[{ company_id: 'c-2' }], []]);
+      await requireUsersManage()(req, res, next);
+      expect(res.status).toHaveBeenCalledWith(403);
       expect(next).not.toHaveBeenCalled();
     });
   });

@@ -24,6 +24,9 @@ export interface AssetResponseDto {
   book_value?: number | null;
   accumulated_depreciation?: number | null;
   monthly_depreciation?: number | null;
+  past_book_value?: number | null;
+  past_accumulated_depreciation?: number | null;
+  past_monthly_depreciation?: number | null;
   depreciation_start_date: string | null;
   company_id: string | null;
   company_name: string | null;

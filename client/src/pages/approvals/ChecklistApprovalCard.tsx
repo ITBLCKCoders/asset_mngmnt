@@ -29,12 +29,12 @@ export type ChecklistApprovalBatch = {
 
 function getStatusBadge(batch: ChecklistApprovalBatch) {
   if (batch.it_manager_signed_at) {
-    return { label: 'Received', className: 'bg-green-100 text-green-800' };
+    return { label: 'Received', className: 'bg-green-100 text-green-800 dark:bg-green-900/30 dark:text-green-200' };
   }
   if (batch.dept_head_signed_at || batch.sub_approver_1_signed_at) {
-    return { label: 'Approved', className: 'bg-blue-100 text-blue-800' };
+    return { label: 'Approved', className: 'bg-blue-100 text-blue-800 dark:bg-blue-900/30 dark:text-blue-200' };
   }
-  return { label: 'Pending', className: 'bg-amber-100 text-amber-800' };
+  return { label: 'Pending', className: 'bg-amber-100 text-amber-800 dark:bg-amber-900/30 dark:text-amber-200' };
 }
 
 function getChecklistTypes(checklists: AssetChecklistData[]) {
@@ -85,7 +85,7 @@ export function ChecklistApprovalCard({
             <Badge variant="secondary" className={statusBadge.className}>
               {statusBadge.label}
             </Badge>
-            <Badge className="bg-red-100 text-red-800 hover:bg-red-100">
+            <Badge className="bg-red-100 text-red-800 hover:bg-red-100 dark:bg-red-900/30 dark:text-red-200 dark:hover:bg-red-900/30">
               {checklistType}
             </Badge>
           </div>
@@ -133,12 +133,12 @@ export function ChecklistApprovalCard({
           </div>
         )}
 
-        {/* Received by */}
+        {/* Reviewed / Checked by */}
         {firstChecklist?.received_by && (
           <div className="flex items-start gap-3">
             <User className="h-4 w-4 text-gray-400 mt-0.5 flex-shrink-0" />
             <div className="flex-1 min-w-0">
-              <p className="text-sm text-gray-600">Received by: {firstChecklist.received_by}</p>
+              <p className="text-sm text-gray-600">Reviewed / Checked by: {firstChecklist.received_by}</p>
             </div>
           </div>
         )}

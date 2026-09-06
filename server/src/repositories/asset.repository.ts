@@ -1,6 +1,6 @@
 import type { RowDataPacket, ResultSetHeader } from 'mysql2/promise';
 import { pool } from '../db.js';
-import { computeAssetDepreciationFields } from '../utils/depreciation.js';
+import { withPastAndPresentDepreciationFields } from '../utils/depreciation.js';
 
 /**
  * Asset repository: every SQL touching `assets`, `asset_documents`,
@@ -231,12 +231,13 @@ export async function callGetAllAssets(): Promise<RowDataPacket[]> {
   const [rowsResult] = await pool.execute<RowDataPacket[]>('CALL sp_get_assets()');
   const r = rowsResult as unknown as RowDataPacket[][];
   const rows = Array.isArray(r[0]) ? r[0] : (rowsResult as RowDataPacket[]);
-  // Compute depreciation fields on read so book value / accumulated
-  // depreciation / monthly depreciation stay current as time passes
-  // (stored columns are only refreshed on edit). Old units keep stored values.
+  // Attach both value sets on read: live present values (book value /
+  // accumulated depreciation / monthly depreciation stay current as time
+  // passes) alongside the frozen stored past_* values (only refreshed on
+  // edit). Old units keep stored values for both sets.
   return (rows as any[]).map(row => ({
     ...row,
-    ...computeAssetDepreciationFields(row),
+    ...withPastAndPresentDepreciationFields(row),
   })) as RowDataPacket[];
 }
 
@@ -574,30 +575,36 @@ export async function getLocationIdById(
 }
 
 export async function getRoomIdByIdOrName(
-  roomIdOrName: string
+  roomIdOrName: string,
+  companyId?: string
 ): Promise<string | null> {
   const isUUID =
     /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(
       roomIdOrName
     );
   const query = isUUID
-    ? 'SELECT roomID FROM asset_mngmnt_location_rooms WHERE roomID = ? AND deleted_at IS NULL'
-    : 'SELECT roomID FROM asset_mngmnt_location_rooms WHERE room_name = ? AND deleted_at IS NULL';
-  const [rows] = await pool.execute<RoomRow[]>(query, [roomIdOrName]);
+    ? 'SELECT roomID FROM asset_mngmnt_location_rooms WHERE roomID = ? AND deleted_at IS NULL AND (? IS NULL OR company_id = ?)'
+    : 'SELECT roomID FROM asset_mngmnt_location_rooms WHERE LOWER(room_name) = LOWER(?) AND deleted_at IS NULL AND (? IS NULL OR company_id = ?)';
+  const [rows] = await pool.execute<RoomRow[]>(query, [
+    roomIdOrName.trim(),
+    companyId ?? null,
+    companyId ?? null,
+  ]);
   return rows[0]?.roomID ?? null;
 }
 
 export async function getDepartmentIdByIdOrName(
-  departmentIdOrName: string
+  departmentIdOrName: string,
+  companyId?: string
 ): Promise<string | null> {
   const isUUID =
     /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(
       departmentIdOrName
     );
   const query = isUUID
-    ? 'SELECT departmentID FROM asset_mngmnt_departments WHERE departmentID = ? AND deleted_at IS NULL'
-    : 'SELECT departmentID FROM asset_mngmnt_departments WHERE name = ? AND deleted_at IS NULL';
-  const [rows] = await pool.execute<DepartmentRow[]>(query, [departmentIdOrName]);
+    ? 'SELECT departmentID FROM asset_mngmnt_departments WHERE departmentID = ? AND deleted_at IS NULL AND (? IS NULL OR company_id = ?)'
+    : 'SELECT departmentID FROM asset_mngmnt_departments WHERE LOWER(name) = LOWER(?) AND deleted_at IS NULL AND (? IS NULL OR company_id = ?)';
+  const [rows] = await pool.execute<DepartmentRow[]>(query, [departmentIdOrName.trim(), companyId ?? null, companyId ?? null]);
   return rows[0]?.departmentID ?? null;
 }
 
@@ -612,44 +619,118 @@ export async function getAssetIdFormatSettings(
 }
 
 export async function getCategoryIdByIdOrName(
-  categoryIdOrName: string
+  categoryIdOrName: string,
+  companyId?: string
 ): Promise<string | null> {
   const isUUID =
     /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(
       categoryIdOrName
     );
   const query = isUUID
-    ? 'SELECT categoryID FROM asset_categories WHERE categoryID = ? AND deleted_at IS NULL'
-    : 'SELECT categoryID FROM asset_categories WHERE name = ? AND deleted_at IS NULL';
-  const [rows] = await pool.execute<RowDataPacket[]>(query, [categoryIdOrName]);
+    ? 'SELECT categoryID FROM asset_categories WHERE categoryID = ? AND deleted_at IS NULL AND (? IS NULL OR company_id = ?)'
+    : 'SELECT categoryID FROM asset_categories WHERE LOWER(name) = LOWER(?) AND deleted_at IS NULL AND (? IS NULL OR company_id = ?)';
+  const [rows] = await pool.execute<RowDataPacket[]>(query, [categoryIdOrName.trim(), companyId ?? null, companyId ?? null]);
   return (rows[0]?.categoryID as string) ?? null;
 }
 
 export async function getTypeIdByIdOrName(
-  typeIdOrName: string
+  typeIdOrName: string,
+  companyId?: string
 ): Promise<string | null> {
   const isUUID =
     /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(
       typeIdOrName
     );
   const query = isUUID
-    ? 'SELECT typeID FROM asset_types WHERE typeID = ? AND deleted_at IS NULL'
-    : 'SELECT typeID FROM asset_types WHERE name = ? AND deleted_at IS NULL';
-  const [rows] = await pool.execute<RowDataPacket[]>(query, [typeIdOrName]);
+    ? 'SELECT typeID FROM asset_types WHERE typeID = ? AND deleted_at IS NULL AND (? IS NULL OR company_id = ?)'
+    : 'SELECT typeID FROM asset_types WHERE LOWER(name) = LOWER(?) AND deleted_at IS NULL AND (? IS NULL OR company_id = ?)';
+  const [rows] = await pool.execute<RowDataPacket[]>(query, [typeIdOrName.trim(), companyId ?? null, companyId ?? null]);
   return (rows[0]?.typeID as string) ?? null;
 }
 
+export async function typeMatchesCategory(
+  typeId: string,
+  categoryId: string,
+  companyId: string
+): Promise<boolean> {
+  const [rows] = await pool.execute<RowDataPacket[]>(
+    `SELECT 1 AS ok FROM asset_types
+     WHERE typeID = ? AND category_id IS NOT NULL AND category_id = ?
+       AND company_id = ? AND deleted_at IS NULL
+     LIMIT 1`,
+    [typeId, categoryId, companyId]
+  );
+  return (rows[0] as any)?.ok != null;
+}
+
+export async function brandExistsForType(
+  brandName: string,
+  typeId: string,
+  companyId: string
+): Promise<boolean> {
+  const [rows] = await pool.execute<RowDataPacket[]>(
+    `SELECT 1 AS ok FROM asset_brands
+     WHERE LOWER(name) = LOWER(?) AND (type_id IS NULL OR type_id = ?)
+       AND company_id = ? AND deleted_at IS NULL
+     LIMIT 1`,
+    [brandName.trim(), typeId, companyId]
+  );
+  return (rows[0] as any)?.ok != null;
+}
+
+export async function brandExistsByName(
+  brandName: string,
+  companyId: string
+): Promise<boolean> {
+  const [rows] = await pool.execute<RowDataPacket[]>(
+    `SELECT 1 AS ok FROM asset_brands
+     WHERE LOWER(name) = LOWER(?) AND company_id = ? AND deleted_at IS NULL
+     LIMIT 1`,
+    [brandName.trim(), companyId]
+  );
+  return (rows[0] as any)?.ok != null;
+}
+
+export async function supplierExistsForCategory(
+  supplierName: string,
+  categoryId: string,
+  companyId: string
+): Promise<boolean> {
+  const [rows] = await pool.execute<RowDataPacket[]>(
+    `SELECT 1 AS ok FROM suppliers
+     WHERE LOWER(name) = LOWER(?) AND (category_id IS NULL OR category_id = ?)
+       AND company_id = ? AND deleted_at IS NULL
+     LIMIT 1`,
+    [supplierName.trim(), categoryId, companyId]
+  );
+  return (rows[0] as any)?.ok != null;
+}
+
+export async function supplierExistsByName(
+  supplierName: string,
+  companyId: string
+): Promise<boolean> {
+  const [rows] = await pool.execute<RowDataPacket[]>(
+    `SELECT 1 AS ok FROM suppliers
+     WHERE LOWER(name) = LOWER(?) AND company_id = ? AND deleted_at IS NULL
+     LIMIT 1`,
+    [supplierName.trim(), companyId]
+  );
+  return (rows[0] as any)?.ok != null;
+}
+
 export async function getLocationIdByIdOrName(
-  locationIdOrName: string
+  locationIdOrName: string,
+  companyId?: string
 ): Promise<string | null> {
   const isUUID =
     /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(
       locationIdOrName
     );
   const query = isUUID
-    ? 'SELECT locationID FROM asset_mngmnt_locations WHERE locationID = ? AND deleted_at IS NULL'
-    : 'SELECT locationID FROM asset_mngmnt_locations WHERE name = ? AND deleted_at IS NULL';
-  const [rows] = await pool.execute<RowDataPacket[]>(query, [locationIdOrName]);
+    ? 'SELECT locationID FROM asset_mngmnt_locations WHERE locationID = ? AND deleted_at IS NULL AND (? IS NULL OR company_id = ?)'
+    : 'SELECT locationID FROM asset_mngmnt_locations WHERE LOWER(name) = LOWER(?) AND deleted_at IS NULL AND (? IS NULL OR company_id = ?)';
+  const [rows] = await pool.execute<RowDataPacket[]>(query, [locationIdOrName.trim(), companyId ?? null, companyId ?? null]);
   return (rows[0]?.locationID as string) ?? null;
 }
 

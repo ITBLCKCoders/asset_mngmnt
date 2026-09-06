@@ -25,10 +25,10 @@ export default forwardRef<HTMLButtonElement, ThemeToggleProps>(
             onClick={() => setTheme(isDarkMode ? "light" : "dark")}
             aria-label={`Switch to ${isDarkMode ? "light" : "dark"} mode`}
             aria-pressed={isDarkMode}
-            className={`relative h-8 w-16 rounded-full border border-white/20 bg-white/15 backdrop-blur-2xl shadow-xl ring-1 ring-white/10 hover:shadow-xl transition-all duration-500 ease-[cubic-bezier(0.22,1,0.36,1)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background ${className ?? ""}`}
+            className={`relative h-8 w-16 rounded-full border border-white/20 bg-white/15 backdrop-blur-2xl shadow-xl ring-1 ring-white/10 hover:shadow-xl transition-all duration-500 [transition-timing-function:cubic-bezier(0.22,1,0.36,1)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background ${className ?? ""}`}
           >
             <span
-              className={`absolute top-1 inline-flex h-6 w-6 items-center justify-center rounded-full bg-white shadow-md transition-all duration-500 ease-[cubic-bezier(0.22,1,0.36,1)] ${
+              className={`absolute top-1 inline-flex h-6 w-6 items-center justify-center rounded-full bg-white shadow-md transition-all duration-500 [transition-timing-function:cubic-bezier(0.22,1,0.36,1)] ${
                 isDarkMode
                   ? "left-9 rotate-12 text-slate-700"
                   : "left-1 rotate-0 text-amber-500"

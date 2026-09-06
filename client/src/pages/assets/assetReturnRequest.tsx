@@ -201,12 +201,12 @@ const RETURN_FORM_INSTRUCTIONS =
 
 function getMyReturnStatusBadgeClass(label: string): string {
   if (label === 'Returned')
-    return 'bg-green-100 text-green-800 border-green-200';
+    return 'bg-green-100 text-green-800 border-green-200 dark:bg-green-900/30 dark:text-green-200 dark:border-green-800';
   if (label === 'Approved by Department head')
-    return 'bg-blue-100 text-blue-800 border-blue-200';
+    return 'bg-blue-100 text-blue-800 border-blue-200 dark:bg-blue-900/30 dark:text-blue-200 dark:border-blue-800';
   if (label === 'Declined' || label === 'Declined by processor')
-    return 'bg-red-100 text-red-900 border-red-200';
-  return 'bg-amber-100 text-amber-800 border-amber-200';
+    return 'bg-red-100 text-red-900 border-red-200 dark:bg-red-900/30 dark:text-red-200 dark:border-red-800';
+  return 'bg-amber-100 text-amber-800 border-amber-200 dark:bg-amber-900/30 dark:text-amber-200 dark:border-amber-800';
 }
 
 function getMyReturnFormNumber(batch: AssetReturnFormBatch): string {
@@ -1175,7 +1175,7 @@ export default function AssetReturnRequest() {
                                       )}
                                       <Badge
                                         variant="default"
-                                        className="text-xs bg-red-100 text-red-800 border-red-200"
+                                        className="text-xs bg-red-100 text-red-800 border-red-200 dark:bg-red-900/30 dark:text-red-200 dark:border-red-800"
                                       >
                                         {assignment.status}
                                       </Badge>
@@ -1334,7 +1334,7 @@ export default function AssetReturnRequest() {
                                       )}
                                       <Badge
                                         variant="default"
-                                        className="text-xs bg-red-100 text-red-800 border-red-200"
+                                        className="text-xs bg-red-100 text-red-800 border-red-200 dark:bg-red-900/30 dark:text-red-200 dark:border-red-800"
                                       >
                                         {assignment.status}
                                       </Badge>
@@ -1505,7 +1505,7 @@ export default function AssetReturnRequest() {
                                       <div className="flex flex-wrap gap-2">
                                         <Badge
                                           variant="secondary"
-                                          className="text-xs bg-blue-100 text-blue-800"
+                                          className="text-xs bg-blue-100 text-blue-800 dark:bg-blue-900/30 dark:text-blue-200"
                                         >
                                           {builderAssignments.length} assigned
                                         </Badge>
@@ -1666,12 +1666,12 @@ export default function AssetReturnRequest() {
                                                       {a.asset?.code ?? '-'}
                                                     </p>
                                                     {pendingReturn && (
-                                                      <p className="text-xs text-amber-800 mt-1 font-medium">
+                                                      <p className="text-xs text-amber-800 mt-1 font-medium dark:text-amber-200">
                                                         Return request submitted
                                                       </p>
                                                     )}
                                                     {pendingTransfer && (
-                                                      <p className="text-xs text-amber-800 mt-1 font-medium">
+                                                      <p className="text-xs text-amber-800 mt-1 font-medium dark:text-amber-200">
                                                         Transfer request submitted
                                                       </p>
                                                     )}

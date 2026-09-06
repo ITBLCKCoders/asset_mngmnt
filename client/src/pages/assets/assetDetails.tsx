@@ -256,10 +256,10 @@ export default function AssetDetails() {
             }
             className={`px-3 sm:px-4 py-2 text-xs sm:text-sm font-semibold ${
               asset.status === 'Assigned'
-                ? 'bg-emerald-500/15 text-emerald-700 border-emerald-500/30'
+                ? 'bg-emerald-500/15 text-emerald-700 border-emerald-500/30 dark:text-emerald-300'
                 : asset.status === 'Available'
-                  ? 'bg-blue-500/10 text-blue-700 border-blue-500/30'
-                  : 'bg-orange-500/10 text-orange-700 border-orange-500/40'
+                  ? 'bg-blue-500/10 text-blue-700 border-blue-500/30 dark:text-blue-300'
+                  : 'bg-orange-500/10 text-orange-700 border-orange-500/40 dark:text-orange-300'
             }`}
           >
             {asset.status === 'Assigned'

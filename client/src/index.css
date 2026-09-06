@@ -803,6 +803,78 @@ select:focus {
 .dark .bg-gray-50\/80 {
   background-color: rgb(39 43 51 / 0.88) !important;
 }
+.dark .bg-gray-50\/95 {
+  background-color: rgb(36 40 48 / 0.95) !important;
+}
+.dark .bg-gray-50\/20 {
+  background-color: rgb(39 43 51 / 0.30) !important;
+}
+.dark .bg-slate-50\/80 {
+  background-color: rgb(36 40 48 / 0.85) !important;
+}
+.dark .bg-amber-50\/80 {
+  background-color: rgb(217 119 6 / 0.18) !important;
+}
+.dark .bg-gray-200\/80 {
+  background-color: rgb(46 51 62 / 0.85) !important;
+}
+.dark .bg-white\/20 {
+  background-color: rgb(180 170 160 / 0.14) !important;
+}
+
+/* Module permissions matrix selected-card gradient (red-50 → red-50) */
+.dark .from-red-50 {
+  --tw-gradient-from: rgb(69 10 10 / 0.55) var(--tw-gradient-from-position) !important;
+  --tw-gradient-to: rgb(69 10 10 / 0) var(--tw-gradient-to-position) !important;
+  --tw-gradient-stops: var(--tw-gradient-from), var(--tw-gradient-to) !important;
+}
+.dark .to-red-50 {
+  --tw-gradient-to: rgb(69 10 10 / 0.55) var(--tw-gradient-to-position) !important;
+}
+.dark .from-red-50\/50 {
+  --tw-gradient-from: rgb(69 10 10 / 0.32) var(--tw-gradient-from-position) !important;
+  --tw-gradient-to: rgb(69 10 10 / 0) var(--tw-gradient-to-position) !important;
+  --tw-gradient-stops: var(--tw-gradient-from), var(--tw-gradient-to) !important;
+}
+.dark .to-red-50\/50 {
+  --tw-gradient-to: rgb(69 10 10 / 0.32) var(--tw-gradient-to-position) !important;
+}
+.dark .from-red-50\/30 {
+  --tw-gradient-from: rgb(69 10 10 / 0.22) var(--tw-gradient-from-position) !important;
+  --tw-gradient-to: rgb(69 10 10 / 0) var(--tw-gradient-to-position) !important;
+  --tw-gradient-stops: var(--tw-gradient-from), var(--tw-gradient-to) !important;
+}
+.dark .to-red-50\/30 {
+  --tw-gradient-to: rgb(69 10 10 / 0.22) var(--tw-gradient-to-position) !important;
+}
+.dark .hover\:bg-red-50\/50:hover {
+  background-color: rgb(69 10 10 / 0.28) !important;
+}
+.dark .hover\:from-red-50\/50:hover {
+  --tw-gradient-from: rgb(69 10 10 / 0.32) var(--tw-gradient-from-position) !important;
+  --tw-gradient-to: rgb(69 10 10 / 0) var(--tw-gradient-to-position) !important;
+  --tw-gradient-stops: var(--tw-gradient-from), var(--tw-gradient-to) !important;
+}
+.dark .hover\:to-red-50\/50:hover {
+  --tw-gradient-to: rgb(69 10 10 / 0.32) var(--tw-gradient-to-position) !important;
+}
+.dark .hover\:from-red-50\/30:hover {
+  --tw-gradient-from: rgb(69 10 10 / 0.22) var(--tw-gradient-from-position) !important;
+  --tw-gradient-to: rgb(69 10 10 / 0) var(--tw-gradient-to-position) !important;
+  --tw-gradient-stops: var(--tw-gradient-from), var(--tw-gradient-to) !important;
+}
+.dark .hover\:to-red-50\/30:hover {
+  --tw-gradient-to: rgb(69 10 10 / 0.22) var(--tw-gradient-to-position) !important;
+}
+.dark .ring-white {
+  --tw-ring-color: rgb(45 50 60 / 0.9) !important;
+}
+.dark .ring-gray-100 {
+  --tw-ring-color: rgb(45 50 60 / 0.9) !important;
+}
+.dark .ring-red-200\/50 {
+  --tw-ring-color: rgb(220 38 38 / 0.35) !important;
+}
 
 .dark .bg-gray-50\/70 {
   background-color: rgb(39 43 51 / 0.80) !important;
@@ -1098,15 +1170,33 @@ nav::-webkit-scrollbar-thumb:hover {
 }
 
 /* Sonner toast theming — aligns to warm OLED card/border (App.tsx Toaster richColors) */
-.dark [data-sonner-toaster] {
+.dark [data-sonner-toaster],
+.dark [data-sonner-toaster][data-sonner-theme='dark'] {
   --normal-bg: var(--card);
   --normal-border: var(--border);
   --normal-text: var(--card-foreground);
+  --normal-bg-hover: #23272f;
+  --normal-border-hover: #343a46;
+  --success-bg: #132a1e;
+  --success-border: #1e3d2b;
+  --success-text: #86efac;
+  --error-bg: #2a1c1e;
+  --error-border: #3e2628;
+  --error-text: #fca5a5;
+  --warning-bg: #2b2517;
+  --warning-border: #3d331f;
+  --warning-text: #fcd34d;
+  --info-bg: #1c2535;
+  --info-border: #263449;
+  --info-text: #93c5fd;
 }
-.dark [data-sonner-toast] {
+.dark [data-sonner-toast]:not([data-type]) {
   background-color: var(--card) !important;
   border-color: var(--border) !important;
   color: var(--card-foreground) !important;
+}
+
+.dark [data-sonner-toast] {
   box-shadow: 0 14px 28px rgb(0 0 0 / 0.48) !important;
 }
 

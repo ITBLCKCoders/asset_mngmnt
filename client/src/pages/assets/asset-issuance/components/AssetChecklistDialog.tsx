@@ -416,11 +416,11 @@ export function AssetChecklistDialog({
             )}
           </div>
 
-          {/* Received By */}
+          {/* Reviewed / Checked By */}
           <div className="p-4 bg-green-50 rounded-lg border border-green-200">
             <h4 className="font-semibold text-gray-900 mb-3 flex items-center gap-2">
               <User className="h-5 w-5 text-green-600" />
-              Received By
+              Reviewed / Checked By
             </h4>
             <Input
               value={receivedBy}

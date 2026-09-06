@@ -214,6 +214,67 @@ export async function updateUserHandler(req: AuthRequest, res: Response) {
   }
 
   try {
+    // Local Admin (`Admin`) may only update users in its own company and may
+    // never grant the `Global Admin` role. (Global Admin + explicit
+    // Users:edit holders bypass this; the route middleware already enforced
+    // the same rule — this is defense-in-depth.)
+    const [actorRows] = (await pool.execute(
+      `SELECT u.company_id, r.name as role_name
+         FROM users u
+         LEFT JOIN asset_mngmnt_roles r ON u.role_id = r.roleID AND r.deleted_at IS NULL
+        WHERE u.userID = ?
+        LIMIT 1`,
+      [userId]
+    )) as any[];
+    const actorRole = String(actorRows[0]?.role_name ?? '').trim().toLowerCase();
+    const actorCompanyId = (actorRows[0]?.company_id as string | null) ?? null;
+    if (actorRole === 'admin') {
+      const [targetRows] = (await pool.execute(
+        `SELECT u.company_id, r.name as role_name
+           FROM users u
+           LEFT JOIN asset_mngmnt_roles r ON u.role_id = r.roleID AND r.deleted_at IS NULL
+          WHERE u.userID = ?
+          LIMIT 1`,
+        [id]
+      )) as any[];
+      const targetCompanyId = (targetRows[0]?.company_id as string | null) ?? null;
+      const targetRole = String(targetRows[0]?.role_name ?? '').trim().toLowerCase();
+      if (!targetRows[0]) {
+        return res.status(404).json({ error: 'User not found' });
+      }
+      if (!actorCompanyId || actorCompanyId !== targetCompanyId) {
+        return res
+          .status(403)
+          .json({ error: 'Forbidden: outside your company scope' });
+      }
+      if (targetRole === 'global admin') {
+        return res
+          .status(403)
+          .json({ error: 'Forbidden: cannot manage a Global Admin user' });
+      }
+      if (role_id) {
+        const [requestedRoleRows] = (await pool.execute(
+          'SELECT name FROM asset_mngmnt_roles WHERE roleID = ? AND deleted_at IS NULL LIMIT 1',
+          [role_id]
+        )) as any[];
+        const requestedRole = String(requestedRoleRows[0]?.name ?? '')
+          .trim()
+          .toLowerCase();
+        if (requestedRole === 'global admin') {
+          return res
+            .status(403)
+            .json({ error: 'Forbidden: cannot assign Global Admin role' });
+        }
+      }
+      // Keep the target inside the actor's company even if the payload
+      // carries a different company_id.
+      if (company_id && company_id !== actorCompanyId) {
+        return res
+          .status(403)
+          .json({ error: 'Forbidden: cannot move user outside your company' });
+      }
+    }
+
     const [rows] = (await pool.execute(
       'CALL sp_update_user(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
       [

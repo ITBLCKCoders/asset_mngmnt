@@ -403,30 +403,30 @@ export default function MyAssetsPage() {
   const getStatusColor = (status: string) => {
     switch (status) {
       case 'Assigned':
-        return 'bg-blue-100 text-blue-800';
+        return 'bg-blue-100 text-blue-800 dark:bg-blue-900/30 dark:text-blue-200';
       case 'In Maintenance':
-        return 'bg-yellow-100 text-yellow-800';
+        return 'bg-yellow-100 text-yellow-800 dark:bg-yellow-900/30 dark:text-yellow-200';
       case 'Available':
-        return 'bg-green-100 text-green-800';
+        return 'bg-green-100 text-green-800 dark:bg-green-900/30 dark:text-green-200';
       default:
-        return 'bg-gray-100 text-gray-800';
+        return 'bg-gray-100 text-gray-800 dark:bg-gray-800 dark:text-gray-200';
     }
   };
 
   const getConditionColor = (condition: string) => {
     switch (condition) {
       case 'Excellent':
-        return 'bg-green-100 text-green-800';
+        return 'bg-green-100 text-green-800 dark:bg-green-900/30 dark:text-green-200';
       case 'Good':
-        return 'bg-blue-100 text-blue-800';
+        return 'bg-blue-100 text-blue-800 dark:bg-blue-900/30 dark:text-blue-200';
       case 'Needs Repair':
-        return 'bg-yellow-100 text-yellow-800';
+        return 'bg-yellow-100 text-yellow-800 dark:bg-yellow-900/30 dark:text-yellow-200';
       case 'Damaged':
-        return 'bg-red-100 text-red-800';
+        return 'bg-red-100 text-red-800 dark:bg-red-900/30 dark:text-red-200';
       case 'Obsolete':
-        return 'bg-gray-100 text-gray-800';
+        return 'bg-gray-100 text-gray-800 dark:bg-gray-800 dark:text-gray-200';
       default:
-        return 'bg-gray-100 text-gray-800';
+        return 'bg-gray-100 text-gray-800 dark:bg-gray-800 dark:text-gray-200';
     }
   };
 
@@ -521,7 +521,7 @@ export default function MyAssetsPage() {
                 {isBuilderParent ? (
                   <button
                     onClick={handleOpenTree}
-                    className="p-1 text-amber-600 hover:text-amber-800 hover:bg-amber-50 rounded transition-colors"
+                    className="p-1 text-amber-600 hover:text-amber-800 hover:bg-amber-50 rounded transition-colors dark:text-amber-400 dark:hover:text-amber-200 dark:hover:bg-amber-900/30"
                     aria-label="View asset tree"
                     title="View asset tree"
                   >
@@ -599,7 +599,7 @@ export default function MyAssetsPage() {
                 {asset.condition}
               </Badge>
               {asset.status === 'In Maintenance' && (
-                <Badge className="text-xs bg-yellow-100 text-yellow-800">
+                <Badge className="text-xs bg-yellow-100 text-yellow-800 dark:bg-yellow-900/30 dark:text-yellow-200">
                   <Wrench className="h-3 w-3 mr-1" />
                   Maintenance
                 </Badge>
@@ -767,7 +767,7 @@ export default function MyAssetsPage() {
                     </span>
                     <Badge
                       variant="outline"
-                      className="text-xs font-mono bg-white text-amber-800 border-amber-300"
+                      className="text-xs font-mono bg-white text-amber-800 border-amber-300 dark:bg-card dark:text-amber-200 dark:border-amber-800"
                     >
                       {asset.id}
                     </Badge>

@@ -215,6 +215,49 @@ export async function getUserPermissionsHandler(
   }
 }
 
+async function assertLocalAdminSameCompany(
+  actorUserId: string,
+  targetUserId: string
+): Promise<{ ok: boolean; error?: string; status?: number; actorRole?: string }> {
+  const [actorRows] = (await pool.execute(
+    `SELECT u.company_id, r.name as role_name
+       FROM users u
+       LEFT JOIN asset_mngmnt_roles r ON u.role_id = r.roleID AND r.deleted_at IS NULL
+      WHERE u.userID = ?
+      LIMIT 1`,
+    [actorUserId]
+  )) as any[];
+  const actorRole = String(actorRows[0]?.role_name ?? '').trim().toLowerCase();
+  if (actorRole !== 'admin') return { ok: true, actorRole };
+  const actorCompanyId = (actorRows[0]?.company_id as string | null) ?? null;
+  const [targetRows] = (await pool.execute(
+    `SELECT u.company_id, r.name as role_name
+       FROM users u
+       LEFT JOIN asset_mngmnt_roles r ON u.role_id = r.roleID AND r.deleted_at IS NULL
+      WHERE u.userID = ?
+      LIMIT 1`,
+    [targetUserId]
+  )) as any[];
+  if (!targetRows[0]) return { ok: false, error: 'User not found', status: 404 };
+  const targetCompanyId = (targetRows[0]?.company_id as string | null) ?? null;
+  const targetRole = String(targetRows[0]?.role_name ?? '').trim().toLowerCase();
+  if (targetRole === 'global admin') {
+    return {
+      ok: false,
+      error: 'Forbidden: cannot manage a Global Admin user',
+      status: 403,
+    };
+  }
+  if (!actorCompanyId || actorCompanyId !== targetCompanyId) {
+    return {
+      ok: false,
+      error: 'Forbidden: outside your company scope',
+      status: 403,
+    };
+  }
+  return { ok: true, actorRole };
+}
+
 export async function updateUserPermissionsHandler(
   req: AuthRequest,
   res: Response
@@ -222,6 +265,17 @@ export async function updateUserPermissionsHandler(
   try {
     const { userId } = req.params;
     const { permissions } = req.body; // Record<string, Record<string, boolean>>
+
+    if (!userId) {
+      return res.status(400).json({ error: 'userId is required' });
+    }
+
+    if (req.user?.userID) {
+      const guard = await assertLocalAdminSameCompany(req.user.userID, userId);
+      if (!guard.ok) {
+        return res.status(guard.status ?? 403).json({ error: guard.error });
+      }
+    }
 
     // Fetch old permissions for audit logging
     const [oldRows] = (await pool.execute(
@@ -345,6 +399,19 @@ export async function applyRolePermissionsHandler(
 ) {
   try {
     const { userId } = req.params;
+
+    if (!userId) {
+      return res.status(400).json({ error: 'userId is required' });
+    }
+
+    if (req.user?.userID) {
+      // NOTE: the guard already blocks a Local Admin from touching a
+      // Global Admin target or a user outside its own company.
+      const guard = await assertLocalAdminSameCompany(req.user.userID, userId);
+      if (!guard.ok) {
+        return res.status(guard.status ?? 403).json({ error: guard.error });
+      }
+    }
 
     const [userRows] = (await pool.execute(
       'SELECT role_id FROM users WHERE userID = ?',

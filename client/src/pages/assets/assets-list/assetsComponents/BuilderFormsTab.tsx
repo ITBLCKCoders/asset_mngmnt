@@ -151,19 +151,19 @@ export function BuilderFormsTab({ builderId, onPdfModalOpen, onPdfModalClose }: 
 
   const getStatusBadge = (status: string) => {
     const statusColors: Record<string, string> = {
-      Pending: 'bg-yellow-500/15 text-yellow-700 border-yellow-500/30',
-      Signed: 'bg-green-500/15 text-green-700 border-green-500/30',
-      Approved: 'bg-green-500/15 text-green-700 border-green-500/30',
-      Declined: 'bg-red-500/15 text-red-700 border-red-500/30',
-      Disabled: 'bg-gray-500/15 text-gray-700 border-gray-500/30',
-      'pending_dept_head': 'bg-yellow-500/15 text-yellow-700 border-yellow-500/30',
-      'pending_staff': 'bg-blue-500/15 text-blue-700 border-blue-500/30',
-      approved: 'bg-green-500/15 text-green-700 border-green-500/30',
-      declined: 'bg-red-500/15 text-red-700 border-red-500/30',
-      returned: 'bg-purple-500/15 text-purple-700 border-purple-500/30',
+      Pending: 'bg-yellow-500/15 text-yellow-700 border-yellow-500/30 dark:text-yellow-300',
+      Signed: 'bg-green-500/15 text-green-700 border-green-500/30 dark:text-green-300',
+      Approved: 'bg-green-500/15 text-green-700 border-green-500/30 dark:text-green-300',
+      Declined: 'bg-red-500/15 text-red-700 border-red-500/30 dark:text-red-300',
+      Disabled: 'bg-gray-500/15 text-gray-700 border-gray-500/30 dark:text-gray-300',
+      'pending_dept_head': 'bg-yellow-500/15 text-yellow-700 border-yellow-500/30 dark:text-yellow-300',
+      'pending_staff': 'bg-blue-500/15 text-blue-700 border-blue-500/30 dark:text-blue-300',
+      approved: 'bg-green-500/15 text-green-700 border-green-500/30 dark:text-green-300',
+      declined: 'bg-red-500/15 text-red-700 border-red-500/30 dark:text-red-300',
+      returned: 'bg-purple-500/15 text-purple-700 border-purple-500/30 dark:text-purple-300',
     };
 
-    const colorClass = statusColors[status] || 'bg-gray-500/15 text-gray-700 border-gray-500/30';
+    const colorClass = statusColors[status] || 'bg-gray-500/15 text-gray-700 border-gray-500/30 dark:text-gray-300';
 
     return (
       <Badge className={colorClass}>
@@ -341,7 +341,7 @@ export function BuilderFormsTab({ builderId, onPdfModalOpen, onPdfModalClose }: 
                       {getUserName(form.user)} • {formatDate(form.created_at)}
                     </div>
                     <div className="text-sm text-gray-600">
-                      Type: {form.return_type} • Received by: {form.received_by}
+                      Type: {form.return_type} • Reviewed / Checked by: {form.received_by}
                     </div>
                   </div>
                   <div className="flex items-center gap-2">

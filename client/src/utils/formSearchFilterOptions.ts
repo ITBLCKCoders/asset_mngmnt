@@ -44,7 +44,7 @@ export const CHECKLIST_FILTER_OPTIONS: SearchColumnOption[] = [
   { label: 'Department', value: 'department' },
   { label: 'Company', value: 'company' },
   { label: 'Type', value: 'type' },
-  { label: 'Received By', value: 'receivedBy' },
+  { label: 'Reviewed / Checked By', value: 'receivedBy' },
 ];
 
 export const BORROW_FILTER_OPTIONS: SearchColumnOption[] = [

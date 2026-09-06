@@ -73,10 +73,13 @@ import { Input } from '@/components/ui/input';
 import { Shimmer } from '@/components/ui/shimmer';
 import {
   addCompanyLogoToPDF,
+  cropSignatureToInk,
   getCompanyAccentColor,
   getBlackCodersFooterGradient,
   isBlackCoders,
   sortAssetsByLast5Digits,
+  PDF_SIGNATURE_FILL_RATIO,
+  PDF_SIGNATURE_NUDGE_X_MM,
 } from '@/lib/pdfGenerator/shared';
 import type { AccountabilityForm } from './accountabilityFormTypes';
 import { AssetMovementTab } from './AssetMovementTab';
@@ -160,13 +163,21 @@ const blobToDataUrl = (blob: Blob): Promise<string> => {
 };
 
 // Helper function to add signature to PDF (handles both text and base64 images)
+//
+// Uniform layout: when `centerWithin` is set the image is sized to a
+// fixed fraction of the column width (equal prominence everywhere),
+// centered horizontally with a slight left nudge, and its bottom edge
+// aligns to `anchorBottomY` (just below the printed-name baseline so the
+// lower strokes overlap the name).
 const addSignatureToPDF = async (
   doc: jsPDF,
   signatureData: string | undefined,
   x: number,
   y: number,
   maxWidth: number = 50,
-  maxHeight: number = 20
+  maxHeight: number = 20,
+  anchorBottomY?: number,
+  centerWithin?: { x: number; width: number }
 ): Promise<void> => {
   try {
     logger.debug('addSignatureToPDF called', {
@@ -192,6 +203,11 @@ const addSignatureToPDF = async (
 
     const img = new Image();
     img.crossOrigin = 'anonymous';
+
+    // Pixel dimensions of the processed (possibly cropped) image — the
+    // cropped data URL has a different aspect than the raw file.
+    let inkWidth = 0;
+    let inkHeight = 0;
 
     // Check if signature is a URL (not base64) and if it's cached
     if (
@@ -242,16 +258,21 @@ const addSignatureToPDF = async (
 
           ctx.putImageData(imageData, 0, 0);
 
+          // Trim scan whitespace so the ink fills the box (bigger render)
+          const cropped = cropSignatureToInk(canvas);
+          inkWidth = cropped.width;
+          inkHeight = cropped.height;
+
           // Cache the processed signature image if it's a URL
           if (
             signatureData.startsWith('http://') ||
             signatureData.startsWith('https://')
           ) {
-            const processedDataUrl = canvas.toDataURL();
+            const processedDataUrl = cropped.toDataURL();
             imageCache.set(signatureData, processedDataUrl);
             img.src = processedDataUrl;
           } else {
-            img.src = canvas.toDataURL();
+            img.src = cropped.toDataURL();
           }
         }
 
@@ -264,16 +285,39 @@ const addSignatureToPDF = async (
     });
 
     const pixelsToMm = 0.264583;
-    const sigWidth = img.width * pixelsToMm;
-    const sigHeight = img.height * pixelsToMm;
+    const sigWidth = inkWidth * pixelsToMm;
+    const sigHeight = inkHeight * pixelsToMm;
 
-    let finalSigWidth = sigWidth;
-    let finalSigHeight = sigHeight;
+    if (!sigWidth || !sigHeight) {
+      return;
+    }
 
-    if (sigWidth > maxWidth) {
-      const scale = maxWidth / sigWidth;
-      finalSigWidth = maxWidth;
+    // Keep centered signatures inside their column at a moderate size —
+    // a fixed `x` cannot stay centered when image aspects differ.
+    const effectiveMaxWidth =
+      centerWithin && centerWithin.width > 0
+        ? Math.min(
+            maxWidth,
+            (centerWithin.width - 4) * PDF_SIGNATURE_FILL_RATIO
+          )
+        : maxWidth;
+
+    let finalSigWidth: number;
+    let finalSigHeight: number;
+
+    if (centerWithin && centerWithin.width > 0) {
+      // Uniform size: stretch/shrink every signature to the same
+      // fraction of the column width so all render at equal prominence.
+      const scale = effectiveMaxWidth / sigWidth;
+      finalSigWidth = effectiveMaxWidth;
       finalSigHeight = sigHeight * scale;
+    } else if (sigWidth > effectiveMaxWidth) {
+      const scale = effectiveMaxWidth / sigWidth;
+      finalSigWidth = effectiveMaxWidth;
+      finalSigHeight = sigHeight * scale;
+    } else {
+      finalSigWidth = sigWidth;
+      finalSigHeight = sigHeight;
     }
 
     if (finalSigHeight > maxHeight) {
@@ -282,13 +326,22 @@ const addSignatureToPDF = async (
       finalSigWidth = finalSigWidth * scale;
     }
 
+    const drawX =
+      centerWithin && centerWithin.width > 0
+        ? centerWithin.x +
+          (centerWithin.width - finalSigWidth) / 2 +
+          PDF_SIGNATURE_NUDGE_X_MM
+        : x;
+    const drawY =
+      anchorBottomY != null ? anchorBottomY - finalSigHeight : y;
+
     logger.debug('Adding signature image to PDF', {
       finalSigWidth,
       finalSigHeight,
-      x,
-      y,
+      x: drawX,
+      y: drawY,
     });
-    doc.addImage(img.src, 'PNG', x, y, finalSigWidth, finalSigHeight);
+    doc.addImage(img.src, 'PNG', drawX, drawY, finalSigWidth, finalSigHeight);
   } catch (error) {
     logger.debug(
       'Failed to add signature to PDF',
@@ -1214,6 +1267,12 @@ I agree that if any of the items are damaged or lost due to my negligence, I sha
 
   // Signatures
   const signatureY = y;
+  // Uniform signature columns: left 20–80, right 130–190 (60mm wide each).
+  // Images fill the column width with their bottom edge 3mm below the
+  // printed-name baseline (name sits at signatureY + 28).
+  const sigColLeft = { x: 20, width: 60 };
+  const sigColRight = { x: 130, width: 60 };
+  const sigNameOverlap = 3;
   doc.text('Issued by:', 20, signatureY);
 
   const issuerSignedDate = form.created_at
@@ -1229,13 +1288,22 @@ I agree that if any of the items are damaged or lost due to my negligence, I sha
     hasIssuerSignature: !!form.issuerSignature,
     signatureLength: form.issuerSignature?.length,
   });
-  await addSignatureToPDF(doc, form.issuerSignature, -20, signatureY, 122, 74);
+  await addSignatureToPDF(
+    doc,
+    form.issuerSignature,
+    20,
+    signatureY,
+    122,
+    74,
+    signatureY + 28 + sigNameOverlap,
+    sigColLeft
+  );
 
   doc.setLineWidth(0.2);
   doc.line(20, signatureY + 30, 80, signatureY + 30);
   doc.text('Signature over Printed Name', 20, signatureY + 35);
 
-  doc.text('Issued to/ Received by:', 130, signatureY);
+  doc.text('Issued to/ Reviewed / Checked by:', 130, signatureY);
 
   if (form.signed_at) {
     const empDate = new Date(form.signed_at);
@@ -1255,7 +1323,16 @@ I agree that if any of the items are damaged or lost due to my negligence, I sha
       signaturePrefix: digitalSignature?.substring(0, 50),
     });
     if (digitalSignature) {
-      await addSignatureToPDF(doc, digitalSignature, 90, signatureY, 122, 74);
+      await addSignatureToPDF(
+        doc,
+        digitalSignature,
+        130,
+        signatureY,
+        122,
+        74,
+        signatureY + 28 + sigNameOverlap,
+        sigColRight
+      );
     }
 
     doc.setLineWidth(0.2);
@@ -1307,10 +1384,12 @@ I agree that if any of the items are damaged or lost due to my negligence, I sha
     await addSignatureToPDF(
       doc,
       adminCopySignatureValue as string,
-      -20,
+      20,
       signatureY + 60,
       122,
-      74
+      74,
+      signatureY + 88 + sigNameOverlap,
+      sigColLeft
     );
   }
 
@@ -1350,10 +1429,12 @@ I agree that if any of the items are damaged or lost due to my negligence, I sha
     await addSignatureToPDF(
       doc,
       deptHeadSignature,
-      -20,
+      20,
       signatureY + 108 + deptHeadGap,
       122,
-      74
+      74,
+      signatureY + 136 + deptHeadGap + sigNameOverlap,
+      sigColLeft
     );
   }
   doc.setLineWidth(0.2);
@@ -1383,10 +1464,12 @@ I agree that if any of the items are damaged or lost due to my negligence, I sha
       await addSignatureToPDF(
         doc,
         form.receivedCopy201FileSignature,
-        90,
+        130,
         signatureY + 60,
         122,
-        74
+        74,
+        signatureY + 88 + sigNameOverlap,
+        sigColRight
       );
     }
     doc.setLineWidth(0.2);
@@ -1496,17 +1579,17 @@ function ChecklistSummaryCard({
         </div>
         <div className="flex flex-wrap justify-end gap-1.5">
           {checklist.type_onboarding && (
-            <Badge className="bg-emerald-100 text-emerald-800 hover:bg-emerald-100">
+            <Badge className="bg-emerald-100 text-emerald-800 hover:bg-emerald-100 dark:bg-emerald-900/30 dark:text-emerald-200 dark:hover:bg-emerald-900/30">
               Onboarding
             </Badge>
           )}
           {checklist.type_offboarding && (
-            <Badge className="bg-blue-100 text-blue-800 hover:bg-blue-100">
+            <Badge className="bg-blue-100 text-blue-800 hover:bg-blue-100 dark:bg-blue-900/30 dark:text-blue-200 dark:hover:bg-blue-900/30">
               Offboarding
             </Badge>
           )}
           {checklist.employee_signed_at && (
-            <Badge className="bg-green-100 text-green-800 hover:bg-green-100">
+            <Badge className="bg-green-100 text-green-800 hover:bg-green-100 dark:bg-green-900/30 dark:text-green-200 dark:hover:bg-green-900/30">
               Signed
             </Badge>
           )}
@@ -1534,7 +1617,7 @@ function ChecklistSummaryCard({
 
       <div className="rounded-lg border border-slate-200 bg-white/80 p-3 text-sm">
         <p className="text-xs font-medium uppercase tracking-wide text-slate-500">
-          Received By
+          Reviewed / Checked By
         </p>
         <p className="mt-1 font-medium text-slate-900">
           {checklist.received_by || 'N/A'}
@@ -2124,21 +2207,21 @@ export function AccountabilityFormCard({
               className={
                 statusPillVariant === 'activeDisabled'
                   ? displayedStatus === 'Disabled'
-                    ? 'bg-red-100 text-red-800'
-                    : 'bg-green-100 text-green-800'
+                    ? 'bg-red-100 text-red-800 dark:bg-red-900/30 dark:text-red-200'
+                    : 'bg-green-100 text-green-800 dark:bg-green-900/30 dark:text-green-200'
                   : displayedStatus === 'To receive'
-                    ? 'bg-orange-100 text-orange-800'
+                    ? 'bg-orange-100 text-orange-800 dark:bg-orange-900/30 dark:text-orange-200'
                     : displayedStatus === 'Completed'
-                      ? 'bg-green-100 text-green-800'
+                      ? 'bg-green-100 text-green-800 dark:bg-green-900/30 dark:text-green-200'
                       : displayedStatus === 'Signed'
-                        ? 'bg-blue-100 text-blue-800'
+                        ? 'bg-blue-100 text-blue-800 dark:bg-blue-900/30 dark:text-blue-200'
                         : displayedStatus === 'Disabled'
-                          ? 'bg-red-100 text-red-800'
+                          ? 'bg-red-100 text-red-800 dark:bg-red-900/30 dark:text-red-200'
                           : displayedStatus === 'Declined'
-                            ? 'bg-slate-200 text-slate-800'
+                            ? 'bg-slate-200 text-slate-800 dark:bg-slate-700 dark:text-slate-200'
                             : displayedStatus === 'Revoked'
-                              ? 'bg-orange-100 text-orange-800'
-                              : 'bg-yellow-100 text-yellow-800'
+                              ? 'bg-orange-100 text-orange-800 dark:bg-orange-900/30 dark:text-orange-200'
+                              : 'bg-yellow-100 text-yellow-800 dark:bg-yellow-900/30 dark:text-yellow-200'
               }
             >
               {displayedStatus}
@@ -3794,8 +3877,8 @@ export function ClearanceFormCard({
             variant="secondary"
             className={
               isIT
-                ? 'bg-emerald-100 text-emerald-800'
-                : 'bg-amber-100 text-amber-800'
+                ? 'bg-emerald-100 text-emerald-800 dark:bg-emerald-900/30 dark:text-emerald-200'
+                : 'bg-amber-100 text-amber-800 dark:bg-amber-900/30 dark:text-amber-200'
             }
           >
             Cleared

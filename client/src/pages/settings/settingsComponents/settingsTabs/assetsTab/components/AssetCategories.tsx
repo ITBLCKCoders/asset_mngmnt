@@ -26,7 +26,24 @@ import {
   Package,
   AlertTriangle,
   Search,
+  Download,
+  Upload,
 } from 'lucide-react';
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from '@/components/ui/dropdown-menu';
+import {
+  exportToCSV,
+  exportToExcel,
+  checkDuplicates,
+  resolveImportIds,
+  importRows,
+  type ImportResult,
+} from '../utils/importExportUtils';
+import { AssetSettingsImportDialog } from './AssetSettingsImportDialog';
 import { Shimmer } from '@/components/ui/shimmer';
 import { useCategories } from '../hooks/useCategories';
 import { useDepartments } from '../hooks/useDepartments';
@@ -73,6 +90,7 @@ export function AssetCategories({
     handleSave,
     handleDelete,
     openEdit,
+    fetchCategories,
   } = useCategories({ onAfterSave });
 
   // Use external categories if provided, otherwise use hook's categories
@@ -80,6 +98,39 @@ export function AssetCategories({
 
   const { departments } = useDepartments();
   const [departmentSearchQuery, setDepartmentSearchQuery] = useState('');
+  const [importDialogOpen, setImportDialogOpen] = useState(false);
+
+  const handleExportCSV = () => {
+    const exportData = categories.map(cat => ({
+      name: cat.name,
+      prefix: cat.prefix,
+      gl_code: cat.gl_code,
+      department: cat.department?.name || '',
+    }));
+    exportToCSV('categories', exportData);
+  };
+
+  const handleExportExcel = () => {
+    const exportData = categories.map(cat => ({
+      name: cat.name,
+      prefix: cat.prefix,
+      gl_code: cat.gl_code,
+      department: cat.department?.name || '',
+    }));
+    exportToExcel('categories', exportData);
+  };
+
+  const handleImport = async (rows: Record<string, string>[]): Promise<ImportResult> => {
+    const resolvedRows = await resolveImportIds('categories', rows);
+    const existingNames = categories.map(c => c.name);
+    const { uniqueRows } = checkDuplicates('categories', resolvedRows, existingNames);
+    const result = await importRows('categories', uniqueRows);
+    if (result.created > 0) {
+      fetchCategories();
+      if (onAfterSave) onAfterSave();
+    }
+    return result;
+  };
 
   const categoryColumns = useMemo<ColumnDef<Category>[]>(
     () => [
@@ -131,7 +182,7 @@ export function AssetCategories({
         accessorKey: 'gl_code',
         size: 120,
         cell: ({ row }) => (
-          <Badge className="font-mono text-sm px-4 py-1.5 bg-emerald-500/10 text-emerald-600 border-emerald-500/30">
+          <Badge className="font-mono text-sm px-4 py-1.5 bg-emerald-500/10 text-emerald-600 border-emerald-500/30 dark:text-emerald-300">
             {row.original.gl_code}
           </Badge>
         ),
@@ -195,7 +246,7 @@ export function AssetCategories({
   return (
     <section className="flex flex-col h-full min-h-[24rem]">
       <div className="bg-red-600 rounded-t-2xl p-6 mb-0 shrink-0">
-        <div className="flex items-start justify-between gap-6">
+        <div className="flex items-start gap-6">
           <div>
             <h2 className="text-2xl font-bold tracking-tight text-white">
               Asset Categories
@@ -203,6 +254,39 @@ export function AssetCategories({
             <p className="text-white/80 mt-2">
               Define categories and map them to your General Ledger
             </p>
+          </div>
+
+          <div className="flex items-center gap-2 ml-auto">
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <Button
+                  size="lg"
+                  variant="outline"
+                  className="shadow-sm hover:shadow-md transition-all duration-300 bg-white/90 hover:bg-white text-gray-700 font-medium rounded-xl border-gray-200"
+                >
+                  <Download className="mr-2 h-4 w-4" />
+                  Export
+                </Button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="end" className="bg-white border-gray-200">
+                <DropdownMenuItem onClick={handleExportCSV} className="cursor-pointer">
+                  Export as CSV
+                </DropdownMenuItem>
+                <DropdownMenuItem onClick={handleExportExcel} className="cursor-pointer">
+                  Export as Excel
+                </DropdownMenuItem>
+              </DropdownMenuContent>
+            </DropdownMenu>
+
+            <Button
+              size="lg"
+              variant="outline"
+              onClick={() => setImportDialogOpen(true)}
+              className="shadow-sm hover:shadow-md transition-all duration-300 bg-white/90 hover:bg-white text-gray-700 font-medium rounded-xl border-gray-200"
+            >
+              <Upload className="mr-2 h-4 w-4" />
+              Import
+            </Button>
           </div>
 
           <Dialog open={isOpen} onOpenChange={setIsOpen}>
@@ -511,6 +595,14 @@ export function AssetCategories({
           </AppAlertDialogChromeFooter>
         </AppAlertDialogFrame>
       </AlertDialog>
+
+      <AssetSettingsImportDialog
+        open={importDialogOpen}
+        onOpenChange={setImportDialogOpen}
+        entityType="categories"
+        onImport={handleImport}
+        onAfterImport={onAfterSave}
+      />
     </section>
   );
 }

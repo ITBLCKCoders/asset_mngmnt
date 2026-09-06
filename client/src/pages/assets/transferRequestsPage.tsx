@@ -587,7 +587,7 @@ export default function TransferRequestsPage() {
       accessorKey: 'status',
       header: 'Status',
       cell: ({ row }: any) => (
-        <Badge className="bg-red-100 text-red-800">
+        <Badge className="bg-red-100 text-red-800 dark:bg-red-900/30 dark:text-red-200">
           {(row.original.returns || []).length} asset
           {(row.original.returns || []).length !== 1 ? 's' : ''}
         </Badge>
@@ -864,7 +864,7 @@ export default function TransferRequestsPage() {
                         </p>
                       </div>
                     </div>
-                    <Badge className="bg-red-100 text-red-800 hover:bg-red-100">
+                    <Badge className="bg-red-100 text-red-800 hover:bg-red-100 dark:bg-red-900/30 dark:text-red-200 dark:hover:bg-red-900/30">
                       {(batch.returns || []).length} asset
                       {(batch.returns || []).length !== 1 ? 's' : ''}
                     </Badge>
@@ -957,7 +957,7 @@ export default function TransferRequestsPage() {
                         <div className="flex items-start gap-3">
                           <User className="h-4 w-4 text-emerald-400 mt-0.5 flex-shrink-0" />
                           <div className="flex-1 min-w-0">
-                            <p className="font-medium text-sm text-emerald-700">
+                            <p className="font-medium text-sm text-emerald-700 dark:text-emerald-300">
                               Processed by: {batch.processed_by}
                             </p>
                           </div>
@@ -1383,7 +1383,7 @@ export default function TransferRequestsPage() {
 
                 <div className="rounded-xl border border-slate-200 bg-white p-5 shadow-sm">
                   <Label className="text-sm font-semibold text-slate-800 uppercase">
-                    Received by <span className="text-red-500">*</span>
+                    Reviewed / Checked by <span className="text-red-500">*</span>
                   </Label>
                   <p className="text-xs text-slate-500 mt-1">
                     Prefills from your profile job position; edit if needed.

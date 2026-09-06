@@ -135,7 +135,7 @@ describe('UserPermissions', () => {
     );
     renderPage();
     await waitFor(() => {
-      const shimmers = document.querySelectorAll('[style*="background-position"]');
+      const shimmers = document.querySelectorAll('[style*="opacity"]');
       expect(shimmers.length).toBeGreaterThan(0);
     });
   });

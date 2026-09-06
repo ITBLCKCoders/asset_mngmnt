@@ -33,9 +33,47 @@ export async function getUserApproversHandler(req: AuthRequest, res: Response) {
   }
 }
 
+async function assertActorMayManageUser(
+  actorUserId: string,
+  targetUserId: string
+): Promise<{ ok: boolean; error?: string; status?: number }> {
+  const [actorRows] = (await pool.execute(
+    `SELECT u.company_id, r.name as role_name
+       FROM users u
+       LEFT JOIN asset_mngmnt_roles r ON u.role_id = r.roleID AND r.deleted_at IS NULL
+      WHERE u.userID = ?
+      LIMIT 1`,
+    [actorUserId]
+  )) as any[];
+  const actorRole = String(actorRows[0]?.role_name ?? '').trim().toLowerCase();
+  if (actorRole !== 'admin') return { ok: true };
+  const actorCompanyId = (actorRows[0]?.company_id as string | null) ?? null;
+  const [targetRows] = (await pool.execute(
+    'SELECT company_id FROM users WHERE userID = ? LIMIT 1',
+    [targetUserId]
+  )) as any[];
+  if (!targetRows[0]) return { ok: false, error: 'Requester user not found', status: 404 };
+  const targetCompanyId = (targetRows[0]?.company_id as string | null) ?? null;
+  if (!actorCompanyId || actorCompanyId !== targetCompanyId) {
+    return {
+      ok: false,
+      error: 'Forbidden: outside your company scope',
+      status: 403,
+    };
+  }
+  return { ok: true };
+}
+
 export async function setUserApproverHandler(req: AuthRequest, res: Response) {
   try {
     const userId = req.params.userId as string;
+
+    if (req.user?.userID) {
+      const guard = await assertActorMayManageUser(req.user.userID, userId);
+      if (!guard.ok) {
+        return res.status(guard.status ?? 403).json({ error: guard.error });
+      }
+    }
     const { approverType, approverUserId } = req.body as {
       approverType?: unknown;
       approverUserId?: unknown;
@@ -112,6 +150,13 @@ export async function removeUserApproverHandler(req: AuthRequest, res: Response)
   try {
     const userId = req.params.userId as string;
     const approverType = req.params.approverType as string;
+
+    if (req.user?.userID) {
+      const guard = await assertActorMayManageUser(req.user.userID, userId);
+      if (!guard.ok) {
+        return res.status(guard.status ?? 403).json({ error: guard.error });
+      }
+    }
     if (!isApproverType(approverType)) {
       return res
         .status(400)

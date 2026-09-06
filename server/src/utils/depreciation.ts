@@ -102,6 +102,55 @@ export type ComputedDepreciationFields = {
  * and `monthly_depreciation`. Old units keep their imported/stored values
  * untouched since they were never depreciation-tracked.
  */
+export type StoredDepreciationFields = {
+  past_book_value: number | null;
+  past_accumulated_depreciation: number | null;
+  past_monthly_depreciation: number | null;
+};
+
+/**
+ * Read the frozen stored (past/creation-time) depreciation values off a row.
+ * These are written at create/edit time and never recomputed, so the Asset
+ * List can show them next to the live (present) computed values.
+ */
+export function readStoredDepreciationFields<
+  T extends {
+    book_value?: number | string | null;
+    accumulated_depreciation?: number | string | null;
+    monthly_depreciation?: number | string | null;
+  }
+>(row: T): StoredDepreciationFields {
+  return {
+    past_book_value: row.book_value != null ? toNumber(row.book_value) : null,
+    past_accumulated_depreciation:
+      row.accumulated_depreciation != null
+        ? toNumber(row.accumulated_depreciation)
+        : null,
+    past_monthly_depreciation:
+      row.monthly_depreciation != null ? toNumber(row.monthly_depreciation) : null,
+  };
+}
+
+/**
+ * Attach both value sets to an asset list row:
+ * - `past_*`: frozen stored values (creation-time record, never recomputed).
+ * - `book_value` / `accumulated_depreciation` / `monthly_depreciation`:
+ *   live present values computed as-of `asOf` (defaults to now, so values
+ *   advance automatically week-over-week with no scheduled job or DB writes).
+ */
+export function withPastAndPresentDepreciationFields<
+  T extends DepreciationInput & {
+    book_value?: number | string | null;
+    accumulated_depreciation?: number | string | null;
+    monthly_depreciation?: number | string | null;
+  }
+>(row: T, asOf: Date = new Date()): ComputedDepreciationFields & StoredDepreciationFields {
+  return {
+    ...readStoredDepreciationFields(row),
+    ...computeAssetDepreciationFields(row, asOf),
+  };
+}
+
 export function computeAssetDepreciationFields<
   T extends DepreciationInput & {
     book_value?: number | string | null;

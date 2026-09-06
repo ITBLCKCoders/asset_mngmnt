@@ -74,7 +74,10 @@ describe('users.controller', () => {
     it('updates user successfully', async () => {
       req.params = { id: 'u-1' };
       req.body = { email: 'a@b.com', first_name: 'Alice', last_name: 'Smith' };
-      mockPool.pool.execute.mockResolvedValue([[ [{ affected_rows: 1 }] ]]);
+      mockPool.pool.execute
+        // actor guard lookup (non-admin bypasses company check)
+        .mockResolvedValueOnce([[{ role_name: 'IT Asset Manager', company_id: 'c-1' }]])
+        .mockResolvedValue([[ [{ affected_rows: 1 }] ]]);
       await usersController.updateUserHandler(req, res);
       expect(res._json.message).toBe('User updated successfully');
     });
@@ -82,7 +85,9 @@ describe('users.controller', () => {
     it('returns 404 when not found', async () => {
       req.params = { id: 'u-999' };
       req.body = { email: 'x@y.com', first_name: 'X', last_name: 'Y' };
-      mockPool.pool.execute.mockResolvedValue([[ [{ affected_rows: 0 }] ]]);
+      mockPool.pool.execute
+        .mockResolvedValueOnce([[{ role_name: 'IT Asset Manager', company_id: 'c-1' }]])
+        .mockResolvedValue([[ [{ affected_rows: 0 }] ]]);
       await usersController.updateUserHandler(req, res);
       expect(res._status).toBe(404);
     });
@@ -91,10 +96,21 @@ describe('users.controller', () => {
       req.params = { id: 'u-1' };
       req.body = { email: 'a@b.com', first_name: 'Alice', last_name: 'Smith', hr_accountability_receiver: true };
       mockPool.pool.execute
+        .mockResolvedValueOnce([[{ role_name: 'IT Asset Manager', company_id: 'c-1' }]])
         .mockResolvedValueOnce([[ [{ affected_rows: 1 }] ]])
         .mockResolvedValueOnce([[ [{ affected_rows: 1 }] ]]);
       await usersController.updateUserHandler(req, res);
-      expect(mockPool.pool.execute).toHaveBeenCalledTimes(2);
+      expect(mockPool.pool.execute).toHaveBeenCalledTimes(3);
+    });
+
+    it('returns 403 when local admin manages a user outside its company', async () => {
+      req.params = { id: 'u-1' };
+      req.body = { email: 'a@b.com', first_name: 'Alice', last_name: 'Smith' };
+      mockPool.pool.execute
+        .mockResolvedValueOnce([[{ role_name: 'Admin', company_id: 'c-1' }]])
+        .mockResolvedValueOnce([[{ company_id: 'c-2', role_name: 'User' }]]);
+      await usersController.updateUserHandler(req, res);
+      expect(res._status).toBe(403);
     });
   });
 

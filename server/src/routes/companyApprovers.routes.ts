@@ -1,7 +1,7 @@
 import { Router } from 'express';
 import type { AuthRequest } from '../middleware/authenticate.js';
 import { authenticate } from '../middleware/authenticate.js';
-import { requirePermission } from '../middleware/requirePermission.js';
+import { requireUsersManage } from '../middleware/requirePermission.js';
 import {
   getCompanyApproversHandler,
   setCompanyApproverHandler,
@@ -11,18 +11,22 @@ import {
 
 const router = Router();
 
-// All routes require authentication and Admin/Global Admin permissions
+// Reads require authentication (used by the Users page dropdowns).
+// Mutations require Users:edit permission OR Local Admin of the same company.
 router.use(authenticate);
-router.use(requirePermission('Users', 'edit'));
 
 // GET /api/companies/:companyId/approvers - Get all designated approvers for a company
 router.get('/:companyId/approvers', getCompanyApproversHandler);
 
 // POST /api/companies/:companyId/approvers - Set designated approver
-router.post('/:companyId/approvers', setCompanyApproverHandler);
+router.post('/:companyId/approvers', requireUsersManage(), setCompanyApproverHandler);
 
 // DELETE /api/companies/:companyId/approvers/:approverType - Remove designated approver
-router.delete('/:companyId/approvers/:approverType', removeCompanyApproverHandler);
+router.delete(
+  '/:companyId/approvers/:approverType',
+  requireUsersManage(),
+  removeCompanyApproverHandler
+);
 
 // GET /api/companies/:companyId/approvers/eligible/:approverType - Get eligible users for dropdown
 router.get('/:companyId/approvers/eligible/:approverType', getEligibleApproversHandler);

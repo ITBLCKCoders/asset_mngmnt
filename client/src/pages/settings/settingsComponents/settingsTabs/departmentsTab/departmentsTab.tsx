@@ -1,6 +1,13 @@
 import { useState, useEffect } from 'react';
 import { SettingsDepartmentsTabSkeleton } from '@/components/common/pageSkeletons';
-import { TabsContent } from '@/components/ui/tabs';
+import {
+  Tabs,
+  TabsContent,
+  TabsList,
+  TabsTrigger,
+  segmentTabsListClassName,
+  segmentTabsTriggerClassName,
+} from '@/components/ui/tabs';
 import { Button } from '@/components/ui/button';
 import { Building, Sparkles } from 'lucide-react';
 import { Department, Position } from '@/types/assets';
@@ -144,7 +151,12 @@ export function DepartmentsTab({
     {} as Record<string, string>
   );
 
-  if (isTabLoading) {
+  // Skeleton stays until the minimum display time passes AND the real
+  // departments/positions queries resolve — avoids the flash where the
+  // skeleton vanishes while tables are still loading their own states.
+  const showSkeleton = isTabLoading || departmentsLoading || positionsLoading;
+
+  if (showSkeleton) {
     return <SettingsDepartmentsTabSkeleton />;
   }
 
@@ -174,105 +186,127 @@ export function DepartmentsTab({
         </div>
       )}
 
-      {/* Departments Section */}
-      <section className="mb-10">
-        <div className="bg-red-600 rounded-t-2xl p-6 mb-0">
-          <div className="flex items-start justify-between gap-6">
-            <div>
-              <h2 className="text-2xl font-bold tracking-tight text-white">
-                Departments
-              </h2>
-              <p className="text-white/80 mt-2">
-                Organize your organization structure and assign assets to
-                departments
-              </p>
-            </div>
+      {/* Nested sub-tabs — Departments / Positions (same pattern as FormsTab) */}
+      <Tabs defaultValue="departments-list" className="space-y-6">
+        <TabsList
+          className={segmentTabsListClassName + ' flex w-full overflow-x-auto scrollbar-hide'}
+        >
+          <TabsTrigger
+            value="departments-list"
+            className={segmentTabsTriggerClassName + ' flex-1 whitespace-nowrap'}
+          >
+            Departments
+          </TabsTrigger>
+          <TabsTrigger
+            value="positions"
+            className={segmentTabsTriggerClassName + ' flex-1 whitespace-nowrap'}
+          >
+            Positions
+          </TabsTrigger>
+        </TabsList>
 
-            <DepartmentForm
-              isOpen={departmentsOpen}
-              setIsOpen={setDepartmentsOpen}
-              editing={editingDepartment}
-              onSave={onDepartmentSave}
-              saving={departmentsSaving}
-              trigger={
-                <Button
-                  size="lg"
-                  className="shadow-lg hover:shadow-xl transition-all duration-300 bg-primary hover:bg-primary/90 text-primary-foreground text-white font-medium rounded-xl disabled:opacity-50 disabled:cursor-not-allowed"
-                  disabled={!hasPermission('Departments', 'create')}
-                  onClick={handleDepartmentAddNew}
-                >
-                  <Sparkles className="mr-2 h-5 w-5" />
-                  Add New Department
-                </Button>
-              }
-            />
-          </div>
-        </div>
+        <TabsContent value="departments-list" className="mt-0">
+          <section className="mb-10">
+            <div className="bg-red-600 rounded-t-2xl p-6 mb-0">
+              <div className="flex items-start justify-between gap-6">
+                <div>
+                  <h2 className="text-2xl font-bold tracking-tight text-white">
+                    Departments
+                  </h2>
+                  <p className="text-white/80 mt-2">
+                    Organize your organization structure and assign assets to
+                    departments
+                  </p>
+                </div>
 
-        <div className="p-5 border border-t-0 border-gray-200 rounded-b-2xl bg-card">
-          <DepartmentTable
-            departments={departments}
-            loading={departmentsLoading}
-            onEdit={handleDepartmentEdit}
-            onDelete={onDepartmentDelete}
-            deleting={deletingDepartment}
-            setDeleting={setDeletingDepartment}
-            onAddNew={handleDepartmentAddNew}
-          />
-        </div>
-      </section>
-
-      {/* Positions Section */}
-      <section className="mb-10">
-        <div className="bg-red-600 rounded-t-2xl p-6 mb-0">
-          <div className="flex items-start justify-between gap-6">
-            <div>
-              <h2 className="text-2xl font-bold tracking-tight text-white">
-                Positions
-              </h2>
-              <p className="text-white/80 mt-2">
-                Manage job positions within your departments
-              </p>
-            </div>
-
-            <PositionForm
-              isOpen={positionsOpen}
-              setIsOpen={setPositionsOpen}
-              editing={editingPosition}
-              onSave={onPositionSave}
-              saving={positionsSaving}
-              trigger={
-                <Button
-                  size="lg"
-                  className="shadow-lg hover:shadow-xl transition-all duration-300 bg-primary hover:bg-primary/90 text-primary-foreground text-white font-medium rounded-xl disabled:opacity-50 disabled:cursor-not-allowed"
-                  disabled={
-                    !hasPermission('Positions', 'create') ||
-                    departments.length === 0
+                <DepartmentForm
+                  isOpen={departmentsOpen}
+                  setIsOpen={setDepartmentsOpen}
+                  editing={editingDepartment}
+                  onSave={onDepartmentSave}
+                  saving={departmentsSaving}
+                  trigger={
+                    <Button
+                      size="lg"
+                      className="shadow-lg hover:shadow-xl transition-all duration-300 bg-primary hover:bg-primary/90 text-primary-foreground text-white font-medium rounded-xl disabled:opacity-50 disabled:cursor-not-allowed"
+                      disabled={!hasPermission('Departments', 'create')}
+                      onClick={handleDepartmentAddNew}
+                    >
+                      <Sparkles className="mr-2 h-5 w-5" />
+                      Add New Department
+                    </Button>
                   }
-                  onClick={handlePositionAddNew}
-                >
-                  <Sparkles className="mr-2 h-5 w-5" />
-                  Add New Position
-                </Button>
-              }
-              departments={departments}
-            />
-          </div>
-        </div>
+                />
+              </div>
+            </div>
 
-        <div className="p-5 border border-t-0 border-gray-200 rounded-b-2xl bg-card">
-          <PositionTable
-            positions={positions}
-            loading={positionsLoading}
-            onEdit={handlePositionEdit}
-            onDelete={onPositionDelete}
-            deleting={deletingPosition}
-            setDeleting={setDeletingPosition}
-            onAddNew={handlePositionAddNew}
-            departments={departmentMap}
-          />
-        </div>
-      </section>
+            <div className="p-5 border border-t-0 border-gray-200 rounded-b-2xl bg-card">
+              <DepartmentTable
+                departments={departments}
+                loading={departmentsLoading}
+                onEdit={handleDepartmentEdit}
+                onDelete={onDepartmentDelete}
+                deleting={deletingDepartment}
+                setDeleting={setDeletingDepartment}
+                onAddNew={handleDepartmentAddNew}
+              />
+            </div>
+          </section>
+        </TabsContent>
+
+        <TabsContent value="positions" className="mt-0">
+          <section className="mb-10">
+            <div className="bg-red-600 rounded-t-2xl p-6 mb-0">
+              <div className="flex items-start justify-between gap-6">
+                <div>
+                  <h2 className="text-2xl font-bold tracking-tight text-white">
+                    Positions
+                  </h2>
+                  <p className="text-white/80 mt-2">
+                    Manage job positions within your departments
+                  </p>
+                </div>
+
+                <PositionForm
+                  isOpen={positionsOpen}
+                  setIsOpen={setPositionsOpen}
+                  editing={editingPosition}
+                  onSave={onPositionSave}
+                  saving={positionsSaving}
+                  trigger={
+                    <Button
+                      size="lg"
+                      className="shadow-lg hover:shadow-xl transition-all duration-300 bg-primary hover:bg-primary/90 text-primary-foreground text-white font-medium rounded-xl disabled:opacity-50 disabled:cursor-not-allowed"
+                      disabled={
+                        !hasPermission('Positions', 'create') ||
+                        departments.length === 0
+                      }
+                      onClick={handlePositionAddNew}
+                    >
+                      <Sparkles className="mr-2 h-5 w-5" />
+                      Add New Position
+                    </Button>
+                  }
+                  departments={departments}
+                />
+              </div>
+            </div>
+
+            <div className="p-5 border border-t-0 border-gray-200 rounded-b-2xl bg-card">
+              <PositionTable
+                positions={positions}
+                loading={positionsLoading}
+                onEdit={handlePositionEdit}
+                onDelete={onPositionDelete}
+                deleting={deletingPosition}
+                setDeleting={setDeletingPosition}
+                onAddNew={handlePositionAddNew}
+                departments={departmentMap}
+              />
+            </div>
+          </section>
+        </TabsContent>
+      </Tabs>
     </TabsContent>
   );
 }

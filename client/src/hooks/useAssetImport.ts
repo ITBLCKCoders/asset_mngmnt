@@ -1,7 +1,12 @@
-import { useState, useCallback } from 'react';
+import { useState, useCallback, useRef, useEffect } from 'react';
 import ExcelJS from 'exceljs';
 import { api } from '@/lib/api';
 import { toast } from 'sonner';
+import {
+  buildMasterReport,
+  type MasterReport,
+  type ParsedRowRef,
+} from '@/pages/assets/assets-list/assetsComponents/importMasterValidation';
 
 export interface ParsedAssetRow {
   row: number;
@@ -144,7 +149,16 @@ function mapBuilderRow(raw: Record<string, unknown>, rowNum: number): ParsedBuil
   };
 }
 
-export function useAssetImport() {
+export type AddDialogField = 'category' | 'type' | 'brand' | 'supplier';
+
+export interface ActiveAddDialog {
+  field: AddDialogField;
+  value: string;
+  parentValue?: string;
+}
+
+export function useAssetImport(options?: { activeCompanyName?: string }) {
+  const activeCompanyName = options?.activeCompanyName;
   const [isImportDialogOpen, setIsImportDialogOpen] = useState(false);
   const [parsedAssets, setParsedAssets] = useState<ParsedAssetRow[] | null>(null);
   const [parsedBuilders, setParsedBuilders] = useState<ParsedBuilderRow[] | null>(null);
@@ -152,6 +166,61 @@ export function useAssetImport() {
   const [importResult, setImportResult] = useState<ImportResult | null>(null);
   const [isUploading, setIsUploading] = useState(false);
   const [fileName, setFileName] = useState<string | null>(null);
+  const [masters, setMasters] = useState({
+    categories: [] as any[],
+    types: [] as any[],
+    brands: [] as any[],
+    suppliers: [] as any[],
+  });
+  const [departments, setDepartments] = useState<any[]>([]);
+  const [masterReport, setMasterReport] = useState<MasterReport | null>(null);
+  const [activeAddDialog, setActiveAddDialog] = useState<ActiveAddDialog | null>(null);
+  const [skipUnresolved, setSkipUnresolved] = useState(false);
+
+  const mastersRef = useRef(masters);
+  const parsedAssetsRef = useRef(parsedAssets);
+
+  useEffect(() => {
+    parsedAssetsRef.current = parsedAssets;
+  }, [parsedAssets]);
+
+  const updateMasters = useCallback((next: typeof masters) => {
+    mastersRef.current = next;
+    setMasters(next);
+  }, []);
+
+  const revalidate = useCallback((rows: ParsedAssetRow[] | null) => {
+    if (!rows || rows.length === 0) {
+      setMasterReport(null);
+      return;
+    }
+    setMasterReport(
+      buildMasterReport(rows as ParsedRowRef[], mastersRef.current, activeCompanyName)
+    );
+  }, [activeCompanyName]);
+
+  const fetchMasters = useCallback(async () => {
+    try {
+      const [cats, typ, bra, sup, deptRes] = await Promise.all([
+        api.get('/categories'),
+        api.get('/types'),
+        api.get('/brands'),
+        api.get('/suppliers'),
+        api.get('/departments'),
+      ]);
+      const next = {
+        categories: (cats ?? []).map((c: any) => ({ ...c, id: c.categoryID || c.id })),
+        types: (typ ?? []).map((t: any) => ({ ...t, id: t.typeID || t.id })),
+        brands: (bra ?? []).map((b: any) => ({ ...b, id: b.brandID || b.id })),
+        suppliers: (sup ?? []).map((s: any) => ({ ...s, id: s.supplierID || s.id })),
+      };
+      updateMasters(next);
+      const depts = (deptRes as any)?.departments || deptRes || [];
+      setDepartments(Array.isArray(depts) ? depts : []);
+    } catch (err) {
+      console.error('Failed to fetch master lists for import validation:', err);
+    }
+  }, [updateMasters]);
 
   const reset = useCallback(() => {
     setParsedAssets(null);
@@ -160,12 +229,16 @@ export function useAssetImport() {
     setImportResult(null);
     setIsUploading(false);
     setFileName(null);
+    setMasterReport(null);
+    setActiveAddDialog(null);
+    setSkipUnresolved(false);
   }, []);
 
   const openDialog = useCallback(() => {
     reset();
     setIsImportDialogOpen(true);
-  }, [reset]);
+    fetchMasters();
+  }, [reset, fetchMasters]);
 
   const closeDialog = useCallback(() => {
     setIsImportDialogOpen(false);
@@ -268,21 +341,46 @@ export function useAssetImport() {
       setParsedAssets(assets);
       setParsedBuilders(builders);
       setValidationErrors(errors);
+      await fetchMasters();
+      revalidate(assets);
     } catch (err: any) {
       setValidationErrors([{ row: 0, field: 'file', message: err.message || 'Failed to parse Excel file' }]);
     }
-  }, []);
+  }, [fetchMasters, revalidate]);
 
   const handleImport = useCallback(async (): Promise<ImportResult | null> => {
-    if (!parsedAssets || parsedAssets.length === 0) {
+    const rows = parsedAssets || [];
+    if (rows.length === 0) {
       toast.error('No valid asset rows to import');
+      return null;
+    }
+
+    const report = buildMasterReport(rows as ParsedRowRef[], mastersRef.current, activeCompanyName);
+    const companyMismatchRows = new Set(report.companyMismatches.map(m => m.row));
+    const unresolvedRows = new Set(report.unresolvedRowNumbers);
+
+    if (!skipUnresolved && report.blocked) {
+      toast.error(
+        'Resolve the missing categories, types, brands, or suppliers before importing.'
+      );
+      return null;
+    }
+
+    const importableRows = rows.filter(a => {
+      if (companyMismatchRows.has(a.row)) return false;
+      if (skipUnresolved && unresolvedRows.has(a.row)) return false;
+      return true;
+    });
+
+    if (importableRows.length === 0) {
+      toast.error('No importable asset rows remain. Resolve the issues and try again.');
       return null;
     }
 
     setIsUploading(true);
     try {
       const body: any = {
-        assets: parsedAssets.map(a => ({
+        assets: importableRows.map(a => ({
           name: a.name,
           description: a.description || null,
           category: a.category,
@@ -339,7 +437,7 @@ export function useAssetImport() {
     } finally {
       setIsUploading(false);
     }
-  }, [parsedAssets, parsedBuilders]);
+  }, [parsedAssets, parsedBuilders, activeCompanyName, skipUnresolved]);
 
   const downloadTemplate = useCallback(async () => {
     const workbook = new ExcelJS.Workbook();
@@ -449,6 +547,43 @@ export function useAssetImport() {
     URL.revokeObjectURL(url);
   }, []);
 
+  const openAddDialog = useCallback(
+    (field: AddDialogField, value: string, parentValue?: string) => {
+      setActiveAddDialog({ field, value, parentValue });
+    },
+    []
+  );
+
+  const closeAddDialog = useCallback(() => {
+    setActiveAddDialog(null);
+  }, []);
+
+  const handleSaveMaster = useCallback(
+    async (field: AddDialogField, payload: Record<string, any>): Promise<boolean> => {
+      const endpoints: Record<AddDialogField, string> = {
+        category: '/categories',
+        type: '/types',
+        brand: '/brands',
+        supplier: '/suppliers',
+      };
+      try {
+        await api.post(endpoints[field], payload);
+        toast.success(
+          `${field.charAt(0).toUpperCase() + field.slice(1)} created successfully`
+        );
+        await fetchMasters();
+        revalidate(parsedAssetsRef.current);
+        closeAddDialog();
+        return true;
+      } catch (error: any) {
+        console.error(`Failed to save ${field}:`, error);
+        toast.error(error?.message || `Failed to create ${field}`);
+        return false;
+      }
+    },
+    [fetchMasters, revalidate, closeAddDialog]
+  );
+
   return {
     isImportDialogOpen,
     setIsImportDialogOpen,
@@ -458,10 +593,19 @@ export function useAssetImport() {
     importResult,
     isUploading,
     fileName,
+    masters,
+    departments,
+    masterReport,
+    activeAddDialog,
+    skipUnresolved,
+    setSkipUnresolved,
     openDialog,
     closeDialog,
     handleFileUpload,
     handleImport,
+    handleSaveMaster,
+    openAddDialog,
+    closeAddDialog,
     downloadTemplate,
     reset,
   };

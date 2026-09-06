@@ -80,8 +80,16 @@ export interface RequestPipelineRow {
   borrowCount: number;
 }
 
+export interface DashboardTrend {
+  delta: number;
+  pct: number | null;
+}
+
+export type DashboardTrends = Partial<Record<keyof DashboardStats, DashboardTrend>>;
+
 export interface DashboardData {
   stats: DashboardStats;
+  trends: DashboardTrends;
   assetByType: AssetByTypeItem[];
   movement: MovementSeries;
   statusDistribution: StatusDistributionItem[];
@@ -229,6 +237,7 @@ export async function getDashboardData(
 
   return {
     stats,
+    trends: getTrends(movementWeekly),
     assetByType: assetByTypeRows,
     movement,
     statusDistribution: statusRows,
@@ -240,6 +249,41 @@ export async function getDashboardData(
     warrantyRunway,
     requestPipeline,
   };
+}
+
+/**
+ * Trends between the two most recent weekly movement points. Uses existing
+ * movement snapshot/flow fields — no additional queries. pct is null when the
+ * previous value is 0 (cannot compute a meaningful percentage).
+ */
+function getTrends(weekly: MovementDataPoint[]): DashboardTrends {
+  if (!weekly || weekly.length < 2) return {};
+
+  const current = weekly[weekly.length - 1];
+  const previous = weekly[weekly.length - 2];
+  if (!current || !previous) return {};
+
+  const fields: Array<[keyof DashboardTrends, keyof MovementDataPoint]> = [
+    ['availableAssets', 'available'],
+    ['activeAssignments', 'assigned'],
+    ['deployedAssets', 'newAssignments'],
+    ['underMaintenance', 'maintenanceEvents'],
+    ['underRepair', 'repairEvents'],
+    ['borrowRequestsCount', 'borrowRequests'],
+    ['returnedAssets', 'returned'],
+  ];
+
+  const trends: DashboardTrends = {};
+  for (const [statKey, field] of fields) {
+    const cur = Number(current[field] ?? 0);
+    const prev = Number(previous[field] ?? 0);
+    const delta = cur - prev;
+    trends[statKey] = {
+      delta,
+      pct: prev === 0 ? null : Math.round((delta / prev) * 1000) / 10,
+    };
+  }
+  return trends;
 }
 
 async function getStats(
@@ -1215,6 +1259,7 @@ function getEmptyDashboard(): DashboardData {
       forMaintenance: 0,
       forRepair: 0,
     },
+    trends: {},
     assetByType: [],
     movement: { weekly: [], monthly: [] },
     statusDistribution: [],

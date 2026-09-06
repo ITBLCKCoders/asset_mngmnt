@@ -75,13 +75,13 @@ function formatDateTime(dateString: string | null | undefined) {
 function getStatusBadgeClass(status: string) {
   switch (status) {
     case 'Available':
-      return 'bg-blue-50 text-blue-700 border border-blue-200';
+      return 'bg-blue-50 text-blue-700 border border-blue-200 dark:bg-blue-900/20 dark:text-blue-200 dark:border-blue-800';
     case 'Assigned':
-      return 'bg-emerald-50 text-emerald-700 border border-emerald-200';
+      return 'bg-emerald-50 text-emerald-700 border border-emerald-200 dark:bg-emerald-900/20 dark:text-emerald-200 dark:border-emerald-800';
     case 'Pending':
-      return 'bg-yellow-50 text-yellow-700 border border-yellow-200';
+      return 'bg-yellow-50 text-yellow-700 border border-yellow-200 dark:bg-yellow-900/20 dark:text-yellow-200 dark:border-yellow-800';
     case 'Signed':
-      return 'bg-green-50 text-green-700 border border-green-200';
+      return 'bg-green-50 text-green-700 border border-green-200 dark:bg-green-900/20 dark:text-green-200 dark:border-green-800';
     default:
       return 'bg-gray-100 text-gray-700 border border-gray-200';
   }
@@ -344,7 +344,7 @@ export default function IntangibleAssetViewModal({
                         <p className="text-xs font-medium text-gray-500 uppercase tracking-wider">
                           Active
                         </p>
-                        <Badge variant="secondary" className="bg-emerald-50 text-emerald-700 border border-emerald-200">
+                        <Badge variant="secondary" className="bg-emerald-50 text-emerald-700 border border-emerald-200 dark:bg-emerald-900/20 dark:text-emerald-200 dark:border-emerald-800">
                           {activeForms.length}
                         </Badge>
                       </div>

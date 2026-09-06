@@ -357,6 +357,7 @@ const Sidebar = memo(function Sidebar({ onLogout, currentPath = '', currentSearc
                 hasPermission('Borrow Form', 'view') ||
                 hasPermission('Return Form', 'view') ||
                 hasPermission('Transfer Form', 'view') ||
+                hasPermission('Intangible Deactivation Form', 'view') ||
                 hasPermission('Approvals', 'view')) && (
                 <li>
                   <SidebarHoverItem
@@ -366,12 +367,13 @@ const Sidebar = memo(function Sidebar({ onLogout, currentPath = '', currentSearc
                       currentPath === '/forms/checklist' ||
                       currentPath === '/forms/return' ||
                       currentPath === '/forms/transfer' ||
+                      currentPath === '/forms/intangible-deactivation' ||
                       currentPath === '/approvals' ||
                       formsOpen
                     }
                   >
                     <button
-                      onClick={() => setUserFormsOpen(!formsOpen)} {...prefetchMany(['/forms/accountability', '/forms/checklist', '/forms/borrow', '/forms/return', '/forms/transfer', '/approvals'])}
+                      onClick={() => setUserFormsOpen(!formsOpen)} {...prefetchMany(['/forms/accountability', '/forms/checklist', '/forms/borrow', '/forms/return', '/forms/transfer', '/forms/intangible-deactivation', '/approvals'])}
                       className={cn(
                         'flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium w-full transition-all duration-200 justify-between',
                         currentPath === '/forms/accountability' ||
@@ -379,6 +381,7 @@ const Sidebar = memo(function Sidebar({ onLogout, currentPath = '', currentSearc
                           currentPath === '/forms/checklist' ||
                           currentPath === '/forms/return' ||
                           currentPath === '/forms/transfer' ||
+                          currentPath === '/forms/intangible-deactivation' ||
                           currentPath === '/approvals' ||
                           formsOpen
                           ? 'bg-white/20 text-white shadow-md'
@@ -497,20 +500,22 @@ const Sidebar = memo(function Sidebar({ onLogout, currentPath = '', currentSearc
                           </button>
                         </SidebarHoverItem>
                       )}
-                      <SidebarHoverItem active={currentPath === '/forms/intangible-deactivation'}>
-                        <button
-                          onClick={() => go('/forms/intangible-deactivation')} {...prefetch('/forms/intangible-deactivation')}
-                          className={cn(
-                            'flex items-center gap-3 px-3 py-2 rounded-lg text-sm w-full transition-all duration-200',
-                            currentPath === '/forms/intangible-deactivation'
-                              ? 'bg-white/15 text-white font-medium'
-                              : 'text-white/70 hover:bg-white/10 hover:text-white'
-                          )}
-                        >
-                          <FileText className="h-4 w-4 flex-shrink-0" />
-                          <span>Intangible Deactivation</span>
-                        </button>
-                      </SidebarHoverItem>
+                      {hasPermission('Intangible Deactivation Form', 'view') && (
+                        <SidebarHoverItem active={currentPath === '/forms/intangible-deactivation'}>
+                          <button
+                            onClick={() => go('/forms/intangible-deactivation')} {...prefetch('/forms/intangible-deactivation')}
+                            className={cn(
+                              'flex items-center gap-3 px-3 py-2 rounded-lg text-sm w-full transition-all duration-200',
+                              currentPath === '/forms/intangible-deactivation'
+                                ? 'bg-white/15 text-white font-medium'
+                                : 'text-white/70 hover:bg-white/10 hover:text-white'
+                            )}
+                          >
+                            <FileText className="h-4 w-4 flex-shrink-0" />
+                            <span>Intangible Deactivation</span>
+                          </button>
+                        </SidebarHoverItem>
+                      )}
                       {hasPermission('Approvals', 'view') && (
                         <SidebarHoverItem
                           active={currentPath === '/approvals'}
@@ -547,6 +552,7 @@ const Sidebar = memo(function Sidebar({ onLogout, currentPath = '', currentSearc
                 hasPermission('Asset Disposal', 'view') ||
                 hasPermission('Asset Borrowing', 'view') ||
                 hasPermission('Borrow Request Management', 'view') ||
+                hasPermission('Intangible Deactivation', 'view') ||
                 hasPermission('Gate Pass', 'view')) && (
                 <li>
                   <SidebarHoverItem

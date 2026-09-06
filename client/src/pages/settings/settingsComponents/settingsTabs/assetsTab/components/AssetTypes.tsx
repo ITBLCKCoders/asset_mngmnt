@@ -26,12 +26,27 @@ import {
   AlertDialogDescription,
 } from '@/components/ui/alert-dialog';
 import { Badge } from '@/components/ui/badge';
-import { Plus, Edit, Trash2, Package, AlertTriangle } from 'lucide-react';
+import { Plus, Edit, Trash2, Package, AlertTriangle, Download, Upload } from 'lucide-react';
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from '@/components/ui/dropdown-menu';
+import {
+  exportToCSV,
+  exportToExcel,
+  checkDuplicates,
+  resolveImportIds,
+  importRows,
+  type ImportResult,
+} from '../utils/importExportUtils';
+import { AssetSettingsImportDialog } from './AssetSettingsImportDialog';
 import { Shimmer } from '@/components/ui/shimmer';
 import { useAssetTypes } from '../hooks/useAssetTypes';
 import { Category, AssetType } from '../types';
 import { useSearchParams } from 'react-router-dom';
-import { useEffect, useMemo } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { useUserPermissions } from '@/hooks/useUserPermissions';
 import { DataTable } from '@/components/ui/dataTable';
 import type { ColumnDef } from '@tanstack/react-table';
@@ -66,7 +81,40 @@ export function AssetTypes({
     handleSave,
     handleDelete,
     openEdit,
+    fetchTypes,
   } = useAssetTypes({ onAfterSave });
+
+  const [importDialogOpen, setImportDialogOpen] = useState(false);
+
+  const handleExportCSV = () => {
+    const exportData = types.map(t => ({
+      name: t.name,
+      category: categories.find(c => String(c.id) === String(t.categoryId ?? t.category_id ?? ''))?.name || '',
+      prefix: t.prefix,
+    }));
+    exportToCSV('types', exportData);
+  };
+
+  const handleExportExcel = () => {
+    const exportData = types.map(t => ({
+      name: t.name,
+      category: categories.find(c => String(c.id) === String(t.categoryId ?? t.category_id ?? ''))?.name || '',
+      prefix: t.prefix,
+    }));
+    exportToExcel('types', exportData);
+  };
+
+  const handleImport = async (rows: Record<string, string>[]): Promise<ImportResult> => {
+    const resolvedRows = await resolveImportIds('types', rows);
+    const existingNames = types.map(t => t.name);
+    const { uniqueRows } = checkDuplicates('types', resolvedRows, existingNames);
+    const result = await importRows('types', uniqueRows);
+    if (result.created > 0) {
+      fetchTypes();
+      if (onAfterSave) onAfterSave();
+    }
+    return result;
+  };
 
   const typeColumns = useMemo<ColumnDef<AssetType>[]>(
     () => [
@@ -194,7 +242,7 @@ export function AssetTypes({
   return (
     <section className="flex flex-col h-full min-h-[24rem]">
       <div className="bg-red-600 rounded-t-2xl p-6 mb-0 shrink-0">
-        <div className="flex items-start justify-between gap-6">
+        <div className="flex items-start gap-6">
           <div>
             <h2 className="text-2xl font-bold tracking-tight text-white">
               Asset Types
@@ -202,6 +250,39 @@ export function AssetTypes({
             <p className="text-white/80 mt-2">
               Define specific types within each asset category
             </p>
+          </div>
+
+          <div className="flex items-center gap-2 ml-auto">
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <Button
+                  size="lg"
+                  variant="outline"
+                  className="shadow-sm hover:shadow-md transition-all duration-300 bg-white/90 hover:bg-white text-gray-700 font-medium rounded-xl border-gray-200"
+                >
+                  <Download className="mr-2 h-4 w-4" />
+                  Export
+                </Button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="end" className="bg-white border-gray-200">
+                <DropdownMenuItem onClick={handleExportCSV} className="cursor-pointer">
+                  Export as CSV
+                </DropdownMenuItem>
+                <DropdownMenuItem onClick={handleExportExcel} className="cursor-pointer">
+                  Export as Excel
+                </DropdownMenuItem>
+              </DropdownMenuContent>
+            </DropdownMenu>
+
+            <Button
+              size="lg"
+              variant="outline"
+              onClick={() => setImportDialogOpen(true)}
+              className="shadow-sm hover:shadow-md transition-all duration-300 bg-white/90 hover:bg-white text-gray-700 font-medium rounded-xl border-gray-200"
+            >
+              <Upload className="mr-2 h-4 w-4" />
+              Import
+            </Button>
           </div>
 
           <Dialog open={isOpen} onOpenChange={setIsOpen}>
@@ -465,6 +546,14 @@ export function AssetTypes({
           </AppAlertDialogChromeFooter>
         </AppAlertDialogFrame>
       </AlertDialog>
+
+      <AssetSettingsImportDialog
+        open={importDialogOpen}
+        onOpenChange={setImportDialogOpen}
+        entityType="types"
+        onImport={handleImport}
+        onAfterImport={onAfterSave}
+      />
     </section>
   );
 }

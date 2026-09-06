@@ -849,8 +849,8 @@ export default function ReturnRequestsPage() {
             variant="secondary"
             className={
               isProcessedTab
-                ? 'bg-emerald-100 text-emerald-800'
-                : 'bg-amber-100 text-amber-800'
+                ? 'bg-emerald-100 text-emerald-800 dark:bg-emerald-900/30 dark:text-emerald-200'
+                : 'bg-amber-100 text-amber-800 dark:bg-amber-900/30 dark:text-amber-200'
             }
           >
             {isProcessedTab ? 'Processed' : 'Pending'}
@@ -1132,8 +1132,8 @@ export default function ReturnRequestsPage() {
                         variant="secondary"
                         className={
                           isProcessedTab
-                            ? 'bg-emerald-100 text-emerald-800 shrink-0 ml-2'
-                            : 'bg-amber-100 text-amber-800 shrink-0 ml-2'
+                            ? 'bg-emerald-100 text-emerald-800 shrink-0 ml-2 dark:bg-emerald-900/30 dark:text-emerald-200'
+                            : 'bg-amber-100 text-amber-800 shrink-0 ml-2 dark:bg-amber-900/30 dark:text-amber-200'
                         }
                       >
                         {isProcessedTab ? 'Processed' : 'Pending'}
@@ -1192,7 +1192,7 @@ export default function ReturnRequestsPage() {
                       <div className="flex items-start gap-3">
                         <User className="h-4 w-4 text-emerald-400 mt-0.5 flex-shrink-0" />
                         <div className="flex-1 min-w-0">
-                          <p className="font-medium text-sm text-emerald-700">
+                            <p className="font-medium text-sm text-emerald-700 dark:text-emerald-300">
                             Processed by: {form.processed_by}
                           </p>
                         </div>
@@ -1605,7 +1605,7 @@ export default function ReturnRequestsPage() {
                                 <tr key={id} className="border-b border-slate-100 last:border-0">
                                   <td className="py-2 px-3 text-slate-900 font-medium">{asset.name}</td>
                                   <td className="py-2 px-3">
-                                    <Badge variant="outline" className={asset.type === 'IT scope' ? 'bg-red-100 text-red-800 border-red-200' : 'bg-orange-100 text-orange-800 border-orange-200'}>
+                                    <Badge variant="outline" className={asset.type === 'IT scope' ? 'bg-red-100 text-red-800 border-red-200 dark:bg-red-900/30 dark:text-red-200 dark:border-red-800' : 'bg-orange-100 text-orange-800 border-orange-200 dark:bg-orange-900/30 dark:text-orange-200 dark:border-orange-800'}>
                                       {asset.type}
                                     </Badge>
                                   </td>

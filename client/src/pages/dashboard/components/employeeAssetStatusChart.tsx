@@ -13,7 +13,7 @@ export default function EmployeeAssetStatusChart({
 }) {
   if (loading) {
     return (
-      <div className="h-[300px] bg-muted rounded-lg animate-pulse" />
+      <div className="h-[280px] bg-muted rounded-lg animate-pulse" />
     );
   }
 
@@ -25,6 +25,7 @@ export default function EmployeeAssetStatusChart({
       defaultTitle="My Assets by Status"
       defaultDescription="Current status breakdown of assets assigned to you"
       defaultVariant="pie"
+      chartId="myAssetStatus"
       empty={!data.length}
       emptyMessage="No assets assigned"
     >
@@ -35,7 +36,7 @@ export default function EmployeeAssetStatusChart({
           indexKey="name"
           series={[...series]}
           chartConfig={config}
-          className="min-h-[280px] w-full"
+          className="h-[280px] w-full"
         />
       )}
     </DashboardChartShell>

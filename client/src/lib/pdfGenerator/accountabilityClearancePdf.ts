@@ -285,6 +285,12 @@ The employee is hereby CLEARED of all asset accountability and is free of any fu
   y += splitAck.length * 5 + 10;
 
   const signatureY = y;
+  // Uniform signature columns: left 20–80, right 130–190 (60mm wide each).
+  // Images fill the column width with their bottom edge 3mm below the
+  // printed-name baseline.
+  const sigColLeft = { x: 20, width: 60 };
+  const sigColRight = { x: 130, width: 60 };
+  const sigNameOverlap = 3;
   doc.setFontSize(12);
   doc.setFont('helvetica', 'normal');
 
@@ -302,10 +308,12 @@ The employee is hereby CLEARED of all asset accountability and is free of any fu
     await addSignatureToPDF(
       doc,
       form.clearanceItSignature,
-      -20,
+      20,
       signatureY,
       122,
-      74
+      74,
+      signatureY + 28 + sigNameOverlap,
+      sigColLeft
     );
   }
   doc.setLineWidth(0.2);
@@ -332,10 +340,12 @@ The employee is hereby CLEARED of all asset accountability and is free of any fu
     await addSignatureToPDF(
       doc,
       digitalSignature,
-      90,
+      130,
       signatureY,
       122,
-      74
+      74,
+      signatureY + 28 + sigNameOverlap,
+      sigColRight
     );
   }
   doc.setLineWidth(0.2);
@@ -356,10 +366,12 @@ The employee is hereby CLEARED of all asset accountability and is free of any fu
     await addSignatureToPDF(
       doc,
       form.clearanceAdminSignature,
-      -20,
+      20,
       signatureY + 60,
       122,
-      74
+      74,
+      signatureY + 88 + sigNameOverlap,
+      sigColLeft
     );
   }
   doc.setLineWidth(0.2);
@@ -391,10 +403,12 @@ The employee is hereby CLEARED of all asset accountability and is free of any fu
       await addSignatureToPDF(
         doc,
         form.receivedCopy201FileSignature,
-        90,
+        130,
         signatureY + 60,
         122,
-        74
+        74,
+        signatureY + 88 + sigNameOverlap,
+        sigColRight
       );
     }
   }
@@ -425,10 +439,12 @@ The employee is hereby CLEARED of all asset accountability and is free of any fu
     await addSignatureToPDF(
       doc,
       deptHeadSignature,
-      -20,
+      20,
       signatureY + 120,
       122,
-      74
+      74,
+      signatureY + 148 + sigNameOverlap,
+      sigColLeft
     );
   }
   doc.setLineWidth(0.2);

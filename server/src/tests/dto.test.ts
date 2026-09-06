@@ -160,6 +160,9 @@ describe('DTO Transformers', () => {
         depreciation_method: 'straight-line',
         useful_life_years: 5,
         annual_depreciation: 180,
+        past_book_value: null,
+        past_accumulated_depreciation: null,
+        past_monthly_depreciation: null,
         depreciation_start_date: '2024-01-01',
         company_id: 'test-company-id',
         company_name: 'Test Company',
@@ -258,6 +261,9 @@ describe('DTO Transformers', () => {
       expect(dto.department_name).toBe(null);
       expect(dto.location_notes).toBe(null);
       expect(dto.warranty_months).toBe(null);
+      expect(dto.past_book_value).toBe(null);
+      expect(dto.past_accumulated_depreciation).toBe(null);
+      expect(dto.past_monthly_depreciation).toBe(null);
     });
   });
 });

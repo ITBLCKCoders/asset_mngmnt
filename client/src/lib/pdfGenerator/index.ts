@@ -16,6 +16,8 @@ export {
   downloadPDF,
   fetchActiveCompanyForAccountabilityForm,
   fetchActiveCompanyForAssetReturnForm,
+  PDF_SIGNATURE_NAME_GAP_MM,
+  PDF_SIGNATURE_NAME_OVERLAP_MM,
 } from './shared';
 
 export type { AssetReturnData } from './assetReturnPdf';

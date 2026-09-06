@@ -349,7 +349,7 @@ export function Step2Lifecycle({
       <div className="flex items-center justify-between mb-4 p-4 border border-amber-200 bg-amber-50 rounded-lg">
         <div className="flex items-center gap-2">
           <AlertTriangle className="h-4 w-4 text-amber-600" />
-          <Label className="text-sm font-medium text-amber-800">
+          <Label className="text-sm font-medium text-amber-800 dark:text-amber-200">
             Old unit unknown purchase date and asset value
           </Label>
         </div>

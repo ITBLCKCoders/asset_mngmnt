@@ -1,4 +1,5 @@
 import type { Pool, RowDataPacket } from 'mysql2/promise';
+import { withPastAndPresentDepreciationFields } from './depreciation.js';
 
 /** SQL fragment: asset belongs to company scope (owned or home/origin). */
 export function buildAssetCompanyScopeClause(alias = 'a'): {
@@ -27,6 +28,11 @@ export function mapTransferredOutAssetRow(row: RowDataPacket & Record<string, un
     'Company';
   return {
     ...row,
+    // Transferred-out rows come from the raw assets table: attach live
+    // present values plus the frozen stored past_* values like the main list.
+    ...withPastAndPresentDepreciationFields(
+      row as unknown as Parameters<typeof withPastAndPresentDepreciationFields>[0]
+    ),
     // Keep parity with sp_get_assets shape where department display text is `department`.
     department:
       (row.department as string) ||

@@ -783,7 +783,7 @@ export function AddAssetModal({
                     <p className="text-amber-900 font-semibold text-sm mb-1">
                       Smart Asset ID Format Not Configured
                     </p>
-                    <p className="text-amber-800 text-xs">
+                    <p className="text-amber-800 text-xs dark:text-amber-200">
                       Please configure the Smart Asset ID Format in Settings &gt; Assets &gt; Smart Asset ID Format before adding assets.
                     </p>
                   </div>

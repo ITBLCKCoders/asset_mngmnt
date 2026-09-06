@@ -371,14 +371,17 @@ function UserPermissions() {
     const fetchUsers = async () => {
       try {
         setLoading(true);
-        // Determine companyId based on user role
+        // Determine companyId based on user role.
+        // Global Admin may switch companies via CompanyContext; Local Admin
+        // (`Admin`) is strictly scoped to its own assigned company so it can
+        // only assign roles/permissions/approvers to its own company users.
         let companyId: string | undefined;
         const userRole = currentUser?.role?.name?.toLowerCase();
-        if (userRole === 'global admin' || userRole === 'admin') {
-          // Global Admin and Admin use active company from CompanyContext
+        if (userRole === 'global admin') {
+          // Global Admin uses active company from CompanyContext
           companyId = activeCompany?.id || undefined;
         } else {
-          // IT asset and Admin asset users use their assigned company
+          // Local Admin and all other users use their assigned company
           companyId = currentUser?.company_id || undefined;
         }
 
@@ -706,13 +709,13 @@ function UserPermissions() {
                           onClick={() => setSelectedUser(user)}
                           className={`cursor-pointer transition-all duration-300 border-2 ${
                             selectedUser?.userID === user.userID
-                              ? 'border-red-600 shadow-xl bg-gradient-to-r from-red-50 to-red-50 ring-2 ring-red-300/50'
-                              : 'border-transparent hover:border-red-300 hover:shadow-lg hover:bg-red-50/50'
+                              ? 'border-red-600 shadow-xl bg-gradient-to-r from-red-50 to-red-50 ring-2 ring-red-300/50 dark:from-red-950/60 dark:to-red-950/60 dark:ring-red-800/60'
+                              : 'border-transparent hover:border-red-300 hover:shadow-lg hover:bg-red-50/50 dark:hover:border-red-700 dark:hover:bg-red-950/30'
                           }`}
                         >
                           <CardContent className="p-5 sm:p-6">
                             <div className="flex items-center gap-3 sm:gap-4">
-                              <Avatar className="h-12 w-12 sm:h-14 sm:w-14 ring-4 ring-white shadow-lg">
+                              <Avatar className="h-12 w-12 sm:h-14 sm:w-14 ring-4 ring-white dark:ring-[rgb(45_50_60_/_0.9)] shadow-lg">
                                 <AvatarImage src={proxyCloudinaryUrl(user.avatar_url)} />
                                 <AvatarFallback
                                   className={`font-bold text-base sm:text-lg ${
@@ -858,25 +861,25 @@ function UserPermissions() {
                         className="m-0 flex-1 flex flex-col min-h-0 overflow-hidden data-[state=inactive]:hidden"
                       >
                         {!canManagePermissions && (
-                          <div className="p-6 bg-gray-50 border-b border-gray-200">
-                            <p className="text-gray-600">
+                          <div className="p-6 bg-gray-50 border-b border-gray-200 dark:bg-[rgb(36_40_48_/_0.95)] dark:border-gray-700">
+                            <p className="text-gray-600 dark:text-slate-300">
                               You do not have permission to manage module
                               access. Ask an administrator for Users create or
                               edit access.
                             </p>
                           </div>
                         )}
-                        {canManagePermissions &&
-                          selectedUser &&
-                          (!selectedUser.role ||
-                            selectedUser.role.name === 'User') && (
-                            <div className="p-4 bg-yellow-50 border border-yellow-200 rounded-lg mx-4 mt-4 shrink-0">
-                              <p className="text-yellow-800">
-                                Please assign a role to this user to set module
-                                permissions and access.
-                              </p>
-                            </div>
-                          )}
+                          {canManagePermissions &&
+                            selectedUser &&
+                            (!selectedUser.role ||
+                              selectedUser.role.name === 'User') && (
+                              <div className="p-4 bg-yellow-50 border border-yellow-200 rounded-lg mx-4 mt-4 shrink-0 dark:bg-yellow-900/30 dark:border-yellow-800">
+                                <p className="text-yellow-800 dark:text-yellow-200">
+                                  Please assign a role to this user to set module
+                                  permissions and access.
+                                </p>
+                              </div>
+                            )}
                         {canManagePermissions && (
                           <div className="flex-1 min-h-0 flex flex-col overflow-hidden">
                             <ModulePermissionsMatrix
@@ -917,18 +920,18 @@ function UserPermissions() {
                         className="m-0 flex-1 flex flex-col min-h-[360px] overflow-auto custom-scrollbar data-[state=inactive]:hidden"
                       >
                         {!canManagePermissions && (
-                          <div className="mx-6 mt-6 flex items-start gap-3 rounded-xl border border-amber-200 bg-amber-50/80 px-4 py-3 shadow-sm">
-                            <AlertCircle className="h-5 w-5 shrink-0 text-amber-600 mt-0.5" />
-                            <p className="text-sm font-medium text-amber-800">
+                          <div className="mx-6 mt-6 flex items-start gap-3 rounded-xl border border-amber-200 bg-amber-50/80 px-4 py-3 shadow-sm dark:border-amber-800 dark:bg-amber-900/20">
+                            <AlertCircle className="h-5 w-5 shrink-0 text-amber-600 dark:text-amber-400 mt-0.5" />
+                            <p className="text-sm font-medium text-amber-800 dark:text-amber-200">
                               You do not have permission to manage approvers. Ask an
                               administrator for Users create or edit access.
                             </p>
                           </div>
                         )}
                         {!selectedUser && (
-                          <div className="mx-6 mt-6 flex items-start gap-3 rounded-xl border border-slate-200 bg-slate-50/80 px-4 py-3 shadow-sm">
-                            <UserX className="h-5 w-5 shrink-0 text-slate-500 mt-0.5" />
-                            <p className="text-sm font-medium text-slate-700">
+                          <div className="mx-6 mt-6 flex items-start gap-3 rounded-xl border border-slate-200 bg-slate-50/80 px-4 py-3 shadow-sm dark:border-slate-700 dark:bg-slate-900/40">
+                            <UserX className="h-5 w-5 shrink-0 text-slate-500 dark:text-slate-400 mt-0.5" />
+                            <p className="text-sm font-medium text-slate-700 dark:text-slate-200">
                               Select a user from the list to assign approvers.
                             </p>
                           </div>
@@ -1016,18 +1019,18 @@ function UserPermissions() {
                         className="m-0 flex-1 flex flex-col min-h-[360px] overflow-auto custom-scrollbar data-[state=inactive]:hidden"
                       >
                         {!canManagePermissions && (
-                          <div className="mx-6 mt-6 flex items-start gap-3 rounded-xl border border-amber-200 bg-amber-50/80 px-4 py-3 shadow-sm">
-                            <AlertCircle className="h-5 w-5 shrink-0 text-amber-600 mt-0.5" />
-                            <p className="text-sm font-medium text-amber-800">
+                          <div className="mx-6 mt-6 flex items-start gap-3 rounded-xl border border-amber-200 bg-amber-50/80 px-4 py-3 shadow-sm dark:border-amber-800 dark:bg-amber-900/20">
+                            <AlertCircle className="h-5 w-5 shrink-0 text-amber-600 dark:text-amber-400 mt-0.5" />
+                            <p className="text-sm font-medium text-amber-800 dark:text-amber-200">
                               You do not have permission to assign roles. Ask an
                               administrator for Users create or edit access.
                             </p>
                           </div>
                         )}
                         {!selectedUser && (
-                          <div className="mx-6 mt-6 flex items-start gap-3 rounded-xl border border-slate-200 bg-slate-50/80 px-4 py-3 shadow-sm">
-                            <UserX className="h-5 w-5 shrink-0 text-slate-500 mt-0.5" />
-                            <p className="text-sm font-medium text-slate-700">
+                          <div className="mx-6 mt-6 flex items-start gap-3 rounded-xl border border-slate-200 bg-slate-50/80 px-4 py-3 shadow-sm dark:border-slate-700 dark:bg-slate-900/40">
+                            <UserX className="h-5 w-5 shrink-0 text-slate-500 dark:text-slate-400 mt-0.5" />
+                            <p className="text-sm font-medium text-slate-700 dark:text-slate-200">
                               Select a user from the list to assign a role.
                             </p>
                           </div>
@@ -1099,7 +1102,7 @@ function UserPermissions() {
                                       </SelectContent>
                                     </Select>
                                     {roles.length === 0 && !rolesLoading && (
-                                      <p className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs font-medium text-amber-800">
+                                      <p className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs font-medium text-amber-800 dark:border-amber-800 dark:bg-amber-900/20 dark:text-amber-200">
                                         No roles found. Add roles in Settings
                                         first.
                                       </p>

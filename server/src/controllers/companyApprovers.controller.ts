@@ -28,12 +28,40 @@ export async function getCompanyApproversHandler(
   }
 }
 
+async function assertActorMayManageCompany(
+  actorUserId: string,
+  companyId: string
+): Promise<{ ok: boolean; error?: string }> {
+  const [actorRows] = (await pool.execute(
+    `SELECT u.company_id, r.name as role_name
+       FROM users u
+       LEFT JOIN asset_mngmnt_roles r ON u.role_id = r.roleID AND r.deleted_at IS NULL
+      WHERE u.userID = ?
+      LIMIT 1`,
+    [actorUserId]
+  )) as any[];
+  const actorRole = String(actorRows[0]?.role_name ?? '').trim().toLowerCase();
+  if (actorRole !== 'admin') return { ok: true };
+  const actorCompanyId = (actorRows[0]?.company_id as string | null) ?? null;
+  if (!actorCompanyId || actorCompanyId !== companyId) {
+    return { ok: false, error: 'Forbidden: outside your company scope' };
+  }
+  return { ok: true };
+}
+
 export async function setCompanyApproverHandler(
   req: AuthRequest,
   res: Response
 ) {
   try {
     const { companyId } = req.params;
+
+    if (req.user?.userID && companyId) {
+      const guard = await assertActorMayManageCompany(req.user.userID, companyId);
+      if (!guard.ok) {
+        return res.status(403).json({ error: guard.error });
+      }
+    }
     if (!companyId) {
       return res.status(400).json({ error: 'companyId is required' });
     }
@@ -75,6 +103,13 @@ export async function removeCompanyApproverHandler(
 ) {
   try {
     const { companyId, approverType } = req.params;
+
+    if (req.user?.userID && companyId) {
+      const guard = await assertActorMayManageCompany(req.user.userID, companyId);
+      if (!guard.ok) {
+        return res.status(403).json({ error: guard.error });
+      }
+    }
     if (!companyId) {
       return res.status(400).json({ error: 'companyId is required' });
     }

@@ -266,7 +266,8 @@ export function ProcessBorrowRequestSummary({ row }: { row: BorrowRequestRow }) 
             variant="outline"
             className={cn(
               'w-fit shrink-0 border-red-200 bg-red-50/80 text-red-800 font-semibold',
-              'px-2 py-0.5 text-[11px]'
+              'px-2 py-0.5 text-[11px]',
+              'dark:border-red-800 dark:bg-red-950/40 dark:text-red-200'
             )}
           >
             {borrowScopeLabel(row.borrow_scope)} scope
@@ -297,7 +298,8 @@ export function ProcessBorrowRequestSummary({ row }: { row: BorrowRequestRow }) 
           variant="outline"
           className={cn(
             'w-fit shrink-0 border-red-200 bg-red-50/80 text-red-800 font-semibold',
-            'px-2 py-0.5 text-[11px]'
+            'px-2 py-0.5 text-[11px]',
+            'dark:border-red-800 dark:bg-red-950/40 dark:text-red-200'
           )}
         >
           {borrowScopeLabel(row.borrow_scope)} scope
@@ -766,14 +768,14 @@ export default function BorrowRequestsPage() {
           const isPending = status.toLowerCase().includes('awaiting') || status.toLowerCase().includes('pending');
           
           const badgeClass = isDeclined
-            ? 'bg-red-100 text-red-800 border border-red-200'
+            ? 'bg-red-100 text-red-800 border border-red-200 dark:bg-red-900/30 dark:text-red-200 dark:border-red-800'
             : isApproved
-              ? 'bg-green-100 text-green-800 border border-green-200'
+              ? 'bg-green-100 text-green-800 border border-green-200 dark:bg-green-900/30 dark:text-green-200 dark:border-green-800'
               : isReturned
-                ? 'bg-blue-100 text-blue-800 border border-blue-200'
+                ? 'bg-blue-100 text-blue-800 border border-blue-200 dark:bg-blue-900/30 dark:text-blue-200 dark:border-blue-800'
                 : isPending
-                  ? 'bg-amber-100 text-amber-800 border border-amber-200'
-                  : 'bg-gray-100 text-gray-800 border border-gray-200';
+                  ? 'bg-amber-100 text-amber-800 border border-amber-200 dark:bg-amber-900/30 dark:text-amber-200 dark:border-amber-800'
+                  : 'bg-gray-100 text-gray-800 border border-gray-200 dark:bg-gray-800 dark:text-gray-200 dark:border-gray-700';
           
           return (
             <Badge variant="secondary" className={badgeClass}>
@@ -906,14 +908,14 @@ export default function BorrowRequestsPage() {
           const isPending = status.toLowerCase().includes('awaiting') || status.toLowerCase().includes('pending');
           
           const badgeClass = isDeclined
-            ? 'bg-red-100 text-red-800 border border-red-200'
+            ? 'bg-red-100 text-red-800 border border-red-200 dark:bg-red-900/30 dark:text-red-200 dark:border-red-800'
             : isApproved
-              ? 'bg-green-100 text-green-800 border border-green-200'
+              ? 'bg-green-100 text-green-800 border border-green-200 dark:bg-green-900/30 dark:text-green-200 dark:border-green-800'
               : isReturned
-                ? 'bg-blue-100 text-blue-800 border border-blue-200'
+                ? 'bg-blue-100 text-blue-800 border border-blue-200 dark:bg-blue-900/30 dark:text-blue-200 dark:border-blue-800'
                 : isPending
-                  ? 'bg-amber-100 text-amber-800 border border-amber-200'
-                  : 'bg-gray-100 text-gray-800 border border-gray-200';
+                  ? 'bg-amber-100 text-amber-800 border border-amber-200 dark:bg-amber-900/30 dark:text-amber-200 dark:border-amber-800'
+                  : 'bg-gray-100 text-gray-800 border border-gray-200 dark:bg-gray-800 dark:text-gray-200 dark:border-gray-700';
           
           return (
             <Badge variant="secondary" className={badgeClass}>
@@ -1017,7 +1019,7 @@ export default function BorrowRequestsPage() {
                 </p>
               </div>
             </div>
-            <Badge variant="secondary" className="bg-amber-100 text-amber-800">
+            <Badge variant="secondary" className="bg-amber-100 text-amber-800 dark:bg-amber-900/30 dark:text-amber-200">
               {borrowRequestStatusLabel(r)}
             </Badge>
           </div>
@@ -1563,8 +1565,8 @@ export default function BorrowRequestsPage() {
               {selected ? <ProcessBorrowRequestSummary row={selected} /> : null}
               {selected && isBorrowRequestStaffReadOnly(selected) ? (
                 selected.processor_decline_reason?.trim() ? (
-                  <div className="rounded-xl border border-red-100 bg-red-50/70 px-3 py-2.5">
-                    <p className="text-[10px] font-bold uppercase tracking-widest text-red-800">
+                  <div className="rounded-xl border border-red-100 bg-red-50/70 px-3 py-2.5 dark:border-red-800 dark:bg-red-950/40">
+                    <p className="text-[10px] font-bold uppercase tracking-widest text-red-800 dark:text-red-200">
                       Processor decline remarks
                     </p>
                     <p className="mt-1 text-sm text-red-950 whitespace-pre-wrap break-words">
@@ -1590,6 +1592,7 @@ export default function BorrowRequestsPage() {
                       variant="outline"
                       className={cn(
                         'w-fit shrink-0 border-red-200 bg-red-50/80 text-red-800 font-semibold',
+                        'dark:border-red-800 dark:bg-red-950/40 dark:text-red-200',
                         'px-2 py-0.5 text-[11px]'
                       )}
                     >

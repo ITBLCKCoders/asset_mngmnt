@@ -131,7 +131,7 @@ export function RoleTable({
               </Badge>
             )}
             {row.original.finance_approver && (
-              <Badge variant="secondary" className="text-xs font-normal bg-emerald-100 text-emerald-800 hover:bg-emerald-100">
+              <Badge variant="secondary" className="text-xs font-normal bg-emerald-100 text-emerald-800 hover:bg-emerald-100 dark:bg-emerald-900/30 dark:text-emerald-200 dark:hover:bg-emerald-900/30">
                 Finance
               </Badge>
             )}

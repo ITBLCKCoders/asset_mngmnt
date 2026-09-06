@@ -6,7 +6,7 @@ import {
   getEligibleApproversHandler,
 } from '../controllers/userApprovers.controller.js';
 import { authenticate } from '../middleware/authenticate.js';
-import { requirePermission } from '../middleware/requirePermission.js';
+import { requireUsersManage } from '../middleware/requirePermission.js';
 
 const router = Router();
 
@@ -18,17 +18,17 @@ router.get(
   getEligibleApproversHandler
 );
 
-// Mutations: restricted to users with Users:edit permission
+// Mutations: Users:edit permission OR Local Admin of the same company
 router.post(
   '/:userId/approvers',
   authenticate,
-  requirePermission('Users', 'edit'),
+  requireUsersManage(),
   setUserApproverHandler
 );
 router.delete(
   '/:userId/approvers/:approverType',
   authenticate,
-  requirePermission('Users', 'edit'),
+  requireUsersManage(),
   removeUserApproverHandler
 );
 
