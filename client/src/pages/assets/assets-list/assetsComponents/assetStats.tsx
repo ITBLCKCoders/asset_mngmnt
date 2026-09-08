@@ -1,6 +1,6 @@
 // src/pages/assets/assetsComponents/assetStats.tsx
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
-import { Package, Wrench, AlertTriangle, Trash2, UserCheck, UserX } from 'lucide-react';
+import { Package, Wrench, AlertTriangle, Trash2 } from 'lucide-react';
 import { Asset } from './assetTable/assetData';
 import { formatCurrency } from '@/lib/currency';
 
@@ -78,13 +78,23 @@ export function AssetStats({ assets, loading, totalCount, summary, activeTab, in
   if (isIntangibleTab) {
     // Intangible Assets stats
     const totalIntangible = intangibleAssets.length;
-    const assignedIntangible = intangibleAssets.filter(a => a.assignees && a.assignees.length > 0).length;
-    const unassignedIntangible = totalIntangible - assignedIntangible;
+    // Status is the canonical field maintained by assignment/deactivation flows
+    const assignedIntangible = intangibleAssets.filter(a => a.status === 'assigned').length;
+    const availableIntangible = intangibleAssets.filter(a => a.status === 'available').length;
 
-    // Count by type
-    const itScopeCount = intangibleAssets.filter(a => a.type === 'IT scope').length;
-    const hrScopeCount = intangibleAssets.filter(a => a.type === 'HR scope').length;
-    const adminScopeCount = intangibleAssets.filter(a => a.type === 'Admin scope').length;
+    // Dynamic per-risk-level counts (risk levels are company-defined with custom names/colors)
+    const riskCounts = new Map<string, { count: number; color?: string }>();
+    let unspecifiedRiskCount = 0;
+    for (const asset of intangibleAssets) {
+      const riskName = asset.risk_level?.name;
+      if (riskName) {
+        const existing = riskCounts.get(riskName) ?? { count: 0, color: asset.risk_level?.color };
+        existing.count += 1;
+        riskCounts.set(riskName, existing);
+      } else {
+        unspecifiedRiskCount++;
+      }
+    }
 
     stats = [
       {
@@ -99,29 +109,32 @@ export function AssetStats({ assets, loading, totalCount, summary, activeTab, in
         dot: 'bg-green-500',
       },
       {
-        label: 'Unassigned',
-        value: unassignedIntangible,
-        color: 'text-gray-600',
-        dot: 'bg-gray-400',
+        label: 'Available',
+        value: availableIntangible,
+        color: 'text-blue-600',
+        dot: 'bg-blue-500',
       },
-      {
-        label: 'IT Scope',
-        value: itScopeCount,
-        icon: Wrench,
-        iconColor: 'text-blue-500',
-      },
-      {
-        label: 'HR Scope',
-        value: hrScopeCount,
-        icon: UserCheck,
-        iconColor: 'text-green-500',
-      },
-      {
-        label: 'Admin Scope',
-        value: adminScopeCount,
-        icon: UserX,
-        iconColor: 'text-purple-500',
-      },
+      // One card per risk level present in the data, sorted by count desc
+      ...Array.from(riskCounts.entries())
+        .sort(([, a], [, b]) => b.count - a.count)
+        .map(([name, { count, color }]) => ({
+          label: name,
+          value: count,
+          color: 'text-gray-600',
+          dot: 'bg-gray-400',
+          dotStyle: color ? { backgroundColor: color } : undefined,
+        })),
+      // Only shown when some assets have no risk level
+      ...(unspecifiedRiskCount > 0
+        ? [
+            {
+              label: 'No Risk Level',
+              value: unspecifiedRiskCount,
+              color: 'text-gray-600',
+              dot: 'bg-gray-400',
+            },
+          ]
+        : []),
     ];
   } else {
     // Regular Assets stats
@@ -202,7 +215,10 @@ export function AssetStats({ assets, loading, totalCount, summary, activeTab, in
                 className={`mt-0.5 h-4 w-4 shrink-0 ${stat.iconColor || 'text-gray-500'}`}
               />
             ) : stat.dot ? (
-              <div className={`mt-1 h-3 w-3 shrink-0 rounded-full ${stat.dot}`} />
+              <div
+                className={`mt-1 h-3 w-3 shrink-0 rounded-full ${stat.dot}`}
+                style={stat.dotStyle}
+              />
             ) : (
               <span className="mt-0.5 shrink-0 text-lg font-bold text-gray-500">$</span>
             )}

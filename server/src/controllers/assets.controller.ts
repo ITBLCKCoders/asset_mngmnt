@@ -790,7 +790,7 @@ export async function createAssetHandler(req: AuthRequest, res: Response) {
 
   let validLocationRoomId = null;
   if (locationRoomId) {
-    validLocationRoomId = await assetRepo.getRoomIdByIdOrName(locationRoomId);
+    validLocationRoomId = await assetRepo.getRoomIdByIdOrName(locationRoomId, validCompanyId ?? undefined);
     logger.info(
       `Location room validation for ${locationRoomId}: ${validLocationRoomId ? 'found' : 'not found'}`
     );
@@ -1415,11 +1415,15 @@ export async function updateAssetHandler(req: AuthRequest, res: Response) {
     departmentId,
   });
 
-  let [validCompanyId, validLocationId, validLocationRoomId, validDepartmentId] = await Promise.all([
-    companyId ? assetRepo.getCompanyIdByIdOrName(companyId) : Promise.resolve(null),
+  // Company resolves first; room/department lookups depend on it for scoping
+  let validCompanyId = companyId
+    ? await assetRepo.getCompanyIdByIdOrName(companyId)
+    : null;
+
+  let [validLocationId, validLocationRoomId, validDepartmentId] = await Promise.all([
     locationId ? assetRepo.getLocationIdById(locationId) : Promise.resolve(null),
-    locationRoomId ? assetRepo.getRoomIdByIdOrName(locationRoomId) : Promise.resolve(null),
-    departmentId ? assetRepo.getDepartmentIdByIdOrName(departmentId) : Promise.resolve(null),
+    locationRoomId ? assetRepo.getRoomIdByIdOrName(locationRoomId, validCompanyId ?? undefined) : Promise.resolve(null),
+    departmentId ? assetRepo.getDepartmentIdByIdOrName(departmentId, validCompanyId ?? undefined) : Promise.resolve(null),
   ]);
 
   logger.info('Validation results for update:', {

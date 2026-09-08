@@ -2170,18 +2170,20 @@ export function AssetsPage() {
                                         <div
                                           key={index}
                                           className={`flex items-center justify-between text-xs rounded-lg px-2 py-1.5 ${
-                                            item.is_parent ? 'bg-amber-50 border border-amber-200' : 'bg-muted/30'
+                                            item.is_parent
+                                              ? 'bg-amber-50 border border-amber-200 dark:bg-amber-900/20 dark:border-amber-800'
+                                              : 'bg-muted/30'
                                           }`}
                                         >
                                           <div className="flex items-center gap-2">
                                             {item.is_parent && (
                                               <Crown className="h-3 w-3 text-amber-600" />
                                             )}
-                                            <span className={`font-medium ${item.is_parent ? 'text-amber-900' : 'text-gray-900'}`}>
+                                            <span className={`font-medium ${item.is_parent ? 'text-amber-900 dark:text-amber-200' : 'text-gray-900'}`}>
                                               {item.asset_code}
                                             </span>
                                           </div>
-                                          <span className={`text-gray-600 ${item.is_parent ? 'text-amber-700' : ''}`}>
+                                          <span className={item.is_parent ? 'text-amber-700 dark:text-amber-300' : 'text-gray-600'}>
                                             {item.asset_name}
                                           </span>
                                         </div>

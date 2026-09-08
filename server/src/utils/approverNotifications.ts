@@ -285,6 +285,28 @@ export async function getManagerApprover2UserIdsForProcessedReturn(
 }
 
 /**
+ * Returns user IDs of active users whose role matches the borrow request scope
+ * ('IT Asset' for it scope, 'Admin Asset' for admin scope) within the given company.
+ */
+export async function getAssetRoleUsersForScopeAndCompany(
+  companyId: string,
+  scope: 'it' | 'admin'
+): Promise<string[]> {
+  const roleName = scope === 'it' ? 'IT Asset' : 'Admin Asset';
+  const [rows] = await pool.execute(
+    `SELECT DISTINCT u.userID
+     FROM users u
+     JOIN asset_mngmnt_roles r ON u.role_id = r.roleID
+     WHERE r.name = ?
+       AND r.deleted_at IS NULL
+       AND u.company_id = ?
+       AND u.is_active = 1`,
+    [roleName, companyId]
+  ) as [{ userID: string }[], unknown];
+  return (rows || []).map(row => row.userID);
+}
+
+/**
  * Returns user IDs of active users who should receive return-workflow notifications:
  * those with any granted permission on the Asset Return module in user_permissions.
  */

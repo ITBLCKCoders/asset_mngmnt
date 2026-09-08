@@ -1399,7 +1399,7 @@ export default function AssetsAssignment() {
                                           {builder.status || 'Available'}
                                         </span>
                                         {isSelected && (
-                                          <span className="px-2 py-1 text-xs font-medium rounded-full bg-red-100 text-red-800">
+                                          <span className="px-2 py-1 text-xs font-medium rounded-full bg-red-100 text-red-800 border border-red-200">
                                             Selected
                                           </span>
                                         )}
@@ -1442,13 +1442,13 @@ export default function AssetsAssignment() {
                                                       <Crown className="h-3 w-3 text-amber-600 shrink-0" />
                                                     )}
                                                     <span
-                                                      className={`font-mono font-medium shrink-0 ${item.is_parent ? 'text-amber-900' : 'text-gray-900'}`}
+                                                      className={`font-mono font-medium shrink-0 ${item.is_parent ? 'text-amber-900 dark:text-amber-200' : 'text-gray-900'}`}
                                                       title="Asset code"
                                                     >
                                                       {item.asset_code}
                                                     </span>
                                                     <span
-                                                      className={`truncate flex-1 min-w-0 ${item.is_parent ? 'text-amber-700' : 'text-gray-600'}`}
+                                                      className={`truncate flex-1 min-w-0 ${item.is_parent ? 'text-amber-700 dark:text-amber-200' : 'text-gray-600'}`}
                                                       title={item.asset_name}
                                                     >
                                                       {item.asset_name}
@@ -1548,9 +1548,13 @@ export default function AssetsAssignment() {
                         {filteredIntangibleAssets.map((asset: any) => {
                           const isSelected = selectedAssets.includes(asset.id);
                           const assigneeCount = asset.assignees?.length ?? (asset.assigned_to ? 1 : 0);
-                          const typeColor = asset.type === 'IT scope' 
-                            ? 'bg-red-100 text-red-800 border-red-200 dark:bg-red-900/30 dark:text-red-200 dark:border-red-800' 
-                            : 'bg-orange-100 text-orange-800 border-orange-200 dark:bg-orange-900/30 dark:text-orange-200 dark:border-orange-800';
+                          // Dark-mode compat layer in index.css restores the pastel
+                          // bg for bg-X-100 + border-X-200 combos, so dark:text-*-200
+                          // variants here caused light-on-light text. Base text-*-800
+                          // stays readable on the restored pastel background.
+                          const typeColor = asset.type === 'IT scope'
+                            ? 'bg-red-100 text-red-800 border-red-200'
+                            : 'bg-orange-100 text-orange-800 border-orange-200';
                           return (
                             <div
                               key={asset.id}

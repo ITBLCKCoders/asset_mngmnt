@@ -144,6 +144,20 @@ export default function NotificationBell({ className }: NotificationBellProps) {
       return;
     }
 
+    // Handle IT/Admin copy signer + accountability approval notifications -
+    // navigate to the Approvals "For Approval" tab where the signer approves.
+    // Must run before the generic accountability_form branch below.
+    if (
+      (notif.actionTarget === 'accountability_form_admin_copy' ||
+        notif.actionTarget === 'accountability_form_approval') &&
+      notif.formId
+    ) {
+      navigate('/approvals?tab=for-approval');
+      markAsRead(notif.id);
+      setIsOpen(false);
+      return;
+    }
+
     // Handle accountability form notifications - navigate to profile documents Accountability sub-tab
     if (notif.type === 'accountability_form' && notif.formId) {
       navigate('/profile?tab=documents&docTab=accountability');

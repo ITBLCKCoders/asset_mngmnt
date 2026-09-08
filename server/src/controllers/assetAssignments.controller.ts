@@ -13,7 +13,7 @@ import {
 import { emitNotification } from '../sockets/socketHandlers.js';
 import { getIoInstance } from '../utils/socketManager.js';
 import { NotificationService } from '../services/notification.service.js';
-import { createAccountabilityFormHandler } from './accountabilityForms.controller.js';
+import { createAccountabilityFormHandler, kickoffApprovalFlowNotifications } from './accountabilityForms.controller.js';
 import * as repo from '../repositories/assetAssignment.repository.js';
 import * as formRepo from '../repositories/accountabilityForm.repository.js';
 import {
@@ -615,8 +615,9 @@ export async function createAssetAssignmentHandler(
 
     // ----------------------------------------------------------------
     // Notify the assignee about pending accountability form(s) to sign
-    // (skip when the form is still in the approval flow - the controller
-    //  already notified the IT/Admin copy signer / owner's approver.)
+    // (skip when the form is still in the approval flow - the pending
+    //  branch kicks off the IT/Admin copy signer / owner's approver
+    //  notification instead, and the owner is notified after approval.)
     // ----------------------------------------------------------------
     if (createdForms.length > 0) {
       try {
@@ -628,8 +629,28 @@ export async function createAssetAssignmentHandler(
           // flow (admin copy + approver) sends its own notifications.
           const approvalStatus = createdFormStatuses.get(createdForm.formId) ?? null;
           if (approvalStatus && approvalStatus !== 'approved') {
-            // Approval flow is in progress; the controller already notified
-            // the copy signer / approver.
+            // Approval flow is in progress: kick off the copy-signer /
+            // owner-approver notification (the form was created with
+            // skipNotification, so it has not been sent yet) and defer the
+            // owner-facing "ready to sign" notification until approval.
+            try {
+              const ownerName = user
+                ? `${user.first_name ?? ''} ${user.last_name ?? ''}`.trim()
+                : userId;
+              await kickoffApprovalFlowNotifications({
+                formId: createdForm.formId,
+                formNumber: createdForm.formNumber,
+                ownerUserId: userId,
+                ownerName,
+                assignerName,
+                req,
+              });
+            } catch (kickoffErr) {
+              logger.error(
+                'Failed to kick off approval notifications for new form:',
+                kickoffErr
+              );
+            }
             continue;
           }
 

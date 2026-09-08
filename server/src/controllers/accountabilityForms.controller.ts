@@ -1063,6 +1063,78 @@ async function sendApprovalKickoffNotifications(args: {
   }
 }
 
+/**
+ * Kick off the approval-flow notifications for a form that was created with
+ * `skipNotification: true` (asset assignment / asset transfer / builder
+ * flows create forms via an internal handler call and send their own
+ * owner-facing notices after approval). This re-reads the persisted form,
+ * and when it is still pending an IT/Admin copy signature or pending
+ * approval, notifies the copy signer / owner's approver exactly like the
+ * direct-creation path would have. No-op for already-approved forms and
+ * never throws so callers can fire-and-forget.
+ */
+export async function kickoffApprovalFlowNotifications(args: {
+  formId: string;
+  formNumber: string;
+  ownerUserId: string;
+  ownerName: string;
+  assignerName: string;
+  req: AuthRequest;
+}): Promise<void> {
+  try {
+    const [rows] = await pool.execute(
+      `SELECT approval_status, admin_copy_signer_id, admin_copy_copy_type
+       FROM accountability_forms
+       WHERE formID = ? AND deleted_at IS NULL
+       LIMIT 1`,
+      [args.formId]
+    );
+    const row = (rows as any[])[0];
+    if (!row) {
+      logger.warn(
+        `kickoffApprovalFlowNotifications: form ${args.formId} not found`
+      );
+      return;
+    }
+
+    const approvalStatus = row.approval_status ?? null;
+    if (
+      !approvalStatus ||
+      approvalStatus === 'approved' ||
+      (!row.admin_copy_signer_id && approvalStatus !== 'pending_approval')
+    ) {
+      // Nothing pending that requires a kickoff notification.
+      return;
+    }
+
+    const ownerApproverId = await getDesignatedApproverUserIdForRequester(
+      args.ownerUserId
+    );
+    const ownerSubApproverId = await getDesignatedSubApproverUserIdForRequester(
+      args.ownerUserId
+    );
+
+    await sendApprovalKickoffNotifications({
+      formId: args.formId,
+      formNumber: args.formNumber,
+      ownerUserId: args.ownerUserId,
+      ownerName: args.ownerName,
+      assignerName: args.assignerName,
+      approvalStatus,
+      adminCopySignerId: row.admin_copy_signer_id ?? null,
+      adminCopyCopyType: row.admin_copy_copy_type ?? null,
+      ownerApproverId,
+      ownerSubApproverId,
+      req: args.req,
+    });
+  } catch (err) {
+    logger.error(
+      `kickoffApprovalFlowNotifications failed for form ${args.formId}:`,
+      err
+    );
+  }
+}
+
 export async function createAccountabilityFormHandler(
   req: AuthRequest,
   res: Response
@@ -2090,7 +2162,7 @@ export async function getAccountabilityFormsHandler(
       departmentIds,
     });
 
-    const forms = rows.map((row: any) => {
+    const allForms = rows.map((row: any) => {
       const parsed = parseAccountabilityAssetsData(row.assets_data);
       let assets = parsed.assets;
       const formOrigin = parsed.formOrigin;
@@ -2226,6 +2298,16 @@ export async function getAccountabilityFormsHandler(
         updated_at: row.updated_at,
       };
     });
+
+    // When fetching forms for a specific user (documents tab), hide forms
+    // that are still pending IT/Admin copy signature or final approval.
+    // These forms appear on the Approvals page for the designated signers.
+    const forms = typeof userId === 'string'
+      ? allForms.filter((form: any) =>
+          form.approvalStatus !== 'pending_admin_copy_signature' &&
+          form.approvalStatus !== 'pending_approval'
+        )
+      : allForms;
 
     return res.json({ forms });
   } catch (error: any) {
@@ -3640,6 +3722,44 @@ export async function getAccountabilityFormMovementHandler(
       (row as any).created_at ?? null
     );
 
+    // Direct per-asset return/transfer sheets, used as a fallback when the
+    // form's assignmentIds are missing or unresolvable (older forms stored
+    // assets without assignment_ids, which previously made return/transfer
+    // forms disappear from the movement tree even though the "new
+    // accountability form" still showed via asset coverage). Attributed per
+    // asset using the same date-window approach as the asset-mode handler:
+    // movements in [this form's created_at, new form's created_at] belong to
+    // the handover from this form to its replacement. The end boundary is
+    // inclusive because a return and its replacement form are often created
+    // in the same transaction (identical timestamps).
+    const windowStart = row.created_at
+      ? new Date(row.created_at).getTime()
+      : 0;
+    const windowEnd = activeForms[0]?.created_at
+      ? new Date(activeForms[0].created_at).getTime()
+      : Infinity;
+    const directReturnFormsByAsset = new Map<string, any[]>();
+    const directTransferFormsByAsset = new Map<string, any[]>();
+    for (const assetId of uniqueAssetIds) {
+      const [directReturns, directTransfers] = await Promise.all([
+        getAssetReturnFormsByAssetId(assetId),
+        getAssetTransferFormsByAssetId(assetId),
+      ]);
+      const inWindow = (createdAt: string | null | undefined) => {
+        if (!createdAt) return false;
+        const t = new Date(createdAt).getTime();
+        return t >= windowStart && t <= windowEnd;
+      };
+      directReturnFormsByAsset.set(
+        assetId,
+        directReturns.filter(r => inWindow(r.created_at))
+      );
+      directTransferFormsByAsset.set(
+        assetId,
+        directTransfers.filter(t => inWindow(t.created_at))
+      );
+    }
+
     // Map active forms to the asset ids they cover (via their assets_data)
     const activeFormAssetIds = new Map<string, Set<string>>();
     for (const f of activeForms) {
@@ -3682,6 +3802,51 @@ export async function getAccountabilityFormMovementHandler(
               assetReturnForms.some(r => r.formID === t.return_form_id))
         )
       );
+      // Fallback: assignment attribution found nothing but the asset has
+      // direct return/transfer sheets in this form's window — use them so the
+      // diagram still shows the actual handover.
+      const fallbackReturns = directReturnFormsByAsset.get(assetId) ?? [];
+      const fallbackTransfers = directTransferFormsByAsset.get(assetId) ?? [];
+      const effectiveReturnForms =
+        assetReturnForms.length > 0
+          ? assetReturnForms.map(r => ({
+              formID: r.formID,
+              form_number: r.form_number,
+              user_id: r.user_id,
+              user_name: r.user_name,
+              created_at: r.created_at,
+            }))
+          : fallbackReturns.map(r => ({
+              formID: r.id,
+              form_number: r.formNumber,
+              user_id: r.user?.id ?? '',
+              user_name: `${r.user?.first_name ?? ''} ${r.user?.last_name ?? ''}`.trim(),
+              created_at: r.created_at,
+            }));
+      const effectiveTransferForms =
+        assetTransferForms.length > 0
+          ? assetTransferForms.map(t => ({
+              formID: t.formID,
+              form_number: t.form_number,
+              user_id: t.user_id,
+              user_name: t.user_name,
+              return_form_id: t.return_form_id ?? null,
+              new_assigned_user_id: t.new_assigned_user_id,
+              new_user_name: t.new_user_name,
+              created_at: t.created_at,
+            }))
+          : fallbackTransfers.map(t => ({
+              formID: t.id,
+              form_number: t.formNumber,
+              user_id: t.user?.id ?? '',
+              user_name: `${t.user?.first_name ?? ''} ${t.user?.last_name ?? ''}`.trim(),
+              return_form_id: null,
+              new_assigned_user_id: t.new_assigned_user_id ?? null,
+              new_user_name: t.new_user
+                ? `${t.new_user.first_name ?? ''} ${t.new_user.last_name ?? ''}`.trim()
+                : '',
+              created_at: t.created_at,
+            }));
       const assetNewForms = dedupeByFormId(
         activeForms.filter(f => {
           const covered = activeFormAssetIds.get(f.formID);
@@ -3699,14 +3864,14 @@ export async function getAccountabilityFormMovementHandler(
           serialNo: a?.serialNo ?? '',
           modelNo: a?.modelNo ?? '',
         },
-        returnForms: assetReturnForms.map(r => ({
+        returnForms: effectiveReturnForms.map(r => ({
           id: r.formID,
           formNumber: r.form_number,
           userId: r.user_id,
           userName: r.user_name || '',
           created_at: r.created_at,
         })),
-        transferForms: assetTransferForms.map(t => ({
+        transferForms: effectiveTransferForms.map(t => ({
           id: t.formID,
           formNumber: t.form_number,
           userId: t.user_id,

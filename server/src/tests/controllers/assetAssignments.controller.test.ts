@@ -47,7 +47,7 @@ jest.mock('../../repositories/assetChecklist.repository.js', () => ({ createAsse
 jest.mock('../../repositories/assetChecklistList.repository.js', () => ({ getAssetChecklists: jest.fn() }));
 jest.mock('../../repositories/assetReturn.repository.js', () => ({ getCategoryDepartmentForAssetIds: jest.fn() }));
 jest.mock('../../utils/checklistFormNumber.js', () => ({ generateChecklistFormNumber: jest.fn(), generateChecklistFormNumberFallback: jest.fn() }));
-jest.mock('../../controllers/accountabilityForms.controller.js', () => ({ createAccountabilityFormHandler: jest.fn() }));
+jest.mock('../../controllers/accountabilityForms.controller.js', () => ({ createAccountabilityFormHandler: jest.fn(), kickoffApprovalFlowNotifications: jest.fn() }));
 jest.mock('../../services/assetAssignment.service.js', () => ({ buildAccountabilityFormMap: jest.fn(), loadUserModulePermissions: jest.fn() }));
 
 const { pool } = jest.requireMock('../../db.js');
@@ -59,7 +59,7 @@ const { NotificationService } = jest.requireMock('../../services/notification.se
 const { getIoInstance } = jest.requireMock('../../utils/socketManager.js');
 const { emitNotification } = jest.requireMock('../../sockets/socketHandlers.js');
 const { handleAccountabilityFormOnAssetReturn } = jest.requireMock('../../utils/accountabilityFormOnReturn.js');
-const { createAccountabilityFormHandler } = jest.requireMock('../../controllers/accountabilityForms.controller.js');
+const { createAccountabilityFormHandler, kickoffApprovalFlowNotifications } = jest.requireMock('../../controllers/accountabilityForms.controller.js');
 const { buildAccountabilityFormMap, loadUserModulePermissions } = jest.requireMock('../../services/assetAssignment.service.js');
 const { generateChecklistFormNumber, generateChecklistFormNumberFallback } = jest.requireMock('../../utils/checklistFormNumber.js');
 const { getCategoryDepartmentForAssetIds } = jest.requireMock('../../repositories/assetReturn.repository.js');
@@ -155,6 +155,44 @@ describe('assetAssignments.controller', () => {
 
       await assetAssignmentsController.createAssetAssignmentHandler(req, res);
 
+      expect(
+        NotificationService.createNotification
+      ).not.toHaveBeenCalledWith(
+        expect.objectContaining({
+          title: 'New asset accountability is ready for you to sign',
+        }),
+        expect.anything(),
+        expect.anything(),
+        expect.anything()
+      );
+    });
+
+    it('kicks off copy-signer approval notifications for pending forms and defers owner notice', async () => {
+      createAccountabilityFormHandler.mockResolvedValue({
+        form: { formID: 'f2', form_number: 'AF-002' },
+      });
+      // createdFormStatuses lookup: return a pending approval status
+      pool.execute.mockImplementation(async (query: unknown) => {
+        const q = String(query);
+        if (q.includes('approval_status')) {
+          return [[{ approval_status: 'pending_admin_copy_signature' }]];
+        }
+        return [[]];
+      });
+      NotificationService.createNotification.mockClear();
+
+      await assetAssignmentsController.createAssetAssignmentHandler(req, res);
+
+      // Signer / approver kickoff is invoked for the pending form
+      expect(kickoffApprovalFlowNotifications).toHaveBeenCalledWith(
+        expect.objectContaining({
+          formId: 'f2',
+          formNumber: 'AF-002',
+          ownerUserId: 'u1',
+        })
+      );
+
+      // Owner "ready to sign" notice is deferred while approval is pending
       expect(
         NotificationService.createNotification
       ).not.toHaveBeenCalledWith(

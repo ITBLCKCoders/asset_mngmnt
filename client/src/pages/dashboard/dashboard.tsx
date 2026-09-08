@@ -815,16 +815,6 @@ export default function Dashboard() {
       path: '/my-assets',
     },
     {
-      title: 'My Borrowing Requests',
-      value:
-        dashboardData?.categoryMix?.find(
-          item => item.name === 'Borrowing Requests'
-        )?.value ?? 0,
-      icon: HandHelping,
-      color: 'text-orange-600',
-      path: '/assets/borrow',
-    },
-    {
       title: 'My Pending Requests',
       value:
         dashboardData?.categoryMix?.find(item => item.name === 'Pending')
@@ -935,7 +925,7 @@ export default function Dashboard() {
         <div
           className={
             isEmployee
-              ? 'grid grid-cols-1 auto-rows-fr gap-4 sm:grid-cols-2 lg:grid-cols-3'
+              ? 'grid grid-cols-1 auto-rows-fr gap-4 sm:grid-cols-2 lg:grid-cols-4'
               : 'grid grid-cols-1 auto-rows-fr gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4'
           }
         >

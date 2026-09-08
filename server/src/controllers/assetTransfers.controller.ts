@@ -54,7 +54,7 @@ import {
 } from '../utils/transferFormNumber.js';
 import { getAssetScope, getDepartmentIdsForScope, classifyDepartmentScopeByName } from '../utils/assetScope.js';
 import { fetchUserDigitalSignature } from '../repositories/assetReturn.repository.js';
-import { createAccountabilityFormHandler } from './accountabilityForms.controller.js';
+import { createAccountabilityFormHandler, kickoffApprovalFlowNotifications } from './accountabilityForms.controller.js';
 import {
   toBind,
   getTransferFormLinksForReturnForms,
@@ -3281,6 +3281,30 @@ export async function runTransferFormExecution(
     'UPDATE asset_transfer_forms SET executed_at = NOW(), updated_at = NOW() WHERE formID = ?',
     [formId]
   );
+
+  // Kick off the approval-flow notifications for newly created
+  // accountability forms (they were created with skipNotification: true).
+  // Pending IT/Admin copy forms notify the copy signer / owner's approver;
+  // already-approved forms are skipped inside the helper. Owner-facing
+  // notices are sent by notifyTransferProcessedNotifications below.
+  for (const createdForm of createdAccountabilityForms) {
+    if (!createdForm.formID) continue;
+    try {
+      await kickoffApprovalFlowNotifications({
+        formId: String(createdForm.formID),
+        formNumber: createdForm.form_number ?? '',
+        ownerUserId: newUserId,
+        ownerName: newUserName,
+        assignerName: processorName,
+        req,
+      });
+    } catch (kickoffErr) {
+      logger.error(
+        'Failed to kick off approval notifications for transfer-created form:',
+        kickoffErr
+      );
+    }
+  }
 
   // Notify the transferrer (old asset owner) that the transfer was processed.
   try {

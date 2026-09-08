@@ -11,7 +11,7 @@ import {
   setAssetBuilderOriginatingCompany,
 } from '../utils/companyTransferVisibility.js';
 import * as assignmentRepo from '../repositories/assetAssignment.repository.js';
-import { createAccountabilityFormHandler } from './accountabilityForms.controller.js';
+import { createAccountabilityFormHandler, kickoffApprovalFlowNotifications } from './accountabilityForms.controller.js';
 import { emitNotification } from '../sockets/socketHandlers.js';
 import { getIoInstance } from '../utils/socketManager.js';
 import { NotificationService } from '../services/notification.service.js';
@@ -909,11 +909,54 @@ export async function updateAssetBuilderHandler(
         }
 
         // --- Notify the assigned user about accountability form(s) to sign ---
+        // When the form requires IT/Admin copy signature or final approval,
+        // kick off the approval flow (notifies the copy signer / approver)
+        // instead of notifying the owner directly. The owner is notified
+        // after the form is fully approved (see signAdminCopyHandler /
+        // approveAccountabilityFormHandler).
         if (createdForms.length > 0) {
           try {
             const assignerName = await assignmentRepo.getUserFullName(userId);
             const io = getIoInstance();
+            const ownerName = await assignmentRepo.getUserFullName(assignedUserId);
             for (const createdForm of createdForms) {
+              // Resolve the approval status for this newly created form.
+              let approvalStatus: string | null = null;
+              try {
+                const [statusRows] = await pool.execute(
+                  `SELECT approval_status FROM accountability_forms
+                   WHERE formID = ? AND deleted_at IS NULL LIMIT 1`,
+                  [createdForm.formId]
+                );
+                const statusRow = (statusRows as any[])?.[0];
+                approvalStatus = statusRow?.approval_status ?? null;
+              } catch (statusErr) {
+                logger.warn('Could not read approval_status for builder form:', statusErr);
+              }
+
+              if (approvalStatus && approvalStatus !== 'approved') {
+                // Approval flow is in progress: kick off the copy-signer /
+                // owner-approver notification (the form was created with
+                // skipNotification, so it has not been sent yet).
+                try {
+                  await kickoffApprovalFlowNotifications({
+                    formId: createdForm.formId,
+                    formNumber: createdForm.formNumber,
+                    ownerUserId: assignedUserId,
+                    ownerName,
+                    assignerName,
+                    req,
+                  });
+                } catch (kickoffErr) {
+                  logger.error(
+                    'Failed to kick off approval notifications for builder form:',
+                    kickoffErr
+                  );
+                }
+                continue;
+              }
+
+              // Form is already approved (legacy path): notify the owner directly.
               const signMessage = createdForm.formNumber
                 ? `by ${assignerName}. Your accountability form ${createdForm.formNumber} is ready. Please review and sign it.`
                 : `by ${assignerName}. Your accountability form is ready. Please review and sign it.`;

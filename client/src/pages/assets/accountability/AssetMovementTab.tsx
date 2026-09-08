@@ -1,6 +1,6 @@
 'use client';
 
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { Suspense, lazy, useCallback, useEffect, useMemo, useState } from 'react';
 import { FileText, GitBranch, Eye } from 'lucide-react';
 import { api } from '@/lib/api';
 import { toast } from 'sonner';
@@ -27,6 +27,16 @@ import {
   buildMermaidOrgModel,
   type MovementInput,
 } from './mermaidOrgChartModel';
+import type { AssetResponseDto } from '@/types/assetsDTOs';
+import { transformApiAssetToAsset } from '../assets-list/useAssetsData';
+import type { Asset } from '../assets-list/assetsComponents/assetTable/assetData';
+
+// Lazy-loaded to avoid a circular import (assetViewModal -> AssetMovementTab).
+const AssetViewModal = lazy(() =>
+  import('../assets-list/assetsComponents/assetViewModal').then(
+    m => ({ default: m.AssetViewModal })
+  )
+);
 
 interface MovementForm {
   id: string;
@@ -134,6 +144,9 @@ export function AssetMovementTab({
   const [accountabilityPreviewId, setAccountabilityPreviewId] = useState<
     string | null
   >(null);
+
+  // Asset details modal state (clicking an Asset box in the diagram)
+  const [viewAsset, setViewAsset] = useState<Asset | null>(null);
 
   useEffect(() => {
     let cancelled = false;
@@ -245,6 +258,24 @@ export function AssetMovementTab({
     setAccountabilityPreviewId(formIdToView);
   }, []);
 
+  const handleViewAsset = useCallback(async (assetIdOrCode: string) => {
+    if (!assetIdOrCode) return;
+    try {
+      const response = await api.get<{ assets: AssetResponseDto[] }>(
+        `/assets/${encodeURIComponent(assetIdOrCode)}`
+      );
+      const apiAsset = response.assets?.[0];
+      if (!apiAsset) {
+        toast.error('Asset details not available');
+        return;
+      }
+      setViewAsset(transformApiAssetToAsset(apiAsset));
+    } catch (error) {
+      console.error('Failed to load asset details:', error);
+      toast.error('Failed to load asset details');
+    }
+  }, []);
+
   const movementInput = useMemo<MovementInput | null>(() => {
     if (formId && formData) {
       return {
@@ -278,6 +309,8 @@ export function AssetMovementTab({
             onViewReturn: handleViewReturnForm,
             onViewTransfer: handleViewTransferForm,
             onViewNew: handleViewAccountabilityForm,
+            onViewAccountabilityForm: handleViewAccountabilityForm,
+            onViewAsset: handleViewAsset,
           })
         : null,
     [
@@ -285,6 +318,7 @@ export function AssetMovementTab({
       handleViewReturnForm,
       handleViewTransferForm,
       handleViewAccountabilityForm,
+      handleViewAsset,
     ]
   );
 
@@ -453,6 +487,24 @@ export function AssetMovementTab({
           formId={accountabilityPreviewId}
           onClose={() => setAccountabilityPreviewId(null)}
         />
+      )}
+
+      {/* Asset details modal (clicked Asset box) */}
+      {viewAsset && (
+        <Suspense
+          fallback={
+            <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/60">
+              <div className="h-10 w-10 animate-spin rounded-full border-4 border-gray-200 border-t-red-600" />
+            </div>
+          }
+        >
+          <AssetViewModal
+            isOpen
+            onClose={() => setViewAsset(null)}
+            asset={viewAsset}
+            hideMovement
+          />
+        </Suspense>
       )}
     </div>
   );

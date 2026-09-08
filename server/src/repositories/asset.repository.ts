@@ -582,9 +582,16 @@ export async function getRoomIdByIdOrName(
     /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(
       roomIdOrName
     );
+  // Rooms have no company_id column; scope via parent location
   const query = isUUID
-    ? 'SELECT roomID FROM asset_mngmnt_location_rooms WHERE roomID = ? AND deleted_at IS NULL AND (? IS NULL OR company_id = ?)'
-    : 'SELECT roomID FROM asset_mngmnt_location_rooms WHERE LOWER(room_name) = LOWER(?) AND deleted_at IS NULL AND (? IS NULL OR company_id = ?)';
+    ? `SELECT r.roomID FROM asset_mngmnt_location_rooms r
+       JOIN asset_mngmnt_locations l ON r.locationID = l.locationID
+       WHERE r.roomID = ? AND r.deleted_at IS NULL AND l.deleted_at IS NULL
+         AND (? IS NULL OR l.company_id = ?)`
+    : `SELECT r.roomID FROM asset_mngmnt_location_rooms r
+       JOIN asset_mngmnt_locations l ON r.locationID = l.locationID
+       WHERE LOWER(r.room_name) = LOWER(?) AND r.deleted_at IS NULL AND l.deleted_at IS NULL
+         AND (? IS NULL OR l.company_id = ?)`;
   const [rows] = await pool.execute<RoomRow[]>(query, [
     roomIdOrName.trim(),
     companyId ?? null,

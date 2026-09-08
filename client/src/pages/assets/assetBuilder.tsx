@@ -551,11 +551,11 @@ export default function AssetBuilderPage() {
                                         {item.is_parent && (
                                           <Crown className="h-3 w-3 text-amber-600" />
                                         )}
-                                        <span className={`font-medium ${item.is_parent ? 'text-amber-900' : 'text-gray-900'}`}>
+                                        <span className={`font-medium ${item.is_parent ? 'text-amber-900 dark:text-amber-200' : 'text-gray-900'}`}>
                                           {item.asset_code}
                                         </span>
                                       </div>
-                                      <span className={`text-gray-600 ${item.is_parent ? 'text-amber-700' : ''}`}>
+                                      <span className={`text-gray-600 ${item.is_parent ? 'text-amber-700 dark:text-amber-200' : ''}`}>
                                         {item.asset_name}
                                       </span>
                                     </div>

@@ -2173,13 +2173,13 @@ export function AccountabilityFormCard({
               <div className="mt-2 flex flex-wrap gap-1.5">
                 {displayAssets.filter(a => getDisplayScopeType(a, form) === 'IT')
                   .length > 0 && (
-                  <span className="inline-flex items-center rounded-md bg-blue-50 px-2 py-0.5 text-xs font-medium text-blue-700 ring-1 ring-inset ring-blue-600/20">
+                  <span className="inline-flex items-center rounded-md bg-blue-50 px-2 py-0.5 text-xs font-medium text-blue-700 ring-1 ring-inset ring-blue-600/20 dark:bg-blue-900/30 dark:text-blue-200 dark:ring-blue-800">
                     IT Asset Accountability
                   </span>
                 )}
                 {displayAssets.filter(a => getDisplayScopeType(a, form) === 'Admin')
                   .length > 0 && (
-                  <span className="inline-flex items-center rounded-md bg-amber-50 px-2 py-0.5 text-xs font-medium text-amber-700 ring-1 ring-inset ring-amber-600/20">
+                  <span className="inline-flex items-center rounded-md bg-amber-50 px-2 py-0.5 text-xs font-medium text-amber-700 ring-1 ring-inset ring-amber-600/20 dark:bg-amber-900/30 dark:text-amber-200 dark:ring-amber-800">
                     Admin Asset Accountability
                   </span>
                 )}
@@ -2229,7 +2229,7 @@ export function AccountabilityFormCard({
             {form.formOrigin === 'processor_return' && (
               <Badge
                 variant="outline"
-                className="border-amber-300 bg-amber-50 text-amber-900 font-medium"
+                className="border-amber-300 bg-amber-50 text-amber-900 font-medium dark:border-amber-800 dark:bg-amber-900/30 dark:text-amber-200"
               >
                 Temporary
               </Badge>
@@ -2237,7 +2237,7 @@ export function AccountabilityFormCard({
             {showPendingReceiverSignatureBadge && form.status === 'Pending' && (
               <Badge
                 variant="outline"
-                className="border-orange-300 bg-orange-50 text-orange-900 font-medium"
+                className="border-orange-300 bg-orange-50 text-orange-900 font-medium dark:border-orange-800 dark:bg-orange-900/30 dark:text-orange-200"
               >
                 Pending Receiver Signature
               </Badge>

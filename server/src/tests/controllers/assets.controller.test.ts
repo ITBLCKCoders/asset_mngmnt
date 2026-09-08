@@ -445,5 +445,38 @@ describe('assets.controller', () => {
       expect(mergeAssignmentIntoDiff).not.toHaveBeenCalled();
       expect(createAuditLog).not.toHaveBeenCalled();
     });
+
+    it('scopes room and department lookups to the resolved company', async () => {
+      const { req, busboy } = makeReq();
+      setupCommon();
+      assetRepo.getCompanyIdByIdOrName.mockResolvedValue('company-uuid');
+      assetRepo.getRoomIdByIdOrName.mockResolvedValue('room-uuid');
+      assetRepo.getDepartmentIdByIdOrName.mockResolvedValue('dept-uuid');
+      buildAssetUpdateAuditDiff.mockReturnValue({
+        oldValues: {},
+        newValues: {},
+        changeCount: 0,
+      });
+
+      const pending = assetsController.updateAssetHandler(req, res);
+      emitFields(busboy, {
+        name: 'Laptop',
+        categoryId: 'c1',
+        typeId: 't1',
+        condition: 'Good',
+        status: 'Available',
+        isOldUnit: '0',
+        maintenanceSchedule: 'None',
+        salvageValue: '0',
+        companyId: 'company-uuid',
+        locationRoomId: 'room-uuid',
+        departmentId: 'dept-uuid',
+      });
+      await pending;
+
+      // Room/department lookups run after company resolves and are company-scoped
+      expect(assetRepo.getRoomIdByIdOrName).toHaveBeenCalledWith('room-uuid', 'company-uuid');
+      expect(assetRepo.getDepartmentIdByIdOrName).toHaveBeenCalledWith('dept-uuid', 'company-uuid');
+    });
   });
 });

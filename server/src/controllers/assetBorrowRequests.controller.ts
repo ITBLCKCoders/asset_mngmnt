@@ -13,6 +13,16 @@ import type { StaffApproveBorrowRequestDto } from '../dtos/assetBorrowRequests/S
 import type { StaffDeclineBorrowRequestDto } from '../dtos/assetBorrowRequests/StaffDeclineBorrowRequestDto.js';
 import type { ProcessBorrowReturnDto } from '../dtos/assetBorrowRequests/ProcessBorrowReturnDto.js';
 import { createAuditLog } from '../utils/audit.js';
+import { createNotificationForApi } from '../utils/notificationsApi.js';
+import { emitNotification } from '../sockets/socketHandlers.js';
+import { getIoInstance } from '../utils/socketManager.js';
+import {
+  getDesignatedApproverUserIdForRequester,
+  getDesignatedSubApproverUserIdForRequester,
+  getAssetRoleUsersForScopeAndCompany,
+} from '../utils/approverNotifications.js';
+import { getUserNamesById } from '../repositories/assetTransferForm.repository.js';
+import { getBorrowRequestById } from '../repositories/assetBorrowRequests.repository.js';
 
 export async function createAssetBorrowRequest(
   req: AuthRequest,
@@ -40,6 +50,53 @@ export async function createAssetBorrowRequest(
       ipAddress: req.ip,
       userAgent: req.get('User-Agent'),
     });
+
+    try {
+      const requesterName = await getUserNamesById(userId);
+      const fullName = requesterName
+        ? `${requesterName.first_name} ${requesterName.last_name}`.trim()
+        : 'A user';
+      const approverUserId = await getDesignatedApproverUserIdForRequester(userId);
+      const subApproverUserId = await getDesignatedSubApproverUserIdForRequester(userId);
+      const io = getIoInstance();
+      const notifyUsers = [approverUserId, subApproverUserId].filter(
+        (id): id is string => id !== null && id !== userId
+      );
+      for (const targetUserId of notifyUsers) {
+        await createNotificationForApi({
+          user_id: targetUserId,
+          title: 'New Borrow Request Pending Approval',
+          message: `${fullName} has submitted a borrow request (${result.id.slice(0, 8)}) for ${body.borrow_scope === 'it' ? 'IT' : 'Admin'} assets and requires your approval.`,
+          type: 'system',
+          data: {
+            form_id: result.id,
+            requester_id: userId,
+            requester_name: fullName,
+            borrow_scope: body.borrow_scope,
+            route: '/approvals',
+            actionTarget: 'borrow_request_approval',
+          },
+        });
+        if (io) {
+          emitNotification(io, targetUserId, 'notification', {
+            title: 'New Borrow Request Pending Approval',
+            message: `${fullName} has submitted a borrow request (${result.id.slice(0, 8)}) for ${body.borrow_scope === 'it' ? 'IT' : 'Admin'} assets and requires your approval.`,
+            type: 'system',
+            data: {
+              form_id: result.id,
+              requester_id: userId,
+              requester_name: fullName,
+              borrow_scope: body.borrow_scope,
+              route: '/approvals',
+              actionTarget: 'borrow_request_approval',
+            },
+            time: new Date().toISOString(),
+          });
+        }
+      }
+    } catch (notifError) {
+      logger.error('[assetBorrowRequests] Failed to send submit notifications', notifError);
+    }
 
     return createSuccessResponse(res, { id: result.id }, 'Borrow request created', undefined, 201);
   } catch (err) {
@@ -182,6 +239,90 @@ export async function approveDeptHeadBorrowRequest(
       userAgent: req.get('User-Agent'),
     });
 
+    try {
+      const row = await getBorrowRequestById(pool, borrowRequestId);
+      if (row) {
+        const io = getIoInstance();
+        const scopeLabel = row.borrow_scope === 'it' ? 'IT' : 'Admin';
+
+        const requesterName = await getUserNamesById(row.user_id);
+        const fullName = requesterName
+          ? `${requesterName.first_name} ${requesterName.last_name}`.trim()
+          : 'A user';
+
+        await createNotificationForApi({
+          user_id: row.user_id,
+          title: 'Borrow Request Approved by Department Head',
+          message: `Your borrow request (${row.form_number ?? borrowRequestId.slice(0, 8)}) has been approved by the department head and is now ready for processing.`,
+          type: 'system',
+          data: {
+            form_id: borrowRequestId,
+            form_number: row.form_number,
+            borrow_scope: row.borrow_scope,
+            route: '/assets/borrow',
+            actionTarget: 'my_borrow_requests',
+          },
+        });
+        if (io) {
+          emitNotification(io, row.user_id, 'notification', {
+            title: 'Borrow Request Approved by Department Head',
+            message: `Your borrow request (${row.form_number ?? borrowRequestId.slice(0, 8)}) has been approved by the department head and is now ready for processing.`,
+            type: 'system',
+            data: {
+              form_id: borrowRequestId,
+              form_number: row.form_number,
+              borrow_scope: row.borrow_scope,
+              route: '/assets/borrow',
+              actionTarget: 'my_borrow_requests',
+            },
+            time: new Date().toISOString(),
+          });
+        }
+
+        const assetRoleUsers = await getAssetRoleUsersForScopeAndCompany(
+          row.company_id,
+          row.borrow_scope
+        );
+        for (const targetUserId of assetRoleUsers) {
+          if (targetUserId === row.user_id || targetUserId === userId) continue;
+          await createNotificationForApi({
+            user_id: targetUserId,
+            title: 'Borrow Request Ready for Processing',
+            message: `${fullName}'s borrow request (${row.form_number ?? borrowRequestId.slice(0, 8)}) has been approved by the department head and is ready for ${scopeLabel} asset assignment.`,
+            type: 'system',
+            data: {
+              form_id: borrowRequestId,
+              form_number: row.form_number,
+              requester_id: row.user_id,
+              requester_name: fullName,
+              borrow_scope: row.borrow_scope,
+              route: '/borrow-requests',
+              actionTarget: 'borrow_request_staff_processing',
+            },
+          });
+          if (io) {
+            emitNotification(io, targetUserId, 'notification', {
+              title: 'Borrow Request Ready for Processing',
+              message: `${fullName}'s borrow request (${row.form_number ?? borrowRequestId.slice(0, 8)}) has been approved by the department head and is ready for ${scopeLabel} asset assignment.`,
+              type: 'system',
+              data: {
+                form_id: borrowRequestId,
+                form_number: row.form_number,
+                requester_id: row.user_id,
+                requester_name: fullName,
+                borrow_scope: row.borrow_scope,
+                route: '/borrow-requests',
+                actionTarget: 'borrow_request_staff_processing',
+              },
+              time: new Date().toISOString(),
+            });
+          }
+        }
+      }
+    } catch (notifError) {
+      logger.error('[assetBorrowRequests] Failed to send dept head approve notifications', notifError);
+    }
+
     return createSuccessResponse(res, { ok: true }, 'Borrow request approved');
   } catch (err) {
     logger.error('[assetBorrowRequests] dept head approve failed', err);
@@ -233,6 +374,43 @@ export async function declineDeptHeadBorrowRequest(
       ipAddress: req.ip,
       userAgent: req.get('User-Agent'),
     });
+
+    try {
+      const row = await getBorrowRequestById(pool, borrowRequestId);
+      if (row) {
+        const io = getIoInstance();
+        await createNotificationForApi({
+          user_id: row.user_id,
+          title: 'Borrow Request Declined',
+          message: `Your borrow request (${row.form_number ?? borrowRequestId.slice(0, 8)}) has been declined by the department head.`,
+          type: 'system',
+          data: {
+            form_id: borrowRequestId,
+            form_number: row.form_number,
+            borrow_scope: row.borrow_scope,
+            route: '/assets/borrow',
+            actionTarget: 'my_borrow_requests',
+          },
+        });
+        if (io) {
+          emitNotification(io, row.user_id, 'notification', {
+            title: 'Borrow Request Declined',
+            message: `Your borrow request (${row.form_number ?? borrowRequestId.slice(0, 8)}) has been declined by the department head.`,
+            type: 'system',
+            data: {
+              form_id: borrowRequestId,
+              form_number: row.form_number,
+              borrow_scope: row.borrow_scope,
+              route: '/assets/borrow',
+              actionTarget: 'my_borrow_requests',
+            },
+            time: new Date().toISOString(),
+          });
+        }
+      }
+    } catch (notifError) {
+      logger.error('[assetBorrowRequests] Failed to send dept head decline notification', notifError);
+    }
 
     return createSuccessResponse(res, { ok: true }, 'Borrow request declined');
   } catch (err) {
@@ -368,6 +546,45 @@ export async function staffApproveBorrowRequest(
       userAgent: req.get('User-Agent'),
     });
 
+    try {
+      const row = await getBorrowRequestById(pool, borrowRequestId);
+      if (row) {
+        const io = getIoInstance();
+        await createNotificationForApi({
+          user_id: row.user_id,
+          title: 'Borrow Request Processed',
+          message: `Your borrow request (${row.form_number ?? borrowRequestId.slice(0, 8)}) has been processed. Asset ${body.asset_code} has been assigned to you. Please receive the asset.`,
+          type: 'system',
+          data: {
+            form_id: borrowRequestId,
+            form_number: row.form_number,
+            asset_code: body.asset_code,
+            borrow_scope: row.borrow_scope,
+            route: '/assets/borrow',
+            actionTarget: 'my_borrow_requests',
+          },
+        });
+        if (io) {
+          emitNotification(io, row.user_id, 'notification', {
+            title: 'Borrow Request Processed',
+            message: `Your borrow request (${row.form_number ?? borrowRequestId.slice(0, 8)}) has been processed. Asset ${body.asset_code} has been assigned to you. Please receive the asset.`,
+            type: 'system',
+            data: {
+              form_id: borrowRequestId,
+              form_number: row.form_number,
+              asset_code: body.asset_code,
+              borrow_scope: row.borrow_scope,
+              route: '/assets/borrow',
+              actionTarget: 'my_borrow_requests',
+            },
+            time: new Date().toISOString(),
+          });
+        }
+      }
+    } catch (notifError) {
+      logger.error('[assetBorrowRequests] Failed to send staff approve notification', notifError);
+    }
+
     return createSuccessResponse(res, { ok: true }, 'Borrow request processed');
   } catch (err) {
     logger.error('[assetBorrowRequests] staff approve failed', err);
@@ -460,6 +677,45 @@ export async function staffDeclineBorrowRequest(
       userAgent: req.get('User-Agent'),
     });
 
+    try {
+      const row = await getBorrowRequestById(pool, borrowRequestId);
+      if (row) {
+        const io = getIoInstance();
+        await createNotificationForApi({
+          user_id: row.user_id,
+          title: 'Borrow Request Declined by Staff',
+          message: `Your borrow request (${row.form_number ?? borrowRequestId.slice(0, 8)}) was declined by staff. Reason: ${body.reason.trim()}`,
+          type: 'system',
+          data: {
+            form_id: borrowRequestId,
+            form_number: row.form_number,
+            decline_reason: body.reason.trim(),
+            borrow_scope: row.borrow_scope,
+            route: '/assets/borrow',
+            actionTarget: 'my_borrow_requests',
+          },
+        });
+        if (io) {
+          emitNotification(io, row.user_id, 'notification', {
+            title: 'Borrow Request Declined by Staff',
+            message: `Your borrow request (${row.form_number ?? borrowRequestId.slice(0, 8)}) was declined by staff. Reason: ${body.reason.trim()}`,
+            type: 'system',
+            data: {
+              form_id: borrowRequestId,
+              form_number: row.form_number,
+              decline_reason: body.reason.trim(),
+              borrow_scope: row.borrow_scope,
+              route: '/assets/borrow',
+              actionTarget: 'my_borrow_requests',
+            },
+            time: new Date().toISOString(),
+          });
+        }
+      }
+    } catch (notifError) {
+      logger.error('[assetBorrowRequests] Failed to send staff decline notification', notifError);
+    }
+
     return createSuccessResponse(res, { ok: true }, 'Borrow request declined');
   } catch (err) {
     logger.error('[assetBorrowRequests] staff decline failed', err);
@@ -505,6 +761,43 @@ export async function processBorrowReturn(
       ipAddress: req.ip,
       userAgent: req.get('User-Agent'),
     });
+
+    try {
+      const row = await getBorrowRequestById(pool, borrowRequestId);
+      if (row) {
+        const io = getIoInstance();
+        await createNotificationForApi({
+          user_id: row.user_id,
+          title: 'Borrow Return Processed',
+          message: `Your borrowed asset for request (${row.form_number ?? borrowRequestId.slice(0, 8)}) has been returned.`,
+          type: 'system',
+          data: {
+            form_id: borrowRequestId,
+            form_number: row.form_number,
+            borrow_scope: row.borrow_scope,
+            route: '/assets/borrow',
+            actionTarget: 'my_borrow_requests',
+          },
+        });
+        if (io) {
+          emitNotification(io, row.user_id, 'notification', {
+            title: 'Borrow Return Processed',
+            message: `Your borrowed asset for request (${row.form_number ?? borrowRequestId.slice(0, 8)}) has been returned.`,
+            type: 'system',
+            data: {
+              form_id: borrowRequestId,
+              form_number: row.form_number,
+              borrow_scope: row.borrow_scope,
+              route: '/assets/borrow',
+              actionTarget: 'my_borrow_requests',
+            },
+            time: new Date().toISOString(),
+          });
+        }
+      }
+    } catch (notifError) {
+      logger.error('[assetBorrowRequests] Failed to send return processed notification', notifError);
+    }
 
     return createSuccessResponse(res, { ok: true }, 'Borrow return processed');
   } catch (err) {
@@ -560,6 +853,43 @@ export async function receiveBorrowRequest(
       ipAddress: req.ip,
       userAgent: req.get('User-Agent'),
     });
+
+    try {
+      const row = await getBorrowRequestById(pool, borrowRequestId);
+      if (row) {
+        const io = getIoInstance();
+        await createNotificationForApi({
+          user_id: row.user_id,
+          title: 'Borrow Asset Received',
+          message: `You have successfully received the asset for borrow request (${row.form_number ?? borrowRequestId.slice(0, 8)}).`,
+          type: 'system',
+          data: {
+            form_id: borrowRequestId,
+            form_number: row.form_number,
+            borrow_scope: row.borrow_scope,
+            route: '/assets/borrow',
+            actionTarget: 'my_borrow_requests',
+          },
+        });
+        if (io) {
+          emitNotification(io, row.user_id, 'notification', {
+            title: 'Borrow Asset Received',
+            message: `You have successfully received the asset for borrow request (${row.form_number ?? borrowRequestId.slice(0, 8)}).`,
+            type: 'system',
+            data: {
+              form_id: borrowRequestId,
+              form_number: row.form_number,
+              borrow_scope: row.borrow_scope,
+              route: '/assets/borrow',
+              actionTarget: 'my_borrow_requests',
+            },
+            time: new Date().toISOString(),
+          });
+        }
+      }
+    } catch (notifError) {
+      logger.error('[assetBorrowRequests] Failed to send receive notification', notifError);
+    }
 
     return createSuccessResponse(res, { ok: true }, 'Borrow request received successfully');
   } catch (err) {

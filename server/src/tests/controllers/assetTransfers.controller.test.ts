@@ -31,7 +31,7 @@ jest.mock('../../repositories/assetTransferForm.repository.js', () => ({
   getBuilderItemsByAssetIds: jest.fn(), getBuilderItemCount: jest.fn(),
   findAccountabilityFormForAsset: jest.fn(),
 }));
-jest.mock('../../controllers/accountabilityForms.controller.js', () => ({ createAccountabilityFormHandler: jest.fn() }));
+jest.mock('../../controllers/accountabilityForms.controller.js', () => ({ createAccountabilityFormHandler: jest.fn(), kickoffApprovalFlowNotifications: jest.fn() }));
 
 const { pool } = jest.requireMock('../../db.js');
 const formModel = jest.requireMock('../../models/assetTransferForm.model.js').AssetTransferFormModel;

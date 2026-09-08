@@ -298,7 +298,7 @@ export function AssetBuilderViewModal({
                       type="button"
                       className={`border rounded-lg p-4 hover:bg-gray-50 transition-colors w-full text-left ${
                         item.is_parent
-                          ? 'border-amber-200 bg-amber-50'
+                          ? 'border-amber-200 bg-amber-50 dark:border-amber-800 dark:bg-amber-900/20 dark:hover:bg-amber-900/30'
                           : 'border-gray-200'
                       }`}
                       onClick={e => {
@@ -313,7 +313,9 @@ export function AssetBuilderViewModal({
                         )}
                         <span
                           className={`font-medium ${
-                            item.is_parent ? 'text-amber-900' : 'text-gray-900'
+                            item.is_parent
+                              ? 'text-amber-900 dark:text-amber-200'
+                              : 'text-gray-900'
                           }`}
                         >
                           {item.asset_code}
@@ -321,7 +323,9 @@ export function AssetBuilderViewModal({
                       </div>
                       <p
                         className={`text-sm mb-2 ${
-                          item.is_parent ? 'text-amber-700' : 'text-gray-600'
+                          item.is_parent
+                            ? 'text-amber-700 dark:text-amber-300'
+                            : 'text-gray-600'
                         }`}
                       >
                         {item.asset_name}

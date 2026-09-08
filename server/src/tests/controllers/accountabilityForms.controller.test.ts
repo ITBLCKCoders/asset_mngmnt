@@ -46,6 +46,10 @@ jest.mock('../../repositories/accountabilityForm.repository.js', () => ({
   getFormByIdTx: jest.fn(),
   updateFormStatusTx: jest.fn(),
   insertDeclineNotification: jest.fn(),
+  getAssignmentAssetMapping: jest.fn(),
+  getReturnFormsByAssignmentIds: jest.fn(),
+  getTransferFormsForMovement: jest.fn(),
+  getActiveAccountabilityFormsForAssetIds: jest.fn(),
 }));
 jest.mock('../../repositories/assetChecklist.repository.js', () => ({
   getChecklistsByAssignmentIds: jest.fn(),
@@ -443,6 +447,100 @@ describe('accountabilityForms.controller', () => {
     });
   });
 
+  describe('getAccountabilityFormMovementHandler', () => {
+    const returnRepo = jest.requireMock('../../repositories/assetReturn.repository.js');
+    const transferRepo = jest.requireMock('../../repositories/assetTransferForm.repository.js');
+
+    beforeEach(() => {
+      repo.getAssignmentAssetMapping.mockResolvedValue([]);
+      repo.getReturnFormsByAssignmentIds.mockResolvedValue([]);
+      repo.getTransferFormsForMovement.mockResolvedValue([]);
+      repo.getActiveAccountabilityFormsForAssetIds.mockResolvedValue([]);
+    });
+
+    it('falls back to direct return/transfer sheets in the window when assignmentIds are unresolvable', async () => {
+      req.params = { formId: 'f1' };
+      repo.getFormFullDetailById.mockResolvedValue(mockFormRow);
+      repo.getActiveAccountabilityFormsForAssetIds.mockResolvedValue([
+        {
+          formID: 'f2', form_number: 'AF-002', user_id: 'u2', user_name: 'Jane Smith',
+          status: 'Pending', created_at: '2024-01-05T00:00:00Z',
+          assets_data: JSON.stringify({ assets: [{ id: 'a1' }] }),
+        },
+      ]);
+      returnRepo.getReturnFormsByAssetId.mockResolvedValue([
+        { id: 'rf1', formNumber: 'RF-001', created_at: '2024-01-03T00:00:00Z', user: { id: 'u1', first_name: 'John', last_name: 'Doe' } },
+      ]);
+      transferRepo.getTransferFormsByAssetId.mockResolvedValue([
+        { id: 'tf1', formNumber: 'TF-001', created_at: '2024-01-04T00:00:00Z', user: { id: 'u1', first_name: 'John', last_name: 'Doe' }, new_user: { first_name: 'Ann', last_name: 'Lee' } },
+      ]);
+
+      await accountabilityFormsController.getAccountabilityFormMovementHandler(req, res);
+
+      expect(res._json.assets).toHaveLength(1);
+      expect(res._json.assets[0].returnForms).toHaveLength(1);
+      expect(res._json.assets[0].returnForms[0].formNumber).toBe('RF-001');
+      expect(res._json.assets[0].transferForms).toHaveLength(1);
+      expect(res._json.assets[0].transferForms[0].newUserName).toBe('Ann Lee');
+      expect(res._json.assets[0].newAccountabilityForms).toHaveLength(1);
+      expect(res._json.assets[0].newAccountabilityForms[0].formNumber).toBe('AF-002');
+    });
+
+    it('excludes direct sheets created outside the window (before this form)', async () => {
+      req.params = { formId: 'f1' };
+      repo.getFormFullDetailById.mockResolvedValue(mockFormRow);
+      repo.getActiveAccountabilityFormsForAssetIds.mockResolvedValue([
+        {
+          formID: 'f2', form_number: 'AF-002', user_id: 'u2', user_name: 'Jane Smith',
+          status: 'Pending', created_at: '2024-01-05T00:00:00Z',
+          assets_data: JSON.stringify({ assets: [{ id: 'a1' }] }),
+        },
+      ]);
+      returnRepo.getReturnFormsByAssetId.mockResolvedValue([
+        { id: 'rf-old', formNumber: 'RF-OLD', created_at: '2023-12-15T00:00:00Z', user: { id: 'u1', first_name: 'John', last_name: 'Doe' } },
+      ]);
+      transferRepo.getTransferFormsByAssetId.mockResolvedValue([]);
+
+      await accountabilityFormsController.getAccountabilityFormMovementHandler(req, res);
+
+      expect(res._json.assets[0].returnForms).toHaveLength(0);
+    });
+
+    it('prefers assignment-attributed forms over the direct fallback', async () => {
+      req.params = { formId: 'f1' };
+      const multiFormRow = {
+        ...mockFormRow,
+        assets_data: JSON.stringify({
+          assets: [{ id: 'a1', code: 'AST-001', name: 'Laptop' }],
+          assignment_ids: ['asg1'],
+        }),
+      };
+      repo.getFormFullDetailById.mockResolvedValue(multiFormRow);
+      repo.getAssignmentAssetMapping.mockResolvedValue([
+        { assignment_id: 'asg1', asset_id: 'a1' },
+      ]);
+      repo.getReturnFormsByAssignmentIds.mockResolvedValue([
+        { formID: 'rf9', form_number: 'RF-009', assignment_id: 'asg1', user_id: 'u1', user_name: 'John Doe', created_at: '2024-01-02T00:00:00Z' },
+      ]);
+      returnRepo.getReturnFormsByAssetId.mockResolvedValue([
+        { id: 'rf1', formNumber: 'RF-001', created_at: '2024-01-03T00:00:00Z', user: { id: 'u1', first_name: 'John', last_name: 'Doe' } },
+      ]);
+      transferRepo.getTransferFormsByAssetId.mockResolvedValue([]);
+
+      await accountabilityFormsController.getAccountabilityFormMovementHandler(req, res);
+
+      expect(res._json.assets[0].returnForms).toHaveLength(1);
+      expect(res._json.assets[0].returnForms[0].formNumber).toBe('RF-009');
+    });
+
+    it('returns 404 when form not found', async () => {
+      req.params = { formId: 'f1' };
+      repo.getFormFullDetailById.mockResolvedValue(null);
+      await accountabilityFormsController.getAccountabilityFormMovementHandler(req, res);
+      expect(res._status).toBe(404);
+    });
+  });
+
   describe('getAssetMovementHandler', () => {
     it('falls back to direct return/transfer sheets when no accountability forms exist', async () => {
       req.params = { assetId: 'a1' };
@@ -472,6 +570,100 @@ describe('accountabilityForms.controller', () => {
       transferRepo.getTransferFormsByAssetId.mockResolvedValue([]);
       await accountabilityFormsController.getAssetMovementHandler(req, res);
       expect(res._json.forms).toEqual([]);
+    });
+  });
+
+  describe('kickoffApprovalFlowNotifications', () => {
+    const kickoffArgs = () => ({
+      formId: 'f9',
+      formNumber: 'AF-009',
+      ownerUserId: 'u1',
+      ownerName: 'John Doe',
+      assignerName: 'Assigner Name',
+      req,
+    });
+
+    it('notifies the copy signer for a pending_admin_copy_signature form', async () => {
+      pool.execute.mockImplementation(async (query: unknown) => {
+        const q = String(query);
+        if (q.includes('SELECT approval_status, admin_copy_signer_id')) {
+          return [[{
+            approval_status: 'pending_admin_copy_signature',
+            admin_copy_signer_id: 'signer1',
+            admin_copy_copy_type: 'IT',
+          }]];
+        }
+        return [[]];
+      });
+      getDesignatedApproverUserIdForRequester.mockResolvedValue('approver1');
+
+      await accountabilityFormsController.kickoffApprovalFlowNotifications(kickoffArgs());
+
+      expect(NotificationService.createNotification).toHaveBeenCalledWith(
+        expect.objectContaining({
+          user_id: 'signer1',
+          title: 'Accountability form AF-009 needs IT copy signature',
+          type: 'accountability_form',
+        }),
+        'u1',
+        '127.0.0.1',
+        undefined
+      );
+      const dataArg = JSON.parse(
+        (NotificationService.createNotification as jest.Mock).mock.calls[0][0].data
+      );
+      expect(dataArg.route).toBe('/approvals?tab=for-approval');
+      expect(dataArg.actionTarget).toBe('accountability_form_admin_copy');
+      expect(dataArg.formId).toBe('f9');
+    });
+
+    it('notifies the owner approvers for a pending_approval form', async () => {
+      pool.execute.mockImplementation(async (query: unknown) => {
+        const q = String(query);
+        if (q.includes('SELECT approval_status, admin_copy_signer_id')) {
+          return [[{
+            approval_status: 'pending_approval',
+            admin_copy_signer_id: null,
+            admin_copy_copy_type: 'IT',
+          }]];
+        }
+        return [[]];
+      });
+      getDesignatedApproverUserIdForRequester.mockResolvedValue('approver1');
+      getDesignatedSubApproverUserIdForRequester.mockResolvedValue('subapprover1');
+
+      await accountabilityFormsController.kickoffApprovalFlowNotifications(kickoffArgs());
+
+      const notifiedUserIds = (NotificationService.createNotification as jest.Mock).mock.calls
+        .map(call => call[0].user_id);
+      expect(notifiedUserIds).toContain('approver1');
+      expect(notifiedUserIds).toContain('subapprover1');
+    });
+
+    it('is a no-op for an approved form', async () => {
+      pool.execute.mockImplementation(async (query: unknown) => {
+        const q = String(query);
+        if (q.includes('SELECT approval_status, admin_copy_signer_id')) {
+          return [[{
+            approval_status: 'approved',
+            admin_copy_signer_id: null,
+            admin_copy_copy_type: null,
+          }]];
+        }
+        return [[]];
+      });
+
+      await accountabilityFormsController.kickoffApprovalFlowNotifications(kickoffArgs());
+
+      expect(NotificationService.createNotification).not.toHaveBeenCalled();
+    });
+
+    it('is a no-op when the form row is missing', async () => {
+      pool.execute.mockResolvedValue([[]]);
+
+      await accountabilityFormsController.kickoffApprovalFlowNotifications(kickoffArgs());
+
+      expect(NotificationService.createNotification).not.toHaveBeenCalled();
     });
   });
 });

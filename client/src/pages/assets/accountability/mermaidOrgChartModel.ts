@@ -28,6 +28,10 @@ export interface MovementNodeActions {
   onViewReturn: (formId: string) => void;
   onViewTransfer: (formId: string) => void;
   onViewNew: (formId: string) => void;
+  /** Called when an Accountability Form box (root / backbone) is clicked. */
+  onViewAccountabilityForm?: (formId: string) => void;
+  /** Called when an Asset box is clicked. Receives the asset id or code. */
+  onViewAsset?: (assetIdOrCode: string) => void;
 }
 
 export interface MovementFormInput {
@@ -99,17 +103,32 @@ function escapeHtml(value: string): string {
     .replace(/"/g, '&quot;');
 }
 
+/** Format an ISO-ish timestamp as a compact gray date line, or '' if absent. */
+function formatDateLine(value?: string | null): string {
+  if (!value) return '';
+  const d = new Date(value);
+  if (Number.isNaN(d.getTime())) return '';
+  const date = `${String(d.getDate()).padStart(2, '0')}/${String(
+    d.getMonth() + 1
+  ).padStart(2, '0')}/${d.getFullYear()}`;
+  const time = `${String(d.getHours()).padStart(2, '0')}:${String(
+    d.getMinutes()
+  ).padStart(2, '0')}`;
+  return `<span style="color:#94a3b8;font-size:10px">${date} ${time}</span>`;
+}
+
 /**
  * Build a multi-line HTML label for a mermaid node. `main` is the full,
  * untruncated form number / asset code. `subtitle` is inserted verbatim
  * (must be pre-escaped) so it can carry inline HTML such as `&rarr;` or
- * `<b>New owner:</b>`.
+ * `<b>New owner:</b>`. `dateLine` (from `formatDateLine`) is appended last.
  */
 function nodeLabel(
   title: string,
   main: string,
   subtitle?: string,
-  badge?: string
+  badge?: string,
+  dateLine?: string
 ): string {
   const parts: string[] = [
     `<b>${escapeHtml(title)}</b>`,
@@ -117,6 +136,7 @@ function nodeLabel(
   ];
   if (subtitle) parts.push(subtitle);
   if (badge) parts.push(`<i>${escapeHtml(badge)}</i>`);
+  if (dateLine) parts.push(dateLine);
   return parts.join('<br/>');
 }
 
@@ -140,58 +160,104 @@ export function buildMermaidOrgModel(
     nodes.push(node);
   };
 
-  const addAssetChildren = (item: MovementAssetChildren, parentId: string) => {
+  // Edge dedupe: mermaid draws a parallel line for every duplicated
+  // A --> B pair, so repeated links (e.g. two assets converging on a shared
+  // form) must only be pushed once.
+  const seenEdges = new Set<string>();
+  const addEdge = (from: string, to: string) => {
+    const key = `${from}->${to}`;
+    if (seenEdges.has(key)) return;
+    seenEdges.add(key);
+    edges.push({ from, to });
+  };
+
+  /**
+   * Attach an asset's return/transfer/new-accountability forms below
+   * `parentId`. `sharedNodes` dedupes boxes by form id so that when several
+   * assets on the same accountability form went through the SAME return /
+   * transfer / new accountability form, only one box is rendered and every
+   * asset's chain converges into it.
+   */
+  const addAssetChildren = (
+    item: MovementAssetChildren,
+    parentId: string,
+    sharedNodes: Map<string, string>
+  ) => {
     const returnIds: string[] = [];
     for (const r of item.returnForms) {
-      const rid = nextId('ret');
-      addNode({
-        id: rid,
-        label: nodeLabel(
-          'Return Form',
-          r.formNumber,
-          escapeHtml(r.userName || '')
-        ),
-        className: 'ret',
-      });
-      edges.push({ from: parentId, to: rid });
-      nodeActions[rid] = () => actions.onViewReturn(r.id);
+      const key = `ret:${r.id}`;
+      let rid = sharedNodes.get(key);
+      if (!rid) {
+        rid = nextId('ret');
+        sharedNodes.set(key, rid);
+        addNode({
+          id: rid,
+          label: nodeLabel(
+            'Return Form',
+            r.formNumber,
+            escapeHtml(r.userName || ''),
+            undefined,
+            formatDateLine(r.created_at)
+          ),
+          className: 'ret',
+        });
+      }
+      addEdge(parentId, rid);
+      if (!nodeActions[rid]) nodeActions[rid] = () => actions.onViewReturn(r.id);
       returnIds.push(rid);
     }
 
     const transferIds: string[] = [];
     for (const t of item.transferForms) {
-      const tid = nextId('trf');
-      const subtitle = t.newUserName
-        ? `${escapeHtml(t.userName || '')} &rarr; ${escapeHtml(t.newUserName)}`
-        : escapeHtml(t.userName || '');
-      addNode({
-        id: tid,
-        label: nodeLabel('Transfer Form', t.formNumber, subtitle),
-        className: 'trf',
-      });
-      edges.push({ from: parentId, to: tid });
-      nodeActions[tid] = () => actions.onViewTransfer(t.id);
+      const key = `trf:${t.id}`;
+      let tid = sharedNodes.get(key);
+      if (!tid) {
+        tid = nextId('trf');
+        sharedNodes.set(key, tid);
+        const subtitle = t.newUserName
+          ? `${escapeHtml(t.userName || '')} &rarr; ${escapeHtml(t.newUserName)}`
+          : escapeHtml(t.userName || '');
+        addNode({
+          id: tid,
+          label: nodeLabel(
+            'Transfer Form',
+            t.formNumber,
+            subtitle,
+            undefined,
+            formatDateLine(t.created_at)
+          ),
+          className: 'trf',
+        });
+      }
+      addEdge(parentId, tid);
+      if (!nodeActions[tid]) nodeActions[tid] = () => actions.onViewTransfer(t.id);
       transferIds.push(tid);
     }
 
     for (const n of item.newAccountabilityForms) {
-      const nid = nextId('newacc');
-      addNode({
-        id: nid,
-        label: nodeLabel(
-          'New Accountability Form',
-          n.formNumber,
-          `<b>New owner:</b> ${escapeHtml(n.userName || '')}`,
-          n.status
-        ),
-        className: 'new',
-      });
-      nodeActions[nid] = () => actions.onViewNew(n.id);
-      if (returnIds.length === 0 && transferIds.length === 0) {
-        edges.push({ from: parentId, to: nid });
+      const key = `new:${n.id}`;
+      let nid = sharedNodes.get(key);
+      if (!nid) {
+        nid = nextId('newacc');
+        sharedNodes.set(key, nid);
+        addNode({
+          id: nid,
+          label: nodeLabel(
+            'New Accountability Form',
+            n.formNumber,
+            `<b>New owner:</b> ${escapeHtml(n.userName || '')}`,
+            n.status,
+            formatDateLine(n.created_at)
+          ),
+          className: 'new',
+        });
       }
-      for (const rid of returnIds) edges.push({ from: rid, to: nid });
-      for (const tid of transferIds) edges.push({ from: tid, to: nid });
+      if (!nodeActions[nid]) nodeActions[nid] = () => actions.onViewNew(n.id);
+      if (returnIds.length === 0 && transferIds.length === 0) {
+        addEdge(parentId, nid);
+      }
+      for (const rid of returnIds) addEdge(rid, nid);
+      for (const tid of transferIds) addEdge(tid, nid);
     }
   };
 
@@ -207,6 +273,13 @@ export function buildMermaidOrgModel(
       ),
       className: 'af',
     });
+    if (actions.onViewAccountabilityForm) {
+      nodeActions[rootId] = () =>
+        actions.onViewAccountabilityForm!(input.form.id);
+    }
+    // Shared across all assets on the form: a single return batch /
+    // transfer batch / replacement accountability form must only appear once.
+    const sharedNodes = new Map<string, string>();
     for (const item of input.assets) {
       const assetId = nextId('asset');
       addNode({
@@ -218,8 +291,13 @@ export function buildMermaidOrgModel(
         ),
         className: 'asset',
       });
-      edges.push({ from: rootId, to: assetId });
-      addAssetChildren(item, assetId);
+      addEdge(rootId, assetId);
+      if (actions.onViewAsset) {
+        const assetKey =
+          item.asset.code || item.asset.name || item.asset.id;
+        nodeActions[assetId] = () => actions.onViewAsset!(assetKey);
+      }
+      addAssetChildren(item, assetId, sharedNodes);
     }
   } else {
     const rootId = nextId('asset');
@@ -232,6 +310,10 @@ export function buildMermaidOrgModel(
       ),
       className: 'asset',
     });
+    if (actions.onViewAsset) {
+      const assetKey = input.asset.code || input.asset.name || input.asset.id;
+      nodeActions[rootId] = () => actions.onViewAsset!(assetKey);
+    }
 
     // Chronological backbone: oldest → latest so forms appear "under each other"
     const sortedForms = [...input.forms].sort((a, b) => {
@@ -260,10 +342,15 @@ export function buildMermaidOrgModel(
           'Accountability Form',
           f.form.formNumber,
           escapeHtml(f.form.userName || ''),
-          f.form.status
+          f.form.status,
+          formatDateLine(f.form.created_at)
         ),
         className: 'af',
       });
+      if (actions.onViewAccountabilityForm) {
+        const afId = String(f.form.id);
+        nodeActions[nid] = () => actions.onViewAccountabilityForm!(afId);
+      }
     }
 
     // Backbone edges: Asset → first AF, then AF(n) → AF(n+1) to force vertical stacking
@@ -272,9 +359,9 @@ export function buildMermaidOrgModel(
       .map(f => formIdToNodeId.get(String(f.form.id))!)
       .filter(Boolean);
     if (afNodeIds.length > 0) {
-      edges.push({ from: rootId, to: afNodeIds[0] });
+      addEdge(rootId, afNodeIds[0]);
       for (let i = 1; i < afNodeIds.length; i++) {
-        edges.push({ from: afNodeIds[i - 1], to: afNodeIds[i] });
+        addEdge(afNodeIds[i - 1], afNodeIds[i]);
       }
     }
 
@@ -286,10 +373,16 @@ export function buildMermaidOrgModel(
         const rid = nextId('ret');
         addNode({
           id: rid,
-          label: nodeLabel('Return Form', r.formNumber, escapeHtml(r.userName || '')),
+          label: nodeLabel(
+            'Return Form',
+            r.formNumber,
+            escapeHtml(r.userName || ''),
+            undefined,
+            formatDateLine(r.created_at)
+          ),
           className: 'ret',
         });
-        edges.push({ from: parentId, to: rid });
+        addEdge(parentId, rid);
         nodeActions[rid] = () => actions.onViewReturn(r.id);
         returnIds.push(rid);
       }
@@ -301,10 +394,16 @@ export function buildMermaidOrgModel(
           : escapeHtml(t.userName || '');
         addNode({
           id: tid,
-          label: nodeLabel('Transfer Form', t.formNumber, subtitle),
+          label: nodeLabel(
+            'Transfer Form',
+            t.formNumber,
+            subtitle,
+            undefined,
+            formatDateLine(t.created_at)
+          ),
           className: 'trf',
         });
-        edges.push({ from: parentId, to: tid });
+        addEdge(parentId, tid);
         nodeActions[tid] = () => actions.onViewTransfer(t.id);
         transferIds.push(tid);
       }
@@ -314,10 +413,10 @@ export function buildMermaidOrgModel(
         if (existing) {
           // Link return/transfer sheets to the existing AF node instead of duplicating.
           if (returnIds.length === 0 && transferIds.length === 0) {
-            edges.push({ from: parentId, to: existing });
+            addEdge(parentId, existing);
           }
-          for (const rid of returnIds) edges.push({ from: rid, to: existing });
-          for (const tid of transferIds) edges.push({ from: tid, to: existing });
+          for (const rid of returnIds) addEdge(rid, existing);
+          for (const tid of transferIds) addEdge(tid, existing);
           // Make the reused AF node open the new-form preview as well (keeps click UX).
           if (!nodeActions[existing]) nodeActions[existing] = () => actions.onViewNew(n.id);
           continue;
@@ -325,13 +424,19 @@ export function buildMermaidOrgModel(
         const nid = nextId('newacc');
         addNode({
           id: nid,
-          label: nodeLabel('New Accountability Form', n.formNumber, `<b>New owner:</b> ${escapeHtml(n.userName || '')}`, n.status),
+          label: nodeLabel(
+            'New Accountability Form',
+            n.formNumber,
+            `<b>New owner:</b> ${escapeHtml(n.userName || '')}`,
+            n.status,
+            formatDateLine(n.created_at)
+          ),
           className: 'new',
         });
         nodeActions[nid] = () => actions.onViewNew(n.id);
-        if (returnIds.length === 0 && transferIds.length === 0) edges.push({ from: parentId, to: nid });
-        for (const rid of returnIds) edges.push({ from: rid, to: nid });
-        for (const tid of transferIds) edges.push({ from: tid, to: nid });
+        if (returnIds.length === 0 && transferIds.length === 0) addEdge(parentId, nid);
+        for (const rid of returnIds) addEdge(rid, nid);
+        for (const tid of transferIds) addEdge(tid, nid);
       }
     };
 
