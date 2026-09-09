@@ -162,9 +162,10 @@ function mapDtoToAsset(dto: AssetResponseDto): Asset {
       dto.status === 'In Use' ? 'Assigned' : dto.status || 'Available',
     transferred_out: Boolean(dto.transferred_out),
     transferred_to_company_name: dto.transferred_to_company_name ?? null,
-    assignedTo: dto.currentAssignment?.user?.name || '',
+    assignedTo: dto.currentAssignment?.user?.name || dto.pendingAssignment?.user?.name || '',
     department: (() => {
       if (dto.currentAssignment?.department) return dto.currentAssignment.department;
+      if (dto.pendingAssignment?.department) return dto.pendingAssignment.department;
       if (dto.department) {
         try {
           const parsed = JSON.parse(dto.department);
@@ -177,8 +178,11 @@ function mapDtoToAsset(dto: AssetResponseDto): Asset {
     })(),
     location:
       dto.currentAssignment?.location ||
+      dto.pendingAssignment?.location ||
       `${dto.location_name || ''}${dto.room_name ? ` - ${dto.room_name}` : ''}`,
     currentAssignment: dto.currentAssignment ?? undefined,
+    pendingAssignment: dto.pendingAssignment ?? undefined,
+    isPendingSignature: Boolean(dto.isPendingSignature),
     assignmentHistory: dto.assignmentHistory,
     builderHistory: dto.builderHistory ?? undefined,
     purchaseDate: dto.purchase_date ? new Date(dto.purchase_date) : null,
@@ -414,8 +418,9 @@ export const useAssetExport = () => {
   ): string | number => {
     const a = asset as any;
     let value = a[colKey];
-    if (colKey === 'assignedTo' && !value && a.currentAssignment?.user?.name) {
-      value = a.currentAssignment.user.name;
+    if (colKey === 'assignedTo' && !value && (a.currentAssignment?.user?.name || a.pendingAssignment?.user?.name)) {
+      value = a.currentAssignment?.user?.name || a.pendingAssignment?.user?.name;
+      if (!a.currentAssignment && a.pendingAssignment) value = `${value} (Pending IT/Admin signature)`;
     }
     if (colKey === 'documents') {
       const docs = a.documents;

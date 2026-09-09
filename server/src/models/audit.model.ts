@@ -420,6 +420,43 @@ class AuditModel {
   }
 
   /**
+   * Get audit logs for a specific accountability form (no pagination).
+   * Used by the per-form timeline; returns an empty list when audit logging
+   * is disabled so callers can fall back to form timestamps.
+   */
+  static async getByAccountabilityFormId(
+    formId: string
+  ): Promise<{ logs: AuditLogWithUser[] }> {
+    const [logRows] = await pool.query(
+      `
+      SELECT
+        al.auditID,
+        al.created_at,
+        al.user_id,
+        al.action,
+        al.resource_type,
+        al.resource_id,
+        al.resource_name,
+        al.details,
+        al.old_values,
+        al.new_values,
+        al.ip_address,
+        al.user_agent,
+        al.company_id,
+        CONCAT(u.first_name, ' ', u.last_name) as user_name,
+        u.email as user_email
+      FROM audit_logs al
+      LEFT JOIN users u ON al.user_id = u.userID
+      WHERE al.resource_type = 'accountability_form' AND al.resource_id = ? AND al.deleted_at IS NULL
+      ORDER BY al.created_at DESC
+    `,
+      [formId]
+    );
+
+    return { logs: logRows as AuditLogWithUser[] };
+  }
+
+  /**
    * Get audit log by ID
    */
   static async getById(id: number): Promise<AuditLog | null> {

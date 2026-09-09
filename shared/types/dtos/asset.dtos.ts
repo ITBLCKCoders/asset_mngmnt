@@ -121,6 +121,10 @@ export interface AssetResponseDto {
   // Related data
   documents: AssetDocumentDto[];
   currentAssignment: AssetAssignmentDto | null;
+  /** Display-only assignee held as `Inactive` while the IT/Admin copy is unsigned. */
+  pendingAssignment?: AssetAssignmentDto | null;
+  /** True when `Assigned To` comes from a pending (unsigned) assignment. */
+  isPendingSignature?: boolean;
   assignmentHistory: AssetAssignmentDto[];
   accountabilityForms: AccountabilityFormDto[];
   isAssetBuilder: boolean;
@@ -675,6 +679,10 @@ export interface IntangibleAssetListItemDto {
   updated_by: string | null;
   updated_by_name: string | null;
   assignees: IntangibleAssetAssigneeDto[];
+  /** Display-only assignees held as `Inactive` while the IT/Admin copy is unsigned. */
+  pendingAssignees?: IntangibleAssetAssigneeDto[];
+  /** True when the assignment is still awaiting IT/Admin copy signature. */
+  isPendingSignature?: boolean;
 }
 
 export interface IntangibleDeactivationFormDto {

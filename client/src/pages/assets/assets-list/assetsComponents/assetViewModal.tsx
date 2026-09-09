@@ -267,6 +267,8 @@ export function AssetViewModal({
                 showReviewHeader={false}
                 assetDocuments={asset.documents}
                 currentAssignment={asset.currentAssignment}
+                pendingAssignment={asset.pendingAssignment}
+                isPendingSignature={asset.isPendingSignature}
                 showFinancialInfo={!hideFinancialInfo}
               />
             )}

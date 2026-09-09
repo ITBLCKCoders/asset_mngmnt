@@ -47,17 +47,68 @@ export async function getAllIntangibleAssets(companyId: string): Promise<any[]> 
     companyId,
   ])) as any[];
   const assets = (rows[0] ?? []) as any[];
+  // Pending (unsigned IT/Admin copy) intangible assignments held as
+  // `Inactive` — display-only, so the list can badge them as pending.
+  let pendingByAssetId = new Map<string, IntangibleAssetAssignee[]>();
+  try {
+    const ids = assets.map((a: any) => String(a.id ?? '')).filter(Boolean);
+    if (ids.length > 0) {
+      const pendingRows = await getPendingIntangibleAssignmentsForAssets(ids);
+      for (const row of pendingRows) {
+        const key = String((row as any).intangible_asset_id ?? '');
+        const list = pendingByAssetId.get(key) ?? [];
+        list.push({
+          userId: String((row as any).user_id ?? ''),
+          firstName: String((row as any).first_name ?? ''),
+          lastName: String((row as any).last_name ?? ''),
+          email: String((row as any).email ?? ''),
+          assignedDate: (row as any).assigned_date
+            ? String((row as any).assigned_date)
+            : undefined,
+        });
+        pendingByAssetId.set(key, list);
+      }
+    }
+  } catch (err) {
+    logger.warn('Failed to fetch pending intangible assignments:', err);
+  }
   return assets.map((asset: any) => {
     const parsed = parseAssignees(asset.assignees);
+    const pendingAssignees = pendingByAssetId.get(String(asset.id ?? '')) ?? [];
     return {
       ...asset,
       assignees: parsed.length > 0 ? parsed : (buildAssigneesFromFlatColumns(asset) ?? parsed),
+      pendingAssignees,
+      isPendingSignature: pendingAssignees.length > 0,
       created_by_name: (asset.created_by_name || '').trim() || null,
       updated_by_name: (asset.updated_by_name || '').trim() || null,
       risk_level: parseRiskLevel(asset.risk_level),
       type_department: parseTypeDepartment(asset.type_department),
     };
   });
+}
+
+/**
+ * Intangible assignments held as `Inactive` while their accountability form
+ * awaits the IT/Admin copy signature. Display-only (badge support).
+ */
+export async function getPendingIntangibleAssignmentsForAssets(
+  intangibleAssetIds: string[]
+): Promise<any[]> {
+  const ids = [...new Set((intangibleAssetIds ?? []).map(id => String(id ?? '').trim()).filter(Boolean))];
+  if (ids.length === 0) return [];
+  const placeholders = ids.map(() => '?').join(',');
+  const [rows] = (await pool.query(
+    `SELECT iaa.intangible_asset_id, iaa.user_id, iaa.assigned_date,
+            u.first_name, u.last_name, u.email
+     FROM intangible_asset_assignments iaa
+     INNER JOIN users u ON iaa.user_id = u.userID
+     WHERE iaa.intangible_asset_id IN (${placeholders})
+       AND iaa.status = 'Inactive' AND iaa.deleted_at IS NULL
+     ORDER BY iaa.intangible_asset_id, iaa.assigned_date DESC`,
+    [...ids]
+  )) as any[];
+  return rows;
 }
 
 function parseRiskLevel(raw: unknown): { id: string; name: string; color?: string } | null {

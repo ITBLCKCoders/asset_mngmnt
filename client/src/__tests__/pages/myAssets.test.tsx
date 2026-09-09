@@ -79,8 +79,8 @@ describe('MyAssetsPage', () => {
     (api.get as any).mockResolvedValue({ assets: [] });
     renderPage();
     await waitFor(() => {
-      expect(screen.getByRole('tab', { name: 'IT Asset' })).toBeDefined();
-      expect(screen.getByRole('tab', { name: 'Admin Asset' })).toBeDefined();
+      expect(screen.getByRole('tab', { name: /IT Asset/ })).toBeDefined();
+      expect(screen.getByRole('tab', { name: /Admin Asset/ })).toBeDefined();
     });
   });
 
@@ -127,6 +127,17 @@ describe('MyAssetsPage', () => {
     renderPage();
     await waitFor(() => {
       expect(screen.getByText('My Assets')).toBeInTheDocument();
+    });
+  });
+
+  it('should show asset count badges on scope tabs after loading', async () => {
+    (api.get as any).mockResolvedValue({ assets: [] });
+    renderPage();
+    await waitFor(() => {
+      const itPill = screen.getByRole('tab', { name: /IT Asset/ });
+      const adminPill = screen.getByRole('tab', { name: /Admin Asset/ });
+      expect(itPill.querySelector('.tab-count')).not.toBeNull();
+      expect(adminPill.querySelector('.tab-count')).not.toBeNull();
     });
   });
 });

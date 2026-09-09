@@ -168,7 +168,11 @@ export default function AccountabilityFormsPage() {
   const hrCopyForms = useMemo(
     () =>
       forms.filter((f: AccountabilityForm) => {
-        return f.status === 'Signed' && !f.receivedCopy201FileSignedAt;
+        // HR can only receive the 201-file copy once the form is fully
+        // approved (the owner now signs before the approver).
+        const fullyApproved =
+          !f.approvalStatus || f.approvalStatus === 'approved';
+        return f.status === 'Signed' && fullyApproved && !f.receivedCopy201FileSignedAt;
       }),
     [forms]
   );
@@ -278,16 +282,23 @@ export default function AccountabilityFormsPage() {
   };
 
   /**
-   * Hide forms still in the approval flow from the regular user view. They
-   * haven't reached the new asset owner yet, so the user can't act on them.
-   * HR accountability receivers / issuers keep seeing everything.
+   * Hide forms still in the approval flow from the regular user view, except
+   * the new owner-signature step — the owner must see and sign those. Forms
+   * awaiting the IT/Admin copy or the approver haven't reached the new asset
+   * owner yet, so the user can't act on them. HR accountability receivers /
+   * issuers keep seeing everything.
    */
   const filterOutPendingApprovals = (list: AccountabilityForm[]) => {
     if (isSuperAdminOrAdmin || hasHrAccountabilityReceiver) return list;
     return list.filter((f: AccountabilityForm) => {
       const ap = f.approvalStatus;
       if (!ap) return true;
-      return ap === 'approved' || ap === undefined || ap === null;
+      return (
+        ap === 'approved' ||
+        ap === 'pending_owner_signature' ||
+        ap === undefined ||
+        ap === null
+      );
     });
   };
 
@@ -894,6 +905,7 @@ export default function AccountabilityFormsPage() {
                   viewContext={viewDetailContext}
                   hrViewMode
                   showAssetMovement
+                  showTimeline={selectedForm.formOrigin !== 'clearance'}
                   onReceiveCompleted={async () => {
                     await fetchForms();
                   }}

@@ -15,6 +15,7 @@ import { Dialog } from '@/components/ui/dialog';
 import { ShieldCheck } from 'lucide-react';
 import { api } from '@/lib/api';
 import { toast } from 'sonner';
+import { useCurrentUser } from '@/hooks/useCurrentUser';
 
 interface SmsOtpDialogProps {
   isOpen: boolean;
@@ -48,6 +49,7 @@ export default function SmsOtpDialog({
   verifyButtonLabel = 'Verify & Sign',
   phoneNumber,
 }: SmsOtpDialogProps) {
+  const { user: currentUser, loading: currentUserLoading } = useCurrentUser();
   const [otpCode, setOtpCode] = useState(['', '', '', '', '', '']);
   const [isSendingOtp, setIsSendingOtp] = useState(false);
   const [isVerifyingOtp, setIsVerifyingOtp] = useState(false);
@@ -62,6 +64,7 @@ export default function SmsOtpDialog({
   const expiryRef = useRef(expirySeconds);
   const resendRef = useRef(60);
   const onOpenChangeRef = useRef(onOpenChange);
+  const onCancelRef = useRef(onCancel);
   const isTimerRunningRef = useRef(false);
 
   // Build description with email if provided (SMS replaced by email)
@@ -73,7 +76,8 @@ export default function SmsOtpDialog({
   // Keep onOpenChange ref in sync
   useEffect(() => {
     onOpenChangeRef.current = onOpenChange;
-  }, [onOpenChange]);
+    onCancelRef.current = onCancel;
+  }, [onOpenChange, onCancel]);
 
   // Prevent body scroll when dialog is open
   useEffect(() => {
@@ -160,12 +164,23 @@ export default function SmsOtpDialog({
   }, [sendOtpEndpoint, expirySeconds]);
 
   useEffect(() => {
-    if (isOpen) {
-      otpInputsRef.current[0]?.focus();
-      // Automatically send OTP when dialog opens
-      sendOtp();
+    if (!isOpen) return;
+    // Wait until the current user profile is resolved before deciding
+    if (currentUserLoading) return;
+    // Block OTP verification when the user has no digital signature on file.
+    // Signing requires a signature to stamp; without one the action cannot proceed.
+    if (!currentUser?.digitalSignature) {
+      toast.error(
+        'Digital signature not set in profile. Please set your digital signature in Profile before signing.'
+      );
+      onOpenChangeRef.current(false);
+      onCancelRef.current();
+      return;
     }
-  }, [isOpen, sendOtp]);
+    otpInputsRef.current[0]?.focus();
+    // Automatically send OTP when dialog opens
+    sendOtp();
+  }, [isOpen, sendOtp, currentUserLoading, currentUser?.digitalSignature]);
 
   const verifyOtp = async () => {
     const code = otpCode.join('');
@@ -245,7 +260,10 @@ export default function SmsOtpDialog({
   };
 
   return (
-    <Dialog open={isOpen} onOpenChange={onOpenChange}>
+    <Dialog
+      open={isOpen && (!!currentUser?.digitalSignature || currentUserLoading)}
+      onOpenChange={onOpenChange}
+    >
       <DialogContent
         showCloseButton={false}
         disableScroll

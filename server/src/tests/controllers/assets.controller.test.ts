@@ -19,6 +19,8 @@ jest.mock('../../repositories/asset.repository.js', () => ({
   callGetAllAssets: jest.fn(),
   getAssetDocumentsForIds: jest.fn(),
   getCurrentAssignmentsForAssetIds: jest.fn(),
+  getPendingAssignmentsForAssetIds: jest.fn(),
+  getPendingAssignmentForAssetId: jest.fn(),
   getAssignmentHistoryForAssetIds: jest.fn(),
   getBuilderByBuilderId: jest.fn(),
   getBuilderChildrenByBuilderId: jest.fn(),
@@ -183,6 +185,7 @@ describe('assets.controller', () => {
       assetRepo.callGetAllAssets.mockResolvedValue([mockAsset]);
       assetRepo.getAssetDocumentsByAssetId.mockResolvedValue([]);
       assetRepo.getCurrentAssignmentForAssetId.mockResolvedValue(null);
+      assetRepo.getPendingAssignmentForAssetId.mockResolvedValue(null);
       assetRepo.getAssignmentHistoryForAssetId.mockResolvedValue([]);
       assetRepo.getBuilderHistoryForAsset.mockRejectedValue(new Error('not found'));
       assetRepo.getBuilderByAssetId.mockRejectedValue(new Error('not found'));
@@ -190,6 +193,36 @@ describe('assets.controller', () => {
       await assetsController.getAssetByCodeHandler(req, res);
       expect(res._json.assets).toHaveLength(1);
       expect(res._json.assets[0].specifications).toEqual([]);
+    });
+
+    it('exposes the pending assignee before the IT/Admin copy is signed', async () => {
+      req.params = { assetCode: 'AST-001' };
+      assetRepo.callGetAllAssets.mockResolvedValue([{ ...mockAsset, status: 'Assigned' }]);
+      assetRepo.getAssetDocumentsByAssetId.mockResolvedValue([]);
+      assetRepo.getCurrentAssignmentForAssetId.mockResolvedValue(null);
+      assetRepo.getPendingAssignmentForAssetId.mockResolvedValue({
+        assignmentID: 'pa1',
+        user_id: 'u9',
+        assigned_user_name: 'Jane Doe',
+        assigned_user_email: 'jane@test.com',
+        employee_number: 'E-009',
+        position: 'Analyst',
+        department_name: 'IT',
+        location_name: 'Main Office',
+        room_name: '201',
+        assigned_date: '2024-01-02',
+        status: 'Inactive',
+      });
+      assetRepo.getAssignmentHistoryForAssetId.mockResolvedValue([]);
+      assetRepo.getBuilderHistoryForAsset.mockRejectedValue(new Error('not found'));
+      assetRepo.getBuilderByAssetId.mockRejectedValue(new Error('not found'));
+      assetRepo.getAccountabilityFormsForAssetWithLike.mockRejectedValue(new Error('not found'));
+      await assetsController.getAssetByCodeHandler(req, res);
+      const returned = res._json.assets[0];
+      expect(returned.currentAssignment).toBeNull();
+      expect(returned.assignedTo).toBe('Jane Doe');
+      expect(returned.isPendingSignature).toBe(true);
+      expect(returned.pendingAssignment?.user?.name).toBe('Jane Doe');
     });
 
     it('returns 400 when assetCode missing', async () => {

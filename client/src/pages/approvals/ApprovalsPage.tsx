@@ -1988,6 +1988,7 @@ export default function ApprovalsPage() {
                 viewContext="all"
                 readOnly
                 embedded
+                showTimeline={accountabilityPreviewForm.formOrigin !== 'clearance'}
               />
             ) : (
               <div className="flex items-center justify-center py-16 text-sm text-muted-foreground">

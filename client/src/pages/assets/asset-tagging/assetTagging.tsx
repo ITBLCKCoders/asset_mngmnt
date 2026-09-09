@@ -44,14 +44,18 @@ function mapDtoToTaggingAsset(asset: AssetResponseDto): Asset {
         ? 'Assigned'
         : (asset.status as 'Available' | 'Assigned' | 'In Maintenance')) ||
       'Available',
-    assignedTo: asset.currentAssignment?.user?.name || '',
+    assignedTo: asset.currentAssignment?.user?.name || asset.pendingAssignment?.user?.name || '',
     department:
       asset.currentAssignment?.department ||
+      asset.pendingAssignment?.department ||
       (asset.department ? JSON.parse(asset.department).name : ''),
     location:
       asset.currentAssignment?.location ||
+      asset.pendingAssignment?.location ||
       `${asset.location_name || ''}${asset.room_name ? ` - ${asset.room_name}` : ''}`,
     currentAssignment: asset.currentAssignment ?? undefined,
+    pendingAssignment: asset.pendingAssignment ?? undefined,
+    isPendingSignature: Boolean(asset.isPendingSignature),
     assignmentHistory: [],
     purchaseDate: asset.purchase_date ? new Date(asset.purchase_date) : null,
     purchasePrice: asset.asset_value || 0,

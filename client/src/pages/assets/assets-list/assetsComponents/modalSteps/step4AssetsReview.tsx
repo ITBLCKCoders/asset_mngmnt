@@ -54,6 +54,8 @@ interface Step4ReviewProps {
   assetDocuments?: AssetDocument[];
   users?: any[];
   currentAssignment?: AssetAssignment;
+  pendingAssignment?: AssetAssignment;
+  isPendingSignature?: boolean;
   showFinancialInfo?: boolean;
 }
 
@@ -63,8 +65,12 @@ export function Step4Review({
   assetDocuments,
   users = [],
   currentAssignment,
+  pendingAssignment,
+  isPendingSignature = false,
   showFinancialInfo = true,
 }: Step4ReviewProps) {
+  const displayAssignment = currentAssignment ?? pendingAssignment;
+  const showPendingBadge = !currentAssignment && (!!pendingAssignment || isPendingSignature);
   const formatDate = (iso?: string) =>
     iso ? format(new Date(iso), 'PPP') : '—';
   const hasImage = !!formData.imageUrl;
@@ -290,7 +296,7 @@ export function Step4Review({
               value={formData.locationRoom || '—'}
               icon={<MapPin className="h-5 w-5 text-indigo-600" />}
             />
-            {!currentAssignment && (
+            {!displayAssignment && (
               <InfoRow
                 label="Assigned User"
                 value={
@@ -316,21 +322,25 @@ export function Step4Review({
                 multiline
               />
             )}
-            {currentAssignment ? (
+            {displayAssignment ? (
               <>
                 <InfoRow
                   label="Assigned To"
-                  value={`${currentAssignment.user.name} (${currentAssignment.user.employeeNumber || currentAssignment.user.id})`}
+                  value={`${displayAssignment.user.name} (${displayAssignment.user.employeeNumber || displayAssignment.user.id})`}
                   icon={<Users className="h-5 w-5 text-blue-600" />}
                 />
                 <InfoRow
                   label="Position"
-                  value={currentAssignment.user.position || 'Not specified'}
+                  value={displayAssignment.user.position || 'Not specified'}
                 />
                 <InfoRow
                   label="Assignment Status"
-                  value={currentAssignment.status}
-                  highlight="text-green-600 font-bold"
+                  value={
+                    showPendingBadge
+                      ? `${displayAssignment.status} (Pending IT/Admin signature)`
+                      : displayAssignment.status
+                  }
+                  highlight={showPendingBadge ? 'text-amber-600 font-bold' : 'text-green-600 font-bold'}
                 />
               </>
             ) : (

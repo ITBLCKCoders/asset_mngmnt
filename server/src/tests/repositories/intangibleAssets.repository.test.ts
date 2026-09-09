@@ -23,28 +23,63 @@ describe('intangibleAssets.repository', () => {
 
   describe('getAllIntangibleAssets', () => {
     it('should call SP with company id and parse assignees', async () => {
-      mockPool.query.mockResolvedValue([[[
-        {
-          id: 'ia-1',
-          name: 'Software License',
-          assignees: JSON.stringify([{ userId: 'u1', firstName: 'Jane', lastName: 'Doe', email: 'jane@example.com' }]),
-          created_by_name: 'Admin User',
-          updated_by_name: 'Admin User',
-          risk_level: JSON.stringify({ id: 'rl-1', name: 'High', color: '#dc2626' }),
-        },
-      ]], []]);
+      mockPool.query
+        .mockResolvedValueOnce([[[
+          {
+            id: 'ia-1',
+            name: 'Software License',
+            assignees: JSON.stringify([{ userId: 'u1', firstName: 'Jane', lastName: 'Doe', email: 'jane@example.com' }]),
+            created_by_name: 'Admin User',
+            updated_by_name: 'Admin User',
+            risk_level: JSON.stringify({ id: 'rl-1', name: 'High', color: '#dc2626' }),
+          },
+        ]], []])
+        .mockResolvedValueOnce([[], []]);
       const result = await getAllIntangibleAssets('c1');
       expect(result).toEqual([
         {
           id: 'ia-1',
           name: 'Software License',
           assignees: [{ userId: 'u1', firstName: 'Jane', lastName: 'Doe', email: 'jane@example.com' }],
+          pendingAssignees: [],
+          isPendingSignature: false,
           created_by_name: 'Admin User',
           updated_by_name: 'Admin User',
           risk_level: { id: 'rl-1', name: 'High', color: '#dc2626' },
+          type_department: null,
         },
       ]);
       expect(mockPool.query).toHaveBeenCalledWith('CALL sp_GetAllIntangibleAssets(?)', ['c1']);
+    });
+
+    it('should attach pending assignees held as Inactive', async () => {
+      mockPool.query
+        .mockResolvedValueOnce([[[
+          {
+            id: 'ia-1',
+            name: 'Software License',
+            assignees: JSON.stringify([]),
+            created_by_name: 'Admin User',
+            updated_by_name: 'Admin User',
+            risk_level: null,
+          },
+        ]], []])
+        .mockResolvedValueOnce([[
+          {
+            intangible_asset_id: 'ia-1',
+            user_id: 'u2',
+            first_name: 'John',
+            last_name: 'Smith',
+            email: 'john@example.com',
+            assigned_date: '2024-01-02',
+          },
+        ], []]);
+      const result = await getAllIntangibleAssets('c1');
+      expect(result[0].assignees).toEqual([]);
+      expect(result[0].pendingAssignees).toEqual([
+        { userId: 'u2', firstName: 'John', lastName: 'Smith', email: 'john@example.com', assignedDate: '2024-01-02' },
+      ]);
+      expect(result[0].isPendingSignature).toBe(true);
     });
 
     it('should return empty array when no results', async () => {

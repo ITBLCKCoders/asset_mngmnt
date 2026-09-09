@@ -163,6 +163,10 @@ export default function MyAssetsPage() {
   const [searchTerm, setSearchTerm] = useState('');
   const [searchColumn, setSearchColumn] = useState('all');
   const [scope, setScope] = useState<'it' | 'admin'>('it');
+  const [scopeCounts, setScopeCounts] = useState<{
+    it: number | null;
+    admin: number | null;
+  }>({ it: null, admin: null });
 
   const fetchMyAssets = async () => {
     if (!user) return;
@@ -340,6 +344,30 @@ export default function MyAssetsPage() {
       fetchMyAssets();
     }
   }, [user, userLoading, scope]);
+
+  useEffect(() => {
+    if (!user || userLoading) return;
+    const fetchScopeCounts = async () => {
+      try {
+        const [itRes, adminRes] = await Promise.all([
+          api.get<{ assets: AssetResponseDto[] }>(
+            `/assets/my-assets?scope=${encodeURIComponent('it')}`
+          ),
+          api.get<{ assets: AssetResponseDto[] }>(
+            `/assets/my-assets?scope=${encodeURIComponent('admin')}`
+          ),
+        ]);
+        setScopeCounts({
+          it: itRes.assets?.length ?? 0,
+          admin: adminRes.assets?.length ?? 0,
+        });
+      } catch (error) {
+        console.error('Failed to fetch scope counts:', error);
+        setScopeCounts({ it: 0, admin: 0 });
+      }
+    };
+    fetchScopeCounts();
+  }, [user, userLoading]);
 
   const filteredAssets = useMemo(() => {
     const q = searchTerm.toLowerCase().trim();
@@ -1011,9 +1039,23 @@ export default function MyAssetsPage() {
         >
           <div className="flex flex-col sm:flex-row sm:items-center gap-3">
             <Tabs value={scope} onValueChange={v => setScope(v as 'it' | 'admin')} className="w-full sm:w-auto">
-              <TabsList className={segmentTabsListClassName + ' grid grid-cols-2 max-w-full sm:max-w-[280px]'}>
-                <TabsTrigger value="it" className={segmentTabsTriggerClassName}>IT Asset</TabsTrigger>
-                <TabsTrigger value="admin" className={segmentTabsTriggerClassName}>Admin Asset</TabsTrigger>
+              <TabsList className={segmentTabsListClassName + ' grid grid-cols-2 max-w-full sm:max-w-[320px]'}>
+                <TabsTrigger value="it" className={segmentTabsTriggerClassName + ' flex items-center gap-2'}>
+                  IT Asset
+                  {scopeCounts.it != null && (
+                    <span className="tab-count ml-1 inline-flex h-[22px] min-w-[22px] items-center justify-center rounded-full bg-slate-300/90 px-1.5 text-xs font-bold text-slate-800">
+                      {scopeCounts.it}
+                    </span>
+                  )}
+                </TabsTrigger>
+                <TabsTrigger value="admin" className={segmentTabsTriggerClassName + ' flex items-center gap-2'}>
+                  Admin Asset
+                  {scopeCounts.admin != null && (
+                    <span className="tab-count ml-1 inline-flex h-[22px] min-w-[22px] items-center justify-center rounded-full bg-slate-300/90 px-1.5 text-xs font-bold text-slate-800">
+                      {scopeCounts.admin}
+                    </span>
+                  )}
+                </TabsTrigger>
               </TabsList>
             </Tabs>
             <Button

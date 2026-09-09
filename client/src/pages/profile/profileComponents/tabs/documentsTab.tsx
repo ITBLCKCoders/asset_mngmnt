@@ -31,9 +31,11 @@ import {
   Download,
   CheckCircle2,
   XCircle,
+  Clock,
   ArrowRightLeft,
   HandHelping,
   ClipboardList,
+  History,
 } from 'lucide-react';
 import { Checkbox } from '@/components/ui/checkbox';
 import {
@@ -70,6 +72,7 @@ import {
 } from '@/lib/pdfGenerator';
 import SmsOtpDialog from '@/components/auth/SmsOtpDialog';
 import { GenerateClearanceModal } from '@/pages/profile/profileComponents/GenerateClearanceModal';
+import { AccountabilityFormTimeline } from '@/pages/assets/accountability/AccountabilityFormTimeline';
 
 export function buildReturnDataForPDFFromBatch(
   batch: AssetReturnFormBatch,
@@ -797,7 +800,6 @@ export function FormTimeline({
         ' ' +
         new Date(d).toLocaleTimeString()
       : null;
-  const step1Done = true;
   const ownerAbsent = !!owner_absent;
   const approvedBySub = !!sub_approver_1_signed_at;
   const step2Done = !!dept_head_signed_at || approvedBySub;
@@ -825,16 +827,27 @@ export function FormTimeline({
       ? 'Your return is completed'
       : 'Transferred';
 
-  const stepNode = (done: boolean, stepIndex: number) => (
+  // First incomplete step is the current (next) step; steps after it are upcoming.
+  const stepStates: Array<'done' | 'current' | 'upcoming'> = [
+    'done',
+    step2Done ? 'done' : step3Done ? 'done' : 'current',
+    step3Done ? 'done' : step2Done ? 'current' : 'upcoming',
+  ];
+
+  const stepNode = (state: 'done' | 'current' | 'upcoming', stepIndex: number) => (
     <div
       className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-full border-2 transition-colors ${
-        done
+        state === 'done'
           ? 'border-green-500 bg-green-500 text-white shadow-md shadow-green-500/25'
-          : 'border-muted-foreground/30 bg-muted/50 text-muted-foreground'
+          : state === 'current'
+            ? 'animate-pulse border-amber-500 bg-amber-500/10 text-amber-600 shadow-md shadow-amber-500/25 ring-4 ring-amber-500/15 dark:text-amber-300'
+            : 'border-dashed border-muted-foreground/30 bg-muted/30 text-muted-foreground'
       }`}
     >
-      {done ? (
+      {state === 'done' ? (
         <CheckCircle2 className="h-5 w-5" />
+      ) : state === 'current' ? (
+        <Clock className="h-5 w-5" />
       ) : (
         <span className="text-sm font-semibold">{stepIndex}</span>
       )}
@@ -843,20 +856,31 @@ export function FormTimeline({
 
   const stepContent = (
     title: string,
-    dateOrPending: string | null,
+    state: 'done' | 'current' | 'upcoming',
+    date: string | null,
     description?: React.ReactNode,
     extra?: React.ReactNode
   ) => (
-    <div className="rounded-lg border border-border/60 bg-muted/30 px-3 py-2.5">
+    <div
+      className={`rounded-lg border px-3 py-2.5 ${
+        state === 'current'
+          ? 'border-amber-300/70 bg-amber-50/60 dark:border-amber-700/50 dark:bg-amber-950/20'
+          : state === 'upcoming'
+            ? 'border-dashed border-border/50 bg-transparent opacity-80'
+            : 'border-border/60 bg-muted/30'
+      }`}
+    >
       <p className="font-semibold text-sm text-foreground">{title}</p>
       <span
         className={`mt-1 inline-block rounded px-2 py-0.5 text-xs font-medium ${
-          dateOrPending === 'Pending'
+          state === 'current'
             ? 'bg-amber-100 text-amber-800 dark:bg-amber-900/30 dark:text-amber-200'
-            : 'bg-muted text-muted-foreground'
+            : state === 'done'
+              ? 'bg-green-100 text-green-800 dark:bg-green-900/30 dark:text-green-200'
+              : 'bg-muted text-muted-foreground'
         }`}
       >
-        {dateOrPending ?? '—'}
+        {state === 'current' ? 'Pending' : state === 'upcoming' ? 'Upcoming' : (date ?? '—')}
       </span>
       {description != null && (
         <p className="mt-2 text-sm leading-snug text-muted-foreground">
@@ -867,22 +891,31 @@ export function FormTimeline({
     </div>
   );
 
+  const connector = (toState: 'done' | 'current' | 'upcoming') => (
+    <div
+      className={`w-0.5 flex-1 rounded-full ${
+        toState === 'done'
+          ? 'bg-green-500'
+          : toState === 'current'
+            ? 'bg-gradient-to-b from-green-500 to-amber-500'
+            : 'bg-muted-foreground/20'
+      }`}
+      aria-hidden
+    />
+  );
+
   return (
     <div className="relative py-1">
       {/* Step 1: Submitted / Initiated by IT/Admin */}
       <div className="flex gap-4">
         <div className="flex flex-col items-center">
-          {stepNode(step1Done, 1)}
-          <div
-            className={`w-0.5 flex-1 rounded-full ${
-              step2Done ? 'bg-green-500' : 'bg-muted-foreground/20'
-            }`}
-            aria-hidden
-          />
+          {stepNode(stepStates[0], 1)}
+          {connector(stepStates[1])}
         </div>
         <div className="flex-1 min-w-0 pb-4">
           {stepContent(
             ownerAbsent ? 'Initiated by IT / Admin' : 'Submitted',
+            stepStates[0],
             step1Date,
             ownerAbsent ? (
               <>
@@ -903,22 +936,14 @@ export function FormTimeline({
       {/* Step 2: Approved by department head */}
       <div className="flex gap-4">
         <div className="flex flex-col items-center">
-          {stepNode(step2Done, 2)}
-          <div
-            className={`w-0.5 flex-1 rounded-full ${
-              step3Done ? 'bg-green-500' : 'bg-muted-foreground/20'
-            }`}
-            aria-hidden
-          />
+          {stepNode(stepStates[1], 2)}
+          {connector(stepStates[2])}
         </div>
         <div className="flex-1 min-w-0 pb-4">
           {stepContent(
             'Approved by the department head',
-            step2Done
-              ? (formatDate(
-                  sub_approver_1_signed_at ?? dept_head_signed_at
-                ) ?? '—')
-              : 'Pending',
+            stepStates[1],
+            formatDate(sub_approver_1_signed_at ?? dept_head_signed_at),
             approvedBySub ? (
               <span className="mt-1 inline-block rounded bg-blue-100 px-2 py-0.5 text-xs font-medium text-blue-700">
                 Stand-in approver
@@ -939,12 +964,13 @@ export function FormTimeline({
       {/* Step 3: Completed */}
       <div className="flex gap-4">
         <div className="flex flex-col items-center">
-          {stepNode(step3Done, 3)}
+          {stepNode(stepStates[2], 3)}
         </div>
         <div className="flex-1 min-w-0">
           {stepContent(
             completedLabel,
-            step3Done ? (step3Date ?? '—') : 'Pending'
+            stepStates[2],
+            step3Date
           )}
         </div>
       </div>
@@ -2184,7 +2210,7 @@ export function buildBorrowDataForPDFFromBatch(
   };
 }
 
-type BorrowStepVisual = 'done' | 'pending' | 'declined';
+type BorrowStepVisual = 'done' | 'current' | 'upcoming' | 'declined';
 
 /** Timeline for borrow: Submitted → Dept head → IT/Admin processed (or declined / returned). */
 function BorrowFormTimeline({ batch }: { batch: AssetBorrowFormBatch }) {
@@ -2214,11 +2240,20 @@ function BorrowFormTimeline({ batch }: { batch: AssetBorrowFormBatch }) {
   const step2Done = !!dept_head_signed_at;
   const step3Done = !declined && (!!approved_at || returned);
 
+  // First incomplete step is the current (next) step; the step after it is upcoming.
+  // A declined form has no next step — its terminal node shows the decline.
+  const step2Visual: BorrowStepVisual = step2Done
+    ? 'done'
+    : declined
+      ? 'upcoming'
+      : 'current';
   const step3Visual: BorrowStepVisual = declined
     ? 'declined'
     : step3Done
       ? 'done'
-      : 'pending';
+      : step2Done
+        ? 'current'
+        : 'upcoming';
 
   const stepNode = (visual: BorrowStepVisual, stepIndex: number) => {
     if (visual === 'declined') {
@@ -2228,55 +2263,61 @@ function BorrowFormTimeline({ batch }: { batch: AssetBorrowFormBatch }) {
         </div>
       );
     }
-    const done = visual === 'done';
     return (
       <div
         className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-full border-2 transition-colors ${
-          done
+          visual === 'done'
             ? 'border-green-500 bg-green-500 text-white shadow-md shadow-green-500/25'
-            : 'border-muted-foreground/30 bg-muted/50 text-muted-foreground'
-        }`}
-      >
-        {done ? (
-          <CheckCircle2 className="h-5 w-5" />
-        ) : (
-          <span className="text-sm font-semibold">{stepIndex}</span>
-        )}
-      </div>
+            : visual === 'current'
+              ? 'animate-pulse border-amber-500 bg-amber-500/10 text-amber-600 shadow-md shadow-amber-500/25 ring-4 ring-amber-500/15 dark:text-amber-300'
+              : 'border-dashed border-muted-foreground/30 bg-muted/30 text-muted-foreground'
+      }`}
+    >
+      {visual === 'done' ? (
+        <CheckCircle2 className="h-5 w-5" />
+      ) : visual === 'current' ? (
+        <Clock className="h-5 w-5" />
+      ) : (
+        <span className="text-sm font-semibold">{stepIndex}</span>
+      )}
+    </div>
     );
-  };
-
-  const stepBadgeClass = (
-    dateOrPending: string | null,
-    variant: 'pending' | 'neutral' | 'danger' | 'success'
-  ) => {
-    if (dateOrPending === 'Pending' || variant === 'pending') {
-      return 'bg-amber-100 text-amber-800 dark:bg-amber-900/30 dark:text-amber-200';
-    }
-    if (variant === 'danger') {
-      return 'bg-red-100 text-red-800 dark:bg-red-900/30 dark:text-red-200';
-    }
-    if (variant === 'success') {
-      return 'bg-green-100 text-green-800 dark:bg-green-900/30 dark:text-green-200';
-    }
-    return 'bg-muted text-muted-foreground';
   };
 
   const stepContent = (
     title: string,
-    dateOrPending: string | null,
-    description?: React.ReactNode,
-    badgeVariant: 'pending' | 'neutral' | 'danger' | 'success' = 'neutral'
+    visual: 'done' | 'current' | 'upcoming' | 'declined' | 'success',
+    label: string | null,
+    description?: React.ReactNode
   ) => (
-    <div className="rounded-lg border border-border/60 bg-muted/30 px-3 py-2.5">
+    <div
+      className={`rounded-lg border px-3 py-2.5 ${
+        visual === 'current'
+          ? 'border-amber-300/70 bg-amber-50/60 dark:border-amber-700/50 dark:bg-amber-950/20'
+          : visual === 'upcoming'
+            ? 'border-dashed border-border/50 bg-transparent opacity-80'
+            : visual === 'declined'
+              ? 'border-red-300/70 bg-red-50/60 dark:border-red-800/50 dark:bg-red-950/20'
+              : visual === 'success'
+                ? 'border-green-300/60 bg-green-50/50 dark:border-green-800/50 dark:bg-green-950/20'
+                : 'border-border/60 bg-muted/30'
+      }`}
+    >
       <p className="font-semibold text-sm text-foreground">{title}</p>
       <span
-        className={`mt-1 inline-block rounded px-2 py-0.5 text-xs font-medium ${stepBadgeClass(
-          dateOrPending,
-          badgeVariant
-        )}`}
+        className={`mt-1 inline-block rounded px-2 py-0.5 text-xs font-medium ${
+          visual === 'current'
+            ? 'bg-amber-100 text-amber-800 dark:bg-amber-900/30 dark:text-amber-200'
+            : visual === 'upcoming'
+              ? 'bg-muted text-muted-foreground'
+              : visual === 'declined'
+                ? 'bg-red-100 text-red-800 dark:bg-red-900/30 dark:text-red-200'
+                : visual === 'success'
+                  ? 'bg-green-100 text-green-800 dark:bg-green-900/30 dark:text-green-200'
+                  : 'bg-green-100 text-green-800 dark:bg-green-900/30 dark:text-green-200'
+        }`}
       >
-        {dateOrPending ?? '—'}
+        {label ?? '—'}
       </span>
       {description != null && (
         <p className="mt-2 text-sm leading-snug text-muted-foreground">
@@ -2291,19 +2332,19 @@ function BorrowFormTimeline({ batch }: { batch: AssetBorrowFormBatch }) {
     : declined
       ? 'Declined by IT / Admin'
       : 'Processed by IT / Admin';
-  const step3When = returned
-    ? formatDate(returned_at)
+  const step3Label = returned
+    ? (formatDate(returned_at) ?? '—')
     : declined
-      ? formatDate(processor_declined_at || declined_at)
+      ? (formatDate(processor_declined_at || declined_at) ?? '—')
       : step3Done
-        ? formatDate(approved_at)
-        : null;
-  const step3BadgeVariant: 'pending' | 'neutral' | 'danger' | 'success' =
-    returned ? 'success' : declined ? 'danger' : step3Done ? 'neutral' : 'pending';
+        ? (formatDate(approved_at) ?? '—')
+        : step3Visual === 'current'
+          ? 'Pending'
+          : 'Upcoming';
 
   const step3Description =
     declined && processor_decline_reason?.trim() ? (
-      <span className="block whitespace-pre-wrap">{processor_decline_reason.trim()}</span>
+      <span className="block whitespace-pre-wrap text-red-600 dark:text-red-400">{processor_decline_reason.trim()}</span>
     ) : undefined;
 
   return (
@@ -2320,22 +2361,25 @@ function BorrowFormTimeline({ batch }: { batch: AssetBorrowFormBatch }) {
           <div className="flex-1 min-w-0 pb-1">
             {stepContent(
               'Submitted',
-              formatDate(created_at) ?? '—',
-              <>Requested by {borrowerName || '—'}.</>,
-              'neutral'
+              'done',
+              formatDate(created_at),
+              <>Requested by {borrowerName || '—'}.</>
             )}
           </div>
         </div>
         <div className="flex gap-4">
           <div className="relative z-10 flex flex-col items-center">
-            {stepNode(step2Done ? 'done' : 'pending', 2)}
+            {stepNode(step2Visual, 2)}
           </div>
           <div className="flex-1 min-w-0 pb-1">
             {stepContent(
               'Approved by the department head',
-              step2Done ? (formatDate(dept_head_signed_at) ?? '—') : 'Pending',
-              undefined,
-              step2Done ? 'neutral' : 'pending'
+              step2Visual,
+              step2Done
+                ? (formatDate(dept_head_signed_at) ?? '—')
+                : step2Visual === 'current'
+                  ? 'Pending'
+                  : 'Upcoming'
             )}
           </div>
         </div>
@@ -2346,9 +2390,9 @@ function BorrowFormTimeline({ batch }: { batch: AssetBorrowFormBatch }) {
           <div className="flex-1 min-w-0">
             {stepContent(
               step3Title,
-              step3When ?? (step3Done || declined || returned ? '—' : 'Pending'),
-              step3Description,
-              step3BadgeVariant
+              returned ? 'success' : declined ? 'declined' : step3Visual,
+              step3Label,
+              step3Description
             )}
           </div>
         </div>
@@ -4394,7 +4438,26 @@ export default function DocumentsTab({
                 description="Asset Accountability Form Preview"
               />
               <AppDialogBody className="min-h-0 flex-1 overflow-auto !p-0">
-                <PDFViewer pdfUrl={formPdfUrl} className="h-full w-full" />
+                <Tabs defaultValue="form" className="flex min-h-0 flex-1 flex-col gap-0">
+                  <div className="px-4 pt-3 sm:px-5">
+                    <TabsList className={`grid w-full grid-cols-2 ${segmentTabsListClassName}`}>
+                      <TabsTrigger value="form" className={cn(segmentTabsTriggerClassName, 'flex h-10 items-center justify-center gap-2')}>
+                        <FileText className="h-4 w-4 shrink-0" />
+                        Form
+                      </TabsTrigger>
+                      <TabsTrigger value="timeline" className={cn(segmentTabsTriggerClassName, 'flex h-10 items-center justify-center gap-2')}>
+                        <History className="h-4 w-4 shrink-0" />
+                        Timeline
+                      </TabsTrigger>
+                    </TabsList>
+                  </div>
+                  <TabsContent value="form" className="mt-0 min-h-0">
+                    <PDFViewer pdfUrl={formPdfUrl} className="h-full w-full" />
+                  </TabsContent>
+                  <TabsContent value="timeline" className="mt-0 min-h-0 overflow-auto px-4 pb-4 sm:px-5">
+                    <AccountabilityFormTimeline form={selectedForm} />
+                  </TabsContent>
+                </Tabs>
               </AppDialogBody>
               <AppDialogChromeFooter className="justify-end gap-3">
                 <Button

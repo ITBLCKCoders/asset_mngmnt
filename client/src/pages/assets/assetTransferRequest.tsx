@@ -228,6 +228,10 @@ export default function AssetTransferRequest() {
   const [sortOrder, setSortOrder] = useState<'asc' | 'desc'>('asc');
   const [viewMode, setViewMode] = useState<'list' | 'grid'>('list');
   const [scope, setScope] = useState<'it' | 'admin'>('it');
+  const [scopeCounts, setScopeCounts] = useState<{
+    it: number | null;
+    admin: number | null;
+  }>({ it: null, admin: null });
   const [targetUser, setTargetUser] = useState<string>('');
   const [users, setUsers] = useState<any[]>([]);
   const [userSearchTerm, setUserSearchTerm] = useState('');
@@ -402,6 +406,30 @@ export default function AssetTransferRequest() {
       fetchData();
     }
   }, [currentUser, scope]);
+
+  useEffect(() => {
+    if (!currentUser) return;
+    const fetchScopeCounts = async () => {
+      try {
+        const [itRes, adminRes] = await Promise.all([
+          api.get(`/asset-assignments/me?scope=${encodeURIComponent('it')}`),
+          api.get(`/asset-assignments/me?scope=${encodeURIComponent('admin')}`),
+        ]);
+        const countActive = (res: { assignments?: any[] }) =>
+          (res.assignments || []).filter(
+            (a: AssetAssignment) => a.status === 'Active'
+          ).length;
+        setScopeCounts({
+          it: countActive(itRes),
+          admin: countActive(adminRes),
+        });
+      } catch (error) {
+        console.error('Failed to fetch scope counts:', error);
+        setScopeCounts({ it: 0, admin: 0 });
+      }
+    };
+    fetchScopeCounts();
+  }, [currentUser]);
 
   useEffect(() => {
     setSelectedAssignments([]);
@@ -729,9 +757,23 @@ export default function AssetTransferRequest() {
         >
           <div className="flex flex-col sm:flex-row sm:items-center gap-3">
             <Tabs value={scope} onValueChange={v => setScope(v as 'it' | 'admin')} className="w-full sm:w-auto">
-              <TabsList className={segmentTabsListClassName + ' grid grid-cols-2 max-w-full sm:max-w-[280px]'}>
-                <TabsTrigger value="it" className={segmentTabsTriggerClassName}>IT Asset</TabsTrigger>
-                <TabsTrigger value="admin" className={segmentTabsTriggerClassName}>Admin Asset</TabsTrigger>
+              <TabsList className={segmentTabsListClassName + ' grid grid-cols-2 max-w-full sm:max-w-[320px]'}>
+                <TabsTrigger value="it" className={segmentTabsTriggerClassName + ' flex items-center gap-2'}>
+                  IT Asset
+                  {scopeCounts.it != null && (
+                    <span className="tab-count ml-1 inline-flex h-[22px] min-w-[22px] items-center justify-center rounded-full bg-slate-300/90 px-1.5 text-xs font-bold text-slate-800">
+                      {scopeCounts.it}
+                    </span>
+                  )}
+                </TabsTrigger>
+                <TabsTrigger value="admin" className={segmentTabsTriggerClassName + ' flex items-center gap-2'}>
+                  Admin Asset
+                  {scopeCounts.admin != null && (
+                    <span className="tab-count ml-1 inline-flex h-[22px] min-w-[22px] items-center justify-center rounded-full bg-slate-300/90 px-1.5 text-xs font-bold text-slate-800">
+                      {scopeCounts.admin}
+                    </span>
+                  )}
+                </TabsTrigger>
               </TabsList>
             </Tabs>
             <Link to="/assets/transfer">

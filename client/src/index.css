@@ -292,6 +292,12 @@ select:focus {
   background-color: #2d323c !important;
 }
 
+/* tab-count pill background (slate-300/90 in light) — darkened slate chip so its
+   light-mode text (text-slate-800 → overridden to #e7edf6) stays readable in dark. */
+.dark .bg-slate-300\/90 {
+  background-color: #343a46 !important;
+}
+
 .dark .bg-gray-400,
 .dark .bg-slate-400 {
   background-color: #343a46 !important;
@@ -721,6 +727,155 @@ select:focus {
 }
 .dark .hover\:text-gray-600:hover {
   color: #d4deeb !important;
+}
+
+/* --- Button hover fixes (dark) — completes hover-variant coverage of the
+      compat layer so buttons stop flashing light-theme colors on hover.
+      Values mirror the non-hover dark bg- and text- mappings above:
+      light pastels become warm OLED brand tints. --- */
+
+/* Invert buttons (bg-*-600 + hover:bg-white) land on card, not white. */
+.dark .hover\:bg-white:hover {
+  background-color: var(--card) !important;
+}
+
+/* Brand pastel hovers → translucent brand tints. */
+.dark .hover\:bg-red-50:hover {
+  background-color: rgb(220 38 38 / 0.17) !important;
+}
+.dark .hover\:bg-red-50\/30:hover {
+  background-color: rgb(220 38 38 / 0.12) !important;
+}
+.dark .hover\:bg-red-50\/80:hover {
+  background-color: rgb(220 38 38 / 0.18) !important;
+}
+.dark .hover\:bg-red-100:hover {
+  background-color: rgb(220 38 38 / 0.28) !important;
+}
+.dark .hover\:bg-red-200:hover {
+  background-color: rgb(220 38 38 / 0.38) !important;
+}
+.dark .hover\:bg-blue-50:hover {
+  background-color: rgb(37 99 235 / 0.18) !important;
+}
+.dark .hover\:bg-blue-50\/30:hover {
+  background-color: rgb(37 99 235 / 0.14) !important;
+}
+.dark .hover\:bg-blue-100:hover {
+  background-color: rgb(37 99 235 / 0.28) !important;
+}
+.dark .hover\:bg-amber-50:hover {
+  background-color: rgb(217 119 6 / 0.17) !important;
+}
+.dark .hover\:bg-amber-100\/70:hover {
+  background-color: rgb(217 119 6 / 0.20) !important;
+}
+.dark .hover\:bg-teal-50:hover {
+  background-color: rgb(13 148 136 / 0.16) !important;
+}
+.dark .hover\:bg-orange-50:hover {
+  background-color: rgb(234 88 12 / 0.17) !important;
+}
+.dark .hover\:bg-indigo-100:hover {
+  background-color: rgb(79 70 229 / 0.28) !important;
+}
+
+/* Neutral hovers missing from the warm OLED palette. */
+.dark .hover\:bg-gray-400:hover {
+  background-color: #343a46 !important;
+}
+.dark .hover\:bg-gray-500\/25:hover {
+  background-color: rgb(62 69 84 / 0.32) !important;
+}
+.dark .hover\:bg-white\/30:hover {
+  background-color: rgb(180 170 160 / 0.20) !important;
+}
+
+/* Destructive icon buttons keep brand destructive red instead of bright red-500. */
+.dark .hover\:bg-red-500:hover {
+  background-color: var(--destructive) !important;
+}
+
+/* Hover text colors — lightened for AA on dark hover surfaces. */
+.dark .hover\:text-red-500:hover {
+  color: #fca5a5 !important;
+}
+.dark .hover\:text-red-600:hover {
+  color: #f87171 !important;
+}
+.dark .hover\:text-red-700:hover {
+  color: #f87171 !important;
+}
+.dark .hover\:text-blue-700:hover {
+  color: #60a5fa !important;
+}
+.dark .hover\:text-blue-800:hover {
+  color: #93c5fd !important;
+}
+.dark .hover\:text-green-800:hover {
+  color: #86efac !important;
+}
+.dark .hover\:text-emerald-600:hover {
+  color: #6ee7b7 !important;
+}
+.dark .hover\:text-amber-600:hover {
+  color: #fbbf24 !important;
+}
+.dark .hover\:text-amber-700:hover {
+  color: #fcd34d !important;
+}
+.dark .hover\:text-amber-800:hover {
+  color: #fcd34d !important;
+}
+.dark .hover\:text-gray-700:hover {
+  color: #d4deeb !important;
+}
+.dark .hover\:text-slate-700:hover {
+  color: #d4deeb !important;
+}
+
+/* Gradient hovers (settings "Add" buttons) — pastel stops → warm OLED tints. */
+.dark .hover\:from-blue-100:hover {
+  --tw-gradient-from: rgb(37 99 235 / 0.32) var(--tw-gradient-from-position) !important;
+  --tw-gradient-to: rgb(37 99 235 / 0) var(--tw-gradient-to-position) !important;
+  --tw-gradient-stops: var(--tw-gradient-from), var(--tw-gradient-to) !important;
+}
+.dark .hover\:to-indigo-100:hover {
+  --tw-gradient-to: rgb(79 70 229 / 0.32) var(--tw-gradient-to-position) !important;
+}
+.dark .hover\:from-green-100:hover {
+  --tw-gradient-from: rgb(22 163 74 / 0.30) var(--tw-gradient-from-position) !important;
+  --tw-gradient-to: rgb(22 163 74 / 0) var(--tw-gradient-to-position) !important;
+  --tw-gradient-stops: var(--tw-gradient-from), var(--tw-gradient-to) !important;
+}
+.dark .hover\:to-emerald-100:hover {
+  --tw-gradient-to: rgb(16 185 129 / 0.30) var(--tw-gradient-to-position) !important;
+}
+
+/* Adjacent hover-family states — group-hover chips, active press, hover borders. */
+.dark .group:hover .group-hover\:bg-red-100 {
+  background-color: rgb(220 38 38 / 0.28) !important;
+}
+.dark .group:hover .group-hover\:bg-gray-50 {
+  background-color: #242830 !important;
+}
+.dark .group:hover .group-hover\:border-red-300 {
+  border-color: rgb(248 113 113 / 0.45) !important;
+}
+.dark .active\:bg-slate-100:active {
+  background-color: #2e333e !important;
+}
+.dark .hover\:border-blue-300:hover {
+  border-color: rgb(96 165 250 / 0.5) !important;
+}
+.dark .hover\:border-blue-400:hover {
+  border-color: rgb(96 165 250 / 0.6) !important;
+}
+.dark .hover\:border-red-300:hover {
+  border-color: rgb(248 113 113 / 0.45) !important;
+}
+.dark .hover\:border-slate-200\/80:hover {
+  border-color: rgb(45 50 60 / 0.8) !important;
 }
 
 /* Focus states for dark mode */

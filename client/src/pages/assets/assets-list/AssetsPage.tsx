@@ -490,7 +490,7 @@ export function AssetsPage() {
         header: 'Assigned To',
         size: 220,
         accessorFn: (row: any) =>
-          (row.assignees || [])
+          [...(row.assignees || []), ...(row.pendingAssignees || [])]
             .map((as: any) => [as.firstName, as.lastName].filter(Boolean).join(' '))
             .filter(Boolean)
             .join(', '),
@@ -500,8 +500,13 @@ export function AssetsPage() {
             lastName?: string;
             email?: string;
           }> = row.original.assignees || [];
+          const pendingAssignees: Array<{
+            firstName?: string;
+            lastName?: string;
+            email?: string;
+          }> = row.original.pendingAssignees || [];
 
-          if (assignees.length === 0) {
+          if (assignees.length === 0 && pendingAssignees.length === 0) {
             return (
               <span className="text-sm text-gray-500">
                 Not assigned
@@ -511,11 +516,13 @@ export function AssetsPage() {
 
           const visible = assignees.slice(0, 3);
           const remaining = assignees.length - visible.length;
+          const visiblePending = pendingAssignees.slice(0, 3);
+          const remainingPending = pendingAssignees.length - visiblePending.length;
 
           return (
             <div className="space-y-1 text-sm">
               {visible.map((assignee, index) => (
-                <div key={`${assignee.firstName}-${assignee.lastName}-${index}`}>
+                <div key={`active-${assignee.firstName}-${assignee.lastName}-${index}`}>
                   <div className="font-medium text-gray-900">
                     {[assignee.firstName, assignee.lastName].filter(Boolean).join(' ') || 'Unknown'}
                   </div>
@@ -528,6 +535,24 @@ export function AssetsPage() {
               ))}
               {remaining > 0 && (
                 <div className="text-xs text-gray-500">+{remaining} more</div>
+              )}
+              {visiblePending.map((assignee, index) => (
+                <div key={`pending-${assignee.firstName}-${assignee.lastName}-${index}`}>
+                  <div className="font-medium text-gray-900">
+                    {[assignee.firstName, assignee.lastName].filter(Boolean).join(' ') || 'Unknown'}
+                  </div>
+                  {assignee.email && (
+                    <div className="text-xs text-gray-500 truncate">
+                      {assignee.email}
+                    </div>
+                  )}
+                  <span className="mt-0.5 inline-flex rounded-full border border-amber-500/30 bg-amber-500/15 px-2 py-0.5 text-[11px] font-semibold text-amber-700">
+                    Pending IT/Admin signature
+                  </span>
+                </div>
+              ))}
+              {remainingPending > 0 && (
+                <div className="text-xs text-gray-500">+{remainingPending} more</div>
               )}
             </div>
           );
@@ -959,17 +984,21 @@ export function AssetsPage() {
         brand: apiAsset.brand || '',
         status:
           apiAsset.status === 'In Use' ? 'Assigned' : apiAsset.status || 'Available',
-        assignedTo: apiAsset.currentAssignment?.user?.name || '',
+        assignedTo: apiAsset.currentAssignment?.user?.name || apiAsset.pendingAssignment?.user?.name || '',
         department:
           apiAsset.currentAssignment?.department ||
+          apiAsset.pendingAssignment?.department ||
           (apiAsset.department ? JSON.parse(apiAsset.department).name : '') ||
           '',
         location:
           apiAsset.currentAssignment?.location ||
+          apiAsset.pendingAssignment?.location ||
           `${apiAsset.location_name || ''}${apiAsset.room_name ? ` - ${apiAsset.room_name}` : ''}`,
         company_id: apiAsset.company_id || undefined,
         company: apiAsset.company_name || '',
         currentAssignment: apiAsset.currentAssignment ?? undefined,
+        pendingAssignment: apiAsset.pendingAssignment ?? undefined,
+        isPendingSignature: Boolean(apiAsset.isPendingSignature),
       }
     ) as Asset;
   }, [assets]);
@@ -1953,9 +1982,15 @@ export function AssetsPage() {
                         <div className="w-full text-left">
                           <div className="font-medium text-gray-900">
                             {row.currentAssignment?.user?.name ||
+                              row.pendingAssignment?.user?.name ||
                               row.assignedTo ||
                               'Not assigned'}
                           </div>
+                          {!row.currentAssignment && row.pendingAssignment && (
+                            <span className="mt-1 inline-flex rounded-full border border-amber-500/30 bg-amber-500/15 px-2 py-0.5 text-[11px] font-semibold text-amber-700">
+                              Pending IT/Admin signature
+                            </span>
+                          )}
                           <div className="mt-1 text-xs text-gray-500">
                             {row.location || 'No location set'}
                           </div>

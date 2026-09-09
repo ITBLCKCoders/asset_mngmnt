@@ -180,19 +180,27 @@ export function AccountabilityFormPreviewDialog({
   };
 
   const handleSign = async (formId: string, acknowledgments?: Record<string, unknown>) => {
+    // Block signing when the user has no digital signature on file.
+    // Skip the check while the profile is still loading to avoid false blocks.
+    if (currentUser.loading) return;
+    const digitalInitials = (currentUser.user as any)?.digitalSignature || '';
+    if (!digitalInitials) {
+      toast.error(
+        'Digital signature not set in profile. Please set your digital signature in Profile before signing.'
+      );
+      return;
+    }
+
     // Store the sign action and show OTP dialog
     pendingSignRef.current = async () => {
       try {
-        // Get user's digital initials from profile
-        const digitalInitials = (currentUser.user as any)?.digitalSignature || '';
-        
         // Prepare acknowledgments with digital signature
-        const acknowledgmentsData = digitalInitials ? {
+        const acknowledgmentsData = {
           ...(acknowledgments || {}),
           digitalSignature: digitalInitials,
           signedBy: currentUser.user?.id,
           signedByName: `${currentUser.user?.firstName || ''} ${currentUser.user?.lastName || ''}`.trim(),
-        } : acknowledgments || {};
+        };
         
         // Call the sign API directly
         const response = await api.post(`/accountability-forms/${formId}/sign`, { 

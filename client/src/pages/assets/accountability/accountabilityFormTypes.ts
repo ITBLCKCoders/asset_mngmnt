@@ -1,5 +1,6 @@
 export type AccountabilityFormApprovalStatus =
   | 'pending_admin_copy_signature'
+  | 'pending_owner_signature'
   | 'pending_approval'
   | 'pending_it'
   | 'pending_admin'

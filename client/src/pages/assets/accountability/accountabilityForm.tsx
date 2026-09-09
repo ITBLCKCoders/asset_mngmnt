@@ -49,6 +49,7 @@ import {
   MapPin,
   ShieldCheck,
   GitBranch,
+  History,
 } from 'lucide-react';
 import SmsOtpDialog from '@/components/auth/SmsOtpDialog';
 import { api } from '@/lib/api';
@@ -83,6 +84,7 @@ import {
 } from '@/lib/pdfGenerator/shared';
 import type { AccountabilityForm } from './accountabilityFormTypes';
 import { AssetMovementTab } from './AssetMovementTab';
+import { AccountabilityFormTimeline } from './AccountabilityFormTimeline';
 import type { AssetBuilderRecord } from '@/utils/builderScan';
 import {
   buildBuilderGroupedAssetRows,
@@ -1732,7 +1734,11 @@ export function AccountabilityFormCard({
     : 'Administrator';
   const isAssignedUser = currentUser?.id === form.user.id;
   const [localForm, setLocalForm] = useState<AccountabilityForm>(form);
-  const canSign = isAssignedUser && localForm.status === 'Pending';
+  // The owner cannot sign until the IT/Admin copy has been signed.
+  const copySignPending =
+    localForm.approvalStatus === 'pending_admin_copy_signature';
+  const canSign =
+    isAssignedUser && localForm.status === 'Pending' && !copySignPending;
   const [pdfUrl, setPdfUrl] = useState<string>('');
   const [isPdfGenerating, setIsPdfGenerating] = useState(false);
   const [isSigning, setIsSigning] = useState(false);
@@ -1744,7 +1750,7 @@ export function AccountabilityFormCard({
   const [declineReasonDraft, setDeclineReasonDraft] = useState('');
   const [isDeclining, setIsDeclining] = useState(false);
   const [activeCardTab, setActiveCardTab] = useState<
-    'accountability' | 'checklist'
+    'accountability' | 'checklist' | 'timeline'
   >('accountability');
   const [checklists, setChecklists] = useState<FormChecklistEntry[]>([]);
   const [activeChecklistKey, setActiveChecklistKey] = useState<string>('');
@@ -1761,15 +1767,21 @@ export function AccountabilityFormCard({
   const allChecklistsSigned = hasChecklist && !hasUnsignedChecklists;
   const canSignChecklist =
     isAssignedUser && hasChecklist && hasUnsignedChecklists;
+  // Timeline tab is view-only: sign/download/decline stay bound to the
+  // accountability and checklist tabs.
   const showCardSignButton =
     showSignButton &&
+    activeCardTab !== 'timeline' &&
     (activeCardTab !== 'checklist' ? canSign : canSignChecklist);
   const showFooterDownload =
-    showDownloadButton && activeCardTab !== 'checklist';
+    showDownloadButton &&
+    activeCardTab !== 'checklist' &&
+    activeCardTab !== 'timeline';
   const showFooterDecline =
     showDeclineButton &&
     canSign &&
     !!onDecline &&
+    activeCardTab !== 'timeline' &&
     !(activeCardTab === 'checklist' && allChecklistsSigned);
   const activeChecklist =
     checklists.find(c => getChecklistTabKey(c) === activeChecklistKey) ??
@@ -2251,12 +2263,12 @@ export function AccountabilityFormCard({
           <Tabs
             value={activeCardTab}
             onValueChange={v =>
-              setActiveCardTab(v as 'accountability' | 'checklist')
+              setActiveCardTab(v as 'accountability' | 'checklist' | 'timeline')
             }
             className="w-full"
           >
             <TabsList
-              className={segmentTabsListClassName + ' grid grid-cols-2 mb-4'}
+              className={segmentTabsListClassName + ' grid grid-cols-3 mb-4'}
             >
               <TabsTrigger
                 value="accountability"
@@ -2269,6 +2281,12 @@ export function AccountabilityFormCard({
                 className={segmentTabsTriggerClassName}
               >
                 Checklist
+              </TabsTrigger>
+              <TabsTrigger
+                value="timeline"
+                className={segmentTabsTriggerClassName}
+              >
+                Timeline
               </TabsTrigger>
             </TabsList>
 
@@ -2426,9 +2444,38 @@ export function AccountabilityFormCard({
                 </div>
               )}
             </TabsContent>
+
+            <TabsContent value="timeline" className="space-y-4">
+              <AccountabilityFormTimeline form={localForm} />
+            </TabsContent>
           </Tabs>
         ) : (
-          <div className="space-y-3">
+          <Tabs
+            value={activeCardTab === 'checklist' ? 'accountability' : activeCardTab}
+            onValueChange={v =>
+              setActiveCardTab(v as 'accountability' | 'timeline')
+            }
+            className="w-full"
+          >
+            <TabsList
+              className={segmentTabsListClassName + ' grid grid-cols-2 mb-4'}
+            >
+              <TabsTrigger
+                value="accountability"
+                className={segmentTabsTriggerClassName}
+              >
+                Accountability
+              </TabsTrigger>
+              <TabsTrigger
+                value="timeline"
+                className={segmentTabsTriggerClassName}
+              >
+                Timeline
+              </TabsTrigger>
+            </TabsList>
+
+            <TabsContent value="accountability" className="space-y-3">
+            <div className="space-y-3">
             {(isDeclined || isDisabledWithDeclineReason) && (
               <div
                 className="rounded-md border border-slate-200 bg-slate-50 px-3 py-2 text-sm text-slate-800"
@@ -2525,7 +2572,13 @@ export function AccountabilityFormCard({
                 </div>
               </div>
             )}
-          </div>
+            </div>
+            </TabsContent>
+
+            <TabsContent value="timeline" className="space-y-4">
+              <AccountabilityFormTimeline form={localForm} />
+            </TabsContent>
+          </Tabs>
         )}
       </CardContent>
 
@@ -3123,6 +3176,8 @@ interface AccountabilityFormDetailProps {
   onReceiveCompleted?: () => void;
   /** When true, show an Asset Movement tab (return/transfer/replacement chain) alongside the PDF */
   showAssetMovement?: boolean;
+  /** When true, show a Timeline tab (lifecycle + audit trail) alongside the PDF */
+  showTimeline?: boolean;
 }
 
 export function AccountabilityFormDetail({
@@ -3141,6 +3196,7 @@ export function AccountabilityFormDetail({
   onDecline,
   onReceiveCompleted,
   showAssetMovement = false,
+  showTimeline = false,
 }: AccountabilityFormDetailProps) {
   const { user: currentUser } = useCurrentUser();
   const [pdfUrl, setPdfUrl] = useState<string>('');
@@ -3168,7 +3224,9 @@ export function AccountabilityFormDetail({
   const pendingReceiveActionRef = useRef<(() => Promise<void>) | null>(null);
   const [intangibleAssets, setIntangibleAssets] = useState<any[]>([]);
   const [intangibleAssetsLoading, setIntangibleAssetsLoading] = useState(false);
-  const [movementTabActive, setMovementTabActive] = useState(false);
+  const [activeDetailTab, setActiveDetailTab] = useState<
+    'form' | 'movement' | 'timeline'
+  >('form');
 
   const isAssignedUser = currentUser?.id === form.user.id;
   const canSign = !readOnly && isAssignedUser && form.status === 'Pending';
@@ -3707,31 +3765,54 @@ export function AccountabilityFormDetail({
               ) : null}
             </div>
           )}
-          {showAssetMovement ? (
+          {showAssetMovement || showTimeline ? (
             <div className="flex min-h-0 flex-1 flex-col overflow-hidden">
               <Tabs
-                value={movementTabActive ? 'movement' : 'form'}
-                onValueChange={tab => setMovementTabActive(tab === 'movement')}
+                value={activeDetailTab}
+                onValueChange={tab =>
+                  setActiveDetailTab(tab as typeof activeDetailTab)
+                }
                 className="flex min-h-0 w-full min-w-0 flex-1 flex-col"
               >
-                <TabsList className={`grid w-full grid-cols-2 mb-3 ${segmentTabsListClassName}`}>
+                <TabsList
+                  className={`mb-3 grid w-full ${
+                    showAssetMovement && showTimeline
+                      ? 'grid-cols-3'
+                      : 'grid-cols-2'
+                  } ${segmentTabsListClassName}`}
+                >
                   <TabsTrigger value="form" className={cn(segmentTabsTriggerClassName, 'flex h-10 items-center justify-center gap-2')}>
                     <FileText className="h-4 w-4 shrink-0" />
                     Form
                   </TabsTrigger>
-                  <TabsTrigger value="movement" className={cn(segmentTabsTriggerClassName, 'flex h-10 items-center justify-center gap-2')}>
-                    <GitBranch className="h-4 w-4 shrink-0" />
-                    Asset Movement
-                  </TabsTrigger>
+                  {showAssetMovement && (
+                    <TabsTrigger value="movement" className={cn(segmentTabsTriggerClassName, 'flex h-10 items-center justify-center gap-2')}>
+                      <GitBranch className="h-4 w-4 shrink-0" />
+                      Asset Movement
+                    </TabsTrigger>
+                  )}
+                  {showTimeline && (
+                    <TabsTrigger value="timeline" className={cn(segmentTabsTriggerClassName, 'flex h-10 items-center justify-center gap-2')}>
+                      <History className="h-4 w-4 shrink-0" />
+                      Timeline
+                    </TabsTrigger>
+                  )}
                 </TabsList>
                 <TabsContent value="form" className="mt-0 min-h-0 flex-1 px-4 sm:px-6">
                   <div className="flex h-[70vh] flex-col overflow-hidden">
                     <PDFViewer pdfUrl={pdfUrl} className="h-full w-full" />
                   </div>
                 </TabsContent>
-                <TabsContent value="movement" className="mt-0 min-h-0 flex-1 overflow-auto px-4 sm:px-6">
-                  <AssetMovementTab formId={form.id} formStatus={localForm.status} />
-                </TabsContent>
+                {showAssetMovement && (
+                  <TabsContent value="movement" className="mt-0 min-h-0 flex-1 overflow-auto px-4 sm:px-6">
+                    <AssetMovementTab formId={form.id} formStatus={localForm.status} />
+                  </TabsContent>
+                )}
+                {showTimeline && (
+                  <TabsContent value="timeline" className="mt-0 min-h-0 flex-1 overflow-auto px-4 sm:px-6">
+                    <AccountabilityFormTimeline form={localForm} />
+                  </TabsContent>
+                )}
               </Tabs>
             </div>
           ) : (
@@ -3740,29 +3821,52 @@ export function AccountabilityFormDetail({
             </div>
           )}
         </div>
-      ) : showAssetMovement ? (
+      ) : showAssetMovement || showTimeline ? (
         <div className={previewClassName}>
           <Tabs
-            value={movementTabActive ? 'movement' : 'form'}
-            onValueChange={tab => setMovementTabActive(tab === 'movement')}
+            value={activeDetailTab}
+            onValueChange={tab =>
+              setActiveDetailTab(tab as typeof activeDetailTab)
+            }
             className="flex min-h-0 flex-1 flex-col"
           >
-            <TabsList className={`grid w-full grid-cols-2 mb-3 ${segmentTabsListClassName}`}>
+            <TabsList
+              className={`mb-3 grid w-full ${
+                showAssetMovement && showTimeline
+                  ? 'grid-cols-3'
+                  : 'grid-cols-2'
+              } ${segmentTabsListClassName}`}
+            >
               <TabsTrigger value="form" className={cn(segmentTabsTriggerClassName, 'flex h-10 items-center justify-center gap-2')}>
                 <FileText className="h-4 w-4 shrink-0" />
                 Form
               </TabsTrigger>
-              <TabsTrigger value="movement" className={cn(segmentTabsTriggerClassName, 'flex h-10 items-center justify-center gap-2')}>
-                <GitBranch className="h-4 w-4 shrink-0" />
-                Asset Movement
-              </TabsTrigger>
+              {showAssetMovement && (
+                <TabsTrigger value="movement" className={cn(segmentTabsTriggerClassName, 'flex h-10 items-center justify-center gap-2')}>
+                  <GitBranch className="h-4 w-4 shrink-0" />
+                  Asset Movement
+                </TabsTrigger>
+              )}
+              {showTimeline && (
+                <TabsTrigger value="timeline" className={cn(segmentTabsTriggerClassName, 'flex h-10 items-center justify-center gap-2')}>
+                  <History className="h-4 w-4 shrink-0" />
+                  Timeline
+                </TabsTrigger>
+              )}
             </TabsList>
             <TabsContent value="form" className="mt-0 min-h-0 flex-1 px-4 sm:px-6">
               <PDFViewer pdfUrl={pdfUrl} className="h-full w-full" />
             </TabsContent>
-            <TabsContent value="movement" className="mt-0 min-h-0 flex-1 overflow-auto px-4 sm:px-6">
-              <AssetMovementTab formId={form.id} formStatus={localForm.status} />
-            </TabsContent>
+            {showAssetMovement && (
+              <TabsContent value="movement" className="mt-0 min-h-0 flex-1 overflow-auto px-4 sm:px-6">
+                <AssetMovementTab formId={form.id} formStatus={localForm.status} />
+              </TabsContent>
+            )}
+            {showTimeline && (
+              <TabsContent value="timeline" className="mt-0 min-h-0 flex-1 overflow-auto px-4 sm:px-6">
+                <AccountabilityFormTimeline form={localForm} />
+              </TabsContent>
+            )}
           </Tabs>
         </div>
       ) : (

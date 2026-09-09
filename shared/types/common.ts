@@ -104,6 +104,7 @@ export enum AccountabilityFormStatus {
 
 export enum AccountabilityFormApprovalStatus {
   PendingAdminCopySignature = 'pending_admin_copy_signature',
+  PendingOwnerSignature = 'pending_owner_signature',
   PendingApproval = 'pending_approval',
   PendingIt = 'pending_it',
   PendingAdmin = 'pending_admin',

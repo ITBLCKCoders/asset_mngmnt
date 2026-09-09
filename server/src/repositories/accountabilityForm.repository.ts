@@ -956,7 +956,7 @@ export async function getTransferFormsForMovement(
 // Approval-flow helpers
 //
 // `approval_status` on `accountability_forms` drives flows:
-// Standard (IT/Admin asset): 1. `pending_admin_copy_signature` -> 2. `pending_approval` -> 3. `approved`
+// Standard (IT/Admin asset): 1. `pending_admin_copy_signature` -> 2. `pending_owner_signature` -> 3. `pending_approval` -> 4. `approved`
 // Unified clearance (`form_origin='clearance', clearance_scope='Unified'`):
 //   1. `pending_approval` -> waiting for owner's designated approver/sub-approver
 //   2. `pending_it`       -> waiting for IT Asset role
@@ -996,7 +996,7 @@ export async function getAdminCopySignerUser(
 export async function updateAdminCopySignature(
   formId: string,
   signature: string | null,
-  newApprovalStatus: 'pending_approval' | 'approved'
+  newApprovalStatus: 'pending_owner_signature' | 'pending_approval' | 'approved'
 ): Promise<number> {
   const [result] = await pool.execute<ResultSetHeader>(
     `UPDATE accountability_forms
@@ -1006,6 +1006,24 @@ export async function updateAdminCopySignature(
          updated_at = NOW()
      WHERE formID = ? AND approval_status = 'pending_admin_copy_signature'`,
     [signature, newApprovalStatus, formId]
+  );
+  return result.affectedRows;
+}
+
+/**
+ * Flip `approval_status` after the accountability owner signs. Only acts on
+ * forms currently in `pending_owner_signature`; returns affected rows.
+ */
+export async function updateOwnerSignatureApproval(
+  formId: string,
+  newApprovalStatus: 'pending_approval' | 'approved'
+): Promise<number> {
+  const [result] = await pool.execute<ResultSetHeader>(
+    `UPDATE accountability_forms
+     SET approval_status = ?,
+         updated_at = NOW()
+     WHERE formID = ? AND approval_status = 'pending_owner_signature'`,
+    [newApprovalStatus, formId]
   );
   return result.affectedRows;
 }
@@ -1060,37 +1078,6 @@ export async function updateFormApproval(args: {
       [args.approvedBy, args.approvalNotes, args.formId]
     );
     return result.affectedRows;
-  }
-}
-
-/**
- * Stamp the Department head signatory for the combined copy-sign + approve
- * path (admin-copy signer is also the owner's approver). Defensive against
- * DBs that have not applied the dept_head_* migration yet.
- */
-export async function stampDeptHeadOnCombinedApproval(args: {
-  formId: string;
-  signedBy: string;
-  signedByName?: string | null;
-  signature?: string | null;
-}): Promise<void> {
-  try {
-    await pool.execute(
-      `UPDATE accountability_forms
-       SET dept_head_signed_by = ?, dept_head_signed_by_name = ?,
-           dept_head_signature = ?, dept_head_signed_at = NOW(),
-           updated_at = NOW()
-       WHERE formID = ?`,
-      [
-        args.signedBy,
-        args.signedByName ?? null,
-        args.signature ?? null,
-        args.formId,
-      ]
-    );
-  } catch (error: any) {
-    if (error?.code !== 'ER_BAD_FIELD_ERROR') throw error;
-    // Legacy DB without dept_head columns — approval columns already stamped.
   }
 }
 

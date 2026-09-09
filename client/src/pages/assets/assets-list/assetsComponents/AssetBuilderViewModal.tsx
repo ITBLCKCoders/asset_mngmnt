@@ -63,15 +63,19 @@ function mapApiAssetToViewAsset(apiAsset: AssetResponseDto): Asset {
         ? 'Assigned'
         : (apiAsset.status as 'Available' | 'Assigned' | 'In Maintenance')) ||
       'Available',
-    assignedTo: apiAsset.currentAssignment?.user?.name || '',
+    assignedTo: apiAsset.currentAssignment?.user?.name || apiAsset.pendingAssignment?.user?.name || '',
     department:
       apiAsset.currentAssignment?.department ||
+      apiAsset.pendingAssignment?.department ||
       (apiAsset.department ? JSON.parse(apiAsset.department).name : '') ||
       '',
     location:
       apiAsset.currentAssignment?.location ||
+      apiAsset.pendingAssignment?.location ||
       `${apiAsset.location_name || ''}${apiAsset.room_name ? ` - ${apiAsset.room_name}` : ''}`,
     currentAssignment: apiAsset.currentAssignment ?? undefined,
+    pendingAssignment: apiAsset.pendingAssignment ?? undefined,
+    isPendingSignature: Boolean(apiAsset.isPendingSignature),
     assignmentHistory: apiAsset.assignmentHistory ?? undefined,
     builderHistory: apiAsset.builderHistory ?? undefined,
     purchaseDate: apiAsset.purchase_date ? new Date(apiAsset.purchase_date) : null,

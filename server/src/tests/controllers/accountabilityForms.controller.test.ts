@@ -37,6 +37,9 @@ jest.mock('../../repositories/accountabilityForm.repository.js', () => ({
   getUserAccountabilityFormPermissions: jest.fn(),
   updateFormSigned: jest.fn(),
   updateFormReceivedCopySignature: jest.fn(),
+  updateAdminCopySignature: jest.fn(),
+  updateOwnerSignatureApproval: jest.fn(),
+  updateFormApproval: jest.fn(),
   findActiveAssignmentForUserAssetTx: jest.fn(),
   callReturnAssignmentTx: jest.fn(),
   findAssignmentIdForUserAssetTx: jest.fn(),
@@ -64,6 +67,7 @@ jest.mock('../../utils/accountabilityFormAssetsData.js', () => ({ resolveCheckli
 jest.mock('../../utils/computerTypeAsset.js', () => ({ isComputerTypeName: jest.fn() }));
 jest.mock('../../repositories/assetReturn.repository.js', () => ({ getReturnFormsByAssetId: jest.fn() }));
 jest.mock('../../repositories/assetTransferForm.repository.js', () => ({ getTransferFormsByAssetId: jest.fn() }));
+jest.mock('../../models/audit.model.js', () => ({ __esModule: true, default: { getByAccountabilityFormId: jest.fn() } }));
 
 const { pool } = jest.requireMock('../../db.js');
 const repo = jest.requireMock('../../repositories/accountabilityForm.repository.js');
@@ -97,6 +101,10 @@ const mockFormRow = {
   received_copy_201_file_signed_by: null, received_copy_201_file_signed_by_name: null,
   received_copy_signer_first_name: null, received_copy_signer_last_name: null,
   received_copy_wet_pdf_url: null,
+  approval_status: null, admin_copy_signer_id: null, admin_copy_signature: null,
+  admin_copy_signed_at: null, admin_copy_copy_type: null,
+  approved_by: null, approved_at: null, approval_notes: null,
+  dept_head_signed_by: null, dept_head_signed_by_name: null, dept_head_signature: null, dept_head_signed_at: null,
   created_at: '2024-01-01T00:00:00Z', updated_at: null,
 };
 
@@ -360,6 +368,68 @@ describe('accountabilityForms.controller', () => {
       repo.getFormById.mockResolvedValue({ ...mockFormRow, status: 'Signed' });
       await accountabilityFormsController.signAccountabilityFormHandler(req, res);
       expect(res._status).toBe(400);
+    });
+
+    it('returns 400 when the IT/Admin copy is still pending signature', async () => {
+      req.params = { formId: 'f1' };
+      repo.getFormById.mockResolvedValue({
+        ...mockFormRow,
+        status: 'Pending',
+        approval_status: 'pending_admin_copy_signature',
+      });
+      await accountabilityFormsController.signAccountabilityFormHandler(req, res);
+      expect(res._status).toBe(400);
+      expect(res._json.error).toContain('IT/Admin copy');
+    });
+
+    it('moves the form to pending_approval and notifies approvers after the owner signs', async () => {
+      req.params = { formId: 'f1' };
+      req.body = { acknowledgments: { digitalSignature: 'sig' } };
+      repo.getFormById.mockResolvedValue({
+        ...mockFormRow,
+        status: 'Pending',
+        approval_status: 'pending_owner_signature',
+        acknowledgments: null,
+        assets_data: null,
+      });
+      pool.query.mockResolvedValue([[{ digital_signature: 'sig' }], []]);
+      resolveChecklistAssignmentIds.mockResolvedValue([]);
+      checklistRepo.getChecklistsByAssignmentIds.mockResolvedValue([]);
+      repo.updateFormSigned.mockResolvedValue(undefined);
+      repo.updateOwnerSignatureApproval.mockResolvedValue(1);
+      getDesignatedApproverUserIdForRequester.mockResolvedValue('approver1');
+      getDesignatedSubApproverUserIdForRequester.mockResolvedValue(null);
+      repo.getUserNameById.mockResolvedValue({ first_name: 'John', last_name: 'Doe' });
+      getHrAccountabilityReceiverUserIds.mockResolvedValue([]);
+      const { notifyUser } = jest.requireMock('../../controllers/accountabilityForms.controller.js') as any;
+      await accountabilityFormsController.signAccountabilityFormHandler(req, res);
+      expect(repo.updateOwnerSignatureApproval).toHaveBeenCalledWith('f1', 'pending_approval');
+      expect(res._json.form.approvalStatus).toBe('pending_approval');
+      expect(res._json.message).toContain('awaiting final approval');
+    });
+
+    it('auto-approves after the owner signs when no designated approver exists', async () => {
+      req.params = { formId: 'f1' };
+      req.body = { acknowledgments: { digitalSignature: 'sig' } };
+      repo.getFormById.mockResolvedValue({
+        ...mockFormRow,
+        status: 'Pending',
+        approval_status: 'pending_owner_signature',
+        acknowledgments: null,
+        assets_data: null,
+      });
+      pool.query.mockResolvedValue([[{ digital_signature: 'sig' }], []]);
+      resolveChecklistAssignmentIds.mockResolvedValue([]);
+      checklistRepo.getChecklistsByAssignmentIds.mockResolvedValue([]);
+      repo.updateFormSigned.mockResolvedValue(undefined);
+      repo.updateOwnerSignatureApproval.mockResolvedValue(1);
+      getDesignatedApproverUserIdForRequester.mockResolvedValue(null);
+      getDesignatedSubApproverUserIdForRequester.mockResolvedValue(null);
+      repo.getUserNameById.mockResolvedValue({ first_name: 'John', last_name: 'Doe' });
+      getHrAccountabilityReceiverUserIds.mockResolvedValue([]);
+      await accountabilityFormsController.signAccountabilityFormHandler(req, res);
+      expect(repo.updateOwnerSignatureApproval).toHaveBeenCalledWith('f1', 'approved');
+      expect(res._json.form.approvalStatus).toBe('approved');
     });
   });
 
@@ -664,6 +734,143 @@ describe('accountabilityForms.controller', () => {
       await accountabilityFormsController.kickoffApprovalFlowNotifications(kickoffArgs());
 
       expect(NotificationService.createNotification).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('signAdminCopyHandler', () => {
+    it('moves the form to pending_owner_signature and notifies the owner', async () => {
+      req.params = { formId: 'f1' };
+      req.body = { digitalSignature: 'sig' };
+      req.user = { userID: 'signer1' };
+      repo.getFormById.mockResolvedValue({
+        ...mockFormRow,
+        status: 'Pending',
+        approval_status: 'pending_admin_copy_signature',
+        admin_copy_signer_id: 'signer1',
+        admin_copy_copy_type: 'IT',
+      });
+      pool.query.mockResolvedValue([[{ digital_signature: 'sig' }], []]);
+      repo.updateAdminCopySignature.mockResolvedValue(1);
+      repo.getUserNameById.mockResolvedValue({ first_name: 'John', last_name: 'Doe' });
+      getHrAccountabilityReceiverUserIds.mockResolvedValue([]);
+
+      await accountabilityFormsController.signAdminCopyHandler(req, res);
+
+      expect(repo.updateAdminCopySignature).toHaveBeenCalledWith('f1', 'sig', 'pending_owner_signature');
+      expect(res._json.approvalStatus).toBe('pending_owner_signature');
+      expect(res._json.message).toContain('awaiting owner signature');
+    });
+
+    it('returns 400 when the form is not awaiting a copy signature', async () => {
+      req.params = { formId: 'f1' };
+      req.user = { userID: 'signer1' };
+      repo.getFormById.mockResolvedValue({
+        ...mockFormRow,
+        approval_status: 'pending_approval',
+        admin_copy_signer_id: 'signer1',
+      });
+      await accountabilityFormsController.signAdminCopyHandler(req, res);
+      expect(res._status).toBe(400);
+    });
+
+    it('returns 403 when the user is not the designated copy signer', async () => {
+      req.params = { formId: 'f1' };
+      req.user = { userID: 'someone_else' };
+      repo.getFormById.mockResolvedValue({
+        ...mockFormRow,
+        approval_status: 'pending_admin_copy_signature',
+        admin_copy_signer_id: 'signer1',
+      });
+      await accountabilityFormsController.signAdminCopyHandler(req, res);
+      expect(res._status).toBe(403);
+    });
+  });
+
+  describe('approveAccountabilityFormHandler', () => {
+    it('approves the form and notifies HR receivers for the 201-file copy when the owner already signed', async () => {
+      req.params = { formId: 'f1' };
+      req.user = { userID: 'approver1' };
+      repo.getFormById.mockResolvedValue({
+        ...mockFormRow,
+        status: 'Signed',
+        approval_status: 'pending_approval',
+        signed_at: '2024-01-02T00:00:00Z',
+      });
+      isDesignatedApprover.mockResolvedValue(true);
+      isDesignatedSubApprover.mockResolvedValue(false);
+      pool.query.mockResolvedValue([[{ digital_signature: 'sig' }], []]);
+      repo.updateFormApproval.mockResolvedValue(1);
+      repo.getUserNameById.mockResolvedValue({ first_name: 'Ann', last_name: 'Lee' });
+      getHrAccountabilityReceiverUserIds.mockResolvedValue(['hr1']);
+
+      await accountabilityFormsController.approveAccountabilityFormHandler(req, res);
+
+      expect(repo.updateFormApproval).toHaveBeenCalled();
+      expect(createNotificationForApi).toHaveBeenCalledWith(
+        expect.objectContaining({ user_id: 'hr1' })
+      );
+      expect(res._json.approvalStatus).toBe('approved');
+    });
+
+    it('returns 400 when the form is not awaiting approval', async () => {
+      req.params = { formId: 'f1' };
+      req.user = { userID: 'approver1' };
+      repo.getFormById.mockResolvedValue({
+        ...mockFormRow,
+        approval_status: 'pending_owner_signature',
+      });
+      await accountabilityFormsController.approveAccountabilityFormHandler(req, res);
+      expect(res._status).toBe(400);
+    });
+
+    it('returns 403 when the user is not the designated approver/sub-approver', async () => {
+      req.params = { formId: 'f1' };
+      req.user = { userID: 'someone_else' };
+      repo.getFormById.mockResolvedValue({
+        ...mockFormRow,
+        approval_status: 'pending_approval',
+      });
+      isDesignatedApprover.mockResolvedValue(false);
+      isDesignatedSubApprover.mockResolvedValue(false);
+      await accountabilityFormsController.approveAccountabilityFormHandler(req, res);
+      expect(res._status).toBe(403);
+    });
+  });
+
+  describe('getAccountabilityFormAuditHandler', () => {
+    it('returns audit logs for the form owner', async () => {
+      req.params = { formId: 'f1' };
+      req.user = { userID: 'u1' };
+      repo.getFormFullDetailById.mockResolvedValue(mockFormRow);
+      const auditModel = jest.requireMock('../../models/audit.model.js');
+      auditModel.default.getByAccountabilityFormId.mockResolvedValue({
+        logs: [{ auditID: 1, action: 'Created Accountability Form' }],
+      });
+
+      await accountabilityFormsController.getAccountabilityFormAuditHandler(req, res);
+
+      expect(res._json.logs).toHaveLength(1);
+      expect(res._json.logs[0].action).toBe('Created Accountability Form');
+    });
+
+    it('returns 404 when form not found', async () => {
+      req.params = { formId: 'f1' };
+      req.user = { userID: 'u1' };
+      repo.getFormFullDetailById.mockResolvedValue(null);
+      await accountabilityFormsController.getAccountabilityFormAuditHandler(req, res);
+      expect(res._status).toBe(404);
+    });
+
+    it('returns 403 when the user cannot view the form', async () => {
+      req.params = { formId: 'f1' };
+      req.user = { userID: 'someone_else' };
+      repo.getFormFullDetailById.mockResolvedValue(mockFormRow);
+      isDesignatedApprover.mockResolvedValue(false);
+      isDesignatedSubApprover.mockResolvedValue(false);
+      repo.getUserAccountabilityFormPermissions.mockResolvedValue([]);
+      pool.execute.mockResolvedValue([[], []]);
+      await accountabilityFormsController.getAccountabilityFormAuditHandler(req, res);
+      expect(res._status).toBe(403);
     });
   });
 });

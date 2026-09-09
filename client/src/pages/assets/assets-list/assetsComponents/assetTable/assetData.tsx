@@ -116,6 +116,9 @@ export interface Asset {
   updatedBy: string;
   specifications?: AssetChild[];
   currentAssignment?: AssetAssignment;
+  /** Display-only assignee awaiting IT/Admin copy signature. */
+  pendingAssignment?: AssetAssignment;
+  isPendingSignature?: boolean;
   assignmentHistory?: AssetAssignment[];
   builderHistory?: AssetBuilderHistory[];
   accountabilityForm?: AccountabilityForm | null;

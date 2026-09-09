@@ -190,22 +190,32 @@ export const assetColumns = [
   {
     id: 'assignedTo',
     header: 'Assigned To',
-    accessorFn: (row: any) => row.currentAssignment?.user?.name ?? '',
+    accessorFn: (row: any) => row.currentAssignment?.user?.name ?? row.pendingAssignment?.user?.name ?? '',
     size: 250,
     cell: ({ row }: any) => {
       const currentAssignment = row.original.currentAssignment;
-      if (currentAssignment) {
+      const pendingAssignment = row.original.pendingAssignment;
+      const assignment = currentAssignment ?? pendingAssignment;
+      if (assignment) {
         return (
           <div className="text-sm">
             <div className="font-medium text-gray-900">
-              {currentAssignment.user.name}
+              {assignment.user.name}
             </div>
             <div className="text-gray-600 text-xs">
-              {currentAssignment.user.employeeNumber || 'No ID'}
+              {assignment.user.employeeNumber || 'No ID'}
             </div>
             <div className="text-gray-600 text-xs">
-              {currentAssignment.user.position || 'No position'}
+              {assignment.user.position || 'No position'}
             </div>
+            {!currentAssignment && pendingAssignment && (
+              <Badge
+                variant="secondary"
+                className="mt-1 font-medium border bg-amber-500/15 text-amber-700 border-amber-500/30"
+              >
+                Pending IT/Admin signature
+              </Badge>
+            )}
           </div>
         );
       }

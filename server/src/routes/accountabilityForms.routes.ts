@@ -16,6 +16,7 @@ import {
   approveClearanceStageHandler,
   signAdminCopyHandler,
   approveAccountabilityFormHandler,
+  getAccountabilityFormAuditHandler,
   getPendingAdminCopySignaturesHandler,
   getPendingAccountabilityApprovalsHandler,
   getPendingClearanceApprovalsHandler,
@@ -75,6 +76,7 @@ router.post(
   '/:formId/checklists/sign',
   signAccountabilityFormChecklistsHandler
 );
+router.get('/:formId/audit', getAccountabilityFormAuditHandler);
 
 /**
  * @swagger

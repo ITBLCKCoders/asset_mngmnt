@@ -331,6 +331,44 @@ export async function getCurrentAssignmentForAssetId(
   return rows[0] ?? null;
 }
 
+/**
+ * Latest assignment held as `Inactive` while the IT/Admin copy approval flow
+ * runs (marked with the 'Pending IT/Admin copy signature' note). Used as a
+ * display-only pending assignee so the asset list can show `Assigned To`
+ * before the copy is signed. Never used for My Assets / Active-only queries.
+ */
+export async function getPendingAssignmentsForAssetIds(
+  assetIds: string[]
+): Promise<AssetAssignmentJoinedRow[]> {
+  if (assetIds.length === 0) return [];
+  const placeholders = assetIds.map(() => '?').join(',');
+  const [rows] = await pool.execute<AssetAssignmentJoinedRow[]>(
+    `SELECT ${ASSIGNMENT_JOIN_SELECT_COMMON}, aa.assigned_date, aa.status
+     ${ASSIGNMENT_JOIN_FROM}
+     WHERE aa.asset_id IN (${placeholders})
+       AND aa.status = 'Inactive' AND aa.deleted_at IS NULL
+       AND aa.assignment_notes LIKE '%Pending IT/Admin copy signature%'
+     ORDER BY aa.asset_id, aa.assigned_date DESC`,
+    [...assetIds]
+  );
+  return rows;
+}
+
+export async function getPendingAssignmentForAssetId(
+  assetId: string
+): Promise<AssetAssignmentJoinedRow | null> {
+  const [rows] = await pool.execute<AssetAssignmentJoinedRow[]>(
+    `SELECT ${ASSIGNMENT_JOIN_SELECT_COMMON}, aa.assigned_date, aa.status
+     ${ASSIGNMENT_JOIN_FROM}
+     WHERE aa.asset_id = ?
+       AND aa.status = 'Inactive' AND aa.deleted_at IS NULL
+       AND aa.assignment_notes LIKE '%Pending IT/Admin copy signature%'
+     ORDER BY aa.assigned_date DESC LIMIT 1`,
+    [assetId]
+  );
+  return rows[0] ?? null;
+}
+
 export async function getAssignmentHistoryForAssetIds(
   assetIds: string[]
 ): Promise<AssetAssignmentJoinedRow[]> {

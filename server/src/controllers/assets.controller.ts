@@ -286,9 +286,15 @@ export async function getMyAssetsHandler(req: AuthRequest, res: Response) {
         };
         // Update assignedTo field for backward compatibility
         asset.assignedTo = currentAssignment.assigned_user_name;
+        // My Assets only surfaces Active assignments — pending (unsigned
+        // IT/Admin copy) rows stay hidden here by design.
+        asset.pendingAssignment = null;
+        asset.isPendingSignature = false;
         // Keep the original status - assigned assets should show as "Available"
       } else {
         asset.currentAssignment = null;
+        asset.pendingAssignment = null;
+        asset.isPendingSignature = false;
         asset.assignedTo = null;
       }
 
@@ -533,6 +539,11 @@ export async function getAssetsHandler(req: AuthRequest, res: Response) {
       // Batch fetch current assignments (Active/Reserved), one per asset — take first per asset_id after ordering by assigned_date DESC
       const currentAssignmentRows = await assetRepo.getCurrentAssignmentsForAssetIds(assetIds);
 
+      // Batch fetch pending assignments held as `Inactive` while the IT/Admin
+      // copy approval flow runs — display-only, so the list can show
+      // `Assigned To` before the copy is signed.
+      const pendingAssignmentRows = await assetRepo.getPendingAssignmentsForAssetIds(assetIds);
+
       // Batch fetch assignment history for timeline
       const historyRows = await assetRepo.getAssignmentHistoryForAssetIds(assetIds);
 
@@ -549,6 +560,31 @@ export async function getAssetsHandler(req: AuthRequest, res: Response) {
           firstCurrentByAssetId.set(row.asset_id, row);
         }
       }
+
+      // Build lookup map for pending (Inactive, awaiting IT/Admin copy sign) assignments
+      const firstPendingByAssetId = new Map<number, any>();
+      for (const row of (pendingAssignmentRows as any[]) ?? []) {
+        if (!firstPendingByAssetId.has(row.asset_id)) {
+          firstPendingByAssetId.set(row.asset_id, row);
+        }
+      }
+
+      const formatAssignment = (row: any) => ({
+        assignmentID: row.assignmentID,
+        user: {
+          id: row.user_id,
+          name: row.assigned_user_name,
+          email: row.assigned_user_email,
+          employeeNumber: row.employee_number,
+          position: row.position,
+        },
+        department: row.department_name,
+        location: row.location_name
+          ? `${row.location_name}${row.room_name ? ` - ${row.room_name}` : ''}`
+          : null,
+        assignedDate: row.assigned_date,
+        status: row.status,
+      });
 
       // Attach batch data to each asset
       for (const asset of assets) {
@@ -584,11 +620,25 @@ export async function getAssetsHandler(req: AuthRequest, res: Response) {
             status: currentAssignment.status,
           };
           asset.assignedTo = currentAssignment.assigned_user_name;
+          asset.pendingAssignment = null;
+          asset.isPendingSignature = false;
           // Assigned assets should show as "Assigned"
           asset.status = 'Assigned';
         } else {
+          // No Active assignment — fall back to the pending assignee held as
+          // `Inactive` while the IT/Admin copy is unsigned, so `Assigned To`
+          // is visible even before the copy is signed.
+          const pendingAssignment = firstPendingByAssetId.get(asset.assetID);
           asset.currentAssignment = null;
-          asset.assignedTo = null;
+          if (pendingAssignment) {
+            asset.pendingAssignment = formatAssignment(pendingAssignment);
+            asset.assignedTo = pendingAssignment.assigned_user_name;
+            asset.isPendingSignature = true;
+          } else {
+            asset.pendingAssignment = null;
+            asset.assignedTo = null;
+            asset.isPendingSignature = false;
+          }
         }
 
         asset.assignmentHistory = (historyRows as any[])
@@ -653,6 +703,8 @@ export async function getAssetsHandler(req: AuthRequest, res: Response) {
         asset.specifications = [];
         asset.documents = [];
         asset.currentAssignment = null;
+        asset.pendingAssignment = null;
+        asset.isPendingSignature = false;
         asset.assignedTo = null;
         asset.assignmentHistory = [];
         asset.builderHistory = [];
@@ -1226,15 +1278,45 @@ export async function getAssetByCodeHandler(req: any, res: Response) {
         };
         // Update assignedTo field for backward compatibility
         asset.assignedTo = assignment.assigned_user_name;
+        asset.pendingAssignment = null;
+        asset.isPendingSignature = false;
         // Keep the original status - assigned assets should show as "Available"
       } else {
+        // Fall back to the pending assignee held as `Inactive` while the
+        // IT/Admin copy is unsigned.
+        const pending = await assetRepo.getPendingAssignmentForAssetId(asset.assetID);
         asset.currentAssignment = null;
-        asset.assignedTo = null;
+        if (pending) {
+          asset.pendingAssignment = {
+            assignmentID: pending.assignmentID,
+            user: {
+              id: pending.user_id,
+              name: pending.assigned_user_name,
+              email: pending.assigned_user_email,
+              employeeNumber: pending.employee_number,
+              position: pending.position,
+            },
+            department: pending.department_name,
+            location: pending.location_name
+              ? `${pending.location_name}${pending.room_name ? ` - ${pending.room_name}` : ''}`
+              : null,
+            assignedDate: pending.assigned_date,
+            status: pending.status,
+          };
+          asset.assignedTo = pending.assigned_user_name;
+          asset.isPendingSignature = true;
+        } else {
+          asset.pendingAssignment = null;
+          asset.assignedTo = null;
+          asset.isPendingSignature = false;
+        }
         // Keep the original status if no assignment
       }
     } catch (assignError) {
       logger.warn(`Failed to fetch assignment for asset ${asset.assetID}:`, assignError);
       asset.currentAssignment = null;
+      asset.pendingAssignment = null;
+      asset.isPendingSignature = false;
       asset.assignedTo = null;
     }
 

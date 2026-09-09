@@ -62,14 +62,18 @@ export default function AssetDetails() {
                 | 'Available'
                 | 'Assigned'
                 | 'In Maintenance')) || 'Available',
-        assignedTo: assetData.currentAssignment?.user?.name || '',
+        assignedTo: assetData.currentAssignment?.user?.name || assetData.pendingAssignment?.user?.name || '',
         department:
           assetData.currentAssignment?.department ||
+          assetData.pendingAssignment?.department ||
           (assetData.department ? JSON.parse(assetData.department).name : ''),
         location:
           assetData.currentAssignment?.location ||
+          assetData.pendingAssignment?.location ||
           `${assetData.location_name || ''}${assetData.room_name ? ` - ${assetData.room_name}` : ''}`,
         currentAssignment: assetData.currentAssignment ?? undefined,
+        pendingAssignment: assetData.pendingAssignment ?? undefined,
+        isPendingSignature: Boolean(assetData.isPendingSignature),
         assignmentHistory: [],
         purchaseDate: assetData.purchase_date
           ? new Date(assetData.purchase_date)

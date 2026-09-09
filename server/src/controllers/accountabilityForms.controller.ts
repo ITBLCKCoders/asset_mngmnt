@@ -972,13 +972,10 @@ async function sendApprovalKickoffNotifications(args: {
 }): Promise<void> {
   const { req } = args;
   if (args.approvalStatus === 'pending_admin_copy_signature' && args.adminCopySignerId) {
-    const alsoApproves =
-      !!args.ownerApproverId &&
-      args.adminCopySignerId === args.ownerApproverId;
     await notifyUser({
       userId: args.adminCopySignerId,
       title: `Accountability form ${args.formNumber} needs ${args.adminCopyCopyType ?? 'IT'} copy signature`,
-      message: `Please ${alsoApproves ? 'sign and approve' : `sign the ${args.adminCopyCopyType ?? 'IT'} copy`} for ${args.ownerName}'s accountability form (${args.formNumber}).`,
+      message: `Please sign the ${args.adminCopyCopyType ?? 'IT'} copy for ${args.ownerName}'s accountability form (${args.formNumber}).`,
       type: 'accountability_form',
       data: {
         route: '/approvals?tab=for-approval',
@@ -986,7 +983,6 @@ async function sendApprovalKickoffNotifications(args: {
         formId: args.formId,
         formNumber: args.formNumber,
         copyType: args.adminCopyCopyType,
-        alsoApproves,
       },
       createdBy: req.user!.userID,
       req,
@@ -2348,6 +2344,14 @@ export async function signAccountabilityFormHandler(
       return res.status(400).json({ error: 'Form is not in pending status' });
     }
 
+    // Standard approval flow: the owner cannot sign until the IT/Admin copy
+    // has been signed.
+    if (form.approval_status === 'pending_admin_copy_signature') {
+      return res.status(400).json({
+        error: 'The IT/Admin copy must be signed before you can sign this form',
+      });
+    }
+
     // Get existing acknowledgments to preserve issuer signature
     const parsedExisting = parseMysqlJsonColumn<Record<string, unknown>>(
       form.acknowledgments
@@ -2428,6 +2432,137 @@ export async function signAccountabilityFormHandler(
       userAgent: req.get ? req.get('User-Agent') : 'Unknown',
     });
 
+    // Standard approval flow: the owner just signed, so the form moves on to
+    // the owner's designated approver/sub-approver. When the owner has no
+    // designated approvers, the form is approved right away.
+    if (form.approval_status === 'pending_owner_signature') {
+      const ownerApproverId = await getDesignatedApproverUserIdForRequester(
+        form.user_id
+      );
+      const ownerSubApproverId =
+        await getDesignatedSubApproverUserIdForRequester(form.user_id);
+
+      const hasNextApprover = !!ownerApproverId || !!ownerSubApproverId;
+      const nextApprovalStatus: 'pending_approval' | 'approved' = hasNextApprover
+        ? 'pending_approval'
+        : 'approved';
+
+      const affected = await repo.updateOwnerSignatureApproval(
+        formId,
+        nextApprovalStatus
+      );
+      if (affected === 0) {
+        return res.status(409).json({
+          error: 'Form state changed during owner signature',
+        });
+      }
+
+      await createAuditLog({
+        userId,
+        action: 'Released Accountability Form To Approver',
+        resourceType: 'accountability_form',
+        resourceId: formId,
+        resourceName: form.form_number,
+        details: `Accountability form ${form.form_number} owner signature completed; released to ${hasNextApprover ? 'approver' : 'approval (no designated approver)'}`,
+        newValues: {
+          approval_status: nextApprovalStatus,
+        },
+        ipAddress: req.ip,
+        userAgent: req.get ? req.get('User-Agent') : 'Unknown',
+      });
+
+      if (hasNextApprover) {
+        // Notify the owner's approver(s). Notify both approver and
+        // sub-approver when they are different; deduplicate recipients.
+        const ownerRow = await repo.getUserNameById(form.user_id);
+        const ownerName = ownerRow
+          ? `${ownerRow.first_name ?? ''} ${ownerRow.last_name ?? ''}`.trim() ||
+            form.user_id
+          : form.user_id;
+        const recipients = [ownerApproverId, ownerSubApproverId].filter(
+          (id): id is string => !!id && id !== userId
+        );
+        const seen = new Set<string>();
+        const uniqueRecipients = recipients.filter(id => {
+          if (seen.has(id)) return false;
+          seen.add(id);
+          return true;
+        });
+        for (const approverId of uniqueRecipients) {
+          try {
+            await notifyUser({
+              userId: approverId,
+              title: `Accountability form ${form.form_number} needs your approval`,
+              message: `Please review and approve the accountability form for ${ownerName} (${form.form_number}).`,
+              type: 'accountability_form',
+              data: {
+                route: '/approvals?tab=for-approval',
+                actionTarget: 'accountability_form_approval',
+                formId,
+                formNumber: form.form_number,
+              },
+              createdBy: userId,
+              req,
+            });
+          } catch (notifErr) {
+            logger.error(
+              'Failed to notify approver after owner signature:',
+              notifErr
+            );
+          }
+        }
+
+        return res.json({
+          message:
+            'Accountability form signed; awaiting final approval',
+          form: {
+            id: formId,
+            status: 'Signed',
+            signed_at: new Date(),
+            approvalStatus: 'pending_approval',
+          },
+        });
+      }
+
+      // No designated approver: the form is fully approved. Stamp the
+      // generic approval columns, send the owner their assignment notice,
+      // and let the HR copy notice below go out as well.
+      try {
+        await pool.execute(
+          `UPDATE accountability_forms
+           SET approved_by = ?, approved_at = NOW(), updated_at = NOW()
+           WHERE formID = ?`,
+          [userId, formId]
+        );
+      } catch (approveErr) {
+        logger.error(
+          'Failed to stamp auto-approval after owner signature:',
+          approveErr
+        );
+      }
+      try {
+        const signerRow = await repo.getUserNameById(userId);
+        const assignerName = signerRow
+          ? `${signerRow.first_name ?? ''} ${signerRow.last_name ?? ''}`.trim() ||
+            userId
+          : userId;
+        await notifyOwnerAssignmentAndAccountability({
+          ownerUserId: form.user_id,
+          formNumber: form.form_number,
+          formId,
+          assignerName,
+          assignerUserId: userId,
+          assetCodes: await getAssetCodesForForm(form),
+          req,
+        });
+      } catch (notifErr) {
+        logger.error(
+          'Failed to notify owner after auto-approval:',
+          notifErr
+        );
+      }
+    }
+
     // Notify HR accountability receivers
     try {
       const hrReceiverIds = await getHrAccountabilityReceiverUserIds();
@@ -2468,6 +2603,10 @@ export async function signAccountabilityFormHandler(
         id: formId,
         status: 'Signed',
         signed_at: new Date(),
+        approvalStatus:
+          form.approval_status === 'pending_owner_signature'
+            ? 'approved'
+            : form.approval_status ?? undefined,
       },
     });
   } catch (error: any) {
@@ -2844,20 +2983,9 @@ export async function signAdminCopyHandler(req: AuthRequest, res: Response) {
       typeof digitalSignature === 'string' ? digitalSignature : null
     );
 
-    // Decide the next status: combine with the approval step if the signer is
-    // also the asset owner's designated approver.
-    const ownerApproverId = await getDesignatedApproverUserIdForRequester(
-      form.user_id
-    );
-    const ownerSubApproverId = await getDesignatedSubApproverUserIdForRequester(
-      form.user_id
-    );
-    const isAlsoApprover =
-      !!ownerApproverId && ownerApproverId === currentUserId;
-
-    const nextStatus: 'pending_approval' | 'approved' = isAlsoApprover
-      ? 'approved'
-      : 'pending_approval';
+    // After the IT/Admin copy is signed, the accountability owner signs
+    // before the owner's designated approver/sub-approver.
+    const nextStatus: 'pending_owner_signature' = 'pending_owner_signature';
 
     const affected = await repo.updateAdminCopySignature(
       formId,
@@ -2872,8 +3000,7 @@ export async function signAdminCopyHandler(req: AuthRequest, res: Response) {
 
     // Copy signed: reveal assignments held as `Inactive` since issuance so
     // the assets now appear in the new owner's My Assets. Owner-facing
-    // notifications still wait until final approval (or the combined step
-    // below, which is both at once).
+    // notifications still wait until final approval.
     try {
       const activated = await activateAssignmentsForAccountabilityForm(form);
       if (activated.tangible > 0 || activated.intangible > 0) {
@@ -2893,133 +3020,52 @@ export async function signAdminCopyHandler(req: AuthRequest, res: Response) {
       logger.error('Failed to activate assignments on copy sign:', activateErr);
     }
 
-    if (isAlsoApprover) {
-      // Combined step: also stamp approved_by/approved_at and the new
-      // Department head signatory, then notify the owner directly.
-      await pool.execute(
-        `UPDATE accountability_forms
-         SET approved_by = ?, approved_at = NOW(), updated_at = NOW()
-         WHERE formID = ?`,
-        [currentUserId, formId]
-      );
-      try {
-        const signerRowForDept = await repo.getUserNameById(currentUserId);
-        const deptName = signerRowForDept
-          ? `${signerRowForDept.first_name ?? ''} ${signerRowForDept.last_name ?? ''}`.trim() ||
-            null
-          : null;
-        await repo.stampDeptHeadOnCombinedApproval({
-          formId,
-          signedBy: currentUserId,
-          signedByName: deptName,
-          signature,
-        });
-      } catch (deptErr) {
-        logger.error('Failed to stamp dept head on combined approval:', deptErr);
-      }
-    }
-
     await createAuditLog({
       userId: currentUserId,
       action: 'Signed IT/Admin Copy',
       resourceType: 'accountability_form',
       resourceId: formId,
       resourceName: form.form_number,
-      details: `IT/Admin copy signed for accountability form ${form.form_number}${isAlsoApprover ? ' (combined with approval)' : ''}`,
+      details: `IT/Admin copy signed for accountability form ${form.form_number}`,
       newValues: {
         admin_copy_signature: signature,
         admin_copy_signed_at: new Date(),
         approval_status: nextStatus,
-        ...(isAlsoApprover
-          ? {
-              approved_by: currentUserId,
-              approved_at: new Date(),
-              dept_head_signed_by: currentUserId,
-              dept_head_signed_at: new Date(),
-              dept_head_signature: signature,
-            }
-          : {}),
       },
       ipAddress: req.ip,
       userAgent: req.get ? req.get('User-Agent') : 'Unknown',
     });
 
-    // Notify the next actor in the chain.
-    if (isAlsoApprover) {
-      // Combined step: assignments are already activated above and the form
-      // is fully approved, so the new owner gets BOTH the assignment notice
-      // and the accountability-issued notice together.
-      const ownerNameRow = await repo.getUserNameById(form.user_id);
-      const ownerName = ownerNameRow
-        ? `${ownerNameRow.first_name ?? ''} ${ownerNameRow.last_name ?? ''}`.trim() ||
-          form.user_id
-        : form.user_id;
-      const signerRow = await repo.getUserNameById(currentUserId);
-      const assignerName = signerRow
-        ? `${signerRow.first_name ?? ''} ${signerRow.last_name ?? ''}`.trim() ||
-          currentUserId
-        : currentUserId;
-      try {
-        await notifyOwnerAssignmentAndAccountability({
-          ownerUserId: form.user_id,
-          formNumber: form.form_number,
-          formId,
-          assignerName,
-          assignerUserId: currentUserId,
-          assetCodes: await getAssetCodesForForm(form),
-          req,
-        });
-      } catch (notifErr) {
-        logger.error('Failed to notify owner after combined approval:', notifErr);
-      }
-      return res.json({
-        message: 'IT/Admin copy signed and form approved (combined step)',
-        formId,
-        approvalStatus: 'approved',
-        combinedApproval: true,
-        ownerName,
-      });
-    }
-
-    // Notify the owner's approver(s). Notify both approver and sub-approver
-    // when they are different; suppress duplicate notifications.
+    // Notify the accountability owner to sign the form.
     const ownerRow = await repo.getUserNameById(form.user_id);
     const ownerName = ownerRow
       ? `${ownerRow.first_name ?? ''} ${ownerRow.last_name ?? ''}`.trim() ||
         form.user_id
       : form.user_id;
-
-    const recipients = [ownerApproverId, ownerSubApproverId].filter(
-      (id): id is string => !!id && id !== currentUserId
-    );
-    // Deduplicate while preserving order.
-    const seen = new Set<string>();
-    const uniqueRecipients = recipients.filter(id => {
-      if (seen.has(id)) return false;
-      seen.add(id);
-      return true;
-    });
-    for (const approverId of uniqueRecipients) {
+    try {
       await notifyUser({
-        userId: approverId,
-        title: `Accountability form ${form.form_number} needs your approval`,
-        message: `Please review and approve the accountability form for ${ownerName} (${form.form_number}).`,
+        userId: form.user_id,
+        title: `Accountability form ${form.form_number} needs your signature`,
+        message: `Please review and sign your accountability form (${form.form_number}).`,
         type: 'accountability_form',
         data: {
-          route: '/approvals?tab=for-approval',
-          actionTarget: 'accountability_form_approval',
+          route: '/profile?tab=documents',
+          actionTarget: 'profile_documents',
           formId,
           formNumber: form.form_number,
         },
         createdBy: currentUserId,
         req,
       });
+    } catch (ownerNotifErr) {
+      logger.error('Failed to notify owner after copy sign:', ownerNotifErr);
     }
 
     return res.json({
-      message: 'IT/Admin copy signed; awaiting final approval',
+      message: 'IT/Admin copy signed; awaiting owner signature',
       formId,
-      approvalStatus: 'pending_approval',
+      approvalStatus: 'pending_owner_signature',
+      ownerName,
     });
   } catch (error: any) {
     logger.error('Sign admin copy failed:', error);
@@ -3032,7 +3078,8 @@ export async function signAdminCopyHandler(req: AuthRequest, res: Response) {
  *
  * Approve an accountability form. The current user must be the asset owner's
  * designated approver OR sub-approver. The form must be in
- * `pending_approval` status (i.e. the IT/Admin copy step has been completed).
+ * `pending_approval` status (i.e. the IT/Admin copy has been signed AND the
+ * accountability owner has signed).
  */
 export async function approveAccountabilityFormHandler(
   req: AuthRequest,
@@ -3144,6 +3191,43 @@ export async function approveAccountabilityFormHandler(
       });
     } catch (notifErr) {
       logger.error('Failed to notify owner after approval:', notifErr);
+    }
+
+    // The owner already signed (owner signs before the approver in the
+    // standard flow), so the form is now ready for the HR 201-file copy.
+    if (form.status === 'Signed') {
+      try {
+        const hrReceiverIds = await getHrAccountabilityReceiverUserIds();
+        const io = getIoInstance();
+        for (const receiverId of hrReceiverIds) {
+          const message = `An Accountability form (${form.form_number}) is ready for you to receive for HR Copy of 201 file`;
+          const notificationPayload = {
+            title: 'Accountability Form Ready for HR Copy',
+            description: message,
+            type: 'accountability_form' as const,
+            route: '/forms/accountability?tab=hrCopy',
+            actionTarget: 'accountability_form_hr_copy',
+            formId: formId,
+            formNumber: form.form_number,
+            timestamp: new Date().toISOString(),
+          };
+          await createNotificationForApi({
+            user_id: receiverId,
+            title: notificationPayload.title,
+            message,
+            type: notificationPayload.type,
+            data: notificationPayload,
+          });
+
+          if (io) {
+            emitNotification(io, receiverId, 'notification', notificationPayload);
+          }
+        }
+        logger.info(`Sent HR copy notifications to ${hrReceiverIds.length} receivers`);
+      } catch (notifError) {
+        logger.error('Failed to send HR copy notifications after approval:', notifError);
+        // Don't fail the request if notification fails
+      }
     }
 
     return res.json({
@@ -3620,6 +3704,61 @@ export async function getAccountabilityFormByIdHandler(
     return res
       .status(500)
       .json({ error: 'Failed to fetch accountability form' });
+  }
+}
+
+/**
+ * GET /api/accountability-forms/:formId/audit
+ *
+ * Returns the audit trail for a single accountability form (created, copy
+ * signed, owner signed, approved, HR received, etc.) for the form timeline.
+ * Visibility mirrors GET /:formId so regular users can view their own form's
+ * trail without audit-admin permission. Returns an empty list when audit
+ * logging is disabled — callers fall back to form timestamps.
+ */
+export async function getAccountabilityFormAuditHandler(
+  req: AuthRequest,
+  res: Response
+) {
+  try {
+    const { formId } = req.params;
+    const currentUserId = req.user!.userID;
+
+    if (!formId) {
+      return res.status(400).json({ error: 'Form ID is required' });
+    }
+
+    const row = await repo.getFormFullDetailById(formId);
+    if (!row) {
+      return res.status(404).json({ error: 'Accountability form not found' });
+    }
+
+    // Same visibility rules as GET /:formId.
+    const isCopySigner = row.admin_copy_signer_id === currentUserId;
+    const isApprover =
+      (await isDesignatedApprover(currentUserId, row.user_id)) ||
+      (await isDesignatedSubApprover(currentUserId, row.user_id));
+    if (
+      row.user_id !== currentUserId &&
+      row.created_by !== currentUserId &&
+      !isCopySigner &&
+      !isApprover &&
+      !(await userCanViewAccountabilityFormRow(row as any, currentUserId))
+    ) {
+      return res.status(403).json({
+        error: 'You can only view forms assigned to you or that you issued',
+      });
+    }
+
+    const { default: AuditModel } = await import('../models/audit.model.js');
+    const { logs } = await AuditModel.getByAccountabilityFormId(formId);
+
+    return res.json({ logs });
+  } catch (error: any) {
+    logger.error('Get accountability form audit failed:', error);
+    return res
+      .status(500)
+      .json({ error: 'Failed to fetch accountability form audit trail' });
   }
 }
 
