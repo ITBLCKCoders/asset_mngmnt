@@ -57,13 +57,13 @@ function toReadableLabel(key: string): string {
 
 function KeyValueList({ value }: { value: unknown }) {
   if (!value || typeof value !== 'object' || Array.isArray(value)) {
-    return <div className="text-sm text-gray-700">{formatValue(value)}</div>;
+    return <div className="text-sm text-muted-foreground">{formatValue(value)}</div>;
   }
 
   const record = value as Record<string, unknown>;
   const entries = Object.entries(record);
   if (entries.length === 0) {
-    return <div className="text-sm text-gray-500">No fields</div>;
+    return <div className="text-sm text-muted-foreground">No fields</div>;
   }
 
   const visibleRows = entries
@@ -99,7 +99,7 @@ function KeyValueList({ value }: { value: unknown }) {
     .filter((row): row is { key: string; label: string; valueText: string } => Boolean(row));
 
   if (visibleRows.length === 0) {
-    return <div className="text-sm text-gray-500">No readable fields</div>;
+    return <div className="text-sm text-muted-foreground">No readable fields</div>;
   }
 
   return (
@@ -107,12 +107,12 @@ function KeyValueList({ value }: { value: unknown }) {
       {visibleRows.map((row) => (
         <div
           key={row.key}
-          className="grid grid-cols-1 gap-1 rounded-md border border-gray-200 bg-gray-50 p-2 sm:grid-cols-[160px_1fr] sm:gap-3"
+          className="grid grid-cols-1 gap-1 rounded-md border border-border/70 bg-muted/30 p-2 sm:grid-cols-[160px_1fr] sm:gap-3"
         >
-          <div className="text-xs font-semibold uppercase tracking-wide text-gray-500">
+          <div className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
             {row.label}
           </div>
-          <div className="text-sm text-gray-800 break-all">{row.valueText}</div>
+          <div className="text-sm text-foreground break-all">{row.valueText}</div>
         </div>
       ))}
     </div>
@@ -182,7 +182,7 @@ const getActionIcon = (type: string) => {
     case 'assign':
       return <User className="h-4 w-4 text-indigo-600" />;
     default:
-      return <FileText className="h-4 w-4 text-gray-600" />;
+      return <FileText className="h-4 w-4 text-muted-foreground" />;
   }
 };
 
@@ -672,7 +672,7 @@ export default function AuditTrail() {
   };
 
   return (
-    <div className="flex flex-col min-h-screen bg-[#FFFFFF]">
+    <div className="flex flex-col min-h-screen">
       <main className="flex-1 space-y-6 p-4 sm:p-6 lg:p-8">
         <PageHeader
           icon={Shield}
@@ -766,7 +766,7 @@ export default function AuditTrail() {
             </CardTitle>
           </CardHeader>
           <CardContent>
-            <div className="mb-4 rounded-lg border border-gray-200 bg-muted/30 p-3">
+            <div className="mb-4 rounded-lg border border-border/70 bg-muted/30 p-3">
               <div className="flex flex-wrap items-center gap-2">
                 <Select value={actionFilter} onValueChange={value => {
                   setCurrentPage(1);
@@ -955,7 +955,7 @@ export default function AuditTrail() {
             }
           }}
         >
-          <SheetContent className="w-full overflow-y-auto border-l border-gray-200 bg-white sm:max-w-2xl">
+          <SheetContent className="w-full overflow-y-auto border-l border-border/70 bg-background sm:max-w-2xl">
             {selectedLog ? (
               <>
                 <SheetHeader>
@@ -965,12 +965,12 @@ export default function AuditTrail() {
                   </SheetDescription>
                 </SheetHeader>
                 <div className="mt-6 space-y-6">
-                  <div className="rounded-xl border border-gray-200 bg-gray-50 p-4">
-                    <div className="mb-3 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
-                      Event Overview
-                    </div>
-                    <div className="grid grid-cols-1 gap-4 text-sm sm:grid-cols-2">
-                      <div className="rounded-md border border-gray-200 bg-white p-3">
+                  <div className="rounded-xl border border-border/70 bg-muted/30 p-4">
+                  <div className="mb-3 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+                    Event Overview
+                  </div>
+                  <div className="grid grid-cols-1 gap-4 text-sm sm:grid-cols-2">
+                    <div className="rounded-md border border-border/70 bg-background p-3">
                         <div className="mb-1 text-xs font-medium uppercase tracking-wide text-muted-foreground">
                           Time
                         </div>
@@ -978,7 +978,7 @@ export default function AuditTrail() {
                           {format(selectedLog.timestamp, 'MMM dd, yyyy HH:mm:ss')}
                         </div>
                       </div>
-                      <div className="rounded-md border border-gray-200 bg-white p-3">
+                      <div className="rounded-md border border-border/70 bg-background p-3">
                         <div className="mb-1 text-xs font-medium uppercase tracking-wide text-muted-foreground">
                           User
                         </div>
@@ -986,7 +986,7 @@ export default function AuditTrail() {
                           {selectedLog.user.name} ({selectedLog.user.email})
                         </div>
                       </div>
-                      <div className="rounded-md border border-gray-200 bg-white p-3">
+                      <div className="rounded-md border border-border/70 bg-background p-3">
                         <div className="mb-1 text-xs font-medium uppercase tracking-wide text-muted-foreground">
                           Action
                         </div>
@@ -997,7 +997,7 @@ export default function AuditTrail() {
                           </Badge>
                         </div>
                       </div>
-                      <div className="rounded-md border border-gray-200 bg-white p-3">
+                      <div className="rounded-md border border-border/70 bg-background p-3">
                         <div className="mb-1 text-xs font-medium uppercase tracking-wide text-muted-foreground">
                           Resource
                         </div>
@@ -1005,7 +1005,7 @@ export default function AuditTrail() {
                           {selectedLog.resourceType} - {formatAuditPlainText(selectedLog.resource ?? selectedLog.resourceId ?? '', mergedIdLabels)}
                         </div>
                       </div>
-                      <div className="rounded-md border border-gray-200 bg-white p-3">
+                      <div className="rounded-md border border-border/70 bg-background p-3">
                         <div className="mb-1 text-xs font-medium uppercase tracking-wide text-muted-foreground">
                           Status
                         </div>
@@ -1013,7 +1013,7 @@ export default function AuditTrail() {
                           <span className="capitalize">{selectedLog.status ?? 'success'}</span>
                         </Badge>
                       </div>
-                      <div className="rounded-md border border-gray-200 bg-white p-3">
+                      <div className="rounded-md border border-border/70 bg-background p-3">
                         <div className="mb-1 text-xs font-medium uppercase tracking-wide text-muted-foreground">
                           Severity
                         </div>
@@ -1022,7 +1022,7 @@ export default function AuditTrail() {
                         </Badge>
                       </div>
                       {selectedLog.ipAddress && (
-                        <div className="rounded-md border border-gray-200 bg-white p-3">
+                        <div className="rounded-md border border-border/70 bg-background p-3">
                           <div className="mb-1 text-xs font-medium uppercase tracking-wide text-muted-foreground">
                             IP Address
                           </div>
@@ -1030,7 +1030,7 @@ export default function AuditTrail() {
                         </div>
                       )}
                       {selectedLog.requestId && (
-                        <div className="rounded-md border border-gray-200 bg-white p-3">
+                        <div className="rounded-md border border-border/70 bg-background p-3">
                           <div className="mb-1 text-xs font-medium uppercase tracking-wide text-muted-foreground">
                             Request ID
                           </div>
@@ -1038,7 +1038,7 @@ export default function AuditTrail() {
                         </div>
                       )}
                       {selectedLog.httpMethod && (
-                        <div className="rounded-md border border-gray-200 bg-white p-3">
+                        <div className="rounded-md border border-border/70 bg-background p-3">
                           <div className="mb-1 text-xs font-medium uppercase tracking-wide text-muted-foreground">
                             HTTP Method
                           </div>
@@ -1046,7 +1046,7 @@ export default function AuditTrail() {
                         </div>
                       )}
                       {selectedLog.httpEndpoint && (
-                        <div className="rounded-md border border-gray-200 bg-white p-3 sm:col-span-2">
+                        <div className="rounded-md border border-border/70 bg-background p-3 sm:col-span-2">
                           <div className="mb-1 text-xs font-medium uppercase tracking-wide text-muted-foreground">
                             HTTP Endpoint
                           </div>
@@ -1057,18 +1057,18 @@ export default function AuditTrail() {
                   </div>
 
                   {selectedLog.details && (
-                    <div className="rounded-xl border border-gray-200 bg-gray-50 p-4">
+                    <div className="rounded-xl border border-border/70 bg-muted/30 p-4">
                       <div className="mb-2 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
                         Details
                       </div>
-                      <div className="rounded-md border border-gray-200 bg-white p-3 text-sm leading-relaxed">
+                      <div className="rounded-md border border-border/70 bg-background p-3 text-sm leading-relaxed">
                         {formatAuditPlainText(selectedLog.details, mergedIdLabels)}
                       </div>
                     </div>
                   )}
 
                   {Boolean(selectedLog.oldValues || selectedLog.newValues) && (
-                    <div className="rounded-xl border border-gray-200 bg-gray-50 p-4">
+                    <div className="rounded-xl border border-border/70 bg-muted/30 p-4">
                       <div className="flex items-center justify-between mb-2">
                         <div className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
                           Changes
@@ -1082,7 +1082,7 @@ export default function AuditTrail() {
                         </Button>
                       </div>
                       {showRawJson ? (
-                        <pre className="max-h-96 overflow-auto rounded-md border border-gray-200 bg-white p-3 text-xs">
+                        <pre className="max-h-96 overflow-auto rounded-md border border-border/70 bg-background p-3 text-xs">
                           {JSON.stringify({ old: selectedLog.oldValues, new: selectedLog.newValues }, null, 2)}
                         </pre>
                       ) : (
@@ -1114,7 +1114,7 @@ export default function AuditTrail() {
                                     <div className="mb-1 text-xs font-medium uppercase tracking-wide text-muted-foreground">
                                       Old Values
                                     </div>
-                                    <div className="max-h-64 overflow-auto rounded-md border border-gray-200 bg-white p-3">
+                                    <div className="max-h-64 overflow-auto rounded-md border border-border/70 bg-background p-3">
                                       <KeyValueList value={filteredOld} />
                                     </div>
                                   </div>
@@ -1124,7 +1124,7 @@ export default function AuditTrail() {
                                     <div className="mb-1 text-xs font-medium uppercase tracking-wide text-muted-foreground">
                                       New Values
                                     </div>
-                                    <div className="max-h-64 overflow-auto rounded-md border border-gray-200 bg-white p-3">
+                                    <div className="max-h-64 overflow-auto rounded-md border border-border/70 bg-background p-3">
                                       <KeyValueList value={filteredNew} />
                                     </div>
                                   </div>

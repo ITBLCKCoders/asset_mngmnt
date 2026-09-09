@@ -46,8 +46,67 @@ export const PDF_SIGNATURE_NAME_OVERLAP_MM = 3;
 export const PDF_SIGNATURE_CELL_PADDING_MM = 2;
 /** Slight horizontal shift (mm) applied to centered signatures */
 export const PDF_SIGNATURE_NUDGE_X_MM = -2;
-/** Fraction of the column/cell width a centered signature should occupy */
+/** Fraction of the column/cell width a centered signature may occupy */
 export const PDF_SIGNATURE_FILL_RATIO = 0.5;
+/**
+ * Uniform signature box (mm): every PDF template renders each signature
+ * aspect-fit inside this box, so all signatures render at the same visual
+ * size regardless of which form generated the PDF. The column fill ratio
+ * only caps the width further for narrow cells.
+ */
+export const PDF_SIGNATURE_STD_WIDTH_MM = 36;
+export const PDF_SIGNATURE_STD_HEIGHT_MM = 18;
+/** Conversion factor from image pixels to PDF millimetres (1 px @ 96 dpi). */
+export const PDF_SIGNATURE_PX_TO_MM = 0.264583;
+
+export interface SignatureFitSize {
+  width: number;
+  height: number;
+}
+
+/**
+ * Uniform, aspect-preserving signature size shared by every PDF template.
+ * Fits the ink inside a single standard box (PDF_SIGNATURE_STD_*), further
+ * capped by the outer max bounds and — for cell-centered signatures — by a
+ * fraction of the column width so nothing overflows its cell.
+ */
+export const computeSignatureFitSize = (
+  inkWidth: number,
+  inkHeight: number,
+  options: {
+    /** Column/cell width (mm) when the signature is centered in a cell */
+    cellWidthMm?: number;
+    /** Outer max width (mm) — defaults to PDF_SIGNATURE_MAX_WIDTH_MM */
+    maxWidthMm?: number;
+    /** Outer max height (mm) — defaults to PDF_SIGNATURE_MAX_HEIGHT_MM */
+    maxHeightMm?: number;
+    /** Fraction of the cell width a signature may occupy */
+    fillRatio?: number;
+  } = {}
+): SignatureFitSize => {
+  const {
+    cellWidthMm,
+    maxWidthMm = PDF_SIGNATURE_MAX_WIDTH_MM,
+    maxHeightMm = PDF_SIGNATURE_MAX_HEIGHT_MM,
+    fillRatio = PDF_SIGNATURE_FILL_RATIO,
+  } = options;
+  const srcW = Math.max(1, inkWidth);
+  const srcH = Math.max(1, inkHeight);
+  let boxW = Math.min(maxWidthMm, PDF_SIGNATURE_STD_WIDTH_MM);
+  const boxH = Math.min(maxHeightMm, PDF_SIGNATURE_STD_HEIGHT_MM);
+  if (cellWidthMm && cellWidthMm > 0) {
+    const cellAllowance = Math.max(
+      0,
+      (cellWidthMm - PDF_SIGNATURE_CELL_PADDING_MM * 2) * fillRatio
+    );
+    boxW = Math.min(boxW, cellAllowance);
+  }
+  const scale = boxW > 0 ? Math.min(boxW / srcW, boxH / srcH) : 0;
+  if (!Number.isFinite(scale) || scale <= 0) {
+    return { width: 0, height: 0 };
+  }
+  return { width: srcW * scale, height: srcH * scale };
+};
 
 /** Horizontal bounds (mm) used to center a signature within its column/cell */
 export interface PdfSignatureCenterBounds {
@@ -283,7 +342,9 @@ export const addSignatureToPDF = async (
   /** When set, bottom edge of the image aligns to this Y (mm) instead of using `y` as top */
   anchorBottomY?: number,
   /** When set, the image is centered horizontally within these bounds (ignores `x`) */
-  centerWithin?: PdfSignatureCenterBounds
+  centerWithin?: PdfSignatureCenterBounds,
+  /** Override for PDF_SIGNATURE_FILL_RATIO (applies to centered signatures only) */
+  fillRatio: number = PDF_SIGNATURE_FILL_RATIO
 ): Promise<void> => {
   try {
     if (!signatureData) {
@@ -363,47 +424,29 @@ export const addSignatureToPDF = async (
       };
     });
 
-    const pixelsToMm = 0.264583;
-    const sigWidth = inkWidth * pixelsToMm;
-    const sigHeight = inkHeight * pixelsToMm;
+    const sigWidth = inkWidth * PDF_SIGNATURE_PX_TO_MM;
+    const sigHeight = inkHeight * PDF_SIGNATURE_PX_TO_MM;
 
     if (!sigWidth || !sigHeight) {
       return;
     }
 
-    // Keep centered signatures inside their column at a moderate size —
-    // a fixed `x` cannot stay centered when image aspects differ.
-    const effectiveMaxWidth =
-      centerWithin && centerWithin.width > 0
-        ? Math.min(
-            maxWidth,
-            (centerWithin.width - PDF_SIGNATURE_CELL_PADDING_MM * 2) *
-              PDF_SIGNATURE_FILL_RATIO
-          )
-        : maxWidth;
+    // Uniform size: every signature is aspect-fit inside the shared
+    // standard box so all render at the same visual size, further capped
+    // by the column width for cell-centered signatures.
+    const fit = computeSignatureFitSize(sigWidth, sigHeight, {
+      cellWidthMm:
+        centerWithin && centerWithin.width > 0 ? centerWithin.width : undefined,
+      maxWidthMm: maxWidth,
+      maxHeightMm: maxHeight,
+      fillRatio: fillRatio ?? PDF_SIGNATURE_FILL_RATIO,
+    });
 
-    let finalSigWidth: number;
-    let finalSigHeight: number;
+    const finalSigWidth = fit.width;
+    const finalSigHeight = fit.height;
 
-    if (centerWithin && centerWithin.width > 0) {
-      // Uniform size: stretch/shrink every signature to the same
-      // fraction of the column width so all render at equal prominence.
-      const scale = effectiveMaxWidth / sigWidth;
-      finalSigWidth = effectiveMaxWidth;
-      finalSigHeight = sigHeight * scale;
-    } else if (sigWidth > effectiveMaxWidth) {
-      const scale = effectiveMaxWidth / sigWidth;
-      finalSigWidth = effectiveMaxWidth;
-      finalSigHeight = sigHeight * scale;
-    } else {
-      finalSigWidth = sigWidth;
-      finalSigHeight = sigHeight;
-    }
-
-    if (finalSigHeight > maxHeight) {
-      const scale = maxHeight / finalSigHeight;
-      finalSigHeight = maxHeight;
-      finalSigWidth = finalSigWidth * scale;
+    if (!finalSigWidth || !finalSigHeight) {
+      return;
     }
 
     const format = img.src.startsWith('data:image/jpeg') ? 'JPEG' : 'PNG';

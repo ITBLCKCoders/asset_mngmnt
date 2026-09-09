@@ -26,6 +26,7 @@ import {
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { PageHeader } from '@/components/common/PageHeader';
+import { AdminCopySignerSelect } from '@/components/common/AdminCopySignerSelect';
 import { Button } from '@/components/ui/button';
 import { DataTable } from '@/components/ui/dataTable';
 import {
@@ -157,6 +158,11 @@ export default function TransferRequestsPage() {
   const [selectedBatch, setSelectedBatch] = useState<ApprovedBatch | null>(
     null
   );
+  const [transferPdfPreviewTab, setTransferPdfPreviewTab] = useState('assets');
+  const [transferPdfUrl, setTransferPdfUrl] = useState<string>('');
+  const [transferPdfLoading, setTransferPdfLoading] = useState(false);
+  const [transferPdfError, setTransferPdfError] = useState<string | null>(null);
+  const transferPdfUrlRef = useRef<string>('');
   const [showConfirmDialog, setShowConfirmDialog] = useState(false);
   const [transferring, setTransferring] = useState(false);
   const [receivedBy, setReceivedBy] = useState('');
@@ -166,6 +172,10 @@ export default function TransferRequestsPage() {
   const [verificationTag, setVerificationTag] = useState(false);
   const [verificationCondition, setVerificationCondition] = useState(false);
   const [verificationConfirmSign, setVerificationConfirmSign] = useState(false);
+  const [adminCopySignerId, setAdminCopySignerId] = useState<string | null>(
+    null
+  );
+  const [adminCopySignerRequired, setAdminCopySignerRequired] = useState(false);
   const [conditions, setConditions] = useState<Record<string, string>>({});
   /** Editable per assignment (same pattern as Assets Transfer confirmation dialog). */
   const [notesByAssignment, setNotesByAssignment] = useState<
@@ -191,6 +201,7 @@ export default function TransferRequestsPage() {
     assetTransfers: any[];
     transferType: string;
     receivedBy: string;
+    adminCopySignerId?: string | null;
     newAssignment: any;
   } | null>(null);
 
@@ -242,6 +253,42 @@ export default function TransferRequestsPage() {
     fetchProcessed();
     fetchDepartments();
   }, [scope]);
+
+  // Generate transfer form PDF preview when the PDF Preview tab is opened
+  useEffect(() => {
+    if (transferPdfPreviewTab !== 'pdf-preview' || !selectedBatch) return;
+    let cancelled = false;
+    const generate = async () => {
+      setTransferPdfLoading(true);
+      setTransferPdfError(null);
+      setTransferPdfUrl('');
+      if (transferPdfUrlRef.current.startsWith('blob:')) {
+        URL.revokeObjectURL(transferPdfUrlRef.current);
+      }
+      transferPdfUrlRef.current = '';
+      try {
+        const data = buildTransferDataForPDFFromBatch(selectedBatch as unknown as AssetTransferFormBatch);
+        if (!data) {
+          setTransferPdfError('Transfer form data is missing or incomplete');
+          return;
+        }
+        const blob = await generateAssetTransferPDF(data);
+        if (cancelled) return;
+        const url = URL.createObjectURL(blob);
+        transferPdfUrlRef.current = url;
+        setTransferPdfUrl(url);
+      } catch (err) {
+        if (!cancelled) {
+          console.error('Transfer PDF preview generation failed:', err);
+          setTransferPdfError('Failed to generate PDF preview. Please try again.');
+        }
+      } finally {
+        if (!cancelled) setTransferPdfLoading(false);
+      }
+    };
+    generate();
+    return () => { cancelled = true; };
+  }, [transferPdfPreviewTab, selectedBatch]);
 
   const handleView = (batch: ApprovedBatch, isReadOnly = false) => {
     setReadOnly(isReadOnly);
@@ -296,6 +343,8 @@ export default function TransferRequestsPage() {
     setVerificationTag(false);
     setVerificationCondition(false);
     setVerificationConfirmSign(false);
+    setAdminCopySignerId(null);
+    setAdminCopySignerRequired(false);
     setShowConfirmDialog(true);
   };
 
@@ -377,6 +426,8 @@ export default function TransferRequestsPage() {
         },
         transferType,
         receivedBy,
+        adminCopySignerId: adminCopySignerId ?? null,
+        adminCopyCopyType: null,
         newAssignment: {
           userId: selectedBatch.new_assigned_user_id,
           departmentId: null,
@@ -479,6 +530,8 @@ export default function TransferRequestsPage() {
             },
             transferType: params.transferType,
             receivedBy: params.receivedBy,
+            adminCopySignerId: params.adminCopySignerId ?? null,
+            adminCopyCopyType: null,
             newAssignment: params.newAssignment,
             checklists: pendingTransferChecklistsRef.current,
           }
@@ -1192,19 +1245,35 @@ export default function TransferRequestsPage() {
                   </div>
                 </div>
 
-                <div className="rounded-xl border border-slate-200 bg-white p-5 shadow-sm">
-                  <Label className="text-sm font-semibold text-slate-800 tracking-tight uppercase flex items-center gap-2">
-                    <Package className="h-4 w-4 text-red-500" />
-                    Tangible Asset ({(selectedBatch.returns || []).length})
-                  </Label>
-                </div>
+                <Tabs
+                  value={transferPdfPreviewTab}
+                  onValueChange={v => setTransferPdfPreviewTab(v as 'assets' | 'pdf-preview')}
+                  className="w-full"
+                >
+                  <TabsList className={segmentTabsListClassName + ' grid grid-cols-2 w-full'}>
+                    <TabsTrigger value="assets" className={segmentTabsTriggerClassName}>
+                      Assets
+                      <Badge variant="secondary" className="ml-1 text-xs">{(selectedBatch.returns || []).length}</Badge>
+                    </TabsTrigger>
+                    <TabsTrigger value="pdf-preview" className={segmentTabsTriggerClassName}>
+                      PDF Preview
+                    </TabsTrigger>
+                  </TabsList>
+
+                  <TabsContent value="assets" className="space-y-4">
+                    <div className="rounded-xl border border-slate-200 bg-white p-5 shadow-sm">
+                      <Label className="text-sm font-semibold text-slate-800 tracking-tight uppercase flex items-center gap-2">
+                        <Package className="h-4 w-4 text-red-500" />
+                        Tangible Asset ({(selectedBatch.returns || []).length})
+                      </Label>
+                    </div>
 
 
-                        {(selectedBatch.returns || []).map(r => (
-                          <div
-                            key={r.assignment_id}
-                            className="rounded-xl border border-slate-200 bg-white p-5 shadow-sm space-y-4"
-                          >
+                    {(selectedBatch.returns || []).map(r => (
+                      <div
+                        key={r.assignment_id}
+                        className="rounded-xl border border-slate-200 bg-white p-5 shadow-sm space-y-4"
+                      >
                             <div className="flex items-center gap-3">
                               <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-slate-100">
                                 <Package className="h-5 w-5 text-slate-600" />
@@ -1351,6 +1420,67 @@ export default function TransferRequestsPage() {
                             </div>
                           </div>
                         ))}
+
+                    </TabsContent>
+
+                    <TabsContent value="pdf-preview" className="space-y-4">
+                      <div className="rounded-xl border border-slate-200 bg-white p-5 shadow-sm">
+                        <h3 className="text-sm font-semibold text-slate-800 tracking-tight uppercase flex items-center gap-2 mb-3">
+                          <FileText className="h-4 w-4 text-red-500" />
+                          Asset Transfer Form — PDF Preview
+                        </h3>
+                        <div className="w-full flex-1 min-h-0 border rounded-lg overflow-hidden bg-gray-50">
+                          {transferPdfError && !transferPdfLoading && !transferPdfUrl ? (
+                            <div className="w-full h-full min-h-[200px] flex items-center justify-center text-red-500">
+                              {transferPdfError}
+                            </div>
+                          ) : (
+                            <div className="relative w-full h-full min-h-[200px]">
+                              {(transferPdfLoading || !transferPdfUrl) && (
+                                <div className="absolute inset-0 z-10 flex items-center justify-center bg-white/80">
+                                  <div className="flex flex-col items-center gap-3 text-gray-500">
+                                    <div className="h-10 w-10 animate-spin rounded-full border-4 border-gray-200 border-t-blue-600" />
+                                    <p className="text-sm">Loading PDF preview...</p>
+                                  </div>
+                                </div>
+                              )}
+                              {transferPdfUrl && (
+                                <iframe
+                                  src={transferPdfUrl}
+                                  className="w-full h-full min-h-0"
+                                  title="Transfer Form PDF Preview"
+                                  style={{ width: '100%', height: '100%', border: 'none', display: 'block' }}
+                                />
+                              )}
+                            </div>
+                          )}
+                        </div>
+                      </div>
+                      {transferPdfUrl && (
+                        <div className="flex justify-end">
+                          <Button
+                            size="sm"
+                            variant="outline"
+                            onClick={() => {
+                              if (!selectedBatch) return;
+                              const data = buildTransferDataForPDFFromBatch(selectedBatch as unknown as AssetTransferFormBatch);
+                              if (!data) { toast.error('Cannot generate PDF for download'); return; }
+                              generateAssetTransferPDF(data).then(blob => {
+                                const fileName = selectedBatch.form_number
+                                  ? `Asset_Transfer_Form_${selectedBatch.form_number}_${Date.now()}.pdf`
+                                  : `Asset_Transfer_Form_${Date.now()}.pdf`;
+                                downloadPDF(blob, fileName);
+                                toast.success('Transfer form downloaded successfully');
+                              }).catch(() => toast.error('Failed to download PDF'));
+                            }}
+                          >
+                            <Download className="h-4 w-4 mr-2" />
+                            Download PDF
+                          </Button>
+                        </div>
+                      )}
+                    </TabsContent>
+                  </Tabs>
                       
 
                 <div className="rounded-xl border border-slate-200 bg-white p-5 shadow-sm space-y-4">
@@ -1396,6 +1526,24 @@ export default function TransferRequestsPage() {
                     placeholder="Position or role"
                   />
                 </div>
+
+                {!readOnly && (
+                  <AdminCopySignerSelect
+                    key={selectedBatch.formID}
+                    assets={(selectedBatch.returns || []).map(r => ({
+                      id: r.assignment?.asset?.id || r.assignment_id,
+                      code: r.assignment?.asset?.code || '',
+                      name: r.assignment?.asset?.name || '',
+                      type: r.assignment?.asset?.type_name || '',
+                      category: r.assignment?.asset?.category_name || '',
+                    }))}
+                    actorUserId={currentUser?.id ?? ''}
+                    onChange={(signerId, requiresSigner) => {
+                      setAdminCopySignerId(signerId);
+                      setAdminCopySignerRequired(requiresSigner);
+                    }}
+                  />
+                )}
 
                 {!readOnly && (
                   <div className="rounded-xl border border-slate-200 bg-white p-5 shadow-sm space-y-4">
@@ -1525,6 +1673,7 @@ export default function TransferRequestsPage() {
                       assetTransfers,
                       transferType,
                       receivedBy,
+                      adminCopySignerId,
                       newAssignment,
                     };
                     setChecklistAssets(computerReturns);
@@ -1547,6 +1696,8 @@ export default function TransferRequestsPage() {
                           },
                           transferType,
                           receivedBy,
+                          adminCopySignerId: adminCopySignerId ?? null,
+                          adminCopyCopyType: null,
                           newAssignment,
                             }
                       );
@@ -1584,6 +1735,7 @@ export default function TransferRequestsPage() {
                   transferring ||
                   !receivedBy ||
                   (!transferTypeTransfer && !transferTypeOffboarding) ||
+                  (!adminCopySignerRequired || !adminCopySignerId) ||
                   !verificationTag ||
                   !verificationCondition ||
                   !verificationConfirmSign ||

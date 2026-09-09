@@ -22,13 +22,6 @@ import { Checkbox } from '@/components/ui/checkbox';
 import { Switch } from '@/components/ui/switch';
 import { api } from '@/lib/api';
 import { toast } from 'sonner';
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from '@/components/ui/select';
 import SmsOtpDialog from '@/components/auth/SmsOtpDialog';
 import { useCurrentUser } from '@/hooks/useCurrentUser';
 
@@ -109,7 +102,6 @@ export function ConfirmationModal({
 }: ConfirmationModalProps) {
   const { user } = useCurrentUser();
   const [signAsIssuer, setSignAsIssuer] = useState(true);
-  const [adminCopySignerId, setAdminCopySignerId] = useState('');
   const [tempAccountability, setTempAccountability] = useState(false);
   const [approverOptions, setApproverOptions] = useState<{
     approver: ApproverOption | null;
@@ -234,13 +226,14 @@ export function ConfirmationModal({
     };
   }, [isOpen, user?.id]);
 
-  // Confirm allowed when: signing as issuer, copy scope handled (either no
-  // copy scope, or a signer has been selected), not currently assigning.
-  const hasCopySigner =
-    !hasCopyScope ||
-    (adminCopySignerId !== '' &&
-      (adminCopySignerId === '__approver__' ||
-        adminCopySignerId === '__sub_approver__'));
+  // Both designated approver and sub-approver of the issuer are notified
+  // for the IT/Admin copy (first to sign wins). A single designated signer
+  // is notified alone. The stored primary id is a legacy fallback only.
+  const primarySignerId =
+    approverOptions.approver?.user_id ??
+    approverOptions.subApprover?.user_id ??
+    null;
+  const hasCopySigner = !hasCopyScope || primarySignerId !== null;
   const canConfirmAssignment = signAsIssuer && hasCopySigner && !assigning;
 
   // OTP verification state
@@ -252,20 +245,20 @@ export function ConfirmationModal({
       return;
     }
     setSignAsIssuer(true);
-    setAdminCopySignerId('');
     setTempAccountability(false);
   }, [isOpen]);
 
-  const resolveSignerId = (): string | null => {
-    if (!hasCopyScope) return null;
-    if (adminCopySignerId === '__approver__') {
-      return approverOptions.approver?.user_id ?? null;
-    }
-    if (adminCopySignerId === '__sub_approver__') {
-      return approverOptions.subApprover?.user_id ?? null;
-    }
-    return null;
-  };
+  const signerNames: string[] = [];
+  if (approverOptions.approver) {
+    signerNames.push(
+      `Approver: ${approverOptions.approver.first_name} ${approverOptions.approver.last_name}`
+    );
+  }
+  if (approverOptions.subApprover) {
+    signerNames.push(
+      `Sub-approver: ${approverOptions.subApprover.first_name} ${approverOptions.subApprover.last_name}`
+    );
+  }
 
   return (
     <>
@@ -392,7 +385,7 @@ export function ConfirmationModal({
               </div>
             </div>
 
-            {/* IT/Admin Copy Signer Selection (replaces the old checkbox) */}
+            {/* IT/Admin Copy Signer Notification (both approver and sub-approver are notified; first to sign wins) */}
             <div className="p-4 bg-blue-50 rounded-lg border border-blue-200">
               <div className="space-y-2">
                 <label className="text-sm font-medium text-gray-900">
@@ -409,44 +402,36 @@ export function ConfirmationModal({
                 ) : !approverOptions.approver && !approverOptions.subApprover ? (
                   <div className="space-y-1">
                     <p className="text-xs font-medium text-red-600">
-                      No designated approver or sub-approver found for your account (issuer). Please assign one before continuing.
+                      No approver or sub-approver found for your account. Please contact your system administrator.
                     </p>
                   </div>
                 ) : (
-                  <Select
-                    value={adminCopySignerId}
-                    onValueChange={setAdminCopySignerId}
-                  >
-                    <SelectTrigger className="w-full bg-white">
-                      <SelectValue placeholder="Select a signer…" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {approverOptions.approver && (
-                        <SelectItem value="__approver__">
-                          Approver: {approverOptions.approver.first_name}{' '}
-                          {approverOptions.approver.last_name}
-                        </SelectItem>
-                      )}
-                      {approverOptions.subApprover && (
-                        <SelectItem value="__sub_approver__">
-                          Sub-approver:{' '}
-                          {approverOptions.subApprover.first_name}{' '}
-                          {approverOptions.subApprover.last_name}
-                        </SelectItem>
-                      )}
-                    </SelectContent>
-                  </Select>
-                )}
-                {hasCopyScope && (
                   <p className="text-xs text-gray-600">
-                    The selected approver/sub-approver will sign the
-                    {' '}
-                    {copyType === 'IT'
-                      ? 'IT'
-                      : copyType === 'Admin'
-                        ? 'Admin'
-                        : ''}{' '}
-                    copy. The form will then be routed to the new asset owner's approver/sub-approver for final approval before being issued to the owner.
+                    {signerNames.length > 1 ? (
+                      <>
+                        {signerNames.join(' and ')} will both be notified to
+                        sign the{' '}
+                        {copyType === 'IT'
+                          ? 'IT'
+                          : copyType === 'Admin'
+                            ? 'Admin'
+                            : ''}{' '}
+                        copy. Whoever signs first completes this step, and it
+                        will be removed from the other. The form will then be
+                        routed to the new asset owner.
+                      </>
+                    ) : (
+                      <>
+                        {signerNames[0]} will be notified to sign the{' '}
+                        {copyType === 'IT'
+                          ? 'IT'
+                          : copyType === 'Admin'
+                            ? 'Admin'
+                            : ''}{' '}
+                        copy. The form will then be routed to the new asset
+                        owner.
+                      </>
+                    )}
                   </p>
                 )}
               </div>
@@ -485,7 +470,7 @@ export function ConfirmationModal({
             <Button
               onClick={async () => {
                 pendingActionRef.current = async () => {
-                  await onConfirm(signAsIssuer, resolveSignerId(), tempAccountability);
+                  await onConfirm(signAsIssuer, primarySignerId, tempAccountability);
                 };
 
                 // Close confirmation modal and show OTP dialog

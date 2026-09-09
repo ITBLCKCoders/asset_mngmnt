@@ -1020,6 +1020,11 @@ export async function createAssetTransferHandler(
         user: { userID: processorId },
         body: {
           assets: mergedAssets,
+          // Persist the new assignments so the movement diagram can attribute
+          // future returns/transfers to this form exactly.
+          assignmentIds: deptAssetsRows
+            .map((row: any) => row.assignmentID)
+            .filter(Boolean),
           userId: newUserId,
           departmentId: deptInfo.departmentId || newDeptId,
           locationId: newLocId,
@@ -3132,6 +3137,7 @@ export async function runTransferFormExecution(
     if (categoryIds.length > 0) {
       const [rows] = (await pool.execute(
         `SELECT a.assetID, a.asset_code, a.name, a.serial, a.model, a.brand,
+                  aa.assignmentID,
                   ac.name as category_name, at.name as type_name, d.name as department_name, d.departmentID as department_id
            FROM asset_assignments aa
            JOIN assets a ON aa.asset_id = a.assetID
@@ -3148,6 +3154,7 @@ export async function runTransferFormExecution(
       const assetPlaceholders = deptInfo.assetIds.map(() => '?').join(',');
       const [rows] = (await pool.execute(
         `SELECT a.assetID, a.asset_code, a.name, a.serial, a.model, a.brand,
+                  aa.assignmentID,
                   ac.name as category_name, at.name as type_name, d.name as department_name, d.departmentID as department_id
            FROM asset_assignments aa
            JOIN assets a ON aa.asset_id = a.assetID
@@ -3186,6 +3193,16 @@ export async function runTransferFormExecution(
 
     const mergedAssets = [...departmentAssets];
     const seenIds = new Set(departmentAssets.map((a: any) => String(a.id)));
+    // New active assignment ids for the merged asset set — stored on the
+    // reissued form so the movement diagram can attribute future
+    // returns/transfers to this form exactly.
+    const mergedAssignmentIds = [
+      ...new Set(
+        deptAssetsRows
+          .map((row: any) => String(row.assignmentID ?? '').trim())
+          .filter(Boolean)
+      ),
+    ];
 
     for (const formRow of existingForms) {
       await pool.execute(
@@ -3240,6 +3257,9 @@ export async function runTransferFormExecution(
       user: { userID: processorId },
       body: {
         assets: mergedAssets,
+        // Persist the new assignments so the movement diagram can attribute
+        // future returns/transfers to this form exactly.
+        assignmentIds: mergedAssignmentIds,
         userId: newUserId,
         departmentId: deptInfo.departmentId || newDeptId,
         locationId: newLocId,

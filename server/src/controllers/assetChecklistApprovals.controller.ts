@@ -148,7 +148,7 @@ export async function approveChecklistsDeptHeadHandler(
     const [employeeRows] = (await pool.execute(
       `SELECT DISTINCT employee_id
        FROM asset_checklists
-       WHERE id IN (${placeholders}) AND deleted_at IS NULL`,
+       WHERE id IN (${placeholders})`,
       checklistIds
     )) as [{ employee_id: string }[], unknown];
     const employeeIds = employeeRows
@@ -227,6 +227,10 @@ export async function approveChecklistsDeptHeadHandler(
       companyId,
       digitalSignature,
       isSubApprover,
+      // employeeIds were authorization-checked above (admin scope or designated
+      // approver/sub per employee); scope the write to them instead of the
+      // approver's department, which may differ from the requester's.
+      employeeIds,
     });
 
     if (approvedCount === 0) {

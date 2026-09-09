@@ -171,14 +171,31 @@ export default function ApprovalsPage() {
   const displayApprovedLoading = approvedLoading;
   const displayReceiveLoading = receiveLoading;
 
-  // ---------- Tabs ----------
-  const [searchParams] = useSearchParams();
-  const [activeTab, setActiveTab] = useState(() => {
-    const tab = searchParams.get('tab');
-    return tab && (APPROVAL_TABS as readonly string[]).includes(tab)
-      ? tab
-      : 'for-approval';
-  });
+  // ---------- Tabs (two-way synced with ?tab= so Back/Forward works) ----------
+  const [searchParams, setSearchParams] = useSearchParams();
+  const [activeTab, setActiveTab] = useState<(typeof APPROVAL_TABS)[number]>(
+    () => {
+      const tab = searchParams.get('tab');
+      return tab && (APPROVAL_TABS as readonly string[]).includes(tab)
+        ? (tab as (typeof APPROVAL_TABS)[number])
+        : 'for-approval';
+    }
+  );
+
+  // Push tab changes into the URL (history push, not replace) so the
+  // browser Back button steps back through previously viewed tabs. Radix
+  // only fires onValueChange when the value actually changes, so no
+  // duplicate history entries are created.
+  const handleTabChange = (value: string) => {
+    if (!(APPROVAL_TABS as readonly string[]).includes(value)) return;
+    const next = value as (typeof APPROVAL_TABS)[number];
+    setActiveTab(next);
+    setSearchParams(prev => {
+      const params = new URLSearchParams(prev);
+      params.set('tab', next);
+      return params;
+    });
+  };
 
   // ---------- Search (per-tab) ----------
   const [searchQuery, setSearchQuery] = useState('');
@@ -249,11 +266,25 @@ export default function ApprovalsPage() {
     roleCustodian?.subApprover2 === true;
 
   // ---------- Tab deep-linking (?tab= query param) ----------
-  // Sync activeTab with ?tab= query, honoring receive-tab permission.
+  // Applies the URL param on deep-link and on Back/Forward navigation,
+  // honoring receive-tab permission. User clicks write through to the URL
+  // via handleTabChange, so state and URL converge (equality-guarded) and
+  // this effect never snaps a manually selected tab back to a stale param.
   const tabParam = searchParams.get('tab');
   useEffect(() => {
-    if (!permissionsLoading && !canReceive && activeTab === 'receive') {
-      setActiveTab('for-approval');
+    if (permissionsLoading) return;
+    if (!canReceive && (tabParam === 'receive' || activeTab === 'receive')) {
+      if (activeTab !== 'for-approval') setActiveTab('for-approval');
+      if (tabParam === 'receive') {
+        setSearchParams(
+          prev => {
+            const params = new URLSearchParams(prev);
+            params.set('tab', 'for-approval');
+            return params;
+          },
+          { replace: true }
+        );
+      }
       return;
     }
     if (
@@ -262,9 +293,9 @@ export default function ApprovalsPage() {
       (APPROVAL_TABS as readonly string[]).includes(tabParam) &&
       (tabParam !== 'receive' || canReceive)
     ) {
-      setActiveTab(tabParam);
+      setActiveTab(tabParam as (typeof APPROVAL_TABS)[number]);
     }
-  }, [tabParam, activeTab, canReceive, permissionsLoading]);
+  }, [tabParam, activeTab, canReceive, permissionsLoading, setSearchParams]);
 
   // ---------- Fetch ----------
   const fetchPendingApprovals = async () => {
@@ -1489,7 +1520,7 @@ export default function ApprovalsPage() {
         </PageHeader>
 
         {/* ───── Tabs ───── */}
-        <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
+        <Tabs value={activeTab} onValueChange={handleTabChange} className="w-full">
           <TabsList
             className={`grid ${canReceive ? 'grid-cols-3' : 'grid-cols-2'} w-full h-14 rounded-xl bg-white shadow-sm border`}
           >

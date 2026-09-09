@@ -251,6 +251,8 @@ export interface AssetDetailsRow extends RowDataPacket {
   type_name: string | null;
   department_name: string | null;
   department_id: string | null;
+  /** Assignment id (from asset_assignments), when selected by the query. */
+  assignmentID?: string;
 }
 
 export async function getAssetDetailsByIds(
@@ -279,6 +281,7 @@ export async function getAssetAssignmentDetailsByUserIdAndCategoryIds(
   const placeholders = categoryIds.map(() => '?').join(',');
   const [rows] = await pool.execute<AssetDetailsRow[]>(
     `SELECT a.assetID, a.asset_code, a.name, a.serial, a.model, a.brand,
+            aa.assignmentID,
             ac.name as category_name, at.name as type_name, d.name as department_name, d.departmentID as department_id
      FROM asset_assignments aa
      JOIN assets a ON aa.asset_id = a.assetID
@@ -301,6 +304,7 @@ export async function getAssetAssignmentDetailsByUserIdAndAssetIds(
   const placeholders = assetIds.map(() => '?').join(',');
   const [rows] = await pool.execute<AssetDetailsRow[]>(
     `SELECT a.assetID, a.asset_code, a.name, a.serial, a.model, a.brand,
+            aa.assignmentID,
             ac.name as category_name, at.name as type_name, d.name as department_name, d.departmentID as department_id
      FROM asset_assignments aa
      JOIN assets a ON aa.asset_id = a.assetID

@@ -1,6 +1,6 @@
-import { render, screen, waitFor, fireEvent } from '@testing-library/react';
+import { render, screen, waitFor, fireEvent, act } from '@testing-library/react';
 import { vi, describe, it, expect, beforeEach } from 'vitest';
-import { MemoryRouter } from 'react-router-dom';
+import { MemoryRouter, useLocation, useNavigate } from 'react-router-dom';
 import { api } from '@/lib/api';
 import ApprovalsPage from '@/pages/approvals/ApprovalsPage';
 
@@ -276,6 +276,75 @@ describe('ApprovalsPage', () => {
     fireEvent.click(screen.getByRole('button', { name: /previous/i }));
     await waitFor(() => {
       expect(screen.getAllByText(/^RET-\d+$/)).toHaveLength(6);
+    });
+  });
+
+  it('should keep a manually selected tab active when ?tab= is present and sync the URL', async () => {
+    mockPermissions.roleCustodian = { managerApprover2: true };
+    (api.get as any).mockResolvedValue({});
+    let currentSearch = '';
+    function SearchProbe() {
+      const location = useLocation();
+      currentSearch = location.search;
+      return null;
+    }
+    render(
+      <MemoryRouter initialEntries={['/approvals?tab=receive']}>
+        <SearchProbe />
+        <ApprovalsPage />
+      </MemoryRouter>
+    );
+    await waitFor(() => {
+      expect(
+        screen.getByRole('tab', { name: /receive approve/i }).getAttribute('data-state')
+      ).toBe('active');
+    });
+    const approvedTabTrigger = screen.getByRole('tab', { name: /approved/i });
+    fireEvent.mouseDown(approvedTabTrigger);
+    fireEvent.click(approvedTabTrigger);
+    // Must stay on Approved (no snap-back to the stale ?tab=receive param)
+    // and the URL must follow the selection.
+    await waitFor(() => {
+      expect(
+        screen.getByRole('tab', { name: /approved/i }).getAttribute('data-state')
+      ).toBe('active');
+    });
+    expect(
+      screen.getByRole('tab', { name: /receive approve/i }).getAttribute('data-state')
+    ).not.toBe('active');
+    expect(currentSearch).toContain('tab=approved');
+  });
+
+  it('should follow back-navigation tab changes via the URL', async () => {
+    mockPermissions.roleCustodian = { managerApprover2: true };
+    (api.get as any).mockResolvedValue({});
+    let goBack: () => void = () => {};
+    function NavProbe() {
+      const navigate = useNavigate();
+      goBack = () => navigate(-1);
+      return null;
+    }
+    render(
+      <MemoryRouter
+        initialEntries={['/approvals?tab=for-approval', '/approvals?tab=approved']}
+        initialIndex={1}
+      >
+        <NavProbe />
+        <ApprovalsPage />
+      </MemoryRouter>
+    );
+    await waitFor(() => {
+      expect(
+        screen.getByRole('tab', { name: /approved/i }).getAttribute('data-state')
+      ).toBe('active');
+    });
+    act(() => {
+      goBack();
+    });
+    await waitFor(() => {
+      expect(
+        screen.getByRole('tab', { name: /for approval/i }).getAttribute('data-state')
+      ).toBe('active');
     });
   });
 });

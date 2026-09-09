@@ -1203,8 +1203,11 @@ export const ReturnFormCard: React.FC<{
                 </p>
                 {batch.returns.length > 0 && (
                   <ul className="max-h-[120px] overflow-y-auto scrollbar-hide text-xs text-gray-600 mt-1 space-y-0.5 list-none">
-                    {batch.returns.map(r => (
-                      <li key={r.return_id} className="flex items-center">
+                    {batch.returns.map((r, i) => (
+                      <li
+                        key={r.return_id ?? `${r.assignment_id}-${i}`}
+                        className="flex items-center"
+                      >
                         <span className="w-1.5 h-1.5 bg-gray-400 rounded-full mr-2 flex-shrink-0" />
                         <span className="truncate">
                           {r.assignment?.asset?.name ??
@@ -1805,8 +1808,11 @@ export const TransferFormCard: React.FC<{
                 </p>
                 {batch.returns.length > 0 && (
                   <ul className="max-h-[120px] overflow-y-auto scrollbar-hide text-xs text-gray-600 mt-1 space-y-0.5 list-none">
-                    {batch.returns.map(r => (
-                      <li key={r.return_id} className="flex items-center">
+                    {batch.returns.map((r, i) => (
+                      <li
+                        key={r.return_id ?? `${r.assignment_id}-${i}`}
+                        className="flex items-center"
+                      >
                         <span className="w-1.5 h-1.5 bg-gray-400 rounded-full mr-2 flex-shrink-0" />
                         <span className="truncate">
                           {r.assignment?.asset?.name ??

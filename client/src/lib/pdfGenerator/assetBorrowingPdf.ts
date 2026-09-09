@@ -2,14 +2,15 @@ import { jsPDF } from 'jspdf';
 import {
   addCompanyLogoToPDF,
   autoTable,
+  computeSignatureFitSize,
   cropSignatureToInk,
   getCompanyAccentColor,
   getBlackCodersFooterGradient,
   isBlackCoders,
   resolveCompanyBranding,
   sortAssetsByLast5Digits,
-  PDF_SIGNATURE_FILL_RATIO,
   PDF_SIGNATURE_NUDGE_X_MM,
+  PDF_SIGNATURE_PX_TO_MM,
 } from './shared';
 
 export interface AssetBorrowingData {
@@ -413,14 +414,14 @@ export const generateAssetBorrowingPDF = async (
 
       if (data.column.index === 0 && sigImg) {
         // Draw signature image centered in the cell
-        // Uniform size: scale the signature to a fixed fraction of the cell width
-        const aspectRatio = sigImg.width / sigImg.height || 1;
-        let sigW = (cell.width - 6) * PDF_SIGNATURE_FILL_RATIO;
-        let sigH = sigW / aspectRatio;
-        if (sigH > 35) {
-          sigH = 35;
-          sigW = sigH * aspectRatio;
-        }
+        // Uniform size: aspect-fit inside the shared standard signature box
+        const fit = computeSignatureFitSize(
+          sigImg.width * PDF_SIGNATURE_PX_TO_MM,
+          sigImg.height * PDF_SIGNATURE_PX_TO_MM,
+          { cellWidthMm: cell.width }
+        );
+        const sigW = fit.width;
+        const sigH = fit.height;
         // Uniform position: center the signature horizontally within the cell
         const sigX = cell.x + (cell.width - sigW) / 2 + PDF_SIGNATURE_NUDGE_X_MM;
         const sigY = cell.y + 12;
@@ -461,14 +462,14 @@ export const generateAssetBorrowingPDF = async (
         let sigY = cell.y + 5;
         let sigH = 0;
         if (deptHeadSigImg) {
-          // Uniform size: scale the signature to a fixed fraction of the cell width
-          const aspectRatio = deptHeadSigImg.width / deptHeadSigImg.height || 1;
-          let sigW = (cell.width - 6) * PDF_SIGNATURE_FILL_RATIO;
-          sigH = sigW / aspectRatio;
-          if (sigH > 35) {
-            sigH = 35;
-            sigW = sigH * aspectRatio;
-          }
+          // Uniform size: aspect-fit inside the shared standard signature box
+          const fit = computeSignatureFitSize(
+            deptHeadSigImg.width * PDF_SIGNATURE_PX_TO_MM,
+            deptHeadSigImg.height * PDF_SIGNATURE_PX_TO_MM,
+            { cellWidthMm: cell.width }
+          );
+          const sigW = fit.width;
+          sigH = fit.height;
           // Uniform position: center the signature horizontally within the cell
           const sigX = cell.x + (cell.width - sigW) / 2 + PDF_SIGNATURE_NUDGE_X_MM;
 
@@ -523,14 +524,14 @@ export const generateAssetBorrowingPDF = async (
         let sigY = cell.y + 5;
         let sigH = 0;
         if (itReceivedSigImg) {
-          // Uniform size: scale the signature to a fixed fraction of the cell width
-          const aspectRatio = itReceivedSigImg.width / itReceivedSigImg.height || 1;
-          let sigW = (cell.width - 6) * PDF_SIGNATURE_FILL_RATIO;
-          sigH = sigW / aspectRatio;
-          if (sigH > 35) {
-            sigH = 35;
-            sigW = sigH * aspectRatio;
-          }
+          // Uniform size: aspect-fit inside the shared standard signature box
+          const fit = computeSignatureFitSize(
+            itReceivedSigImg.width * PDF_SIGNATURE_PX_TO_MM,
+            itReceivedSigImg.height * PDF_SIGNATURE_PX_TO_MM,
+            { cellWidthMm: cell.width }
+          );
+          const sigW = fit.width;
+          sigH = fit.height;
           // Uniform position: center the signature horizontally within the cell
           const sigX = cell.x + (cell.width - sigW) / 2 + PDF_SIGNATURE_NUDGE_X_MM;
 
@@ -580,14 +581,14 @@ export const generateAssetBorrowingPDF = async (
         let sigY = cell.y + 5;
         let sigH = 0;
         if (itApprovedSigImg) {
-          // Uniform size: scale the signature to a fixed fraction of the cell width
-          const aspectRatio = itApprovedSigImg.width / itApprovedSigImg.height || 1;
-          let sigW = (cell.width - 6) * PDF_SIGNATURE_FILL_RATIO;
-          sigH = sigW / aspectRatio;
-          if (sigH > 35) {
-            sigH = 35;
-            sigW = sigH * aspectRatio;
-          }
+          // Uniform size: aspect-fit inside the shared standard signature box
+          const fit = computeSignatureFitSize(
+            itApprovedSigImg.width * PDF_SIGNATURE_PX_TO_MM,
+            itApprovedSigImg.height * PDF_SIGNATURE_PX_TO_MM,
+            { cellWidthMm: cell.width }
+          );
+          const sigW = fit.width;
+          sigH = fit.height;
           // Uniform position: center the signature horizontally within the cell
           const sigX = cell.x + (cell.width - sigW) / 2 + PDF_SIGNATURE_NUDGE_X_MM;
 

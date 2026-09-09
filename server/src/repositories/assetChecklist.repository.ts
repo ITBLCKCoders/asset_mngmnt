@@ -601,6 +601,14 @@ export async function approveChecklistsAsDeptHead(params: {
   companyId: string;
   digitalSignature: string | null;
   isSubApprover?: boolean;
+  /**
+   * Employee IDs the caller already authorized (e.g. designated approver
+   * assignments). When provided and non-empty, the UPDATE is scoped to these
+   * employees instead of the legacy approver-department predicate, since
+   * designated approvers are assigned per-user company-wide and may sit in a
+   * different department than the requester.
+   */
+  employeeIds?: string[];
 }): Promise<number> {
   if (!(await hasDeptHeadSignColumns())) {
     const err = new Error(
@@ -617,11 +625,15 @@ export async function approveChecklistsAsDeptHead(params: {
     companyId,
     digitalSignature,
     isSubApprover = false,
+    employeeIds: rawEmployeeIds,
   } = params;
   const ids = [...new Set(checklistIds.filter(id => id?.trim()))];
   if (ids.length === 0) {
     return 0;
   }
+  const authorizedEmployeeIds = [
+    ...new Set((rawEmployeeIds ?? []).filter(id => id?.trim())),
+  ];
 
   const hasSubCols = await hasSubApproverSignColumns();
   if (isSubApprover && !hasSubCols) {
@@ -636,6 +648,17 @@ export async function approveChecklistsAsDeptHead(params: {
 
   let setClause: string;
   let exclusionClause: string;
+  let scopeClause: string;
+  let scopeValues: (string | null | number)[];
+  if (authorizedEmployeeIds.length > 0) {
+    const empPlaceholders = authorizedEmployeeIds.map(() => '?').join(',');
+    scopeClause = `AND ac.employee_id IN (${empPlaceholders})`;
+    scopeValues = [...authorizedEmployeeIds];
+  } else {
+    scopeClause = 'AND emp.department_id <=> ?';
+    scopeValues = [approverDepartmentId];
+  }
+
   let values: (string | null | number)[];
 
   if (isSubApprover) {
@@ -649,7 +672,7 @@ export async function approveChecklistsAsDeptHead(params: {
       approverUserId,
       digitalSignature,
       ...ids,
-      approverDepartmentId,
+      ...scopeValues,
       companyId,
     ];
   } else {
@@ -663,7 +686,7 @@ export async function approveChecklistsAsDeptHead(params: {
       approverUserId,
       digitalSignature,
       ...ids,
-      approverDepartmentId,
+      ...scopeValues,
       companyId,
     ];
   }
@@ -675,7 +698,7 @@ export async function approveChecklistsAsDeptHead(params: {
     WHERE ac.id IN (${placeholders})
       AND ac.employee_signed_at IS NOT NULL
       ${exclusionClause}
-      AND emp.department_id <=> ?
+      ${scopeClause}
       AND emp.company_id = ?
   `;
 

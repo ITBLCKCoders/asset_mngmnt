@@ -9,6 +9,8 @@ const {
   findFormsByAssetId,
   getActiveIntangibleAssetsByUserAndDepartment,
   listAccountabilityForms,
+  listFormsPendingApprovalForApprover,
+  listFormsPendingAdminCopySignature,
 } = require('../../repositories/accountabilityForm.repository.js');
 
 describe('accountabilityForm.repository', () => {
@@ -67,6 +69,31 @@ describe('accountabilityForm.repository', () => {
       expect(sql).not.toContain('u.company_id');
       expect(sql).not.toContain('departmentID IN');
       expect(params).toEqual([]);
+    });
+  });
+
+  describe('listFormsPendingAdminCopySignature', () => {
+    it('only lists live (Pending) forms awaiting the admin copy signature', async () => {
+      mockPool.execute.mockResolvedValue([[{ formID: 'f1' }], []]);
+      await listFormsPendingAdminCopySignature('signer1');
+      const [sql, params] = mockPool.execute.mock.calls[0];
+      expect(sql).toContain("af.approval_status = 'pending_admin_copy_signature'");
+      // Disabled/superseded forms must not appear in the copy-sign queue.
+      expect(sql).toContain("af.status = 'Pending'");
+      expect(params).toEqual(['signer1', 'signer1']);
+    });
+  });
+
+  describe('listFormsPendingApprovalForApprover', () => {
+    it('only lists live (Pending/Signed) forms awaiting final approval', async () => {
+      mockPool.execute.mockResolvedValue([[{ formID: 'f1' }], []]);
+      await listFormsPendingApprovalForApprover('approver1');
+      const [sql, params] = mockPool.execute.mock.calls[0];
+      expect(sql).toContain("af.approval_status = 'pending_approval'");
+      // A Disabled/Revoked form must not remain in the approver's queue,
+      // otherwise its pending approval flow would keep running.
+      expect(sql).toContain("af.status IN ('Pending', 'Signed')");
+      expect(params).toEqual(['approver1', 'approver1']);
     });
   });
 });

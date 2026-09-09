@@ -1,6 +1,6 @@
 'use client';
 
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   AlertTriangle,
   FileDown,
@@ -32,6 +32,25 @@ interface MermaidOrgChartProps {
 const MIN_ZOOM = 0.25;
 const MAX_ZOOM = 10;
 const ZOOM_STEP = 0.25;
+
+/**
+ * Mermaid's renderer is not concurrency-safe (shared temp DOM node +
+ * module-level render state). Multiple ChartPanels can be mounted at once
+ * (inline chart + fullscreen dialog), so renders are serialized through a
+ * promise chain. Exported for tests.
+ */
+let renderQueue: Promise<unknown> = Promise.resolve();
+
+export function renderMermaidSerialized<T>(task: () => Promise<T>): Promise<T> {
+  const run = renderQueue.then(task, task);
+  // Keep the chain alive even if a render fails; the rejection is already
+  // delivered to `run`'s caller.
+  renderQueue = run.then(
+    () => undefined,
+    () => undefined
+  );
+  return run;
+}
 
 /**
  * Lucide icon path data keyed by node class. Injected as inline SVG into each
@@ -146,8 +165,13 @@ export function matchMermaidNodeId(
   nodeIds: string[]
 ): string | undefined {
   return nodeIds.find(id =>
-    new RegExp(`(?:^|-)flowchart-${id}-\\d+$`).test(gId)
+    new RegExp(`(?:^|-)flowchart-${escapeRegExp(id)}-\\d+$`).test(gId)
   );
+}
+
+/** Escape regex metacharacters so node ids can never break the matcher. */
+function escapeRegExp(value: string): string {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 }
 
 /**
@@ -271,6 +295,21 @@ function ChartPanel({
   const [exporting, setExporting] = useState(false);
   const [exportError, setExportError] = useState<string | null>(null);
 
+  // Latest model for the delegated click handler. React re-commits
+  // dangerouslySetInnerHTML whenever the panel re-renders with a fresh
+  // { __html } object (e.g. the auto-fit zoom right after mount), which wipes
+  // listeners attached directly to <g> nodes. Delegation on the stable
+  // wrapper survives those re-commits.
+  const modelRef = useRef(model);
+  modelRef.current = model;
+
+  // Memoize so unrelated re-renders (zoom/export state) never re-commit the
+  // same innerHTML and destroy applied decorations.
+  const svgInnerHtml = useMemo(
+    () => ({ __html: svgHtml }),
+    [svgHtml]
+  );
+
   useEffect(() => {
     let cancelled = false;
     (async () => {
@@ -286,13 +325,22 @@ function ChartPanel({
         });
         const def = buildMermaidDefinition(model);
         const uid = `orgchart-${Math.random().toString(36).slice(2, 10)}`;
-        const { svg } = await mermaid.render(uid, def);
+        // Serialized: mermaid render uses shared module state and a temp DOM
+        // node, so two panels rendering concurrently corrupt each other's
+        // output (blank/undecorated SVG, dead click handlers).
+        const { svg } = await renderMermaidSerialized(() =>
+          mermaid.render(uid, def)
+        );
         if (cancelled) return;
         setSvgHtml(svg);
         setError(null);
       } catch (e) {
         if (!cancelled) {
-          console.error('Mermaid org chart render failed:', e);
+          console.error(
+            'Mermaid org chart render failed. Definition:',
+            '\n' + buildMermaidDefinition(model),
+            e
+          );
           setError('Failed to render the org chart');
         }
       }
@@ -302,22 +350,37 @@ function ChartPanel({
     };
   }, [model]);
 
+  // Decorate (icons, tooltips, rounded corners, cursor) after each new SVG.
+  // Click handling itself is delegated below and survives re-commits.
   useEffect(() => {
     const container = svgRef.current;
     if (!container || !svgHtml) return;
-    const nodeIds = Object.keys(model.actions);
     decorateSvg(container, model);
-    container
-      .querySelectorAll<SVGGElement>('g[id]')
-      .forEach(g => {
-        const matched = matchMermaidNodeId(g.id, nodeIds);
-        if (!matched) return;
-        const action = model.actions[matched];
-        if (!action) return;
-        g.style.cursor = 'pointer';
-        g.addEventListener('click', action);
-      });
   }, [svgHtml, model]);
+
+  // Delegated click handling: one listener on the scroll container, which is
+  // mounted for the panel's whole lifetime (the svg wrap div only exists
+  // after the chart loads, so it cannot be the stable target). React
+  // re-commits dangerouslySetInnerHTML on re-renders, which would wipe any
+  // listener bound directly to a <g>; this listener outlives those commits.
+  useEffect(() => {
+    const container = containerRef.current;
+    if (!container) return undefined;
+    const handleDelegatedClick = (event: Event) => {
+      const target = event.target as Element | null;
+      const g = target?.closest?.('g[id]') as SVGGElement | null;
+      if (!g) return;
+      const nodeIds = Object.keys(modelRef.current.actions);
+      const matched = matchMermaidNodeId(g.id, nodeIds);
+      if (!matched) return;
+      const action = modelRef.current.actions[matched];
+      if (action) action();
+    };
+    container.addEventListener('click', handleDelegatedClick);
+    return () => {
+      container.removeEventListener('click', handleDelegatedClick);
+    };
+  }, []);
 
   // Hover/active styling, injected once per document (scoped by class).
   useEffect(() => {
@@ -457,7 +520,7 @@ function ChartPanel({
             <div
               ref={svgRef}
               className="orgchart-svg-scope"
-              dangerouslySetInnerHTML={{ __html: svgHtml }}
+              dangerouslySetInnerHTML={svgInnerHtml}
             />
           </div>
         )}

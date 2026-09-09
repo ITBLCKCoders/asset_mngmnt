@@ -12,6 +12,7 @@ import { Menu, Search } from 'lucide-react';
 import calendarIcon from '@/assets/icons/calendar.png';
 import Sidebar from '../sidebar';
 import logo from '@/assets/Blackcoders-Black.png';
+import logoWhite from '@/assets/Blackcoders - White.png';
 import { format } from 'date-fns';
 import {
   Popover,
@@ -67,9 +68,9 @@ function ProtectedLayoutShell() {
         <div className="app-shell relative flex h-screen overflow-hidden bg-background">
         <div className="hidden md:flex items-center justify-center fixed bottom-[87vh] left-0 z-20 h-[18vh] min-h-[80px] pl-2 pt-4 w-[260px]">
           <img
-            src={logo}
+            src={theme === "dark" ? logoWhite : logo}
             alt="Blackcoders Logo"
-            className={`h-20 w-auto object-contain drop-shadow-md ${theme === "dark" ? "brightness-0 invert" : ""}`}
+            className="h-20 w-auto object-contain drop-shadow-md"
           />
         </div>
 

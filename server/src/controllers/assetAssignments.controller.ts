@@ -15,7 +15,6 @@ import { getIoInstance } from '../utils/socketManager.js';
 import { NotificationService } from '../services/notification.service.js';
 import { createAccountabilityFormHandler, kickoffApprovalFlowNotifications } from './accountabilityForms.controller.js';
 import * as repo from '../repositories/assetAssignment.repository.js';
-import * as formRepo from '../repositories/accountabilityForm.repository.js';
 import {
   buildAccountabilityFormMap,
   loadUserModulePermissions,
@@ -329,12 +328,12 @@ export async function createAssetAssignmentHandler(
 
     // ----------------------------------------------------------------
     // Recreate accountability forms (per affected department).
-    // Forms with an in-flight approval flow are never disabled: the new
-    // assets are merged into them so a single live form carries the flow.
+    // Any existing live form (including one with an in-flight approval
+    // flow) is disabled and a NEW form is created that carries all of
+    // the user's active assets for the department.
     // ----------------------------------------------------------------
     const accountabilityFormIds: string[] = [];
     const createdForms: { formId: string; formNumber: string }[] = [];
-    const mergedPendingFormIds: string[] = [];
     try {
       if (assignedAssets.length > 0) {
         const assignedAssetCodes = assignedAssets.map(a => a.code);
@@ -454,12 +453,12 @@ export async function createAssetAssignmentHandler(
 
           let disabledFormId: string | null = null;
           let previousFormOriginalStatus: string | null = null;
-          const inflightForms = existingForms.filter(f =>
-            String((f as any).approval_status ?? '').startsWith('pending')
-          );
+          // Disable ALL existing live forms for this user + department,
+          // including ones with an in-flight approval flow (pending
+          // employee/admin copy signature). A fresh form is created below;
+          // its approval flow notifies the copy signer anew.
           if (existingForms.length > 0) {
             for (const form of existingForms) {
-              if (inflightForms.some(f => f.formID === form.formID)) continue;
               previousFormOriginalStatus = form.status;
               await repo.disableAccountabilityForm(form.formID);
               disabledFormId = form.formID;
@@ -483,36 +482,6 @@ export async function createAssetAssignmentHandler(
           const departmentAssignmentIds = assignments.map(
             assignment => assignment.assignmentID
           );
-
-          const mergeTarget = inflightForms[0] ?? null;
-          if (mergeTarget) {
-            // Adopt the in-flight form: merge assets, keep its number/signer/
-            // approval flow (its signer was already notified when created).
-            try {
-              const merged = await formRepo.mergeAssetsIntoFormAssetsData(
-                mergeTarget.formID,
-                departmentAssets,
-                departmentAssignmentIds
-              );
-              mergedPendingFormIds.push(mergeTarget.formID);
-              logger.info(
-                `Merged ${departmentAssets.length} asset(s) into in-flight form ${mergeTarget.formID} for department ${deptName} (${merged.assetCount} total)`
-              );
-              await createAuditLog({
-                userId: assignedBy,
-                action: 'Merged Assets Into In-Flight Accountability Form',
-                resourceType: 'accountability_form',
-                resourceId: mergeTarget.formID,
-                resourceName: mergeTarget.form_number,
-                details: `Merged ${departmentAssets.length} newly assigned asset(s) into in-flight form due to new asset assignment`,
-                oldValues: null,
-                newValues: { assetCount: merged.assetCount },
-                ...reqAudit(req),
-              });
-            } catch (mergeErr) {
-              logger.error('Failed to merge assets into in-flight form:', mergeErr);
-            }
-          } else {
 
           logger.info(
             `Creating new accountability form for ${formType} department (${deptName}) with ${departmentAssets.length} assets`
@@ -560,7 +529,6 @@ export async function createAssetAssignmentHandler(
               formNumber: createdBody?.form?.form_number ?? '',
             });
           }
-          } // end adopt-or-create else
         }
       }
     } catch (formError) {
@@ -591,7 +559,7 @@ export async function createAssetAssignmentHandler(
     const hasPendingApprovalFlow =
       [...createdFormStatuses.values()].some(
         status => !!status && status !== 'approved'
-      ) || mergedPendingFormIds.length > 0;
+      );
 
     // ----------------------------------------------------------------
     // Hide new assignments while the IT/Admin copy approval flow runs.
@@ -710,62 +678,60 @@ export async function createAssetAssignmentHandler(
 
     // ----------------------------------------------------------------
     // Notify the assignee about the new assignment.
-    // Deferred while the IT/Admin copy approval flow runs: the owner is
-    // notified with both "assigned" + "accountability issued" once the
-    // form is finally approved (see approveAccountabilityFormHandler and
-    // the combined-approval branch of signAdminCopyHandler).
+    // Skipped while the IT/Admin copy approval flow is still running: the
+    // owner receives the assignment notice when the IT/Admin copy has been
+    // signed and it is their turn to sign (signAdminCopyHandler ->
+    // notifyOwnerAssignmentAndAccountability), so they are never told an
+    // asset is "assigned" before the IT/Admin copy signature stage is done.
     // ----------------------------------------------------------------
-    if (hasPendingApprovalFlow) {
-      logger.info(
-        'Skipping immediate "assigned" notification; approval flow in progress'
-      );
-    } else
-    try {
-      const assignerName = await repo.getUserFullName(assignedBy);
-      const assetCodesList = assetsToAssign.join(', ');
-      const truncatedCodes =
-        assetCodesList.length > 50
-          ? assetCodesList.substring(0, 47) + '...'
-          : assetCodesList;
+    if (!hasPendingApprovalFlow) {
+      try {
+        const assignerName = await repo.getUserFullName(assignedBy);
+        const assetCodesList = assetsToAssign.join(', ');
+        const truncatedCodes =
+          assetCodesList.length > 50
+            ? assetCodesList.substring(0, 47) + '...'
+            : assetCodesList;
 
-      await NotificationService.createNotification(
-        {
-          user_id: userId,
+        await NotificationService.createNotification(
+          {
+            user_id: userId,
+            title: 'New asset is assigned to You',
+            message: `by ${assignerName}. Assets: ${truncatedCodes}`,
+            type: 'asset_assignment',
+            status: 'unread',
+            data: JSON.stringify({
+              description: `by ${assignerName}. Assets: ${truncatedCodes}`,
+              route: '/my-assets',
+              actionTarget: 'my_assets',
+              assignedBy: assignerName,
+              timestamp: new Date().toISOString(),
+            }),
+          },
+          assignedBy,
+          req.ip,
+          req.get('User-Agent')
+        );
+
+        const notificationData = {
           title: 'New asset is assigned to You',
-          message: `by ${assignerName}. Assets: ${truncatedCodes}`,
-          type: 'asset_assignment',
-          status: 'unread',
-          data: JSON.stringify({
-            description: `by ${assignerName}. Assets: ${truncatedCodes}`,
-            route: '/my-assets',
-            actionTarget: 'my_assets',
-            assignedBy: assignerName,
-            timestamp: new Date().toISOString(),
-          }),
-        },
-        assignedBy,
-        req.ip,
-        req.get('User-Agent')
-      );
+          description: `by ${assignerName}. Assets: ${truncatedCodes}`,
+          type: 'asset_assigned',
+          route: '/my-assets',
+          actionTarget: 'my_assets',
+          assignedBy: assignerName,
+          timestamp: new Date().toISOString(),
+        };
 
-      const notificationData = {
-        title: 'New asset is assigned to You',
-        description: `by ${assignerName}. Assets: ${truncatedCodes}`,
-        type: 'asset_assigned',
-        route: '/my-assets',
-        actionTarget: 'my_assets',
-        assignedBy: assignerName,
-        timestamp: new Date().toISOString(),
-      };
-
-      const io = getIoInstance();
-      if (!io) {
-        logger.error('[NOTIFICATION] Socket.IO instance not available');
-      } else {
-        emitNotification(io, userId, 'notification', notificationData);
+        const io = getIoInstance();
+        if (!io) {
+          logger.error('[NOTIFICATION] Socket.IO instance not available');
+        } else {
+          emitNotification(io, userId, 'notification', notificationData);
+        }
+      } catch (socketError) {
+        logger.error('Failed to send WebSocket notification:', socketError);
       }
-    } catch (socketError) {
-      logger.error('Failed to send WebSocket notification:', socketError);
     }
 
     return res.status(201).json({

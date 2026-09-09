@@ -26,6 +26,7 @@ import {
   AppAlertDialogMessage,
 } from '@/components/common/appDialogChrome';
 import SignatureCanvas from 'react-signature-canvas';
+import { captureSignatureFromPad } from '@/lib/signatureCapture';
 import { User, MapPin, Mail, Phone, Building, Calendar, ShieldCheck } from 'lucide-react';
 import { useCurrentUser } from '@/hooks/useCurrentUser';
 import { proxyCloudinaryUrl } from '@/utils/cloudinaryProxy';
@@ -308,113 +309,9 @@ const BasicInfoTab = forwardRef<BasicInfoTabHandle, BasicInfoTabProps>(
       }
       const canvas = canvasRef || sigCanvas.current;
       if (canvas && !safeCanvasIsEmpty()) {
-        let signatureDataURL: string | null = null;
-        try {
-          const signatureData = canvas.toData();
-          if (signatureData && signatureData.length > 0) {
-            // Get actual canvas dimensions from editing canvas
-            const canvasEl = canvas.getCanvas();
-            const canvasWidth = canvasEl?.width || 500;
-            const canvasHeight = canvasEl?.height || 500;
-
-            // Use larger canvas size for saving (double the editing canvas)
-            const saveCanvasWidth = canvasWidth * 2;
-            const saveCanvasHeight = canvasHeight * 2;
-
-            // Calculate bounding box of the signature
-            let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
-            signatureData.forEach((stroke: any) => {
-              if (stroke && stroke.length > 0) {
-                stroke.forEach((point: any) => {
-                  if (point.x < minX) minX = point.x;
-                  if (point.y < minY) minY = point.y;
-                  if (point.x > maxX) maxX = point.x;
-                  if (point.y > maxY) maxY = point.y;
-                });
-              }
-            });
-            const signatureWidth = maxX - minX;
-            const signatureHeight = maxY - minY;
-            const padding = 100;
-            const availableWidth = saveCanvasWidth - (padding * 2);
-            const availableHeight = saveCanvasHeight - (padding * 2);
-            const scale = Math.min(availableWidth / signatureWidth, availableHeight / signatureHeight, 1);
-            const scaledWidth = signatureWidth * scale;
-            const scaledHeight = signatureHeight * scale;
-            const offsetX = (saveCanvasWidth - scaledWidth) / 2 - (minX * scale);
-            const offsetY = (saveCanvasHeight - scaledHeight) / 2 - (minY * scale);
-
-            const tempCanvas = document.createElement('canvas');
-            const tempCtx = tempCanvas.getContext('2d');
-            if (tempCtx) {
-              tempCanvas.width = saveCanvasWidth;
-              tempCanvas.height = saveCanvasHeight;
-              tempCtx.fillStyle = 'white';
-              tempCtx.fillRect(0, 0, tempCanvas.width, tempCanvas.height);
-              tempCtx.strokeStyle = 'black';
-              signatureData.forEach((stroke: any) => {
-                if (stroke && stroke.length > 0) {
-                  tempCtx.beginPath();
-                  tempCtx.lineWidth = 5;
-                  tempCtx.lineCap = 'round';
-                  tempCtx.lineJoin = 'round';
-                  tempCtx.moveTo(stroke[0].x * scale + offsetX, stroke[0].y * scale + offsetY);
-                  for (let i = 1; i < stroke.length; i++) {
-                    tempCtx.lineTo(
-                      stroke[i].x * scale + offsetX,
-                      stroke[i].y * scale + offsetY
-                    );
-                  }
-                  tempCtx.stroke();
-                }
-              });
-              signatureDataURL = tempCanvas.toDataURL('image/png');
-            }
-          }
-        } catch {
-          /* try fallback */
-        }
-        if (!signatureDataURL) {
-          try {
-            const trimmedCanvas = canvas.getTrimmedCanvas();
-            if (trimmedCanvas) {
-              const tempCanvas = document.createElement('canvas');
-              const tempCtx = tempCanvas.getContext('2d');
-              if (tempCtx) {
-                tempCanvas.width = 500;
-                tempCanvas.height = 500;
-                tempCtx.fillStyle = 'white';
-                tempCtx.fillRect(0, 0, tempCanvas.width, tempCanvas.height);
-                tempCtx.drawImage(trimmedCanvas, 0, 0);
-                signatureDataURL = tempCanvas.toDataURL('image/png');
-              }
-            }
-          } catch {
-            /* try fallback */
-          }
-        }
-        if (!signatureDataURL) {
-          try {
-            const canvasEl = canvas.getCanvas();
-            if (canvasEl) {
-              const tempCanvas = document.createElement('canvas');
-              const tempCtx = tempCanvas.getContext('2d');
-              if (tempCtx) {
-                tempCanvas.width = canvasEl.width;
-                tempCanvas.height = canvasEl.height;
-                tempCtx.fillStyle = 'white';
-                tempCtx.fillRect(0, 0, tempCanvas.width, tempCanvas.height);
-                tempCtx.drawImage(canvasEl, 0, 0);
-                signatureDataURL = tempCanvas.toDataURL('image/png');
-              }
-            }
-          } catch {
-            /* ignore */
-          }
-        }
-        return signatureDataURL && signatureDataURL !== 'data:,'
-          ? signatureDataURL
-          : null;
+        // Shared capture: every signature is normalized to the same
+        // fixed-size canvas (see lib/signatureCapture.ts).
+        return captureSignatureFromPad(canvas);
       }
       return null;
     };
@@ -466,111 +363,10 @@ const BasicInfoTab = forwardRef<BasicInfoTabHandle, BasicInfoTabProps>(
           console.log('Canvas ref exists:', !!canvas);
           console.log('Canvas isEmpty:', safeCanvasIsEmpty());
           if (canvas && !safeCanvasIsEmpty()) {
-            let signatureDataURL: string | null = null;
-            try {
-              const signatureData = canvas.toData();
-              if (signatureData && signatureData.length > 0) {
-                // Get actual canvas dimensions from editing canvas
-                const canvasEl = canvas.getCanvas();
-                const canvasWidth = canvasEl?.width || 500;
-                const canvasHeight = canvasEl?.height || 500;
-
-                // Use larger canvas size for saving (double the editing canvas)
-                const saveCanvasWidth = canvasWidth * 2;
-                const saveCanvasHeight = canvasHeight * 2;
-
-                // Calculate bounding box of the signature
-                let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
-                signatureData.forEach((stroke: any) => {
-                  if (stroke && stroke.length > 0) {
-                    stroke.forEach((point: any) => {
-                      if (point.x < minX) minX = point.x;
-                      if (point.y < minY) minY = point.y;
-                      if (point.x > maxX) maxX = point.x;
-                      if (point.y > maxY) maxY = point.y;
-                    });
-                  }
-                });
-                const signatureWidth = maxX - minX;
-                const signatureHeight = maxY - minY;
-                const padding = 100;
-                const availableWidth = saveCanvasWidth - (padding * 2);
-                const availableHeight = saveCanvasHeight - (padding * 2);
-                const scale = Math.min(availableWidth / signatureWidth, availableHeight / signatureHeight, 1);
-                const scaledWidth = signatureWidth * scale;
-                const scaledHeight = signatureHeight * scale;
-                const offsetX = (saveCanvasWidth - scaledWidth) / 2 - (minX * scale);
-                const offsetY = (saveCanvasHeight - scaledHeight) / 2 - (minY * scale);
-
-                const tempCanvas = document.createElement('canvas');
-                const tempCtx = tempCanvas.getContext('2d');
-                if (tempCtx) {
-                  tempCanvas.width = saveCanvasWidth;
-                  tempCanvas.height = saveCanvasHeight;
-                  tempCtx.fillStyle = 'white';
-                  tempCtx.fillRect(0, 0, tempCanvas.width, tempCanvas.height);
-                  tempCtx.strokeStyle = 'black';
-                  signatureData.forEach((stroke: any) => {
-                    if (stroke && stroke.length > 0) {
-                      tempCtx.beginPath();
-                      tempCtx.lineWidth = 5;
-                      tempCtx.lineCap = 'round';
-                      tempCtx.lineJoin = 'round';
-                      tempCtx.moveTo(stroke[0].x * scale + offsetX, stroke[0].y * scale + offsetY);
-                      for (let i = 1; i < stroke.length; i++) {
-                        tempCtx.lineTo(
-                          stroke[i].x * scale + offsetX,
-                          stroke[i].y * scale + offsetY
-                        );
-                      }
-                      tempCtx.stroke();
-                    }
-                  });
-                  signatureDataURL = tempCanvas.toDataURL('image/png');
-                }
-              }
-            } catch {
-              /* try fallback */
-            }
-            if (!signatureDataURL) {
-              try {
-                const trimmedCanvas = canvas.getTrimmedCanvas();
-                if (trimmedCanvas) {
-                  const tempCanvas = document.createElement('canvas');
-                  const tempCtx = tempCanvas.getContext('2d');
-                  if (tempCtx) {
-                    tempCanvas.width = 500;
-                    tempCanvas.height = 500;
-                    tempCtx.fillStyle = 'white';
-                    tempCtx.fillRect(0, 0, tempCanvas.width, tempCanvas.height);
-                    tempCtx.drawImage(trimmedCanvas, 0, 0);
-                    signatureDataURL = tempCanvas.toDataURL('image/png');
-                  }
-                }
-              } catch {
-                /* try fallback */
-              }
-            }
-            if (!signatureDataURL) {
-              try {
-                const canvasEl = canvas.getCanvas();
-                if (canvasEl) {
-                  const tempCanvas = document.createElement('canvas');
-                  const tempCtx = tempCanvas.getContext('2d');
-                  if (tempCtx) {
-                    tempCanvas.width = canvasEl.width;
-                    tempCanvas.height = canvasEl.height;
-                    tempCtx.fillStyle = 'white';
-                    tempCtx.fillRect(0, 0, tempCanvas.width, tempCanvas.height);
-                    tempCtx.drawImage(canvasEl, 0, 0);
-                    signatureDataURL = tempCanvas.toDataURL('image/png');
-                  }
-                }
-              } catch {
-                /* ignore */
-              }
-            }
-            if (signatureDataURL && signatureDataURL !== 'data:,') {
+            // Shared capture: every signature is normalized to the same
+            // fixed-size canvas (see lib/signatureCapture.ts).
+            const signatureDataURL = captureSignatureFromPad(canvas);
+            if (signatureDataURL) {
               payload.digitalSignature = signatureDataURL;
               console.log('Captured signature from canvas:', signatureDataURL.substring(0, 50) + '...');
             }
@@ -960,13 +756,18 @@ const BasicInfoTab = forwardRef<BasicInfoTabHandle, BasicInfoTabProps>(
                   </p>
                 </div>
                 <div className="p-6 bg-white flex items-center justify-center min-h-[80px]">
-                      {isImageSignature(user?.digitalSignature) && (
-                        <img
-                          src={proxyCloudinaryUrl(user.digitalSignature)}
-                          alt="Digital Initials"
-                          className="max-w-full h-32 object-contain mx-auto"
-                        />
-                      )}
+                  {/* Fixed-ratio box matching the normalized saved signature
+                      size (lib/signatureCapture.ts) so the preview always
+                      renders at the same size. */}
+                  <div className="w-full max-w-sm aspect-[5/2] flex items-center justify-center">
+                    {isImageSignature(user?.digitalSignature) && (
+                      <img
+                        src={proxyCloudinaryUrl(user.digitalSignature)}
+                        alt="Digital Initials"
+                        className="max-h-full max-w-full object-contain"
+                      />
+                    )}
+                  </div>
                 </div>
               </div>
             )}
@@ -1040,130 +841,15 @@ const BasicInfoTab = forwardRef<BasicInfoTabHandle, BasicInfoTabProps>(
                             console.log('Canvas is not empty, proceeding to capture');
                             setTimeout(async () => {
                               try {
-                                let signatureDataURL: string | null = null;
                                 const canvas = canvasRef || sigCanvas.current;
                                 if (!canvas) {
                                   toast.error('Canvas not ready. Please try again.');
                                   return;
                                 }
-                                console.log('Capturing signature from canvas, canvasRef:', !!canvasRef, 'sigCanvas.current:', !!sigCanvas.current);
-                                try {
-                                  const signatureData = canvas.toData();
-                                  console.log('toData result:', signatureData ? 'YES' : 'NO', 'stroke count:', signatureData?.length);
-                                  if (signatureData && signatureData.length > 0) {
-                                    // Get actual canvas dimensions from editing canvas
-                                    const canvasEl = canvas.getCanvas();
-                                    const canvasWidth = canvasEl?.width || 500;
-                                    const canvasHeight = canvasEl?.height || 500;
-                                    console.log('Canvas dimensions:', { canvasWidth, canvasHeight });
-
-                                    // Use larger canvas size for saving (double the editing canvas)
-                                    const saveCanvasWidth = canvasWidth * 2;
-                                    const saveCanvasHeight = canvasHeight * 2;
-                                    console.log('Save canvas dimensions:', { saveCanvasWidth, saveCanvasHeight });
-
-                                    // Calculate bounding box of the signature
-                                    let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
-                                    signatureData.forEach((stroke: any) => {
-                                      if (stroke && stroke.length > 0) {
-                                        stroke.forEach((point: any) => {
-                                          if (point.x < minX) minX = point.x;
-                                          if (point.y < minY) minY = point.y;
-                                          if (point.x > maxX) maxX = point.x;
-                                          if (point.y > maxY) maxY = point.y;
-                                        });
-                                      }
-                                    });
-                                    const signatureWidth = maxX - minX;
-                                    const signatureHeight = maxY - minY;
-                                    const padding = 100;
-                                    const availableWidth = saveCanvasWidth - (padding * 2);
-                                    const availableHeight = saveCanvasHeight - (padding * 2);
-                                    const scale = Math.min(availableWidth / signatureWidth, availableHeight / signatureHeight, 1);
-                                    const scaledWidth = signatureWidth * scale;
-                                    const scaledHeight = signatureHeight * scale;
-                                    const offsetX = (saveCanvasWidth - scaledWidth) / 2 - (minX * scale);
-                                    const offsetY = (saveCanvasHeight - scaledHeight) / 2 - (minY * scale);
-
-                                    console.log('Signature bounds:', { minX, minY, maxX, maxY, signatureWidth, signatureHeight, scale, offsetX, offsetY });
-
-                                    const tempCanvas = document.createElement('canvas');
-                                    const tempCtx = tempCanvas.getContext('2d');
-                                    if (tempCtx) {
-                                      tempCanvas.width = saveCanvasWidth;
-                                      tempCanvas.height = saveCanvasHeight;
-                                      tempCtx.fillStyle = 'white';
-                                      tempCtx.fillRect(0, 0, tempCanvas.width, tempCanvas.height);
-                                      tempCtx.strokeStyle = 'black';
-                                      signatureData.forEach((stroke: any) => {
-                                        if (stroke && stroke.length > 0) {
-                                          tempCtx.beginPath();
-                                          tempCtx.lineWidth = 5;
-                                          tempCtx.lineCap = 'round';
-                                          tempCtx.lineJoin = 'round';
-                                          tempCtx.moveTo(stroke[0].x * scale + offsetX, stroke[0].y * scale + offsetY);
-                                          for (let i = 1; i < stroke.length; i++) {
-                                            tempCtx.lineTo(
-                                              stroke[i].x * scale + offsetX,
-                                              stroke[i].y * scale + offsetY
-                                            );
-                                          }
-                                          tempCtx.stroke();
-                                        }
-                                      });
-                                      signatureDataURL = tempCanvas.toDataURL('image/png');
-                                      console.log('Signature captured successfully, dataURL length:', signatureDataURL?.length);
-                                    }
-                                  } else {
-                                    console.log('No signature data found');
-                                  }
-                                } catch (err) {
-                                  console.error('toData failed:', err);
-                                  /* try fallback */
-                                }
-                                if (!signatureDataURL) {
-                                  console.log('Primary capture failed, trying fallback methods');
-                                  try {
-                                    const trimmedCanvas = canvas.getTrimmedCanvas();
-                                    if (trimmedCanvas) {
-                                      const tempCanvas = document.createElement('canvas');
-                                      const tempCtx = tempCanvas.getContext('2d');
-                                      if (tempCtx) {
-                                        tempCanvas.width = 500;
-                                        tempCanvas.height = 500;
-                                        tempCtx.fillStyle = 'white';
-                                        tempCtx.fillRect(0, 0, tempCanvas.width, tempCanvas.height);
-                                        tempCtx.drawImage(trimmedCanvas, 0, 0);
-                                        signatureDataURL = tempCanvas.toDataURL('image/png');
-                                        console.log('Signature captured via trimmedCanvas');
-                                      }
-                                    }
-                                  } catch {
-                                    /* try fallback */
-                                  }
-                                }
-                                if (!signatureDataURL) {
-                                  console.log('TrimmedCanvas failed, trying getCanvas');
-                                  try {
-                                    const canvasEl = canvas.getCanvas();
-                                    if (canvasEl) {
-                                      const tempCanvas = document.createElement('canvas');
-                                      const tempCtx = tempCanvas.getContext('2d');
-                                      if (tempCtx) {
-                                        tempCanvas.width = canvasEl.width;
-                                        tempCanvas.height = canvasEl.height;
-                                        tempCtx.fillStyle = 'white';
-                                        tempCtx.fillRect(0, 0, tempCanvas.width, tempCanvas.height);
-                                        tempCtx.drawImage(canvasEl, 0, 0);
-                                        signatureDataURL = tempCanvas.toDataURL('image/png');
-                                        console.log('Signature captured via getCanvas');
-                                      }
-                                    }
-                                  } catch {
-                                    /* ignore */
-                                  }
-                                }
-                                if (signatureDataURL && signatureDataURL !== 'data:,') {
+                                // Shared capture: every signature is normalized to the
+                                // same fixed-size canvas (see lib/signatureCapture.ts).
+                                const signatureDataURL = captureSignatureFromPad(canvas);
+                                if (signatureDataURL) {
                                   setSignatureReadyToSave(signatureDataURL);
                                   setSignatureMarkedDone(true);
                                   toast.success('Initials marked as done! Click Save to save your profile.');

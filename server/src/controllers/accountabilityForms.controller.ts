@@ -667,8 +667,9 @@ async function activateAssignmentsForAccountabilityForm(formRow: {
 
 /**
  * Notify the new asset owner with BOTH the assignment notice and the
- * accountability-issued notice. Fired once the form is finally `approved`
- * (or via the combined copy-sign + approve step), never at issuance time.
+ * accountability-issued notice. Fired when the owner is the one who needs
+ * to sign — i.e. right after the IT/Admin copy is signed and the form moves
+ * to `pending_owner_signature` — never at issuance time.
  */
 async function notifyOwnerAssignmentAndAccountability(args: {
   ownerUserId: string;
@@ -867,8 +868,10 @@ async function getFormIdByFormNumber(
  * decided by:
  *   1. The IT/Admin copy scope of the assets (clearance uses its own scope)
  *   2. The designated approver/sub-approver of the form's user
- *   3. The adminCopySignerId supplied by the issuer (may be null when the
- *      issuer chose the legacy `signITCopy` checkbox or for clearance)
+ *   3. The designated approver/sub-approver of the issuer/creator, who form
+ *      the IT/Admin copy-signer pool (BOTH are notified; first to sign wins).
+ *      A legacy explicit `adminCopySignerId` is still honored as a fallback
+ *      when the issuer has no designated approvers.
  *
  * Returns null when the form does not need to go through the new flow
  * (no IT/Admin copy, no clearance, no approver found).
@@ -880,6 +883,11 @@ async function resolveApprovalParams(args: {
   clearanceScope: ClearanceScope | undefined;
   adminCopySignerIdRaw: unknown;
   adminCopyCopyTypeRaw: unknown;
+  /** Issuer/creator user id — signer pool is resolved from their designations. */
+  issuerUserId?: string | null;
+  /** When true, fall back to `approved` instead of throwing NO_ADMIN_COPY_SIGNER
+   *  if the issuer has no designated approvers (background regen flows). */
+  lenientNoIssuerApprovers?: boolean;
 }): Promise<
   | {
       approvalStatus: 'pending_admin_copy_signature' | 'pending_approval' | 'approved';
@@ -924,23 +932,46 @@ async function resolveApprovalParams(args: {
     return null;
   }
 
-  // IT/Admin scope form: must have a copy signer.
-  const signerId =
-    typeof args.adminCopySignerIdRaw === 'string' &&
-    args.adminCopySignerIdRaw.trim() !== ''
-      ? args.adminCopySignerIdRaw.trim()
-      : null;
-
-  if (!signerId) {
-    throw Object.assign(new Error('NO_ADMIN_COPY_SIGNER'), {
-      code: 'NO_ADMIN_COPY_SIGNER',
-    });
-  }
-
+  // IT/Admin scope form: the copy-signer pool is BOTH designated approver
+  // and sub-approver of the issuer/creator (both notified, first to sign
+  // wins). The stored `admin_copy_signer_id` is display/audit only
+  // (primary = approver ?? sub-approver).
   const approverId = await getDesignatedApproverUserIdForRequester(args.userId);
   const subApproverId = await getDesignatedSubApproverUserIdForRequester(
     args.userId
   );
+
+  let signerId: string | null = null;
+  if (args.issuerUserId) {
+    const [issuerApproverId, issuerSubApproverId] = await Promise.all([
+      getDesignatedApproverUserIdForRequester(args.issuerUserId),
+      getDesignatedSubApproverUserIdForRequester(args.issuerUserId),
+    ]);
+    signerId = issuerApproverId ?? issuerSubApproverId ?? null;
+  }
+  if (!signerId) {
+    const legacySignerId =
+      typeof args.adminCopySignerIdRaw === 'string' &&
+      args.adminCopySignerIdRaw.trim() !== ''
+        ? args.adminCopySignerIdRaw.trim()
+        : null;
+    signerId = legacySignerId;
+  }
+
+  if (!signerId) {
+    if (args.lenientNoIssuerApprovers) {
+      return {
+        approvalStatus: 'approved',
+        adminCopySignerId: null,
+        adminCopyCopyType: copyType,
+        ownerApproverId: approverId,
+        ownerSubApproverId: subApproverId,
+      };
+    }
+    throw Object.assign(new Error('NO_ADMIN_COPY_SIGNER'), {
+      code: 'NO_ADMIN_COPY_SIGNER',
+    });
+  }
 
   return {
     approvalStatus: 'pending_admin_copy_signature',
@@ -953,7 +984,9 @@ async function resolveApprovalParams(args: {
 
 /**
  * Send the next-step notification after a form is created. When the form is
- * in `pending_admin_copy_signature`, notify the IT/Admin copy signer. When in
+ * in `pending_admin_copy_signature`, notify BOTH designated approver and
+ * sub-approver of the issuer/creator (first to sign wins; a single
+ * designated signer is notified alone). When in
  * `pending_approval` (clearance), notify the owner's approver. When
  * `approved`, notify the new asset owner.
  */
@@ -968,25 +1001,43 @@ async function sendApprovalKickoffNotifications(args: {
   adminCopyCopyType: AdminCopyCopyType | null;
   ownerApproverId: string | null;
   ownerSubApproverId: string | null;
+  /** Issuer/creator — copy-signer pool is resolved from their designations. */
+  issuerUserId?: string | null;
   req: AuthRequest;
 }): Promise<void> {
   const { req } = args;
-  if (args.approvalStatus === 'pending_admin_copy_signature' && args.adminCopySignerId) {
-    await notifyUser({
-      userId: args.adminCopySignerId,
-      title: `Accountability form ${args.formNumber} needs ${args.adminCopyCopyType ?? 'IT'} copy signature`,
-      message: `Please sign the ${args.adminCopyCopyType ?? 'IT'} copy for ${args.ownerName}'s accountability form (${args.formNumber}).`,
-      type: 'accountability_form',
-      data: {
-        route: '/approvals?tab=for-approval',
-        actionTarget: 'accountability_form_admin_copy',
-        formId: args.formId,
-        formNumber: args.formNumber,
-        copyType: args.adminCopyCopyType,
-      },
-      createdBy: req.user!.userID,
-      req,
-    });
+  if (args.approvalStatus === 'pending_admin_copy_signature') {
+    const copyRecipients: string[] = [];
+    if (args.issuerUserId) {
+      const [issuerApproverId, issuerSubApproverId] = await Promise.all([
+        getDesignatedApproverUserIdForRequester(args.issuerUserId),
+        getDesignatedSubApproverUserIdForRequester(args.issuerUserId),
+      ]);
+      for (const id of [issuerApproverId, issuerSubApproverId]) {
+        if (id && !copyRecipients.includes(id)) copyRecipients.push(id);
+      }
+    }
+    // Legacy fallback: single explicitly-stored signer.
+    if (copyRecipients.length === 0 && args.adminCopySignerId) {
+      copyRecipients.push(args.adminCopySignerId);
+    }
+    for (const recipientId of copyRecipients) {
+      await notifyUser({
+        userId: recipientId,
+        title: `Accountability form ${args.formNumber} needs ${args.adminCopyCopyType ?? 'IT'} copy signature`,
+        message: `Please sign the ${args.adminCopyCopyType ?? 'IT'} copy for ${args.ownerName}'s accountability form (${args.formNumber}).`,
+        type: 'accountability_form',
+        data: {
+          route: '/approvals?tab=for-approval',
+          actionTarget: 'accountability_form_admin_copy',
+          formId: args.formId,
+          formNumber: args.formNumber,
+          copyType: args.adminCopyCopyType,
+        },
+        createdBy: req.user!.userID,
+        req,
+      });
+    }
     return;
   }
   if (args.approvalStatus === 'pending_approval') {
@@ -1079,7 +1130,7 @@ export async function kickoffApprovalFlowNotifications(args: {
 }): Promise<void> {
   try {
     const [rows] = await pool.execute(
-      `SELECT approval_status, admin_copy_signer_id, admin_copy_copy_type
+      `SELECT approval_status, admin_copy_signer_id, admin_copy_copy_type, created_by
        FROM accountability_forms
        WHERE formID = ? AND deleted_at IS NULL
        LIMIT 1`,
@@ -1121,6 +1172,7 @@ export async function kickoffApprovalFlowNotifications(args: {
       adminCopyCopyType: row.admin_copy_copy_type ?? null,
       ownerApproverId,
       ownerSubApproverId,
+      issuerUserId: (row.created_by as string | null) ?? null,
       req: args.req,
     });
   } catch (err) {
@@ -1151,6 +1203,7 @@ export async function createAccountabilityFormHandler(
       adminCopySignerId,
       adminCopyCopyType: adminCopyCopyTypeBody,
       adminCopySigner: adminCopySignerBody,
+      adminCopySignerLenient: adminCopySignerLenientBody,
       formOrigin: formOriginBody,
       form_origin: formOriginSnake,
       clearanceScope: clearanceScopeBody,
@@ -1268,7 +1321,7 @@ export async function createAccountabilityFormHandler(
           } catch (approvalErr: any) {
             if (approvalErr?.code === 'NO_ADMIN_COPY_SIGNER') {
               return res.status(400).json({
-                error: `No designated approver/sub-approver found for this user; cannot create clearance that requires approval`,
+                error: `No designated approver/sub-approver found for this user; cannot create clearance that requires approval. Please contact your system administrator.`,
               });
             }
             throw approvalErr;
@@ -1352,6 +1405,7 @@ export async function createAccountabilityFormHandler(
               adminCopyCopyType: resolvedApprovalParams.adminCopyCopyType,
               ownerApproverId: resolvedApprovalParams.ownerApproverId,
               ownerSubApproverId: resolvedApprovalParams.ownerSubApproverId,
+              issuerUserId: createdBy,
               req,
             });
           } else {
@@ -1549,27 +1603,26 @@ export async function createAccountabilityFormHandler(
             }
           }
 
-          // Resolve approval parameters for the form. If the form has an
-          // IT/Admin copy column and no admin copy signer is provided, this
-          // throws to surface a 400 response. The legacy `signITCopy` flag
-          // falls back to the issuer auto-signing (no copy signer required).
+          // Resolve approval parameters for the multi-asset form. IT/Admin
+          // scope is detected server-side from the assets; the copy-signer
+          // pool auto-resolves to BOTH designated approver and sub-approver
+          // of the issuer (createdBy). Throws to surface a 400 response when
+          // the issuer has neither designated.
           try {
-            if (adminCopySignerId || adminCopyCopyTypeBody) {
-              multiResolvedApproval = await resolveApprovalParams({
-                userId,
-                assetsForScope: assets,
-                formOrigin: formOriginStored,
-                clearanceScope: clearanceScopeStored,
-                adminCopySignerIdRaw: adminCopySignerId,
-                adminCopyCopyTypeRaw: adminCopyCopyTypeBody ?? adminCopySignerBody,
-              });
-            } else {
-              multiResolvedApproval = null;
-            }
+            multiResolvedApproval = await resolveApprovalParams({
+              userId,
+              assetsForScope: assets,
+              formOrigin: formOriginStored,
+              clearanceScope: clearanceScopeStored,
+              adminCopySignerIdRaw: adminCopySignerId,
+              adminCopyCopyTypeRaw: adminCopyCopyTypeBody ?? adminCopySignerBody,
+              issuerUserId: createdBy,
+              lenientNoIssuerApprovers: adminCopySignerLenientBody === true,
+            });
           } catch (approvalErr: any) {
             if (approvalErr?.code === 'NO_ADMIN_COPY_SIGNER') {
               return res.status(400).json({
-                error: 'No designated approver/sub-approver found for this user; an IT/Admin copy signer must be selected for this form',
+                error: 'No approver or sub-approver found for your account. Please contact your system administrator.',
               });
             }
             throw approvalErr;
@@ -1654,6 +1707,7 @@ export async function createAccountabilityFormHandler(
               adminCopyCopyType: multiResolvedApproval.adminCopyCopyType,
               ownerApproverId: multiResolvedApproval.ownerApproverId,
               ownerSubApproverId: multiResolvedApproval.ownerSubApproverId,
+              issuerUserId: createdBy,
               req,
             });
           } else {
@@ -1789,26 +1843,24 @@ export async function createAccountabilityFormHandler(
           departmentId
         );
 
-        // Resolve approval parameters for the form. If the form has an
-        // IT/Admin copy column and no admin copy signer is provided, this
-        // throws to surface a 400 response.
+        // Resolve approval parameters for the single-asset form. IT/Admin
+        // scope is detected server-side; the copy-signer pool auto-resolves
+        // to BOTH designated approver and sub-approver of the issuer.
         try {
-          if (adminCopySignerId || adminCopyCopyTypeBody) {
-            singleResolvedApproval = await resolveApprovalParams({
-              userId,
-              assetsForScope: assetScopeArray,
-              formOrigin: formOriginStored,
-              clearanceScope: clearanceScopeStored,
-              adminCopySignerIdRaw: adminCopySignerId,
-              adminCopyCopyTypeRaw: adminCopyCopyTypeBody ?? adminCopySignerBody,
-            });
-          } else {
-            singleResolvedApproval = null;
-          }
+          singleResolvedApproval = await resolveApprovalParams({
+            userId,
+            assetsForScope: assetScopeArray,
+            formOrigin: formOriginStored,
+            clearanceScope: clearanceScopeStored,
+            adminCopySignerIdRaw: adminCopySignerId,
+            adminCopyCopyTypeRaw: adminCopyCopyTypeBody ?? adminCopySignerBody,
+            issuerUserId: createdBy,
+            lenientNoIssuerApprovers: adminCopySignerLenientBody === true,
+          });
         } catch (approvalErr: any) {
           if (approvalErr?.code === 'NO_ADMIN_COPY_SIGNER') {
             return res.status(400).json({
-              error: 'No designated approver/sub-approver found for this user; an IT/Admin copy signer must be selected for this form',
+              error: 'No approver or sub-approver found for your account. Please contact your system administrator.',
             });
           }
           throw approvalErr;
@@ -1894,6 +1946,7 @@ export async function createAccountabilityFormHandler(
             adminCopyCopyType: singleResolvedApproval.adminCopyCopyType,
             ownerApproverId: singleResolvedApproval.ownerApproverId,
             ownerSubApproverId: singleResolvedApproval.ownerSubApproverId,
+            issuerUserId: createdBy,
             req,
           });
         } else {
@@ -2296,12 +2349,14 @@ export async function getAccountabilityFormsHandler(
     });
 
     // When fetching forms for a specific user (documents tab), hide forms
-    // that are still pending IT/Admin copy signature or final approval.
-    // These forms appear on the Approvals page for the designated signers.
+    // that are still pending the IT/Admin copy signature. Those forms appear
+    // on the Approvals page for the designated signers.
+    // Forms already signed by the owner (pending_approval) MUST remain
+    // visible in the owner's documents list — they only leave the account
+    // once the owner's designated approver/sub-approver gives final approval.
     const forms = typeof userId === 'string'
       ? allForms.filter((form: any) =>
-          form.approvalStatus !== 'pending_admin_copy_signature' &&
-          form.approvalStatus !== 'pending_approval'
+          form.approvalStatus !== 'pending_admin_copy_signature'
         )
       : allForms;
 
@@ -2947,8 +3002,10 @@ export async function declineAccountabilityFormHandler(
  * POST /api/accountability-forms/:formId/sign-admin-copy
  *
  * Sign the IT/Admin copy of an accountability form. The current user must be
- * the assigned `admin_copy_signer_id` for the form, and the form must be in
- * `pending_admin_copy_signature` status.
+ * one of the issuer/creator's designated approver or sub-approver (BOTH are
+ * notified; first to sign wins — the status-guarded update makes a second
+ * concurrent sign a 409), or the legacy stored `admin_copy_signer_id`.
+ * The form must be in `pending_admin_copy_signature` status.
  *
  * If the signer is also the asset owner's designated approver, the form
  * transitions directly to `approved` (combined-step flow per user decision).
@@ -2976,10 +3033,31 @@ export async function signAdminCopyHandler(req: AuthRequest, res: Response) {
       });
     }
 
-    if (form.admin_copy_signer_id !== currentUserId) {
-      return res.status(403).json({
-        error: 'You are not the designated IT/Admin copy signer for this form',
+    // A disabled form was superseded by a newer accountability form
+    // (e.g. via a new asset assignment) and must no longer be signable.
+    if (form.status !== 'Pending') {
+      return res.status(400).json({
+        error: 'This accountability form has been superseded and can no longer be signed',
       });
+    }
+
+    if (form.admin_copy_signer_id !== currentUserId) {
+      // Dual-signer flow: either designated approver or sub-approver of the
+      // issuer/creator may sign (both were notified; first to sign wins).
+      // The stored-id check above covers legacy single-signer forms.
+      const [isIssuerApprover, isIssuerSubApprover] = await Promise.all([
+        form.created_by
+          ? isDesignatedApprover(currentUserId, form.created_by)
+          : Promise.resolve(false),
+        form.created_by
+          ? isDesignatedSubApprover(currentUserId, form.created_by)
+          : Promise.resolve(false),
+      ]);
+      if (!isIssuerApprover && !isIssuerSubApprover) {
+        return res.status(403).json({
+          error: 'You are not the designated IT/Admin copy signer for this form',
+        });
+      }
     }
 
     const signature = await resolveSigningDigitalSignature(
@@ -2998,13 +3076,13 @@ export async function signAdminCopyHandler(req: AuthRequest, res: Response) {
     );
     if (affected === 0) {
       return res.status(409).json({
-        error: 'Form state changed during admin copy sign',
+        error: 'This form was already signed (the other approver may have signed first)',
       });
     }
 
     // Copy signed: reveal assignments held as `Inactive` since issuance so
-    // the assets now appear in the new owner's My Assets. Owner-facing
-    // notifications still wait until final approval.
+    // the assets now appear in the new owner's My Assets. The owner-facing
+    // assignment/accountability notices are sent below (owner-signature step).
     try {
       const activated = await activateAssignmentsForAccountabilityForm(form);
       if (activated.tangible > 0 || activated.intangible > 0) {
@@ -3040,25 +3118,31 @@ export async function signAdminCopyHandler(req: AuthRequest, res: Response) {
       userAgent: req.get ? req.get('User-Agent') : 'Unknown',
     });
 
-    // Notify the accountability owner to sign the form.
+    // Owner-signature step: the IT/Admin copy is signed and the assignments
+    // are now visible to the owner, so this is where the owner receives BOTH
+    // the "asset assigned" notice and the "accountability form issued for
+    // signing" notice (previously these were only sent at final approval).
     const ownerRow = await repo.getUserNameById(form.user_id);
     const ownerName = ownerRow
       ? `${ownerRow.first_name ?? ''} ${ownerRow.last_name ?? ''}`.trim() ||
         form.user_id
       : form.user_id;
     try {
-      await notifyUser({
-        userId: form.user_id,
-        title: `Accountability form ${form.form_number} needs your signature`,
-        message: `Please review and sign your accountability form (${form.form_number}).`,
-        type: 'accountability_form',
-        data: {
-          route: '/profile?tab=documents',
-          actionTarget: 'profile_documents',
-          formId,
-          formNumber: form.form_number,
-        },
-        createdBy: currentUserId,
+      // The "by ..." wording refers to the issuer who assigned the assets.
+      const issuerRow = await repo.getUserNameById(
+        form.created_by ?? currentUserId
+      );
+      const assignerName = issuerRow
+        ? `${issuerRow.first_name ?? ''} ${issuerRow.last_name ?? ''}`.trim() ||
+          (form.created_by ?? currentUserId)
+        : (form.created_by ?? currentUserId);
+      await notifyOwnerAssignmentAndAccountability({
+        ownerUserId: form.user_id,
+        formNumber: form.form_number,
+        formId,
+        assignerName,
+        assignerUserId: currentUserId,
+        assetCodes: await getAssetCodesForForm(form),
         req,
       });
     } catch (ownerNotifErr) {
@@ -3106,6 +3190,16 @@ export async function approveAccountabilityFormHandler(
     if (form.approval_status !== 'pending_approval') {
       return res.status(400).json({
         error: 'Form is not awaiting approval',
+      });
+    }
+
+    // A disabled form was superseded (e.g. by a new asset assignment or a
+    // full return) and its pending approval flow must stop. Only forms still
+    // live (Pending/Signed) can be approved.
+    if (form.status !== 'Pending' && form.status !== 'Signed') {
+      return res.status(400).json({
+        error:
+          'This accountability form has been superseded/disabled and can no longer be approved',
       });
     }
 
@@ -3170,27 +3264,34 @@ export async function approveAccountabilityFormHandler(
       userAgent: req.get ? req.get('User-Agent') : 'Unknown',
     });
 
-    // Final approval: assignments were already revealed at copy-sign time,
-    // so the new owner now gets BOTH the assignment notice and the
-    // accountability-issued notice together.
+    // Final approval: the assignment/accountability-issued notices were
+    // already sent at the owner-signature step, so the owner only learns
+    // here that the department head has reviewed and signed the form.
     const ownerRow = await repo.getUserNameById(form.user_id);
     const ownerName = ownerRow
       ? `${ownerRow.first_name ?? ''} ${ownerRow.last_name ?? ''}`.trim() ||
         form.user_id
       : form.user_id;
     const signerRow = await repo.getUserNameById(currentUserId);
-    const assignerName = signerRow
+    const approverName = signerRow
       ? `${signerRow.first_name ?? ''} ${signerRow.last_name ?? ''}`.trim() ||
         currentUserId
       : currentUserId;
     try {
-      await notifyOwnerAssignmentAndAccountability({
-        ownerUserId: form.user_id,
-        formNumber: form.form_number,
-        formId,
-        assignerName,
-        assignerUserId: currentUserId,
-        assetCodes: await getAssetCodesForForm(form),
+      await notifyUser({
+        userId: form.user_id,
+        title:
+          'Your accountability form has been reviewed and signed by your department head',
+        message: `Your accountability form (${form.form_number}) has been reviewed and signed by ${approverName}.`,
+        type: 'accountability_form',
+        data: {
+          route: '/profile?tab=documents',
+          actionTarget: 'profile_documents',
+          formId,
+          formNumber: form.form_number,
+          approvedBy: approverName,
+        },
+        createdBy: currentUserId,
         req,
       });
     } catch (notifErr) {
@@ -3767,6 +3868,21 @@ export async function getAccountabilityFormAuditHandler(
 }
 
 /**
+ * Minimal shapes returned by getReturnFormsByAssetId / getTransferFormsByAssetId
+ * for the movement fallback attribution.
+ */
+interface DirectFormSummary {
+  id: string;
+  formNumber: string;
+  created_at: string | null;
+  user?: { id?: string; first_name?: string; last_name?: string };
+}
+interface DirectTransferFormSummary extends DirectFormSummary {
+  new_assigned_user_id?: string | null;
+  new_user?: { first_name?: string; last_name?: string };
+}
+
+/**
  * GET /api/accountability-forms/:formId/movement
  * Build the per-asset movement tree for a form: for each asset in the form,
  * resolve the linked return form, transfer form, and the current
@@ -3866,40 +3982,104 @@ export async function getAccountabilityFormMovementHandler(
     );
 
     // Direct per-asset return/transfer sheets, used as a fallback when the
-    // form's assignmentIds are missing or unresolvable (older forms stored
-    // assets without assignment_ids, which previously made return/transfer
-    // forms disappear from the movement tree even though the "new
-    // accountability form" still showed via asset coverage). Attributed per
-    // asset using the same date-window approach as the asset-mode handler:
-    // movements in [this form's created_at, new form's created_at] belong to
-    // the handover from this form to its replacement. The end boundary is
-    // inclusive because a return and its replacement form are often created
-    // in the same transaction (identical timestamps).
-    const windowStart = row.created_at
-      ? new Date(row.created_at).getTime()
-      : 0;
-    const windowEnd = activeForms[0]?.created_at
+    // form's assignmentIds are missing or unresolvable (older/reissued forms
+    // stored assets without assignment_ids, which previously made
+    // return/transfer forms disappear from the movement tree even though the
+    // "new accountability form" still showed via asset coverage).
+    //
+    // Attribution covers both directions of the handover story:
+    //  a) INBOUND — a reissued form is created AFTER the return/transfer
+    //     that handed its assets over to this form's owner (the transfer
+    //     flow creates the replacement form minutes after the return). Those
+    //     movements happen BEFORE this form's created_at.
+    //  b) OUTBOUND — the form's own assets were later returned/transferred
+    //     and a new form replaced this one. Those movements happen between
+    //     this form's created_at and the replacement form's created_at.
+    // The previous window only covered (b) and used the wrong start boundary,
+    // which missed the very common reissued-form case (a). The fallback only
+    // applies when assignment-based attribution found nothing, so forms WITH
+    // resolvable assignment_ids keep their exact per-assignment chain.
+    const directReturnFormsByAsset = new Map<string, DirectFormSummary[]>();
+    const directTransferFormsByAsset = new Map<
+      string,
+      DirectTransferFormSummary[]
+    >();
+    // OUTBOUND window end: first active form created after this form.
+    const outboundEndMs = activeForms[0]?.created_at
       ? new Date(activeForms[0].created_at).getTime()
       : Infinity;
-    const directReturnFormsByAsset = new Map<string, any[]>();
-    const directTransferFormsByAsset = new Map<string, any[]>();
+    const formCreatedMs = row.created_at
+      ? new Date(row.created_at).getTime()
+      : 0;
+    // INBOUND batch tolerance: a reissued form is created shortly after the
+    // return/transfer that handed its assets over — usually within minutes,
+    // but allow up to a day for delayed form generation.
+    const INBOUND_TOLERANCE_MS = 24 * 60 * 60 * 1000;
+    // OUTBOUND batch tolerance: return + transfer + replacement form are
+    // usually created within the same transaction/minute.
+    const BATCH_WINDOW_MS = 5 * 60 * 1000;
     for (const assetId of uniqueAssetIds) {
       const [directReturns, directTransfers] = await Promise.all([
         getAssetReturnFormsByAssetId(assetId),
         getAssetTransferFormsByAssetId(assetId),
       ]);
-      const inWindow = (createdAt: string | null | undefined) => {
-        if (!createdAt) return false;
-        const t = new Date(createdAt).getTime();
-        return t >= windowStart && t <= windowEnd;
+      const hasAssignmentAttribution = assignmentIds.some(
+        id => assignmentToAssetId.get(id) === assetId
+      );
+      if (hasAssignmentAttribution) {
+        // Assignment chain is exact — skip the fuzzy fallback for this asset.
+        directReturnFormsByAsset.set(assetId, []);
+        directTransferFormsByAsset.set(assetId, []);
+        continue;
+      }
+      const timeOf = (c: string | null | undefined) =>
+        c ? new Date(c).getTime() : 0;
+      const allTimes = [
+        ...directReturns.map(r => timeOf(r.created_at)),
+        ...directTransfers.map(t => timeOf(t.created_at)),
+      ].filter(t => t > 0);
+      if (allTimes.length === 0) {
+        directReturnFormsByAsset.set(assetId, []);
+        directTransferFormsByAsset.set(assetId, []);
+        continue;
+      }
+      // INBOUND: the reissued form is created shortly after the handover —
+      // only movements within the inbound tolerance BEFORE this form's
+      // creation qualify. A return much earlier belongs to an older form's
+      // story and must stay out of this diagram.
+      const inboundTimes = allTimes.filter(
+        t => t <= formCreatedMs && t >= formCreatedMs - INBOUND_TOLERANCE_MS
+      );
+      const inboundHandover = inboundTimes.length
+        ? Math.max(...inboundTimes)
+        : 0;
+      // OUTBOUND: first movements after this form's creation start the
+      // handover to the replacement form.
+      const outboundTimes = allTimes.filter(
+        t => t > formCreatedMs && t <= outboundEndMs
+      );
+      const outboundStart = outboundTimes.length
+        ? Math.min(...outboundTimes)
+        : 0;
+
+      const inBatch = (createdAt: string | null | undefined) => {
+        const t = timeOf(createdAt);
+        if (!t) return false;
+        const inbound =
+          inboundHandover > 0 &&
+          t >= inboundHandover - BATCH_WINDOW_MS &&
+          t <= formCreatedMs;
+        const outbound =
+          outboundStart > 0 && t >= outboundStart && t <= outboundEndMs;
+        return inbound || outbound;
       };
       directReturnFormsByAsset.set(
         assetId,
-        directReturns.filter(r => inWindow(r.created_at))
+        directReturns.filter(r => inBatch(r.created_at))
       );
       directTransferFormsByAsset.set(
         assetId,
-        directTransfers.filter(t => inWindow(t.created_at))
+        directTransfers.filter(t => inBatch(t.created_at))
       );
     }
 
@@ -4473,7 +4653,7 @@ export async function createClearanceHandler(req: AuthRequest, res: Response) {
           });
         } catch (approvalErr: any) {
           if (approvalErr?.code === 'NO_ADMIN_COPY_SIGNER') {
-            return res.status(400).json({ error: 'No designated approver found for this user; cannot create clearance that requires approval' });
+            return res.status(400).json({ error: 'No designated approver found for this user; cannot create clearance that requires approval. Please contact your system administrator.' });
           }
           throw approvalErr;
         }
@@ -4560,6 +4740,7 @@ export async function createClearanceHandler(req: AuthRequest, res: Response) {
           adminCopyCopyType: resolvedApprovalParams.adminCopyCopyType,
           ownerApproverId: resolvedApprovalParams.ownerApproverId,
           ownerSubApproverId: resolvedApprovalParams.ownerSubApproverId,
+          issuerUserId: requesterId,
           req,
         });
       } else {
@@ -4599,6 +4780,14 @@ export async function approveClearanceStageHandler(req: AuthRequest, res: Respon
     if (!row) return res.status(404).json({ error: 'Form not found' });
     const assetsData = parseMysqlJsonColumn<{ form_origin?: string; clearance_scope?: string }>(row.assets_data);
     if (assetsData?.form_origin !== 'clearance') return res.status(400).json({ error: 'Not a clearance form' });
+
+    // A disabled/revoked form was superseded; its pending approval flow must
+    // stop rather than continue through the clearance stages.
+    if ((row as any).status !== 'Pending' && (row as any).status !== 'Signed') {
+      return res.status(400).json({
+        error: 'This clearance form has been superseded/disabled and can no longer be approved',
+      });
+    }
 
     const status = String((row as any).approval_status ?? 'approved');
     const ownerId = String((row as any).user_id);

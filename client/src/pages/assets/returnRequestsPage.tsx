@@ -26,6 +26,7 @@ import {
   List,
 } from 'lucide-react';
 import { PageHeader } from '@/components/common/PageHeader';
+import { AdminCopySignerSelect } from '@/components/common/AdminCopySignerSelect';
 import { isIntangibleAssignedToUser } from '@/utils/intangibleAssets';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
@@ -181,6 +182,11 @@ export default function ReturnRequestsPage() {
   const isOverallManager = roleCustodian?.managerRole === 'overallManager';
   const showScopeTabs = isSuperAdmin || isAdmin || isOverallManager;
   const [processForm, setProcessForm] = useState<PendingForm | null>(null);
+  const [returnPdfPreviewTab, setReturnPdfPreviewTab] = useState('physical-assets');
+  const [returnPdfUrl, setReturnPdfUrl] = useState<string>('');
+  const [returnPdfLoading, setReturnPdfLoading] = useState(false);
+  const [returnPdfError, setReturnPdfError] = useState<string | null>(null);
+  const returnPdfUrlRef = useRef<string>('');
   const [processorConditions, setProcessorConditions] = useState<
     Record<string, string>
   >({});
@@ -196,6 +202,10 @@ export default function ReturnRequestsPage() {
   const [verificationTag, setVerificationTag] = useState(false);
   const [verificationCondition, setVerificationCondition] = useState(false);
   const [verificationConfirmSign, setVerificationConfirmSign] = useState(false);
+  const [adminCopySignerId, setAdminCopySignerId] = useState<string | null>(
+    null
+  );
+  const [adminCopySignerRequired, setAdminCopySignerRequired] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [declineDialogOpen, setDeclineDialogOpen] = useState(false);
   const [declineReason, setDeclineReason] = useState('');
@@ -221,6 +231,7 @@ export default function ReturnRequestsPage() {
     assetReturns: { assignmentId: string; condition: string; notes: string; imageUrls: string[]; returnDepartmentId: string; returnLocationId: string; returnAreaId: string | undefined }[];
     returnType: string;
     assignToProcessor: boolean;
+    adminCopySignerId?: string | null;
     intangibleAssetReturnItems?: { id: string; notes: string }[];
   } | null>(null);
   const [checklistDialogOpen, setChecklistDialogOpen] = useState(false);
@@ -310,6 +321,42 @@ export default function ReturnRequestsPage() {
     fetchIntangibleAssets();
   }, [scope]);
 
+  // Generate return form PDF preview when the PDF Preview tab is opened
+  useEffect(() => {
+    if (returnPdfPreviewTab !== 'pdf-preview' || !processForm) return;
+    let cancelled = false;
+    const generate = async () => {
+      setReturnPdfLoading(true);
+      setReturnPdfError(null);
+      setReturnPdfUrl('');
+      if (returnPdfUrlRef.current.startsWith('blob:')) {
+        URL.revokeObjectURL(returnPdfUrlRef.current);
+      }
+      returnPdfUrlRef.current = '';
+      try {
+        const data = buildReturnDataForPDFFromBatch(processForm as unknown as AssetReturnFormBatch);
+        if (!data) {
+          setReturnPdfError('Return form data is missing or incomplete');
+          return;
+        }
+        const blob = await generateAssetReturnPDF(data);
+        if (cancelled) return;
+        const url = URL.createObjectURL(blob);
+        returnPdfUrlRef.current = url;
+        setReturnPdfUrl(url);
+      } catch (err) {
+        if (!cancelled) {
+          console.error('Return PDF preview generation failed:', err);
+          setReturnPdfError('Failed to generate PDF preview. Please try again.');
+        }
+      } finally {
+        if (!cancelled) setReturnPdfLoading(false);
+      }
+    };
+    generate();
+    return () => { cancelled = true; };
+  }, [returnPdfPreviewTab, processForm]);
+
   // Note: wet-upload notification deep-link is handled on `/assets/return`
   // (processors may not have `Return Request` permission).
 
@@ -369,6 +416,8 @@ export default function ReturnRequestsPage() {
     setVerificationTag(false);
     setVerificationCondition(false);
     setVerificationConfirmSign(false);
+    setAdminCopySignerId(null);
+    setAdminCopySignerRequired(false);
     setSelectedIntangibleAssetIds([]);
     setIntangibleNotes({});
   };
@@ -548,6 +597,7 @@ export default function ReturnRequestsPage() {
         assetReturns,
         returnType: returnType || '',
         assignToProcessor,
+        adminCopySignerId,
         intangibleAssetReturnItems: intangibleAssetReturnItems.length > 0 ? intangibleAssetReturnItems : undefined,
       };
       setChecklistAssets(computerReturns);
@@ -569,6 +619,8 @@ export default function ReturnRequestsPage() {
           returnType: returnType || undefined,
           assignToProcessor,
           receivedBy: assignToProcessor ? (currentUser?.id ?? null) : null,
+          adminCopySignerId: adminCopySignerId ?? null,
+          adminCopyCopyType: null,
           intangibleAssetReturnItems: intangibleAssetReturnItems.length > 0 ? intangibleAssetReturnItems : undefined,
         });
         toast.success('Return processed successfully');
@@ -646,6 +698,8 @@ export default function ReturnRequestsPage() {
           returnType: params.returnType || undefined,
           assignToProcessor: params.assignToProcessor,
           receivedBy: params.assignToProcessor ? (currentUser?.id ?? null) : null,
+          adminCopySignerId: params.adminCopySignerId ?? null,
+          adminCopyCopyType: null,
           intangibleAssetReturnItems: params.intangibleAssetReturnItems,
         });
 
@@ -727,7 +781,8 @@ export default function ReturnRequestsPage() {
     verificationTag &&
     verificationCondition &&
     verificationConfirmSign &&
-    assignToProcessor;
+    assignToProcessor &&
+    (!adminCopySignerRequired || !!adminCopySignerId);
 
   const handleDownloadNextAccountability = async () => {
     if (!nextStepsReturnerUserId) {
@@ -1384,14 +1439,21 @@ export default function ReturnRequestsPage() {
                     </div>
                   </div>
 
-                  <Tabs defaultValue="physical-assets" className="w-full">
-                    <TabsList className={segmentTabsListClassName + ' grid grid-cols-1 w-full'}>
+                  <Tabs
+                    value={returnPdfPreviewTab}
+                    onValueChange={v => setReturnPdfPreviewTab(v as 'physical-assets' | 'pdf-preview')}
+                    className="w-full"
+                  >
+                    <TabsList className={segmentTabsListClassName + ' grid grid-cols-2 w-full'}>
                       <TabsTrigger value="physical-assets" className={segmentTabsTriggerClassName + ' flex items-center gap-2'}>
                         <Package className="h-4 w-4" />
                         Physical Assets
                         <Badge variant="secondary" className="ml-1 text-xs">
                           {processForm.returns.length}
                         </Badge>
+                      </TabsTrigger>
+                      <TabsTrigger value="pdf-preview" className={segmentTabsTriggerClassName}>
+                        PDF Preview
                       </TabsTrigger>
                     </TabsList>
 
@@ -1579,6 +1641,63 @@ export default function ReturnRequestsPage() {
                       })}
                     </TabsContent>
 
+                    <TabsContent value="pdf-preview" className="mt-4 space-y-4">
+                      <div className="rounded-xl border border-slate-200 bg-white p-5 shadow-sm -mx-3">
+                        <h3 className="text-sm font-semibold text-slate-800 tracking-tight uppercase flex items-center gap-2 mb-3">
+                          <FileText className="h-4 w-4 text-red-500" />
+                          Asset Return Form — PDF Preview
+                        </h3>
+                        <div className="w-full flex-1 min-h-0 border rounded-lg overflow-hidden bg-gray-50">
+                          {returnPdfError && !returnPdfLoading && !returnPdfUrl ? (
+                            <div className="w-full h-full min-h-[200px] flex items-center justify-center text-red-500">
+                              {returnPdfError}
+                            </div>
+                          ) : (
+                            <div className="relative w-full h-full min-h-[200px]">
+                              {(returnPdfLoading || !returnPdfUrl) && (
+                                <div className="absolute inset-0 z-10 flex items-center justify-center bg-white/80">
+                                  <div className="flex flex-col items-center gap-3 text-gray-500">
+                                    <div className="h-10 w-10 animate-spin rounded-full border-4 border-gray-200 border-t-blue-600" />
+                                    <p className="text-sm">Loading PDF preview...</p>
+                                  </div>
+                                </div>
+                              )}
+                              {returnPdfUrl && (
+                                <iframe
+                                  src={returnPdfUrl}
+                                  className="w-full h-full min-h-0"
+                                  title="Return Form PDF Preview"
+                                  style={{ width: '100%', height: '100%', border: 'none', display: 'block' }}
+                                />
+                              )}
+                            </div>
+                          )}
+                        </div>
+                      </div>
+                      {returnPdfUrl && (
+                        <div className="flex justify-end">
+                          <Button
+                            size="sm"
+                            variant="outline"
+                            onClick={() => {
+                              if (!processForm) return;
+                              const data = buildReturnDataForPDFFromBatch(processForm as unknown as AssetReturnFormBatch);
+                              if (!data) { toast.error('Cannot generate PDF for download'); return; }
+                              generateAssetReturnPDF(data).then(blob => {
+                                const fileName = processForm.form_number
+                                  ? `Asset_Return_Form_${processForm.form_number}_${Date.now()}.pdf`
+                                  : `Asset_Return_Form_${Date.now()}.pdf`;
+                                downloadPDF(blob, fileName);
+                                toast.success('Return form downloaded successfully');
+                              }).catch(() => toast.error('Failed to download PDF'));
+                            }}
+                          >
+                            <Download className="h-4 w-4 mr-2" />
+                            Download PDF
+                          </Button>
+                        </div>
+                      )}
+                    </TabsContent>
                   </Tabs>
 
                   {selectedIntangibleAssetIds.length > 0 && (
@@ -1771,6 +1890,21 @@ export default function ReturnRequestsPage() {
 
                   {!readOnly && (
                     <>
+                      <AdminCopySignerSelect
+                        key={processForm.formID}
+                        assets={(processForm?.returns ?? []).map(r => ({
+                          id: r.assignment?.asset?.id || r.assignment_id,
+                          code: r.assignment?.asset?.code || '',
+                          name: r.assignment?.asset?.name || '',
+                          type: r.assignment?.asset?.type_name || '',
+                          category: r.assignment?.asset?.category_name || '',
+                        }))}
+                        actorUserId={currentUser?.id ?? ''}
+                        onChange={(signerId, requiresSigner) => {
+                          setAdminCopySignerId(signerId);
+                          setAdminCopySignerRequired(requiresSigner);
+                        }}
+                      />
                       {/* Verification – same as Asset Return page */}
                       <div className="rounded-xl border border-slate-200 bg-white p-5 shadow-sm -mx-3 space-y-4">
                         <Label className="text-sm font-semibold text-slate-800 tracking-tight uppercase block">

@@ -264,6 +264,10 @@ export async function handleAccountabilityFormOnAssetReturn(
           itCopySignature: processorDigitalSignature,
           adminCopySignerId: options?.adminCopySignerId ?? null,
           adminCopyCopyType: options?.adminCopyCopyType ?? null,
+          // Background regen: follow the new dual-signer process when the
+          // creator has designated approvers; fall back to direct issue
+          // (no interactive user to block) when they have none.
+          adminCopySignerLenient: true,
         },
       } as AuthRequest;
 
@@ -387,6 +391,10 @@ export async function handleAccountabilityFormOnAssetReturn(
         itCopySignature: processorDigitalSignature,
         adminCopySignerId: options?.adminCopySignerId ?? null,
         adminCopyCopyType: options?.adminCopyCopyType ?? null,
+        // Background regen: follow the new dual-signer process when the
+        // creator has designated approvers; fall back to direct issue
+        // (no interactive user to block) when they have none.
+        adminCopySignerLenient: true,
       },
     } as AuthRequest;
 
@@ -465,6 +473,10 @@ export async function handleAccountabilityFormOnAssetReturn(
           itCopySignature: processorDigitalSignature,
           adminCopySignerId: options?.adminCopySignerId ?? null,
           adminCopyCopyType: options?.adminCopyCopyType ?? null,
+          // Background regen: follow the new dual-signer process when the
+          // creator has designated approvers; fall back to direct issue
+          // (no interactive user to block) when they have none.
+          adminCopySignerLenient: true,
         },
       } as AuthRequest;
 

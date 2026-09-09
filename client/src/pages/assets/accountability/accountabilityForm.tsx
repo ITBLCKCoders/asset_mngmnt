@@ -79,8 +79,8 @@ import {
   getBlackCodersFooterGradient,
   isBlackCoders,
   sortAssetsByLast5Digits,
-  PDF_SIGNATURE_FILL_RATIO,
-  PDF_SIGNATURE_NUDGE_X_MM,
+  computeSignatureFitSize,
+  PDF_SIGNATURE_PX_TO_MM,
 } from '@/lib/pdfGenerator/shared';
 import type { AccountabilityForm } from './accountabilityFormTypes';
 import { AssetMovementTab } from './AssetMovementTab';
@@ -138,12 +138,23 @@ const generateCacheKey = (
     formId: form.id,
     formNumber: form.formNumber,
     status: form.status,
+    approvalStatus: form.approvalStatus,
+    signed_at: form.signed_at,
     issuerSignature: form.issuerSignature,
     itCopySignature: form.itCopySignature,
     adminCopySignature: (form as AccountabilityForm).adminCopySignature,
     adminCopySignedAt: (form as AccountabilityForm).adminCopySignedAt,
     adminCopySignerName: (form as AccountabilityForm).adminCopySignerName,
-    receivedCopy201FileSignature: form.receivedCopy201FileSignedAt,
+    deptHeadSignedById: form.deptHeadSignedById,
+    deptHeadSignedByName: form.deptHeadSignedByName,
+    deptHeadSignature: form.deptHeadSignature,
+    deptHeadSignedAt: form.deptHeadSignedAt,
+    approvedByName: (form as AccountabilityForm).approvedByName,
+    approvedBySignature: (form as AccountabilityForm).approvedBySignature,
+    approvedAt: form.approvedAt,
+    receivedCopy201FileSignature: form.receivedCopy201FileSignature,
+    receivedCopy201FileSignedAt: form.receivedCopy201FileSignedAt,
+    receivedCopy201FileSignedByName: form.receivedCopy201FileSignedByName,
     digitalSignature: form.acknowledgments?.digitalSignature,
     assetCount: form.assets.length,
     assetIds: form.assets.map(a => a.id).join(','),
@@ -163,6 +174,11 @@ const blobToDataUrl = (blob: Blob): Promise<string> => {
     reader.readAsDataURL(blob);
   });
 };
+
+// Horizontal shift (mm) applied to centered signatures on this form only.
+// Pushed further left than the shared PDF_SIGNATURE_NUDGE_X_MM (-2) per design
+// feedback; other form PDFs are unaffected.
+const SIGNATURE_NUDGE_X_MM = -6;
 
 // Helper function to add signature to PDF (handles both text and base64 images)
 //
@@ -286,53 +302,35 @@ const addSignatureToPDF = async (
       };
     });
 
-    const pixelsToMm = 0.264583;
-    const sigWidth = inkWidth * pixelsToMm;
-    const sigHeight = inkHeight * pixelsToMm;
+    const sigWidth = inkWidth * PDF_SIGNATURE_PX_TO_MM;
+    const sigHeight = inkHeight * PDF_SIGNATURE_PX_TO_MM;
 
     if (!sigWidth || !sigHeight) {
       return;
     }
 
-    // Keep centered signatures inside their column at a moderate size —
-    // a fixed `x` cannot stay centered when image aspects differ.
-    const effectiveMaxWidth =
-      centerWithin && centerWithin.width > 0
-        ? Math.min(
-            maxWidth,
-            (centerWithin.width - 4) * PDF_SIGNATURE_FILL_RATIO
-          )
-        : maxWidth;
+    // Uniform size: every signature is aspect-fit inside the shared
+    // standard box so all render at the same visual size, further capped
+    // by the column width for cell-centered signatures.
+    const fit = computeSignatureFitSize(sigWidth, sigHeight, {
+      cellWidthMm:
+        centerWithin && centerWithin.width > 0 ? centerWithin.width : undefined,
+      maxWidthMm: maxWidth,
+      maxHeightMm: maxHeight,
+    });
 
-    let finalSigWidth: number;
-    let finalSigHeight: number;
+    const finalSigWidth = fit.width;
+    const finalSigHeight = fit.height;
 
-    if (centerWithin && centerWithin.width > 0) {
-      // Uniform size: stretch/shrink every signature to the same
-      // fraction of the column width so all render at equal prominence.
-      const scale = effectiveMaxWidth / sigWidth;
-      finalSigWidth = effectiveMaxWidth;
-      finalSigHeight = sigHeight * scale;
-    } else if (sigWidth > effectiveMaxWidth) {
-      const scale = effectiveMaxWidth / sigWidth;
-      finalSigWidth = effectiveMaxWidth;
-      finalSigHeight = sigHeight * scale;
-    } else {
-      finalSigWidth = sigWidth;
-      finalSigHeight = sigHeight;
-    }
-
-    if (finalSigHeight > maxHeight) {
-      const scale = maxHeight / finalSigHeight;
-      finalSigHeight = maxHeight;
-      finalSigWidth = finalSigWidth * scale;
+    if (!finalSigWidth || !finalSigHeight) {
+      return;
     }
 
     const drawX =
       centerWithin && centerWithin.width > 0
         ? centerWithin.x +
           (centerWithin.width - finalSigWidth) / 2 +
-          PDF_SIGNATURE_NUDGE_X_MM
+          SIGNATURE_NUDGE_X_MM
         : x;
     const drawY =
       anchorBottomY != null ? anchorBottomY - finalSigHeight : y;
@@ -1270,11 +1268,12 @@ I agree that if any of the items are damaged or lost due to my negligence, I sha
   // Signatures
   const signatureY = y;
   // Uniform signature columns: left 20–80, right 130–190 (60mm wide each).
-  // Images fill the column width with their bottom edge 3mm below the
-  // printed-name baseline (name sits at signatureY + 28).
+  // Images fill the column width; the bottom edge sits only 1mm below the
+  // printed-name baseline (name sits at signatureY + 28) — raised from 3mm
+  // per design feedback so signatures sit higher above the line.
   const sigColLeft = { x: 20, width: 60 };
   const sigColRight = { x: 130, width: 60 };
-  const sigNameOverlap = 3;
+  const sigNameOverlap = 1;
   doc.text('Issued by:', 20, signatureY);
 
   const issuerSignedDate = form.created_at
@@ -1305,7 +1304,7 @@ I agree that if any of the items are damaged or lost due to my negligence, I sha
   doc.line(20, signatureY + 30, 80, signatureY + 30);
   doc.text('Signature over Printed Name', 20, signatureY + 35);
 
-  doc.text('Issued to/ Reviewed / Checked by:', 130, signatureY);
+  doc.text('Issued to / Received by:', 130, signatureY);
 
   if (form.signed_at) {
     const empDate = new Date(form.signed_at);

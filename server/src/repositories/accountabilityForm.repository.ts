@@ -1042,6 +1042,8 @@ export async function updateFormApproval(args: {
   // Stamp the Department head signatory (new field set) together with the
   // generic approval columns. Falls back to the legacy update when the
   // dept_head_* migration has not been applied yet.
+  // The status guard ensures a superseded (Disabled/Revoked) form can never
+  // be approved, even if an approval request was in flight concurrently.
   try {
     const [result] = await pool.execute<ResultSetHeader>(
       `UPDATE accountability_forms
@@ -1054,7 +1056,8 @@ export async function updateFormApproval(args: {
            dept_head_signature = ?,
            dept_head_signed_at = NOW(),
            updated_at = NOW()
-       WHERE formID = ? AND approval_status = 'pending_approval'`,
+       WHERE formID = ? AND approval_status = 'pending_approval'
+         AND status IN ('Pending', 'Signed')`,
       [
         args.approvedBy,
         args.approvalNotes,
@@ -1074,7 +1077,8 @@ export async function updateFormApproval(args: {
            approved_at = NOW(),
            approval_notes = ?,
            updated_at = NOW()
-       WHERE formID = ? AND approval_status = 'pending_approval'`,
+       WHERE formID = ? AND approval_status = 'pending_approval'
+         AND status IN ('Pending', 'Signed')`,
       [args.approvedBy, args.approvalNotes, args.formId]
     );
     return result.affectedRows;
@@ -1082,8 +1086,11 @@ export async function updateFormApproval(args: {
 }
 
 /**
- * Fetch full-detail rows for forms where the given user is the designated
- * IT/Admin copy signer AND the form is awaiting their signature.
+ * Fetch full-detail rows for forms awaiting an IT/Admin copy signature that
+ * the given user may sign: either designated approver or sub-approver of the
+ * issuer/creator (both are notified; first to sign wins, after which the form
+ * leaves this list for both), plus legacy forms where the user is the stored
+ * `admin_copy_signer_id`.
  */
 export async function listFormsPendingAdminCopySignature(
   signerUserId: string
@@ -1092,9 +1099,18 @@ export async function listFormsPendingAdminCopySignature(
     `${FORM_FULL_SELECT_AND_JOINS}
      WHERE af.deleted_at IS NULL
        AND af.approval_status = 'pending_admin_copy_signature'
-       AND af.admin_copy_signer_id = ?
+       AND af.status = 'Pending'
+       AND (
+         af.admin_copy_signer_id = ?
+         OR EXISTS (
+           SELECT 1 FROM user_approvers ua
+           WHERE ua.user_id = af.created_by
+             AND ua.approver_user_id = ?
+             AND ua.approver_type IN ('approver', 'sub_approver')
+         )
+       )
      ORDER BY af.created_at DESC`,
-    [signerUserId]
+    [signerUserId, signerUserId]
   );
   return rows;
 }
@@ -1110,6 +1126,7 @@ export async function listFormsPendingApprovalForApprover(
     `${FORM_FULL_SELECT_AND_JOINS}
      WHERE af.deleted_at IS NULL
        AND af.approval_status = 'pending_approval'
+       AND af.status IN ('Pending', 'Signed')
 AND (
           EXISTS (
             SELECT 1 FROM user_approvers ua
@@ -1323,6 +1340,7 @@ export async function listFormsPendingItForUser(userId: string): Promise<RowData
   const [rows] = await pool.execute<RowDataPacket[]>(
     `${FORM_FULL_SELECT_AND_JOINS}
      WHERE af.deleted_at IS NULL AND af.approval_status = 'pending_it'
+       AND af.status IN ('Pending', 'Signed')
        AND JSON_UNQUOTE(JSON_EXTRACT(af.assets_data, '$.form_origin')) = 'clearance'
      ORDER BY af.created_at DESC`
   );
@@ -1333,6 +1351,7 @@ export async function listFormsPendingAdminForUser(userId: string): Promise<RowD
   const [rows] = await pool.execute<RowDataPacket[]>(
     `${FORM_FULL_SELECT_AND_JOINS}
      WHERE af.deleted_at IS NULL AND af.approval_status = 'pending_admin'
+       AND af.status IN ('Pending', 'Signed')
        AND JSON_UNQUOTE(JSON_EXTRACT(af.assets_data, '$.form_origin')) = 'clearance'
      ORDER BY af.created_at DESC`
   );
@@ -1343,6 +1362,7 @@ export async function listFormsPendingHrForUser(userId: string): Promise<RowData
   const [rows] = await pool.execute<RowDataPacket[]>(
     `${FORM_FULL_SELECT_AND_JOINS}
      WHERE af.deleted_at IS NULL AND af.approval_status = 'pending_hr'
+       AND af.status IN ('Pending', 'Signed')
        AND JSON_UNQUOTE(JSON_EXTRACT(af.assets_data, '$.form_origin')) = 'clearance'
      ORDER BY af.created_at DESC`
   );
@@ -1353,6 +1373,7 @@ export async function listFormsPendingClearanceForApprover(approverUserId: strin
   const [rows] = await pool.execute<RowDataPacket[]>(
     `${FORM_FULL_SELECT_AND_JOINS}
      WHERE af.deleted_at IS NULL AND af.approval_status = 'pending_approval'
+       AND af.status IN ('Pending', 'Signed')
        AND JSON_UNQUOTE(JSON_EXTRACT(af.assets_data, '$.form_origin')) = 'clearance'
        AND (
          EXISTS (SELECT 1 FROM user_approvers ua WHERE ua.user_id = af.user_id AND ua.approver_user_id = ? AND ua.approver_type = 'approver')

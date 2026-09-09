@@ -3,7 +3,7 @@ import * as assetAssignmentsController from '../../controllers/assetAssignments.
 import { createMockRes } from '../helpers/mockRes.js';
 
 jest.mock('../../db.js', () => ({ pool: { execute: jest.fn() } }));
-jest.mock('../../logger.js', () => ({ __esModule: true, default: { error: jest.fn(), info: jest.fn(), warn: jest.fn(), debug: jest.fn() } }));
+jest.mock('../../logger.js', () => ({ __esModule: true, default: { error: jest.fn((...a: any[]) => console.error('LOGGER_ERROR:', ...a)), info: jest.fn(), warn: jest.fn(), debug: jest.fn() } }));
 jest.mock('../../utils/audit.js', () => ({ createAuditLog: jest.fn() }));
 jest.mock('../../utils/accountabilityFormOnReturn.js', () => ({ handleAccountabilityFormOnAssetReturn: jest.fn() }));
 jest.mock('../../utils/assetScope.js', () => ({ getAssetScope: jest.fn(), classifyDepartmentScopeByName: jest.fn(), getDepartmentIdsForScope: jest.fn() }));
@@ -203,6 +203,116 @@ describe('assetAssignments.controller', () => {
         expect.anything(),
         expect.anything()
       );
+    });
+    it('defers the "New asset is assigned to You" notice while the approval flow is pending', async () => {
+      createAccountabilityFormHandler.mockResolvedValue({
+        form: { formID: 'f2', form_number: 'AF-002' },
+      });
+      // createdFormStatuses lookup: the new form is awaiting the IT/Admin copy
+      pool.execute.mockImplementation(async (query: unknown) => {
+        const q = String(query);
+        if (q.includes('approval_status')) {
+          return [[{ approval_status: 'pending_admin_copy_signature' }]];
+        }
+        return [[]];
+      });
+      NotificationService.createNotification.mockClear();
+      emitNotification.mockClear();
+
+      await assetAssignmentsController.createAssetAssignmentHandler(req, res);
+
+      // The assignment notice must NOT reach the owner before the form is
+      // fully approved (it is sent by the final approval step instead).
+      expect(
+        NotificationService.createNotification
+      ).not.toHaveBeenCalledWith(
+        expect.objectContaining({ title: 'New asset is assigned to You' }),
+        expect.anything(),
+        expect.anything(),
+        expect.anything()
+      );
+      expect(emitNotification).not.toHaveBeenCalledWith(
+        expect.anything(),
+        'u1',
+        'notification',
+        expect.objectContaining({ title: 'New asset is assigned to You' })
+      );
+    });
+
+    it('sends the "New asset is assigned to You" notice when no approval flow is pending', async () => {
+      createAccountabilityFormHandler.mockResolvedValue({
+        form: { formID: 'f1', form_number: 'AF-001' },
+      });
+      // createdFormStatuses lookup: form approved right away (no approvers)
+      pool.execute.mockImplementation(async (query: unknown) => {
+        const q = String(query);
+        if (q.includes('approval_status')) {
+          return [[{ approval_status: 'approved' }]];
+        }
+        return [[]];
+      });
+      NotificationService.createNotification.mockClear();
+      emitNotification.mockClear();
+
+      await assetAssignmentsController.createAssetAssignmentHandler(req, res);
+
+      expect(
+        NotificationService.createNotification
+      ).toHaveBeenCalledWith(
+        expect.objectContaining({
+          user_id: 'u1',
+          title: 'New asset is assigned to You',
+          type: 'asset_assignment',
+        }),
+        '5',
+        '127.0.0.1',
+        undefined
+      );
+      expect(emitNotification).toHaveBeenCalledWith(
+        {},
+        'u1',
+        'notification',
+        expect.objectContaining({ title: 'New asset is assigned to You' })
+      );
+    });
+
+
+
+    it('disables an in-flight (pending admin copy) form and creates a new one instead of merging', async () => {
+      repo.getExistingAccountabilityForms.mockResolvedValue([
+        {
+          formID: 'f-old',
+          form_number: 'AF-000',
+          status: 'Pending',
+          approval_status: 'pending_admin_copy_signature',
+          created_at: '2026-01-01T00:00:00Z',
+          // Referenced asset is already covered by the category query,
+          // so no extra-asset lookup is needed for this test.
+          assets_data: JSON.stringify({ assets: [{ id: 'a1', department: 'IT' }] }),
+        },
+      ]);
+      createAccountabilityFormHandler.mockResolvedValue({
+        form: { formID: 'f-new', form_number: 'AF-003' },
+      });
+
+      await assetAssignmentsController.createAssetAssignmentHandler(req, res);
+
+      // The in-flight form is disabled, never merged into
+      expect(repo.disableAccountabilityForm).toHaveBeenCalledWith('f-old');
+
+      // A NEW form is created, linked to the disabled previous form
+      expect(createAccountabilityFormHandler).toHaveBeenCalledWith(
+        expect.objectContaining({
+          body: expect.objectContaining({
+            previousFormId: 'f-old',
+            previousFormOriginalStatus: 'Pending',
+          }),
+        }),
+        expect.anything()
+      );
+
+      expect(res._status).toBe(201);
+      expect(res._json.accountabilityFormIds).toEqual(['f-new']);
     });
   });
 

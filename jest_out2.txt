@@ -1,0 +1,6 @@
+PASS src/tests/controllers/assetAssignments.controller.test.ts
+
+Test Suites: 1 passed, 1 total
+Tests:       20 passed, 20 total
+Snapshots:   0 total
+Time:        0.667 s, estimated 1 s
