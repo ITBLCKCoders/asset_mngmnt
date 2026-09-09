@@ -2344,6 +2344,11 @@ export async function signAccountabilityFormHandler(
       return res.status(400).json({ error: 'Form is not in pending status' });
     }
 
+    // The approvalStatus we return in the final response. Set explicitly in
+    // each mutation path below so it always reflects the DB state, never
+    // re-derived from the stale pre-fetch `form.approval_status`.
+    let responseApprovalStatus: string | undefined;
+
     // Standard approval flow: the owner cannot sign until the IT/Admin copy
     // has been signed.
     if (form.approval_status === 'pending_admin_copy_signature') {
@@ -2519,7 +2524,7 @@ export async function signAccountabilityFormHandler(
             id: formId,
             status: 'Signed',
             signed_at: new Date(),
-            approvalStatus: 'pending_approval',
+            approvalStatus: (responseApprovalStatus = 'pending_approval'),
           },
         });
       }
@@ -2540,6 +2545,7 @@ export async function signAccountabilityFormHandler(
           approveErr
         );
       }
+      responseApprovalStatus = 'approved';
       try {
         const signerRow = await repo.getUserNameById(userId);
         const assignerName = signerRow
@@ -2604,9 +2610,7 @@ export async function signAccountabilityFormHandler(
         status: 'Signed',
         signed_at: new Date(),
         approvalStatus:
-          form.approval_status === 'pending_owner_signature'
-            ? 'approved'
-            : form.approval_status ?? undefined,
+          responseApprovalStatus ?? form.approval_status ?? undefined,
       },
     });
   } catch (error: any) {
