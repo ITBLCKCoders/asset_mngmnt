@@ -416,4 +416,59 @@ describe('accountabilityFormOnReturn', () => {
     );
     expect(clearanceCalls).toHaveLength(0);
   });
+
+  it('should not reference ia.deleted_at in any query (intangible_assets has no such column)', async () => {
+    const req = makeReq();
+    mockPool.execute
+      // Fetch processor digital signature
+      .mockResolvedValueOnce([[{ digital_signature: null }], []])
+      // Find forms for user: one IT form to disable
+      .mockResolvedValueOnce([[
+        {
+          formID: 'f-it',
+          form_number: 'AF-IT-004',
+          asset_id: 'a1',
+          assets_data: JSON.stringify({
+            assets: [{ id: 'a1', name: 'Laptop', department: 'IT' }],
+          }),
+          status: 'Signed',
+          issuer_signature: 'sig',
+          it_copy_signature: 'sig',
+        },
+      ], []])
+      // Disable form
+      .mockResolvedValueOnce([[], []])
+      // Find active assignments (one IT asset remains)
+      .mockResolvedValueOnce([[
+        { asset_id: 'a3', department_id: 'd1', location_id: 'loc1', location_room_id: 'room1' },
+      ], []])
+      // Clearance helper - IT scope: existing clearance (none)
+      .mockResolvedValueOnce([[], []])
+      // Clearance helper - IT scope: remaining tangibles
+      .mockResolvedValueOnce([[{ assetID: 'a3', department_name: 'IT' }], []])
+      // Clearance helper - IT scope: remaining intangibles (none)
+      .mockResolvedValueOnce([[], []])
+      // Clearance helper - IT scope: other active forms (none)
+      .mockResolvedValueOnce([[], []])
+      // Get asset details
+      .mockResolvedValueOnce([[
+        { assetID: 'a3', category_id: 'c1', asset_code: 'A003', name: 'Monitor', serial: 'S3', model: 'M3', brand: 'B3', category_name: 'Electronics', type_name: 'Monitor', department_name: 'IT' },
+      ], []])
+      // Get returned asset departments
+      .mockResolvedValueOnce([[{ department_name: 'IT' }], []])
+      // Get department assets for new form
+      .mockResolvedValueOnce([[
+        { assetID: 'a3', asset_code: 'A003', name: 'Monitor', serial: 'S3', model: 'M3', brand: 'B3', category_name: 'Electronics', type_name: 'Monitor', department_name: 'IT', department_id: 'd1' },
+      ], []]);
+    mockCreateAccountabilityFormHandler.mockResolvedValue(undefined);
+
+    await handleAccountabilityFormOnAssetReturn('u1', ['a1'], 'd1', 'loc1', 'room1', 'creator', req);
+
+    expect(mockCreateAccountabilityFormHandler).toHaveBeenCalled();
+    const executedSql = mockPool.execute.mock.calls.map((call: any[]) => String(call[0]));
+    expect(executedSql.length).toBeGreaterThan(0);
+    for (const sql of executedSql) {
+      expect(sql).not.toMatch(/\bia\.deleted_at\b/);
+    }
+  });
 });

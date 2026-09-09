@@ -206,6 +206,13 @@ export default function ReturnRequestsPage() {
     null
   );
   const [adminCopySignerRequired, setAdminCopySignerRequired] = useState(false);
+  /**
+   * Assets left in the return requestor's custody after this batch
+   * (active assignments minus the batch). Null while unknown / not loaded.
+   */
+  const [requestorRemaining, setRequestorRemaining] = useState<number | null>(
+    null
+  );
   const [submitting, setSubmitting] = useState(false);
   const [declineDialogOpen, setDeclineDialogOpen] = useState(false);
   const [declineReason, setDeclineReason] = useState('');
@@ -320,6 +327,42 @@ export default function ReturnRequestsPage() {
     fetchLocations();
     fetchIntangibleAssets();
   }, [scope]);
+
+  // Load the return requestor's remaining custody so the IT-copy signer
+  // block can note that a new accountability form will be issued.
+  useEffect(() => {
+    if (!processForm) {
+      setRequestorRemaining(null);
+      return;
+    }
+    let cancelled = false;
+    const load = async () => {
+      try {
+        const res = await api.get<{ assignments?: unknown[] }>(
+          `/asset-assignments?userId=${processForm.user_id}&status=Active`
+        );
+        if (cancelled) return;
+        const list = Array.isArray(res?.assignments) ? res.assignments : [];
+        // Count only this requestor's active assignments (the endpoint also
+        // returns intangible rows — filter defensively by owner + status).
+        const total = list.filter(
+          a =>
+            (a as { user?: { id?: string } })?.user?.id ===
+              processForm.user_id &&
+            (a as { status?: string })?.status === 'Active'
+        ).length;
+        setRequestorRemaining(
+          Math.max(0, total - (processForm.returns?.length ?? 0))
+        );
+      } catch {
+        if (!cancelled) setRequestorRemaining(null);
+      }
+    };
+    load();
+    return () => {
+      cancelled = true;
+    };
+  }, [processForm]);
 
   // Generate return form PDF preview when the PDF Preview tab is opened
   useEffect(() => {
@@ -1900,6 +1943,17 @@ export default function ReturnRequestsPage() {
                           category: r.assignment?.asset?.category_name || '',
                         }))}
                         actorUserId={currentUser?.id ?? ''}
+                        custody={
+                          requestorRemaining !== null
+                            ? {
+                                requestorName: processForm
+                                  ? returnerName(processForm)
+                                  : 'The requestor',
+                                requestorRemaining,
+                                origin: 'return',
+                              }
+                            : null
+                        }
                         onChange={(signerId, requiresSigner) => {
                           setAdminCopySignerId(signerId);
                           setAdminCopySignerRequired(requiresSigner);

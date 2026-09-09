@@ -1713,18 +1713,21 @@ export function AccountabilityFormCard({
   lazyLoadDetails = false,
 }: AccountabilityFormProps) {
   const { user: currentUser } = useCurrentUser();
+  const isDisabledOrDeclined =
+    form.status === 'Disabled' || form.status === 'Declined';
+  const isReceived201 = !!form.receivedCopy201FileSignedAt;
   const displayedStatus =
-    statusPillVariant === 'activeDisabled' && form.receivedCopy201FileSignedAt
-      ? 'Received'
-      : statusPillVariant === 'toReceive'
-        ? 'To receive'
-        : statusPillVariant === 'activeDisabled'
-          ? form.status === 'Disabled' || form.status === 'Declined'
-            ? 'Disabled'
-            : 'Active'
-          : statusBasedOnReceivedCopy
-            ? form.status
-            : form.status;
+    statusPillVariant === 'activeDisabled' && isDisabledOrDeclined
+      ? 'Disabled'
+      : statusPillVariant === 'activeDisabled' && isReceived201
+        ? 'Received'
+        : statusPillVariant === 'toReceive'
+          ? 'To receive'
+          : statusPillVariant === 'activeDisabled'
+            ? 'Active'
+            : statusBasedOnReceivedCopy
+              ? form.status
+              : form.status;
   const isDeclined = form.status === 'Declined';
   const isDisabledWithDeclineReason =
     form.status === 'Disabled' && form.declineReason;
@@ -2237,6 +2240,16 @@ export function AccountabilityFormCard({
             >
               {displayedStatus}
             </Badge>
+            {statusPillVariant === 'activeDisabled' &&
+              displayedStatus === 'Disabled' &&
+              isReceived201 && (
+                <Badge
+                  variant="outline"
+                  className="border-green-300 bg-green-50 text-green-900 font-medium dark:border-green-800 dark:bg-green-900/30 dark:text-green-200"
+                >
+                  Received • 201 file
+                </Badge>
+              )}
             {form.formOrigin === 'processor_return' && (
               <Badge
                 variant="outline"

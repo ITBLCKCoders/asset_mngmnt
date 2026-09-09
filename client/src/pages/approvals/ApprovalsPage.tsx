@@ -118,10 +118,15 @@ function mapAccountabilityApiBatch(
   formType: AccountabilityApprovalFormType
 ): AccountabilityApprovalBatch {
   let assets: AccountabilityApprovalBatch['assets'] = [];
+  let formOrigin: AccountabilityApprovalBatch['formOrigin'];
   const raw = row?.assets_data;
   if (raw) {
     try {
       const data = typeof raw === 'string' ? JSON.parse(raw) : raw;
+      const origin = data?.form_origin ?? data?.formOrigin;
+      if (origin === 'processor_return' || origin === 'clearance') {
+        formOrigin = origin;
+      }
       if (Array.isArray(data?.assets)) {
         assets = data.assets.map((a: any) => ({
           id: String(a?.id ?? a?.assetID ?? ''),
@@ -133,6 +138,12 @@ function mapAccountabilityApiBatch(
       }
     } catch {
       /* ignore */
+    }
+  }
+  if (!formOrigin) {
+    const rowOrigin = row?.form_origin ?? row?.formOrigin;
+    if (rowOrigin === 'processor_return' || rowOrigin === 'clearance') {
+      formOrigin = rowOrigin;
     }
   }
   return {
@@ -147,6 +158,7 @@ function mapAccountabilityApiBatch(
     admin_copy_signed_at: row.admin_copy_signed_at ?? null,
     approval_status: row.approval_status ?? null,
     created_at: row.created_at,
+    formOrigin,
     assets,
     // The "new asset owner" is the form's user; their department is what the
     // accountability card should show (matches the form card display).

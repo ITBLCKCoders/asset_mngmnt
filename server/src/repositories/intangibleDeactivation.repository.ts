@@ -167,7 +167,7 @@ export async function getActiveIntangibleAssignmentsForUser(userId: string): Pro
             iat.department_id as type_department_id, td.name as type_department_name,
             d.name as department_name
      FROM intangible_asset_assignments iaa
-     JOIN intangible_assets ia ON iaa.intangible_asset_id = ia.id AND ia.deleted_at IS NULL
+      JOIN intangible_assets ia ON iaa.intangible_asset_id = ia.id
      LEFT JOIN intangible_asset_types iat ON ia.type = iat.name AND iat.company_id = ia.company_id AND iat.deleted_at IS NULL
      LEFT JOIN asset_mngmnt_departments td ON iat.department_id = td.departmentID AND td.deleted_at IS NULL
      LEFT JOIN asset_mngmnt_departments d ON iaa.department_id = d.departmentID AND d.deleted_at IS NULL

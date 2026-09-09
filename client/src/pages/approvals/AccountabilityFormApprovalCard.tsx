@@ -21,6 +21,7 @@ export interface AccountabilityApprovalBatch {
   admin_copy_signed_at?: string | null;
   approval_status?: string | null;
   created_at: string;
+  formOrigin?: 'processor_return' | 'clearance';
   assets?: Array<{
     id: string;
     code?: string | null;
@@ -96,6 +97,14 @@ export function AccountabilityFormApprovalCard({
             {batch.admin_copy_copy_type && (
               <Badge className="bg-red-100 text-red-800 hover:bg-red-100 dark:bg-red-900/30 dark:text-red-200 dark:hover:bg-red-900/30">
                 {batch.admin_copy_copy_type} Copy
+              </Badge>
+            )}
+            {batch.formOrigin === 'processor_return' && (
+              <Badge
+                variant="outline"
+                className="border-amber-300 bg-amber-50 text-amber-900 font-medium dark:border-amber-800 dark:bg-amber-900/30 dark:text-amber-200"
+              >
+                Temporary
               </Badge>
             )}
           </div>

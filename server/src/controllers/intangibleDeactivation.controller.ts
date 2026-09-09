@@ -328,7 +328,7 @@ async function handleIntangibleAccountabilityAfterDeactivation(userId: string, d
   const [activeIntangiblesRows] = await conn.execute(
     `SELECT iaa.intangible_asset_id, ia.name, ia.description, ia.type, iaa.department_id, d.name as department_name
      FROM intangible_asset_assignments iaa
-     JOIN intangible_assets ia ON iaa.intangible_asset_id=ia.id AND ia.deleted_at IS NULL
+      JOIN intangible_assets ia ON iaa.intangible_asset_id=ia.id
      LEFT JOIN asset_mngmnt_departments d ON iaa.department_id=d.departmentID AND d.deleted_at IS NULL
      WHERE iaa.user_id=? AND iaa.status='Active' AND iaa.deleted_at IS NULL`, [userId]) as any[];
   const activeIntangibles = (activeIntangiblesRows as any[]) ?? [];

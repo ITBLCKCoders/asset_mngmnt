@@ -44,7 +44,12 @@ export async function handleAccountabilityFormOnAssetReturn(
   createdBy: string,
   req: Request,
   _processSignature?: ProcessSignature,
-  options?: { adminCopySignerId?: string | null; adminCopyCopyType?: 'IT' | 'Admin' | null }
+  options?: {
+    adminCopySignerId?: string | null;
+    adminCopyCopyType?: 'IT' | 'Admin' | null;
+    /** Origin word used in the remaining-custody note sent to the IT/Admin copy signer. */
+    reason?: 'return' | 'transfer';
+  }
 ): Promise<ClearanceEligibility> {
   const emptyEligibility: ClearanceEligibility = {
     eligibleScopes: [],
@@ -206,18 +211,29 @@ export async function handleAccountabilityFormOnAssetReturn(
     disabledFormNumbersByScope,
   });
 
+  // Remaining-custody note for the IT/Admin copy signer: the replacement
+  // form(s) below are issued because the user still holds assets.
+  const originWord = options?.reason === 'transfer' ? 'transfer' : 'return';
+  const tangibleCustodyNote =
+    `Note: a new accountability form was issued since the user still has ` +
+    `${activeAssignments.length} asset${activeAssignments.length === 1 ? '' : 's'} ` +
+    `in custody following this ${originWord}.`;
+  const intangibleCustodyNote =
+    `Note: a new accountability form was issued since the user still has ` +
+    `intangible asset(s) in custody following this ${originWord}.`;
+
   if (activeAssignments.length === 0) {
     // No tangible assets remain. Intangible assets are tracked in a separate
     // table, so the user may still hold intangibles even after returning all
     // of their physical assets. Those existing forms were already disabled in
     // step 1, so create a replacement form from the remaining intangibles.
-    const [activeIntangibles] = (await pool.execute(
-      `SELECT iaa.intangible_asset_id, ia.name, ia.description, ia.type,
-              iaa.department_id, iaa.location_id, iaa.location_room_id,
-              d.name AS department_name
-       FROM intangible_asset_assignments iaa
-       INNER JOIN intangible_assets ia
-         ON iaa.intangible_asset_id = ia.id AND ia.deleted_at IS NULL
+     const [activeIntangibles] = (await pool.execute(
+       `SELECT iaa.intangible_asset_id, ia.name, ia.description, ia.type,
+               iaa.department_id, iaa.location_id, iaa.location_room_id,
+               d.name AS department_name
+        FROM intangible_asset_assignments iaa
+        INNER JOIN intangible_assets ia
+          ON iaa.intangible_asset_id = ia.id
        LEFT JOIN asset_mngmnt_departments d
          ON iaa.department_id = d.departmentID AND d.deleted_at IS NULL
        WHERE iaa.user_id = ? AND iaa.status = 'Active' AND iaa.deleted_at IS NULL`,
@@ -264,6 +280,7 @@ export async function handleAccountabilityFormOnAssetReturn(
           itCopySignature: processorDigitalSignature,
           adminCopySignerId: options?.adminCopySignerId ?? null,
           adminCopyCopyType: options?.adminCopyCopyType ?? null,
+          custodyNote: intangibleCustodyNote,
           // Background regen: follow the new dual-signer process when the
           // creator has designated approvers; fall back to direct issue
           // (no interactive user to block) when they have none.
@@ -391,6 +408,7 @@ export async function handleAccountabilityFormOnAssetReturn(
         itCopySignature: processorDigitalSignature,
         adminCopySignerId: options?.adminCopySignerId ?? null,
         adminCopyCopyType: options?.adminCopyCopyType ?? null,
+        custodyNote: tangibleCustodyNote,
         // Background regen: follow the new dual-signer process when the
         // creator has designated approvers; fall back to direct issue
         // (no interactive user to block) when they have none.
@@ -473,6 +491,7 @@ export async function handleAccountabilityFormOnAssetReturn(
           itCopySignature: processorDigitalSignature,
           adminCopySignerId: options?.adminCopySignerId ?? null,
           adminCopyCopyType: options?.adminCopyCopyType ?? null,
+          custodyNote: tangibleCustodyNote,
           // Background regen: follow the new dual-signer process when the
           // creator has designated approvers; fall back to direct issue
           // (no interactive user to block) when they have none.
@@ -585,11 +604,11 @@ export async function getClearanceEligibility(params: {
       // `type_department` for their scope, see
       // `getActiveIntangibleAssetsByUserAndDepartment` in
       // `accountabilityForm.repository.ts:422`).
-      const [remainingIntangibleRows] = (await pool.execute(
-        `SELECT ia.id, td.name AS type_department_name, d.name AS department_name
-         FROM intangible_asset_assignments iaa
-         INNER JOIN intangible_assets ia
-           ON iaa.intangible_asset_id = ia.id AND ia.deleted_at IS NULL
+       const [remainingIntangibleRows] = (await pool.execute(
+         `SELECT ia.id, td.name AS type_department_name, d.name AS department_name
+          FROM intangible_asset_assignments iaa
+          INNER JOIN intangible_assets ia
+            ON iaa.intangible_asset_id = ia.id
          LEFT JOIN intangible_asset_types iat
            ON ia.type = iat.name
           AND iat.company_id = ia.company_id

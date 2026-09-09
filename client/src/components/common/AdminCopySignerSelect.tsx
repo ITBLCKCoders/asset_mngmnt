@@ -46,6 +46,32 @@ interface AdminCopySignerSelectProps {
    */
   onChange: (signerId: string | null, requiresSigner: boolean) => void;
   disabled?: boolean;
+  /**
+   * Remaining-custody context for return / transfer processing dialogs. When
+   * provided (and relevant), a note is shown that a new accountability form
+   * will be issued and the approver/sub-approver above will be notified to
+   * sign its IT/Admin copy.
+   */
+  custody?: CustodyNoteInfo | null;
+}
+
+/**
+ * Remaining-custody context for the return / transfer process dialogs.
+ * - Return: the return requestor keeps `requestorRemaining` assets, so a new
+ *   accountability form will be issued to them.
+ * - Transfer: a new accountability form is always issued to the asset
+ *   receiver (`receiverName`); when the transfer requestor still has assets
+ *   left (`requestorRemaining > 0`), a new form is issued to them as well.
+ */
+export interface CustodyNoteInfo {
+  /** Return / transfer requestor display name. */
+  requestorName: string;
+  /** Assets left in the requestor's custody after this batch (excludes batch assets). */
+  requestorRemaining: number;
+  /** Transfer asset-receiver display name (transfer flow only). */
+  receiverName?: string | null;
+  /** Origin word used in the note copy. */
+  origin: 'return' | 'transfer';
 }
 
 function detectItAsset(asset: AdminCopySignerAsset): boolean {
@@ -113,6 +139,7 @@ export function AdminCopySignerSelect({
   actorUserId,
   onChange,
   disabled = false,
+  custody = null,
 }: AdminCopySignerSelectProps) {
   const [approvers, setApprovers] = useState<{
     approver: ApproverOption | null;
@@ -200,6 +227,10 @@ export function AdminCopySignerSelect({
     );
   }
 
+  const copyNoun =
+    copyType === 'IT' ? 'IT' : copyType === 'Admin' ? 'Admin' : '';
+  const custodyNote = buildCustodyNote(custody, copyNoun);
+
   return (
     <div className="rounded-xl border border-slate-200 bg-white p-5 shadow-sm -mx-3 space-y-2">
       <div className="space-y-2">
@@ -243,7 +274,41 @@ export function AdminCopySignerSelect({
             copy.
           </p>
         )}
+        {hasCopyScope && custodyNote && (
+          <p className="rounded-lg border border-amber-300 bg-amber-50 px-3 py-2.5 text-sm leading-relaxed text-slate-900">
+            <span className="font-semibold">Note: </span>
+            {custodyNote}
+          </p>
+        )}
       </div>
     </div>
   );
+}
+
+/**
+ * Builds the remaining-custody note for return / transfer processing.
+ * Returns null when no new accountability form is expected (return with
+ * nothing left in custody and no receiver involved).
+ */
+function buildCustodyNote(
+  custody: CustodyNoteInfo | null | undefined,
+  copyNoun: string
+): string | null {
+  if (!custody) return null;
+  const remaining = Math.max(0, custody.requestorRemaining);
+  const copyLabel = copyNoun ? `${copyNoun} ` : '';
+  if (custody.origin === 'transfer') {
+    const receiver = custody.receiverName?.trim();
+    if (!receiver && remaining <= 0) return null;
+    const receiverPart = receiver
+      ? `a new accountability form will be issued to ${receiver} (asset receiver)`
+      : `a new accountability form will be issued to the asset receiver`;
+    const requestorPart =
+      remaining > 0
+        ? ` and to ${custody.requestorName}, who still has ${remaining} asset${remaining === 1 ? '' : 's'} in custody`
+        : '';
+    return `${receiverPart}${requestorPart} after this transfer. The approver/sub-approver above will also sign the ${copyLabel}copy.`;
+  }
+  if (remaining <= 0) return null;
+  return `${custody.requestorName} still has ${remaining} asset${remaining === 1 ? '' : 's'} in custody, so a new accountability form will be issued to them. The approver/sub-approver above will also sign its ${copyLabel}copy.`;
 }

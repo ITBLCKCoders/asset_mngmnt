@@ -405,7 +405,9 @@ export async function createCompanyTransferHandler(
         null,
         null,
         currentUserId,
-        req
+        req,
+        undefined,
+        { reason: 'transfer' }
       );
     }
 
@@ -903,7 +905,8 @@ export async function createAssetTransferHandler(
         null,
         processorId,
         req,
-        processSignature ?? undefined
+        processSignature ?? undefined,
+        { reason: 'transfer' }
       );
     } catch (formErr) {
       logger.error(
@@ -3083,7 +3086,8 @@ export async function runTransferFormExecution(
                 ? { digital_signature: processSignature.digital_signature }
                 : {}),
             } as ProcessSignature)
-          : undefined
+          : undefined,
+        { reason: 'transfer' }
       );
     } catch (formErr) {
       logger.error(
@@ -3267,6 +3271,9 @@ export async function runTransferFormExecution(
         skipNotification: true,
         adminCopySignerId: adminCopySignerId ?? null,
         adminCopyCopyType: adminCopyCopyType ?? null,
+        custodyNote:
+          `Note: a new accountability form was issued to the asset receiver ` +
+          `following this transfer.`,
       },
     } as AuthRequest;
     let accountabilityFormResBody: any = null;
@@ -3316,6 +3323,9 @@ export async function runTransferFormExecution(
         ownerUserId: newUserId,
         ownerName: newUserName,
         assignerName: processorName,
+        custodyNote:
+          `Note: a new accountability form was issued to the asset receiver ` +
+          `following this transfer.`,
         req,
       });
     } catch (kickoffErr) {

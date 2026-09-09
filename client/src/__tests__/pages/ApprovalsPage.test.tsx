@@ -347,4 +347,55 @@ describe('ApprovalsPage', () => {
       ).toBe('active');
     });
   });
+
+  it('should show the Temporary badge on temporary accountability form cards only', async () => {
+    mockPermissions.roleCustodian = null;
+    const temporaryRow = {
+      formID: 'acc-temp-1',
+      form_number: 'ACC-TEMP-001',
+      user_id: 'u9',
+      first_name: 'Temp',
+      last_name: 'Owner',
+      email: 'temp@test.com',
+      approval_status: 'pending_approval',
+      created_at: '2026-01-01T00:00:00Z',
+      user_department_name: 'IT',
+      assets_data: JSON.stringify({
+        form_origin: 'processor_return',
+        assets: [{ id: 'a1', code: 'AST-001', name: 'Laptop' }],
+      }),
+    };
+    const regularRow = {
+      formID: 'acc-reg-1',
+      form_number: 'ACC-REG-001',
+      user_id: 'u10',
+      first_name: 'Regular',
+      last_name: 'Owner',
+      email: 'regular@test.com',
+      approval_status: 'pending_approval',
+      created_at: '2026-01-02T00:00:00Z',
+      user_department_name: 'HR',
+      assets_data: JSON.stringify({
+        assets: [{ id: 'a2', code: 'AST-002', name: 'Monitor' }],
+      }),
+    };
+    (api.get as any).mockImplementation(async (url: string) => {
+      if (url === '/accountability-forms/pending-approvals') {
+        return { forms: [temporaryRow, regularRow] };
+      }
+      return {
+        assetReturnForms: [],
+        assetTransferForms: [],
+        checklistBatches: [],
+        success: true,
+        data: { borrowRequests: [] },
+      };
+    });
+    renderPage();
+    await waitFor(() => {
+      expect(screen.getByText('ACC-TEMP-001')).toBeDefined();
+    });
+    expect(screen.getByText('ACC-REG-001')).toBeDefined();
+    expect(screen.getAllByText('Temporary')).toHaveLength(1);
+  });
 });

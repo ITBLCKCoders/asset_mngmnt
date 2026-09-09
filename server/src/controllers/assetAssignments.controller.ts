@@ -904,6 +904,16 @@ export async function getAssetAssignmentsHandler(
         (status as string) ?? null
       );
       intangibleRows = await repo.getIntangibleAssignments(null);
+      // getIntangibleAssignments has no user/status filter — apply the
+      // requested userId/status here so `?userId=&status=` callers (e.g.
+      // remaining-custody checks) don't count other users' assignments.
+      if (userId || status) {
+        intangibleRows = intangibleRows.filter(
+          row =>
+            (!userId || String(row.user_id) === String(userId)) &&
+            (!status || String(row.status) === String(status))
+        );
+      }
     }
 
     const formMap = await buildAccountabilityFormMap(physicalRows);

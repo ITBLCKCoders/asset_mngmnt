@@ -1004,6 +1004,12 @@ async function sendApprovalKickoffNotifications(args: {
   /** Issuer/creator — copy-signer pool is resolved from their designations. */
   issuerUserId?: string | null;
   req: AuthRequest;
+  /**
+   * Remaining-custody context appended to the copy-signature request message
+   * (return / transfer regen: a new accountability form was issued because
+   * the user still has assets in custody).
+   */
+  custodyNote?: string | null;
 }): Promise<void> {
   const { req } = args;
   if (args.approvalStatus === 'pending_admin_copy_signature') {
@@ -1021,11 +1027,15 @@ async function sendApprovalKickoffNotifications(args: {
     if (copyRecipients.length === 0 && args.adminCopySignerId) {
       copyRecipients.push(args.adminCopySignerId);
     }
+    const custodySuffix =
+      typeof args.custodyNote === 'string' && args.custodyNote.trim() !== ''
+        ? ` ${args.custodyNote.trim()}`
+        : '';
     for (const recipientId of copyRecipients) {
       await notifyUser({
         userId: recipientId,
         title: `Accountability form ${args.formNumber} needs ${args.adminCopyCopyType ?? 'IT'} copy signature`,
-        message: `Please sign the ${args.adminCopyCopyType ?? 'IT'} copy for ${args.ownerName}'s accountability form (${args.formNumber}).`,
+        message: `Please sign the ${args.adminCopyCopyType ?? 'IT'} copy for ${args.ownerName}'s accountability form (${args.formNumber}).${custodySuffix}`,
         type: 'accountability_form',
         data: {
           route: '/approvals?tab=for-approval',
@@ -1127,6 +1137,8 @@ export async function kickoffApprovalFlowNotifications(args: {
   ownerName: string;
   assignerName: string;
   req: AuthRequest;
+  /** Remaining-custody context appended to the copy-signature request message. */
+  custodyNote?: string | null;
 }): Promise<void> {
   try {
     const [rows] = await pool.execute(
@@ -1173,6 +1185,7 @@ export async function kickoffApprovalFlowNotifications(args: {
       ownerApproverId,
       ownerSubApproverId,
       issuerUserId: (row.created_by as string | null) ?? null,
+      custodyNote: args.custodyNote ?? null,
       req: args.req,
     });
   } catch (err) {
@@ -1217,6 +1230,7 @@ export async function createAccountabilityFormHandler(
       previousFormId,
       previousFormOriginalStatus,
       skipNotification,
+      custodyNote: custodyNoteBody,
     } = req.body;
     const formOriginRaw = formOriginBody ?? formOriginSnake;
     const formOriginStored: AccountabilityFormOrigin | undefined =
@@ -1257,6 +1271,10 @@ export async function createAccountabilityFormHandler(
         ? clearedAtRaw
         : new Date().toISOString();
     const createdBy = req.user!.userID;
+    const custodyNote =
+      typeof custodyNoteBody === 'string' && custodyNoteBody.trim() !== ''
+        ? custodyNoteBody.trim()
+        : null;
 
     // Handle clearance certificates (unified) - owner self-service via createClearanceHandler
     // This legacy direct path is retained for backwards compat but now requires Unified scope
@@ -1708,6 +1726,7 @@ export async function createAccountabilityFormHandler(
               ownerApproverId: multiResolvedApproval.ownerApproverId,
               ownerSubApproverId: multiResolvedApproval.ownerSubApproverId,
               issuerUserId: createdBy,
+              custodyNote,
               req,
             });
           } else {
@@ -1947,6 +1966,7 @@ export async function createAccountabilityFormHandler(
             ownerApproverId: singleResolvedApproval.ownerApproverId,
             ownerSubApproverId: singleResolvedApproval.ownerSubApproverId,
             issuerUserId: createdBy,
+            custodyNote,
             req,
           });
         } else {

@@ -350,6 +350,20 @@ describe('assetAssignments.controller', () => {
       await assetAssignmentsController.getAssetAssignmentsHandler(req, res);
       expect(res._json.assignments).toHaveLength(1);
     });
+
+    it('filters intangible assignments by userId and status when companyId is absent', async () => {
+      req.query = { userId: 'u1', status: 'Active' };
+      repo.callGetAssignments.mockResolvedValue([]);
+      repo.getIntangibleAssignments.mockResolvedValue([
+        { assignmentID: 'i1', intangible_asset_id: 'ia1', user_id: 'u1', status: 'Active', asset_name: 'VPN', asset_type: 'Access', first_name: 'A', last_name: 'B' },
+        { assignmentID: 'i2', intangible_asset_id: 'ia2', user_id: 'u2', status: 'Active', asset_name: 'VPN', asset_type: 'Access', first_name: 'C', last_name: 'D' },
+        { assignmentID: 'i3', intangible_asset_id: 'ia3', user_id: 'u1', status: 'Inactive', asset_name: 'VPN', asset_type: 'Access', first_name: 'A', last_name: 'B' },
+      ]);
+      buildAccountabilityFormMap.mockResolvedValue(new Map());
+      await assetAssignmentsController.getAssetAssignmentsHandler(req, res);
+      expect(res._json.assignments).toHaveLength(1);
+      expect(res._json.assignments[0].assignmentID).toBe('i1');
+    });
   });
 
   describe('getFilteredAssetAssignmentsHandler', () => {

@@ -176,6 +176,13 @@ export default function TransferRequestsPage() {
     null
   );
   const [adminCopySignerRequired, setAdminCopySignerRequired] = useState(false);
+  /**
+   * Assets left in the transfer requestor's custody after this batch
+   * (active assignments minus the batch). Null while unknown / not loaded.
+   */
+  const [requestorRemaining, setRequestorRemaining] = useState<number | null>(
+    null
+  );
   const [conditions, setConditions] = useState<Record<string, string>>({});
   /** Editable per assignment (same pattern as Assets Transfer confirmation dialog). */
   const [notesByAssignment, setNotesByAssignment] = useState<
@@ -253,6 +260,43 @@ export default function TransferRequestsPage() {
     fetchProcessed();
     fetchDepartments();
   }, [scope]);
+
+  // Load the transfer requestor's remaining custody so the IT-copy signer
+  // block can note that new accountability forms will be issued (to the
+  // requestor when assets remain, and to the asset receiver).
+  useEffect(() => {
+    if (!selectedBatch) {
+      setRequestorRemaining(null);
+      return;
+    }
+    let cancelled = false;
+    const load = async () => {
+      try {
+        const res = await api.get<{ assignments?: unknown[] }>(
+          `/asset-assignments?userId=${selectedBatch.user_id}&status=Active`
+        );
+        if (cancelled) return;
+        const list = Array.isArray(res?.assignments) ? res.assignments : [];
+        // Count only this requestor's active assignments (the endpoint also
+        // returns intangible rows — filter defensively by owner + status).
+        const total = list.filter(
+          a =>
+            (a as { user?: { id?: string } })?.user?.id ===
+              selectedBatch.user_id &&
+            (a as { status?: string })?.status === 'Active'
+        ).length;
+        setRequestorRemaining(
+          Math.max(0, total - (selectedBatch.returns?.length ?? 0))
+        );
+      } catch {
+        if (!cancelled) setRequestorRemaining(null);
+      }
+    };
+    load();
+    return () => {
+      cancelled = true;
+    };
+  }, [selectedBatch]);
 
   // Generate transfer form PDF preview when the PDF Preview tab is opened
   useEffect(() => {
@@ -1538,6 +1582,20 @@ export default function TransferRequestsPage() {
                       category: r.assignment?.asset?.category_name || '',
                     }))}
                     actorUserId={currentUser?.id ?? ''}
+                    custody={
+                      selectedBatch && requestorRemaining !== null
+                        ? {
+                            requestorName:
+                              formatTransferFromNames(selectedBatch) || 'The requestor',
+                            requestorRemaining,
+                            receiverName: selectedBatch.new_assigned_user
+                              ? `${selectedBatch.new_assigned_user.first_name} ${selectedBatch.new_assigned_user.last_name}`.trim() ||
+                                null
+                              : null,
+                            origin: 'transfer',
+                          }
+                        : null
+                    }
                     onChange={(signerId, requiresSigner) => {
                       setAdminCopySignerId(signerId);
                       setAdminCopySignerRequired(requiresSigner);
