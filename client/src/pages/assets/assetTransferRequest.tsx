@@ -332,7 +332,6 @@ export default function AssetTransferRequest() {
           ? `${b.new_assigned_user.first_name || ''} ${b.new_assigned_user.last_name || ''}`.trim()
           : undefined;
         const returns = Array.isArray(b.returns) ? b.returns : [];
-        const raw = b as AssetTransferFormBatch & { return_form_id?: string | null };
         return {
           id: b.formID,
           formID: b.formID,
@@ -342,7 +341,7 @@ export default function AssetTransferRequest() {
           target_user: targetName,
           asset_count: returns.length,
           assets_label: getMyTransferAssetSummary(returns),
-          returnFormId: raw.return_form_id ?? null,
+          returnFormId: b.return_form_id ?? null,
           isApproved: Boolean(b.dept_head_signed_at || b.sub_approver_1_signed_at),
         };
       });
@@ -611,11 +610,10 @@ export default function AssetTransferRequest() {
     setHighlightFormId(transferFormId);
     const batch = myTransferBatches.find(b => b.formID === transferFormId);
     if (!batch) return;
-    const raw = batch as AssetTransferFormBatch & { return_form_id?: string | null };
     const approved = Boolean(
       batch.dept_head_signed_at || batch.sub_approver_1_signed_at
     );
-    if (approved && raw.return_form_id == null && !showReturnConfirmDialog) {
+    if (approved && batch.return_form_id == null && !showReturnConfirmDialog) {
       setReturnTarget({ formID: batch.formID, form_number: batch.form_number });
       setConfirmReturnSigning(false);
       setShowReturnConfirmDialog(true);

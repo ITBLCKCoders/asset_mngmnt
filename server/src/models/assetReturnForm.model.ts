@@ -1,4 +1,5 @@
 import { pool } from '../db.js';
+import type { PoolConnection } from 'mysql2/promise';
 import crypto from 'crypto';
 
 export interface AssetReturnForm {
@@ -89,11 +90,13 @@ export class AssetReturnFormModel {
     > & {
       signed_by: string;
       signed_digital_signature: string | null;
-    }
+    },
+    connection?: PoolConnection
   ): Promise<AssetReturnForm | null> {
     try {
       const formID = crypto.randomUUID();
-      await pool.execute(
+      const executor = connection ?? pool;
+      await executor.execute(
         `INSERT INTO asset_return_forms
          (formID, form_number, user_id, department_id, location_id, location_room_id, created_by, signed_at, signed_by, signed_digital_signature, return_type)
          VALUES (?, ?, ?, ?, ?, ?, ?, NOW(), ?, ?, ?)`,
@@ -110,7 +113,7 @@ export class AssetReturnFormModel {
           formData.return_type ?? null,
         ]
       );
-      return this.findById(formID);
+      return this.findById(formID, connection);
     } catch (error) {
       console.error(
         'Error creating asset return form with returner signature:',
@@ -120,9 +123,13 @@ export class AssetReturnFormModel {
     }
   }
 
-  static async findById(formID: string): Promise<AssetReturnForm | null> {
+  static async findById(
+    formID: string,
+    connection?: PoolConnection
+  ): Promise<AssetReturnForm | null> {
     try {
-      const [rows] = await pool.execute(
+      const executor = connection ?? pool;
+      const [rows] = await executor.execute(
         `SELECT formID, form_number, user_id, department_id, location_id, location_room_id, created_by, created_at, updated_at, deleted_at,
          signed_at, signed_by, signed_digital_signature,
          DATE_FORMAT(process_signed_at, '%Y-%m-%d %H:%i:%s') AS process_signed_at,

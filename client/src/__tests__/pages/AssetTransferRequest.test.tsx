@@ -121,4 +121,66 @@ describe('AssetTransferRequest', () => {
       expect(screen.getByText('No active asset assignments found')).toBeDefined();
     });
   });
+
+  it('shows Generate Return Form only after transfer approval and before a return is linked', async () => {
+    (api.get as any).mockImplementation(async (url: string) => {
+      if (url === '/asset-transfers/user/u1') {
+        return {
+          assetTransferForms: [
+            {
+              formID: 'tf1',
+              form_number: 'TRF-001',
+              user_id: 'u1',
+              created_at: '2024-06-01T10:00:00.000Z',
+              dept_head_signed_at: '2024-06-02T09:00:00.000Z',
+              sub_approver_1_signed_at: null,
+              return_form_id: null,
+              returns: [],
+            },
+          ],
+        };
+      }
+      return emptyApiMock(url);
+    });
+
+    renderPage();
+
+    await waitFor(() => {
+      expect(
+        screen.getByRole('button', { name: 'Generate Return Form' })
+      ).toBeDefined();
+      expect(screen.getByText('Awaiting Return Form')).toBeDefined();
+    });
+  });
+
+  it('does not show Generate Return Form when the approved transfer already has a linked return', async () => {
+    (api.get as any).mockImplementation(async (url: string) => {
+      if (url === '/asset-transfers/user/u1') {
+        return {
+          assetTransferForms: [
+            {
+              formID: 'tf1',
+              form_number: 'TRF-001',
+              user_id: 'u1',
+              created_at: '2024-06-01T10:00:00.000Z',
+              dept_head_signed_at: '2024-06-02T09:00:00.000Z',
+              sub_approver_1_signed_at: null,
+              return_form_id: 'rf1',
+              returns: [],
+            },
+          ],
+        };
+      }
+      return emptyApiMock(url);
+    });
+
+    renderPage();
+
+    await waitFor(() => {
+      expect(screen.getByText('TRF-001')).toBeDefined();
+    });
+    expect(
+      screen.queryByRole('button', { name: 'Generate Return Form' })
+    ).toBeNull();
+  });
 });

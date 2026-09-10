@@ -1565,6 +1565,7 @@ async function runAfterReturnAccountabilityAndProcessorAssign(
       digital_signature?: string;
     } | null;
     assignToProcessor: boolean;
+    skipProcessorAccountability?: boolean;
     adminCopySignerId?: string | null;
     adminCopyCopyType?: 'IT' | 'Admin' | null;
   }
@@ -1574,6 +1575,7 @@ async function runAfterReturnAccountabilityAndProcessorAssign(
     req,
     processSignature,
     assignToProcessor,
+    skipProcessorAccountability = false,
     adminCopySignerId,
     adminCopyCopyType,
   } = options;
@@ -1619,7 +1621,11 @@ async function runAfterReturnAccountabilityAndProcessorAssign(
     }
   }
 
-  if (assignToProcessor && assignmentRows.length > 0) {
+  if (
+    assignToProcessor &&
+    !skipProcessorAccountability &&
+    assignmentRows.length > 0
+  ) {
     const assignedAssetIds = assignmentRows.map(a => String(a.asset_id));
     const placeholders = assignedAssetIds.map(() => '?').join(',');
 
@@ -5363,6 +5369,9 @@ export async function processReturnFormHandler(
       userAgent: req.get ? req.get('User-Agent') : 'Unknown',
     });
 
+    const linkedTransferFormIds = await getTransferFormIdsByReturnFormId(formId);
+    const isTransferLinkedReturn = linkedTransferFormIds.length > 0;
+
     await runAfterReturnAccountabilityAndProcessorAssign(
       assignmentRows as Array<{
         user_id: string;
@@ -5376,6 +5385,9 @@ export async function processReturnFormHandler(
         req,
         processSignature: processSignature ?? null,
         assignToProcessor: !!assignToProcessor,
+        // During a transfer the processor only performs condition checking and
+        // holds the asset temporarily; accountability belongs to the recipient.
+        skipProcessorAccountability: isTransferLinkedReturn,
         adminCopySignerId: adminCopySignerId ?? null,
         adminCopyCopyType: adminCopyCopyType ?? null,
       }
@@ -6306,35 +6318,77 @@ export async function createReturnFromTransferHandler(
         ? await generateReturnFormNumber(companyId, transferDeptId)
         : await generateReturnFormNumberFallback();
 
-    const returnForm = await AssetReturnFormModel.createWithReturnerSignature({
-      form_number: returnFormNumber,
-      user_id: currentUserId,
-      department_id: transferDeptId,
-      location_id: firstRow.location_id ?? null,
-      location_room_id: firstRow.location_room_id ?? null,
-      created_by: currentUserId,
-      signed_by: currentUserId,
-      signed_digital_signature: requesterSignature || null,
-    });
-    const returnFormId = returnForm!.formID;
+    const connection = await pool.getConnection();
+    let returnFormId: string;
+    try {
+      await connection.beginTransaction();
 
-    for (const row of assignmentRows as any[]) {
-      await AssetReturnModel.create({
-        assignment_id: row.assignmentID,
-        user_id: row.user_id,
-        return_condition: 'Good',
-        return_notes: `Return for transfer ${transfer.form_number ?? transferFormId}`,
-        return_location_id: row.location_id ?? undefined,
-        return_location_room_id: row.location_room_id ?? undefined,
-        return_department_id: row.department_id ?? undefined,
-        form_id: returnFormId,
-      });
+      // Serialize generation for this transfer. Without the row lock, two fast
+      // requests could both observe return_form_id = NULL and create duplicates.
+      const [lockedRows] = (await connection.execute(
+        `SELECT return_form_id
+         FROM asset_transfer_forms
+         WHERE formID = ? AND deleted_at IS NULL
+         FOR UPDATE`,
+        [transferFormId]
+      )) as any[];
+      const lockedTransfer = (lockedRows as any[])[0];
+      if (!lockedTransfer) {
+        await connection.rollback();
+        return res.status(404).json({ error: 'Transfer form not found' });
+      }
+      if (lockedTransfer.return_form_id) {
+        await connection.rollback();
+        return res.status(400).json({
+          error: 'A return form has already been generated for this transfer',
+        });
+      }
+
+      const returnForm = await AssetReturnFormModel.createWithReturnerSignature(
+        {
+          form_number: returnFormNumber,
+          user_id: currentUserId,
+          department_id: transferDeptId,
+          location_id: firstRow.location_id ?? null,
+          location_room_id: firstRow.location_room_id ?? null,
+          created_by: currentUserId,
+          signed_by: currentUserId,
+          signed_digital_signature: requesterSignature || null,
+        },
+        connection
+      );
+      if (!returnForm) {
+        throw new Error('Failed to create linked return form');
+      }
+      returnFormId = returnForm.formID;
+
+      for (const row of assignmentRows as any[]) {
+        await AssetReturnModel.create(
+          {
+            assignment_id: row.assignmentID,
+            user_id: row.user_id,
+            return_condition: 'Good',
+            return_notes: `Return for transfer ${transfer.form_number ?? transferFormId}`,
+            return_location_id: row.location_id ?? undefined,
+            return_location_room_id: row.location_room_id ?? undefined,
+            return_department_id: row.department_id ?? undefined,
+            form_id: returnFormId,
+          },
+          connection
+        );
+      }
+
+      await connection.execute(
+        `UPDATE asset_transfer_forms SET return_form_id = ?, updated_at = NOW() WHERE formID = ?`,
+        [returnFormId, transferFormId]
+      );
+      await connection.commit();
+    } catch (error) {
+      await connection.rollback();
+      throw error;
+    } finally {
+      connection.release();
     }
-
-    await pool.execute(
-      `UPDATE asset_transfer_forms SET return_form_id = ?, updated_at = NOW() WHERE formID = ?`,
-      [returnFormId, transferFormId]
-    );
 
     await createAuditLog({
       userId: currentUserId,

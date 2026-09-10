@@ -4049,6 +4049,7 @@ batches.push({
       formID: formId,
       form_number: form.form_number,
       return_batch_id: formId,
+      return_form_id: form.return_form_id ?? null,
       created_at: form.created_at,
       user_id: formUserId,
       owner_absent: Number((form as { owner_absent?: unknown }).owner_absent ?? 0) === 1,

@@ -1,4 +1,5 @@
 import { pool } from '../db.js';
+import type { PoolConnection } from 'mysql2/promise';
 import crypto from 'crypto';
 
 export interface AssetReturn {
@@ -23,7 +24,8 @@ export class AssetReturnModel {
     assetReturnData: Omit<
       AssetReturn,
       'return_id' | 'created_at' | 'updated_at' | 'deleted_at'
-    >
+    >,
+    connection?: PoolConnection
   ): Promise<AssetReturn | null> {
     try {
       const return_id = crypto.randomUUID();
@@ -34,7 +36,8 @@ export class AssetReturnModel {
           ? JSON.stringify(assetReturnData.condition_images)
           : null;
 
-      await pool.execute(
+      const executor = connection ?? pool;
+      await executor.execute(
         'CALL sp_create_asset_return(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
         [
           return_id,
@@ -51,16 +54,20 @@ export class AssetReturnModel {
         ]
       );
 
-      return this.findById(return_id);
+      return this.findById(return_id, connection);
     } catch (error) {
       console.error('Error creating asset return:', error);
       throw error;
     }
   }
 
-  static async findById(return_id: string): Promise<AssetReturn | null> {
+  static async findById(
+    return_id: string,
+    connection?: PoolConnection
+  ): Promise<AssetReturn | null> {
     try {
-      const [rows] = await pool.execute(
+      const executor = connection ?? pool;
+      const [rows] = await executor.execute(
         'SELECT * FROM asset_returns WHERE return_id = ? AND deleted_at IS NULL',
         [return_id]
       );

@@ -27,7 +27,7 @@ jest.mock('../../services/userApprovers.service.js', () => ({ getRequestersAssig
 jest.mock('../../utils/notificationsApi.js', () => ({ createNotificationForApi: jest.fn() }));
 jest.mock('../../utils/transferFormNumber.js', () => ({ generateTransferFormNumber: jest.fn(), generateTransferFormNumberFallback: jest.fn() }));
 jest.mock('../../utils/returnFormNumber.js', () => ({ generateReturnFormNumber: jest.fn(), generateReturnFormNumberFallback: jest.fn() }));
-jest.mock('../../models/assetTransferForm.model.js', () => ({ AssetTransferFormModel: { create: jest.fn(), findById: jest.fn(), findAll: jest.fn(), createWithTransfererSignature: jest.fn(), addFormAssignments: jest.fn(), getFormAssignmentIds: jest.fn() } }));
+jest.mock('../../models/assetTransferForm.model.js', () => ({ AssetTransferFormModel: { create: jest.fn(), findById: jest.fn(), findByUserId: jest.fn(), findAll: jest.fn(), createWithTransfererSignature: jest.fn(), addFormAssignments: jest.fn(), getFormAssignmentIds: jest.fn() } }));
 jest.mock('../../models/assetReturnForm.model.js', () => ({ AssetReturnFormModel: { create: jest.fn(), createWithReturnerSignature: jest.fn(), findById: jest.fn() } }));
 jest.mock('../../models/assetReturn.model.js', () => ({ AssetReturnModel: { create: jest.fn() } }));
 jest.mock('../../repositories/assetReturn.repository.js', () => ({ fetchUserDigitalSignature: jest.fn() }));
@@ -421,6 +421,38 @@ describe('assetTransfers.controller', () => {
         (c: any[]) => c[0]?.title
       );
       expect(notifTitles).not.toContain('New Asset Transfer Request Received');
+    });
+  });
+
+  describe('getAssetTransferFormsByUserHandler', () => {
+    it('returns the linked return form state used by the requestor action button', async () => {
+      req.params = { userId: 'u1' };
+      formModel.findByUserId.mockResolvedValue([
+        {
+          formID: 'f1',
+          form_number: 'TRF-001',
+          user_id: 'u1',
+          created_by: null,
+          created_at: '2024-06-01T10:00:00.000Z',
+          department_id: null,
+          new_assigned_user_id: null,
+          dept_head_signed_at: '2024-06-02T09:00:00.000Z',
+          sub_approver_1_signed_at: null,
+          return_form_id: null,
+        },
+      ]);
+      pool.execute.mockResolvedValue([[], []]);
+
+      await assetTransfersController.getAssetTransferFormsByUserHandler(req, res);
+
+      expect(res._json.assetTransferForms).toHaveLength(1);
+      expect(res._json.assetTransferForms[0]).toEqual(
+        expect.objectContaining({
+          formID: 'f1',
+          dept_head_signed_at: '2024-06-02T09:00:00.000Z',
+          return_form_id: null,
+        })
+      );
     });
   });
 

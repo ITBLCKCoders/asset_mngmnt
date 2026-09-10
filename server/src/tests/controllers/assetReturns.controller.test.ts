@@ -2,7 +2,12 @@ import { describe, it, expect, jest, beforeEach } from '@jest/globals';
 import * as assetReturnsController from '../../controllers/assetReturns.controller.js';
 import { createMockRes } from '../helpers/mockRes.js';
 
-jest.mock('../../db.js', () => ({ pool: { execute: jest.fn() } }));
+jest.mock('../../db.js', () => ({
+  pool: {
+    execute: jest.fn(),
+    getConnection: jest.fn(),
+  },
+}));
 jest.mock('../../logger.js', () => ({ __esModule: true, default: { error: jest.fn(), info: jest.fn(), warn: jest.fn(), debug: jest.fn() } }));
 jest.mock('../../utils/audit.js', () => ({ createAuditLog: jest.fn(() => Promise.resolve()) }));
 jest.mock('../../utils/accountabilityFormOnReturn.js', () => ({ handleAccountabilityFormOnAssetReturn: jest.fn(), createReturnAccountabilityFormAndNotify: jest.fn() }));
@@ -58,11 +63,23 @@ jest.mock('../../services/assetReturn.service.js', () => ({ resolveReturnFormCon
 jest.mock('../../controllers/accountabilityForms.controller.js', () => ({ createAccountabilityFormHandler: jest.fn(), kickoffApprovalFlowNotifications: jest.fn() }));
 jest.mock('../../controllers/assetTransfers.controller.js', () => ({ runTransferFormExecution: jest.fn() }));
 
-const { pool } = jest.requireMock('../../db.js') as { pool: { execute: jest.Mock } };
+const { pool } = jest.requireMock('../../db.js') as {
+  pool: { execute: jest.Mock; getConnection: jest.Mock };
+};
+const transactionConnection = {
+  execute: jest.fn(),
+  beginTransaction: jest.fn(),
+  commit: jest.fn(),
+  rollback: jest.fn(),
+  release: jest.fn(),
+};
 const returnModel = jest.requireMock('../../models/assetReturn.model.js').AssetReturnModel as jest.Mock;
 const returnFormModel = jest.requireMock('../../models/assetReturnForm.model.js').AssetReturnFormModel as jest.Mock;
 const { getAssetScope, classifyDepartmentScopeByName } = jest.requireMock('../../utils/assetScope.js') as { getAssetScope: jest.Mock; classifyDepartmentScopeByName: jest.Mock };
 const { createAccountabilityFormHandler } = jest.requireMock('../../controllers/accountabilityForms.controller.js') as { createAccountabilityFormHandler: jest.Mock };
+const { createReturnAccountabilityFormAndNotify } = jest.requireMock(
+  '../../utils/accountabilityFormOnReturn.js'
+) as { createReturnAccountabilityFormAndNotify: jest.Mock };
 const transferRepo = jest.requireMock('../../repositories/assetTransferForm.repository.js') as Record<string, jest.Mock>;
 const returnRepo = jest.requireMock('../../repositories/assetReturn.repository.js') as Record<string, jest.Mock>;
 const { isUserManagerApprover1, getManagerApprover1UserIdsInDepartmentAndCompany, getManagerApprover2UserIdsForProcessedReturn, getAssetRoleUsersForAssignmentsAndCompany } = jest.requireMock('../../utils/approverNotifications.js') as { isUserManagerApprover1: jest.Mock; getManagerApprover1UserIdsInDepartmentAndCompany: jest.Mock; getManagerApprover2UserIdsForProcessedReturn: jest.Mock; getAssetRoleUsersForAssignmentsAndCompany: jest.Mock };
@@ -83,9 +100,15 @@ describe('assetReturns.controller', () => {
     jest.resetAllMocks();
     req = { body: {}, params: {}, query: {}, ip: '127.0.0.1', get: jest.fn(), user: { userID: 'u1' } };
     res = createMockRes();
+    pool.getConnection.mockResolvedValue(transactionConnection);
+    transactionConnection.execute.mockResolvedValue([[], []]);
+    transactionConnection.beginTransaction.mockResolvedValue(undefined);
+    transactionConnection.commit.mockResolvedValue(undefined);
+    transactionConnection.rollback.mockResolvedValue(undefined);
     const { createAuditLog } = jest.requireMock('../../utils/audit.js') as { createAuditLog: jest.Mock };
     createAuditLog.mockResolvedValue(undefined);
     getAssetRoleUsersForAssignmentsAndCompany.mockResolvedValue([]);
+    transferRepo.getTransferFormIdsByReturnFormId.mockResolvedValue([]);
     isDesignatedApprover.mockResolvedValue(false);
     isDesignatedSubApprover.mockResolvedValue(false);
     getDesignatedApproverUserIdForRequester.mockResolvedValue(null);
@@ -1147,7 +1170,7 @@ describe('assetReturns.controller', () => {
 
       await assetReturnsController.processReturnFormHandler(req, res);
 
-      expect(createAccountabilityFormHandler).toHaveBeenCalledWith(
+      expect(createReturnAccountabilityFormAndNotify).toHaveBeenCalledWith(
         expect.objectContaining({
           user: { userID: 'u1' },
           body: expect.objectContaining({
@@ -1156,8 +1179,19 @@ describe('assetReturns.controller', () => {
             adminCopyCopyType: 'IT',
           }),
         }),
-        expect.anything()
+        'u1',
+        'u1',
+        req,
+        null
       );
+
+      createReturnAccountabilityFormAndNotify.mockClear();
+      transferRepo.getTransferFormIdsByReturnFormId.mockResolvedValue(['tf1']);
+      res = createMockRes();
+
+      await assetReturnsController.processReturnFormHandler(req, res);
+
+      expect(createReturnAccountabilityFormAndNotify).not.toHaveBeenCalled();
     });
   });
 
@@ -1184,6 +1218,13 @@ describe('assetReturns.controller', () => {
           return [[approvedTransferRow], []];
         if (s.includes('UPDATE asset_transfer_forms SET return_form_id'))
           return [[], []];
+        return [[], []];
+      });
+      transactionConnection.execute.mockImplementation(async (sql: string) => {
+        const s = String(sql);
+        if (s.includes('SELECT return_form_id')) {
+          return [[{ return_form_id: null }], []];
+        }
         return [[], []];
       });
       transferRepo.getTransferFormAssignments.mockResolvedValue([
@@ -1220,10 +1261,11 @@ describe('assetReturns.controller', () => {
           assignment_id: 'a1',
           user_id: 'u1',
           form_id: 'rf9',
-        })
+        }),
+        transactionConnection
       );
-      // Transfer form is linked to the new return form.
-      const linkCall = pool.execute.mock.calls.find((c: any[]) =>
+      // Transfer form is linked to the new return form in the same transaction.
+      const linkCall = transactionConnection.execute.mock.calls.find((c: any[]) =>
         String(c[0]).includes('UPDATE asset_transfer_forms SET return_form_id')
       );
       expect(linkCall).toBeDefined();
@@ -1234,8 +1276,13 @@ describe('assetReturns.controller', () => {
           user_id: 'u1',
           signed_by: 'u1',
           signed_digital_signature: 'sig',
-        })
+        }),
+        transactionConnection
       );
+      expect(transactionConnection.beginTransaction).toHaveBeenCalledTimes(1);
+      expect(transactionConnection.commit).toHaveBeenCalledTimes(1);
+      expect(transactionConnection.rollback).not.toHaveBeenCalled();
+      expect(transactionConnection.release).toHaveBeenCalledTimes(1);
       expect(createNotificationForApi).toHaveBeenCalledWith(
         expect.objectContaining({
           user_id: 'u-approver',
@@ -1247,6 +1294,28 @@ describe('assetReturns.controller', () => {
           }),
         })
       );
+    });
+
+    it('prevents duplicate linked returns when another request wins the row lock', async () => {
+      req.params = { transferFormId: 'tf1' };
+      req.body = { digitalSignature: 'sig' };
+      setupHappyPath();
+      transactionConnection.execute.mockImplementation(async (sql: string) => {
+        if (String(sql).includes('SELECT return_form_id')) {
+          return [[{ return_form_id: 'rf-existing' }], []];
+        }
+        return [[], []];
+      });
+
+      await assetReturnsController.createReturnFromTransferHandler(req, res);
+
+      expect(res._status).toBe(400);
+      expect(res._json.error).toContain('already been generated');
+      expect(returnFormModel.createWithReturnerSignature).not.toHaveBeenCalled();
+      expect(returnModel.create).not.toHaveBeenCalled();
+      expect(transactionConnection.rollback).toHaveBeenCalledTimes(1);
+      expect(transactionConnection.commit).not.toHaveBeenCalled();
+      expect(transactionConnection.release).toHaveBeenCalledTimes(1);
     });
 
     it('returns 404 when the transfer form is not found', async () => {
