@@ -548,7 +548,7 @@ describe('assetReturns.controller', () => {
           user_id: 'mgr2-1',
           title: 'An asset has been returned, checked and verified',
           message:
-            'Jane Processor has processed return request of John Returner',
+            'Jane Processor has processed return request of John Returner and is now for your review and signature.',
           data: expect.objectContaining({
             form_id: 'f1',
             route: '/approvals?tab=receive',
@@ -903,7 +903,7 @@ describe('assetReturns.controller', () => {
           user_id: 'mgr2-1',
           title: 'An asset has been returned, checked and verified',
           message:
-            'Jane Processor has processed return request of John Returner',
+            'Jane Processor has processed return request of John Returner and is now for your review and signature.',
           data: expect.objectContaining({
             form_id: 'f1',
             form_number: 'RET-001',
@@ -1092,7 +1092,7 @@ describe('assetReturns.controller', () => {
           user_id: 'mgr2-1',
           title: 'An asset has been returned, checked and verified',
           message:
-            'Jane Processor has processed return request of John Returner',
+            'Jane Processor has processed return request of John Returner and is now for your review and signature.',
           data: expect.objectContaining({
             form_id: 'f1',
             form_number: 'RET-001',

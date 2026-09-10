@@ -13,6 +13,7 @@ import { emitNotification } from '../sockets/socketHandlers.js';
 import { getIoInstance } from '../utils/socketManager.js';
 import { NotificationService } from '../services/notification.service.js';
 import { handleAccountabilityFormOnAssetReturn } from '../utils/accountabilityFormOnReturn.js';
+import { notifyIfNoAssetsRemainInCustody } from '../utils/noAssetCustodyNotification.js';
 
 function parseAssetsData(v: unknown): { assets: any[]; intangibleAssetIds: string[] } {
   if (v == null || v === '') return { assets: [], intangibleAssetIds: [] };
@@ -291,6 +292,12 @@ export async function approveHrHandler(req: AuthRequest, res: Response) {
       await NotificationService.createNotification({ user_id: row.user_id, title: `Intangible deactivation ${row.form_number} approved`, message: `Your intangible deactivation request has been approved by HR.`, type: 'system', status: 'unread', data: JSON.stringify({ route: '/forms/intangible-deactivation', formId, formNumber: row.form_number }) }, req.user!.userID!, req.ip, req.get('User-Agent') ?? 'Unknown');
       const io = getIoInstance(); if (io) emitNotification(io, row.user_id, 'notification', { title: `Intangible deactivation approved`, description: `${row.form_number} approved`, type:'system', route:'/forms/intangible-deactivation', formId });
     } catch {}
+
+    await notifyIfNoAssetsRemainInCustody({
+      userId: row.user_id,
+      sourceType: 'intangible_deactivation',
+      sourceId: formId,
+    });
 
     return res.json({ message: 'HR approved, assets deactivated and accountability updated' });
   } catch (e) { logger.error(e); return res.status(500).json({ error: 'Failed to HR approve' }); }

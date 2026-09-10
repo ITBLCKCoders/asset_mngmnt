@@ -74,7 +74,7 @@ function ProtectedLayoutShell() {
           />
         </div>
 
-        <aside className="hidden md:block w-64 pt-6 pb-6 fixed bottom-0 left-0 z-10 h-[90vh] overflow-y-auto shadow-inner ring-1 ring-gray-200 rounded-tr-[210px] bg-gradient-to-t from-[#881115] to-[#EE1D25]">
+        <aside className="hidden md:block w-64 pt-6 pb-6 fixed bottom-0 left-0 z-10 h-[90vh] overflow-y-auto shadow-inner ring-1 ring-white/10 rounded-tr-[210px] bg-gradient-to-t from-[#881115] to-[#EE1D25]">
           <Sidebar onLogout={handleLogout} currentPath={location.pathname} currentSearch={location.search} />
         </aside>
 

@@ -1521,7 +1521,7 @@ async function notifyManagerApprover2OfProcessedReturn(params: {
     const payload = {
       user_id: approverUserId,
       title: 'An asset has been returned, checked and verified',
-      message: `${processorName} has processed return request of ${returnRequestorName}`,
+      message: `${processorName} has processed return request of ${returnRequestorName} and is now for your review and signature.`,
       type: 'system' as const,
       data: {
         form_id: formId,

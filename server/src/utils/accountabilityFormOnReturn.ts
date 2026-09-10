@@ -11,6 +11,7 @@ import type { AuthRequest } from '../middleware/authenticate.js';
 import type { Response } from 'express';
 import logger from '../logger.js';
 import { classifyDepartmentScopeByName } from './assetScope.js';
+import { notifyIfNoAssetsRemainInCustody } from './noAssetCustodyNotification.js';
 
 /**
  * When assets are returned:
@@ -304,7 +305,13 @@ export async function handleAccountabilityFormOnAssetReturn(
       [userId]
     )) as any[];
 
-    if (activeIntangibles.length === 0) return clearanceEligibility;
+    if (activeIntangibles.length === 0) {
+      await notifyIfNoAssetsRemainInCustody({
+        userId,
+        sourceType: options?.reason === 'transfer' ? 'transfer' : 'return',
+      });
+      return clearanceEligibility;
+    }
 
     // Group by department so each department gets its own form (mirrors the
     // tangible grouping above and the form's per-department flow).
@@ -586,6 +593,11 @@ export async function handleAccountabilityFormOnAssetReturn(
       }
     }
   }
+
+  await notifyIfNoAssetsRemainInCustody({
+    userId,
+    sourceType: options?.reason === 'transfer' ? 'transfer' : 'return',
+  });
 
   return clearanceEligibility;
 }

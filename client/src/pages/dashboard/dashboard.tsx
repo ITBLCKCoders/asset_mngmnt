@@ -430,7 +430,10 @@ export default function Dashboard() {
 
   const normalizedRoleName = (user?.role?.name ?? '').trim().toLowerCase();
   const isSuperAdmin = normalizedRoleName === 'global admin';
-  const isAdmin = normalizedRoleName === 'admin' || isSuperAdmin;
+  const isLocalAdmin = normalizedRoleName === 'admin';
+  // Local Admin gets the same IT/Admin scope tabs as Global Admin (Asset List parity),
+  // but locked to its own company — no company switcher.
+  const showScopeTabs = isSuperAdmin || isLocalAdmin;
   const isEmployee =
     normalizedRoleName === 'user' ||
     normalizedRoleName === 'employee' ||
@@ -442,8 +445,8 @@ export default function Dashboard() {
     normalizedRoleName === 'admin asset manager' ||
     normalizedRoleName === 'admin custodian';
   const assetType = roleCustodian?.assetType ?? null;
-  const effectiveScope = !isSuperAdmin && assetType ? assetType : scope;
-  const dashboardTitle = isSuperAdmin
+  const effectiveScope = !isSuperAdmin && !isLocalAdmin && assetType ? assetType : scope;
+  const dashboardTitle = isSuperAdmin || isLocalAdmin
     ? scope === 'it'
       ? 'IT Asset Dashboard'
       : 'Admin Asset Dashboard'
@@ -651,11 +654,14 @@ export default function Dashboard() {
       const params = new URLSearchParams();
       if (isSuperAdmin) {
         params.set('scope', scope);
+        if (selectedCompanyId) params.set('companyId', selectedCompanyId);
+      } else if (isLocalAdmin) {
+        params.set('scope', scope);
+        const localCompanyId = user?.company_id || selectedCompanyId;
+        if (localCompanyId) params.set('companyId', localCompanyId);
       } else if (assetType) {
         params.set('scope', assetType);
       }
-      if (isAdmin && selectedCompanyId)
-        params.set('companyId', selectedCompanyId);
       const query = params.toString() ? `?${params.toString()}` : '';
 
       // Fetch dashboard stats
@@ -695,7 +701,7 @@ export default function Dashboard() {
     } finally {
       setLoading(false);
     }
-  }, [isSuperAdmin, isAdmin, scope, selectedCompanyId, isEmployee, user?.id]);
+  }, [isSuperAdmin, isLocalAdmin, scope, selectedCompanyId, isEmployee, user?.id, user?.company_id, assetType]);
 
   useEffect(() => {
     if (!getToken()) {
@@ -704,6 +710,16 @@ export default function Dashboard() {
       navigate('/profile');
     }
   }, [navigate, user, userLoading]);
+
+  // Keep the company filter in sync: Global Admin follows the company
+  // switcher (activeCompany); Local Admin is locked to its own company.
+  useEffect(() => {
+    if (isSuperAdmin && activeCompany?.id) {
+      setSelectedCompanyId(activeCompany.id);
+    } else if (isLocalAdmin && user?.company_id) {
+      setSelectedCompanyId(user.company_id);
+    }
+  }, [isSuperAdmin, isLocalAdmin, activeCompany?.id, user?.company_id]);
 
   useEffect(() => {
     if (!userLoading && user?.role) {
@@ -889,7 +905,7 @@ export default function Dashboard() {
           loading={loading}
         >
           <div className="flex flex-wrap items-center gap-2">
-            {isSuperAdmin && (
+            {showScopeTabs && (
               <Tabs
                 value={scope}
                 onValueChange={v => setScope(v as 'it' | 'admin')}

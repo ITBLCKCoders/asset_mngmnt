@@ -3360,7 +3360,7 @@ export async function notifyTransferProcessedNotifications(params: {
       const payload = {
         user_id: approverUserId,
         title: 'An asset has been transferred, checked and verified',
-        message: `${processorName} has processed transfer request of ${transferRequestorName}`,
+        message: `${processorName} has processed transfer request of ${transferRequestorName} and is now for your review and signature.`,
         type: 'system' as const,
         data: {
           form_id: formId,

@@ -715,7 +715,7 @@ const Sidebar = memo(function Sidebar({ onLogout, currentPath = '', currentSearc
                                   : 'max-h-0 opacity-0'
                               )}
                             >
-                              <div className="ml-1 space-y-1 border-l border-white/20 pl-3">
+                              <div className="ml-1 space-y-1 border-l border-white/10 pl-3">
                                 {visibleChildren.map(child => (
                                   <SidebarHoverItem
                                     key={child.path}
@@ -1115,7 +1115,10 @@ const Sidebar = memo(function Sidebar({ onLogout, currentPath = '', currentSearc
           <div className="flex-1" />
         )}
 
-        <div className="p-3 border-t border-white/10">
+        <div className="px-3 pt-3">
+          <div className="h-px bg-gradient-to-r from-transparent via-white/15 to-transparent" />
+        </div>
+        <div className="p-3">
           <SidebarHoverItem>
             <Button
               variant="ghost"

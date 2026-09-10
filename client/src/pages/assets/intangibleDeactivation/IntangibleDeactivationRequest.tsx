@@ -1,20 +1,58 @@
 'use client';
 import { useEffect, useState, useMemo } from 'react';
-import { Package, FileText, CheckCircle2, AlertTriangle } from 'lucide-react';
+import { Package, FileText, CheckCircle2, AlertTriangle, RotateCcw } from 'lucide-react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { PageHeader } from '@/components/common/PageHeader';
+import { SearchWithColumnFilter } from '@/components/common/SearchWithColumnFilter';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Checkbox } from '@/components/ui/checkbox';
-import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
+import { Shimmer } from '@/components/ui/shimmer';
 import { api } from '@/lib/api';
+import { cn } from '@/lib/utils';
 import { toast } from 'sonner';
 import { useCurrentUser } from '@/hooks/useCurrentUser';
 import SmsOtpDialog from '@/components/auth/SmsOtpDialog';
 import { DataTable } from '@/components/ui/dataTable';
 import type { ColumnDef } from '@tanstack/react-table';
+
+interface DeactivationHistoryRow {
+  id: string;
+  formNumber: string;
+  assetsLabel: string;
+  assetCount: number;
+  status: string;
+  date: string;
+}
+
+function statusBadge(status: string) {
+  if (status === 'Approved') return 'bg-green-100 text-green-800 border-green-200 dark:bg-green-900/30 dark:text-green-200 dark:border-green-800';
+  if (status === 'Declined') return 'bg-red-100 text-red-800 border-red-200 dark:bg-red-900/30 dark:text-red-200 dark:border-red-800';
+  if (status === 'PendingHrApproval') return 'bg-blue-100 text-blue-800 border-blue-200 dark:bg-blue-900/30 dark:text-blue-200 dark:border-blue-800';
+  return 'bg-amber-100 text-amber-800 border-amber-200 dark:bg-amber-900/30 dark:text-amber-200 dark:border-amber-800';
+}
+
+function statusLabel(s: string) {
+  if (s === 'PendingHrApproval') return 'Pending HR Approval';
+  return s;
+}
+
+const INTANGIBLE_SELECT_COLUMNS = [
+  { label: 'All Columns', value: 'all' },
+  { label: 'Name', value: 'name' },
+  { label: 'Type', value: 'type' },
+  { label: 'Description', value: 'description' },
+];
+
+const HISTORY_SEARCH_COLUMNS = [
+  { label: 'All Columns', value: 'all' },
+  { label: 'Form Number', value: 'formNumber' },
+  { label: 'Assets', value: 'assetsLabel' },
+  { label: 'Status', value: 'status' },
+  { label: 'Date', value: 'date' },
+];
 
 export default function IntangibleDeactivationRequest() {
   const { user: currentUser } = useCurrentUser();
@@ -24,6 +62,7 @@ export default function IntangibleDeactivationRequest() {
   const [remarks, setRemarks] = useState('');
   const [submitting, setSubmitting] = useState(false);
   const [search, setSearch] = useState('');
+  const [searchColumn, setSearchColumn] = useState('all');
   const [showOtp, setShowOtp] = useState(false);
   const [myForms, setMyForms] = useState<any[]>([]);
 
@@ -62,20 +101,31 @@ export default function IntangibleDeactivationRequest() {
   const filteredIntangibles = useMemo(() => {
     if (!search.trim()) return intangibles;
     const q = search.toLowerCase();
-    return intangibles.filter((ia: any) => (ia.name ?? '').toLowerCase().includes(q) || (ia.type ?? '').toLowerCase().includes(q) || (ia.description ?? '').toLowerCase().includes(q));
-  }, [intangibles, search]);
+    return intangibles.filter((ia: any) => {
+      if (searchColumn === 'all') {
+        return (ia.name ?? '').toLowerCase().includes(q)
+          || (ia.type ?? '').toLowerCase().includes(q)
+          || (ia.description ?? '').toLowerCase().includes(q);
+      }
+      return String(ia[searchColumn] ?? '').toLowerCase().includes(q);
+    });
+  }, [intangibles, search, searchColumn]);
 
   const toggleSelect = (id: string, checked: boolean) => {
     if (checked) setSelectedIds(prev => [...prev, id]);
     else setSelectedIds(prev => prev.filter(x => x !== id));
   };
 
-  const toggleAll = (checked: boolean) => {
-    if (checked) setSelectedIds(filteredIntangibles.map((ia: any) => String(ia.id)));
-    else setSelectedIds([]);
-  };
-
   const allSelected = filteredIntangibles.length > 0 && filteredIntangibles.every((ia: any) => selectedIds.includes(String(ia.id)));
+
+  const toggleSelectAllVisible = () => {
+    const allVisibleIds = filteredIntangibles.map((ia: any) => String(ia.id));
+    if (allVisibleIds.length > 0 && allVisibleIds.every(id => selectedIds.includes(id))) {
+      setSelectedIds(prev => prev.filter(id => !allVisibleIds.includes(id)));
+    } else {
+      setSelectedIds(prev => [...new Set([...prev, ...allVisibleIds])]);
+    }
+  };
 
   const handleSubmit = async (otpVerified?: boolean) => {
     if (selectedIds.length === 0) { toast.error('Select at least one intangible asset'); return; }
@@ -92,73 +142,357 @@ export default function IntangibleDeactivationRequest() {
     finally { setSubmitting(false); setShowOtp(false); }
   };
 
-  const columns = useMemo<ColumnDef<any>[]>(() => [
+  const historyRows = useMemo<DeactivationHistoryRow[]>(() => {
+    return (myForms ?? []).map((f: any) => {
+      const assets: any[] = f.assets ?? [];
+      return {
+        id: String(f.id ?? f.formNumber),
+        formNumber: f.formNumber ?? 'N/A',
+        assetsLabel: assets.length > 0 ? assets.map((a: any) => a.name).join(', ') : '—',
+        assetCount: assets.length,
+        status: f.status ?? 'Pending',
+        date: f.created_at ? new Date(f.created_at).toLocaleDateString() : 'N/A',
+      };
+    });
+  }, [myForms]);
+
+  const historyColumns = useMemo<ColumnDef<DeactivationHistoryRow>[]>(() => [
     {
-      id: 'select',
-      header: () => <Checkbox checked={allSelected} onCheckedChange={v => toggleAll(Boolean(v))} />,
-      cell: ({ row }) => <Checkbox checked={selectedIds.includes(String(row.original.id))} onCheckedChange={v => toggleSelect(String(row.original.id), Boolean(v))} />,
-      size: 50,
+      accessorKey: 'formNumber',
+      header: 'Form Number',
+      cell: ({ row }) => <span className="font-mono font-medium">{row.original.formNumber}</span>,
     },
-    { accessorKey: 'name', header: 'Name', cell: ({ row }) => <span className="font-medium">{row.original.name}</span> },
-    { accessorKey: 'type', header: 'Type', cell: ({ row }) => <Badge variant="outline">{row.original.type}</Badge> },
-    { accessorKey: 'description', header: 'Description', cell: ({ row }) => <span className="text-sm text-muted-foreground truncate max-w-[300px] inline-block">{row.original.description ?? '-'}</span> },
-  ], [selectedIds, allSelected, filteredIntangibles]);
+    {
+      accessorKey: 'assetsLabel',
+      header: 'Assets',
+      cell: ({ row }) => (
+        <div className="min-w-0">
+          <div className="text-xs text-muted-foreground">{row.original.assetCount} asset(s)</div>
+          <div className="truncate max-w-[320px] text-sm">{row.original.assetsLabel}</div>
+        </div>
+      ),
+    },
+    {
+      accessorKey: 'status',
+      header: 'Status',
+      cell: ({ row }) => (
+        <Badge variant="outline" className={cn('text-xs', statusBadge(row.original.status))}>
+          {statusLabel(row.original.status)}
+        </Badge>
+      ),
+    },
+    {
+      accessorKey: 'date',
+      header: 'Date',
+      cell: ({ row }) => <span className="text-sm text-muted-foreground">{row.original.date}</span>,
+    },
+  ], []);
 
   return (
     <div className="min-h-screen">
-      <main className="flex-1 p-4 sm:p-6 space-y-6">
-        <PageHeader icon={Package} title="Intangible Deactivation" description="Request deactivation of your assigned intangible assets" />
+      <main className="flex-1 p-6 space-y-6">
+        <PageHeader
+          icon={Package}
+          title="Intangible Deactivation"
+          description="Request deactivation of your assigned intangible assets"
+        />
 
-        <Card className="shadow-md">
-          <CardHeader>
-            <CardTitle className="flex items-center gap-2"><FileText className="h-5 w-5" /> My Intangible Assets</CardTitle>
-            <p className="text-sm text-muted-foreground">Select the intangible assets you want to deactivate. Your request will be routed to your approver and then to HR.</p>
-          </CardHeader>
-          <CardContent className="space-y-4">
-            <div className="flex flex-col sm:flex-row gap-3">
-              <Input placeholder="Search name, type..." value={search} onChange={e => setSearch(e.target.value)} className="max-w-sm" />
-              <div className="ml-auto flex items-center gap-2 text-sm">
-                <span className="text-muted-foreground">{selectedIds.length} selected</span>
-                {selectedIds.length > 0 && <Button variant="outline" size="sm" onClick={() => setSelectedIds([])}>Clear</Button>}
-              </div>
-            </div>
-            {loading ? <div className="text-sm text-muted-foreground py-8 text-center">Loading...</div> :
-              filteredIntangibles.length === 0 ? <div className="text-center py-10 text-muted-foreground"><Package className="h-10 w-10 mx-auto mb-2 opacity-50" /><p>No intangible assets assigned to you</p></div> :
-              <DataTable columns={columns} data={filteredIntangibles} />}
-            {selectedIds.length > 0 && (
-              <div className="space-y-3 pt-4 border-t">
+        <div className="grid grid-cols-1 xl:grid-cols-3 gap-8">
+          {/* Selection panel */}
+          <div className="xl:col-span-2">
+            <Card className="shadow-xl border-0 bg-white/80 backdrop-blur-sm">
+              <CardHeader className="pb-4">
+                <CardTitle className="flex items-center gap-3 text-xl">
+                  <div className="p-2 bg-red-100 rounded-lg">
+                    <Package className="h-5 w-5 text-red-600" />
+                  </div>
+                  Select Intangibles to Deactivate
+                  <Badge variant="secondary" className="ml-auto">
+                    {filteredIntangibles.length} assigned
+                  </Badge>
+                </CardTitle>
+                <p className="text-sm text-gray-500 mt-1">
+                  Select the intangible assets you want to deactivate. Your request will be routed to your approver and then to HR.
+                </p>
+
+                <SearchWithColumnFilter
+                  value={search}
+                  onChange={setSearch}
+                  placeholder="Search intangibles..."
+                  columnOptions={INTANGIBLE_SELECT_COLUMNS}
+                  searchColumn={searchColumn}
+                  onSearchColumnChange={setSearchColumn}
+                  className="mt-4"
+                />
+                {filteredIntangibles.length > 0 && (
+                  <div className="mt-3 flex justify-end">
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={toggleSelectAllVisible}
+                      className="text-red-600 border-red-300 hover:bg-red-50 whitespace-nowrap"
+                    >
+                      {allSelected ? 'Deselect All' : 'Select All'}
+                    </Button>
+                  </div>
+                )}
+              </CardHeader>
+
+              <CardContent className="pt-0">
+                <div className="space-y-3 max-h-96 overflow-y-auto scrollbar-thin scrollbar-thumb-gray-300 scrollbar-track-gray-100 -mr-6 pr-6">
+                  {loading ? (
+                    <div className="space-y-3">
+                      {[1, 2, 3, 4, 5].map(i => (
+                        <div
+                          key={i}
+                          className="flex items-start gap-4 p-4 border-2 border-gray-200 rounded-xl"
+                        >
+                          <Shimmer className="h-10 w-10 rounded flex-shrink-0" />
+                          <div className="flex-1 space-y-2">
+                            <Shimmer className="h-4 w-48 rounded" />
+                            <Shimmer className="h-3 w-36 rounded" />
+                            <Shimmer className="h-3 w-28 rounded" />
+                          </div>
+                          <Shimmer className="h-6 w-6 rounded flex-shrink-0" />
+                        </div>
+                      ))}
+                    </div>
+                  ) : filteredIntangibles.length === 0 ? (
+                    <div className="text-center py-12">
+                      <div className="inline-flex items-center justify-center w-20 h-20 rounded-full bg-gradient-to-br from-red-100 to-red-200 mb-4">
+                        <Package className="h-10 w-10 text-red-600" />
+                      </div>
+                      <h3 className="text-lg font-semibold text-gray-900 mb-2">
+                        No intangible assets found
+                      </h3>
+                      <p className="text-gray-500 text-sm">
+                        Try adjusting your search criteria
+                      </p>
+                    </div>
+                  ) : (
+                    filteredIntangibles.map((ia: any) => {
+                      const id = String(ia.id);
+                      const isSelected = selectedIds.includes(id);
+                      return (
+                        <div
+                          key={id}
+                          className={cn(
+                            'group relative p-4 border-2 rounded-xl transition-all duration-200 cursor-pointer',
+                            isSelected
+                              ? 'border-red-500 bg-red-50 shadow-md'
+                              : 'border-gray-200 hover:border-gray-300 hover:shadow-sm'
+                          )}
+                          onClick={() => toggleSelect(id, !isSelected)}
+                        >
+                          <div className="flex items-start gap-4">
+                            <div className="flex-shrink-0 mt-1">
+                              <Checkbox
+                                checked={isSelected}
+                                onCheckedChange={(checked: boolean | string) => toggleSelect(id, checked === true)}
+                                className="pointer-events-none"
+                              />
+                            </div>
+
+                            <div className="flex-1 min-w-0">
+                              <div className="mb-2">
+                                <div className="flex items-center justify-between">
+                                  <h3 className="font-semibold text-lg text-gray-900 truncate">
+                                    {ia.name}
+                                  </h3>
+                                  <div className="flex items-center gap-2">
+                                    {isSelected && (
+                                      <CheckCircle2 className="h-5 w-5 text-red-600 flex-shrink-0" />
+                                    )}
+                                  </div>
+                                </div>
+                              </div>
+
+                              <div className="flex flex-wrap gap-2 mb-2">
+                                {ia.type && (
+                                  <Badge variant="outline" className="text-xs border-gray-300">
+                                    {ia.type}
+                                  </Badge>
+                                )}
+                                {ia.status && (
+                                  <Badge
+                                    variant="default"
+                                    className="text-xs bg-red-100 text-red-800 border-red-200 dark:bg-red-900/30 dark:text-red-200 dark:border-red-800"
+                                  >
+                                    {ia.status}
+                                  </Badge>
+                                )}
+                                {ia.risk_level && (
+                                  <Badge variant="outline" className="text-xs border-orange-300 text-orange-700">
+                                    Risk: {ia.risk_level}
+                                  </Badge>
+                                )}
+                              </div>
+
+                              <p className="text-sm text-gray-600 line-clamp-2">
+                                {ia.description ?? 'No description'}
+                              </p>
+                            </div>
+                          </div>
+
+                          {isSelected && (
+                            <div className="absolute inset-0 bg-green-500/5 rounded-xl pointer-events-none"></div>
+                          )}
+                        </div>
+                      );
+                    })
+                  )}
+                </div>
+
+                {selectedIds.length > 0 && (
+                  <div className="mt-6 p-4 bg-gradient-to-r from-red-50 to-red-100 border border-red-200 rounded-xl">
+                    <div className="flex items-center justify-between">
+                      <div className="flex items-center gap-2">
+                        <CheckCircle2 className="h-5 w-5 text-red-600" />
+                        <span className="font-semibold text-red-900">
+                          {selectedIds.length} intangible{selectedIds.length !== 1 ? 's' : ''} selected for deactivation
+                        </span>
+                      </div>
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={() => setSelectedIds([])}
+                        className="text-red-600 border-red-300 hover:bg-red-50"
+                      >
+                        Clear All
+                      </Button>
+                    </div>
+                  </div>
+                )}
+              </CardContent>
+            </Card>
+          </div>
+
+          {/* Deactivation Details Panel */}
+          <div>
+            <Card className="shadow-xl border-0 bg-white/80 backdrop-blur-sm sticky top-8">
+              <CardHeader>
+                <CardTitle className="flex items-center gap-3 text-xl">
+                  <div className="p-2 bg-red-100 rounded-lg">
+                    <RotateCcw className="h-5 w-5 text-red-600" />
+                  </div>
+                  Deactivation Details
+                </CardTitle>
+              </CardHeader>
+
+              <CardContent className="space-y-6">
+                <div className="text-sm text-gray-600">
+                  Select intangibles above, then add remarks and submit your deactivation request.
+                </div>
+
                 <div className="space-y-1.5">
                   <Label>Remarks (optional)</Label>
-                  <Textarea value={remarks} onChange={e => setRemarks(e.target.value)} placeholder="Reason for deactivation" rows={2} />
+                  <Textarea
+                    value={remarks}
+                    onChange={e => setRemarks(e.target.value)}
+                    placeholder="Reason for deactivation"
+                    rows={3}
+                  />
                 </div>
+
                 <div className="flex items-center gap-2 text-sm bg-amber-50 border border-amber-200 rounded-lg p-3">
-                  <AlertTriangle className="h-4 w-4 text-amber-600" />
+                  <AlertTriangle className="h-4 w-4 text-amber-600 flex-shrink-0" />
                   <span>Your request will go to <b>Approver/Sub-Approver</b> → then <b>HR Custodian</b>. On HR approval, the asset(s) will be removed from your accountability.</span>
                 </div>
-                <Button onClick={() => handleSubmit()} disabled={submitting} className="bg-red-600 hover:bg-red-700 gap-2">
-                  <CheckCircle2 className="h-4 w-4" /> {submitting ? 'Submitting...' : `Request Deactivation (${selectedIds.length})`}
-                </Button>
-              </div>
-            )}
-          </CardContent>
-        </Card>
 
-        {myForms.length > 0 && (
-          <Card>
-            <CardHeader><CardTitle className="text-base">My Recent Deactivation Requests</CardTitle></CardHeader>
-            <CardContent>
-              <div className="space-y-2">
-                {myForms.slice(0, 5).map((f: any) => (
-                  <div key={f.id} className="flex items-center justify-between border rounded-lg px-3 py-2 text-sm">
-                    <span className="font-mono font-medium">{f.formNumber}</span>
-                    <Badge variant={f.status==='Approved'?'default': f.status==='Declined'?'destructive':'secondary'}>{f.status}</Badge>
-                    <span className="text-muted-foreground">{new Date(f.created_at).toLocaleDateString()}</span>
+                <Button
+                  onClick={() => handleSubmit()}
+                  disabled={submitting || selectedIds.length === 0}
+                  className="w-full bg-gradient-to-r from-red-500 to-red-600 hover:from-red-600 hover:to-red-700 text-white font-semibold py-3 rounded-xl shadow-lg hover:shadow-xl transition-all duration-200 disabled:opacity-50 disabled:cursor-not-allowed"
+                >
+                  {submitting ? (
+                    <div className="flex items-center gap-2">
+                      <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white"></div>
+                      Submitting...
+                    </div>
+                  ) : (
+                    <div className="flex items-center gap-2">
+                      <CheckCircle2 className="h-5 w-5" />
+                      Request Deactivation ({selectedIds.length})
+                    </div>
+                  )}
+                </Button>
+
+                {selectedIds.length === 0 && (
+                  <p className="text-sm text-gray-500 text-center">
+                    Select intangible assets above to enable request
+                  </p>
+                )}
+              </CardContent>
+            </Card>
+          </div>
+        </div>
+
+        {/* Deactivation History Table */}
+        <Card className="shadow-xl border-0 bg-white/80 backdrop-blur-sm">
+          <CardHeader>
+            <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 w-full">
+              <CardTitle className="flex items-center gap-3 text-xl">
+                <div className="p-2 bg-red-100 rounded-lg">
+                  <FileText className="h-5 w-5 text-red-600" />
+                </div>
+                Deactivation History
+                <Badge variant="secondary" className="ml-auto">
+                  {historyRows.length} requests
+                </Badge>
+              </CardTitle>
+            </div>
+          </CardHeader>
+
+          <CardContent>
+            {loading ? (
+              <div className="border border-gray-200 rounded-lg overflow-hidden">
+                <div className="bg-gray-50 p-3 space-y-2">
+                  <div className="flex gap-4">
+                    <Shimmer className="h-5 w-32 rounded" />
+                    <Shimmer className="h-5 w-24 rounded" />
+                    <Shimmer className="h-5 w-24 rounded" />
+                    <Shimmer className="h-5 w-28 rounded" />
+                  </div>
+                </div>
+                {[...Array(5)].map((_, index) => (
+                  <div key={index} className="border-t border-gray-200 p-3 space-y-2">
+                    <div className="flex gap-4">
+                      <Shimmer className="h-5 w-32 rounded" />
+                      <Shimmer className="h-5 w-24 rounded" />
+                      <Shimmer className="h-5 w-24 rounded" />
+                      <Shimmer className="h-5 w-28 rounded" />
+                    </div>
                   </div>
                 ))}
               </div>
-            </CardContent>
-          </Card>
-        )}
+            ) : historyRows.length === 0 ? (
+              <div className="text-center py-12">
+                <div className="inline-flex items-center justify-center w-20 h-20 rounded-full bg-gradient-to-br from-red-100 to-red-200 mb-4">
+                  <FileText className="h-10 w-10 text-red-600" />
+                </div>
+                <h3 className="text-lg font-semibold text-gray-900 mb-2">
+                  No deactivation history found
+                </h3>
+                <p className="text-gray-500 text-sm">
+                  Submitted requests will appear here
+                </p>
+              </div>
+            ) : (
+              <DataTable<DeactivationHistoryRow>
+                tableId="intangible-deactivation-history"
+                data={historyRows}
+                columns={historyColumns}
+                searchPlaceholder="Search deactivation history..."
+                searchColumnOptions={HISTORY_SEARCH_COLUMNS}
+                emptyState={
+                  <div className="text-center py-8">
+                    <p className="text-gray-500">No matching requests</p>
+                  </div>
+                }
+              />
+            )}
+          </CardContent>
+        </Card>
       </main>
       <SmsOtpDialog isOpen={showOtp} onOpenChange={setShowOtp} onVerified={() => handleSubmit(true)} onCancel={() => setShowOtp(false)} pendingActionRef={{ current: null } as any} title="Verify to submit" description="Enter OTP to confirm deactivation request" />
     </div>
