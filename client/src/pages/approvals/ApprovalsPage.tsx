@@ -297,6 +297,10 @@ export default function ApprovalsPage() {
     roleCustodian?.managerApprover2 === true ||
     roleCustodian?.subApprover2 === true;
 
+  const isHrReceiver =
+    (currentUser as any)?.role?.hr_accountability_receiver === true ||
+    (currentUser as any)?.hr_accountability_receiver === true;
+
   // ---------- Tab deep-linking (?tab= query param) ----------
   // Applies the URL param on deep-link and on Back/Forward navigation,
   // honoring receive-tab permission. User clicks write through to the URL
@@ -341,6 +345,7 @@ export default function ApprovalsPage() {
         adminCopyRes,
         approvalRes,
         intangibleDeactRes,
+        intangibleHrRes,
         clearanceRes,
       ] = await Promise.all([
         api.get<{ assetReturnForms?: AssetReturnFormBatch[] }>(
@@ -363,6 +368,9 @@ export default function ApprovalsPage() {
         ),
         api.get<{ forms?: any[] }>(
           '/intangible-deactivations/forms/pending-approvals'
+        ).catch(()=> ({ forms: [] } as any)),
+        api.get<{ forms?: any[] }>(
+          '/intangible-deactivations/forms/pending-hr-approvals'
         ).catch(()=> ({ forms: [] } as any)),
         api.get<{ forms?: any[] }>(
           '/accountability-forms/pending-clearance'
@@ -393,6 +401,9 @@ export default function ApprovalsPage() {
       const intangibleDeactBatches = ((intangibleDeactRes as any)?.forms ?? []).map((row: any) =>
         mapIntangibleDeactivationRow(row, 'intangible_deactivation')
       );
+      const intangibleHrBatches = (((intangibleHrRes as any)?.forms ?? []) as any[]).map((row: any) =>
+        mapIntangibleDeactivationRow(row, 'intangible_deactivation_hr')
+      );
       const clearanceBatches = ((clearanceRes as any)?.forms ?? []).map((row: any) => {
         const stage = row._clearanceStage ?? row.approval_status ?? 'pending_approval';
         let ft: any = 'clearance_approver';
@@ -410,6 +421,7 @@ export default function ApprovalsPage() {
           ...adminCopyBatches,
           ...approvalBatches,
           ...intangibleDeactBatches,
+          ...intangibleHrBatches,
           ...clearanceBatches,
         ] as ApprovalBatch[]).sort(
           (a, b) =>
@@ -523,10 +535,8 @@ export default function ApprovalsPage() {
         ...b,
         formType: 'borrow' as const,
       })) as ApprovalBatch[];
-      let intangibleHrBatches: IntangibleDeactivationBatch[] = [];
-      try { const hrRes: any = await api.get('/intangible-deactivations/forms/pending-hr-approvals'); intangibleHrBatches = (hrRes.forms ?? []).map((row: any)=> mapIntangibleDeactivationRow(row, 'intangible_deactivation_hr')); } catch {}
       setReceiveBatches(
-        ([...returns, ...transfers, ...checklists, ...borrowRequests, ...intangibleHrBatches] as ApprovalBatch[]).sort(
+        ([...returns, ...transfers, ...checklists, ...borrowRequests] as ApprovalBatch[]).sort(
           (a, b) =>
             new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
         )
@@ -1286,9 +1296,6 @@ export default function ApprovalsPage() {
         return;
       }
 
-      if ((selectedBatch as any).formType === 'intangible_deactivation_hr') {
-        try { setReceiving(true); const sig = (currentUser as any)?.digitalSignature || ''; await api.post('/intangible-deactivations/forms/' + (selectedBatch as any).formID + '/hr-approve', { digitalSignature: sig || undefined }); toast.success('HR approved'); setShowDetail(false); setSelectedBatch(null); await refreshAll(); } catch(e:any){ toast.error(e?.data?.error || e?.message || 'Failed'); } finally { setReceiving(false); } return;
-      }
       if (selectedBatch.formType === 'checklist') {
         const cb = selectedBatch as ChecklistApprovalBatch;
         try {
@@ -2283,7 +2290,7 @@ export default function ApprovalsPage() {
                 detailSourceTab !== 'approved' &&
                 (intangiblePreviewBatch.formType === 'intangible_deactivation'
                   ? canApprove
-                  : canReceive) && (
+                  : (isHrReceiver || canReceive)) && (
                 <>
                   <Button
                     variant="outline"

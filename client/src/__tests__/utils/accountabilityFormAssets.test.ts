@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import type { AccountabilityForm } from '@/pages/assets/accountability/accountabilityFormTypes';
+import type { AccountabilityForm } from "../../pages/assets/accountability/accountabilityFormTypes";
 import {
   isIntangibleAssetLike,
   fetchAssignedIntangibleAssetsForForm,
@@ -10,7 +10,8 @@ import {
   intangibleMatchesFormScope,
   splitDisplayAssets,
   mergeAssetsById,
-} from '@/pages/assets/accountability/accountabilityFormAssets';
+  getEmbeddedIntangibleIds,
+} from "../../pages/assets/accountability/accountabilityFormAssets";
 
 const tangible = {
   id: 't1',
@@ -359,5 +360,75 @@ describe('mergeAssetsById', () => {
 
   it('skips entries without an id', () => {
     expect(mergeAssetsById([intangible, { name: 'NoId' }])).toHaveLength(1);
+  });
+});
+
+describe('getEmbeddedIntangibleIds', () => {
+  it('returns ids of embedded intangible assets', () => {
+    const form = makeForm();
+    expect(getEmbeddedIntangibleIds(form)).toEqual(new Set(['i1']));
+  });
+
+  it('returns an empty set when the form has no intangibles', () => {
+    expect(getEmbeddedIntangibleIds(makeForm({ assets: [tangible] }))).toEqual(new Set());
+  });
+});
+
+describe('getFormDisplayAssets replacement-form defense', () => {
+  const deadFetchedIntangible = {
+    id: 'i-dead',
+    code: 'INT-DEAD',
+    name: 'Deactivated Domain',
+    category: 'Intangible',
+    type: 'Domain',
+    serialNo: '',
+    risk_level: { id: 'rl1', name: 'Medium' },
+    description: 'Was deactivated',
+    type_department: { id: 'td1', name: 'IT' },
+    assignees: [{ userId: 'u1' }],
+  };
+
+  const aliveFetchedIntangible = {
+    id: 'i-alive',
+    code: 'INT-ALIVE',
+    name: 'Live Software',
+    category: 'Intangible',
+    type: 'Software',
+    serialNo: '',
+    risk_level: { id: 'rl2', name: 'Low' },
+    description: 'Still active',
+    type_department: { id: 'td1', name: 'IT' },
+    assignees: [{ userId: 'u1' }],
+  };
+
+  it('excludes fetched intangibles not in the snapshot when the form is a replacement', () => {
+    const form = makeForm({
+      assets: [tangible, { id: 'i-alive', category: 'Intangible', name: 'Live Software' }],
+      previous_form_original_status: 'Pending',
+    });
+    const result = getFormDisplayAssets(form, [deadFetchedIntangible, aliveFetchedIntangible]);
+    expect(result.map(a => a.id)).toEqual(['t1', 'i-alive']);
+    expect(result.find(a => a.id === 'i-dead')).toBeUndefined();
+  });
+
+  it('merges fetched intangibles normally when the form is NOT a replacement', () => {
+    const form = makeForm({
+      assets: [tangible],
+    });
+    const result = getFormDisplayAssets(form, [aliveFetchedIntangible]);
+    expect(result.map(a => a.id)).toEqual(['t1', 'i-alive']);
+  });
+
+  it('still dedups when a fetched id matches an embedded id on a replacement form', () => {
+    const embedded = { id: 'i-shared', category: 'Intangible', name: 'Shared' };
+    const fetched = { ...embedded, type_department: { name: 'IT' } };
+    const form = makeForm({
+      assets: [tangible, embedded],
+      previous_form_original_status: 'Pending',
+    });
+    const result = getFormDisplayAssets(form, [fetched]);
+    const merged = result.find(a => a.id === 'i-shared');
+    expect(merged?.type_department).toEqual({ name: 'IT' });
+    expect(result.map(a => a.id)).toEqual(['t1', 'i-shared']);
   });
 });

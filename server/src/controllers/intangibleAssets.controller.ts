@@ -544,6 +544,12 @@ export const assignIntangibleAsset = async (req: AuthRequest, res: Response) => 
               (n: string) => n.includes('admin') || n.includes('administration')
             );
             const isITAsset = isIT || (!isAdmin);
+            // Honor the client-resolved copy type when valid (old clients send
+            // null); otherwise derive it from the intangible scope so the form
+            // still requires the IT/Admin copy just like tangible assets.
+            const normalizedCopyType: 'IT' | 'Admin' = adminCopyCopyType === 'IT' || adminCopyCopyType === 'Admin'
+              ? adminCopyCopyType
+              : isITAsset ? 'IT' : 'Admin';
             const assetCode = isITAsset
               ? settings.it_asset_code
               : settings.admin_asset_code;
@@ -590,7 +596,7 @@ export const assignIntangibleAsset = async (req: AuthRequest, res: Response) => 
               assignmentId: null,
               approvalStatus: adminCopySignerId ? 'pending_admin_copy_signature' : 'approved',
               adminCopySignerId: adminCopySignerId ?? null,
-              adminCopyCopyType: adminCopyCopyType ?? null,
+              adminCopyCopyType: normalizedCopyType,
             });
 
             const resolvedFormId = await formRepo.findFormIdByFormNumber(formNumber);
@@ -621,7 +627,7 @@ export const assignIntangibleAsset = async (req: AuthRequest, res: Response) => 
                 assignmentId,
                 assignedTo,
                 adminCopySignerId: adminCopySignerId ?? null,
-                adminCopyCopyType: adminCopyCopyType ?? null,
+                adminCopyCopyType: normalizedCopyType,
                 formId: resolvedFormId,
                 formNumber,
                 req,
@@ -750,7 +756,7 @@ export const batchAssignIntangibleAssets = async (req: AuthRequest, res: Respons
       assetIds,
       assignedTo,
       assignmentId,
-      departmentId,
+      departmentId: rawDepartmentId,
       locationId,
       locationRoomId,
       signAsIssuer,
@@ -782,6 +788,42 @@ export const batchAssignIntangibleAssets = async (req: AuthRequest, res: Respons
     }
     if (!assignmentId) {
       return res.status(400).json({ error: 'Assignment ID is required' });
+    }
+
+    // Fallback: resolve the scope department when the client did not send one
+    // (e.g. a department named "Information Technology" never matches a plain
+    // "it" keyword client-side). The accountability form below is gated on a
+    // department id, so without this the form (and its IT/Admin copy step)
+    // would be silently skipped for intangible-only assignments.
+    // Mutable so every downstream use (dept lookups, form number, insert)
+    // observes the resolved value.
+    let departmentId: string | null = rawDepartmentId || null;
+    if (!departmentId) {
+      try {
+        const batchDeptNames: string[] = [];
+        for (const id of assetIds) {
+          try {
+            const a: any = await intangibleAssetsService.getIntangibleAssetById(id, activeCompany.id);
+            const n = a?.type_department?.name || a?.type_department_name || a?.type || '';
+            if (n) batchDeptNames.push(String(n).toLowerCase());
+          } catch {
+            /* ignore per-asset lookup failure; fall back to IT scope below */
+          }
+        }
+        const wantsAdminScope = batchDeptNames.some(
+          n => n.includes('admin') || n.includes('administration')
+        ) && !batchDeptNames.some(
+          n => n.includes('it') || n.includes('information technology')
+        );
+        const keywords = wantsAdminScope ? ['admin', 'administration'] : ['it', 'information technology'];
+        const [deptMatch] = await pool.execute(
+          `SELECT departmentID FROM asset_mngmnt_departments WHERE company_id = ? AND deleted_at IS NULL AND (${keywords.map(() => `LOWER(name) LIKE ?`).join(' OR ')}) LIMIT 1`,
+          [activeCompany.id, ...keywords.map(k => `%${k}%`)]
+        );
+        departmentId = (deptMatch as any[])[0]?.departmentID ?? null;
+      } catch (deptErr) {
+        logger.error('Failed to resolve fallback department for intangible batch assign:', deptErr);
+      }
     }
 
     // Assign each intangible asset (allows multiple concurrent assignees)
@@ -952,6 +994,12 @@ export const batchAssignIntangibleAssets = async (req: AuthRequest, res: Respons
               (n: string) => n.includes('admin') || n.includes('administration')
             );
             const isITAsset = isIT || (!isAdmin);
+            // Honor the client-resolved copy type when valid (old clients send
+            // null); otherwise derive it from the intangible scope so the form
+            // still requires the IT/Admin copy just like tangible assets.
+            const normalizedCopyType: 'IT' | 'Admin' = adminCopyCopyType === 'IT' || adminCopyCopyType === 'Admin'
+              ? adminCopyCopyType
+              : isITAsset ? 'IT' : 'Admin';
             const assetCode = isITAsset
               ? settings.it_asset_code
               : settings.admin_asset_code;
@@ -998,7 +1046,7 @@ export const batchAssignIntangibleAssets = async (req: AuthRequest, res: Respons
               assignmentId: null,
               approvalStatus: adminCopySignerId ? 'pending_admin_copy_signature' : 'approved',
               adminCopySignerId: adminCopySignerId ?? null,
-              adminCopyCopyType: adminCopyCopyType ?? null,
+              adminCopyCopyType: normalizedCopyType,
             });
 
             const resolvedFormId = await formRepo.findFormIdByFormNumber(formNumber);
@@ -1029,7 +1077,7 @@ export const batchAssignIntangibleAssets = async (req: AuthRequest, res: Respons
                 assignmentId,
                 assignedTo,
                 adminCopySignerId: adminCopySignerId ?? null,
-                adminCopyCopyType: adminCopyCopyType ?? null,
+                adminCopyCopyType: normalizedCopyType,
                 formId: resolvedFormId,
                 formNumber,
                 req,

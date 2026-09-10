@@ -218,8 +218,13 @@ export async function deactivateAssignments(intangibleAssetIds: string[], userId
       `SELECT 1 FROM intangible_asset_assignments WHERE intangible_asset_id=? AND status='Active' AND deleted_at IS NULL LIMIT 1`, [id]
     ) as any;
     if (!remaining || remaining.length === 0) {
+      // Also clear the legacy flat assignment columns. sp_GetAllIntangibleAssets
+      // falls back to `assigned_to` when no Active assignment row exists, so a
+      // stale value here would keep re-listing the user as an assignee (and the
+      // accountability card/PDF union would re-add the deactivated intangible
+      // to the replacement form). Mirrors legacy sp_UnassignIntangibleAsset.
       await executor.execute(
-        `UPDATE intangible_assets SET status='available', updated_at=NOW() WHERE id=?`, [id]
+        `UPDATE intangible_assets SET status='available', assigned_to=NULL, assigned_date=NULL, assignment_id=NULL, updated_at=NOW() WHERE id=?`, [id]
       ) as any;
     }
   }

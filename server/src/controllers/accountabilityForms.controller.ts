@@ -22,6 +22,8 @@ import { randomUUID } from 'crypto';
 import { resolveChecklistAssignmentIds } from '../utils/accountabilityFormAssetsData.js';
 import {
   getActiveIntangibleIdsForUser,
+  getDeactivatedIntangibleIdsForUsers,
+  pruneDeactivatedIntangibles,
   pruneInactiveIntangibleAssets,
   stripInactiveIntangiblesFromForms,
 } from '../utils/accountabilityIntangibleFilter.js';
@@ -616,6 +618,7 @@ function parseAccountabilityAssetsData(assetsDataRaw: unknown): {
         formOrigin: 'processor_return',
       };
     }
+    return { assets, assignmentIds: [...new Set(assignmentIds)] };
   } catch {
     /* ignore */
   }
@@ -2271,8 +2274,9 @@ export async function getAccountabilityFormsHandler(
       companyId,
       departmentIds,
     });
+    const filteredRows = await stripInactiveIntangiblesFromForms(rows as any[]);
 
-    const allForms = rows.map((row: any) => {
+    const allForms = filteredRows.map((row: any) => {
       const parsed = parseAccountabilityAssetsData(row.assets_data);
       let assets = parsed.assets;
       const formOrigin = parsed.formOrigin;
@@ -3749,9 +3753,21 @@ export async function getAccountabilityFormByIdHandler(
     // Same prune as the pending lists: the stored snapshot can still carry
     // a deactivated intangible, and this detail payload feeds the PDF
     // preview — so the PDF must match the approvals card.
+    // Prune HR-deactivated intangibles regardless of approval_status (a
+    // replacement form created after HR approval lands in
+    // pending_admin_copy_signature and must not re-receive the dead asset).
+    // The held-`Inactive` exception still applies only to intangibles with no
+    // approved deactivation, so genuinely pending copy-signature intangibles
+    // remain visible to the copy signer.
     try {
-      const active = await getActiveIntangibleIdsForUser(String(row.user_id ?? ''));
-      assets = pruneInactiveIntangibleAssets(assets, active);
+      const deadByUser = await getDeactivatedIntangibleIdsForUsers([String(row.user_id ?? '')]);
+      const dead = deadByUser.get(String(row.user_id ?? ''));
+      if (dead && dead.size > 0) {
+        assets = pruneDeactivatedIntangibles(assets, dead);
+      } else {
+        const active = await getActiveIntangibleIdsForUser(String(row.user_id ?? ''));
+        assets = pruneInactiveIntangibleAssets(assets, active);
+      }
     } catch {
       /* fail-open: keep original assets */
     }

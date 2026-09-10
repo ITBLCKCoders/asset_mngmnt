@@ -542,6 +542,28 @@ export default function AssetsAssignment() {
       const tangibleAssets = selectedAssets.filter(id => !intangibleAssets.some(ia => ia.id === id));
       const selectedIntangibleAssets = selectedAssets.filter(id => intangibleAssets.some(ia => ia.id === id));
 
+      // Resolve the IT/Admin copy type for the accountability form across both
+      // tangible and intangible selections (mirrors ConfirmationModal scope
+      // detection). Mixed scopes prefer IT. Intangibles classify via their
+      // type's department so they require a copy just like tangible assets.
+      const tangibleScopeTextOf = (id: string): string => {
+        const a: any = allAssignableAssets.find(x => x.id === id);
+        if (!a) return '';
+        return [a.department, a.category, a.type, a.name, a.id].filter(Boolean).join(' ').toLowerCase();
+      };
+      const intangibleScopeTextOf = (id: string): string => {
+        const ia = intangibleAssets.find(x => x.id === id);
+        if (!ia) return '';
+        return String(ia.type_department?.name || ia.type_department_name || ia.type || '').toLowerCase();
+      };
+      const scopeTextHasIt = (s: string) => s.includes('it') || s.includes('information technology') || s.includes('computer') || s.includes('laptop') || s.includes('server');
+      const scopeTextHasAdmin = (s: string) => s.includes('admin') || s.includes('administration');
+      const hasItScope = tangibleAssets.some(id => scopeTextHasIt(tangibleScopeTextOf(id)))
+        || selectedIntangibleAssets.some(id => scopeTextHasIt(intangibleScopeTextOf(id)));
+      const hasAdminScope = tangibleAssets.some(id => scopeTextHasAdmin(tangibleScopeTextOf(id)))
+        || selectedIntangibleAssets.some(id => scopeTextHasAdmin(intangibleScopeTextOf(id)));
+      const resolvedCopyType: 'IT' | 'Admin' | null = hasItScope ? 'IT' : hasAdminScope ? 'Admin' : null;
+
       let assignmentResponse: any = null;
 
       // Handle tangible assets assignment
@@ -558,7 +580,7 @@ export default function AssetsAssignment() {
           signITCopy: false,
           itCopySignature: null,
           adminCopySignerId: adminCopySignerId || null,
-          adminCopyCopyType: adminCopySignerId ? null : null,
+          adminCopyCopyType: resolvedCopyType,
           tempAccountability: tempAccountability || undefined,
         };
 
@@ -587,10 +609,13 @@ export default function AssetsAssignment() {
 
         for (const [scope, scopeAssets] of Object.entries(scopeGroups)) {
           try {
-            const deptKeyword = scope === 'Admin scope' ? 'admin' : 'it';
-            const matchDept = departments.find(d =>
-              d.name?.toLowerCase().includes(deptKeyword)
-            );
+            const isAdminScope = scope === 'Admin scope';
+            const matchDept = departments.find(d => {
+              const n = d.name?.toLowerCase() || '';
+              return isAdminScope
+                ? n.includes('admin') || n.includes('administration')
+                : n.includes('it') || n.includes('information technology');
+            });
 
             const batchResult = await api.post('/intangible-assets/batch-assign', {
               assetIds: scopeAssets.map(ia => ia.id),
@@ -603,7 +628,7 @@ export default function AssetsAssignment() {
               signITCopy: false,
               itCopySignature: null,
               adminCopySignerId: adminCopySignerId || null,
-              adminCopyCopyType: adminCopySignerId ? null : null,
+              adminCopyCopyType: resolvedCopyType,
               tempAccountability: tempAccountability || undefined,
             });
             if (batchResult?.formError) {
@@ -638,10 +663,13 @@ export default function AssetsAssignment() {
         // Send one batch request per scope (server creates accountability form with existing tangible assets)
         for (const [scope, scopeAssets] of Object.entries(scopeGroups)) {
           try {
-            const deptKeyword = scope === 'Admin scope' ? 'admin' : 'it';
-            const matchDept = departments.find(d =>
-              d.name?.toLowerCase().includes(deptKeyword)
-            );
+            const isAdminScope = scope === 'Admin scope';
+            const matchDept = departments.find(d => {
+              const n = d.name?.toLowerCase() || '';
+              return isAdminScope
+                ? n.includes('admin') || n.includes('administration')
+                : n.includes('it') || n.includes('information technology');
+            });
 
             const batchResult = await api.post('/intangible-assets/batch-assign', {
               assetIds: scopeAssets.map(ia => ia.id),
@@ -654,7 +682,7 @@ export default function AssetsAssignment() {
               signITCopy: false,
               itCopySignature: null,
               adminCopySignerId: adminCopySignerId || null,
-              adminCopyCopyType: adminCopySignerId ? null : null,
+              adminCopyCopyType: resolvedCopyType,
               tempAccountability: tempAccountability || undefined,
             });
             if (batchResult?.formError) {
@@ -1685,6 +1713,7 @@ export default function AssetsAssignment() {
           onOpenChange={setConfirmModalOpen}
           selectedAssets={selectedAssets}
           assets={allAssignableAssets}
+          intangibleAssets={intangibleAssets}
           departments={departments}
           locations={locations}
           users={users}

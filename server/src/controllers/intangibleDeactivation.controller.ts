@@ -325,8 +325,8 @@ export async function approveDeptHeadHandler(req: AuthRequest, res: Response) {
     const requesterName = `${row.first_name ?? ''} ${row.last_name ?? ''}`.trim() || row.user_id;
     for (const hrId of hrIds) {
       try {
-        await createNotificationForApi({ user_id: hrId, title: `Intangible deactivation ${row.form_number} awaiting HR approval`, message: `${requesterName}'s deactivation approved by Dept Head, awaiting HR.`, type: 'system', data: { route: '/approvals?tab=receive', actionTarget: 'intangible_deactivation_hr', formId, formNumber: row.form_number } });
-        const io = getIoInstance(); if (io) emitNotification(io, hrId, 'notification', { title: `Intangible deactivation ${row.form_number} awaiting HR`, description: `${requesterName}'s request`, type:'system', route:'/approvals?tab=receive', formId });
+        await createNotificationForApi({ user_id: hrId, title: `Intangible deactivation ${row.form_number} awaiting HR approval`, message: `${requesterName}'s deactivation approved by Dept Head, awaiting HR.`, type: 'system', data: { route: '/approvals?tab=for-approval', actionTarget: 'intangible_deactivation_hr', formId, formNumber: row.form_number } });
+        const io = getIoInstance(); if (io) emitNotification(io, hrId, 'notification', { title: `Intangible deactivation ${row.form_number} awaiting HR`, description: `${requesterName}'s request`, type:'system', route:'/approvals?tab=for-approval', formId });
       } catch {}
     }
     await createAuditLog({ userId: req.user!.userID!, action: 'Approved Intangible Deactivation (Dept Head)', resourceType: 'intangible_deactivation_form', resourceId: formId, resourceName: row.form_number, details: `Dept head approved ${row.form_number}`, ipAddress: req.ip, userAgent: req.get('User-Agent') ?? 'Unknown' });

@@ -98,6 +98,13 @@ export const fetchAssignedIntangibleAssetsForForm = (
 // assignment_id field the stored procedure does not return. Only intangibles
 // matching the form's scope are returned so an Admin form never shows IT
 // intangibles (and vice versa).
+//
+// Defense-in-depth: when a post-deactivation replacement form unions the
+// server-pruned snapshot with a fetched /intangible-assets list, the fetched
+// list can still carry the dead id if the legacy `assigned_to` column was
+// not cleared. Filter out any fetched intangible whose id is absent from the
+// server snapshot when the form is a replacement (has
+// `previous_form_original_status`) — the snapshot is the trusted source.
 export const getFormAssignedIntangibleAssets = (
   assets: any[],
   form: AccountabilityForm
@@ -112,12 +119,33 @@ export const getFormAssignedIntangibleAssets = (
       intangibleMatchesFormScope(asset, form)
   );
 
+// Return the set of intangible asset ids embedded in the form snapshot
+// (the server-pruned source of truth). Used as a denylist when merging
+// fetched intangibles so a stale /intangible-assets response cannot
+// reintroduce a deactivated id.
+export const getEmbeddedIntangibleIds = (form: AccountabilityForm): Set<string> => {
+  const ids = new Set<string>();
+  for (const a of form.assets || []) {
+    if (String(a.category ?? '').toLowerCase() === 'intangible') {
+      const key = String(a.id ?? a.assetID ?? a.intangible_asset_id ?? '');
+      if (key) ids.add(key);
+    }
+  }
+  return ids;
+};
+
 // Merge the form's embedded assets with the intangibles currently assigned to
 // the form's user so the card's asset list matches the PDF tables (which
 // compose tangible form assets + resolved assigned intangibles). When an
 // embedded snapshot asset already exists in the resolved list, fields the
 // snapshot is missing (e.g. type_department on old forms) are gap-filled from
 // the resolved /intangible-assets record so classification stays accurate.
+//
+// Defense-in-depth: when the form is a post-deactivation replacement
+// (`previous_form_original_status` is set), the server-pruned snapshot is the
+// trusted source. Fetched intangibles whose id is not in the snapshot are
+// excluded so a stale /intangible-assets response (e.g. still carrying the
+// legacy `assigned_to` value) cannot reintroduce a dead id.
 export const getFormDisplayAssets = (
   form: AccountabilityForm,
   intangibleAssets: any[]
@@ -125,8 +153,14 @@ export const getFormDisplayAssets = (
   const embedded = form.assets || [];
   const merged: any[] = [...embedded];
   const byId = new Map<string, any>(merged.map(a => [String(a.id), a]));
+
+  const isReplacement = !!(form as any).previous_form_original_status;
+  const embeddedIds = getEmbeddedIntangibleIds(form);
   for (const ia of intangibleAssets || []) {
     const key = String(ia.id);
+    // For replacement forms, exclude fetched intangibles whose ids are not in
+    // the server-pruned snapshot (the embedded list is the trusted source).
+    if (isReplacement && !embeddedIds.has(key)) continue;
     const existing = byId.get(key);
     if (!existing) {
       byId.set(key, ia);

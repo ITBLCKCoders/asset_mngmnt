@@ -93,7 +93,9 @@ import {
 import {
   fetchAssignedIntangibleAssetsForForm,
   getAssetDisplayScope,
+  getEmbeddedIntangibleIds,
   getFormAssignedIntangibleAssets,
+  isIntangibleAssetLike,
   getFormDisplayAssets,
   intangibleMatchesFormScope,
   mergeAssetsById,
@@ -158,6 +160,7 @@ const generateCacheKey = (
     digitalSignature: form.acknowledgments?.digitalSignature,
     assetCount: form.assets.length,
     assetIds: form.assets.map(a => a.id).join(','),
+    previousFormOriginalStatus: (form as any).previous_form_original_status,
     intangibleAssetCount: intangibleAssets.length,
     intangibleAssetIds: intangibleAssets.map(a => a.id).join(','),
     currentUser: currentUser?.id,
@@ -514,16 +517,31 @@ export const generateAccountabilityFormPDF = async (
   );
   let resolvedIntangibleAssets: any[] = embeddedIntangibles;
   if (intangibleAssets && intangibleAssets.length > 0) {
+    // Defense-in-depth for replacement forms: exclude fetched intangibles
+    // whose id is not in the server-pruned snapshot so a stale
+    // /intangible-assets response cannot reintroduce a deactivated id.
+    const embeddedIds = getEmbeddedIntangibleIds(form);
+    const isReplacement = !!(form as any).previous_form_original_status;
+    const filtered =
+      isReplacement
+        ? intangibleAssets.filter(a => !isIntangibleAssetLike(a) || !embeddedIds.has(String(a.id)))
+        : intangibleAssets;
     resolvedIntangibleAssets = mergeAssetsById(
       embeddedIntangibles,
-      intangibleAssets
+      filtered
     );
   } else {
     try {
       const response = await api.get<any[]>('/intangible-assets');
+      const isReplacement = !!(form as any).previous_form_original_status;
+      const embeddedIds = getEmbeddedIntangibleIds(form);
+      let fetched = getFormAssignedIntangibleAssets(response, form);
+      if (isReplacement) {
+        fetched = fetched.filter(a => !embeddedIds.has(String(a.id)));
+      }
       resolvedIntangibleAssets = mergeAssetsById(
         embeddedIntangibles,
-        getFormAssignedIntangibleAssets(response, form)
+        fetched
       );
     } catch (error) {
       logger.warn('Failed to fetch assigned intangible assets for form');

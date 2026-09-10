@@ -68,6 +68,7 @@ interface ConfirmationModalProps {
   onOpenChange: (open: boolean) => void;
   selectedAssets: string[];
   assets: Asset[];
+  intangibleAssets?: any[];
   departments: Department[];
   locations: Location[];
   users: User[];
@@ -89,6 +90,7 @@ export function ConfirmationModal({
   onOpenChange,
   selectedAssets,
   assets,
+  intangibleAssets = [],
   departments,
   locations,
   users,
@@ -114,11 +116,27 @@ export function ConfirmationModal({
   const showTempAccountability = assigneeRoleName ? allowedRoles.includes(assigneeRoleName) : false;
 
   // Determine copy scope (IT vs Admin) based on the selected assets' department, category, type, name, or code.
-  // The dropdown label updates accordingly.
-  const hasItAsset = selectedAssets.some(assetId => {
-    const asset = assets.find(
+  // Intangible assets are resolved from `intangibleAssets` via their type's
+  // department (e.g. 'IT scope' / 'Admin scope') so they require an IT/Admin
+  // copy just like tangible assets. The dropdown label updates accordingly.
+  const intangibleScopeOf = (assetId: string): string => {
+    const ia = (intangibleAssets || []).find((a: any) => a?.id === assetId);
+    if (!ia) return '';
+    return (
+      (ia.type_department?.name ||
+        ia.type_department_name ||
+        ia.type ||
+        '') as string
+    ).toLowerCase();
+  };
+  const findTangibleAsset = (assetId: string) =>
+    assets.find(
       a => a.id === assetId || (a as any).asset_code === assetId || (a as any).assetID === assetId
     );
+  const hasItAsset = selectedAssets.some(assetId => {
+    const s = intangibleScopeOf(assetId);
+    if (s) return s.includes('it') || s.includes('information technology');
+    const asset = findTangibleAsset(assetId);
     if (!asset) return false;
     const dept = (
       (asset as any).department ||
@@ -159,9 +177,9 @@ export function ConfirmationModal({
     );
   });
   const hasAdminAsset = selectedAssets.some(assetId => {
-    const asset = assets.find(
-      a => a.id === assetId || (a as any).asset_code === assetId || (a as any).assetID === assetId
-    );
+    const s = intangibleScopeOf(assetId);
+    if (s) return s.includes('admin') || s.includes('administration');
+    const asset = findTangibleAsset(assetId);
     if (!asset) return false;
     const dept = (
       (asset as any).department ||
@@ -282,14 +300,28 @@ export function ConfirmationModal({
               <div className="max-h-40 space-y-2 overflow-y-auto">
                 {selectedAssets.map(assetId => {
                   const asset = assets.find(a => a.id === assetId);
-                  return asset ? (
-                    <div key={assetId} className="flex items-start gap-2 text-sm">
-                      <Package className="h-4 w-4 text-gray-500" />
-                      <span className="font-medium">
-                        {asset.id} {asset.name} {asset.serialNo}
-                      </span>
-                    </div>
-                  ) : null;
+                  if (asset) {
+                    return (
+                      <div key={assetId} className="flex items-start gap-2 text-sm">
+                        <Package className="h-4 w-4 text-gray-500" />
+                        <span className="font-medium">
+                          {asset.id} {asset.name} {asset.serialNo}
+                        </span>
+                      </div>
+                    );
+                  }
+                  const intangible = (intangibleAssets || []).find((a: any) => a?.id === assetId);
+                  if (intangible) {
+                    return (
+                      <div key={assetId} className="flex items-start gap-2 text-sm">
+                        <Package className="h-4 w-4 text-gray-500" />
+                        <span className="font-medium">
+                          {intangible.name || intangible.id} {intangible.type ? `(${intangible.type})` : ''}
+                        </span>
+                      </div>
+                    );
+                  }
+                  return null;
                 })}
               </div>
             </div>

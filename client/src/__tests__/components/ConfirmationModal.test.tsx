@@ -96,4 +96,53 @@ describe('ConfirmationModal copy-signer notice', () => {
       (screen.getByRole('button', { name: /Confirm Assignment/i }) as HTMLButtonElement).disabled
     ).toBe(false);
   });
+
+  it('requires an IT copy for intangible-only selections (same as tangible)', async () => {
+    mockApiGet.mockResolvedValue({
+      approvers: {
+        approver: { user_id: 'a1', first_name: 'Jane', last_name: 'Doe', email: 'j@x.com' },
+        sub_approver: null,
+      },
+    });
+    render(
+      <ConfirmationModal
+        {...baseProps}
+        isOpen={true}
+        selectedAssets={['INT-001']}
+        assets={[]}
+        intangibleAssets={[{ id: 'INT-001', name: 'MS Office License', type: 'IT scope' }]}
+      />
+    );
+
+    await waitFor(() =>
+      expect(screen.getByText(/Who should sign this accountability form for IT copy\?/i)).toBeDefined()
+    );
+    expect(screen.queryByText(/do not require an IT\/Admin copy signature/i)).toBeNull();
+    expect(
+      (screen.getByRole('button', { name: /Confirm Assignment/i }) as HTMLButtonElement).disabled
+    ).toBe(false);
+  });
+
+  it('requires an Admin copy for admin-scope intangible selections', async () => {
+    mockApiGet.mockResolvedValue({
+      approvers: {
+        approver: { user_id: 'a1', first_name: 'Jane', last_name: 'Doe', email: 'j@x.com' },
+        sub_approver: null,
+      },
+    });
+    render(
+      <ConfirmationModal
+        {...baseProps}
+        isOpen={true}
+        selectedAssets={['INT-002']}
+        assets={[]}
+        intangibleAssets={[{ id: 'INT-002', name: 'Building Lease', type: 'Admin scope' }]}
+      />
+    );
+
+    await waitFor(() =>
+      expect(screen.getByText(/Who should sign this accountability form for Admin copy\?/i)).toBeDefined()
+    );
+    expect(screen.queryByText(/do not require an IT\/Admin copy signature/i)).toBeNull();
+  });
 });
