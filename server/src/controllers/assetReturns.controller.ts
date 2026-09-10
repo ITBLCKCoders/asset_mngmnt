@@ -5,9 +5,12 @@ import { pool } from '../db.js';
 import type { AuthRequest } from '../middleware/authenticate.js';
 import logger from '../logger.js';
 import { createAuditLog } from '../utils/audit.js';
-import { handleAccountabilityFormOnAssetReturn } from '../utils/accountabilityFormOnReturn.js';
+import {
+  handleAccountabilityFormOnAssetReturn,
+  createReturnAccountabilityFormAndNotify,
+} from '../utils/accountabilityFormOnReturn.js';
 import { getAssetScope, getDepartmentIdsForScope, classifyDepartmentScopeByName } from '../utils/assetScope.js';
-import { createAccountabilityFormHandler } from './accountabilityForms.controller.js';
+
 import {
   isUserManagerApprover2,
   isUserSubApprover2,
@@ -1450,11 +1453,33 @@ export async function createAssetReturnHandler(
   }
 }
 
-/**
- * Notify Manager Approver 2 users in the asset scope department that a return has been
- * processed, checked and verified. Falls back to the processor's department when the
- * form has no scope department.
- */
+/** Notify the requestor where to return an approved asset for processing. */
+async function notifyRequesterToReturnAsset(params: {
+  formId: string;
+  formNumber: string | null;
+  requesterUserId: string;
+  departmentName: string | null | undefined;
+}): Promise<void> {
+  const scope = classifyDepartmentScopeByName(params.departmentName);
+  if (scope !== 'IT' && scope !== 'Admin') return;
+
+  const destinationDepartment = scope === 'IT' ? 'IT' : 'Admin';
+  await createNotificationForApi({
+    user_id: params.requesterUserId,
+    title: 'Return Asset Now',
+    message: `Please return the asset to the ${destinationDepartment} Department for return processing and asset condition checking.`,
+    type: 'system',
+    data: {
+      form_id: params.formId,
+      form_number: params.formNumber,
+      asset_scope: scope,
+      destination_department: destinationDepartment,
+      route: '/profile?tab=documents&docTab=returns',
+      actionTarget: 'return_asset_now',
+    },
+  });
+}
+
 async function notifyManagerApprover2OfProcessedReturn(params: {
   formId: string;
   formNumber: string | null;
@@ -1762,6 +1787,7 @@ async function runAfterReturnAccountabilityAndProcessorAssign(
       // Use the asset category's department (IT/Admin scope) — same source used by regular accountability forms
       const originalDeptId = expandedList[0]?.department_id || null;
 
+      const processorCopyScope = classifyDepartmentScopeByName(deptName);
       const accountabilityFormReq = {
         ...req,
         user: { userID: processorId },
@@ -1774,16 +1800,22 @@ async function runAfterReturnAccountabilityAndProcessorAssign(
           issuerSignature: processorDigitalSignature,
           itCopySignature: processorDigitalSignature,
           adminCopySignerId: options?.adminCopySignerId ?? null,
-          adminCopyCopyType: options?.adminCopyCopyType ?? null,
+          // Preserve the category department's scope so processor-return forms
+          // enter the copy-signing workflow for the processor's approvers.
+          adminCopyCopyType:
+            options?.adminCopyCopyType ??
+            (processorCopyScope === 'IT' || processorCopyScope === 'Admin'
+              ? processorCopyScope
+              : null),
         },
       } as AuthRequest;
-      const accountabilityFormRes = {
-        status: () => ({ json: () => null }),
-      } as unknown as Response;
       try {
-        await createAccountabilityFormHandler(
+        await createReturnAccountabilityFormAndNotify(
           accountabilityFormReq,
-          accountabilityFormRes
+          processorId,
+          actingUserId,
+          req,
+          null
         );
         formsCreatedCount++;
       } catch (formErr) {
@@ -5639,6 +5671,22 @@ export async function approveReturnFormHandler(
         });
       } catch (notifError) {
         logger.error('Failed to send approval notification to requester:', notifError);
+      }
+    }
+
+    // Notify the requestor to bring the asset to the department that owns its
+    // asset scope. Hold returns already have custody and are already processed.
+    if (!isHoldFlow && !approveOwnerAbsent) {
+      try {
+        const department = await getDepartmentById(form.department_id);
+        await notifyRequesterToReturnAsset({
+          formId,
+          formNumber: form.form_number,
+          requesterUserId: form.user_id,
+          departmentName: department?.name,
+        });
+      } catch (notifError) {
+        logger.error('Failed to notify requestor to return asset:', notifError);
       }
     }
 

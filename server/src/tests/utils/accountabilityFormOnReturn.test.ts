@@ -9,6 +9,7 @@ jest.mock('../../logger.js', () => ({ __esModule: true, default: { info: jest.fn
 jest.mock('../../utils/audit.js', () => ({ createAuditLog: (...args: any[]) => mockCreateAuditLog(...args) }));
 jest.mock('../../controllers/accountabilityForms.controller.js', () => ({
   createAccountabilityFormHandler: (...args: any[]) => mockCreateAccountabilityFormHandler(...args),
+  kickoffApprovalFlowNotifications: jest.fn(),
 }));
 
 const { handleAccountabilityFormOnAssetReturn } = require('../../utils/accountabilityFormOnReturn.js');

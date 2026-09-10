@@ -1023,8 +1023,11 @@ async function sendApprovalKickoffNotifications(args: {
         if (id && !copyRecipients.includes(id)) copyRecipients.push(id);
       }
     }
-    // Legacy fallback: single explicitly-stored signer.
-    if (copyRecipients.length === 0 && args.adminCopySignerId) {
+    // Always include the explicitly selected/stored signer. Return processing can
+    // create both the requestor's replacement form and the processor's temporary
+    // form, and both must notify the signer shown in Approvals. Keep the
+    // designated approver/sub-approver recipients as well, de-duplicated.
+    if (args.adminCopySignerId && !copyRecipients.includes(args.adminCopySignerId)) {
       copyRecipients.push(args.adminCopySignerId);
     }
     const custodySuffix =

@@ -5,7 +5,7 @@ import { createMockRes } from '../helpers/mockRes.js';
 jest.mock('../../db.js', () => ({ pool: { execute: jest.fn() } }));
 jest.mock('../../logger.js', () => ({ __esModule: true, default: { error: jest.fn(), info: jest.fn(), warn: jest.fn(), debug: jest.fn() } }));
 jest.mock('../../utils/audit.js', () => ({ createAuditLog: jest.fn(() => Promise.resolve()) }));
-jest.mock('../../utils/accountabilityFormOnReturn.js', () => ({ handleAccountabilityFormOnAssetReturn: jest.fn() }));
+jest.mock('../../utils/accountabilityFormOnReturn.js', () => ({ handleAccountabilityFormOnAssetReturn: jest.fn(), createReturnAccountabilityFormAndNotify: jest.fn() }));
 jest.mock('../../utils/assetScope.js', () => ({ getAssetScope: jest.fn(), classifyDepartmentScopeByName: jest.fn() }));
 jest.mock('../../utils/approverNotifications.js', () => ({ isUserManagerApprover1: jest.fn(), isUserManagerApprover2: jest.fn(), getManagerApprover1UserIdsInDepartmentAndCompany: jest.fn(), getManagerApprover2UserIdsForProcessedReturn: jest.fn(), getAssetRoleUsersForAssignmentsAndCompany: jest.fn(), isDesignatedApprover: jest.fn(), isDesignatedSubApprover: jest.fn(), getDesignatedApproverUserIdForRequester: jest.fn(), getDesignatedSubApproverUserIdForRequester: jest.fn() }));
 jest.mock('../../services/userApprovers.service.js', () => ({ getRequestersAssignedToApprover: jest.fn() }));
@@ -55,13 +55,14 @@ jest.mock('../../repositories/assetTransferForm.repository.js', () => ({
   findAccountabilityFormForAsset: jest.fn(),
 }));
 jest.mock('../../services/assetReturn.service.js', () => ({ resolveReturnFormContext: jest.fn() }));
-jest.mock('../../controllers/accountabilityForms.controller.js', () => ({ createAccountabilityFormHandler: jest.fn() }));
+jest.mock('../../controllers/accountabilityForms.controller.js', () => ({ createAccountabilityFormHandler: jest.fn(), kickoffApprovalFlowNotifications: jest.fn() }));
 jest.mock('../../controllers/assetTransfers.controller.js', () => ({ runTransferFormExecution: jest.fn() }));
 
 const { pool } = jest.requireMock('../../db.js') as { pool: { execute: jest.Mock } };
 const returnModel = jest.requireMock('../../models/assetReturn.model.js').AssetReturnModel as jest.Mock;
 const returnFormModel = jest.requireMock('../../models/assetReturnForm.model.js').AssetReturnFormModel as jest.Mock;
-const { getAssetScope } = jest.requireMock('../../utils/assetScope.js') as { getAssetScope: jest.Mock };
+const { getAssetScope, classifyDepartmentScopeByName } = jest.requireMock('../../utils/assetScope.js') as { getAssetScope: jest.Mock; classifyDepartmentScopeByName: jest.Mock };
+const { createAccountabilityFormHandler } = jest.requireMock('../../controllers/accountabilityForms.controller.js') as { createAccountabilityFormHandler: jest.Mock };
 const transferRepo = jest.requireMock('../../repositories/assetTransferForm.repository.js') as Record<string, jest.Mock>;
 const returnRepo = jest.requireMock('../../repositories/assetReturn.repository.js') as Record<string, jest.Mock>;
 const { isUserManagerApprover1, getManagerApprover1UserIdsInDepartmentAndCompany, getManagerApprover2UserIdsForProcessedReturn, getAssetRoleUsersForAssignmentsAndCompany } = jest.requireMock('../../utils/approverNotifications.js') as { isUserManagerApprover1: jest.Mock; getManagerApprover1UserIdsInDepartmentAndCompany: jest.Mock; getManagerApprover2UserIdsForProcessedReturn: jest.Mock; getAssetRoleUsersForAssignmentsAndCompany: jest.Mock };
@@ -316,6 +317,53 @@ describe('assetReturns.controller', () => {
       transferRepo.getDepartmentById.mockResolvedValue({ name: 'IT' });
       await assetReturnsController.approveReturnFormHandler(req, res);
       expect(res._json.message).toContain('approved');
+    });
+
+    it('notifies the requestor to return an approved IT asset for processing', async () => {
+      req.params = { formId: 'f1' };
+      req.body = { digitalSignature: 'sig' };
+      transferRepo.getReturnFormById.mockResolvedValue({
+        formID: 'f1',
+        form_number: 'RET-001',
+        user_id: 'u-requestor',
+        signed_at: '2024-01-01',
+        company_id: '10',
+        dept_head_signed_at: null,
+        process_signed_at: null,
+        received_by: null,
+        owner_absent: 0,
+        department_id: 'dept-it',
+      });
+      pool.execute.mockImplementation(async (sql: string) => {
+        if (sql.includes('SELECT module_name')) {
+          return [[
+            { module_name: 'Approvals', permission_type: 'create', granted: 1 },
+            { module_name: 'Approvals', permission_type: 'edit', granted: 1 },
+          ], []];
+        }
+        return [[], []];
+      });
+      returnRepo.fetchUserDigitalSignature.mockResolvedValue('dig-sig');
+      getAssetScope.mockResolvedValue({ companyId: '10', departmentIds: null, isSuperAdmin: false, isAdmin: false });
+      transferRepo.getUserNamesById.mockResolvedValue({ first_name: 'Approver', last_name: 'User' });
+      transferRepo.getDepartmentById.mockResolvedValue({ name: 'Information Technology' });
+      classifyDepartmentScopeByName.mockReturnValue('IT');
+
+      await assetReturnsController.approveReturnFormHandler(req, res);
+
+      expect(createNotificationForApi).toHaveBeenCalledWith(
+        expect.objectContaining({
+          user_id: 'u-requestor',
+          title: 'Return Asset Now',
+          message: expect.stringContaining('IT Department'),
+          data: expect.objectContaining({
+            form_id: 'f1',
+            asset_scope: 'IT',
+            destination_department: 'IT',
+            actionTarget: 'return_asset_now',
+          }),
+        })
+      );
     });
 
     it('returns 400 when form not signed', async () => {
@@ -1031,6 +1079,84 @@ describe('assetReturns.controller', () => {
             actionTarget: 'approvals',
           }),
         })
+      );
+    });
+
+    it('passes the processor asset scope to the accountability copy-signing flow', async () => {
+      req.params = { formId: 'f1' };
+      req.body = {
+        processSignature: { digital_signature: 'processor-sig' },
+        assetReturns: [{ assignmentId: 'a1', condition: 'Good' }],
+        assignToProcessor: true,
+        receivedBy: 'u1',
+      };
+      const formRow = {
+        formID: 'f1',
+        form_number: 'RET-001',
+        user_id: 'u-returner',
+        department_id: 'd1',
+        form_company_id: 10,
+        dept_head_signed_at: '2024-01-01 00:00:00',
+        process_signed_at: null,
+        process_digital_signature: null,
+        process_signed_by: null,
+        declined_at: null,
+        processor_declined_at: null,
+        received_by: null,
+        return_type: 'Returned',
+        owner_absent: 0,
+        process_user_position: null,
+      };
+      const assignmentRow = {
+        ...mockAssignment,
+        asset_id: 'asset-it',
+      };
+      pool.execute.mockImplementation(async (sql: string) => {
+        const s = String(sql);
+        if (s.includes('FROM asset_assignments WHERE assignmentID IN')) return [[assignmentRow]];
+        if (s.includes('SELECT assetID, asset_code FROM assets')) return [[{ assetID: 'asset-it', asset_code: 'AST-001' }]];
+        if (s.includes('FROM asset_builder_items abi')) return [[]];
+        if (s.includes('FROM assets a') && s.includes('WHERE a.assetID IN')) {
+          return [[{
+            assetID: 'asset-it',
+            asset_code: 'AST-001',
+            name: 'Laptop',
+            category_name: 'Computers',
+            type_name: 'Laptop',
+            department_name: 'Information Technology',
+            department_id: 'd-it',
+          }]];
+        }
+        if (s.includes('SELECT department_id, location_id FROM asset_assignments')) {
+          return [[{ department_id: 'd-it', location_id: 'l1' }]];
+        }
+        if (s.includes('SELECT COUNT(*) as cnt')) return [[{ cnt: 1 }]];
+        return [[formRow]];
+      });
+      classifyDepartmentScopeByName.mockReturnValue('IT');
+      getAssetScope.mockResolvedValue({ companyId: 10, departmentIds: null, isSuperAdmin: false });
+      returnRepo.fetchUserPosition.mockResolvedValue('IT Staff');
+      returnRepo.fetchUserDigitalSignature.mockResolvedValue('processor-sig');
+      returnRepo.resolveProcessorReturnTarget.mockResolvedValue(null);
+      transferRepo.getBuilderItemCount.mockResolvedValue(0);
+      returnModel.findByFormId.mockResolvedValue([{ return_id: 'r1', assignment_id: 'a1', return_department_id: null, return_location_id: null, return_location_room_id: null }]);
+      transferRepo.getCategoryDepartmentsByAssetIds.mockResolvedValue([{ assetID: 'asset-it', departmentID: 'd-it' }]);
+      transferRepo.getUserNamesById.mockResolvedValue({ first_name: 'Jane', last_name: 'Processor' });
+      transferRepo.getDepartmentById.mockResolvedValue({ name: 'Information Technology' });
+      getManagerApprover2UserIdsForProcessedReturn.mockResolvedValue([]);
+
+      await assetReturnsController.processReturnFormHandler(req, res);
+
+      expect(createAccountabilityFormHandler).toHaveBeenCalledWith(
+        expect.objectContaining({
+          user: { userID: 'u1' },
+          body: expect.objectContaining({
+            formOrigin: 'processor_return',
+            userId: 'u1',
+            adminCopyCopyType: 'IT',
+          }),
+        }),
+        expect.anything()
       );
     });
   });

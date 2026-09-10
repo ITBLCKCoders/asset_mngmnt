@@ -3,6 +3,7 @@ import { pool } from '../db.js';
 import { createAuditLog } from './audit.js';
 import {
   createAccountabilityFormHandler,
+  kickoffApprovalFlowNotifications,
   type ClearanceScope,
   type ClearanceReason,
 } from '../controllers/accountabilityForms.controller.js';
@@ -20,6 +21,69 @@ export type ProcessSignature = {
   signed_at?: string;
   digital_signature?: string;
 } | null;
+
+export async function createReturnAccountabilityFormAndNotify(
+  formReq: AuthRequest,
+  ownerUserId: string,
+  assignerUserId: string,
+  request: Request,
+  custodyNote: string | null
+): Promise<void> {
+  let responseBody: any = null;
+  const formRes = {
+    status: () => ({
+      json: (body: any) => {
+        responseBody = body;
+        return body;
+      },
+    }),
+  } as unknown as Response;
+
+  await createAccountabilityFormHandler(
+    {
+      ...formReq,
+      body: {
+        ...formReq.body,
+        // Return processing creates forms internally. Defer the notification so
+        // the persisted form is always passed through the shared kickoff path.
+        skipNotification: true,
+      },
+    } as AuthRequest,
+    formRes
+  );
+
+  const createdForm = responseBody?.form;
+  if (!createdForm?.formID || !createdForm?.form_number) return;
+
+  let ownerName = ownerUserId;
+  let assignerName = assignerUserId;
+  try {
+    const [userRows] = (await pool.execute(
+      `SELECT userID, first_name, last_name
+         FROM users
+        WHERE userID IN (?, ?)`,
+      [ownerUserId, assignerUserId]
+    )) as any[];
+    for (const row of userRows as any[]) {
+      const name = `${row.first_name ?? ''} ${row.last_name ?? ''}`.trim();
+      if (!name) continue;
+      if (String(row.userID) === String(ownerUserId)) ownerName = name;
+      if (String(row.userID) === String(assignerUserId)) assignerName = name;
+    }
+  } catch (error) {
+    logger.warn('Could not resolve return accountability notification names:', error);
+  }
+
+  await kickoffApprovalFlowNotifications({
+    formId: String(createdForm.formID),
+    formNumber: String(createdForm.form_number),
+    ownerUserId,
+    ownerName,
+    assignerName,
+    custodyNote,
+    req: request as AuthRequest,
+  });
+}
 
 export interface ClearanceEligibility {
   eligibleScopes: ClearanceScope[];
@@ -288,12 +352,15 @@ export async function handleAccountabilityFormOnAssetReturn(
         },
       } as AuthRequest;
 
-      const intangibleFormRes = {
-        status: () => ({ json: () => ({}) }),
-      } as unknown as Response;
 
       try {
-        await createAccountabilityFormHandler(intangibleFormReq, intangibleFormRes);
+        await createReturnAccountabilityFormAndNotify(
+          intangibleFormReq,
+          userId,
+          createdBy,
+          req,
+          intangibleCustodyNote
+        );
         logger.info(
           `Created intangible-only accountability form on return: user ${userId}, dept ${first.department_id ?? 'None'}, ${departmentAssets.length} assets`
         );
@@ -416,14 +483,14 @@ export async function handleAccountabilityFormOnAssetReturn(
       },
     } as AuthRequest;
 
-    const accountabilityFormRes = {
-      status: () => ({ json: () => ({}) }),
-    } as unknown as Response;
 
     try {
-      await createAccountabilityFormHandler(
+      await createReturnAccountabilityFormAndNotify(
         accountabilityFormReq,
-        accountabilityFormRes
+        userId,
+        createdBy,
+        req,
+        tangibleCustodyNote
       );
       formsCreated++;
       logger.info(
@@ -499,12 +566,15 @@ export async function handleAccountabilityFormOnAssetReturn(
         },
       } as AuthRequest;
 
-      const fallbackRes = {
-        status: () => ({ json: () => ({}) }),
-      } as unknown as Response;
 
       try {
-        await createAccountabilityFormHandler(fallbackReq, fallbackRes);
+        await createReturnAccountabilityFormAndNotify(
+          fallbackReq,
+          userId,
+          createdBy,
+          req,
+          tangibleCustodyNote
+        );
         logger.info(
           `Created fallback accountability form on return: user ${userId}, ${allAssets.length} assets`
         );

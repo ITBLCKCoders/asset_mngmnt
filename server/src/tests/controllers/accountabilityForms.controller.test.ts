@@ -779,6 +779,49 @@ describe('accountabilityForms.controller', () => {
       expect(NotificationService.createNotification).toHaveBeenCalledTimes(2);
     });
 
+    it('also notifies an explicitly selected copy signer for return-created forms', async () => {
+      pool.execute.mockImplementation(async (query: unknown) => {
+        const q = String(query);
+        if (q.includes('SELECT approval_status, admin_copy_signer_id')) {
+          return [[{
+            approval_status: 'pending_admin_copy_signature',
+            admin_copy_signer_id: 'selectedCopySigner',
+            admin_copy_copy_type: 'Admin',
+            created_by: 'processor1',
+          }]];
+        }
+        return [[]];
+      });
+      getDesignatedApproverUserIdForRequester.mockResolvedValue('processorApprover');
+      getDesignatedSubApproverUserIdForRequester.mockResolvedValue('processorSubApprover');
+
+      await accountabilityFormsController.kickoffApprovalFlowNotifications({
+        formId: 'f-returner',
+        formNumber: 'AF-RETURN-001',
+        ownerUserId: 'returner1',
+        ownerName: 'Returner Name',
+        assignerName: 'Processor Name',
+        req,
+      });
+
+      const notifiedUserIds = (NotificationService.createNotification as jest.Mock).mock.calls
+        .map(call => call[0].user_id);
+      expect(notifiedUserIds).toEqual([
+        'processorApprover',
+        'processorSubApprover',
+        'selectedCopySigner',
+      ]);
+      expect(NotificationService.createNotification).toHaveBeenCalledWith(
+        expect.objectContaining({
+          user_id: 'selectedCopySigner',
+          title: 'Accountability form AF-RETURN-001 needs Admin copy signature',
+        }),
+        'u1',
+        '127.0.0.1',
+        undefined
+      );
+    });
+
     it('notifies just the single designated signer when the issuer has only one', async () => {
       pool.execute.mockImplementation(async (query: unknown) => {
         const q = String(query);
