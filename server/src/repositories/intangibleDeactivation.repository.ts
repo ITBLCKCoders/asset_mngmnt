@@ -127,6 +127,15 @@ export async function listAll(): Promise<DeactivationFormRow[]> {
   return rows;
 }
 
+export async function listPendingForUser(userId: string): Promise<DeactivationFormRow[]> {
+  const [rows] = await pool.execute<DeactivationFormRow[]>(
+    `${FORM_SELECT} WHERE f.deleted_at IS NULL AND f.user_id = ?
+     AND f.status IN ('Pending', 'PendingHrApproval')
+     ORDER BY f.created_at DESC`, [userId]
+  );
+  return rows;
+}
+
 export async function listPendingForApprover(approverUserId: string): Promise<DeactivationFormRow[]> {
   const [rows] = await pool.execute<DeactivationFormRow[]>(
     `${FORM_SELECT} WHERE f.deleted_at IS NULL AND f.status = 'Pending'

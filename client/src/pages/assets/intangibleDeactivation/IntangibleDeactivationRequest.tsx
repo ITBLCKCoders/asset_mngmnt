@@ -1,6 +1,6 @@
 'use client';
 import { useEffect, useState, useMemo, useRef } from 'react';
-import { Package, FileText, CheckCircle2, RotateCcw } from 'lucide-react';
+import { Package, FileText, CheckCircle2, RotateCcw, LockKeyhole } from 'lucide-react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { PageHeader } from '@/components/common/PageHeader';
 import { SearchWithColumnFilter } from '@/components/common/SearchWithColumnFilter';
@@ -66,6 +66,7 @@ export default function IntangibleDeactivationRequest() {
   const [showOtp, setShowOtp] = useState(false);
   const pendingActionRef = useRef<(() => Promise<void>) | null>(null);
   const [myForms, setMyForms] = useState<any[]>([]);
+  const [pendingAssetIds, setPendingAssetIds] = useState<string[]>([]);
 
   const fetchData = async () => {
     try {
@@ -93,11 +94,19 @@ export default function IntangibleDeactivationRequest() {
       });
       setIntangibles(finalList);
       setMyForms((formsRes as any)?.forms ?? []);
+      setPendingAssetIds(
+        ((formsRes as any)?.pendingAssetIds ?? []).map((id: unknown) => String(id))
+      );
     } catch (e) { console.error(e); toast.error('Failed to load intangibles'); }
     finally { setLoading(false); }
   };
 
   useEffect(() => { if (currentUser) fetchData(); }, [currentUser]);
+
+  useEffect(() => {
+    const pending = new Set(pendingAssetIds);
+    setSelectedIds(prev => prev.filter(id => !pending.has(id)));
+  }, [pendingAssetIds]);
 
   const filteredIntangibles = useMemo(() => {
     if (!search.trim()) return intangibles;
@@ -112,15 +121,22 @@ export default function IntangibleDeactivationRequest() {
     });
   }, [intangibles, search, searchColumn]);
 
+  const isPending = (id: string) => pendingAssetIds.includes(id);
+
   const toggleSelect = (id: string, checked: boolean) => {
+    if (isPending(id)) return;
     if (checked) setSelectedIds(prev => [...prev, id]);
     else setSelectedIds(prev => prev.filter(x => x !== id));
   };
 
-  const allSelected = filteredIntangibles.length > 0 && filteredIntangibles.every((ia: any) => selectedIds.includes(String(ia.id)));
+  const selectableIntangibles = filteredIntangibles.filter(
+    (ia: any) => !isPending(String(ia.id))
+  );
+  const allSelected = selectableIntangibles.length > 0
+    && selectableIntangibles.every((ia: any) => selectedIds.includes(String(ia.id)));
 
   const toggleSelectAllVisible = () => {
-    const allVisibleIds = filteredIntangibles.map((ia: any) => String(ia.id));
+    const allVisibleIds = selectableIntangibles.map((ia: any) => String(ia.id));
     if (allVisibleIds.length > 0 && allVisibleIds.every(id => selectedIds.includes(id))) {
       setSelectedIds(prev => prev.filter(id => !allVisibleIds.includes(id)));
     } else {
@@ -141,6 +157,7 @@ export default function IntangibleDeactivationRequest() {
       setRemarks('');
       await fetchData();
     } catch (e: any) {
+      if (e?.response?.status === 409) await fetchData();
       toast.error(e?.data?.error || e?.message || 'Failed to submit');
     } finally {
       setSubmitting(false);
@@ -238,7 +255,7 @@ export default function IntangibleDeactivationRequest() {
                   onSearchColumnChange={setSearchColumn}
                   className="mt-4"
                 />
-                {filteredIntangibles.length > 0 && (
+                {selectableIntangibles.length > 0 && (
                   <div className="mt-3 flex justify-end">
                     <Button
                       variant="outline"
@@ -277,10 +294,14 @@ export default function IntangibleDeactivationRequest() {
                         <Package className="h-10 w-10 text-red-600" />
                       </div>
                       <h3 className="text-lg font-semibold text-gray-900 mb-2">
-                        No intangible assets found
+                        {selectableIntangibles.length === 0 && filteredIntangibles.length > 0
+                          ? 'All visible intangibles have a pending request'
+                          : 'No intangible assets found'}
                       </h3>
                       <p className="text-gray-500 text-sm">
-                        Try adjusting your search criteria
+                        {selectableIntangibles.length === 0 && filteredIntangibles.length > 0
+                          ? 'Wait for the existing request to be approved or declined before submitting another request.'
+                          : 'Try adjusting your search criteria'}
                       </p>
                     </div>
                   ) : (
@@ -291,17 +312,21 @@ export default function IntangibleDeactivationRequest() {
                         <div
                           key={id}
                           className={cn(
-                            'group relative p-4 border-2 rounded-xl transition-all duration-200 cursor-pointer',
-                            isSelected
-                              ? 'border-red-500 bg-red-50 shadow-md'
-                              : 'border-gray-200 hover:border-gray-300 hover:shadow-sm'
+                            'group relative p-4 border-2 rounded-xl transition-all duration-200',
+                            isPending(id)
+                              ? 'border-gray-200 bg-gray-50 cursor-not-allowed opacity-75'
+                              : isSelected
+                                ? 'border-red-500 bg-red-50 shadow-md cursor-pointer'
+                                : 'border-gray-200 hover:border-gray-300 hover:shadow-sm cursor-pointer'
                           )}
                           onClick={() => toggleSelect(id, !isSelected)}
+                          aria-disabled={isPending(id)}
                         >
                           <div className="flex items-start gap-4">
                             <div className="flex-shrink-0 mt-1">
                               <Checkbox
                                 checked={isSelected}
+                                disabled={isPending(id)}
                                 onCheckedChange={(checked: boolean | string) => toggleSelect(id, checked === true)}
                                 className="pointer-events-none"
                               />
@@ -309,13 +334,19 @@ export default function IntangibleDeactivationRequest() {
 
                             <div className="flex-1 min-w-0">
                               <div className="mb-2">
-                                <div className="flex items-center justify-between">
+                                <div className="flex items-center justify-between gap-2">
                                   <h3 className="font-semibold text-lg text-gray-900 truncate">
                                     {ia.name}
                                   </h3>
-                                  <div className="flex items-center gap-2">
-                                    {isSelected && (
-                                      <CheckCircle2 className="h-5 w-5 text-red-600 flex-shrink-0" />
+                                  <div className="flex items-center gap-2 flex-shrink-0">
+                                    {isPending(id) && (
+                                      <Badge variant="outline" className="text-xs border-amber-300 text-amber-700 bg-amber-50">
+                                        <LockKeyhole className="h-3 w-3 mr-1" />
+                                        Deactivation Requested
+                                      </Badge>
+                                    )}
+                                    {isSelected && !isPending(id) && (
+                                      <CheckCircle2 className="h-5 w-5 text-red-600" />
                                     )}
                                   </div>
                                 </div>

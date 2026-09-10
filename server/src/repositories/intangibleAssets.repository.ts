@@ -50,10 +50,31 @@ export async function getAllIntangibleAssets(companyId: string): Promise<any[]> 
   // Pending (unsigned IT/Admin copy) intangible assignments held as
   // `Inactive` — display-only, so the list can badge them as pending.
   let pendingByAssetId = new Map<string, IntangibleAssetAssignee[]>();
+  let deactivatedByAssetId = new Map<string, any[]>();
   try {
     const ids = assets.map((a: any) => String(a.id ?? '')).filter(Boolean);
     if (ids.length > 0) {
-      const pendingRows = await getPendingIntangibleAssignmentsForAssets(ids);
+      const [pendingRows, deactivatedRows] = await Promise.all([
+        getPendingIntangibleAssignmentsForAssets(ids),
+        getDeactivatedIntangibleAssignmentsForAssets(ids),
+      ]);
+      for (const row of deactivatedRows) {
+        const key = String((row as any).intangible_asset_id ?? '');
+        const list = deactivatedByAssetId.get(key) ?? [];
+        list.push({
+          userId: String((row as any).user_id ?? ''),
+          firstName: String((row as any).first_name ?? ''),
+          lastName: String((row as any).last_name ?? ''),
+          email: String((row as any).email ?? ''),
+          assignedDate: (row as any).assigned_date
+            ? String((row as any).assigned_date)
+            : undefined,
+          deactivatedAt: (row as any).deactivated_at
+            ? String((row as any).deactivated_at)
+            : undefined,
+        });
+        deactivatedByAssetId.set(key, list);
+      }
       for (const row of pendingRows) {
         const key = String((row as any).intangible_asset_id ?? '');
         const list = pendingByAssetId.get(key) ?? [];
@@ -74,11 +95,14 @@ export async function getAllIntangibleAssets(companyId: string): Promise<any[]> 
   }
   return assets.map((asset: any) => {
     const parsed = parseAssignees(asset.assignees);
-    const pendingAssignees = pendingByAssetId.get(String(asset.id ?? '')) ?? [];
+    const assetId = String(asset.id ?? '');
+    const pendingAssignees = pendingByAssetId.get(assetId) ?? [];
+    const deactivatedAssignees = deactivatedByAssetId.get(assetId) ?? [];
     return {
       ...asset,
       assignees: parsed.length > 0 ? parsed : (buildAssigneesFromFlatColumns(asset) ?? parsed),
       pendingAssignees,
+      deactivatedAssignees,
       isPendingSignature: pendingAssignees.length > 0,
       created_by_name: (asset.created_by_name || '').trim() || null,
       updated_by_name: (asset.updated_by_name || '').trim() || null,
@@ -105,7 +129,52 @@ export async function getPendingIntangibleAssignmentsForAssets(
      INNER JOIN users u ON iaa.user_id = u.userID
      WHERE iaa.intangible_asset_id IN (${placeholders})
        AND iaa.status = 'Inactive' AND iaa.deleted_at IS NULL
+       AND NOT EXISTS (
+         SELECT 1
+           FROM intangible_deactivation_forms f
+          WHERE f.user_id = iaa.user_id
+            AND f.status = 'Approved'
+            AND f.deleted_at IS NULL
+            AND JSON_CONTAINS(
+              JSON_EXTRACT(f.assets_data, '$.intangibleAssetIds'),
+              JSON_QUOTE(CAST(iaa.intangible_asset_id AS CHAR))
+            )
+       )
      ORDER BY iaa.intangible_asset_id, iaa.assigned_date DESC`,
+    [...ids]
+  )) as any[];
+  return rows;
+}
+
+/**
+ * Intangible assignments that were made inactive by an approved deactivation.
+ * These remain visible in the asset list as historical assignments.
+ */
+export async function getDeactivatedIntangibleAssignmentsForAssets(
+  intangibleAssetIds: string[]
+): Promise<any[]> {
+  const ids = [...new Set((intangibleAssetIds ?? []).map(id => String(id ?? '').trim()).filter(Boolean))];
+  if (ids.length === 0) return [];
+  const placeholders = ids.map(() => '?').join(',');
+  const [rows] = (await pool.query(
+    `SELECT iaa.intangible_asset_id, iaa.user_id, iaa.assigned_date,
+            u.first_name, u.last_name, u.email,
+            MAX(f.updated_at) AS deactivated_at
+       FROM intangible_asset_assignments iaa
+       INNER JOIN users u ON iaa.user_id = u.userID
+       INNER JOIN intangible_deactivation_forms f
+         ON f.user_id = iaa.user_id
+        AND f.status = 'Approved'
+        AND f.deleted_at IS NULL
+        AND JSON_CONTAINS(
+          JSON_EXTRACT(f.assets_data, '$.intangibleAssetIds'),
+          JSON_QUOTE(CAST(iaa.intangible_asset_id AS CHAR))
+        )
+      WHERE iaa.intangible_asset_id IN (${placeholders})
+        AND iaa.status = 'Inactive' AND iaa.deleted_at IS NULL
+      GROUP BY iaa.intangible_asset_id, iaa.user_id, iaa.assigned_date,
+               u.first_name, u.last_name, u.email
+      ORDER BY iaa.intangible_asset_id, iaa.assigned_date DESC`,
     [...ids]
   )) as any[];
   return rows;

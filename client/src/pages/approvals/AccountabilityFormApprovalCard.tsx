@@ -11,8 +11,9 @@ import {
   segmentTabsListClassName,
   segmentTabsTriggerClassName,
 } from '@/components/ui/tabs';
-import { Download, Eye, FileSignature, User, Package, Building2 } from 'lucide-react';
+import { Download, Eye, FileSignature, User, Package, FileText, Building2 } from 'lucide-react';
 import { ApprovalTimeline } from '@/components/common/ApprovalTimeline';
+import { splitDisplayAssets } from '@/pages/assets/accountability/accountabilityFormAssets';
 
 export type AccountabilityApprovalFormType =
   | 'admin_copy_signature'
@@ -37,6 +38,9 @@ export interface AccountabilityApprovalBatch {
     name?: string | null;
     category?: string | null;
     serialNo?: string | null;
+    type_department?: string | { name?: string } | null;
+    type_department_name?: string | null;
+    risk_level?: unknown;
   }>;
   department_name?: string | null;
   signed_at?: string | null;
@@ -82,6 +86,23 @@ export function AccountabilityFormApprovalCard({
   const displayAssets = (batch.assets ?? [])
     .map(a => ({ ...a, label: a.name || a.code || a.id }))
     .filter(a => a.label);
+  const { tangible: tangibleAssets, intangible: intangibleAssets } =
+    splitDisplayAssets(displayAssets);
+  const renderAssetList = (assets: typeof displayAssets) =>
+    assets.length > 0 ? (
+      <div className="max-h-[120px] overflow-y-auto scrollbar-hide mt-1">
+        <ul className="space-y-1">
+          {assets.map(a => (
+            <li key={a.id} className="flex items-start text-sm font-medium">
+              <span className="w-1 h-1 bg-gray-400 rounded-full mr-2 mt-1.5 flex-shrink-0" />
+              <span className="break-words">{a.label}</span>
+            </li>
+          ))}
+        </ul>
+      </div>
+    ) : (
+      <p className="text-xs text-gray-400 mt-1">None</p>
+    );
   const timeline = [
     { title: 'Form created', done: !!batch.created_at, date: batch.created_at },
     { title: `${batch.admin_copy_copy_type ?? 'IT/Admin'} copy signed`, done: !!batch.admin_copy_signed_at, date: batch.admin_copy_signed_at, signerName: batch.admin_copy_signer_name },
@@ -163,25 +184,20 @@ export function AccountabilityFormApprovalCard({
 
         {/* Assets summary */}
         {displayAssets.length > 0 && (
-          <div className="flex items-start gap-3">
-            <Package className="h-4 w-4 text-gray-400 mt-0.5 flex-shrink-0" />
-            <div className="flex-1 min-w-0">
-              <p className="text-xs text-gray-500">
-                Assets ({batch.assets?.length ?? displayAssets.length})
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+            <div className="min-w-0">
+              <p className="flex items-center gap-1.5 font-medium text-sm">
+                <Package className="h-4 w-4 text-blue-600 flex-shrink-0" />
+                Tangible Assets <span className="text-gray-400">({tangibleAssets.length})</span>
               </p>
-              <div className="max-h-[120px] overflow-y-auto scrollbar-hide mt-1">
-                <ul className="space-y-1">
-                  {displayAssets.map(a => (
-                    <li
-                      key={a.id}
-                      className="flex items-start text-sm font-medium"
-                    >
-                      <span className="w-1 h-1 bg-gray-400 rounded-full mr-2 mt-1.5 flex-shrink-0" />
-                      <span className="break-words">{a.label}</span>
-                    </li>
-                  ))}
-                </ul>
-              </div>
+              {renderAssetList(tangibleAssets)}
+            </div>
+            <div className="min-w-0">
+              <p className="flex items-center gap-1.5 font-medium text-sm">
+                <FileText className="h-4 w-4 text-amber-600 flex-shrink-0" />
+                Intangible Assets <span className="text-gray-400">({intangibleAssets.length})</span>
+              </p>
+              {renderAssetList(intangibleAssets)}
             </div>
           </div>
         )}

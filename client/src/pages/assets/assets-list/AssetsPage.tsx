@@ -491,7 +491,7 @@ export function AssetsPage() {
         header: 'Assigned To',
         size: 220,
         accessorFn: (row: any) =>
-          [...(row.assignees || []), ...(row.pendingAssignees || [])]
+          [...(row.assignees || []), ...(row.pendingAssignees || []), ...(row.deactivatedAssignees || [])]
             .map((as: any) => [as.firstName, as.lastName].filter(Boolean).join(' '))
             .filter(Boolean)
             .join(', '),
@@ -506,8 +506,14 @@ export function AssetsPage() {
             lastName?: string;
             email?: string;
           }> = row.original.pendingAssignees || [];
+          const deactivatedAssignees: Array<{
+            firstName?: string;
+            lastName?: string;
+            email?: string;
+            deactivatedAt?: string;
+          }> = row.original.deactivatedAssignees || [];
 
-          if (assignees.length === 0 && pendingAssignees.length === 0) {
+          if (assignees.length === 0 && pendingAssignees.length === 0 && deactivatedAssignees.length === 0) {
             return (
               <span className="text-sm text-gray-500">
                 Not assigned
@@ -519,6 +525,8 @@ export function AssetsPage() {
           const remaining = assignees.length - visible.length;
           const visiblePending = pendingAssignees.slice(0, 3);
           const remainingPending = pendingAssignees.length - visiblePending.length;
+          const visibleDeactivated = deactivatedAssignees.slice(0, 3);
+          const remainingDeactivated = deactivatedAssignees.length - visibleDeactivated.length;
 
           return (
             <div className="space-y-1 text-sm">
@@ -554,6 +562,25 @@ export function AssetsPage() {
               ))}
               {remainingPending > 0 && (
                 <div className="text-xs text-gray-500">+{remainingPending} more</div>
+              )}
+              {visibleDeactivated.map((assignee, index) => (
+                <div key={`deactivated-${assignee.firstName}-${assignee.lastName}-${index}`}>
+                  <div className="font-medium text-gray-700">
+                    {[assignee.firstName, assignee.lastName].filter(Boolean).join(' ') || 'Unknown'}
+                  </div>
+                  {assignee.email && (
+                    <div className="truncate text-xs text-gray-500">{assignee.email}</div>
+                  )}
+                  <Badge
+                    variant="outline"
+                    className="mt-0.5 border-red-500/30 bg-red-500/10 px-2 py-0.5 text-[11px] font-semibold text-red-700"
+                  >
+                    Deactivated
+                  </Badge>
+                </div>
+              ))}
+              {remainingDeactivated > 0 && (
+                <div className="text-xs text-gray-500">+{remainingDeactivated} more deactivated</div>
               )}
             </div>
           );

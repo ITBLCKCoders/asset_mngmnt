@@ -362,7 +362,10 @@ describe('ApprovalsPage', () => {
       user_department_name: 'IT',
       assets_data: JSON.stringify({
         form_origin: 'processor_return',
-        assets: [{ id: 'a1', code: 'AST-001', name: 'Laptop' }],
+        assets: [
+          { id: 'a1', code: 'AST-001', name: 'Laptop', category: 'Computer' },
+          { id: 'ia1', name: 'Adobe License', category: 'Intangible' },
+        ],
       }),
     };
     const regularRow = {
@@ -397,5 +400,9 @@ describe('ApprovalsPage', () => {
     });
     expect(screen.getByText('ACC-REG-001')).toBeDefined();
     expect(screen.getAllByText('Temporary')).toHaveLength(1);
+    expect(screen.getAllByText('Tangible Assets').length).toBeGreaterThan(0);
+    expect(screen.getAllByText('Intangible Assets').length).toBeGreaterThan(0);
+    expect(screen.getByText('Laptop')).toBeDefined();
+    expect(screen.getByText('Adobe License')).toBeDefined();
   });
 });

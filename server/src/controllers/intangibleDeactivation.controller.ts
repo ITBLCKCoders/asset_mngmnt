@@ -12,7 +12,7 @@ import { createNotificationForApi } from '../utils/notificationsApi.js';
 import { emitNotification } from '../sockets/socketHandlers.js';
 import { getIoInstance } from '../utils/socketManager.js';
 import { NotificationService } from '../services/notification.service.js';
-import { handleAccountabilityFormOnAssetReturn } from '../utils/accountabilityFormOnReturn.js';
+import { createReturnAccountabilityFormAndNotify } from '../utils/accountabilityFormOnReturn.js';
 import { notifyIfNoAssetsRemainInCustody } from '../utils/noAssetCustodyNotification.js';
 
 function parseAssetsData(v: unknown): { assets: any[]; intangibleAssetIds: string[] } {
@@ -122,6 +122,18 @@ export async function createDeactivationHandler(req: AuthRequest, res: Response)
     const { intangibleAssetIds, digitalSignature, remarks } = parsed.data;
     const requesterId = req.user!.userID;
 
+    const pendingRows = await repo.listPendingForUser(requesterId);
+    const pendingAssetIds = new Set(
+      pendingRows.flatMap(row => parseAssetsData(row.assets_data).intangibleAssetIds)
+    );
+    const alreadyRequested = intangibleAssetIds.filter(id => pendingAssetIds.has(String(id)));
+    if (alreadyRequested.length > 0) {
+      return res.status(409).json({
+        error: `A deactivation request already exists for asset(s): ${alreadyRequested.join(', ')}`,
+        assetIds: alreadyRequested,
+      });
+    }
+
     // Validate assets belong to user and are active
     const activeRows = await repo.getActiveIntangibleAssignmentsForUser(requesterId);
     const activeMap = new Map<string, any>(activeRows.map(r => [String(r.intangible_asset_id), r]));
@@ -209,7 +221,13 @@ export async function getMyDeactivationsHandler(req: AuthRequest, res: Response)
   try {
     const userId = req.user!.userID;
     const rows = await repo.listForms({ userId });
-    return res.json({ forms: await Promise.all(rows.map(mapRow)) });
+    const pendingRows = rows.filter(row => ['Pending', 'PendingHrApproval'].includes(row.status));
+    const pendingAssetIds = [
+      ...new Set(
+        pendingRows.flatMap(row => parseAssetsData(row.assets_data).intangibleAssetIds)
+      ),
+    ];
+    return res.json({ forms: await Promise.all(rows.map(mapRow)), pendingAssetIds });
   } catch (e) { logger.error(e); return res.status(500).json({ error: 'Failed' }); }
 }
 
@@ -262,6 +280,30 @@ export async function approveDeptHeadHandler(req: AuthRequest, res: Response) {
     if (!isApprover) return res.status(403).json({ error: 'Not authorized to approve this form' });
     const affected = await repo.updateDeptHeadApproval(formId, req.user!.userID!, sig);
     if (!affected) return res.status(400).json({ error: 'Failed to approve' });
+
+    // Notify the requester that the department-head approval is complete.
+    try {
+      const title = 'Your request for intangible deactivation has been approved by your department head.';
+      await NotificationService.createNotification({
+        user_id: row.user_id,
+        title,
+        message: title,
+        type: 'system',
+        status: 'unread',
+        data: JSON.stringify({ route: '/profile?tab=documents&docTab=intangible-deactivation', formId, formNumber: row.form_number }),
+      }, req.user!.userID!, req.ip, req.get('User-Agent') ?? 'Unknown');
+      const io = getIoInstance();
+      if (io) emitNotification(io, row.user_id, 'notification', {
+        title,
+        description: title,
+        type: 'system',
+        route: '/profile?tab=documents&docTab=intangible-deactivation',
+        formId,
+        formNumber: row.form_number,
+      });
+    } catch (notificationError) {
+      logger.error('Failed to notify requester after department-head approval', notificationError);
+    }
 
     // Notify HR receivers
     const { getHrAccountabilityReceiverUserIds } = await import('../utils/approverNotifications.js');
@@ -316,11 +358,29 @@ export async function approveHrHandler(req: AuthRequest, res: Response) {
 
     await createAuditLog({ userId: req.user!.userID!, action: 'Approved Intangible Deactivation (HR)', resourceType: 'intangible_deactivation_form', resourceId: formId, resourceName: row.form_number, details: `HR approved ${row.form_number}, assets deactivated`, ipAddress: req.ip, userAgent: req.get('User-Agent') ?? 'Unknown' });
 
-    // notify requester
+    // Notify requester that HR has completed processing the request.
     try {
-      await NotificationService.createNotification({ user_id: row.user_id, title: `Intangible deactivation ${row.form_number} approved`, message: `Your intangible deactivation request has been approved by HR.`, type: 'system', status: 'unread', data: JSON.stringify({ route: '/forms/intangible-deactivation', formId, formNumber: row.form_number }) }, req.user!.userID!, req.ip, req.get('User-Agent') ?? 'Unknown');
-      const io = getIoInstance(); if (io) emitNotification(io, row.user_id, 'notification', { title: `Intangible deactivation approved`, description: `${row.form_number} approved`, type:'system', route:'/forms/intangible-deactivation', formId });
-    } catch {}
+      const title = 'Your intangible deactivation request has been processed.';
+      await NotificationService.createNotification({
+        user_id: row.user_id,
+        title,
+        message: title,
+        type: 'system',
+        status: 'unread',
+        data: JSON.stringify({ route: '/profile?tab=documents&docTab=intangible-deactivation', formId, formNumber: row.form_number }),
+      }, req.user!.userID!, req.ip, req.get('User-Agent') ?? 'Unknown');
+      const io = getIoInstance();
+      if (io) emitNotification(io, row.user_id, 'notification', {
+        title,
+        description: title,
+        type: 'system',
+        route: '/profile?tab=documents&docTab=intangible-deactivation',
+        formId,
+        formNumber: row.form_number,
+      });
+    } catch (notificationError) {
+      logger.error('Failed to notify requester after HR processing', notificationError);
+    }
 
     await notifyIfNoAssetsRemainInCustody({
       userId: row.user_id,
@@ -332,78 +392,171 @@ export async function approveHrHandler(req: AuthRequest, res: Response) {
   } catch (e) { logger.error(e); return res.status(500).json({ error: 'Failed to HR approve' }); }
 }
 
-async function handleIntangibleAccountabilityAfterDeactivation(userId: string, deactivatedIds: string[], req: AuthRequest, hrSignature: string | null, conn: PoolConnection) {
+async function handleIntangibleAccountabilityAfterDeactivation(userId: string, deactivatedIds: string[], req: AuthRequest, _hrSignature: string | null, conn: PoolConnection) {
   const idSet = new Set(deactivatedIds.map(String));
-  // Find and disable accountability forms containing any deactivated intangible id
-  const [formRows] = await conn.execute(`SELECT formID, form_number, assets_data, status FROM accountability_forms WHERE user_id=? AND deleted_at IS NULL`, [userId]) as any[];
-  const disabledNumbersByScope: Record<string,string[]> = { IT: [], Admin: [] };
-  const { classifyDepartmentScopeByName } = await import('../utils/assetScope.js');
+  const [formRows] = await conn.execute(
+    `SELECT formID, form_number, assets_data, status, created_by, issuer_signature, it_copy_signature, admin_copy_copy_type, created_at
+       FROM accountability_forms
+      WHERE user_id=? AND deleted_at IS NULL
+      ORDER BY created_at DESC`,
+    [userId]
+  ) as any[];
+
+  // The replacement form must retain the issuer of the latest disabled form,
+  // not the HR user who processed the deactivation.
+  let replacementIssuerId: string | null = null;
+  let replacementIssuerSignature: string | null = null;
+  let replacementItCopySignature: string | null = null;
+  let replacementCopyType: 'IT' | 'Admin' | null = null;
+
   for (const form of (formRows as any[])) {
-    let contains = false;
-    let scopes = new Set<string>();
+    let containsDeactivatedAsset = false;
     try {
       const data = typeof form.assets_data === 'string' ? JSON.parse(form.assets_data) : form.assets_data;
       const assets: any[] = Array.isArray(data?.assets) ? data.assets : [];
-      for (const a of assets) {
-        if (idSet.has(String(a.id))) contains = true;
-        const sc = classifyDepartmentScopeByName(a?.department || a?.categoryDepartment || '');
-        if (sc==='IT' || sc==='Admin') scopes.add(sc);
-      }
-    } catch {}
-    if (!contains) continue;
-    await conn.execute(`UPDATE accountability_forms SET status='Disabled', updated_at=NOW() WHERE formID=?`, [form.formID]);
-    await createAuditLog({ userId: req.user!.userID, action: 'Disabled Accountability Form (Intangible Deactivation)', resourceType: 'accountability_form', resourceId: form.formID, resourceName: form.form_number, details: `Disabled due to intangible deactivation ${[...idSet].join(',')}`, oldValues: { status: form.status }, newValues: { status: 'Disabled' }, ipAddress: req.ip, userAgent: req.get('User-Agent') ?? 'Unknown' });
-    for (const s of scopes) {
-      if (s==='IT' || s==='Admin') (disabledNumbersByScope as any)[s as 'IT'|'Admin'].push(String(form.form_number));
+      const intangibleAssetIds: unknown[] = Array.isArray(data?.intangibleAssetIds)
+        ? data.intangibleAssetIds
+        : [];
+      containsDeactivatedAsset =
+        assets.some(asset => idSet.has(String(asset.id))) ||
+        intangibleAssetIds.some(assetId => idSet.has(String(assetId)));
+    } catch {
+      containsDeactivatedAsset = false;
     }
+    if (!containsDeactivatedAsset) continue;
+
+    if (!replacementIssuerId) {
+      replacementIssuerId = form.created_by ?? null;
+      replacementIssuerSignature = form.issuer_signature ?? null;
+      replacementItCopySignature = form.it_copy_signature ?? null;
+      replacementCopyType = form.admin_copy_copy_type === 'Admin' ? 'Admin' : form.admin_copy_copy_type === 'IT' ? 'IT' : null;
+    }
+
+    await conn.execute(
+      `UPDATE accountability_forms SET status='Disabled', updated_at=NOW() WHERE formID=?`,
+      [form.formID]
+    );
+    await createAuditLog({
+      userId: req.user!.userID,
+      action: 'Disabled Accountability Form (Intangible Deactivation)',
+      resourceType: 'accountability_form',
+      resourceId: form.formID,
+      resourceName: form.form_number,
+      details: `Disabled due to intangible deactivation ${[...idSet].join(',')}`,
+      oldValues: { status: form.status },
+      newValues: { status: 'Disabled' },
+      ipAddress: req.ip,
+      userAgent: req.get('User-Agent') ?? 'Unknown',
+    });
   }
 
-  // Check remaining assignments
-  const [activeAssignmentsRows] = await conn.execute(`SELECT asset_id FROM asset_assignments WHERE user_id=? AND status='Active' AND deleted_at IS NULL`, [userId]) as any[];
-  const activeAssignments = (activeAssignmentsRows as any[]) ?? [];
-  const [activeIntangiblesRows] = await conn.execute(
-    `SELECT iaa.intangible_asset_id, ia.name, ia.description, ia.type, iaa.department_id, d.name as department_name
-     FROM intangible_asset_assignments iaa
-      JOIN intangible_assets ia ON iaa.intangible_asset_id=ia.id
-     LEFT JOIN asset_mngmnt_departments d ON iaa.department_id=d.departmentID AND d.deleted_at IS NULL
-     WHERE iaa.user_id=? AND iaa.status='Active' AND iaa.deleted_at IS NULL`, [userId]) as any[];
-  const activeIntangibles = (activeIntangiblesRows as any[]) ?? [];
-
-  if (activeAssignments.length===0 && activeIntangibles.length===0) {
-    // No remaining assets -> accountability clearance is now owner self-service
-    // via Profile > Documents (unified form). Do not auto-create here.
+  if (!replacementIssuerId) {
+    logger.warn(`No issuer found while regenerating accountability after intangible deactivation for user ${userId}`);
     return;
   }
 
-  // Still has remaining -> create new accountability forms for remaining assets grouped by scope
-  // Simplified: call handleAccountabilityFormOnAssetReturn equivalent by directly invoking creation via handler
-  // Instead, we will use the same fallback: group intangibles by department + tangibles already handled via existing forms.
-  // For tangibles untouched, we don't need to recreate; only need to recreate for intangibles remaining.
-  // Easiest: delegate to existing handle but with empty returnedAssetIds that are intangible -> it already handles intangible-only case.
-  // We'll create intangible-only forms for remaining intangibles grouped by department.
-  if ((activeIntangibles as any[]).length>0) {
-    const byDept = new Map<string, any[]>();
-    for (const r of (activeIntangibles as any[])) {
-      const k = String(r.department_id ?? 'None');
-      const arr = byDept.get(k) ?? [];
-      arr.push(r);
-      byDept.set(k, arr);
-    }
-    const { createAccountabilityFormHandler } = await import('../controllers/accountabilityForms.controller.js');
-    for (const [, rows] of byDept.entries()) {
-      const first = rows[0];
-      const departmentAssets = rows.map(row => ({ id: row.intangible_asset_id, code: row.name || row.intangible_asset_id, name: row.name||'', description: row.description||'', category:'Intangible', type: row.type||'Intangible', department: row.department_name, serialNo:'', modelNo:'', brand:'' }));
-      const fakeReq = { ...req, user: { userID: req.user!.userID }, body: { assets: departmentAssets, userId, departmentId: first.department_id ?? null, locationId: null, issuerSignature: hrSignature, itCopySignature: hrSignature } } as AuthRequest;
-      const fakeRes = { status: () => ({ json: () => ({}) }) } as unknown as Response;
-      try { await createAccountabilityFormHandler(fakeReq, fakeRes); } catch(e){ logger.error('create remaining intangible form failed', e); }
-    }
+  const [tangibleRows] = await conn.execute(
+    `SELECT a.assetID, a.asset_code, a.name, a.serial, a.model, a.brand,
+            ac.name AS category_name, at.name AS type_name,
+            d.name AS department_name, d.departmentID AS department_id,
+            aa.location_id, aa.location_room_id
+       FROM asset_assignments aa
+       JOIN assets a ON aa.asset_id = a.assetID
+       LEFT JOIN asset_categories ac ON a.category_id = ac.categoryID
+       LEFT JOIN asset_types at ON a.type_id = at.typeID
+       LEFT JOIN asset_mngmnt_departments d ON ac.department_id = d.departmentID
+      WHERE aa.user_id=? AND aa.status='Active' AND aa.deleted_at IS NULL
+      ORDER BY aa.assigned_date ASC`,
+    [userId]
+  ) as any[];
+  const excludedIntangiblePlaceholders = deactivatedIds.map(() => '?').join(',');
+  const [intangibleRows] = await conn.execute(
+    `SELECT iaa.intangible_asset_id, ia.name, ia.description, ia.type,
+            iaa.department_id, iaa.location_id, iaa.location_room_id,
+            d.name AS department_name
+       FROM intangible_asset_assignments iaa
+       JOIN intangible_assets ia ON iaa.intangible_asset_id=ia.id
+       LEFT JOIN asset_mngmnt_departments d ON iaa.department_id=d.departmentID AND d.deleted_at IS NULL
+      WHERE iaa.user_id=?
+        AND iaa.status='Active'
+        AND iaa.deleted_at IS NULL
+        AND iaa.intangible_asset_id NOT IN (${excludedIntangiblePlaceholders})`,
+    [userId, ...deactivatedIds]
+  ) as any[];
+
+  if (tangibleRows.length === 0 && intangibleRows.length === 0) return;
+
+  const groups = new Map<string, { departmentId: string | null; locationId: string | null; locationRoomId: string | null; assets: any[] }>();
+  const addToGroup = (key: string, departmentId: string | null, locationId: string | null, locationRoomId: string | null, asset: any) => {
+    const group = groups.get(key) ?? { departmentId, locationId, locationRoomId, assets: [] };
+    group.assets.push(asset);
+    groups.set(key, group);
+  };
+
+  for (const row of tangibleRows as any[]) {
+    const key = String(row.department_id ?? 'None');
+    addToGroup(key, row.department_id ?? null, row.location_id ?? null, row.location_room_id ?? null, {
+      id: row.assetID,
+      code: row.asset_code,
+      name: row.name || row.asset_code,
+      category: row.category_name || 'Asset',
+      type: row.type_name || 'Asset',
+      department: row.department_name,
+      serialNo: row.serial || '',
+      modelNo: row.model || '',
+      brand: row.brand || '',
+    });
   }
-  // For tangibles, existing Disabled logic already captured; if user had tangibles, those forms remain disabled but need replacement via same grouping as OnReturn does.
-  // Invoke generic handler for tangible recomputation if needed: fetch remaining tangibles and create forms per scope similar to OnReturn fallback.
-  if (activeAssignments.length>0) {
-    // Trigger creation via handleAccountabilityFormOnAssetReturn with a dummy? Instead, manually recreate for remaining tangible scopes that were disabled.
-    // Simpler: reuse handleAccountabilityFormOnAssetReturn by passing deactivatedIds as returnedAssetIds - it already regenerates tangible forms for returned departments.
-    // But it would try to disable again. We already disabled, so call with empty to just generate? We'll just call getClearanceEligibility path? For now skip tangible regen if tangibles unaffected.
+  for (const row of intangibleRows as any[]) {
+    const key = String(row.department_id ?? 'None');
+    addToGroup(key, row.department_id ?? null, row.location_id ?? null, row.location_room_id ?? null, {
+      id: row.intangible_asset_id,
+      code: row.name || row.intangible_asset_id,
+      name: row.name || '',
+      description: row.description || '',
+      category: 'Intangible',
+      type: row.type || 'Intangible',
+      department: row.department_name,
+      serialNo: '',
+      modelNo: '',
+      brand: '',
+    });
+  }
+
+  for (const group of groups.values()) {
+    const replacementReq = {
+      ...req,
+      // This is the important part: the original issuer creates the form,
+      // allowing the normal issuer approver/sub-approver flow to resolve.
+      user: { userID: replacementIssuerId },
+      body: {
+        assets: group.assets,
+        userId,
+        departmentId: group.departmentId,
+        locationId: group.locationId,
+        locationRoomId: group.locationRoomId,
+        issuerSignature: replacementIssuerSignature,
+        itCopySignature: replacementItCopySignature,
+        // Preserve the original form scope so this replacement cannot bypass
+        // the issuer approver/sub-approver copy-signature step.
+        adminCopyCopyType: replacementCopyType ?? undefined,
+        custodyNote: 'Replacement accountability form created after intangible deactivation.',
+        adminCopySignerLenient: false,
+      },
+    } as AuthRequest;
+
+    try {
+      await createReturnAccountabilityFormAndNotify(
+        replacementReq,
+        userId,
+        replacementIssuerId,
+        req,
+        'Replacement accountability form created after intangible deactivation.'
+      );
+      logger.info(`Created replacement accountability form for user ${userId} with issuer ${replacementIssuerId}`);
+    } catch (error) {
+      logger.error('Failed to create replacement accountability form after intangible deactivation:', error);
+    }
   }
 }
 

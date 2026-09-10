@@ -136,6 +136,9 @@ function mapAccountabilityApiBatch(
           name: a?.name ?? a?.asset_name ?? null,
           category: a?.category ?? a?.category_name ?? null,
           serialNo: a?.serialNo ?? a?.serial ?? null,
+          type_department: a?.type_department ?? null,
+          type_department_name: a?.type_department_name ?? null,
+          risk_level: a?.risk_level ?? null,
         })).filter((a: { id: string }) => a.id);
       }
     } catch {

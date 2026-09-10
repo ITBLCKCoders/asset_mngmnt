@@ -63,6 +63,7 @@ import {
   generateAssetBorrowingPDF,
   generateAssetChecklistPDF,
   generateAccountabilityClearancePDF,
+  generateIntangibleDeactivationPDF,
   downloadPDF,
   type AssetReturnData,
   type AssetTransferData,
@@ -72,6 +73,7 @@ import {
 import SmsOtpDialog from '@/components/auth/SmsOtpDialog';
 import { GenerateClearanceModal } from '@/pages/profile/profileComponents/GenerateClearanceModal';
 import { AccountabilityFormTimeline } from '@/pages/assets/accountability/AccountabilityFormTimeline';
+import { ApprovalTimeline } from '@/components/common/ApprovalTimeline';
 
 export function buildReturnDataForPDFFromBatch(
   batch: AssetReturnFormBatch,
@@ -2957,6 +2959,97 @@ type ReturnFormChecklistEntry = AssetChecklistData & {
   asset?: { id: string; code: string | null; name: string | null } | null;
 };
 
+function IntangibleDeactivationProfileCard({
+  form,
+  onView,
+  onDownload,
+}: {
+  form: any;
+  onView: (form: any) => void;
+  onDownload: (form: any) => void;
+}) {
+  const employeeName = `${form.user?.first_name ?? ''} ${form.user?.last_name ?? ''}`.trim() || 'Employee';
+  const assetNames = (form.assets ?? []).map((asset: any) => asset.name).filter(Boolean);
+  const isDeclined = form.status === 'Declined' || !!form.declineReason;
+  const statusClass =
+    form.status === 'Approved'
+      ? 'bg-green-100 text-green-800 border-green-200'
+      : form.status === 'Declined'
+        ? 'bg-red-100 text-red-800 border-red-200'
+        : form.status === 'PendingHrApproval'
+          ? 'bg-blue-100 text-blue-800 border-blue-200'
+          : 'bg-amber-100 text-amber-800 border-amber-200';
+  const statusLabel = form.status === 'PendingHrApproval' ? 'Pending HR Approval' : form.status;
+  const timelineSteps = [
+    { title: 'Request created', done: !!form.created_at, date: form.created_at, signerName: employeeName },
+    { title: 'Approved by department head', done: !!form.deptHeadSignedAt, date: form.deptHeadSignedAt, signerName: form.deptHeadApproverName },
+    { title: 'HR / custodian finalization', done: !!form.hrSignedAt, date: form.hrSignedAt, signerName: form.hrApproverName },
+  ];
+
+  return (
+    <Card className="flex h-full flex-col overflow-hidden border-slate-200 bg-white shadow-md transition-all duration-200 hover:shadow-xl">
+      <CardHeader className="pb-3">
+        <div className="flex items-start justify-between gap-2">
+          <div className="flex min-w-0 items-center gap-3">
+            <div className="shrink-0 rounded-xl bg-gradient-to-br from-red-500 to-red-600 p-2.5 shadow-sm">
+              <FileText className="h-5 w-5 text-white" />
+            </div>
+            <div className="min-w-0">
+              <CardTitle className="truncate font-mono text-lg">{form.formNumber}</CardTitle>
+              <p className="text-sm text-gray-500">
+                Created {form.created_at ? new Date(form.created_at).toLocaleDateString() : '—'}
+              </p>
+            </div>
+          </div>
+          <Badge variant="outline" className={cn('shrink-0', statusClass)}>{statusLabel}</Badge>
+        </div>
+      </CardHeader>
+      <Tabs defaultValue="details" className="flex min-h-0 flex-1 flex-col">
+        <TabsList className={`${segmentTabsListClassName} mx-4 mb-2 grid w-[calc(100%-2rem)] grid-cols-2`}>
+          <TabsTrigger value="details" className={segmentTabsTriggerClassName}>Details</TabsTrigger>
+          <TabsTrigger value="timeline" className={segmentTabsTriggerClassName}>Timeline</TabsTrigger>
+        </TabsList>
+        <TabsContent value="details" className="mt-0 flex-1">
+          <CardContent className="flex-1 space-y-4 pt-0">
+            <div className="flex items-start gap-3">
+              <Package className="mt-0.5 h-4 w-4 shrink-0 text-gray-400" />
+              <div className="min-w-0 flex-1">
+                <p className="text-sm font-medium">Assets to deactivate ({form.assets?.length ?? 0})</p>
+                <p className="mt-1 truncate text-xs text-gray-600">{assetNames.length ? assetNames.join(', ') : '—'}</p>
+              </div>
+            </div>
+            <div className="flex items-start gap-3">
+              <User className="mt-0.5 h-4 w-4 shrink-0 text-gray-400" />
+              <div className="min-w-0 flex-1">
+                <p className="text-sm font-medium">Requested by: {employeeName}</p>
+                {form.user?.email && <p className="mt-0.5 truncate text-xs text-gray-600">{form.user.email}</p>}
+              </div>
+            </div>
+            <div className="flex items-start gap-3">
+              <Calendar className="mt-0.5 h-4 w-4 shrink-0 text-gray-400" />
+              <p className="text-xs text-gray-600">{form.created_at ? new Date(form.created_at).toLocaleString() : '—'}</p>
+            </div>
+            {form.declineReason && <div className="rounded-lg border border-red-200 bg-red-50 p-2 text-xs text-red-600">Reason: {form.declineReason}</div>}
+          </CardContent>
+        </TabsContent>
+        <TabsContent value="timeline" className="mt-0 flex-1">
+          <CardContent className="flex-1 pt-0">
+            <ApprovalTimeline steps={timelineSteps} isDeclined={isDeclined} declinedAt={form.updated_at} declineReason={form.declineReason} />
+          </CardContent>
+        </TabsContent>
+      </Tabs>
+      <div className="flex gap-2 border-t border-slate-100 p-4">
+        <Button size="sm" variant="outline" className="flex-1 border-red-600 bg-red-600 text-white hover:bg-white hover:text-red-600" onClick={() => onView(form)}>
+          <Eye className="mr-2 h-4 w-4" />View
+        </Button>
+        <Button size="sm" variant="outline" className="flex-1 border-red-600 text-red-600 hover:bg-red-600 hover:text-white" onClick={() => onDownload(form)}>
+          <Download className="mr-2 h-4 w-4" />Download
+        </Button>
+      </div>
+    </Card>
+  );
+}
+
 function ReturnChecklistCard({
   checklists,
   checklistLoading,
@@ -3156,6 +3249,10 @@ export default function DocumentsTab({
   const [accountabilityForms, setAccountabilityForms] = useState<
     AccountabilityForm[]
   >([]);
+  const [intangibleDeactivationForms, setIntangibleDeactivationForms] = useState<any[]>([]);
+  const [selectedIntangibleDeactivation, setSelectedIntangibleDeactivation] = useState<any | null>(null);
+  const [intangiblePreviewUrl, setIntangiblePreviewUrl] = useState<string | null>(null);
+  const [intangiblePreviewLoading, setIntangiblePreviewLoading] = useState(false);
   const [assetReturnForms, setAssetReturnForms] = useState<
     AssetReturnFormBatch[]
   >([]);
@@ -3250,6 +3347,87 @@ export default function DocumentsTab({
       setAccountabilityForms([]);
       setFilteredForms([]);
     }
+  };
+
+  const fetchIntangibleDeactivationForms = async () => {
+    if (!currentUser?.id) {
+      setIntangibleDeactivationForms([]);
+      return;
+    }
+    try {
+      const response = await api.get('/intangible-deactivations/my');
+      setIntangibleDeactivationForms(response.forms ?? []);
+    } catch (error) {
+      console.error('Failed to fetch intangible deactivation forms:', error);
+      setIntangibleDeactivationForms([]);
+    }
+  };
+
+  const buildIntangibleDeactivationPdf = async (form: any) => {
+    const remarks = form.assets_data
+      ? (() => {
+          try {
+            return JSON.parse(form.assets_data)?.remarks ?? null;
+          } catch {
+            return null;
+          }
+        })()
+      : null;
+    return generateIntangibleDeactivationPDF({
+      formNumber: form.formNumber,
+      status: form.status,
+      companyName: form.user?.company?.name,
+      companyLogoUrl: form.user?.company?.logo_url ?? form.user?.companyLogoUrl,
+      requesterPosition: form.user?.position,
+      requesterDepartment: form.user?.department?.name ?? form.department?.name,
+      requesterEmployeeId: form.user?.employeeNumber,
+      createdAt: form.created_at,
+      requesterName: `${form.user?.first_name ?? ''} ${form.user?.last_name ?? ''}`.trim() || form.user?.email,
+      requesterEmail: form.user?.email,
+      requesterSignature: form.requesterSignature,
+      departmentHeadName: form.deptHeadApproverName,
+      departmentHeadSignedAt: form.deptHeadSignedAt,
+      departmentHeadSignature: form.deptHeadSignature,
+      hrApproverName: form.hrApproverName,
+      hrSignedAt: form.hrSignedAt,
+      hrSignature: form.hrSignature,
+      declineReason: form.declineReason,
+      remarks,
+      assets: form.assets ?? [],
+    });
+  };
+
+  const handleDownloadIntangibleDeactivationForm = async (form: any) => {
+    try {
+      const blob = await buildIntangibleDeactivationPdf(form);
+      downloadPDF(blob, `Intangible_Deactivation_Form_${form.formNumber ?? Date.now()}.pdf`);
+      toast.success('Download started');
+    } catch (error) {
+      console.error('Failed to download intangible deactivation form:', error);
+      toast.error('Failed to download intangible deactivation form');
+    }
+  };
+
+  const handleViewIntangibleDeactivationForm = async (form: any) => {
+    setSelectedIntangibleDeactivation(form);
+    setIntangiblePreviewLoading(true);
+    if (intangiblePreviewUrl) URL.revokeObjectURL(intangiblePreviewUrl);
+    setIntangiblePreviewUrl(null);
+    try {
+      const blob = await buildIntangibleDeactivationPdf(form);
+      setIntangiblePreviewUrl(URL.createObjectURL(blob));
+    } catch (error) {
+      console.error('Failed to preview intangible deactivation form:', error);
+      toast.error('Failed to load intangible deactivation form');
+    } finally {
+      setIntangiblePreviewLoading(false);
+    }
+  };
+
+  const closeIntangiblePreview = () => {
+    if (intangiblePreviewUrl) URL.revokeObjectURL(intangiblePreviewUrl);
+    setIntangiblePreviewUrl(null);
+    setSelectedIntangibleDeactivation(null);
   };
 
   const fetchClearanceEligibility = async () => {
@@ -3487,6 +3665,7 @@ export default function DocumentsTab({
 
       await Promise.all([
         fetchAccountabilityForms(),
+        fetchIntangibleDeactivationForms(),
         fetchAssetReturnForms(),
         fetchAssetTransferForms(),
         fetchAssetBorrowForms(),
@@ -3858,9 +4037,12 @@ export default function DocumentsTab({
 
         <CardContent className="p-4 sm:p-6 lg:p-8">
           <Tabs value={activeSubTab} onValueChange={setActiveSubTab} className="w-full">
-            <TabsList className={cn(segmentTabsListClassName, 'grid grid-cols-2 sm:grid-cols-5 mb-6')}>
+            <TabsList className={cn(segmentTabsListClassName, 'grid grid-cols-2 sm:grid-cols-6 mb-6')}>
               <TabsTrigger value="accountability" className={cn(segmentTabsTriggerClassName, 'text-xs sm:text-sm')}>
                 <FileCheck className="mr-1.5 h-4 w-4" /> Accountability
+              </TabsTrigger>
+              <TabsTrigger value="intangible-deactivation" className={cn(segmentTabsTriggerClassName, 'text-xs sm:text-sm')}>
+                <FileText className="mr-1.5 h-4 w-4" /> Intangible Deactivation
               </TabsTrigger>
               <TabsTrigger value="returns" className={cn(segmentTabsTriggerClassName, 'text-xs sm:text-sm')}>
                 <FileDown className="mr-1.5 h-4 w-4" /> Returns
@@ -3994,6 +4176,39 @@ export default function DocumentsTab({
                       />
                     )
                   )}
+                </div>
+              )}
+            </TabsContent>
+
+            {/* TabsContent: Intangible Deactivation */}
+            <TabsContent value="intangible-deactivation" className="mt-0">
+              <div className="mb-6 flex items-center gap-3">
+                <FileText className="h-6 w-6 text-red-600" />
+                <h3 className="text-xl font-semibold text-gray-900">
+                  Intangible Deactivation Forms
+                </h3>
+                <span className="rounded-full bg-red-100 px-2 py-1 text-sm text-red-800 dark:bg-red-900/30 dark:text-red-200">
+                  {intangibleDeactivationForms.length}
+                </span>
+              </div>
+              {intangibleDeactivationForms.length === 0 ? (
+                <div className="rounded-xl border-2 border-dashed border-slate-200 bg-slate-50/50 py-12 text-center">
+                  <FileText className="mx-auto mb-4 h-10 w-10 text-slate-400" />
+                  <p className="text-lg font-medium text-slate-600">No intangible deactivation forms yet</p>
+                  <p className="mt-1 text-sm text-slate-400">
+                    Your intangible deactivation requests will appear here.
+                  </p>
+                </div>
+              ) : (
+                <div className="grid grid-cols-1 gap-6 md:grid-cols-2 lg:grid-cols-3">
+                  {intangibleDeactivationForms.map(form => (
+                    <IntangibleDeactivationProfileCard
+                      key={form.id ?? form.formNumber}
+                      form={form}
+                      onView={handleViewIntangibleDeactivationForm}
+                      onDownload={handleDownloadIntangibleDeactivationForm}
+                    />
+                  ))}
                 </div>
               )}
             </TabsContent>
@@ -4437,6 +4652,39 @@ export default function DocumentsTab({
           </Tabs>
         </CardContent>
       </Card>
+
+      <Dialog
+        open={!!selectedIntangibleDeactivation}
+        onOpenChange={(open) => {
+          if (!open) closeIntangiblePreview();
+        }}
+      >
+        <AppDialogFrame className="max-h-[90vh] max-w-3xl overflow-hidden !flex !flex-col !gap-0 !rounded-lg !p-0">
+          <AppDialogGradientHeader
+            title="Intangible Deactivation Form"
+            description={selectedIntangibleDeactivation?.formNumber ?? ''}
+            showCloseButton={false}
+            className="!px-4 !pb-4 !pt-4"
+          />
+          <AppDialogBody className="min-h-0 flex-1 overflow-hidden bg-slate-50 p-3">
+            {intangiblePreviewLoading || !intangiblePreviewUrl ? (
+              <div className="flex h-full min-h-[320px] items-center justify-center text-sm text-muted-foreground">
+                Loading PDF preview...
+              </div>
+            ) : (
+              <PDFViewer pdfUrl={intangiblePreviewUrl} className="h-full w-full" />
+            )}
+          </AppDialogBody>
+          <AppDialogChromeFooter className="flex-row justify-end gap-2">
+            <Button variant="outline" onClick={closeIntangiblePreview}>Close</Button>
+            {selectedIntangibleDeactivation && (
+              <Button onClick={() => void handleDownloadIntangibleDeactivationForm(selectedIntangibleDeactivation)}>
+                <Download className="mr-2 h-4 w-4" />Download PDF
+              </Button>
+            )}
+          </AppDialogChromeFooter>
+        </AppDialogFrame>
+      </Dialog>
 
       {/* Form Detail Dialog */}
       <Dialog open={showFormDetail} onOpenChange={(open) => {
