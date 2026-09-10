@@ -20,6 +20,11 @@ import { getIoInstance } from '../utils/socketManager.js';
 import { NotificationService } from '../services/notification.service.js';
 import { randomUUID } from 'crypto';
 import { resolveChecklistAssignmentIds } from '../utils/accountabilityFormAssetsData.js';
+import {
+  getActiveIntangibleIdsForUser,
+  pruneInactiveIntangibleAssets,
+  stripInactiveIntangiblesFromForms,
+} from '../utils/accountabilityIntangibleFilter.js';
 import { isComputerTypeName } from '../utils/computerTypeAsset.js';
 import * as assignmentRepo from '../repositories/assetAssignment.repository.js';
 import * as intangibleAssignmentRepo from '../repositories/intangibleAssets.repository.js';
@@ -1535,6 +1540,22 @@ export async function createAccountabilityFormHandler(
               const id = String(row.id ?? '').trim();
               if (!id || seenIds.has(id)) continue;
               seenIds.add(id);
+              const typeDepartment =
+                row.type_department_id || row.type_department_name
+                  ? {
+                      id: row.type_department_id ?? null,
+                      name: row.type_department_name ?? null,
+                      code: row.type_department_code ?? undefined,
+                    }
+                  : null;
+              const riskLevel =
+                row.risk_level_id || row.risk_level_name
+                  ? {
+                      id: row.risk_level_id ?? row.risk_level_id_resolved ?? null,
+                      name: row.risk_level_name ?? null,
+                      color: row.risk_level_color ?? undefined,
+                    }
+                  : null;
               assets.push({
                 id,
                 code: row.name || id,
@@ -1543,6 +1564,10 @@ export async function createAccountabilityFormHandler(
                 category: 'Intangible',
                 type: row.type || 'Intangible',
                 department: row.department_name,
+                type_department: typeDepartment,
+                type_department_name: row.type_department_name ?? null,
+                risk_level_id: row.risk_level_id ?? row.risk_level_id_resolved ?? null,
+                risk_level: riskLevel,
                 serialNo: '',
                 modelNo: '',
                 brand: '',
@@ -3396,7 +3421,8 @@ export async function getPendingAdminCopySignaturesHandler(
   try {
     const currentUserId = req.user!.userID;
     const rows = await repo.listFormsPendingAdminCopySignature(currentUserId);
-    return res.json({ forms: rows });
+    const filtered = await stripInactiveIntangiblesFromForms(rows as any[]);
+    return res.json({ forms: filtered });
   } catch (error: any) {
     logger.error('Get pending admin copy signatures failed:', error);
     return res
@@ -3418,7 +3444,8 @@ export async function getPendingAccountabilityApprovalsHandler(
   try {
     const currentUserId = req.user!.userID;
     const rows = await repo.listFormsPendingApprovalForApprover(currentUserId);
-    return res.json({ forms: rows });
+    const filtered = await stripInactiveIntangiblesFromForms(rows as any[]);
+    return res.json({ forms: filtered });
   } catch (error: any) {
     logger.error('Get pending accountability approvals failed:', error);
     return res
@@ -3718,6 +3745,16 @@ export async function getAccountabilityFormByIdHandler(
     const parsedSingle = parseAccountabilityAssetsData(row.assets_data);
     let assets = parsedSingle.assets;
     const formOriginSingle = parsedSingle.formOrigin;
+
+    // Same prune as the pending lists: the stored snapshot can still carry
+    // a deactivated intangible, and this detail payload feeds the PDF
+    // preview — so the PDF must match the approvals card.
+    try {
+      const active = await getActiveIntangibleIdsForUser(String(row.user_id ?? ''));
+      assets = pruneInactiveIntangibleAssets(assets, active);
+    } catch {
+      /* fail-open: keep original assets */
+    }
 
     // If no assets from acknowledgments, use the single asset
     if (assets.length === 0 && row.asset_id) {

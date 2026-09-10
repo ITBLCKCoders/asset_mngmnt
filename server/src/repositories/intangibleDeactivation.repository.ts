@@ -169,11 +169,12 @@ export async function updateDeptHeadApproval(formId: string, signedBy: string, s
   return result.affectedRows;
 }
 
-export async function updateHrApproval(formId: string, signedBy: string, signature: string): Promise<number> {
-  const [result] = await pool.execute<ResultSetHeader>(
+export async function updateHrApproval(formId: string, signedBy: string, signature: string, conn?: PoolConnection): Promise<number> {
+  const executor: typeof pool | PoolConnection = conn ?? pool;
+  const [result] = await executor.execute(
     `UPDATE intangible_deactivation_forms SET status='Approved', hr_signed_by=?, hr_signed_at=NOW(), hr_signature=?, updated_at=NOW()
      WHERE formID=? AND status='PendingHrApproval' AND deleted_at IS NULL`, [signedBy, signature, formId]
-  );
+  ) as [ResultSetHeader, unknown];
   return result.affectedRows;
 }
 

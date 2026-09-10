@@ -211,7 +211,7 @@ export const assetColumns = [
             {!currentAssignment && pendingAssignment && (
               <Badge
                 variant="secondary"
-                className="mt-1 font-medium border bg-amber-500/15 text-amber-700 border-amber-500/30"
+                className="mt-1 font-medium border bg-amber-500/15 text-amber-700 border-amber-500/30 dark:text-amber-300"
               >
                 Pending IT/Admin signature
               </Badge>

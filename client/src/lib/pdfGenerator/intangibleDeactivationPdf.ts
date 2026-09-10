@@ -49,6 +49,16 @@ const formatDate = (value?: string | null) => {
   return Number.isNaN(date.getTime()) ? value : date.toLocaleDateString();
 };
 
+const pickText = (value: unknown): string | null => {
+  if (value == null) return null;
+  if (typeof value === 'object') {
+    const name = (value as { name?: unknown }).name;
+    return pickText(name);
+  }
+  const text = String(value).trim();
+  return text.length > 0 ? text : null;
+};
+
 
 const drawBrandedHeader = async (
   doc: jsPDF,
@@ -201,10 +211,10 @@ export const generateIntangibleDeactivationPDF = async (
     head: [['Asset Name', 'Description', 'Type', 'Risk']],
     body: data.assets.length
       ? data.assets.map(asset => [
-          asset.name ?? asset.id,
-          asset.description ?? asset.remarks ?? '—',
-          asset.type ?? '—',
-          asset.riskLevel ?? (typeof asset.risk_level === 'string' ? asset.risk_level : asset.risk_level?.name) ?? '—',
+          pickText(asset.name) ?? pickText(asset.id) ?? '—',
+          pickText(asset.description) ?? pickText(asset.remarks) ?? '—',
+          pickText(asset.type) ?? '—',
+          pickText(asset.riskLevel) ?? pickText(asset.risk_level) ?? '—',
         ])
       : [['No assets listed', '—', '—', '—']],
     theme: 'grid',

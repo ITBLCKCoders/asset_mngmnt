@@ -294,13 +294,22 @@ export async function handleAccountabilityFormOnAssetReturn(
     // step 1, so create a replacement form from the remaining intangibles.
      const [activeIntangibles] = (await pool.execute(
        `SELECT iaa.intangible_asset_id, ia.name, ia.description, ia.type,
+               ia.risk_level_id,
                iaa.department_id, iaa.location_id, iaa.location_room_id,
-               d.name AS department_name
+               d.name AS department_name,
+               td.departmentID AS type_department_id, td.name AS type_department_name, td.code AS type_department_code,
+               rl.id AS risk_level_id_resolved, rl.name AS risk_level_name, rl.color AS risk_level_color
         FROM intangible_asset_assignments iaa
         INNER JOIN intangible_assets ia
           ON iaa.intangible_asset_id = ia.id
        LEFT JOIN asset_mngmnt_departments d
          ON iaa.department_id = d.departmentID AND d.deleted_at IS NULL
+       LEFT JOIN intangible_asset_types iat
+         ON ia.type = iat.name AND iat.company_id = ia.company_id AND iat.deleted_at IS NULL
+       LEFT JOIN asset_mngmnt_departments td
+         ON iat.department_id = td.departmentID AND td.deleted_at IS NULL
+       LEFT JOIN risk_levels rl
+         ON ia.risk_level_id = rl.id AND rl.deleted_at IS NULL
        WHERE iaa.user_id = ? AND iaa.status = 'Active' AND iaa.deleted_at IS NULL`,
       [userId]
     )) as any[];
@@ -325,7 +334,7 @@ export async function handleAccountabilityFormOnAssetReturn(
 
     for (const [, rows] of intangByDept.entries()) {
       const first = rows[0];
-      const departmentAssets = rows.map((row) => ({
+      const departmentAssets = rows.map((row: any) => ({
         id: row.intangible_asset_id,
         code: row.name || row.intangible_asset_id,
         name: row.name || '',
@@ -333,6 +342,24 @@ export async function handleAccountabilityFormOnAssetReturn(
         category: 'Intangible',
         type: row.type || 'Intangible',
         department: row.department_name,
+        type_department:
+          row.type_department_id || row.type_department_name
+            ? {
+                id: row.type_department_id ?? null,
+                name: row.type_department_name ?? null,
+                code: row.type_department_code ?? undefined,
+              }
+            : null,
+        type_department_name: row.type_department_name ?? null,
+        risk_level_id: row.risk_level_id ?? row.risk_level_id_resolved ?? null,
+        risk_level:
+          row.risk_level_id || row.risk_level_name
+            ? {
+                id: row.risk_level_id ?? row.risk_level_id_resolved ?? null,
+                name: row.risk_level_name ?? null,
+                color: row.risk_level_color ?? undefined,
+              }
+            : null,
         serialNo: '',
         modelNo: '',
         brand: '',

@@ -529,10 +529,15 @@ export interface ActiveIntangibleAssetForFormRow extends RowDataPacket {
   name: string;
   description: string | null;
   type: string | null;
+  risk_level_id: string | null;
+  risk_level_id_resolved: string | null;
+  risk_level_name: string | null;
+  risk_level_color: string | null;
   department_id: string | null;
   department_name: string | null;
   type_department_id: string | null;
   type_department_name: string | null;
+  type_department_code: string | null;
 }
 
 export async function getActiveIntangibleAssetsByUserAndDepartment(
@@ -545,10 +550,15 @@ export async function getActiveIntangibleAssetsByUserAndDepartment(
        ia.name,
        ia.description,
        ia.type,
+       ia.risk_level_id,
        iaa.department_id,
        d.name AS department_name,
        td.departmentID AS type_department_id,
-       td.name AS type_department_name
+       td.name AS type_department_name,
+       td.code AS type_department_code,
+       rl.id AS risk_level_id_resolved,
+       rl.name AS risk_level_name,
+       rl.color AS risk_level_color
      FROM intangible_asset_assignments iaa
      INNER JOIN intangible_assets ia ON iaa.intangible_asset_id = ia.id
      LEFT JOIN intangible_asset_types iat
@@ -558,6 +568,9 @@ export async function getActiveIntangibleAssetsByUserAndDepartment(
      LEFT JOIN asset_mngmnt_departments td
        ON iat.department_id = td.departmentID
        AND td.deleted_at IS NULL
+     LEFT JOIN risk_levels rl
+       ON ia.risk_level_id = rl.id
+       AND rl.deleted_at IS NULL
      LEFT JOIN asset_mngmnt_departments d
        ON iaa.department_id = d.departmentID
        AND d.deleted_at IS NULL

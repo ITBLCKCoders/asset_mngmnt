@@ -340,7 +340,7 @@ export default function IntangibleDeactivationRequest() {
                                   </h3>
                                   <div className="flex items-center gap-2 flex-shrink-0">
                                     {isPending(id) && (
-                                      <Badge variant="outline" className="text-xs border-amber-300 text-amber-700 bg-amber-50">
+                                      <Badge variant="outline" className="text-xs border-amber-300 text-amber-700 bg-amber-50 dark:border-amber-800 dark:bg-amber-900/30 dark:text-amber-200">
                                         <LockKeyhole className="h-3 w-3 mr-1" />
                                         Deactivation Requested
                                       </Badge>
@@ -354,7 +354,7 @@ export default function IntangibleDeactivationRequest() {
 
                               <div className="flex flex-wrap gap-2 mb-2">
                                 {ia.type && (
-                                  <Badge variant="outline" className="text-xs border-gray-300">
+                                  <Badge variant="outline" className="text-xs border-gray-300 dark:border-gray-700">
                                     {ia.type}
                                   </Badge>
                                 )}
@@ -370,7 +370,7 @@ export default function IntangibleDeactivationRequest() {
                                   const risk = ia.risk_level;
                                   const riskLabel = typeof risk === 'object' ? risk?.name : risk;
                                   return riskLabel ? (
-                                    <Badge variant="outline" className="text-xs border-orange-300 text-orange-700">
+                                    <Badge variant="outline" className="text-xs border-orange-300 text-orange-700 dark:border-orange-800 dark:bg-orange-900/30 dark:text-orange-200">
                                       Risk: {riskLabel}
                                     </Badge>
                                   ) : null;

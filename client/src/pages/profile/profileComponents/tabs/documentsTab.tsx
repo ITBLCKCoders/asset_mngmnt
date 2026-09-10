@@ -2973,12 +2973,12 @@ function IntangibleDeactivationProfileCard({
   const isDeclined = form.status === 'Declined' || !!form.declineReason;
   const statusClass =
     form.status === 'Approved'
-      ? 'bg-green-100 text-green-800 border-green-200'
+      ? 'bg-green-100 text-green-800 border-green-200 dark:bg-green-900/30 dark:text-green-200 dark:border-green-800'
       : form.status === 'Declined'
-        ? 'bg-red-100 text-red-800 border-red-200'
+        ? 'bg-red-100 text-red-800 border-red-200 dark:bg-red-900/30 dark:text-red-200 dark:border-red-800'
         : form.status === 'PendingHrApproval'
-          ? 'bg-blue-100 text-blue-800 border-blue-200'
-          : 'bg-amber-100 text-amber-800 border-amber-200';
+          ? 'bg-blue-100 text-blue-800 border-blue-200 dark:bg-blue-900/30 dark:text-blue-200 dark:border-blue-800'
+          : 'bg-amber-100 text-amber-800 border-amber-200 dark:bg-amber-900/30 dark:text-amber-200 dark:border-amber-800';
   const statusLabel = form.status === 'PendingHrApproval' ? 'Pending HR Approval' : form.status;
   const timelineSteps = [
     { title: 'Request created', done: !!form.created_at, date: form.created_at, signerName: employeeName },
@@ -4361,7 +4361,7 @@ export default function DocumentsTab({
                 <h3 className="text-xl font-semibold text-gray-900">
                   Asset Transfer Forms
                 </h3>
-                <span className="bg-purple-100 text-purple-800 text-sm px-2 py-1 rounded-full">
+                <span className="bg-purple-100 text-purple-800 text-sm px-2 py-1 rounded-full dark:bg-purple-900/30 dark:text-purple-200">
                   {filteredTransferForms.length}
                 </span>
               </div>

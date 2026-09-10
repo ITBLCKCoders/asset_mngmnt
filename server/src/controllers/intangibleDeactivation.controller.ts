@@ -351,12 +351,26 @@ export async function approveHrHandler(req: AuthRequest, res: Response) {
     const conn = await pool.getConnection();
     try {
       await conn.beginTransaction();
-      const affected = await (repo as any).updateHrApproval(formId, req.user!.userID!, sig);
+      const affected = await (repo as any).updateHrApproval(formId, req.user!.userID!, sig, conn);
       if (!affected) { await conn.rollback(); conn.release(); return res.status(400).json({ error:'Failed to approve' }); }
 
-      // Deactivate assignments
+      // Deactivate assignments — normalize ids so the DB match, the
+      // NOT IN filter, and the in-memory prune below all agree.
       const { assets, intangibleAssetIds } = parseAssetsData(row.assets_data);
-      const ids: string[] = intangibleAssetIds.length ? intangibleAssetIds : assets.map((a:any)=> String(a.id));
+      const normalizeId = (v: unknown): string | null => {
+        const s = String(v ?? '').trim();
+        return s ? s : null;
+      };
+      const rawIds: string[] = (intangibleAssetIds.length
+        ? intangibleAssetIds
+        : assets.map((a: any) => a?.id ?? a?.assetID ?? a?.intangible_asset_id)
+      )
+        .map(normalizeId)
+        .filter((v): v is string => v !== null);
+      const ids: string[] = [...new Set(rawIds)];
+      if (!ids.length) {
+        logger.warn(`HR-approve ${row.form_number}: no intangible ids resolved, skipping deactivation/regen`);
+      }
       if (ids.length) {
         await repo.deactivateAssignments(ids, row.user_id, conn);
       }
@@ -407,11 +421,14 @@ export async function approveHrHandler(req: AuthRequest, res: Response) {
 }
 
 async function handleIntangibleAccountabilityAfterDeactivation(userId: string, deactivatedIds: string[], req: AuthRequest, _hrSignature: string | null, conn: PoolConnection) {
-  const idSet = new Set(deactivatedIds.map(String));
+  const idSet = new Set(
+    (deactivatedIds ?? []).map(v => String(v ?? '').trim()).filter(Boolean)
+  );
   const [formRows] = await conn.execute(
-    `SELECT formID, form_number, assets_data, status, created_by, issuer_signature, it_copy_signature, admin_copy_copy_type, created_at
+    `SELECT formID, form_number, asset_id, assets_data, status, created_by, issuer_signature, it_copy_signature, admin_copy_copy_type, created_at
        FROM accountability_forms
       WHERE user_id=? AND deleted_at IS NULL
+        AND status IN ('Pending', 'Signed')
       ORDER BY created_at DESC`,
     [userId]
   ) as any[];
@@ -426,14 +443,25 @@ async function handleIntangibleAccountabilityAfterDeactivation(userId: string, d
   for (const form of (formRows as any[])) {
     let containsDeactivatedAsset = false;
     try {
-      const data = typeof form.assets_data === 'string' ? JSON.parse(form.assets_data) : form.assets_data;
-      const assets: any[] = Array.isArray(data?.assets) ? data.assets : [];
-      const intangibleAssetIds: unknown[] = Array.isArray(data?.intangibleAssetIds)
-        ? data.intangibleAssetIds
-        : [];
-      containsDeactivatedAsset =
-        assets.some(asset => idSet.has(String(asset.id))) ||
-        intangibleAssetIds.some(assetId => idSet.has(String(assetId)));
+      // Legacy single-asset rows store the asset outside assets_data.
+      if (form.asset_id && idSet.has(String(form.asset_id).trim())) {
+        containsDeactivatedAsset = true;
+      } else {
+        const data = typeof form.assets_data === 'string' ? JSON.parse(form.assets_data) : form.assets_data;
+        const assets: any[] = Array.isArray(data?.assets) ? data.assets : [];
+        const intangibleAssetIds: unknown[] = Array.isArray(data?.intangibleAssetIds)
+          ? data.intangibleAssetIds
+          : [];
+        const keysOf = (a: any): string[] => [
+          String(a?.id ?? '').trim(),
+          String(a?.assetID ?? '').trim(),
+          String(a?.intangible_asset_id ?? '').trim(),
+          String(a?.code ?? '').trim(),
+        ].filter(Boolean);
+        containsDeactivatedAsset =
+          assets.some(asset => keysOf(asset).some(k => idSet.has(k))) ||
+          intangibleAssetIds.some(assetId => idSet.has(String(assetId).trim()));
+      }
     } catch {
       containsDeactivatedAsset = false;
     }
@@ -483,19 +511,32 @@ async function handleIntangibleAccountabilityAfterDeactivation(userId: string, d
       ORDER BY aa.assigned_date ASC`,
     [userId]
   ) as any[];
-  const excludedIntangiblePlaceholders = deactivatedIds.map(() => '?').join(',');
+  // Exclude deactivated ids only when we have any — `NOT IN ()` is a
+  // SQL syntax error, and `status='Active'` already hides deactivated rows.
+  const normalizedDeactivated = [...new Set(
+    (deactivatedIds ?? []).map(v => String(v ?? '').trim()).filter(Boolean)
+  )];
+  const notInClause = normalizedDeactivated.length
+    ? `AND iaa.intangible_asset_id NOT IN (${normalizedDeactivated.map(() => '?').join(',')})`
+    : '';
   const [intangibleRows] = await conn.execute(
     `SELECT iaa.intangible_asset_id, ia.name, ia.description, ia.type,
+            ia.risk_level_id,
             iaa.department_id, iaa.location_id, iaa.location_room_id,
-            d.name AS department_name
+            d.name AS department_name,
+            td.departmentID AS type_department_id, td.name AS type_department_name, td.code AS type_department_code,
+            rl.id AS risk_level_id_resolved, rl.name AS risk_level_name, rl.color AS risk_level_color
        FROM intangible_asset_assignments iaa
-       JOIN intangible_assets ia ON iaa.intangible_asset_id=ia.id
-       LEFT JOIN asset_mngmnt_departments d ON iaa.department_id=d.departmentID AND d.deleted_at IS NULL
+        JOIN intangible_assets ia ON iaa.intangible_asset_id=ia.id
+        LEFT JOIN asset_mngmnt_departments d ON iaa.department_id=d.departmentID AND d.deleted_at IS NULL
+        LEFT JOIN intangible_asset_types iat ON ia.type = iat.name AND iat.company_id = ia.company_id AND iat.deleted_at IS NULL
+        LEFT JOIN asset_mngmnt_departments td ON iat.department_id = td.departmentID AND td.deleted_at IS NULL
+        LEFT JOIN risk_levels rl ON ia.risk_level_id = rl.id AND rl.deleted_at IS NULL
       WHERE iaa.user_id=?
         AND iaa.status='Active'
         AND iaa.deleted_at IS NULL
-        AND iaa.intangible_asset_id NOT IN (${excludedIntangiblePlaceholders})`,
-    [userId, ...deactivatedIds]
+        ${notInClause}`,
+    [userId, ...normalizedDeactivated]
   ) as any[];
 
   if (tangibleRows.length === 0 && intangibleRows.length === 0) return;
@@ -523,6 +564,22 @@ async function handleIntangibleAccountabilityAfterDeactivation(userId: string, d
   }
   for (const row of intangibleRows as any[]) {
     const key = String(row.department_id ?? 'None');
+    const typeDepartment =
+      row.type_department_id || row.type_department_name
+        ? {
+            id: row.type_department_id ?? null,
+            name: row.type_department_name ?? null,
+            code: row.type_department_code ?? undefined,
+          }
+        : null;
+    const riskLevel =
+      row.risk_level_id || row.risk_level_name
+        ? {
+            id: row.risk_level_id ?? row.risk_level_id_resolved ?? null,
+            name: row.risk_level_name ?? null,
+            color: row.risk_level_color ?? undefined,
+          }
+        : null;
     addToGroup(key, row.department_id ?? null, row.location_id ?? null, row.location_room_id ?? null, {
       id: row.intangible_asset_id,
       code: row.name || row.intangible_asset_id,
@@ -531,20 +588,37 @@ async function handleIntangibleAccountabilityAfterDeactivation(userId: string, d
       category: 'Intangible',
       type: row.type || 'Intangible',
       department: row.department_name,
+      type_department: typeDepartment,
+      type_department_name: row.type_department_name ?? null,
+      risk_level_id: row.risk_level_id ?? row.risk_level_id_resolved ?? null,
+      risk_level: riskLevel,
       serialNo: '',
       modelNo: '',
       brand: '',
     });
   }
 
+  // Final in-memory sweep: never insert the deactivated intangible into the
+  // replacement form, even if a read-side id mismatch let it through above.
+  // Matches every id key the codebase uses for intangible entries.
+  const deadSet = new Set(normalizedDeactivated.map(String));
+  const assetKey = (a: any): string =>
+    String(a?.id ?? a?.assetID ?? a?.intangible_asset_id ?? a?.code ?? '').trim();
   for (const group of groups.values()) {
+    const pruned = group.assets.filter(a => !deadSet.has(assetKey(a)));
+    if (pruned.length !== group.assets.length) {
+      logger.warn(
+        `Pruned ${group.assets.length - pruned.length} deactivated intangible(s) from replacement form for user ${userId}`
+      );
+    }
+    if (!pruned.length) continue;
     const replacementReq = {
       ...req,
       // This is the important part: the original issuer creates the form,
       // allowing the normal issuer approver/sub-approver flow to resolve.
       user: { userID: replacementIssuerId },
       body: {
-        assets: group.assets,
+        assets: pruned,
         userId,
         departmentId: group.departmentId,
         locationId: group.locationId,

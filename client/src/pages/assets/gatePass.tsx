@@ -286,7 +286,7 @@ export default function GatePass() {
         accessorKey: 'condition',
         size: 100,
         cell: ({ row }) => (
-          <Badge variant="outline" className="bg-gray-100 text-gray-800">
+          <Badge variant="outline" className="bg-gray-100 text-gray-800 dark:bg-gray-800 dark:text-gray-200">
             {row.original.condition}
           </Badge>
         ),

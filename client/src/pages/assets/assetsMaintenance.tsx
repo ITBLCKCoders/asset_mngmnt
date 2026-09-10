@@ -481,7 +481,7 @@ const [searchColumn, setSearchColumn] = useState('all');
 
   const getMaintenanceStatus = (asset: Asset) => {
     if (!asset.nextMaintenanceDate)
-      return { status: 'Not Scheduled', color: 'bg-gray-100 text-gray-800' };
+      return { status: 'Not Scheduled', color: 'bg-gray-100 text-gray-800 dark:bg-gray-800 dark:text-gray-200' };
 
     const nextDate = new Date(asset.nextMaintenanceDate);
     const today = new Date();

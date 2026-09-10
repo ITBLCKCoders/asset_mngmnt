@@ -30,7 +30,15 @@ export type IntangibleDeactivationBatch = {
   user_email?: string | null;
   created_at: string;
   status: string;
-  assets: Array<{ id: string; name: string; type: string }>;
+  assets: Array<{
+    id: string;
+    name: string;
+    type: string;
+    description?: string | null;
+    remarks?: string | null;
+    riskLevel?: string | null;
+    risk_level?: string | { name?: string | null } | null;
+  }>;
   requester_signature?: string | null;
   dept_head_signed_at?: string | null;
   dept_head_signature?: string | null;
@@ -172,11 +180,25 @@ export function IntangibleDeactivationApprovalCard({
 }
 
 export function mapIntangibleDeactivationRow(row: any, formType: 'intangible_deactivation' | 'intangible_deactivation_hr'): IntangibleDeactivationBatch {
+  const normalizeAsset = (a: any): IntangibleDeactivationBatch['assets'][number] => ({
+    id: String(a?.id ?? ''),
+    name: a?.name ?? a?.id ?? '',
+    type: a?.type ?? '',
+    description: a?.description ?? null,
+    remarks: a?.remarks ?? null,
+    riskLevel: typeof a?.riskLevel === 'string' ? a.riskLevel : (a?.riskLevel?.name ?? null),
+    risk_level: a?.risk_level ?? null,
+  });
   let assets: IntangibleDeactivationBatch['assets'] = [];
   try {
-    const raw = row.assets_data;
-    const data = typeof raw === 'string' ? JSON.parse(raw) : raw;
-    if (Array.isArray(data?.assets)) assets = data.assets.map((a:any)=> ({ id: String(a.id), name: a.name ?? a.id, type: a.type ?? '' }));
+    // Prefer the backend-enriched `assets` array (snapshot + live description/risk lookup).
+    if (Array.isArray(row?.assets) && row.assets.length > 0) {
+      assets = row.assets.map(normalizeAsset).filter((a: { id: string }) => a.id);
+    } else {
+      const raw = row.assets_data;
+      const data = typeof raw === 'string' ? JSON.parse(raw) : raw;
+      if (Array.isArray(data?.assets)) assets = data.assets.map(normalizeAsset).filter((a: { id: string }) => a.id);
+    }
   } catch {}
   return {
     formType,

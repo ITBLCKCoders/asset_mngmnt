@@ -439,25 +439,6 @@ interface AccountabilityFormProps {
   lazyLoadDetails?: boolean;
 }
 
-const getAccountabilityFormAssignmentIds = (
-  form: AccountabilityForm
-): string[] => {
-  const assignmentIds = new Set<string>();
-  for (const id of form.assignmentIds ?? []) {
-    const assignmentId = String(id ?? '').trim();
-    if (assignmentId) {
-      assignmentIds.add(assignmentId);
-    }
-  }
-  if (form.assignment?.id) {
-    const assignmentId = String(form.assignment.id).trim();
-    if (assignmentId) {
-      assignmentIds.add(assignmentId);
-    }
-  }
-  return [...assignmentIds];
-};
-
 // Classify a display asset (embedded form asset or resolved intangible) into the
 // IT/Admin bucket used by the card badges. Mirrors the PDF split at
 // generateAccountabilityFormPDF: intangibles are classified solely by their
@@ -488,9 +469,11 @@ const enrichIntangibleAssetsWithDescriptions = async (
     return assets;
   }
 
-  const assignmentIds = new Set(getAccountabilityFormAssignmentIds(form));
-  if (assignmentIds.size === 0) return assets;
-
+  // NOTE: no assignmentIds gate here on purpose. The lookup below is keyed by
+  // asset id (not assignment id) and only fills fields the snapshot is
+  // missing, so it is safe for regenerated forms (e.g. after an intangible
+  // deactivation) that carry no assignment_ids — those are exactly the forms
+  // whose snapshots may lack risk_level and would otherwise print '—'.
   try {
     const response = await api.get<any[]>('/intangible-assets');
     const apiById = new Map(
@@ -3983,7 +3966,7 @@ export function ClearanceFormCard({
             <div>
               <p
                 className={`text-[11px] font-semibold uppercase tracking-wider ${
-                  isIT ? 'text-emerald-600' : 'text-amber-600'
+                  isIT ? 'text-emerald-600 dark:text-emerald-300' : 'text-amber-600 dark:text-amber-300'
                 }`}
               >
                 {scopeLabel}
