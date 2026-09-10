@@ -659,6 +659,7 @@ export default function TransferRequestsPage() {
     'Needs Repair',
     'Obsolete',
   ];
+  const conditionSectionReadOnly = true;
 
   const isProcessedTab = activeTab === 'processed';
   const listLoading = isProcessedTab ? processedLoading : loading;
@@ -1336,7 +1337,13 @@ export default function TransferRequestsPage() {
                             <div>
                               <Label className="text-sm font-semibold text-slate-700">
                                 Condition
+                                <span className="ml-2 text-xs font-normal normal-case text-slate-500">
+                                  Read-only
+                                </span>
                               </Label>
+                              <p className="mt-1 text-xs text-slate-500">
+                                Selected on the connected return.
+                              </p>
                               <div className="grid grid-cols-2 sm:grid-cols-3 gap-2 mt-2">
                                 {conditionOptions.map(opt => {
                                   const sel =
@@ -1345,18 +1352,19 @@ export default function TransferRequestsPage() {
                                     <div
                                       key={opt}
                                       role="button"
-                                      tabIndex={readOnly ? -1 : 0}
+                                      tabIndex={conditionSectionReadOnly ? -1 : 0}
+                                      aria-disabled={conditionSectionReadOnly}
                                       className={cn(
-                                        'flex items-center gap-2 p-2 rounded-lg border-2',
-                                        readOnly
-                                          ? 'cursor-default'
+                                        'flex items-center gap-2 p-2 rounded-lg border-2 select-none transition-none',
+                                        conditionSectionReadOnly
+                                          ? 'cursor-not-allowed'
                                           : 'cursor-pointer',
                                         sel
-                                          ? 'border-red-500 bg-red-50'
-                                          : 'border-slate-200 hover:border-slate-300'
+                                          ? 'border-slate-400 bg-slate-100 text-slate-700'
+                                          : 'border-slate-200 bg-slate-50 text-slate-400'
                                       )}
                                       onClick={
-                                        readOnly
+                                        conditionSectionReadOnly
                                           ? undefined
                                           : () =>
                                               setConditions(prev => ({
@@ -1365,7 +1373,7 @@ export default function TransferRequestsPage() {
                                               }))
                                       }
                                       onKeyDown={
-                                        readOnly
+                                        conditionSectionReadOnly
                                           ? undefined
                                           : e => {
                                               if (
@@ -1384,7 +1392,7 @@ export default function TransferRequestsPage() {
                                       <CheckCircle
                                         className={cn(
                                           'h-4 w-4',
-                                          sel ? 'text-green-600' : 'text-slate-400'
+                                          sel ? 'text-slate-600' : 'text-slate-400'
                                         )}
                                       />
                                       <span className="text-sm font-medium">{opt}</span>

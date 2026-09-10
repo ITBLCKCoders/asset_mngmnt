@@ -88,6 +88,59 @@ describe('TransferRequestsPage', () => {
     });
   });
 
+  it('keeps the connected return condition read-only when executing an approved transfer', async () => {
+    const approvedBatch = {
+      formID: 'tf-approved-1',
+      form_number: 'TF-APPROVED-0001',
+      created_at: '2026-01-01T00:00:00Z',
+      user_id: 'u1',
+      new_assigned_user_id: 'u2',
+      new_assigned_user: {
+        first_name: 'New',
+        last_name: 'Owner',
+      },
+      returns: [
+        {
+          assignment_id: 'a1',
+          return_condition: 'Damaged',
+          return_notes: '',
+          assignment: {
+            asset: { id: 'ast-1', code: 'AST-001', name: 'Laptop' },
+            user: { id: 'u1', first_name: 'Test', last_name: 'User' },
+          },
+        },
+      ],
+    };
+    vi.mocked(api.get).mockImplementation(
+      (async (url: string) => {
+        if (String(url).includes('approved-for-execution')) {
+          return { assetTransferForms: [approvedBatch] };
+        }
+        return { assetTransferForms: [] };
+      }) as any
+    );
+
+    renderPage();
+    await waitFor(() => {
+      expect(screen.getByText('View & Transfer')).toBeInTheDocument();
+    });
+    fireEvent.click(screen.getByText('View & Transfer'));
+
+    await waitFor(() => {
+      expect(screen.getByRole('button', { name: 'Damaged' })).toHaveAttribute(
+        'aria-disabled',
+        'true'
+      );
+    });
+    const selectedCondition = screen.getByRole('button', { name: 'Damaged' });
+    const otherCondition = screen.getByRole('button', { name: 'Good' });
+    expect(selectedCondition).toHaveClass('border-slate-400', 'bg-slate-100');
+    expect(otherCondition).toHaveClass('bg-slate-50');
+    fireEvent.click(otherCondition);
+    expect(selectedCondition).toHaveClass('border-slate-400', 'bg-slate-100');
+    expect(otherCondition).not.toHaveClass('border-slate-400');
+  });
+
   it('shows a View Form button on the processed tab', async () => {
     const processedBatch = {
       formID: 'tf-1',

@@ -1,7 +1,6 @@
 'use client';
 
 import { useEffect, useState, useMemo, useRef } from 'react';
-import { Link } from 'react-router-dom';
 import {
   Package,
   Boxes,
@@ -15,7 +14,6 @@ import {
   FileText,
   Crown,
   Layers,
-  ArrowLeft,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { Tabs, TabsContent, TabsList, TabsTrigger, segmentTabsListClassName, segmentTabsTriggerClassName } from '@/components/ui/tabs';
@@ -953,16 +951,6 @@ export default function AssetReturnRequest() {
                 </TabsTrigger>
               </TabsList>
             </Tabs>
-            <Link to="/assets/return">
-              <Button
-                variant="header"
-                size="sm"
-                className="flex items-center gap-2"
-              >
-                <ArrowLeft className="h-4 w-4" />
-                Back to Asset Return
-              </Button>
-            </Link>
           </div>
         </PageHeader>
 

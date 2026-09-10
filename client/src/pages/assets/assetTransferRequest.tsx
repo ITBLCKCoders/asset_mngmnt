@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect, useState, useMemo, useRef, useCallback } from 'react';
-import { Link, useSearchParams } from 'react-router-dom';
+import { useSearchParams } from 'react-router-dom';
 import {
   Package,
   Search,
@@ -14,7 +14,6 @@ import {
   Crown,
   Download,
   FileText,
-  ArrowLeft,
 } from 'lucide-react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { PageHeader } from '@/components/common/PageHeader';
@@ -874,16 +873,6 @@ export default function AssetTransferRequest() {
                 </TabsTrigger>
               </TabsList>
             </Tabs>
-            <Link to="/assets/transfer">
-              <Button
-                variant="header"
-                size="sm"
-                className="flex items-center gap-2"
-              >
-                <ArrowLeft className="h-4 w-4" />
-                Back to Asset Transfer
-              </Button>
-            </Link>
           </div>
         </PageHeader>
 
