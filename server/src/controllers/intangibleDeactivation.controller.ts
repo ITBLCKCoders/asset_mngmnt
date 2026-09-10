@@ -83,22 +83,36 @@ async function mapRow(row: repo.DeactivationFormRow): Promise<any> {
 
 async function generateFormNumber(companyId: string): Promise<string> {
   // Try to reuse accountability settings for consistency; fallback to simple IDF prefix
-  const settings = await accRepo.getAccountabilityFormSettings(companyId);
+  const settings = await repo.getIntangibleDeactivationFormSettings(companyId);
   const company = await repo.getCompanyPrefix(companyId);
-  const prefixBase = company?.code || company?.prefix || 'GEN';
-  const likeParam = `${prefixBase}-IDF`;
-  const seq = await repo.getNextSequence(likeParam);
-  const datePart = (() => {
-    const now = new Date();
-    if (settings?.include_date) {
-      return settings.date_format === 'YYYYMMDD'
-        ? `${now.getFullYear()}${String(now.getMonth()+1).padStart(2,'0')}${String(now.getDate()).padStart(2,'0')}`
-        : `${String(now.getMonth()+1).padStart(2,'0')}${now.getFullYear()}`;
-    }
-    return null;
-  })();
-  const parts = [prefixBase, 'IDF'];
+  const prefixBase =
+    settings?.company_format === 'prefix'
+      ? company?.prefix || company?.code || 'GEN'
+      : company?.code || company?.prefix || 'GEN';
+  const department = await accRepo.getHrDepartmentCodePrefix(companyId);
+  const parts = [prefixBase];
+  if (settings?.department_format === 'code' && department?.code) {
+    parts.push(department.code);
+  } else if (settings?.department_format === 'prefix' && department?.prefix) {
+    parts.push(department.prefix);
+  }
+  parts.push(settings?.form_code || 'IDF');
+
+  const now = new Date();
+  const includeDate = settings?.include_date ?? true;
+  const dateFormat = settings?.date_format || 'MMYYYY';
+  const datePart = includeDate
+    ? dateFormat === 'YYYYMMDD'
+      ? `${now.getFullYear()}${String(now.getMonth()+1).padStart(2,'0')}${String(now.getDate()).padStart(2,'0')}`
+      : `${String(now.getMonth()+1).padStart(2,'0')}${now.getFullYear()}`
+    : null;
   if (datePart) parts.push(datePart);
+
+  const basePattern = parts.slice(0, datePart ? -1 : undefined).join('-');
+  const likeParam = includeDate && dateFormat === 'MMYYYY'
+    ? `${basePattern}-%${now.getFullYear()}`
+    : basePattern + (datePart ? `-${datePart}` : '');
+  const seq = await repo.getNextSequence(likeParam);
   parts.push(String(seq).padStart(4,'0'));
   return parts.join('-');
 }

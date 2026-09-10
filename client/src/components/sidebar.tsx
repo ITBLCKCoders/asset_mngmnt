@@ -104,6 +104,7 @@ const Sidebar = memo(function Sidebar({ onLogout, currentPath = '', currentSearc
     const p = currentPath;
     return (
       p === '/forms/accountability' ||
+      p === '/forms/accountability-clearance' ||
       p === '/forms/borrow' ||
       p === '/forms/checklist' ||
       p === '/forms/return' ||
@@ -363,6 +364,7 @@ const Sidebar = memo(function Sidebar({ onLogout, currentPath = '', currentSearc
                   <SidebarHoverItem
                     active={
                       currentPath === '/forms/accountability' ||
+                      currentPath === '/forms/accountability-clearance' ||
                       currentPath === '/forms/borrow' ||
                       currentPath === '/forms/checklist' ||
                       currentPath === '/forms/return' ||
@@ -373,10 +375,11 @@ const Sidebar = memo(function Sidebar({ onLogout, currentPath = '', currentSearc
                     }
                   >
                     <button
-                      onClick={() => setUserFormsOpen(!formsOpen)} {...prefetchMany(['/forms/accountability', '/forms/checklist', '/forms/borrow', '/forms/return', '/forms/transfer', '/forms/intangible-deactivation', '/approvals'])}
+                      onClick={() => setUserFormsOpen(!formsOpen)} {...prefetchMany(['/forms/accountability', '/forms/accountability-clearance', '/forms/checklist', '/forms/borrow', '/forms/return', '/forms/transfer', '/forms/intangible-deactivation', '/approvals'])}
                       className={cn(
                         'flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium w-full transition-all duration-200 justify-between',
                         currentPath === '/forms/accountability' ||
+                          currentPath === '/forms/accountability-clearance' ||
                           currentPath === '/forms/borrow' ||
                           currentPath === '/forms/checklist' ||
                           currentPath === '/forms/return' ||
@@ -425,6 +428,22 @@ const Sidebar = memo(function Sidebar({ onLogout, currentPath = '', currentSearc
                           >
                             <FileText className="h-4 w-4 flex-shrink-0" />
                             <span>Accountability</span>
+                          </button>
+                        </SidebarHoverItem>
+                      )}
+                      {hasPermission('Accountability Form', 'view') && (
+                        <SidebarHoverItem active={currentPath === '/forms/accountability-clearance'}>
+                          <button
+                            onClick={() => go('/forms/accountability-clearance')} {...prefetch('/forms/accountability-clearance')}
+                            className={cn(
+                              'flex items-center gap-3 px-3 py-2 rounded-lg text-sm w-full transition-all duration-200',
+                              currentPath === '/forms/accountability-clearance'
+                                ? 'bg-white/15 text-white font-medium'
+                                : 'text-white/70 hover:bg-white/10 hover:text-white'
+                            )}
+                          >
+                            <FileText className="h-4 w-4 flex-shrink-0" />
+                            <span>Accountability Clearance</span>
                           </button>
                         </SidebarHoverItem>
                       )}

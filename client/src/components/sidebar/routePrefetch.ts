@@ -51,6 +51,8 @@ const ROUTE_IMPORTERS: Record<string, Importer> = {
 
   '/forms/accountability': () =>
     import('@/pages/forms/AccountabilityFormsPage'),
+  '/forms/accountability-clearance': () =>
+    import('@/pages/forms/AccountabilityClearanceFormsPage'),
   '/forms/borrow': () => import('@/pages/forms/BorrowFormsPage'),
   '/forms/checklist': () => import('@/pages/forms/AssetChecklistFormsPage'),
   '/forms/return': () => import('@/pages/forms/AssetReturnFormsPage'),

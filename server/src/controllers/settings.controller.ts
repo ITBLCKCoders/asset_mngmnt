@@ -615,6 +615,14 @@ export async function getAccountabilityFormSettingsHandler(
         admin_asset_code,
         include_date,
         date_format,
+        deactivation_form_code,
+        deactivation_department_format,
+        deactivation_include_date,
+        deactivation_date_format,
+        clearance_form_code,
+        clearance_department_format,
+        clearance_include_date,
+        clearance_date_format,
         created_at,
         created_by,
         updated_at,
@@ -645,6 +653,10 @@ export async function updateAccountabilityFormSettingsHandler(
     admin_asset_code,
     include_date,
     date_format,
+    clearance_form_code,
+    clearance_department_format,
+    clearance_include_date,
+    clearance_date_format,
   } = req.body;
   const userId = req.user!.userID;
 
@@ -671,6 +683,14 @@ export async function updateAccountabilityFormSettingsHandler(
           department_format = ?,
           it_asset_code = ?,
           admin_asset_code = ?,
+          deactivation_form_code = ?,
+          deactivation_department_format = ?,
+          deactivation_include_date = ?,
+          deactivation_date_format = ?,
+          clearance_form_code = ?,
+          clearance_department_format = ?,
+          clearance_include_date = ?,
+          clearance_date_format = ?,
           include_date = ?,
           date_format = ?,
           updated_by = ?,
@@ -682,6 +702,14 @@ export async function updateAccountabilityFormSettingsHandler(
           department_format || 'none',
           it_asset_code || null,
           admin_asset_code || null,
+          req.body.deactivation_form_code || 'IDF',
+          req.body.deactivation_department_format || 'code',
+          req.body.deactivation_include_date !== undefined ? req.body.deactivation_include_date : true,
+          req.body.deactivation_date_format || 'MMYYYY',
+          clearance_form_code || 'CLR',
+          clearance_department_format || 'code',
+          clearance_include_date !== undefined ? clearance_include_date : true,
+          clearance_date_format || 'MMYYYY',
           include_date !== undefined ? include_date : true,
           date_format || 'MMYYYY',
           userId,
@@ -698,11 +726,19 @@ export async function updateAccountabilityFormSettingsHandler(
           department_format,
           it_asset_code,
           admin_asset_code,
+          deactivation_form_code,
+          deactivation_department_format,
+          deactivation_include_date,
+          deactivation_date_format,
+          clearance_form_code,
+          clearance_department_format,
+          clearance_include_date,
+          clearance_date_format,
           include_date,
           date_format,
           created_by,
           updated_by
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
       `,
         [
           company_id,
@@ -710,6 +746,14 @@ export async function updateAccountabilityFormSettingsHandler(
           department_format || 'none',
           it_asset_code || null,
           admin_asset_code || null,
+          req.body.deactivation_form_code || 'IDF',
+          req.body.deactivation_department_format || 'code',
+          req.body.deactivation_include_date !== undefined ? req.body.deactivation_include_date : true,
+          req.body.deactivation_date_format || 'MMYYYY',
+          clearance_form_code || 'CLR',
+          clearance_department_format || 'code',
+          clearance_include_date !== undefined ? clearance_include_date : true,
+          clearance_date_format || 'MMYYYY',
           include_date !== undefined ? include_date : true,
           date_format || 'MMYYYY',
           userId,
@@ -728,6 +772,14 @@ export async function updateAccountabilityFormSettingsHandler(
         department_format,
         it_asset_code,
         admin_asset_code,
+        deactivation_form_code,
+        deactivation_department_format,
+        deactivation_include_date,
+        deactivation_date_format,
+        clearance_form_code,
+        clearance_department_format,
+        clearance_include_date,
+        clearance_date_format,
         include_date,
         date_format,
         created_at,
@@ -759,6 +811,77 @@ export async function updateAccountabilityFormSettingsHandler(
     return res
       .status(500)
       .json({ error: 'Failed to update accountability form settings' });
+  }
+}
+
+export async function getIntangibleClearanceFormSettingsHandler(
+  req: AuthRequest,
+  res: Response
+) {
+  try {
+    const currentCompany = await getScopedActiveCompany(pool, req.user?.userID);
+    if (!currentCompany) return res.status(400).json({ error: 'No active company found' });
+    const [rows] = (await pool.execute(
+      `SELECT d.company_id,
+              d.company_format AS deactivation_company_format,
+              d.department_format AS deactivation_department_format,
+              d.form_code AS deactivation_form_code,
+              d.include_date AS deactivation_include_date,
+              d.date_format AS deactivation_date_format,
+              c.company_format AS clearance_company_format,
+              c.department_format AS clearance_department_format,
+              c.form_code AS clearance_form_code,
+              c.include_date AS clearance_include_date,
+              c.date_format AS clearance_date_format
+       FROM intangible_deactivation_form_settings d
+       LEFT JOIN accountability_clearance_form_settings c ON c.company_id = d.company_id AND c.deleted_at IS NULL
+       WHERE d.company_id = ? AND d.deleted_at IS NULL`,
+      [currentCompany.id]
+    )) as any[];
+    return res.json({ settings: rows });
+  } catch (error: any) {
+    logger.error('Get separate deactivation and clearance settings failed:', error);
+    return res.status(500).json({ error: 'Failed to fetch form settings' });
+  }
+}
+
+export async function updateIntangibleClearanceFormSettingsHandler(
+  req: AuthRequest,
+  res: Response
+) {
+  const { company_id, company_format, deactivation_department_format, deactivation_form_code, deactivation_include_date, deactivation_date_format, clearance_department_format, clearance_form_code, clearance_include_date, clearance_date_format } = req.body;
+  const userId = req.user!.userID;
+  if (!company_id) return res.status(400).json({ error: 'Company ID is required' });
+
+  try {
+    if (deactivation_form_code !== undefined || deactivation_department_format !== undefined) {
+      await pool.execute(
+        `INSERT INTO intangible_deactivation_form_settings
+          (company_id, company_format, department_format, form_code, include_date, date_format, updated_by)
+         VALUES (?, ?, ?, ?, ?, ?, ?)
+         ON DUPLICATE KEY UPDATE
+          company_format = VALUES(company_format), department_format = VALUES(department_format),
+          form_code = VALUES(form_code), include_date = VALUES(include_date),
+          date_format = VALUES(date_format), updated_by = VALUES(updated_by), updated_at = NOW()`,
+        [company_id, company_format || 'code', deactivation_department_format || 'code', deactivation_form_code || 'IDF', deactivation_include_date !== undefined ? deactivation_include_date : true, deactivation_date_format || 'MMYYYY', userId]
+      );
+    }
+    if (clearance_form_code !== undefined || clearance_department_format !== undefined) {
+      await pool.execute(
+        `INSERT INTO accountability_clearance_form_settings
+          (company_id, company_format, department_format, form_code, include_date, date_format, updated_by)
+         VALUES (?, ?, ?, ?, ?, ?, ?)
+         ON DUPLICATE KEY UPDATE
+          company_format = VALUES(company_format), department_format = VALUES(department_format),
+          form_code = VALUES(form_code), include_date = VALUES(include_date),
+          date_format = VALUES(date_format), updated_by = VALUES(updated_by), updated_at = NOW()`,
+        [company_id, company_format || 'code', clearance_department_format || 'code', clearance_form_code || 'CLR', clearance_include_date !== undefined ? clearance_include_date : true, clearance_date_format || 'MMYYYY', userId]
+      );
+    }
+    return res.json({ message: 'Separate deactivation and clearance settings updated successfully' });
+  } catch (error: any) {
+    logger.error('Update intangible clearance form settings failed:', error);
+    return res.status(500).json({ error: 'Failed to update intangible clearance form settings' });
   }
 }
 

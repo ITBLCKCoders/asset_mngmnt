@@ -58,6 +58,7 @@ const AuditTrail = lazy(() => import('./pages/assets-history/auditTrail'));
 const UserManual = lazy(() => import('./pages/userManual'));
 const FlowDiagrams = lazy(() => import('./pages/flowDiagrams'));
 const AccountabilityFormsPage = lazy(() => import('./pages/forms/AccountabilityFormsPage'));
+const AccountabilityClearanceFormsPage = lazy(() => import('./pages/forms/AccountabilityClearanceFormsPage'));
 const BorrowFormsPage = lazy(() => import('./pages/forms/BorrowFormsPage'));
 const AssetChecklistFormsPage = lazy(() => import('./pages/forms/AssetChecklistFormsPage'));
 const AssetReturnFormsPage = lazy(() => import('./pages/forms/AssetReturnFormsPage'));
@@ -102,6 +103,7 @@ const privateRoutes: RouteConfig[] = [
   { path: '/audit',                  module: 'Audit Trail',      component: AuditTrail },
   { path: '/assets/intangible-deactivation', module: 'Intangible Deactivation', component: IntangibleDeactivationRequest },
   { path: '/forms/accountability',   module: 'Accountability Form', component: AccountabilityFormsPage },
+  { path: '/forms/accountability-clearance', module: 'Accountability Form', component: AccountabilityClearanceFormsPage },
   { path: '/forms/borrow',           module: 'Borrow Form',      component: BorrowFormsPage },
   { path: '/forms/checklist',        module: 'Checklist Form',   component: AssetChecklistFormsPage },
   { path: '/forms/return',           module: 'Return Form',      component: AssetReturnFormsPage },

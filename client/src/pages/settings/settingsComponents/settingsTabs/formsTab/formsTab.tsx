@@ -84,6 +84,23 @@ export function FormsTab({ isActive }: { isActive?: boolean }) {
   const [hasUnsavedBorrowChanges, setHasUnsavedBorrowChanges] =
     useState(false);
 
+  const [clearanceFormSettings, setClearanceFormSettings] = useState({
+    companyCode: 'code' as 'code' | 'prefix' | 'none',
+    department: 'code' as 'code' | 'prefix' | 'none',
+    formCode: 'IDF',
+    includeDate: true,
+    dateFormat: 'MMYYYY',
+  });
+  const [hasUnsavedClearanceChanges, setHasUnsavedClearanceChanges] = useState(false);
+  const [deactivationFormSettings, setDeactivationFormSettings] = useState({
+    companyCode: 'code' as 'code' | 'prefix' | 'none',
+    department: 'code' as 'code' | 'prefix' | 'none',
+    formCode: 'IDF',
+    includeDate: true,
+    dateFormat: 'MMYYYY',
+  });
+  const [hasUnsavedDeactivationChanges, setHasUnsavedDeactivationChanges] = useState(false);
+
   useEffect(() => {
     if (isActive) {
       setIsTabLoading(true);
@@ -106,6 +123,7 @@ export function FormsTab({ isActive }: { isActive?: boolean }) {
       fetchChecklistFormSettings();
       fetchTransferFormSettings();
       fetchBorrowFormSettings();
+      fetchClearanceFormSettings();
     }
   }, [isActive, activeCompany]);
 
@@ -373,6 +391,84 @@ export function FormsTab({ isActive }: { isActive?: boolean }) {
     }
   };
 
+  const fetchClearanceFormSettings = async () => {
+    if (!activeCompany) return;
+    try {
+      const data = await api.get('/settings/intangible-clearance-form');
+      const settings = data?.settings?.find((s: any) => s.company_id === activeCompany.id);
+      if (settings) {
+        setClearanceFormSettings({
+          companyCode: settings.clearance_company_format || 'code',
+          department: settings.clearance_department_format || 'code',
+          formCode: settings.clearance_form_code || 'CLR',
+          includeDate: settings.clearance_include_date !== 0,
+          dateFormat: settings.clearance_date_format || 'MMYYYY',
+        });
+        setDeactivationFormSettings({
+          companyCode: settings.deactivation_company_format || 'code',
+          department: settings.deactivation_department_format || 'code',
+          formCode: settings.deactivation_form_code || 'IDF',
+          includeDate: settings.deactivation_include_date !== 0,
+          dateFormat: settings.deactivation_date_format || 'MMYYYY',
+        });
+      }
+    } catch (error) {
+      console.error('Failed to fetch intangible clearance form settings:', error);
+    }
+  };
+
+  const handleSaveClearanceFormSettings = async () => {
+    if (!activeCompany) return toast.error('No active company found');
+    try {
+      setSettingsLoading(true);
+      await api.put('/settings/intangible-clearance-form', {
+        company_id: activeCompany.id,
+        company_format: clearanceFormSettings.companyCode,
+        clearance_department_format: clearanceFormSettings.department,
+        clearance_form_code: clearanceFormSettings.formCode.trim() || 'IDF',
+        clearance_include_date: clearanceFormSettings.includeDate,
+        clearance_date_format: 'MMYYYY',
+      });
+      toast.success('Intangible deactivation and clearance settings saved successfully');
+      setHasUnsavedClearanceChanges(false);
+    } catch (error: any) {
+      toast.error(error.message || 'Failed to save settings');
+    } finally {
+      setSettingsLoading(false);
+    }
+  };
+
+  const updateClearanceFormSettings = (updates: Partial<typeof clearanceFormSettings>) => {
+    setClearanceFormSettings(prev => ({ ...prev, ...updates }));
+    setHasUnsavedClearanceChanges(true);
+  };
+
+  const handleSaveDeactivationFormSettings = async () => {
+    if (!activeCompany) return toast.error('No active company found');
+    try {
+      setSettingsLoading(true);
+      await api.put('/settings/intangible-clearance-form', {
+        company_id: activeCompany.id,
+        company_format: deactivationFormSettings.companyCode,
+        deactivation_department_format: deactivationFormSettings.department,
+        deactivation_form_code: deactivationFormSettings.formCode.trim() || 'IDF',
+        deactivation_include_date: deactivationFormSettings.includeDate,
+        deactivation_date_format: 'MMYYYY',
+      });
+      toast.success('Intangible deactivation settings saved successfully');
+      setHasUnsavedDeactivationChanges(false);
+    } catch (error: any) {
+      toast.error(error.message || 'Failed to save settings');
+    } finally {
+      setSettingsLoading(false);
+    }
+  };
+
+  const updateDeactivationFormSettings = (updates: Partial<typeof deactivationFormSettings>) => {
+    setDeactivationFormSettings(prev => ({ ...prev, ...updates }));
+    setHasUnsavedDeactivationChanges(true);
+  };
+
   const handleSaveBorrowFormSettings = async () => {
     if (!activeCompany) {
       toast.error('No active company found');
@@ -603,6 +699,18 @@ export function FormsTab({ isActive }: { isActive?: boolean }) {
             className={segmentTabsTriggerClassName + ' flex-1 whitespace-nowrap'}
           >
             Asset Borrow
+          </TabsTrigger>
+          <TabsTrigger
+            value="intangible-deactivation"
+            className={segmentTabsTriggerClassName + ' flex-1 whitespace-nowrap'}
+          >
+            Intangible Deactivation
+          </TabsTrigger>
+          <TabsTrigger
+            value="accountability-clearance"
+            className={segmentTabsTriggerClassName + ' flex-1 whitespace-nowrap'}
+          >
+            Accountability Clearance
           </TabsTrigger>
         </TabsList>
         <TabsContent value="accountability" className="mt-0">
@@ -1692,6 +1800,64 @@ export function FormsTab({ isActive }: { isActive?: boolean }) {
           )}
         </Card>
 
+        </TabsContent>
+
+        <TabsContent value="intangible-deactivation" className="mt-0">
+          <Card className="shadow-lg border-0 rounded-2xl overflow-hidden bg-card/95 backdrop-blur">
+            <CardHeader className="bg-red-600 rounded-t-2xl">
+              <h3 className="text-xl font-semibold text-white">Intangible Deactivation</h3>
+              <p className="text-red-100 text-sm">Configure intangible deactivation form numbering</p>
+            </CardHeader>
+            <CardContent className="p-5 space-y-6">
+              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+                <div className="space-y-2">
+                  <Label>Company</Label>
+                  <Select value={deactivationFormSettings.companyCode} onValueChange={(value: 'code' | 'prefix' | 'none') => updateDeactivationFormSettings({ companyCode: value })} disabled={settingsLoading}>
+                    <SelectTrigger><SelectValue /></SelectTrigger>
+                    <SelectContent><SelectItem value="code">Code</SelectItem><SelectItem value="prefix">Prefix</SelectItem><SelectItem value="none">None</SelectItem></SelectContent>
+                  </Select>
+                </div>
+                <div className="space-y-2">
+                  <Label>HR Department</Label>
+                  <Select value={deactivationFormSettings.department} onValueChange={(value: 'code' | 'prefix' | 'none') => updateDeactivationFormSettings({ department: value })} disabled={settingsLoading}>
+                    <SelectTrigger><SelectValue /></SelectTrigger>
+                    <SelectContent><SelectItem value="code">Department Code</SelectItem><SelectItem value="prefix">Department Prefix</SelectItem><SelectItem value="none">None</SelectItem></SelectContent>
+                  </Select>
+                  <p className="text-xs text-muted-foreground">Uses either HR or Human Resources department.</p>
+                </div>
+                <div className="space-y-2">
+                  <Label>Form Code</Label>
+                  <Input value={deactivationFormSettings.formCode} onChange={e => updateDeactivationFormSettings({ formCode: e.target.value })} placeholder="e.g., IDF" disabled={settingsLoading} />
+                  <p className="text-xs text-muted-foreground">Code for intangible deactivation forms.</p>
+                </div>
+              </div>
+              <div className="flex items-center justify-between p-4 bg-muted/30 rounded-xl">
+                <div><Label>Month and Year (MMYYYY)</Label><p className="text-xs text-muted-foreground">The four-digit sequence continues through the year and resets to 0001 in January.</p></div>
+                <Switch checked={deactivationFormSettings.includeDate} onCheckedChange={checked => updateDeactivationFormSettings({ includeDate: checked })} disabled={settingsLoading} />
+              </div>
+              <div className="p-4 border rounded-xl font-mono text-center text-lg">{activeCompany?.code || 'COMP'}-{deactivationFormSettings.department === 'none' ? '' : 'HR-'}{deactivationFormSettings.formCode || 'IDF'}-{deactivationFormSettings.includeDate ? 'MMYYYY-' : ''}0001</div>
+            </CardContent>
+            {hasUnsavedDeactivationChanges && <CardFooter className="flex justify-end"><Button onClick={handleSaveDeactivationFormSettings} disabled={settingsLoading}>{settingsLoading ? 'Saving...' : 'Save Changes'}</Button></CardFooter>}
+          </Card>
+        </TabsContent>
+
+        <TabsContent value="accountability-clearance" className="mt-0">
+          <Card className="shadow-lg border-0 rounded-2xl overflow-hidden bg-card/95 backdrop-blur">
+            <CardHeader className="bg-red-600 rounded-t-2xl">
+              <h3 className="text-xl font-semibold text-white">Accountability Clearance</h3>
+              <p className="text-red-100 text-sm">Configure accountability clearance form numbering</p>
+            </CardHeader>
+            <CardContent className="p-5 space-y-6">
+              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+                <div className="space-y-2"><Label>Company</Label><Select value={clearanceFormSettings.companyCode} onValueChange={(value: 'code' | 'prefix' | 'none') => updateClearanceFormSettings({ companyCode: value })} disabled={settingsLoading}><SelectTrigger><SelectValue /></SelectTrigger><SelectContent><SelectItem value="code">Code</SelectItem><SelectItem value="prefix">Prefix</SelectItem><SelectItem value="none">None</SelectItem></SelectContent></Select></div>
+                <div className="space-y-2"><Label>HR Department</Label><Select value={clearanceFormSettings.department} onValueChange={(value: 'code' | 'prefix' | 'none') => updateClearanceFormSettings({ department: value })} disabled={settingsLoading}><SelectTrigger><SelectValue /></SelectTrigger><SelectContent><SelectItem value="code">Department Code</SelectItem><SelectItem value="prefix">Department Prefix</SelectItem><SelectItem value="none">None</SelectItem></SelectContent></Select><p className="text-xs text-muted-foreground">Uses either HR or Human Resources department.</p></div>
+                <div className="space-y-2"><Label>Form Code</Label><Input value={clearanceFormSettings.formCode} onChange={e => updateClearanceFormSettings({ formCode: e.target.value })} placeholder="e.g., CLR" disabled={settingsLoading} /><p className="text-xs text-muted-foreground">Code for accountability clearance forms.</p></div>
+              </div>
+              <div className="flex items-center justify-between p-4 bg-muted/30 rounded-xl"><div><Label>Month and Year (MMYYYY)</Label><p className="text-xs text-muted-foreground">The clearance sequence resets to 0001 in a new year.</p></div><Switch checked={clearanceFormSettings.includeDate} onCheckedChange={checked => updateClearanceFormSettings({ includeDate: checked })} disabled={settingsLoading} /></div>
+              <div className="p-4 border rounded-xl font-mono text-center text-lg">{activeCompany?.code || 'COMP'}-{clearanceFormSettings.department === 'none' ? '' : 'HR-'}{clearanceFormSettings.formCode || 'CLR'}-{clearanceFormSettings.includeDate ? 'MMYYYY-' : ''}0001</div>
+            </CardContent>
+            {hasUnsavedClearanceChanges && <CardFooter className="flex justify-end"><Button onClick={handleSaveClearanceFormSettings} disabled={settingsLoading}>{settingsLoading ? 'Saving...' : 'Save Changes'}</Button></CardFooter>}
+          </Card>
         </TabsContent>
 
         <TabsContent value="borrow" className="mt-0">

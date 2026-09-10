@@ -95,8 +95,9 @@ export async function findFormIdByNumber(formNumber: string): Promise<string | n
 
 export async function getNextSequence(likeParam: string): Promise<number> {
   const [rows] = await pool.execute<RowDataPacket[]>(
-    `SELECT COALESCE(MAX(CAST(SUBSTRING_INDEX(form_number, '-', -1) AS UNSIGNED)),0)+1 as next_seq
-     FROM intangible_deactivation_forms WHERE form_number LIKE CONCAT(?, '-%')`, [likeParam]
+    `SELECT COALESCE(MAX(CAST(SUBSTRING_INDEX(form_number, '-', -1) AS UNSIGNED)), 0) + 1 AS next_seq
+     FROM intangible_deactivation_forms
+     WHERE form_number LIKE CONCAT(?, '-%')`, [likeParam]
   );
   return Number((rows[0] as any)?.next_seq ?? 1);
 }
@@ -226,6 +227,22 @@ export async function deactivateAssignments(intangibleAssetIds: string[], userId
 export async function getUserCompanyAndDept(userId: string): Promise<{ company_id: string | null; department_id: string | null; first_name: string | null; last_name: string | null } | null> {
   const [rows] = await pool.execute<RowDataPacket[]>(
     `SELECT company_id, department_id, first_name, last_name FROM users WHERE userID=? LIMIT 1`, [userId]
+  );
+  return (rows[0] as any) ?? null;
+}
+
+export async function getIntangibleDeactivationFormSettings(companyId: string): Promise<{
+  company_format: string | null;
+  department_format: string | null;
+  form_code: string | null;
+  include_date: 0 | 1 | null;
+  date_format: string | null;
+} | null> {
+  const [rows] = await pool.execute<RowDataPacket[]>(
+    `SELECT company_format, department_format, form_code, include_date, date_format
+     FROM intangible_deactivation_form_settings
+     WHERE company_id = ? AND deleted_at IS NULL LIMIT 1`,
+    [companyId]
   );
   return (rows[0] as any) ?? null;
 }

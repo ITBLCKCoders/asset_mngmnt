@@ -761,10 +761,24 @@ async function generateFormNumber(
   // Get company info
   const company = await repo.getCompanyCodePrefix(companyId);
 
-  // Get department info if department_format is not 'none'
+  const isClearance = options?.origin === 'clearance';
+  const clearanceSettings = isClearance
+    ? await repo.getAccountabilityClearanceFormSettings(companyId)
+    : null;
+  const numberingSettings = clearanceSettings ?? settings;
+  const departmentFormat = numberingSettings.department_format;
+  const includeDate = numberingSettings.include_date;
+  const dateFormat = numberingSettings.date_format;
+
+  // Clearance documents are issued by HR, so resolve the HR department by
+  // either its short name (HR) or full name (Human Resources).
   let department: { code: string | null; prefix: string | null } | null = null;
-  if (settings?.department_format !== 'none' && departmentId) {
-    department = await repo.getDepartmentCodePrefix(departmentId);
+  if (departmentFormat !== 'none') {
+    department = isClearance
+      ? await repo.getHrDepartmentCodePrefix(companyId)
+      : departmentId
+        ? await repo.getDepartmentCodePrefix(departmentId)
+        : null;
   }
 
   // Determine if assets are IT or Admin based on asset category's department first
@@ -799,9 +813,8 @@ async function generateFormNumber(
   }
 
   let assetCode: string | null;
-  if (options?.origin === 'clearance') {
-    // Unified clearance uses CLR (single certificate). Legacy IT/Admin codes kept for history.
-    assetCode = 'CLR';
+  if (isClearance) {
+    assetCode = clearanceSettings?.form_code || 'CLR';
   } else {
     assetCode = isITAsset
       ? settings?.it_asset_code
@@ -812,16 +825,16 @@ async function generateFormNumber(
   const parts = [];
 
   // Company part
-  if (settings?.company_format === 'code' && company?.code) {
+  if (numberingSettings.company_format === 'code' && company?.code) {
     parts.push(company.code);
-  } else if (settings?.company_format === 'prefix' && company?.prefix) {
+  } else if (numberingSettings.company_format === 'prefix' && company?.prefix) {
     parts.push(company.prefix);
   }
 
   // Department part
-  if (settings?.department_format === 'code' && department?.code) {
+  if (departmentFormat === 'code' && department?.code) {
     parts.push(department.code);
-  } else if (settings?.department_format === 'prefix' && department?.prefix) {
+  } else if (departmentFormat === 'prefix' && department?.prefix) {
     parts.push(department.prefix);
   }
 
@@ -831,23 +844,23 @@ async function generateFormNumber(
   }
 
   // Date part
-  if (settings?.include_date) {
+  if (includeDate) {
     const now = new Date();
     const dateStr =
-      settings.date_format === 'YYYYMMDD'
+      dateFormat === 'YYYYMMDD'
         ? `${now.getFullYear()}${String(now.getMonth() + 1).padStart(2, '0')}${String(now.getDate()).padStart(2, '0')}`
         : `${String(now.getMonth() + 1).padStart(2, '0')}${now.getFullYear()}`;
     parts.push(dateStr);
   }
 
-  // Generate sequence number (for MMYYYY: reset per year, so match any month in same year)
-  const dateFilter = settings?.include_date ? parts[parts.length - 1] : null;
-  const basePattern = parts.slice(0, -1).join('-'); // All parts except date/sequence
-  const year = settings?.include_date ? new Date().getFullYear() : null;
+  // MMYYYY sequences continue across months and reset when the year changes.
+  const dateFilter = includeDate ? parts[parts.length - 1] : null;
+  const basePattern = parts.join('-');
+  const year = includeDate ? new Date().getFullYear() : null;
   const likeParam =
-    settings?.include_date && settings?.date_format === 'MMYYYY'
-      ? `${basePattern}-%${year}`
-      : `${basePattern}${dateFilter ? `-${dateFilter}` : ''}`;
+    includeDate && dateFormat === 'MMYYYY'
+      ? `${basePattern.slice(0, -(dateFilter as string).length - 1)}-%${year}`
+      : `${basePattern}`;
 
   const nextSeq = await repo.getNextFormSequence(likeParam);
   parts.push(String(nextSeq).padStart(4, '0'));

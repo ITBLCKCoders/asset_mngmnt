@@ -7,6 +7,8 @@ import {
   copyMainCompanyDepartmentSettings,
   getAccountabilityFormSettingsHandler,
   updateAccountabilityFormSettingsHandler,
+  updateIntangibleClearanceFormSettingsHandler,
+  getIntangibleClearanceFormSettingsHandler,
   getAssetReturnFormSettingsHandler,
   updateAssetReturnFormSettingsHandler,
   getAssetChecklistFormSettingsHandler,
@@ -126,6 +128,11 @@ router.get('/accountability-form', getAccountabilityFormSettingsHandler);
  *       401: { description: Unauthorized }
  */
 router.put('/accountability-form', updateAccountabilityFormSettingsHandler);
+
+// Intangible deactivation and accountability clearance share the clearance_* fields
+// on the accountability settings record.
+router.get('/intangible-clearance-form', getIntangibleClearanceFormSettingsHandler);
+router.put('/intangible-clearance-form', updateIntangibleClearanceFormSettingsHandler);
 
 /**
  * @swagger

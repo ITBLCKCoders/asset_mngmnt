@@ -4027,7 +4027,7 @@ export default function DocumentsTab({
             <div>
               <CardTitle className="text-2xl font-bold">Documents</CardTitle>
               <p className="text-red-100 text-sm opacity-90">
-                Accountability, return, transfer, and equipment borrow forms
+                Accountability, clearance, return, transfer, and equipment borrow forms
               </p>
             </div>
           </div>
@@ -4037,9 +4037,12 @@ export default function DocumentsTab({
 
         <CardContent className="p-4 sm:p-6 lg:p-8">
           <Tabs value={activeSubTab} onValueChange={setActiveSubTab} className="w-full">
-            <TabsList className={cn(segmentTabsListClassName, 'grid grid-cols-2 sm:grid-cols-6 mb-6')}>
+            <TabsList className={cn(segmentTabsListClassName, 'grid grid-cols-2 sm:grid-cols-7 mb-6')}>
               <TabsTrigger value="accountability" className={cn(segmentTabsTriggerClassName, 'text-xs sm:text-sm')}>
                 <FileCheck className="mr-1.5 h-4 w-4" /> Accountability
+              </TabsTrigger>
+              <TabsTrigger value="clearance" className={cn(segmentTabsTriggerClassName, 'text-xs sm:text-sm')}>
+                <FileCheck className="mr-1.5 h-4 w-4" /> Accountability Clearance
               </TabsTrigger>
               <TabsTrigger value="intangible-deactivation" className={cn(segmentTabsTriggerClassName, 'text-xs sm:text-sm')}>
                 <FileText className="mr-1.5 h-4 w-4" /> Intangible Deactivation
@@ -4066,17 +4069,9 @@ export default function DocumentsTab({
                   Asset Accountability Forms
                 </h3>
                 <span className="bg-blue-100 text-blue-800 text-sm px-2 py-1 rounded-full dark:bg-blue-900/30 dark:text-blue-200">
-                  {filteredForms.length}
+                  {filteredForms.filter(form => form.formOrigin !== 'clearance').length}
                 </span>
-                {clearanceEligibility?.canGenerate && (
-                  <Button size="sm" onClick={() => setShowGenerateClearance(true)} className="ml-auto bg-emerald-600 hover:bg-emerald-700 text-white">
-                    Generate Accountability Clearance Form
-                  </Button>
-                )}
               </div>
-              {clearanceEligibility && !clearanceEligibility.canGenerate && clearanceEligibility.reason && (
-                <p className="text-xs text-slate-500 mb-4">Clearance not available: {clearanceEligibility.reason}</p>
-              )}
 
               <div className="flex flex-col sm:flex-row gap-4 mb-6">
                 <div className="flex flex-col gap-1.5 flex-1 min-w-0">
@@ -4130,7 +4125,7 @@ export default function DocumentsTab({
                 </div>
               </div>
 
-              {filteredForms.length === 0 ? (
+              {filteredForms.filter(form => form.formOrigin !== 'clearance').length === 0 ? (
                 <div className="text-center py-12 rounded-xl border-2 border-dashed border-slate-200 bg-slate-50/50">
                   <div className="inline-flex p-3 bg-slate-100 rounded-full mb-4">
                     <FileCheck className="w-10 h-10 text-slate-400" />
@@ -4156,15 +4151,9 @@ export default function DocumentsTab({
                 </div>
               ) : (
                 <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-                  {filteredForms.map(form =>
-                    form.formOrigin === 'clearance' ? (
-                      <ClearanceFormCard
-                        key={form.id}
-                        form={form}
-                        onView={handleViewForm}
-                        onDownload={handleDownloadClearanceForm}
-                      />
-                    ) : (
+                  {filteredForms
+                    .filter(form => form.formOrigin !== 'clearance')
+                    .map(form => (
                       <AccountabilityFormCard
                         key={form.id}
                         form={form}
@@ -4174,8 +4163,53 @@ export default function DocumentsTab({
                         onDecline={handleDeclineAccountabilityForm}
                         showDownloadButton={false}
                       />
-                    )
-                  )}
+                    ))}
+                </div>
+              )}
+            </TabsContent>
+
+            {/* TabsContent: Accountability Clearance */}
+            <TabsContent value="clearance" className="mt-0">
+              <div className="flex items-center gap-3 mb-2">
+                <FileCheck className="w-6 h-6 text-emerald-600" />
+                <h3 className="text-xl font-semibold text-gray-900">
+                  Accountability Clearance Forms
+                </h3>
+                <span className="bg-emerald-100 text-emerald-800 text-sm px-2 py-1 rounded-full dark:bg-emerald-900/30 dark:text-emerald-200">
+                  {filteredForms.filter(form => form.formOrigin === 'clearance').length}
+                </span>
+                {clearanceEligibility?.canGenerate && (
+                  <Button size="sm" onClick={() => setShowGenerateClearance(true)} className="ml-auto bg-emerald-600 hover:bg-emerald-700 text-white">
+                    Generate Accountability Clearance Form
+                  </Button>
+                )}
+              </div>
+              {clearanceEligibility && !clearanceEligibility.canGenerate && clearanceEligibility.reason && (
+                <p className="text-xs text-slate-500 mb-4">Clearance not available: {clearanceEligibility.reason}</p>
+              )}
+
+              {filteredForms.filter(form => form.formOrigin === 'clearance').length === 0 ? (
+                <div className="text-center py-12 rounded-xl border-2 border-dashed border-slate-200 bg-slate-50/50">
+                  <div className="inline-flex p-3 bg-slate-100 rounded-full mb-4">
+                    <FileCheck className="w-10 h-10 text-slate-400" />
+                  </div>
+                  <p className="text-slate-600 text-lg font-medium">No accountability clearance forms yet</p>
+                  <p className="text-slate-400 text-sm mt-1">
+                    Your clearance forms will appear here when they are generated.
+                  </p>
+                </div>
+              ) : (
+                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+                  {filteredForms
+                    .filter(form => form.formOrigin === 'clearance')
+                    .map(form => (
+                      <ClearanceFormCard
+                        key={form.id}
+                        form={form}
+                        onView={handleViewForm}
+                        onDownload={handleDownloadClearanceForm}
+                      />
+                    ))}
                 </div>
               )}
             </TabsContent>

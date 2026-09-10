@@ -31,6 +31,10 @@ export interface AccountabilityFormSettingsRow extends RowDataPacket {
   department_format: string | null;
   date_format: string | null;
   include_date: 0 | 1 | null;
+  clearance_form_code: string | null;
+  clearance_department_format: string | null;
+  clearance_include_date: 0 | 1 | null;
+  clearance_date_format: string | null;
 }
 
 export interface CompanyCodePrefixRow extends RowDataPacket {
@@ -157,11 +161,41 @@ export async function getAccountabilityFormSettings(
   return rows[0] ?? null;
 }
 
+export async function getAccountabilityClearanceFormSettings(companyId: string): Promise<{
+  company_format: string | null;
+  department_format: string | null;
+  form_code: string | null;
+  include_date: 0 | 1 | null;
+  date_format: string | null;
+} | null> {
+  const [rows] = await pool.execute<RowDataPacket[]>(
+    `SELECT company_format, department_format, form_code, include_date, date_format
+     FROM accountability_clearance_form_settings
+     WHERE company_id = ? AND deleted_at IS NULL LIMIT 1`,
+    [companyId]
+  );
+  return (rows[0] as any) ?? null;
+}
+
 export async function getCompanyCodePrefix(
   companyId: string
 ): Promise<CompanyCodePrefixRow | null> {
   const [rows] = await pool.execute<CompanyCodePrefixRow[]>(
     `SELECT code, prefix FROM companies WHERE companyID = ? AND deleted_at IS NULL`,
+    [companyId]
+  );
+  return rows[0] ?? null;
+}
+
+export async function getHrDepartmentCodePrefix(
+  companyId: string
+): Promise<CompanyCodePrefixRow | null> {
+  const [rows] = await pool.execute<CompanyCodePrefixRow[]>(
+    `SELECT code, prefix FROM asset_mngmnt_departments
+     WHERE company_id = ? AND deleted_at IS NULL
+       AND LOWER(TRIM(name)) IN ('hr', 'human resources')
+     ORDER BY CASE WHEN LOWER(TRIM(name)) = 'hr' THEN 0 ELSE 1 END
+     LIMIT 1`,
     [companyId]
   );
   return rows[0] ?? null;
@@ -180,7 +214,7 @@ export async function getDepartmentCodePrefix(
 
 export async function getNextFormSequence(likeParam: string): Promise<number> {
   const [rows] = await pool.execute<NextSeqRow[]>(
-    `SELECT COALESCE(MAX(CAST(SUBSTRING_INDEX(form_number, '-', -1) AS UNSIGNED)), 0) + 1 as next_seq
+    `SELECT COALESCE(MAX(CAST(SUBSTRING_INDEX(form_number, '-', -1) AS UNSIGNED)), 0) + 1 AS next_seq
      FROM accountability_forms
      WHERE form_number LIKE CONCAT(?, '-%')`,
     [likeParam]
