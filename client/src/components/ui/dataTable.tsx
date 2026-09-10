@@ -149,8 +149,8 @@ function SortableTableHeader<T>({ header }: { header: Header<T, unknown> }) {
       ref={setNodeRef}
       style={{ width: size, minWidth: size, ...style }}
       className={cn(
-        'h-10 px-2 px-4 py-3 text-left align-middle text-xs font-medium uppercase tracking-wider text-gray-900 cursor-pointer hover:bg-gray-100 whitespace-nowrap transition-[transform,background-color] duration-150 hover:-translate-y-0.5',
-        isDragging && 'opacity-50 bg-gray-100'
+        'h-10 px-2 px-4 py-3 text-left align-middle text-xs font-medium uppercase tracking-wider text-gray-900 dark:text-muted-foreground cursor-pointer hover:bg-gray-100 dark:hover:bg-accent whitespace-nowrap transition-[transform,background-color] duration-150 hover:-translate-y-0.5',
+        isDragging && 'opacity-50 bg-gray-100 dark:bg-accent'
       )}
     >
       <div className="flex items-center gap-1">
@@ -344,7 +344,10 @@ export function DataTable<T>({
   const MobileCardSkeleton = () => (
     <div className="space-y-4">
       {Array.from({ length: 5 }, (_, i) => (
-        <div key={i} className="bg-white border border-gray-200 rounded-lg p-4">
+        <div
+          key={i}
+          className="bg-white border border-gray-200 rounded-lg p-4 dark:bg-card dark:border-input"
+        >
           <div className="space-y-3">
             {Array.from({ length: 3 }, (_, j) => (
               <div key={j} className="flex justify-between">
@@ -475,29 +478,34 @@ export function DataTable<T>({
   };
 
   return (
-    <section className="rounded-lg border border-gray-200 bg-white shadow-lg overflow-hidden">
+    <section className="rounded-lg border border-gray-200 bg-white shadow-lg overflow-hidden dark:border-input dark:bg-card">
       {/* Controls */}
       <div
         className={cn(
-          'flex flex-col gap-4 p-4 md:flex-row md:items-center bg-white',
+          'flex flex-col gap-4 p-4 md:flex-row md:items-end bg-white dark:bg-card',
           showSearch ? 'md:justify-between' : 'md:justify-end'
         )}
       >
         {showSearch ? (
-          <SearchWithColumnFilter
-            value={rawFilter}
-            onChange={setRawFilter}
-            placeholder={searchPlaceholder}
-            columnOptions={searchColumnOptions}
-            searchColumn={searchColumn}
-            onSearchColumnChange={setSearchColumn}
-            className="w-full md:max-w-md"
-          />
+          <div className="flex flex-col gap-1.5 w-full md:max-w-md min-w-0">
+            <span className="text-sm font-medium text-muted-foreground">
+              Search
+            </span>
+            <SearchWithColumnFilter
+              value={rawFilter}
+              onChange={setRawFilter}
+              placeholder={searchPlaceholder}
+              columnOptions={searchColumnOptions}
+              searchColumn={searchColumn}
+              onSearchColumnChange={setSearchColumn}
+              className="w-full"
+            />
+          </div>
         ) : null}
 
         <div className="flex flex-col gap-3 sm:flex-row sm:flex-wrap sm:items-center sm:justify-end">
           <div className="flex items-center gap-2 text-sm flex-wrap">
-            <span className="text-gray-600">Show</span>
+            <span className="text-gray-600 dark:text-muted-foreground">Show</span>
             <Input
               type="number"
               value={pagination.pageSize}
@@ -515,7 +523,10 @@ export function DataTable<T>({
                   <ChevronDown className="h-3 w-3" />
                 </Button>
               </DropdownMenuTrigger>
-              <DropdownMenuContent align="end" className="bg-white">
+              <DropdownMenuContent
+              align="end"
+              className="bg-white dark:bg-popover dark:border-input"
+            >
                 {[10, 20, 30, 50, 100].map(size => (
                   <DropdownMenuItem
                     key={size}
@@ -526,14 +537,16 @@ export function DataTable<T>({
                         pageIndex: 0,
                       })
                     }
-                    className="bg-white hover:bg-gray-200 cursor-pointer"
+                    className="bg-white hover:bg-gray-200 cursor-pointer dark:bg-transparent dark:hover:bg-accent dark:focus:bg-accent"
                   >
                     {size} rows
                   </DropdownMenuItem>
                 ))}
               </DropdownMenuContent>
             </DropdownMenu>
-            <span className="text-gray-600">entries</span>
+            <span className="text-gray-600 dark:text-muted-foreground">
+              entries
+            </span>
           </div>
 
           <DropdownMenu>
@@ -542,7 +555,10 @@ export function DataTable<T>({
                 Columns <ChevronDown className="ml-1 h-4 w-4" />
               </Button>
             </DropdownMenuTrigger>
-            <DropdownMenuContent align="end" className="w-48 bg-white">
+            <DropdownMenuContent
+              align="end"
+              className="w-48 bg-white dark:bg-popover dark:border-input"
+            >
               <DropdownMenuLabel>Toggle Columns</DropdownMenuLabel>
               <DropdownMenuSeparator />
               <div
@@ -555,7 +571,7 @@ export function DataTable<T>({
                   .map(col => (
                     <DropdownMenuCheckboxItem
                       key={col.id}
-                      className="bg-white hover:bg-gray-200 cursor-pointer"
+                      className="bg-white hover:bg-gray-200 cursor-pointer dark:bg-transparent dark:hover:bg-accent dark:focus:bg-accent"
                       checked={col.getIsVisible()}
                       onCheckedChange={v => col.getCanHide() && col.toggleVisibility(!!v)}
                       disabled={!col.getCanHide()}
@@ -568,7 +584,7 @@ export function DataTable<T>({
               </div>
               <DropdownMenuSeparator />
               <DropdownMenuItem
-                className="bg-white hover:bg-gray-200 cursor-pointer"
+                className="bg-white hover:bg-gray-200 cursor-pointer dark:bg-transparent dark:hover:bg-accent dark:focus:bg-accent"
                 onClick={resetColumnOrder}
               >
                 Reset column order
@@ -582,9 +598,11 @@ export function DataTable<T>({
 
       {/* Title with Badges */}
       {title && (
-        <div className="border-b px-4 py-3 sm:px-7 sm:py-2">
+        <div className="border-b px-4 py-3 sm:px-7 sm:py-2 dark:border-input">
           <div className="flex flex-col gap-2 sm:flex-row sm:flex-wrap sm:items-center sm:gap-3">
-            <h2 className="text-xl font-semibold text-gray-900">{title}</h2>
+            <h2 className="text-xl font-semibold text-gray-900 dark:text-foreground">
+              {title}
+            </h2>
             {titleBadge && (
               <Badge variant="outline" className="font-medium">
                 {titleBadge}
@@ -620,7 +638,7 @@ export function DataTable<T>({
                 className="w-full"
                 style={{ tableLayout: 'auto', minWidth: 'max-content' }}
               >
-                <TableHeader className="bg-gray-50">
+                <TableHeader className="bg-gray-50 dark:bg-muted/50">
                   {table.getHeaderGroups().map(headerGroup => (
                     <TableRow key={headerGroup.id}>
                       <SortableContext
@@ -643,7 +661,7 @@ export function DataTable<T>({
                       <React.Fragment key={row.id}>
                         <TableRow
                           className={cn(
-                            'h-12 cursor-pointer transition-colors hover:bg-gray-50',
+                            'h-12 cursor-pointer transition-colors hover:bg-gray-50 dark:hover:bg-accent/50',
                             getRowClassName?.(row)
                           )}
                           onClick={() => onRowClick?.(row)}
@@ -655,7 +673,7 @@ export function DataTable<T>({
                             return (
                               <TableCell
                                 key={cell.id}
-                                className="px-4 text-sm text-gray-700"
+                                className="px-4 text-sm text-gray-700 dark:text-foreground"
                                 style={{ width: colSize, minWidth: colSize }}
                               >
                                 {flexRender(
@@ -670,7 +688,7 @@ export function DataTable<T>({
                           <TableRow key={`${row.id}-expanded`}>
                             <TableCell
                               colSpan={row.getVisibleCells().length}
-                              className="bg-gray-50 p-4"
+                              className="bg-gray-50 p-4 dark:bg-muted/50"
                             >
                               <div className="ml-8 max-w-4xl">
                                 {renderSubComponent({ row })}
@@ -684,7 +702,7 @@ export function DataTable<T>({
                     <TableRow>
                       <TableCell
                         colSpan={columns.length}
-                        className="h-32 text-center text-gray-500"
+                        className="h-32 text-center text-gray-500 dark:text-muted-foreground"
                       >
                         {emptyState ? (
                           emptyState
@@ -723,7 +741,7 @@ export function DataTable<T>({
                 <div
                   key={row.id}
                   className={cn(
-                    'cursor-pointer rounded-lg border border-gray-200 bg-white p-4 shadow-sm transition-[transform,box-shadow] duration-150 hover:-translate-y-1 hover:shadow-md',
+                    'cursor-pointer rounded-lg border border-gray-200 bg-white p-4 shadow-sm transition-[transform,box-shadow] duration-150 hover:-translate-y-1 hover:shadow-md dark:border-input dark:bg-card',
                     getRowClassName?.(row),
                     mobileCardClassName
                   )}
@@ -738,26 +756,26 @@ export function DataTable<T>({
                           field.className
                         )}
                       >
-                        <span className="text-xs font-medium uppercase tracking-wider text-gray-500">
+                        <span className="text-xs font-medium uppercase tracking-wider text-gray-500 dark:text-muted-foreground">
                           {field.label}
                         </span>
-                        <div className="min-w-0 text-right text-sm font-medium text-gray-900">
+                        <div className="min-w-0 text-right text-sm font-medium text-gray-900 dark:text-foreground">
                           {field.value}
                         </div>
                       </div>
                     ))}
                     {secondaryFields.length > 0 && (
-                      <div className="border-t border-gray-100 pt-2">
+                      <div className="border-t border-gray-100 pt-2 dark:border-input">
                         <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
                           {secondaryFields.map(field => (
                             <div
                               key={field.key}
                               className={cn('text-xs', field.className)}
                             >
-                              <span className="font-medium text-gray-500">
+                              <span className="font-medium text-gray-500 dark:text-muted-foreground">
                                 {field.label}:
                               </span>
-                              <div className="mt-1 text-gray-900">
+                              <div className="mt-1 text-gray-900 dark:text-foreground">
                                 {field.value}
                               </div>
                             </div>
@@ -769,7 +787,7 @@ export function DataTable<T>({
                   {row.getIsExpanded() && renderSubComponent && (
                     <div
                       key={`${row.id}-expanded-mobile`}
-                      className="mt-4 border-t border-gray-100 pt-4"
+                      className="mt-4 border-t border-gray-100 pt-4 dark:border-input"
                     >
                       {renderSubComponent({ row })}
                     </div>
@@ -778,7 +796,7 @@ export function DataTable<T>({
               );
             })
           ) : (
-            <div className="h-32 flex flex-col items-center justify-center text-gray-500">
+            <div className="h-32 flex flex-col items-center justify-center text-gray-500 dark:text-muted-foreground">
               {emptyState ? (
                 emptyState
               ) : (
@@ -793,7 +811,7 @@ export function DataTable<T>({
       )}
 
       {/* Footer */}
-      <div className="flex flex-col gap-3 border-t bg-gray-50 px-4 py-3 text-sm text-gray-600 sm:flex-row sm:items-center sm:justify-between sm:px-6">
+      <div className="flex flex-col gap-3 border-t bg-gray-50 px-4 py-3 text-sm text-gray-600 sm:flex-row sm:items-center sm:justify-between sm:px-6 dark:border-input dark:bg-muted/50 dark:text-muted-foreground">
         <span>
           Showing <strong>{start}</strong> to <strong>{end}</strong> of{' '}
           <strong>{total}</strong> entries

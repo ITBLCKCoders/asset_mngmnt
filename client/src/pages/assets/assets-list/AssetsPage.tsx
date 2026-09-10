@@ -79,6 +79,7 @@ import { useBarcodeAssetOrBuilderScan } from '@/hooks/useBarcodeAssetOrBuilderSc
 import type { AssetBuilderRecord } from '@/utils/builderScan';
 import { PDFViewer } from '@/components/PDFViewer';
 import { ASSET_SEARCH_COLUMNS, INTANGIBLE_ASSET_SEARCH_COLUMNS } from '@/utils/assetSearchColumns';
+import { SearchWithColumnFilter } from '@/components/common/SearchWithColumnFilter';
 import jsPDF from 'jspdf';
 import autoTable from 'jspdf-autotable';
 
@@ -2096,15 +2097,14 @@ export function AssetsPage() {
               </div>
 
               <div className="flex items-center gap-4">
-                <div className="relative flex-1 max-w-md rounded-lg border bg-white px-3 shadow-sm">
-                  <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 h-4 w-4" />
-                  <Input
+                <div className="flex flex-col gap-1.5 flex-1 max-w-md min-w-0">
+                  <span className="text-sm font-medium text-muted-foreground">
+                    Search
+                  </span>
+                  <SearchWithColumnFilter
                     placeholder="Search asset builders..."
                     value={searchTerm}
-                    onChange={(e: React.ChangeEvent<HTMLInputElement>) =>
-                      setSearchTerm(e.target.value)
-                    }
-                    className="pl-10 border-0 bg-transparent shadow-none focus-visible:ring-0 focus-visible:ring-offset-0"
+                    onChange={setSearchTerm}
                   />
                 </div>
               </div>

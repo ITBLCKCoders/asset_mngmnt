@@ -57,6 +57,14 @@ export const BORROW_FILTER_OPTIONS: SearchColumnOption[] = [
   { label: 'Purpose', value: 'purpose' },
 ];
 
+export const INTANGIBLE_DEACTIVATION_FILTER_OPTIONS: SearchColumnOption[] = [
+  { label: 'All Fields', value: ALL_FILTER_VALUE },
+  { label: 'Form Number', value: 'formNumber' },
+  { label: 'Employee', value: 'employee' },
+  { label: 'Asset', value: 'asset' },
+  { label: 'Status', value: 'status' },
+];
+
 export const APPROVAL_FILTER_OPTIONS: SearchColumnOption[] = [
   { label: 'All Fields', value: ALL_FILTER_VALUE },
   { label: 'Form Number', value: 'formNumber' },

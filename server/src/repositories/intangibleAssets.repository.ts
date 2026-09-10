@@ -269,9 +269,27 @@ export async function getActiveAssignmentsByUser(
   companyId: string
 ): Promise<any[]> {
   const [rows] = (await pool.query(
-    `SELECT iaa.*, ia.name, ia.description, ia.type, ia.status AS asset_status
+    `SELECT iaa.*, ia.name, ia.description, ia.remarks, ia.type, ia.risk_level_id,
+            ia.status AS asset_status, ia.company_id, ia.created_at, ia.created_by,
+            ia.updated_at, ia.updated_by,
+            c.name AS company_name,
+            CONCAT(COALESCE(uc.first_name, ''), ' ', COALESCE(uc.last_name, '')) AS created_by_name,
+            CONCAT(COALESCE(uu.first_name, ''), ' ', COALESCE(uu.last_name, '')) AS updated_by_name,
+            td.departmentID AS type_department_id, td.name AS type_department_name, td.code AS type_department_code,
+            rl.id AS risk_level_id_resolved, rl.name AS risk_level_name, rl.color AS risk_level_color
      FROM intangible_asset_assignments iaa
      INNER JOIN intangible_assets ia ON iaa.intangible_asset_id = ia.id
+     LEFT JOIN companies c ON ia.company_id = c.companyID
+     LEFT JOIN users uc ON ia.created_by = uc.userID
+     LEFT JOIN users uu ON ia.updated_by = uu.userID
+     LEFT JOIN intangible_asset_types iat
+       ON ia.type = iat.name
+       AND iat.company_id = ia.company_id
+       AND iat.deleted_at IS NULL
+     LEFT JOIN asset_mngmnt_departments td
+       ON iat.department_id = td.departmentID
+       AND td.deleted_at IS NULL
+     LEFT JOIN risk_levels rl ON ia.risk_level_id = rl.id AND rl.deleted_at IS NULL
      WHERE iaa.user_id = ? AND ia.company_id = ? AND iaa.status = 'Active' AND iaa.deleted_at IS NULL`,
     [userId, companyId]
   )) as any[];

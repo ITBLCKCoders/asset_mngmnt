@@ -6,7 +6,6 @@ import {
   ArrowLeft,
   ArrowRightLeft,
   FileText,
-  Search,
   Package,
   Download,
 } from 'lucide-react';
@@ -15,6 +14,7 @@ import { PageHeader } from '@/components/common/PageHeader';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Input } from '@/components/ui/input';
+import { SearchWithColumnFilter } from '@/components/common/SearchWithColumnFilter';
 import { Shimmer } from '@/components/ui/shimmer';
 import { api } from '@/lib/api';
 import { toast } from 'sonner';
@@ -276,13 +276,14 @@ export default function MyTransferRequestsPage() {
                   </span>
                 ) : null}
               </p>
-              <div className="relative w-full sm:max-w-sm">
-                <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-400" />
-                <Input
+              <div className="flex flex-col gap-1.5 w-full sm:max-w-sm min-w-0">
+                <span className="text-sm font-medium text-muted-foreground">
+                  Search
+                </span>
+                <SearchWithColumnFilter
                   placeholder="Search form, assets, recipient, status…"
                   value={searchQuery}
-                  onChange={e => setSearchQuery(e.target.value)}
-                  className="border-gray-200 pl-9 focus:border-red-500 focus:ring-red-500"
+                  onChange={setSearchQuery}
                 />
               </div>
             </div>

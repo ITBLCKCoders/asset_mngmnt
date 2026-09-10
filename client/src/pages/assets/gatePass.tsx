@@ -7,7 +7,6 @@ import {
   User,
   MapPin,
   Building,
-  Search,
   CheckCircle2,
   DoorOpen,
   ChevronDown,
@@ -761,14 +760,14 @@ export default function GatePass() {
                     <p className="text-sm text-gray-500 mt-1">
                       Select whole builder or individual assets for gate pass.
                     </p>
-                    <div className="relative mt-4 w-full">
-                      <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-gray-400" />
-                      <Input
-                        type="text"
+                    <div className="flex flex-col gap-1.5 mt-4 w-full min-w-0">
+                      <span className="text-sm font-medium text-muted-foreground">
+                        Search
+                      </span>
+                      <SearchWithColumnFilter
                         placeholder="Search by builder name or asset code..."
                         value={builderSearchTerm}
-                        onChange={e => setBuilderSearchTerm(e.target.value)}
-                        className="pl-10 w-full h-10 border-gray-200 focus:border-red-500 focus:ring-red-500"
+                        onChange={setBuilderSearchTerm}
                       />
                     </div>
                   </CardHeader>

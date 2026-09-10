@@ -1,11 +1,11 @@
 'use client';
 
 import { useEffect, useState, useMemo } from 'react';
-import { Tag, QrCode, Package, Boxes, Crown, Search } from 'lucide-react';
+import { Tag, QrCode, Package, Boxes, Crown } from 'lucide-react';
 import { Tabs, TabsList, TabsTrigger, TabsContent, segmentTabsListClassName, segmentTabsTriggerClassName } from '@/components/ui/tabs';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
-import { Input } from '@/components/ui/input';
+import { SearchWithColumnFilter } from '@/components/common/SearchWithColumnFilter';
 import { PageHeader } from '@/components/common/PageHeader';
 import { Button } from '@/components/ui/button';
 import { DataTable } from '@/components/ui/dataTable';
@@ -657,14 +657,14 @@ export default function AssetsTagging() {
                 <p className="text-sm text-gray-500 mt-1">
                   Select a builder to generate one tag per built asset (parent asset code).
                 </p>
-                <div className="relative mt-4 w-full max-w-md">
-                  <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-gray-400" />
-                  <Input
-                    type="text"
+                <div className="flex flex-col gap-1.5 mt-4 w-full max-w-md min-w-0">
+                  <span className="text-sm font-medium text-muted-foreground">
+                    Search
+                  </span>
+                  <SearchWithColumnFilter
                     placeholder="Search by builder name or asset code..."
                     value={builderSearchTerm}
-                    onChange={e => setBuilderSearchTerm(e.target.value)}
-                    className="pl-10 h-10 border-gray-200 focus:border-red-500 focus:ring-red-500"
+                    onChange={setBuilderSearchTerm}
                   />
                 </div>
               </CardHeader>

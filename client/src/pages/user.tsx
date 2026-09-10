@@ -12,7 +12,6 @@ import {
   Shield,
   Activity,
   Clock,
-  Search,
   UserCheck,
   AlertCircle,
   UserX,
@@ -55,7 +54,7 @@ import {
   SelectValue,
 } from '@/components/ui/select';
 import { Label } from '@/components/ui/label';
-import { Input } from '@/components/ui/input';
+import { SearchWithColumnFilter } from '@/components/common/SearchWithColumnFilter';
 import { toast } from 'sonner';
 import type { Role } from '@/types/assets';
 import { Shimmer } from '@/components/ui/shimmer';
@@ -185,23 +184,21 @@ function SearchableApproverSelect({
           </Button>
         </PopoverTrigger>
         <PopoverContent
-          className="w-[var(--radix-popover-trigger-width)] overflow-hidden rounded-xl border-gray-200 bg-white p-0 shadow-xl"
+          className="w-[var(--radix-popover-trigger-width)] overflow-hidden rounded-xl border-gray-200 bg-white p-0 shadow-xl dark:border-input dark:bg-popover"
           align="start"
         >
-          <div className="space-y-2 border-b border-gray-100 p-2">
+          <div className="space-y-2 border-b border-gray-100 p-2 dark:border-input">
             <div className="relative">
-              <Search className="absolute left-2.5 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-400" />
-              <Input
+              <SearchWithColumnFilter
                 value={search}
-                onChange={e => setSearch(e.target.value)}
+                onChange={setSearch}
                 placeholder="Search users..."
-                className="h-9 pl-8"
               />
             </div>
             <select
               value={departmentName}
               onChange={e => setDepartmentName(e.target.value)}
-              className="h-9 w-full rounded-lg border border-gray-200 bg-white px-2.5 text-sm text-gray-700 focus:border-red-400 focus:outline-none focus:ring-2 focus:ring-red-500/20"
+              className="h-9 w-full rounded-md border border-gray-200 bg-white px-2.5 text-sm text-gray-700 focus:border-red-400 focus:outline-none focus:ring-2 focus:ring-red-500/20 dark:border-input dark:bg-input/30 dark:text-foreground"
             >
               <option value="">All Departments</option>
               {departmentNames.map(name => (
@@ -667,14 +664,14 @@ function UserPermissions() {
                   </CardTitle>
                 </CardHeader>
                 <CardContent className="p-6 flex-1 flex flex-col min-h-0 space-y-4">
-                  <div className="relative mb-4">
-                    <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 h-4 w-4" />
-                    <input
-                      type="text"
+                  <div className="flex flex-col gap-1.5 mb-4 min-w-0">
+                    <span className="text-sm font-medium text-muted-foreground">
+                      Search
+                    </span>
+                    <SearchWithColumnFilter
                       placeholder="Search users..."
                       value={searchTerm}
-                      onChange={e => setSearchTerm(e.target.value)}
-                      className="w-full pl-10 pr-4 py-2 sm:py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-red-500 focus:border-transparent transition-all duration-200 text-sm sm:text-base"
+                      onChange={setSearchTerm}
                     />
                   </div>
 

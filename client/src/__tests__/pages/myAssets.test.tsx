@@ -84,13 +84,21 @@ describe('MyAssetsPage', () => {
     });
   });
 
+  it('should render the Intangible scope tab', async () => {
+    (api.get as any).mockResolvedValue({ assets: [] });
+    renderPage();
+    await waitFor(() => {
+      expect(screen.getByRole('tab', { name: /Intangible/ })).toBeDefined();
+    });
+  });
+
   it('should show shimmer during initial loading', async () => {
     (api.get as any).mockImplementation(
       () => new Promise(() => {})
     );
     renderPage();
     await waitFor(() => {
-      const shimmers = document.querySelectorAll('[style*="background-position"]');
+      const shimmers = document.querySelectorAll('[data-slot="shimmer"]');
       expect(shimmers.length).toBeGreaterThan(0);
     });
   });

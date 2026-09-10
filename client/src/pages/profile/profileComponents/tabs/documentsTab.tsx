@@ -14,14 +14,13 @@ import {
   AppAlertDialogGradientHeader,
   AppAlertDialogMessage,
 } from '@/components/common/appDialogChrome';
-import { Input } from '@/components/ui/input';
+import { SearchWithColumnFilter } from '@/components/common/SearchWithColumnFilter';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import {
   FileText,
   FileCheck,
   FileDown,
-  Search,
   Package,
   User,
   Calendar,
@@ -3898,14 +3897,15 @@ export default function DocumentsTab({
               )}
 
               <div className="flex flex-col sm:flex-row gap-4 mb-6">
-                <div className="relative flex-1">
-                  <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 w-4 h-4" />
-                  <Input
-                    type="text"
+                <div className="flex flex-col gap-1.5 flex-1 min-w-0">
+                  <span className="text-sm font-medium text-muted-foreground">
+                    Search
+                  </span>
+                  <SearchWithColumnFilter
                     placeholder="Search form number, employee, assets, department..."
                     value={searchQuery}
-                    onChange={e => setSearchQuery(e.target.value)}
-                    className="pl-10 pr-4 py-2 w-full max-w-md"
+                    onChange={setSearchQuery}
+                    className="max-w-md"
                   />
                 </div>
                 <div className="flex gap-2">
@@ -4010,14 +4010,15 @@ export default function DocumentsTab({
                 </span>
               </div>
 
-              <div className="relative mb-6">
-                <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 w-4 h-4" />
-                <Input
-                  type="text"
+              <div className="flex flex-col gap-1.5 mb-6">
+                <span className="text-sm font-medium text-muted-foreground">
+                  Search
+                </span>
+                <SearchWithColumnFilter
                   placeholder="Search form number, assets, returner, department, notes..."
                   value={returnSearchQuery}
-                  onChange={e => setReturnSearchQuery(e.target.value)}
-                  className="pl-10 pr-4 py-2 w-full max-w-md"
+                  onChange={setReturnSearchQuery}
+                  className="max-w-md"
                 />
               </div>
 
@@ -4116,14 +4117,15 @@ export default function DocumentsTab({
                 </span>
               </div>
 
-              <div className="relative mb-6">
-                <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 w-4 h-4" />
-                <Input
-                  type="text"
+              <div className="flex flex-col gap-1.5 mb-6">
+                <span className="text-sm font-medium text-muted-foreground">
+                  Search
+                </span>
+                <SearchWithColumnFilter
                   placeholder="Search form number, assets, users, department, recipient..."
                   value={transferSearchQuery}
-                  onChange={e => setTransferSearchQuery(e.target.value)}
-                  className="pl-10 pr-4 py-2 w-full max-w-md"
+                  onChange={setTransferSearchQuery}
+                  className="max-w-md"
                 />
               </div>
 
@@ -4206,14 +4208,15 @@ export default function DocumentsTab({
                 </span>
               </div>
 
-              <div className="relative mb-6">
-                <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 w-4 h-4" />
-                <Input
-                  type="text"
+              <div className="flex flex-col gap-1.5 mb-6">
+                <span className="text-sm font-medium text-muted-foreground">
+                  Search
+                </span>
+                <SearchWithColumnFilter
                   placeholder="Search form number, equipment, purpose, status..."
                   value={borrowSearchQuery}
-                  onChange={e => setBorrowSearchQuery(e.target.value)}
-                  className="pl-10 pr-4 py-2 w-full max-w-md"
+                  onChange={setBorrowSearchQuery}
+                  className="max-w-md"
                 />
               </div>
 
@@ -4288,14 +4291,15 @@ export default function DocumentsTab({
                 </span>
               </div>
 
-              <div className="relative mb-6">
-                <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 w-4 h-4" />
-                <Input
-                  type="text"
+              <div className="flex flex-col gap-1.5 mb-6">
+                <span className="text-sm font-medium text-muted-foreground">
+                  Search
+                </span>
+                <SearchWithColumnFilter
                   placeholder="Search form number, employee, asset..."
                   value={checklistSearchQuery}
-                  onChange={e => setChecklistSearchQuery(e.target.value)}
-                  className="pl-10 pr-4 py-2 w-full max-w-md"
+                  onChange={setChecklistSearchQuery}
+                  className="max-w-md"
                 />
               </div>
 

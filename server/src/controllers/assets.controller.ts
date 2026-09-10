@@ -30,6 +30,7 @@ import {
   setAssetOriginatingCompany,
 } from '../utils/companyTransferVisibility.js';
 import { attachBuilderGroupingToAssets } from '../utils/assetBuilderGrouping.js';
+import * as intangibleRepo from '../repositories/intangibleAssets.repository.js';
 
 /** Matches `sp_create_asset` / `sp_update_asset` `p_status` ENUM (excludes UI-only `Assigned`). */
 const STORED_PROC_ASSET_STATUSES = new Set([
@@ -183,6 +184,139 @@ export async function getMyAssetsHandler(req: AuthRequest, res: Response) {
     const userId = req.user!.userID;
     logger.info(`Fetching assets for user: ${userId}`);
 
+    const scopeParam = req.query.scope as string | undefined;
+    const isIntangibleScope = scopeParam === 'intangible';
+
+    // Dedicated Intangible tab: only Active intangible assignments for this user.
+    // Pending (Inactive/unsigned copy) rows stay hidden here by design.
+    if (isIntangibleScope) {
+      const { companyId } = await getAssetScope(pool, userId);
+      if (!companyId) {
+        return res.json({ assets: [] });
+      }
+      const rows = await intangibleRepo.getActiveAssignmentsByUser(
+        userId,
+        companyId
+      );
+      const userName = (req.user as any)?.name ?? '';
+      const userEmail = (req.user as any)?.email ?? '';
+      const myIntangibles = rows.map((row: any) => {
+        const intangibleId = String(
+          row.intangible_asset_id ?? row.id ?? ''
+        );
+        const typeDepartment =
+          row.type_department_id || row.type_department_name
+            ? {
+                id: row.type_department_id ?? null,
+                name: row.type_department_name ?? null,
+                code: row.type_department_code ?? undefined,
+              }
+            : null;
+        const riskLevel =
+          row.risk_level_id || row.risk_level_name
+            ? {
+                id: row.risk_level_id ?? row.risk_level_id_resolved ?? null,
+                name: row.risk_level_name ?? null,
+                color: row.risk_level_color ?? undefined,
+              }
+            : null;
+        return {
+          assetID: intangibleId,
+          asset_code: intangibleId,
+          tag_code: null,
+          name: row.name ?? '',
+          description: row.description ?? null,
+          remarks: row.remarks ?? null,
+          category_id: null,
+          category_name: 'Intangible',
+          supplier: null,
+          type_id: null,
+          type_name: row.type ?? null,
+          type_department: typeDepartment,
+          risk_level: riskLevel,
+          brand: null,
+          model: null,
+          serial: null,
+          image_url: null,
+          purchase_date: null,
+          asset_value: null,
+          salvage_value: 0,
+          depreciation_method: null,
+          useful_life_years: null,
+          annual_depreciation: null,
+          depreciation_start_date: null,
+          company_id: row.company_id ?? companyId,
+          company_name: row.company_name ?? null,
+          company_logo_url: null,
+          location_id: null,
+          location_name: null,
+          location_room_id: null,
+          location_room_name: null,
+          department_id: row.department_id ?? null,
+          department_name: null,
+          location_notes: null,
+          warranty_months: null,
+          condition: 'Good',
+          maintenance_schedule: 'None',
+          next_maintenance_date: null,
+          status: 'In Use',
+          is_old_unit: 0,
+          building: null,
+          room_name: null,
+          last_maintenance_date: null,
+          department: null,
+          created_by_name: row.created_by_name ?? null,
+          updated_by_name: row.updated_by_name ?? null,
+          deleted_at: null,
+          deleted_by: null,
+          created_at: row.created_at ?? new Date().toISOString(),
+          created_by: row.created_by ?? null,
+          updated_at: row.updated_at ?? row.created_at ?? new Date().toISOString(),
+          updated_by: row.updated_by ?? null,
+          specifications: [],
+          builderHistory: null,
+          documents: [],
+          currentAssignment: {
+            assignmentID: row.assignmentID ?? row.id ?? null,
+            user: {
+              id: userId,
+              name: userName,
+              email: userEmail,
+            },
+            department: null,
+            location: null,
+            assignedDate: row.assigned_date ?? null,
+            status: 'Active',
+          },
+          assignedTo: userName || null,
+          pendingAssignment: null,
+          isPendingSignature: false,
+          assignmentHistory: [],
+          accountabilityForms: [],
+          isAssetBuilder: false,
+          isBuilderChild: false,
+          builderStatus: null,
+          children: [],
+          isIntangible: true,
+          assignees: [
+            {
+              userId,
+              firstName: '',
+              lastName: '',
+              email: userEmail,
+              assignedDate: row.assigned_date
+                ? String(row.assigned_date)
+                : undefined,
+            },
+          ],
+        };
+      });
+      logger.info(
+        `Found ${myIntangibles.length} intangible assets assigned to user ${userId}`
+      );
+      return res.json({ assets: myIntangibles });
+    }
+
     // First, get all active assignments for the current user
     const assetIds = await assetRepo.getActiveAssignmentAssetIdsForUser(userId);
 
@@ -207,7 +341,7 @@ export async function getMyAssetsHandler(req: AuthRequest, res: Response) {
 
     // Accept optional scope query param for IT/Admin tab switching. Applied for
     // every user so anyone can view both their IT and Admin assigned assets.
-    const scopeParam = req.query.scope as string | undefined;
+    // (`scope=intangible` is handled by the early branch above.)
     const scopeOverride =
       scopeParam === 'it' || scopeParam === 'admin' ? scopeParam : undefined;
     if (scopeOverride) {

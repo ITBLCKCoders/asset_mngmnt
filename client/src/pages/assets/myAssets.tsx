@@ -82,8 +82,8 @@ function mapMyAssetDto(apiAsset: AssetResponseDto): Asset {
     name: apiAsset.name,
     image: apiAsset.image_url || '',
     description: apiAsset.description || '',
-    category: apiAsset.category_name || apiAsset.category_id || '',
-    type: apiAsset.type_name || apiAsset.type_id || '',
+    category: apiAsset.category_name || (apiAsset as any).category || '',
+    type: apiAsset.type_name || (apiAsset as any).type || '',
     serialNo: apiAsset.serial || '',
     modelNo: apiAsset.model || '',
     brand: apiAsset.brand || '',
@@ -144,6 +144,15 @@ function mapMyAssetDto(apiAsset: AssetResponseDto): Asset {
     isBuilderChild: apiAsset.isBuilderChild || false,
     children,
     expanded: false,
+    // Intangible passthrough (backend scope=intangible branch)
+    ...((apiAsset as any).isIntangible
+      ? {
+          isIntangible: true,
+          remarks: (apiAsset as any).remarks ?? null,
+          type_department: (apiAsset as any).type_department ?? null,
+          risk_level: (apiAsset as any).risk_level ?? null,
+        }
+      : {}),
   } as Asset;
 }
 
@@ -162,11 +171,12 @@ export default function MyAssetsPage() {
   const [treeModalAsset, setTreeModalAsset] = useState<Asset | null>(null);
   const [searchTerm, setSearchTerm] = useState('');
   const [searchColumn, setSearchColumn] = useState('all');
-  const [scope, setScope] = useState<'it' | 'admin'>('it');
+  const [scope, setScope] = useState<'it' | 'admin' | 'intangible'>('it');
   const [scopeCounts, setScopeCounts] = useState<{
     it: number | null;
     admin: number | null;
-  }>({ it: null, admin: null });
+    intangible: number | null;
+  }>({ it: null, admin: null, intangible: null });
 
   const fetchMyAssets = async () => {
     if (!user) return;
@@ -204,8 +214,8 @@ export default function MyAssetsPage() {
           name: asset.name,
           image: asset.image_url || '',
           description: asset.description || '',
-          category: asset.category_name || asset.category_id || '',
-          type: asset.type_name || asset.type_id || '',
+          category: asset.category_name || (asset as any).category || '',
+          type: asset.type_name || (asset as any).type || '',
           serialNo: asset.serial || '',
           modelNo: asset.model || '',
           brand: asset.brand || '',
@@ -268,6 +278,15 @@ export default function MyAssetsPage() {
           isBuilderChild: asset.isBuilderChild || false,
           children: [],
           expanded: false,
+          // Intangible passthrough (backend scope=intangible branch)
+          ...((asset as any).isIntangible
+            ? {
+                isIntangible: true,
+                remarks: (asset as any).remarks ?? null,
+                type_department: (asset as any).type_department ?? null,
+                risk_level: (asset as any).risk_level ?? null,
+              }
+            : {}),
         };
         assetMap.set(mappedAsset.id, mappedAsset);
         return mappedAsset;
@@ -349,21 +368,25 @@ export default function MyAssetsPage() {
     if (!user || userLoading) return;
     const fetchScopeCounts = async () => {
       try {
-        const [itRes, adminRes] = await Promise.all([
+        const [itRes, adminRes, intangibleRes] = await Promise.all([
           api.get<{ assets: AssetResponseDto[] }>(
             `/assets/my-assets?scope=${encodeURIComponent('it')}`
           ),
           api.get<{ assets: AssetResponseDto[] }>(
             `/assets/my-assets?scope=${encodeURIComponent('admin')}`
           ),
+          api.get<{ assets: AssetResponseDto[] }>(
+            `/assets/my-assets?scope=${encodeURIComponent('intangible')}`
+          ),
         ]);
         setScopeCounts({
           it: itRes.assets?.length ?? 0,
           admin: adminRes.assets?.length ?? 0,
+          intangible: intangibleRes.assets?.length ?? 0,
         });
       } catch (error) {
         console.error('Failed to fetch scope counts:', error);
-        setScopeCounts({ it: 0, admin: 0 });
+        setScopeCounts({ it: 0, admin: 0, intangible: 0 });
       }
     };
     fetchScopeCounts();
@@ -375,6 +398,15 @@ export default function MyAssetsPage() {
     
     // Filter function that checks asset and its children recursively
     const matchesSearch = (asset: Asset): boolean => {
+      const extra = asset as any;
+      const riskName =
+        typeof extra.risk_level === 'object'
+          ? extra.risk_level?.name
+          : extra.risk_level;
+      const typeDeptName =
+        typeof extra.type_department === 'object'
+          ? extra.type_department?.name
+          : extra.type_department;
       if (searchColumn === 'all') {
         if (
           asset.name.toLowerCase().includes(q) ||
@@ -388,7 +420,10 @@ export default function MyAssetsPage() {
           asset.department.toLowerCase().includes(q) ||
           asset.location.toLowerCase().includes(q) ||
           asset.assignedTo.toLowerCase().includes(q) ||
-          asset.supplier.toLowerCase().includes(q)
+          asset.supplier.toLowerCase().includes(q) ||
+          String(extra.remarks ?? '').toLowerCase().includes(q) ||
+          String(riskName ?? '').toLowerCase().includes(q) ||
+          String(typeDeptName ?? '').toLowerCase().includes(q)
         ) {
           return true;
         }
@@ -486,6 +521,15 @@ export default function MyAssetsPage() {
     const matchesSearch = (a: Asset): boolean => {
       const q = searchTerm.toLowerCase().trim();
       if (!q) return true;
+      const extra = a as any;
+      const riskName =
+        typeof extra.risk_level === 'object'
+          ? extra.risk_level?.name
+          : extra.risk_level;
+      const typeDeptName =
+        typeof extra.type_department === 'object'
+          ? extra.type_department?.name
+          : extra.type_department;
       if (searchColumn === 'all') {
         if (
           a.name.toLowerCase().includes(q) ||
@@ -499,7 +543,10 @@ export default function MyAssetsPage() {
           a.department.toLowerCase().includes(q) ||
           a.location.toLowerCase().includes(q) ||
           a.assignedTo.toLowerCase().includes(q) ||
-          a.supplier.toLowerCase().includes(q)
+          a.supplier.toLowerCase().includes(q) ||
+          String(extra.remarks ?? '').toLowerCase().includes(q) ||
+          String(riskName ?? '').toLowerCase().includes(q) ||
+          String(typeDeptName ?? '').toLowerCase().includes(q)
         ) {
           return true;
         }
@@ -521,6 +568,17 @@ export default function MyAssetsPage() {
 
     const statusColor = getStatusColor(asset.status);
     const conditionColor = getConditionColor(asset.condition);
+    const isIntangible =
+      (asset as any).isIntangible === true ||
+      String(asset.category ?? '').toLowerCase() === 'intangible';
+    const riskName =
+      typeof (asset as any).risk_level === 'object'
+        ? (asset as any).risk_level?.name
+        : (asset as any).risk_level;
+    const typeDeptName =
+      typeof (asset as any).type_department === 'object'
+        ? (asset as any).type_department?.name
+        : (asset as any).type_department;
     const displayStatus =
       asset.isAssetBuilder && asset.builderStatus
         ? asset.builderStatus
@@ -536,6 +594,78 @@ export default function MyAssetsPage() {
       e.stopPropagation();
       onClick(asset);
     };
+
+    // Simple card for intangibles: no picture, no UUID/code badge.
+    if (isIntangible) {
+      const remarks = (asset as any).remarks as string | null;
+      return (
+        <Card
+          className="border border-gray-200 shadow-sm hover:shadow-md transition-shadow cursor-pointer flex flex-col rounded-lg"
+          onClick={handleCardClick}
+        >
+          <CardHeader className="pb-3">
+            <div className="flex items-center gap-2 mb-2 flex-wrap">
+              <Badge className="text-xs bg-purple-100 text-purple-800 dark:bg-purple-900/30 dark:text-purple-200">
+                Intangible
+              </Badge>
+              <Badge className={`text-xs ${statusColor}`}>
+                {displayStatus}
+              </Badge>
+            </div>
+            <CardTitle className="text-lg font-semibold text-gray-900 line-clamp-2">
+              {asset.name}
+            </CardTitle>
+            {asset.description && (
+              <p className="text-sm text-gray-500 line-clamp-2">
+                {asset.description}
+              </p>
+            )}
+          </CardHeader>
+
+          <CardContent className="flex-1 flex flex-col justify-between space-y-4 bg-white rounded-lg">
+            <div className="space-y-2">
+              {asset.type && (
+                <div className="flex items-center gap-2 text-sm text-gray-600">
+                  <FileText className="h-4 w-4" />
+                  <span className="truncate">{asset.type}</span>
+                </div>
+              )}
+
+              {typeDeptName && (
+                <div className="flex items-center gap-2 text-sm text-gray-600">
+                  <User className="h-4 w-4" />
+                  <span className="truncate">{typeDeptName}</span>
+                </div>
+              )}
+
+              {riskName && (
+                <div className="text-xs text-gray-500">
+                  Risk: {riskName}
+                </div>
+              )}
+
+              {remarks && (
+                <div className="text-xs text-gray-500 line-clamp-2">
+                  {remarks}
+                </div>
+              )}
+            </div>
+
+            <Button
+              variant="outline"
+              size="sm"
+              className="w-full"
+              onClick={e => {
+                e.stopPropagation();
+                onClick(asset);
+              }}
+            >
+              View Details
+            </Button>
+          </CardContent>
+        </Card>
+      );
+    }
 
     return (
       <Card
@@ -1038,8 +1168,8 @@ export default function MyAssetsPage() {
           description={`Assets assigned to ${user.name} • ${assets.length} items`}
         >
           <div className="flex flex-col sm:flex-row sm:items-center gap-3">
-            <Tabs value={scope} onValueChange={v => setScope(v as 'it' | 'admin')} className="w-full sm:w-auto">
-              <TabsList className={segmentTabsListClassName + ' grid grid-cols-2 max-w-full sm:max-w-[320px]'}>
+            <Tabs value={scope} onValueChange={v => setScope(v as 'it' | 'admin' | 'intangible')} className="w-full sm:w-auto">
+              <TabsList className={segmentTabsListClassName + ' grid grid-cols-3 max-w-full sm:max-w-[480px]'}>
                 <TabsTrigger value="it" className={segmentTabsTriggerClassName + ' flex items-center gap-2'}>
                   IT Asset
                   {scopeCounts.it != null && (
@@ -1053,6 +1183,14 @@ export default function MyAssetsPage() {
                   {scopeCounts.admin != null && (
                     <span className="tab-count ml-1 inline-flex h-[22px] min-w-[22px] items-center justify-center rounded-full bg-slate-300/90 px-1.5 text-xs font-bold text-slate-800">
                       {scopeCounts.admin}
+                    </span>
+                  )}
+                </TabsTrigger>
+                <TabsTrigger value="intangible" className={segmentTabsTriggerClassName + ' flex items-center gap-2'}>
+                  Intangible
+                  {scopeCounts.intangible != null && (
+                    <span className="tab-count ml-1 inline-flex h-[22px] min-w-[22px] items-center justify-center rounded-full bg-slate-300/90 px-1.5 text-xs font-bold text-slate-800">
+                      {scopeCounts.intangible}
                     </span>
                   )}
                 </TabsTrigger>
