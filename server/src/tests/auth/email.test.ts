@@ -17,7 +17,7 @@ jest.mock('../../utils/redact.js', () => ({
   redactEmail: (e: string) => e,
 }));
 
-const { sendVerificationOTP, verifyOTP } = require('../../auth/email.js');
+const { sendVerificationOTP, verifyOTP, sendSigningOTP, verifySigningOTP, normalizeSigningOtpPurpose, getSigningOtpTemplate } = require('../../auth/email.js');
 
 describe('Auth Email (OTP)', () => {
   beforeEach(() => {
@@ -36,7 +36,7 @@ describe('Auth Email (OTP)', () => {
       (mockPool.execute as jest.Mock).mockResolvedValue([[], []]);
       mockSendEmail.mockResolvedValue(undefined);
       await sendVerificationOTP('user-1', 'user@test.com');
-      expect(mockSendEmail).toHaveBeenCalledWith('user@test.com', 'Your OTP Code – Asset Management', expect.any(String), expect.any(String));
+      expect(mockSendEmail).toHaveBeenCalledWith('user@test.com', 'Verify your email – Asset Management', expect.any(String), expect.any(String));
     });
   });
 
@@ -66,6 +66,54 @@ describe('Auth Email (OTP)', () => {
 
       const result = await verifyOTP('123456');
       expect(result.error).toBe('User not found');
+    });
+  });
+
+  describe('normalizeSigningOtpPurpose', () => {
+    it('should accept known purposes and reject unknown values', () => {
+      expect(normalizeSigningOtpPurpose('transfer')).toBe('transfer');
+      expect(normalizeSigningOtpPurpose('clearance')).toBe('clearance');
+      expect(normalizeSigningOtpPurpose('registration')).toBeNull();
+      expect(normalizeSigningOtpPurpose(undefined)).toBeNull();
+    });
+  });
+
+  describe('sendSigningOTP', () => {
+    it('should send a purpose-specific subject without touching registration template', async () => {
+      (mockPool.execute as jest.Mock).mockResolvedValue([[], []]);
+      mockSendEmail.mockResolvedValue(undefined);
+      await sendSigningOTP('user-1', 'user@test.com', 'transfer');
+      expect(mockSendEmail).toHaveBeenCalledWith(
+        'user@test.com',
+        'Asset transfer signing code – Asset Management',
+        expect.any(String),
+        expect.any(String)
+      );
+    });
+
+    it('should expose distinct templates per purpose', () => {
+      expect(getSigningOtpTemplate('issuance').subject).toContain('issuance');
+      expect(getSigningOtpTemplate('profile_initials').subject).toContain('initials');
+    });
+  });
+
+  describe('verifySigningOTP', () => {
+    it('should verify without flipping users.verified', async () => {
+      (mockPool.execute as jest.Mock).mockResolvedValueOnce([[{ userID: 'user-1', token: '123456' }], []]);
+      (mockPool.execute as jest.Mock).mockResolvedValueOnce([[], []]);
+
+      const result = await verifySigningOTP('123456');
+      expect(result.success).toBe(true);
+      const updates = (mockPool.execute as jest.Mock).mock.calls.filter((c: any[]) =>
+        String(c[0]).includes('UPDATE users SET verified')
+      );
+      expect(updates.length).toBe(0);
+    });
+
+    it('should return error when OTP is invalid or expired', async () => {
+      (mockPool.execute as jest.Mock).mockResolvedValue([[], []]);
+      const result = await verifySigningOTP('000000');
+      expect(result.error).toBe('Invalid or expired OTP');
     });
   });
 });

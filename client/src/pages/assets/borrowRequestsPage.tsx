@@ -2035,6 +2035,7 @@ export default function BorrowRequestsPage() {
           }}
           sendOtpEndpoint="/auth/initials/send-otp"
           verifyOtpEndpoint="/auth/initials/verify-otp"
+          purpose="borrowing"
           onVerified={() => {
             setSmsOtpDialogOpen(false);
             pendingProcessBorrowActionRef.current = null;

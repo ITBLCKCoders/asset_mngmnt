@@ -1900,6 +1900,7 @@ export default function TransferRequestsPage() {
           onOpenChange={setShowOtpDialog}
           sendOtpEndpoint="/auth/initials/send-otp"
           verifyOtpEndpoint="/auth/initials/verify-otp"
+          purpose="transfer"
           onVerified={() => {
             setShowOtpDialog(false);
             pendingExecuteActionRef.current = null;
@@ -1909,8 +1910,8 @@ export default function TransferRequestsPage() {
             setShowOtpDialog(false);
           }}
           pendingActionRef={pendingExecuteActionRef}
-          title="OTP SMS Verification"
-          description="OTP SMS Verification has been sent to your registered mobile number for transfer processing confirmation."
+          title="OTP Email Verification"
+          description="OTP Email Verification has been sent to your registered email for transfer processing confirmation."
           verifyButtonLabel="Verify & Process Transfer"
           phoneNumber={
             (currentUser as { contactNumber?: string })?.contactNumber

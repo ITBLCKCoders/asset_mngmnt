@@ -2115,13 +2115,14 @@ export default function ApprovalsPage() {
             setShowOtpDialog(false);
           }}
           pendingActionRef={pendingActionRef}
-          title="OTP SMS Verification"
+          purpose="approval"
+          title="OTP Email Verification"
           description={
             otpPurpose === 'receive'
-              ? 'OTP SMS Verification has been sent to your registered mobile number for receive confirmation.'
+              ? 'OTP Email Verification has been sent to your registered email for receive confirmation.'
               : otpPurpose === 'decline'
-                ? 'OTP SMS Verification has been sent to your registered mobile number for decline confirmation.'
-                : 'OTP SMS Verification has been sent to your registered mobile number for approval confirmation.'
+                ? 'OTP Email Verification has been sent to your registered email for decline confirmation.'
+                : 'OTP Email Verification has been sent to your registered email for approval confirmation.'
           }
           verifyButtonLabel={
             otpPurpose === 'receive' ? 'Verify & Receive' : 'Verify & Confirm'

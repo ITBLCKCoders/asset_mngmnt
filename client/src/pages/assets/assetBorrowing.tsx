@@ -855,6 +855,7 @@ const loadMyRequests = useCallback(async () => {
           onOpenChange={setShowOtpDialog}
           sendOtpEndpoint="/auth/initials/send-otp"
           verifyOtpEndpoint="/auth/initials/verify-otp"
+          purpose="borrowing"
           onVerified={() => {
             toast.success('Borrow request submitted');
           }}
@@ -862,8 +863,8 @@ const loadMyRequests = useCallback(async () => {
             pendingActionRef.current = null;
           }}
           pendingActionRef={pendingActionRef}
-          title="OTP SMS Verification"
-          description="OTP SMS Verification has been sent to your registered mobile number for borrow request submission."
+          title="OTP Email Verification"
+          description="OTP Email Verification has been sent to your registered email for borrow request submission."
           verifyButtonLabel="Verify & Submit"
         />
 

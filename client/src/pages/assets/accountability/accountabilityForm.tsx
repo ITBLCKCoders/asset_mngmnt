@@ -2949,8 +2949,9 @@ export function AccountabilityFormCard({
         }}
         pendingActionRef={pendingActionRef}
         expirySeconds={otpExpiryFromSettings}
-        title="OTP SMS Verification"
-        description="OTP SMS Verification has been sent to your registered mobile number for accountability form signing."
+        purpose="assignment"
+        title="OTP Email Verification"
+        description="OTP Email Verification has been sent to your registered email for accountability form signing."
         icon={<ShieldCheck className="h-6 w-6 text-blue-600" />}
         verifyButtonLabel={
           pendingActionType === 'decline' ? 'Verify & Decline' : 'Verify & Sign'
@@ -3592,8 +3593,9 @@ export function AccountabilityFormDetail({
         }}
         pendingActionRef={pendingActionRef}
         expirySeconds={otpExpiryFromSettings}
-        title="OTP SMS Verification"
-        description="OTP SMS Verification has been sent to your registered mobile number for accountability form signing."
+        purpose="assignment"
+        title="OTP Email Verification"
+        description="OTP Email Verification has been sent to your registered email for accountability form signing."
         icon={<ShieldCheck className="h-6 w-6 text-blue-600" />}
         verifyButtonLabel={
           pendingActionType === 'decline' ? 'Verify & Decline' : 'Verify & Sign'
@@ -3925,8 +3927,9 @@ export function AccountabilityFormDetail({
         }}
         pendingActionRef={pendingReceiveActionRef}
         expirySeconds={otpExpiryFromSettings}
-        title="OTP SMS Verification"
-        description="OTP SMS Verification has been sent to your registered mobile number for receiving the accountability form copy."
+        purpose="assignment"
+        title="OTP Email Verification"
+        description="OTP Email Verification has been sent to your registered email for receiving the accountability form copy."
         icon={<ShieldCheck className="h-6 w-6 text-blue-600" />}
         verifyButtonLabel="Verify & Receive"
         phoneNumber={currentUser?.contactNumber || undefined}

@@ -60,7 +60,7 @@ describe('SmsOtpDialog digital signature guard', () => {
     render(<SmsOtpDialog {...baseProps} />);
 
     await waitFor(() => {
-      expect(api.post).toHaveBeenCalledWith('/auth/initials/send-otp', {});
+      expect(api.post).toHaveBeenCalledWith('/auth/initials/send-otp', { purpose: 'profile_initials' });
     });
     expect(baseProps.onOpenChange).not.toHaveBeenCalledWith(false);
     expect(baseProps.onCancel).not.toHaveBeenCalled();
@@ -92,5 +92,18 @@ describe('SmsOtpDialog digital signature guard', () => {
     expect(api.post).not.toHaveBeenCalled();
     expect(baseProps.onCancel).not.toHaveBeenCalled();
     expect(baseProps.onOpenChange).not.toHaveBeenCalledWith(false);
+  });
+
+  it('forwards a per-action purpose to the send-otp endpoint', async () => {
+    mockUseCurrentUser.mockReturnValue({
+      user: { id: 'u1', digitalSignature: 'data:image/png;base64,abc' },
+      loading: false,
+    });
+
+    render(<SmsOtpDialog {...baseProps} purpose="transfer" />);
+
+    await waitFor(() => {
+      expect(api.post).toHaveBeenCalledWith('/auth/initials/send-otp', { purpose: 'transfer' });
+    });
   });
 });

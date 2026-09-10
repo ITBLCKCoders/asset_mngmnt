@@ -2,6 +2,7 @@ import { describe, it, expect, jest, beforeEach } from '@jest/globals';
 import {
   registerHandler,
   loginHandler,
+  sendInitialsOtpHandler,
 } from '../../controllers/auth.controller.js';
 import { createMockRes } from '../helpers/mockRes.js';
 
@@ -21,6 +22,12 @@ jest.mock('../../auth/index.js', () => {
     updateActivity: noop,
     verifyOTP: noop,
     sendVerificationOTP: noop,
+    sendSigningOTP: jest.fn().mockResolvedValue(undefined),
+    verifySigningOTP: noop,
+    normalizeSigningOtpPurpose: (v: unknown) =>
+      ['profile_initials', 'assignment', 'issuance', 'transfer', 'return', 'borrowing', 'approval', 'clearance'].includes(v as string)
+        ? (v as string)
+        : null,
   };
 });
 
@@ -111,6 +118,27 @@ describe('auth.controller', () => {
 
       expect(res._status).toBe(401);
       expect((res._json as any).error).toBeDefined();
+    });
+  });
+
+  describe('sendInitialsOtpHandler', () => {
+    it('should forward a valid purpose to sendSigningOTP', async () => {
+      req.user = { userID: 'user-1', email: 'user@test.com' };
+      req.body = { purpose: 'transfer' };
+
+      await sendInitialsOtpHandler(req, res);
+
+      expect(authModule.sendSigningOTP).toHaveBeenCalledWith('user-1', 'user@test.com', 'transfer');
+      expect((res._json as any).message).toContain('OTP sent');
+    });
+
+    it('should fall back to profile_initials for missing/invalid purpose', async () => {
+      req.user = { userID: 'user-1', email: 'user@test.com' };
+      req.body = { purpose: 'registration' };
+
+      await sendInitialsOtpHandler(req, res);
+
+      expect(authModule.sendSigningOTP).toHaveBeenCalledWith('user-1', 'user@test.com', 'profile_initials');
     });
   });
 });

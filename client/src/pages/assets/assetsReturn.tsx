@@ -2803,6 +2803,7 @@ export default function AssetsReturn() {
           }}
           sendOtpEndpoint="/auth/initials/send-otp"
           verifyOtpEndpoint="/auth/initials/verify-otp"
+          purpose="return"
           onVerified={() => {
             setSmsOtpDialogOpen(false);
             pendingReturnActionRef.current = null;
@@ -2814,8 +2815,8 @@ export default function AssetsReturn() {
             pendingReturnChecklistsRef.current = [];
           }}
           pendingActionRef={pendingReturnActionRef}
-          title="OTP SMS Verification"
-          description="OTP SMS Verification has been sent to your registered mobile number for asset return confirmation."
+          title="OTP Email Verification"
+          description="OTP Email Verification has been sent to your registered email for asset return confirmation."
           verifyButtonLabel="Verify & Process Return"
           phoneNumber={
             (currentUser as { contactNumber?: string })?.contactNumber

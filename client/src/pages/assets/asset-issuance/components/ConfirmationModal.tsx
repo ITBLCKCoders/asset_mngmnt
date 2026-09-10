@@ -505,6 +505,7 @@ export function ConfirmationModal({
         }}
         sendOtpEndpoint='/auth/initials/send-otp'
         verifyOtpEndpoint='/auth/initials/verify-otp'
+        purpose="issuance"
         onVerified={() => {
           // SmsOtpDialog already handles setting pendingActionRef.current = null after execution
         }}
@@ -512,8 +513,8 @@ export function ConfirmationModal({
           pendingActionRef.current = null;
         }}
         pendingActionRef={pendingActionRef}
-        title='OTP SMS Verification'
-        description='OTP SMS Verification has been sent for asset assignment confirmation.'
+        title='OTP Email Verification'
+        description='OTP Email Verification has been sent to your registered email for asset issuance confirmation.'
         verifyButtonLabel='Verify & Confirm'
         phoneNumber={user?.contactNumber || undefined}
       />

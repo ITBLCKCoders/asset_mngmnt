@@ -2160,6 +2160,7 @@ export default function ReturnRequestsPage() {
             pendingProcessActionRef.current = null;
           }}
           pendingActionRef={pendingProcessActionRef}
+          purpose="return"
           title="Verify Return Processing"
           description="Please verify your identity to process this asset return request."
           verifyButtonLabel="Verify & Process Return"
@@ -2176,6 +2177,7 @@ export default function ReturnRequestsPage() {
             pendingDeclineActionRef.current = null;
           }}
           pendingActionRef={pendingDeclineActionRef}
+          purpose="return"
           title="Verify Decline"
           description="Please verify your identity to decline this asset return request."
           verifyButtonLabel="Verify & Decline"

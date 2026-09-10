@@ -1990,6 +1990,7 @@ export default function AssetReturnRequest() {
                   onOpenChange={setShowOtpDialog}
                   sendOtpEndpoint="/auth/initials/send-otp"
                   verifyOtpEndpoint="/auth/initials/verify-otp"
+                  purpose="return"
                   onVerified={() => {
                     setShowOtpDialog(false);
                     pendingSubmitActionRef.current = null;
@@ -1999,8 +2000,8 @@ export default function AssetReturnRequest() {
                     setShowOtpDialog(false);
                   }}
                   pendingActionRef={pendingSubmitActionRef}
-                  title="OTP SMS Verification"
-                  description="OTP SMS Verification has been sent to your registered mobile number for return request confirmation."
+                  title="OTP Email Verification"
+                  description="OTP Email Verification has been sent to your registered email for return request confirmation."
                   verifyButtonLabel="Verify & Submit"
                 />
 

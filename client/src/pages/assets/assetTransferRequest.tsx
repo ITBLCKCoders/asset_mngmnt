@@ -1990,8 +1990,8 @@ export default function AssetTransferRequest() {
           }}
           pendingActionRef={pendingSubmitActionRef}
           purpose="transfer"
-          title="OTP SMS Verification"
-          description="OTP SMS Verification has been sent to your registered mobile number for transfer request confirmation."
+          title="OTP Email Verification"
+          description="OTP Email Verification has been sent to your registered email for transfer request confirmation."
           verifyButtonLabel="Verify & Submit"
           phoneNumber={
             (currentUser as { contactNumber?: string })?.contactNumber
@@ -2103,8 +2103,8 @@ export default function AssetTransferRequest() {
           }}
           pendingActionRef={pendingReturnActionRef}
           purpose="return"
-          title="OTP SMS Verification"
-          description="OTP SMS Verification has been sent to your registered mobile number for return form confirmation."
+          title="OTP Email Verification"
+          description="OTP Email Verification has been sent to your registered email for return form confirmation."
           verifyButtonLabel="Verify & Generate"
           phoneNumber={
             (currentUser as { contactNumber?: string })?.contactNumber

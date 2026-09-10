@@ -125,7 +125,7 @@ export function AccountabilityFormPreviewDialog({
   const sendOtp = async () => {
     setIsSendingOtp(true);
     try {
-      await api.post('/auth/initials/send-otp', {});
+      await api.post('/auth/initials/send-otp', { purpose: 'assignment' });
       // Timer will be reset by useEffect when showOtpDialog is true
       return true;
     } catch (err: any) {

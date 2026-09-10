@@ -246,7 +246,7 @@ const BasicInfoTab = forwardRef<BasicInfoTabHandle, BasicInfoTabProps>(
     const sendOtp = async () => {
       setIsSendingOtp(true);
       try {
-        await api.post('/auth/initials/send-otp', {});
+        await api.post('/auth/initials/send-otp', { purpose: 'profile_initials' });
         setOtpExpiry(300);
         setCanResend(false);
         setResendCooldown(60);

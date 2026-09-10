@@ -3051,6 +3051,7 @@ export default function AssetsTransfer() {
           }}
           sendOtpEndpoint="/auth/initials/send-otp"
           verifyOtpEndpoint="/auth/initials/verify-otp"
+          purpose="transfer"
           onVerified={() => {
             setSmsOtpDialogOpen(false);
             pendingTransferActionRef.current = null;
@@ -3060,8 +3061,8 @@ export default function AssetsTransfer() {
             pendingTransferActionRef.current = null;
           }}
           pendingActionRef={pendingTransferActionRef}
-          title="OTP SMS Verification"
-          description="OTP SMS Verification has been sent to your registered mobile number for asset transfer confirmation."
+          title="OTP Email Verification"
+          description="OTP Email Verification has been sent to your registered email for asset transfer confirmation."
           verifyButtonLabel="Verify & Process Transfer"
           phoneNumber={
             (currentUser as { contactNumber?: string })?.contactNumber
