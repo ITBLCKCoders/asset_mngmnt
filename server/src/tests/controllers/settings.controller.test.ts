@@ -88,6 +88,12 @@ describe('settings.controller', () => {
       pool.execute.mockResolvedValueOnce([[{ id: 1 }], []]);
       await settingsController.updateAccountabilityFormSettingsHandler(req, res);
       expect(res._json.message).toContain('updated');
+      expect(pool.execute.mock.calls[1][0]).toEqual(expect.stringContaining('created_by = COALESCE(created_by, ?)'));
+      expect(pool.execute.mock.calls[1][1].slice(-3)).toEqual(['5', '5', 1]);
+      expect(createAuditLog).toHaveBeenCalledWith(expect.objectContaining({
+        userId: '5',
+        action: 'update_accountability_form_settings',
+      }));
     });
 
     it('inserts new settings', async () => {
@@ -96,6 +102,32 @@ describe('settings.controller', () => {
       pool.execute.mockResolvedValueOnce([[], []]);
       pool.execute.mockResolvedValueOnce([[{ id: 2 }], []]);
       await settingsController.updateAccountabilityFormSettingsHandler(req, res);
+      expect(res._json.message).toContain('updated');
+    });
+  });
+
+  describe('updateIntangibleClearanceFormSettingsHandler', () => {
+    it('saves both settings with creator fields and writes an audit log', async () => {
+      req.body = {
+        company_id: 1,
+        deactivation_form_code: 'IDF',
+        clearance_form_code: 'CLR',
+      };
+      pool.execute.mockResolvedValue([[], []]);
+
+      await settingsController.updateIntangibleClearanceFormSettingsHandler(req, res);
+
+      expect(pool.execute).toHaveBeenCalledTimes(2);
+      expect(pool.execute.mock.calls[0][0]).toEqual(expect.stringContaining('created_by, updated_by'));
+      expect(pool.execute.mock.calls[1][0]).toEqual(expect.stringContaining('created_by, updated_by'));
+      expect(pool.execute.mock.calls[0][1].slice(-2)).toEqual(['5', '5']);
+      expect(pool.execute.mock.calls[1][1].slice(-2)).toEqual(['5', '5']);
+      expect(createAuditLog).toHaveBeenCalledWith(expect.objectContaining({
+        userId: '5',
+        action: 'update_intangible_clearance_form_settings',
+        resourceType: 'settings',
+        resourceId: '1',
+      }));
       expect(res._json.message).toContain('updated');
     });
   });

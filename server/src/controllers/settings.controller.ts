@@ -693,6 +693,7 @@ export async function updateAccountabilityFormSettingsHandler(
           clearance_date_format = ?,
           include_date = ?,
           date_format = ?,
+          created_by = COALESCE(created_by, ?),
           updated_by = ?,
           updated_at = NOW()
         WHERE company_id = ? AND deleted_at IS NULL
@@ -712,6 +713,7 @@ export async function updateAccountabilityFormSettingsHandler(
           clearance_date_format || 'MMYYYY',
           include_date !== undefined ? include_date : true,
           date_format || 'MMYYYY',
+          userId,
           userId,
           company_id,
         ]
@@ -857,27 +859,40 @@ export async function updateIntangibleClearanceFormSettingsHandler(
     if (deactivation_form_code !== undefined || deactivation_department_format !== undefined) {
       await pool.execute(
         `INSERT INTO intangible_deactivation_form_settings
-          (company_id, company_format, department_format, form_code, include_date, date_format, updated_by)
-         VALUES (?, ?, ?, ?, ?, ?, ?)
+          (company_id, company_format, department_format, form_code, include_date, date_format, created_by, updated_by)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?)
          ON DUPLICATE KEY UPDATE
           company_format = VALUES(company_format), department_format = VALUES(department_format),
           form_code = VALUES(form_code), include_date = VALUES(include_date),
-          date_format = VALUES(date_format), updated_by = VALUES(updated_by), updated_at = NOW()`,
-        [company_id, company_format || 'code', deactivation_department_format || 'code', deactivation_form_code || 'IDF', deactivation_include_date !== undefined ? deactivation_include_date : true, deactivation_date_format || 'MMYYYY', userId]
+          date_format = VALUES(date_format), created_by = COALESCE(created_by, VALUES(created_by)),
+          updated_by = VALUES(updated_by), updated_at = NOW()`,
+        [company_id, company_format || 'code', deactivation_department_format || 'code', deactivation_form_code || 'IDF', deactivation_include_date !== undefined ? deactivation_include_date : true, deactivation_date_format || 'MMYYYY', userId, userId]
       );
     }
     if (clearance_form_code !== undefined || clearance_department_format !== undefined) {
       await pool.execute(
         `INSERT INTO accountability_clearance_form_settings
-          (company_id, company_format, department_format, form_code, include_date, date_format, updated_by)
-         VALUES (?, ?, ?, ?, ?, ?, ?)
+          (company_id, company_format, department_format, form_code, include_date, date_format, created_by, updated_by)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?)
          ON DUPLICATE KEY UPDATE
           company_format = VALUES(company_format), department_format = VALUES(department_format),
           form_code = VALUES(form_code), include_date = VALUES(include_date),
-          date_format = VALUES(date_format), updated_by = VALUES(updated_by), updated_at = NOW()`,
-        [company_id, company_format || 'code', clearance_department_format || 'code', clearance_form_code || 'CLR', clearance_include_date !== undefined ? clearance_include_date : true, clearance_date_format || 'MMYYYY', userId]
+          date_format = VALUES(date_format), created_by = COALESCE(created_by, VALUES(created_by)),
+          updated_by = VALUES(updated_by), updated_at = NOW()`,
+        [company_id, company_format || 'code', clearance_department_format || 'code', clearance_form_code || 'CLR', clearance_include_date !== undefined ? clearance_include_date : true, clearance_date_format || 'MMYYYY', userId, userId]
       );
     }
+
+    await createAuditLog({
+      userId,
+      action: 'update_intangible_clearance_form_settings',
+      resourceType: 'settings',
+      resourceId: String(company_id),
+      details: `Updated intangible deactivation and accountability clearance settings for company: ${company_id}`,
+      ipAddress: req.ip,
+      userAgent: req.get('User-Agent'),
+    });
+
     return res.json({ message: 'Separate deactivation and clearance settings updated successfully' });
   } catch (error: any) {
     logger.error('Update intangible clearance form settings failed:', error);
