@@ -1598,58 +1598,19 @@ export async function submitTransferRequestHandler(
       assignmentsByDept.get(deptId)!.push(row);
     }
 
-    const sharedNotes = (body.notes != null ? String(body.notes) : '') || '';
     const transferTypeValue =
       (req.body as { transferType?: string }).transferType ?? null;
 
-    const createdForms: Array<{ formID: string; form_number: string | null; returnFormID: string; returnFormNumber: string | null }> = [];
-    let firstForm: { formID: string; form_number: string | null; returnFormID: string; returnFormNumber: string | null } | null = null;
+    const createdForms: Array<{ formID: string; form_number: string | null; returnFormID: string | null; returnFormNumber: string | null }> = [];
+    let firstForm: { formID: string; form_number: string | null; returnFormID: string | null; returnFormNumber: string | null } | null = null;
 
     for (const [deptId, deptAssignments] of assignmentsByDept) {
       const effectiveDepartmentId = deptId === '__unknown__' ? null : deptId;
 
-      // Resolve company for return form number
-      let returnFormCompanyId: string | null = null;
-      const deptIdForReturnForm = effectiveDepartmentId || deptAssignments[0]?.department_id;
-      if (deptIdForReturnForm) {
-        const dept = await getDepartmentById(deptIdForReturnForm);
-        returnFormCompanyId = dept?.company_id ?? null;
-      }
-      if (!returnFormCompanyId && deptAssignments[0]?.user_id) {
-        const user = await getUserById(deptAssignments[0].user_id);
-        returnFormCompanyId = user?.company_id ?? null;
-      }
-      const returnFormNumber =
-        returnFormCompanyId != null
-          ? await generateReturnFormNumber(returnFormCompanyId, effectiveDepartmentId)
-          : await generateReturnFormNumberFallback();
-
+      // Staged flow: self-service transfer requests create ONLY the transfer
+      // form here. The linked return form is generated later by the requestor
+      // (after dept-head approval) via POST /asset-returns/from-transfer.
       const firstDeptAssignment = deptAssignments[0];
-      const returnForm = await AssetReturnFormModel.createWithReturnerSignature({
-        form_number: returnFormNumber,
-        user_id: firstDeptAssignment.user_id,
-        department_id: effectiveDepartmentId,
-        location_id: firstDeptAssignment.location_id ?? null,
-        location_room_id: firstDeptAssignment.location_room_id ?? null,
-        created_by: currentUserId,
-        signed_by: currentUserId,
-        signed_digital_signature: transfererDigitalSignature || null,
-      });
-      const returnFormId = returnForm!.formID;
-
-      // Create asset return records for this department group
-      for (const row of deptAssignments) {
-        await AssetReturnModel.create({
-          assignment_id: row.assignmentID,
-          user_id: row.user_id,
-          return_condition: 'Good',
-          return_notes: sharedNotes,
-          return_location_id: row.location_id ?? undefined,
-          return_location_room_id: row.location_room_id ?? undefined,
-          return_department_id: row.department_id ?? undefined,
-          form_id: returnFormId,
-        });
-      }
 
       // Resolve company for transfer form number
       let companyId: string | null = null;
@@ -1680,7 +1641,7 @@ export async function submitTransferRequestHandler(
           signed_by: currentUserId,
           signed_digital_signature: transfererDigitalSignature || null,
           transfer_type: transferTypeValue || null,
-          return_form_id: returnFormId,
+          return_form_id: null,
         } as any);
 
       const formId =
@@ -1714,8 +1675,8 @@ export async function submitTransferRequestHandler(
       const entry = {
         formID: formId,
         form_number: transferForm!.form_number,
-        returnFormID: returnFormId,
-        returnFormNumber: returnForm?.form_number ?? returnFormNumber,
+        returnFormID: null as string | null,
+        returnFormNumber: null as string | null,
       };
       createdForms.push(entry);
       if (!firstForm) firstForm = entry;
@@ -1770,100 +1731,17 @@ export async function submitTransferRequestHandler(
                 time: new Date().toISOString(),
               });
             }
-            // Also notify for the linked return form (transfer requests create both forms)
-            await createNotificationForApi({
-              user_id: approverUserId,
-              title: 'Asset Return Request Approval Needed',
-              message: `${requesterName} has submitted an asset return request for ${assetCount} asset${assetCount !== 1 ? 's' : ''} and requires your approval.`,
-              type: 'system',
-              data: {
-                form_id: returnFormId,
-                form_number: returnForm?.form_number ?? returnFormNumber,
-                requester_id: currentUserId,
-                requester_name: requesterName,
-                asset_count: assetCount,
-                route: '/approvals',
-                actionTarget: 'return_request_approval',
-              },
-            });
-            if (io) {
-              emitNotification(io, approverUserId, 'notification', {
-                id: returnFormId,
-                title: 'Asset Return Request Approval Needed',
-                message: `${requesterName} has submitted an asset return request for ${assetCount} asset${assetCount !== 1 ? 's' : ''} and requires your approval.`,
-                type: 'system',
-                data: {
-                  form_id: returnFormId,
-                  form_number: returnForm?.form_number ?? returnFormNumber,
-                  requester_id: currentUserId,
-                  requester_name: requesterName,
-                  asset_count: assetCount,
-                  route: '/approvals',
-                  actionTarget: 'return_request_approval',
-                },
-                time: new Date().toISOString(),
-              });
-            }
+            // Staged flow: the linked return form does not exist yet — it is
+            // generated by the requestor after this transfer is approved.
           }
         } catch (notifError) {
           logger.error('Failed to send transfer request notifications:', notifError);
         }
       }
 
-      // Second notification to the requester: return form created for IT/Admin condition checking
-      try {
-        const deptForScope = effectiveDepartmentId ? await getDepartmentById(effectiveDepartmentId) : null;
-        const scope = classifyDepartmentScopeByName(deptForScope?.name ?? null);
-        const targetDeptLabel =
-          scope === 'IT'
-            ? 'IT Department'
-            : scope === 'Admin'
-              ? 'Admin Department'
-              : deptForScope?.name?.trim() || 'department';
-        const deptHint = scope === 'IT' ? 'IT asset' : scope === 'Admin' ? 'Admin asset' : 'asset';
-        const message =
-          `A return form (${returnForm?.form_number ?? returnFormNumber}) has also been created for the asset to be returned first to the ${targetDeptLabel} for asset condition checking (${deptHint}). When approved, please bring the asset to the ${targetDeptLabel}.`;
-        const ioReq = getIoInstance();
-        await createNotificationForApi({
-          user_id: currentUserId,
-          title: 'Return Form Created for Condition Checking',
-          message,
-          type: 'system',
-          data: {
-            form_id: returnFormId,
-            form_number: returnForm?.form_number ?? returnFormNumber,
-            transfer_form_id: formId,
-            transfer_form_number: transferForm!.form_number ?? null,
-            asset_count: deptAssignments.length,
-            scope,
-            target_department: targetDeptLabel,
-            route: '/profile?tab=documents&docTab=returns',
-            actionTarget: 'my_return_requests',
-          },
-        });
-        if (ioReq) {
-          emitNotification(ioReq, currentUserId, 'notification', {
-            id: returnFormId,
-            title: 'Return Form Created for Condition Checking',
-            message,
-            type: 'system',
-            data: {
-              form_id: returnFormId,
-              form_number: returnForm?.form_number ?? returnFormNumber,
-              transfer_form_id: formId,
-              transfer_form_number: transferForm!.form_number ?? null,
-              asset_count: deptAssignments.length,
-              scope,
-              target_department: targetDeptLabel,
-              route: '/profile?tab=documents&docTab=returns',
-              actionTarget: 'my_return_requests',
-            },
-            time: new Date().toISOString(),
-          });
-        }
-      } catch (requesterNotifErr) {
-        logger.error('Failed to send transfer return-form condition-check notification to requester:', requesterNotifErr);
-      }
+      // Staged flow: no return form exists yet. The requestor is told to
+      // generate one only after this transfer form is approved (see
+      // approveTransferFormHandler).
     }
 
     return res.status(201).json({
@@ -2465,9 +2343,6 @@ export async function runTransferFormExecution(
   const transferredAssetIds = assignmentRows.map((r: any) => r.asset_id);
   const executedAssetCodes: string[] = [];
 
-  const categoryDeptRows = await getCategoryDepartmentsByAssetIds(transferredAssetIds);
-  const categoryDeptId = (categoryDeptRows[0] as any)?.departmentID ?? null;
-
   // Compute which builders have ALL their assets in this transfer batch (full transfer)
   const transferredAssetIdSet = new Set(transferredAssetIds);
   const fullyTransferredBuilderIds = new Set<string>();
@@ -2555,32 +2430,10 @@ export async function runTransferFormExecution(
       ]
     );
   } else {
-    const returnFormNumber =
-      companyId != null
-        ? await generateReturnFormNumber(companyId, categoryDeptId)
-        : await generateReturnFormNumberFallback();
-    const returnForm = await AssetReturnFormModel.create({
-      form_number: returnFormNumber,
-      user_id: pastOwnerUserId,
-      department_id: categoryDeptId ?? newDeptId,
-      location_id: newLocId,
-      location_room_id: newRoomId,
-      created_by: processorId,
-      process_signed_at: processSignedAtForDb,
-      process_digital_signature: processSignature?.digital_signature ?? null,
-      process_signed_by: processSignedAtForDb ? processorId : null,
-      return_type: transferType ?? null,
-      received_by: receivedBy ?? null,
-    });
-    returnFormId = returnForm!.formID;
-    await executeRawWrite(
-      `UPDATE asset_transfer_forms SET process_signed_at = ?, process_digital_signature = ?, received_by = ?, updated_at = NOW() WHERE formID = ?`,
-      [
-        processSignedAtForDb,
-        processSignature?.digital_signature ?? null,
-        receivedBy ?? null,
-        formId,
-      ]
+    // Staged flow: self-service transfers must have a requestor-generated,
+    // approved + processed return before execution. Never auto-create one here.
+    throw new ValidationError(
+      'A return form must be generated for this transfer and processed first. Ask the requestor to click Generate Return Form on the Transfer asset page, then process the return before executing the transfer.'
     );
   }
 
@@ -5186,6 +5039,76 @@ export async function approveTransferFormHandler(
       logger.error('Failed to send transfer approval notification to requester:', notifError);
     }
 
+    // Staged flow: self-service transfers have no return yet — tell the
+    // requestor they can now generate it (scope-aware IT / Admin wording,
+    // both departments when the batch is mixed).
+    if (!returnFormId) {
+      try {
+        const stagedAssignments = await getTransferFormAssignments(formId);
+        const stagedAssignmentIds = stagedAssignments.map((a: any) => a.assignment_id);
+        let scopeSet = new Set<string>();
+        if (stagedAssignmentIds.length > 0) {
+          const placeholders = stagedAssignmentIds.map(() => '?').join(',');
+          const [aaRows] = (await pool.execute(
+            `SELECT asset_id FROM asset_assignments WHERE assignmentID IN (${placeholders})`,
+            stagedAssignmentIds
+          )) as any[];
+          const assetIds = (aaRows as any[]).map(r => r.asset_id).filter(Boolean);
+          if (assetIds.length > 0) {
+            const catRows = await getCategoryDepartmentsByAssetIds(assetIds);
+            const catDeptIds = [...new Set((catRows as any[]).map(r => r.departmentID).filter(Boolean))];
+            if (catDeptIds.length > 0) {
+              const deptPlaceholders = catDeptIds.map(() => '?').join(',');
+              const [deptRows] = (await pool.execute(
+                `SELECT name FROM asset_mngmnt_departments WHERE departmentID IN (${deptPlaceholders}) AND deleted_at IS NULL`,
+                catDeptIds
+              )) as any[];
+              for (const d of (deptRows as any[]) ?? []) {
+                scopeSet.add(classifyDepartmentScopeByName(d?.name ?? null));
+              }
+            }
+          }
+        }
+        if (scopeSet.size === 0 && form.department_id) {
+          const fallbackDept = await getDepartmentById(form.department_id);
+          scopeSet.add(classifyDepartmentScopeByName(fallbackDept?.name ?? null));
+        }
+        const hasIT = scopeSet.has('IT');
+        const hasAdmin = scopeSet.has('Admin');
+        const targetDeptLabel =
+          hasIT && hasAdmin
+            ? 'IT and Admin departments'
+            : hasIT
+              ? 'IT department'
+              : hasAdmin
+                ? 'Admin department'
+                : ((form.department_id ? (await getDepartmentById(form.department_id))?.name?.trim() : '') || 'department');
+        const scopes = [...scopeSet].filter(s => s === 'IT' || s === 'Admin');
+        const message =
+          `Your transfer request (${form.form_number ?? ''}) has been approved. ` +
+          `You can now request a return to return the asset(s) to the ${targetDeptLabel} for condition checking. ` +
+          `Open "Transfer asset — Request to transfer your assigned assets to another user" and click Generate Return Form.`;
+        await createNotificationForApi({
+          user_id: form.user_id,
+          title: 'You Can Now Request a Return for Condition Checking',
+          message,
+          type: 'system',
+          data: {
+            form_id: formId,
+            form_number: form.form_number,
+            transfer_form_id: formId,
+            transfer_form_number: form.form_number,
+            scopes,
+            target_department: targetDeptLabel,
+            route: `/assets/transfer-request?transferFormId=${formId}&action=generate-return`,
+            actionTarget: 'transfer_approved_generate_return',
+          },
+        });
+      } catch (notifError: any) {
+        logger.error('Failed to send generate-return notification to requester:', notifError);
+      }
+    }
+
     // Linked return forms are now approved independently — do not auto-approve the paired return form here.
     if (returnFormId) {
       try {
@@ -5199,41 +5122,45 @@ export async function approveTransferFormHandler(
       }
     }
 
-    // Notify IT/Admin asset role users of the company about the approved transfer only.
-    try {
-      const requesterRow = await getUserById(form.user_id);
-      const assetRoleCompanyId = requesterRow?.company_id ?? null;
-      const transferDeptRow = form.department_id ? await getDepartmentById(form.department_id) : null;
-      const transferAssignments = await getTransferFormAssignments(formId);
-      const assetRoleUsers = await getAssetRoleUsersForAssignmentsAndCompany(
-        assetRoleCompanyId,
-        transferAssignments.map((a: any) => a.assignment_id),
-        transferDeptRow?.name || ''
-      );
-      for (const assetUser of assetRoleUsers) {
-        if (assetUser.userID !== userId && assetUser.userID !== form.user_id) {
-          await createNotificationForApi({
-            user_id: assetUser.userID,
-            title: 'New Asset Transfer Request Received',
-            message:
-              'A new Asset Transfer Request has been received. Please process the return first, then process the transfer.',
-            type: 'system',
-            data: {
-              form_id: formId,
-              form_number: form.form_number,
-              requester_id: form.user_id,
-              route: '/assets/transfer-requests',
-              actionTarget: 'asset_transfer_requests',
-            },
-          });
-          // Linked return notification is now sent only when the return itself is approved.
+    // Staged self-service transfers notify IT/Admin processors only after the
+    // requestor generates + approver approves the return (see
+    // approveReturnFormHandler). Held / legacy forms already carry a return,
+    // so keep their immediate processor broadcast.
+    if (returnFormId) {
+      try {
+        const requesterRow = await getUserById(form.user_id);
+        const assetRoleCompanyId = requesterRow?.company_id ?? null;
+        const transferDeptRow = form.department_id ? await getDepartmentById(form.department_id) : null;
+        const transferAssignments = await getTransferFormAssignments(formId);
+        const assetRoleUsers = await getAssetRoleUsersForAssignmentsAndCompany(
+          assetRoleCompanyId,
+          transferAssignments.map((a: any) => a.assignment_id),
+          transferDeptRow?.name || ''
+        );
+        for (const assetUser of assetRoleUsers) {
+          if (assetUser.userID !== userId && assetUser.userID !== form.user_id) {
+            await createNotificationForApi({
+              user_id: assetUser.userID,
+              title: 'New Asset Transfer Request Received',
+              message:
+                'A new Asset Transfer Request has been received. Please process the return first, then process the transfer.',
+              type: 'system',
+              data: {
+                form_id: formId,
+                form_number: form.form_number,
+                requester_id: form.user_id,
+                route: '/assets/transfer-requests',
+                actionTarget: 'asset_transfer_requests',
+              },
+            });
+          }
         }
+      } catch (notifError: any) {
+        logger.error(
+          'Failed to send asset role user notifications on transfer approval:',
+          notifError
+        );
       }
-    } catch (notifError: any) {
-      logger.error(
-        'Failed to send asset role user notifications on transfer approval:',
-        notifError
-      );
     }
 
     if (returnFormId) {

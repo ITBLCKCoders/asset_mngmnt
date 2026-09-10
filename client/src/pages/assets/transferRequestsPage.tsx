@@ -492,11 +492,13 @@ export default function TransferRequestsPage() {
         'Failed to execute transfer';
       if (
         typeof msg === 'string' &&
-        msg
+        (msg
           .toLowerCase()
           .includes(
             'linked return form is processed by the processor'
-          )
+          ) ||
+          msg.toLowerCase().includes('return form must be generated') ||
+          msg.toLowerCase().includes('generate return form'))
       ) {
         setReturnProcessBlockMessage(msg);
         setShowReturnProcessBlockDialog(true);

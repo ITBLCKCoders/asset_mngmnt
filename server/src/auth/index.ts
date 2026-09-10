@@ -17,7 +17,15 @@ export {
 
 export { login, register } from './user.js';
 
-export { verifyOTP, sendVerificationOTP } from './email.js';
+export {
+  verifyOTP,
+  sendVerificationOTP,
+  sendSigningOTP,
+  verifySigningOTP,
+  normalizeSigningOtpPurpose,
+  getSigningOtpTemplate,
+} from './email.js';
+export type { SigningOtpPurpose } from './email.js';
 
 export {
   forgotPassword,

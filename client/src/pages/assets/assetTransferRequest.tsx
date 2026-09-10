@@ -1,7 +1,7 @@
 'use client';
 
-import { useEffect, useState, useMemo, useRef } from 'react';
-import { Link } from 'react-router-dom';
+import { useEffect, useState, useMemo, useRef, useCallback } from 'react';
+import { Link, useSearchParams } from 'react-router-dom';
 import {
   Package,
   Search,
@@ -128,6 +128,10 @@ interface TransferRequestRow {
   assetCode?: string;
   fromDepartment?: string;
   toDepartment?: string;
+  /** Linked return form (null while the staged return is not yet generated). */
+  returnFormId?: string | null;
+  /** True once dept head / sub approver signed the transfer. */
+  isApproved?: boolean;
   processedBy?: string;
   transferDate?: string;
   condition?: string;
@@ -174,6 +178,8 @@ function getTransferStatusBadgeClass(status: string): string {
   if (status === 'completed')
     return 'bg-green-100 text-green-800 border-green-200 dark:bg-green-900/30 dark:text-green-200 dark:border-green-800';
   if (status === 'approved') return 'bg-blue-100 text-blue-800 border-blue-200 dark:bg-blue-900/30 dark:text-blue-200 dark:border-blue-800';
+  if (status === 'awaiting-return')
+    return 'bg-purple-100 text-purple-800 border-purple-200 dark:bg-purple-900/30 dark:text-purple-200 dark:border-purple-800';
   if (status === 'declined')
     return 'bg-red-100 text-red-800 border-red-200 dark:bg-red-900/30 dark:text-red-200 dark:border-red-800';
   return 'bg-amber-100 text-amber-800 border-amber-200 dark:bg-amber-900/30 dark:text-amber-200 dark:border-amber-800';
@@ -246,6 +252,18 @@ export default function AssetTransferRequest() {
   const [confirmTransferWhenApproved, setConfirmTransferWhenApproved] =
     useState(false);
   const [confirmSigningTransfer, setConfirmSigningTransfer] = useState(false);
+  // Staged flow: requestor generates the linked return form after transfer approval.
+  const [searchParams, setSearchParams] = useSearchParams();
+  const [returnTarget, setReturnTarget] = useState<{
+    formID: string;
+    form_number: string;
+  } | null>(null);
+  const [showReturnConfirmDialog, setShowReturnConfirmDialog] = useState(false);
+  const [showReturnOtpDialog, setShowReturnOtpDialog] = useState(false);
+  const [generatingReturn, setGeneratingReturn] = useState(false);
+  const [confirmReturnSigning, setConfirmReturnSigning] = useState(false);
+  const [highlightFormId, setHighlightFormId] = useState<string | null>(null);
+  const pendingReturnActionRef = useRef<(() => Promise<void>) | null>(null);
 
   const digitalSignature =
     (currentUser as { digitalSignature?: string | null })?.digitalSignature || '';
@@ -314,6 +332,7 @@ export default function AssetTransferRequest() {
           ? `${b.new_assigned_user.first_name || ''} ${b.new_assigned_user.last_name || ''}`.trim()
           : undefined;
         const returns = Array.isArray(b.returns) ? b.returns : [];
+        const raw = b as AssetTransferFormBatch & { return_form_id?: string | null };
         return {
           id: b.formID,
           formID: b.formID,
@@ -323,6 +342,8 @@ export default function AssetTransferRequest() {
           target_user: targetName,
           asset_count: returns.length,
           assets_label: getMyTransferAssetSummary(returns),
+          returnFormId: raw.return_form_id ?? null,
+          isApproved: Boolean(b.dept_head_signed_at || b.sub_approver_1_signed_at),
         };
       });
       setMyTransferBatches(mine);
@@ -520,10 +541,7 @@ export default function AssetTransferRequest() {
       );
 
       toast.success(
-`Transfer request submitted for ${selectedAssignments.length} asset(s). It will be sent to your department head for approval.`
-      );
-      toast.success(
-`Return request submitted for ${selectedAssignments.length} asset(s). It will also be sent to your department head for approval.`
+`Transfer request submitted for ${selectedAssignments.length} asset(s). It will be sent to your department head for approval. After approval you can generate the return form from My Transfer Requests.`
       );
       setShowConfirmDialog(false);
       setConfirmTransferWhenApproved(false);
@@ -543,6 +561,69 @@ export default function AssetTransferRequest() {
       setSubmitting(false);
     }
   };
+
+  /** Staged flow: open the generate-return confirmation for an approved transfer. */
+  const handleGenerateReturnClick = useCallback(
+    (row: TransferRequestRow) => {
+      setReturnTarget({ formID: row.formID, form_number: row.form_number });
+      setConfirmReturnSigning(false);
+      setHighlightFormId(row.formID);
+      setShowReturnConfirmDialog(true);
+    },
+    []
+  );
+
+  const handleConfirmGenerateReturn = async () => {
+    if (!returnTarget) return;
+    setGeneratingReturn(true);
+    try {
+      const response = await api.post<{
+        form_number?: string | null;
+      }>(`/asset-returns/from-transfer/${returnTarget.formID}`, {
+        digitalSignature,
+      });
+      toast.success(
+        `Return form ${response?.form_number ?? ''} generated for transfer ${returnTarget.form_number}. It will be sent to your department head for approval.`
+      );
+      setShowReturnConfirmDialog(false);
+      setConfirmReturnSigning(false);
+      setReturnTarget(null);
+      await Promise.all([
+        fetchAssignments(),
+        fetchTransferRequests(),
+        fetchReturnRequests(),
+      ]);
+    } catch (error: any) {
+      console.error('Failed to generate return form:', error);
+      const data = error?.data ?? error?.response?.data;
+      toast.error(data?.error || 'Failed to generate return form');
+    } finally {
+      setGeneratingReturn(false);
+    }
+  };
+
+  // Deep-link from the "You Can Now Request a Return" notification:
+  // /assets/transfer-request?transferFormId=<id>&action=generate-return
+  useEffect(() => {
+    const action = searchParams.get('action');
+    const transferFormId = searchParams.get('transferFormId');
+    if (action !== 'generate-return' || !transferFormId) return;
+    setHighlightFormId(transferFormId);
+    const batch = myTransferBatches.find(b => b.formID === transferFormId);
+    if (!batch) return;
+    const raw = batch as AssetTransferFormBatch & { return_form_id?: string | null };
+    const approved = Boolean(
+      batch.dept_head_signed_at || batch.sub_approver_1_signed_at
+    );
+    if (approved && raw.return_form_id == null && !showReturnConfirmDialog) {
+      setReturnTarget({ formID: batch.formID, form_number: batch.form_number });
+      setConfirmReturnSigning(false);
+      setShowReturnConfirmDialog(true);
+    }
+    // Clear the query params once consumed so refresh does not reopen.
+    setSearchParams({}, { replace: true });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [searchParams, myTransferBatches]);
 
   const assignedBuilders = useMemo(() => {
     return assetBuilders.filter(
@@ -743,8 +824,27 @@ export default function AssetTransferRequest() {
         cell: ({ row }) =>
           new Date(row.getValue('request_date') as string).toLocaleDateString(),
       },
+      {
+        id: 'actions',
+        header: 'Actions',
+        cell: ({ row }) => {
+          const r = row.original;
+          const needsReturn =
+            r.status === 'awaiting-return' && !r.returnFormId;
+          if (!needsReturn) return <span className="text-sm text-gray-400">-</span>;
+          return (
+            <Button
+              size="sm"
+              onClick={() => handleGenerateReturnClick(r)}
+              className="rounded-lg bg-gradient-to-r from-red-500 to-red-600 font-semibold text-white shadow-sm hover:from-red-600 hover:to-red-700"
+            >
+              Generate Return Form
+            </Button>
+          );
+        },
+      },
     ],
-    []
+    [handleGenerateReturnClick]
   );
 
   return (
@@ -1889,9 +1989,123 @@ export default function AssetTransferRequest() {
             setShowOtpDialog(false);
           }}
           pendingActionRef={pendingSubmitActionRef}
+          purpose="transfer"
           title="OTP SMS Verification"
           description="OTP SMS Verification has been sent to your registered mobile number for transfer request confirmation."
           verifyButtonLabel="Verify & Submit"
+          phoneNumber={
+            (currentUser as { contactNumber?: string })?.contactNumber
+          }
+        />
+
+        <Dialog
+          open={showReturnConfirmDialog}
+          onOpenChange={open => {
+            setShowReturnConfirmDialog(open);
+            if (!open) {
+              setConfirmReturnSigning(false);
+            }
+          }}
+        >
+          <AppDialogFrame className="sm:max-w-lg">
+            <AppDialogGradientHeader
+              title={
+                <span className="flex items-center gap-3">
+                  <span className="rounded-xl bg-white/20 p-2.5">
+                    <ArrowRightLeft className="h-5 w-5 text-white" />
+                  </span>
+                  Generate Return Form
+                </span>
+              }
+              description="Your transfer was approved. Generate the linked return form so the asset can be returned for condition checking before the transfer is processed."
+            />
+            <AppDialogBody className="space-y-4">
+              <div className="flex items-center justify-between rounded-xl border border-gray-200 bg-gray-50 px-4 py-3">
+                <span className="text-sm font-medium text-gray-600">
+                  Approved transfer
+                </span>
+                <Badge className="shrink-0 bg-red-600 font-semibold text-white">
+                  {returnTarget?.form_number ?? ''}
+                </Badge>
+              </div>
+              <div className="rounded-lg border border-gray-200 bg-gray-50 px-3 py-3">
+                <p className="text-xs leading-snug text-gray-700">
+                  A return form linked to this transfer will be created and
+                  signed by you (OTP verified). It will be sent to your
+                  department head for approval, then to the IT / Admin
+                  department to process the return first before the transfer.
+                </p>
+              </div>
+              <div className="rounded-lg border border-gray-200 bg-gray-50 px-3 py-2">
+                <label className="group flex cursor-pointer items-start gap-2">
+                  <Checkbox
+                    checked={confirmReturnSigning}
+                    onCheckedChange={(checked: boolean | string) =>
+                      setConfirmReturnSigning(Boolean(checked))
+                    }
+                    className="mt-0.5 border-gray-400 data-[state=checked]:border-red-600 data-[state=checked]:bg-red-600"
+                  />
+                  <span className="text-xs leading-snug text-gray-700 group-hover:text-gray-900">
+                    I confirm that by signing this return form I am returning
+                    all assets in transfer {returnTarget?.form_number ?? ''}{' '}
+                    for condition checking.
+                  </span>
+                </label>
+              </div>
+            </AppDialogBody>
+            <AppDialogChromeFooter className="gap-2 sm:gap-2">
+              <Button
+                variant="outline"
+                onClick={() => setShowReturnConfirmDialog(false)}
+                disabled={generatingReturn}
+                className="rounded-xl border-gray-300 hover:bg-gray-100"
+              >
+                Cancel
+              </Button>
+              <Button
+                onClick={() => {
+                  pendingReturnActionRef.current = async () => {
+                    await handleConfirmGenerateReturn();
+                  };
+                  setShowReturnOtpDialog(true);
+                }}
+                disabled={generatingReturn || !confirmReturnSigning}
+                className="rounded-xl bg-gradient-to-r from-red-500 to-red-600 font-semibold text-white shadow-md transition-all hover:from-red-600 hover:to-red-700 hover:shadow-lg disabled:pointer-events-none disabled:opacity-50"
+              >
+                {generatingReturn ? (
+                  <div className="flex items-center gap-2">
+                    <div className="h-4 w-4 animate-spin rounded-full border-2 border-white border-t-transparent" />
+                    Generating...
+                  </div>
+                ) : (
+                  <>
+                    <CheckCircle2 className="mr-1.5 h-4 w-4" />
+                    Confirm
+                  </>
+                )}
+              </Button>
+            </AppDialogChromeFooter>
+          </AppDialogFrame>
+        </Dialog>
+
+        <SmsOtpDialog
+          isOpen={showReturnOtpDialog}
+          onOpenChange={setShowReturnOtpDialog}
+          sendOtpEndpoint="/auth/initials/send-otp"
+          verifyOtpEndpoint="/auth/initials/verify-otp"
+          onVerified={() => {
+            setShowReturnOtpDialog(false);
+            pendingReturnActionRef.current = null;
+          }}
+          onCancel={() => {
+            pendingReturnActionRef.current = null;
+            setShowReturnOtpDialog(false);
+          }}
+          pendingActionRef={pendingReturnActionRef}
+          purpose="return"
+          title="OTP SMS Verification"
+          description="OTP SMS Verification has been sent to your registered mobile number for return form confirmation."
+          verifyButtonLabel="Verify & Generate"
           phoneNumber={
             (currentUser as { contactNumber?: string })?.contactNumber
           }
@@ -1912,6 +2126,27 @@ export default function AssetTransferRequest() {
             </CardHeader>
 
             <CardContent>
+              {(() => {
+                const highlighted = transferRequests.find(
+                  r => r.formID === highlightFormId && r.status === 'awaiting-return' && !r.returnFormId
+                );
+                if (!highlighted) return null;
+                return (
+                  <div className="mb-4 flex flex-col gap-2 rounded-xl border border-purple-200 bg-purple-50 px-4 py-3 sm:flex-row sm:items-center sm:justify-between">
+                    <p className="text-sm text-purple-900">
+                      Transfer <span className="font-semibold">{highlighted.form_number}</span> was
+                      approved — generate its return form to continue.
+                    </p>
+                    <Button
+                      size="sm"
+                      onClick={() => handleGenerateReturnClick(highlighted)}
+                      className="rounded-lg bg-gradient-to-r from-red-500 to-red-600 font-semibold text-white shadow-sm hover:from-red-600 hover:to-red-700"
+                    >
+                      Generate Return Form
+                    </Button>
+                  </div>
+                );
+              })()}
               {loading ? (
                 <div className="space-y-3">
                   {[1, 2, 3, 4, 5].map(i => (

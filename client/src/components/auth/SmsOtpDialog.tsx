@@ -31,6 +31,8 @@ interface SmsOtpDialogProps {
   icon?: React.ReactNode;
   verifyButtonLabel?: string;
   phoneNumber?: string;
+  /** Selects the email template matching the action being signed (e.g. 'transfer'). */
+  purpose?: string;
 }
 
 export default function SmsOtpDialog({
@@ -48,6 +50,7 @@ export default function SmsOtpDialog({
   icon = <ShieldCheck className="h-6 w-6 text-blue-600" />,
   verifyButtonLabel = 'Verify & Sign',
   phoneNumber,
+  purpose = 'profile_initials',
 }: SmsOtpDialogProps) {
   const { user: currentUser, loading: currentUserLoading } = useCurrentUser();
   const [otpCode, setOtpCode] = useState(['', '', '', '', '', '']);
@@ -149,7 +152,7 @@ export default function SmsOtpDialog({
   const sendOtp = useCallback(async () => {
     setIsSendingOtp(true);
     try {
-      await api.post(sendOtpEndpoint, {});
+      await api.post(sendOtpEndpoint, { purpose });
       setOtpExpiry(expirySeconds);
       setCanResend(false);
       setResendCooldown(60);
@@ -161,7 +164,7 @@ export default function SmsOtpDialog({
     } finally {
       setIsSendingOtp(false);
     }
-  }, [sendOtpEndpoint, expirySeconds]);
+  }, [sendOtpEndpoint, expirySeconds, purpose]);
 
   useEffect(() => {
     if (!isOpen) return;

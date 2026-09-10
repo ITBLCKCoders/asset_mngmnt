@@ -1,6 +1,7 @@
 import express from 'express';
 import multer from 'multer';
 import {
+  createReturnFromTransferHandler,
   createAssetReturnHandler,
   getAssetReturnsHandler,
   getAssetReturnByIdHandler,
@@ -77,6 +78,37 @@ router.post(
  *       401: { description: Unauthorized }
  */
 router.post('/submit-request', authenticate, submitAssetReturnRequestHandler);
+
+/**
+ * @swagger
+ * /api/asset-returns/from-transfer/{transferFormId}:
+ *   post:
+ *     tags: [Asset Returns]
+ *     summary: Generate the linked return form for an approved transfer (staged flow, OTP-verified requestor signature)
+ *     parameters:
+ *       - in: path
+ *         name: transferFormId
+ *         required: true
+ *         schema: { type: string }
+ *     requestBody:
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             properties:
+ *               digitalSignature: { type: string }
+ *     responses:
+ *       201: { description: Return form generated and linked }
+ *       400: { description: Validation error }
+ *       401: { description: Unauthorized }
+ *       403: { description: Forbidden }
+ *       404: { description: Transfer form not found }
+ */
+router.post(
+  '/from-transfer/:transferFormId',
+  authenticate,
+  createReturnFromTransferHandler
+);
 
 /**
  * @swagger

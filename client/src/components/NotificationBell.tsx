@@ -177,6 +177,20 @@ export default function NotificationBell({ className }: NotificationBellProps) {
       return;
     }
 
+    // Staged transfer flow: approved transfer without a return yet — deep-link
+    // to the Transfer asset request page with the generate-return action.
+    if (
+      notif.actionTarget === 'transfer_approved_generate_return' &&
+      notif.formId
+    ) {
+      navigate(
+        `/assets/transfer-request?transferFormId=${notif.formId}&action=generate-return`
+      );
+      markAsRead(notif.id);
+      setIsOpen(false);
+      return;
+    }
+
     // Handle processed-return "checked and verified" and checklist receive
     // notifications - navigate to the Approvals Receive Approve tab.
     // Matched on actionTarget so it also works for legacy notifications whose

@@ -1034,4 +1034,148 @@ describe('assetReturns.controller', () => {
       );
     });
   });
+
+  describe('createReturnFromTransferHandler', () => {
+    const approvedTransferRow = {
+      formID: 'tf1',
+      form_number: 'TRF-001',
+      user_id: 'u1',
+      department_id: 'd1',
+      location_id: 'l1',
+      location_room_id: null,
+      signed_at: '2024-06-01 10:00:00',
+      dept_head_signed_at: '2024-06-02 09:00:00',
+      sub_approver_1_signed_at: null,
+      return_form_id: null,
+      declined_at: null,
+      executed_at: null,
+    };
+
+    function setupHappyPath() {
+      pool.execute.mockImplementation(async (sql: string) => {
+        const s = String(sql);
+        if (s.includes('FROM asset_transfer_forms WHERE formID'))
+          return [[approvedTransferRow], []];
+        if (s.includes('UPDATE asset_transfer_forms SET return_form_id'))
+          return [[], []];
+        return [[], []];
+      });
+      transferRepo.getTransferFormAssignments.mockResolvedValue([
+        { assignment_id: 'a1' },
+      ]);
+      transferRepo.getActiveAssignmentsByIds.mockResolvedValue([
+        { ...mockAssignment, assignmentID: 'a1' },
+      ]);
+      transferRepo.getDepartmentById.mockResolvedValue({ company_id: '10', name: 'IT' });
+      transferRepo.getUserById.mockResolvedValue({ userID: 'u1', company_id: '10' });
+      returnRepo.fetchUserDigitalSignature.mockResolvedValue('dig-sig');
+      generateReturnFormNumber.mockResolvedValue('RET-100');
+      returnFormModel.createWithReturnerSignature.mockResolvedValue({
+        formID: 'rf9',
+        form_number: 'RET-100',
+      });
+      returnModel.create.mockResolvedValue({ return_id: 'r9' });
+      transferRepo.getUserNamesById.mockResolvedValue({ first_name: 'John', last_name: 'Doe' });
+      getDesignatedApproverUserIdForRequester.mockResolvedValue('u-approver');
+      getDesignatedSubApproverUserIdForRequester.mockResolvedValue(null);
+    }
+
+    it('creates + links the return form and notifies the approver', async () => {
+      req.params = { transferFormId: 'tf1' };
+      req.body = { digitalSignature: 'sig' };
+      setupHappyPath();
+      await assetReturnsController.createReturnFromTransferHandler(req, res);
+      expect(res._status).toBe(201);
+      expect(res._json.formID).toBe('rf9');
+      expect(res._json.transferFormID).toBe('tf1');
+      // Return rows are created for every linked assignment.
+      expect(returnModel.create).toHaveBeenCalledWith(
+        expect.objectContaining({
+          assignment_id: 'a1',
+          user_id: 'u1',
+          form_id: 'rf9',
+        })
+      );
+      // Transfer form is linked to the new return form.
+      const linkCall = pool.execute.mock.calls.find((c: any[]) =>
+        String(c[0]).includes('UPDATE asset_transfer_forms SET return_form_id')
+      );
+      expect(linkCall).toBeDefined();
+      expect(linkCall![1]).toEqual(['rf9', 'tf1']);
+      // Requestor's signature is stored on the return form.
+      expect(returnFormModel.createWithReturnerSignature).toHaveBeenCalledWith(
+        expect.objectContaining({
+          user_id: 'u1',
+          signed_by: 'u1',
+          signed_digital_signature: 'sig',
+        })
+      );
+      expect(createNotificationForApi).toHaveBeenCalledWith(
+        expect.objectContaining({
+          user_id: 'u-approver',
+          title: 'Return Form Approval Needed for Transfer Request',
+          data: expect.objectContaining({
+            form_id: 'rf9',
+            transfer_form_id: 'tf1',
+            actionTarget: 'return_request_approval',
+          }),
+        })
+      );
+    });
+
+    it('returns 404 when the transfer form is not found', async () => {
+      req.params = { transferFormId: 'missing' };
+      pool.execute.mockResolvedValue([[], []]);
+      await assetReturnsController.createReturnFromTransferHandler(req, res);
+      expect(res._status).toBe(404);
+    });
+
+    it('returns 403 when caller is not the transfer requestor', async () => {
+      req.params = { transferFormId: 'tf1' };
+      req.body = { digitalSignature: 'sig' };
+      pool.execute.mockImplementation(async (sql: string) => {
+        if (String(sql).includes('FROM asset_transfer_forms WHERE formID'))
+          return [[{ ...approvedTransferRow, user_id: 'someone-else' }], []];
+        return [[], []];
+      });
+      await assetReturnsController.createReturnFromTransferHandler(req, res);
+      expect(res._status).toBe(403);
+    });
+
+    it('returns 400 when the transfer is not yet approved', async () => {
+      req.params = { transferFormId: 'tf1' };
+      req.body = { digitalSignature: 'sig' };
+      pool.execute.mockImplementation(async (sql: string) => {
+        if (String(sql).includes('FROM asset_transfer_forms WHERE formID'))
+          return [[{ ...approvedTransferRow, dept_head_signed_at: null, sub_approver_1_signed_at: null }], []];
+        return [[], []];
+      });
+      await assetReturnsController.createReturnFromTransferHandler(req, res);
+      expect(res._status).toBe(400);
+    });
+
+    it('returns 400 when a return form already exists for the transfer', async () => {
+      req.params = { transferFormId: 'tf1' };
+      req.body = { digitalSignature: 'sig' };
+      pool.execute.mockImplementation(async (sql: string) => {
+        if (String(sql).includes('FROM asset_transfer_forms WHERE formID'))
+          return [[{ ...approvedTransferRow, return_form_id: 'rf-existing' }], []];
+        return [[], []];
+      });
+      await assetReturnsController.createReturnFromTransferHandler(req, res);
+      expect(res._status).toBe(400);
+    });
+
+    it('returns 400 when the transfer was declined', async () => {
+      req.params = { transferFormId: 'tf1' };
+      req.body = { digitalSignature: 'sig' };
+      pool.execute.mockImplementation(async (sql: string) => {
+        if (String(sql).includes('FROM asset_transfer_forms WHERE formID'))
+          return [[{ ...approvedTransferRow, declined_at: '2024-06-01' }], []];
+        return [[], []];
+      });
+      await assetReturnsController.createReturnFromTransferHandler(req, res);
+      expect(res._status).toBe(400);
+    });
+  });
 });

@@ -11,8 +11,18 @@ jest.mock('../../utils/responseWrapper.js', () => ({
   createErrorResponse: (res: any, error: any, errors?: any, statusCode?: number, message?: string) => { res.status(statusCode || 400).json({ error: message || error }); return res; },
 }));
 jest.mock('../../utils/cloudinary.js', () => ({ uploadReturnConditionImageToCloudinary: jest.fn(), signedRawUrlFromStoredSecureUrl: jest.fn() }));
-jest.mock('../../utils/assetScope.js', () => ({ getAssetScope: jest.fn(), getDepartmentIdsForScope: jest.fn() }));
-jest.mock('../../utils/approverNotifications.js', () => ({ isUserManagerApprover1: jest.fn(), isUserManagerApprover2: jest.fn(), getManagerApprover1UserIdsInDepartmentAndCompany: jest.fn(), getAssetRoleUsersForAssignmentsAndCompany: jest.fn(), getManagerApprover2UserIdsForProcessedReturn: jest.fn(), isDesignatedApprover: jest.fn(), isDesignatedSubApprover: jest.fn(), getDesignatedApproverUserIdForRequester: jest.fn(), getDesignatedSubApproverUserIdForRequester: jest.fn() }));
+jest.mock('../../utils/assetScope.js', () => ({
+  getAssetScope: jest.fn(),
+  getDepartmentIdsForScope: jest.fn(),
+  // Mirror the real classifier so scope-aware notifications stay testable.
+  classifyDepartmentScopeByName: jest.fn((name: string | null | undefined) => {
+    const n = (name || '').toLowerCase();
+    if (n.includes('it') || n.includes('information technology')) return 'IT';
+    if (n.includes('admin') || n.includes('administration')) return 'Admin';
+    return 'Other';
+  }),
+}));
+jest.mock('../../utils/approverNotifications.js', () => ({ isUserManagerApprover1: jest.fn(), isUserManagerApprover2: jest.fn(), getManagerApprover1UserIdsInDepartmentAndCompany: jest.fn(), getAssetRoleUsersForAssignmentsAndCompany: jest.fn(), getManagerApprover2UserIdsForProcessedReturn: jest.fn(), isDesignatedApprover: jest.fn(), isDesignatedSubApprover: jest.fn(), getDesignatedApproverUserIdForRequester: jest.fn(), getDesignatedSubApproverUserIdForRequester: jest.fn(), getRequestorMA1Status: jest.fn() }));
 jest.mock('../../services/userApprovers.service.js', () => ({ getRequestersAssignedToApprover: jest.fn() }));
 jest.mock('../../utils/notificationsApi.js', () => ({ createNotificationForApi: jest.fn() }));
 jest.mock('../../utils/transferFormNumber.js', () => ({ generateTransferFormNumber: jest.fn(), generateTransferFormNumberFallback: jest.fn() }));
@@ -39,7 +49,7 @@ const returnFormModel = jest.requireMock('../../models/assetReturnForm.model.js'
 const assetReturnModel = jest.requireMock('../../models/assetReturn.model.js').AssetReturnModel;
 const { getAssetScope } = jest.requireMock('../../utils/assetScope.js');
 const { isUserManagerApprover1, isUserManagerApprover2, getManagerApprover1UserIdsInDepartmentAndCompany, getAssetRoleUsersForAssignmentsAndCompany, getManagerApprover2UserIdsForProcessedReturn } = jest.requireMock('../../utils/approverNotifications.js');
-const { isDesignatedApprover, isDesignatedSubApprover, getDesignatedApproverUserIdForRequester, getDesignatedSubApproverUserIdForRequester } = jest.requireMock('../../utils/approverNotifications.js');
+const { isDesignatedApprover, isDesignatedSubApprover, getDesignatedApproverUserIdForRequester, getDesignatedSubApproverUserIdForRequester, getRequestorMA1Status } = jest.requireMock('../../utils/approverNotifications.js');
 const { getRequestersAssignedToApprover } = jest.requireMock('../../services/userApprovers.service.js');
 const { createNotificationForApi } = jest.requireMock('../../utils/notificationsApi.js');
 const transferRepo = jest.requireMock('../../repositories/assetTransferForm.repository.js');
@@ -64,6 +74,8 @@ describe('assetTransfers.controller', () => {
     getDesignatedApproverUserIdForRequester.mockResolvedValue(null);
     getDesignatedSubApproverUserIdForRequester.mockResolvedValue(null);
     getRequestersAssignedToApprover.mockResolvedValue([]);
+    getRequestorMA1Status.mockResolvedValue(false);
+    getAssetScope.mockResolvedValue({ companyId: 10, departmentIds: null, isSuperAdmin: false, isAdmin: false });
   });
 
   describe('submitTransferRequestHandler', () => {
@@ -113,7 +125,7 @@ describe('assetTransfers.controller', () => {
       expect(res._status).toBe(400);
     });
 
-    it('sends both transfer and return approval-needed notifications to Manager Approver 1', async () => {
+    it('sends only the transfer approval-needed notification to Manager Approver 1 (staged flow: no return form yet)', async () => {
       req.body = { assignmentIds: ['a1'], departmentId: 'd1', transferToUserId: 'u2', notes: 'Transfer', digitalSignature: 'sig' };
       transferRepo.getActiveAssignmentsByIds.mockResolvedValue([{ assignmentID: 'a1', asset_id: '10', user_id: 'u1', department_id: 'd1', location_id: 'l1', location_room_id: null }]);
       transferRepo.getUserById.mockResolvedValue({ userID: 'u2', company_id: '10' });
@@ -121,15 +133,19 @@ describe('assetTransfers.controller', () => {
       transferRepo.getCategoryDepartmentsByAssetIds.mockResolvedValue([{ departmentID: 'd1' }]);
       transferRepo.getDepartmentById.mockResolvedValue({ company_id: '10' });
       transferRepo.getUserNamesById.mockResolvedValue({ first_name: 'John', last_name: 'Doe' });
-      generateReturnFormNumber.mockResolvedValue('RF-001');
-      returnFormModel.createWithReturnerSignature.mockResolvedValue({ formID: 'rf1', form_number: 'RF-001' });
-      assetReturnModel.create.mockResolvedValue({});
       generateTransferFormNumber.mockResolvedValue('TRF-001');
       formModel.createWithTransfererSignature.mockResolvedValue({ formID: 'f1', form_number: 'TRF-001' });
       formModel.addFormAssignments.mockResolvedValue(undefined);
-      getManagerApprover1UserIdsInDepartmentAndCompany.mockResolvedValue(['u-approver']);
+      getDesignatedApproverUserIdForRequester.mockResolvedValue('u-approver');
+      getDesignatedSubApproverUserIdForRequester.mockResolvedValue(null);
       await assetTransfersController.submitTransferRequestHandler(req, res);
       expect(res._status).toBe(201);
+      // Staged flow: only the transfer form is created (no return form / returns).
+      expect(returnFormModel.createWithReturnerSignature).not.toHaveBeenCalled();
+      expect(assetReturnModel.create).not.toHaveBeenCalled();
+      expect(formModel.createWithTransfererSignature).toHaveBeenCalledWith(
+        expect.objectContaining({ return_form_id: null })
+      );
       expect(createNotificationForApi).toHaveBeenCalledWith(
         expect.objectContaining({
           user_id: 'u-approver',
@@ -137,13 +153,12 @@ describe('assetTransfers.controller', () => {
           data: expect.objectContaining({ form_id: 'f1', actionTarget: 'transfer_request_approval' }),
         })
       );
-      expect(createNotificationForApi).toHaveBeenCalledWith(
-        expect.objectContaining({
-          user_id: 'u-approver',
-          title: 'Asset Return Request Approval Needed',
-          data: expect.objectContaining({ form_id: 'rf1', actionTarget: 'return_request_approval' }),
-        })
+      // The old coupled "Asset Return Request Approval Needed" notification is gone.
+      const notifTitles = (createNotificationForApi as jest.Mock).mock.calls.map(
+        (c: any[]) => c[0]?.title
       );
+      expect(notifTitles).not.toContain('Asset Return Request Approval Needed');
+      expect(notifTitles).not.toContain('Return Form Created for Condition Checking');
     });
 
     it('returns 404 when assignments not found', async () => {
@@ -365,14 +380,22 @@ describe('assetTransfers.controller', () => {
       );
     });
 
-    it('notifies the requester when approving a transfer with no linked return form', async () => {
+    it('notifies the requester they can generate a return when approving a transfer with no linked return form', async () => {
       req.params = { formId: 'f1' };
       req.body = { digitalSignature: 'sig' };
-      formModel.findById.mockResolvedValue({ ...mockForm, form_number: 'TRF-001', user_id: 'u1', signed_at: '2024-01-01', dept_head_signed_at: null, return_form_id: null });
-      pool.execute.mockResolvedValue([[{ module_name: 'Approvals', permission_type: 'create', granted: 1 }, { module_name: 'Approvals', permission_type: 'edit', granted: 1 }], []]);
+      formModel.findById.mockResolvedValue({ ...mockForm, form_number: 'TRF-001', user_id: 'u1', department_id: 'd1', signed_at: '2024-01-01', dept_head_signed_at: null, return_form_id: null });
+      pool.execute.mockImplementation(async (sql: string) => {
+        const s = String(sql);
+        if (s.includes('SELECT module_name')) return [[{ module_name: 'Approvals', permission_type: 'create', granted: 1 }, { module_name: 'Approvals', permission_type: 'edit', granted: 1 }], []];
+        if (s.includes('SELECT asset_id FROM asset_assignments')) return [[{ asset_id: '10' }], []];
+        return [[], []];
+      });
       isUserManagerApprover1.mockResolvedValue(false);
       fetchUserDigitalSignature.mockResolvedValue('dig-sig');
       transferRepo.getUserNamesById.mockResolvedValue({ first_name: 'John', last_name: 'Doe' });
+      transferRepo.getTransferFormAssignments.mockResolvedValue([{ assignment_id: 'a1' }]);
+      transferRepo.getCategoryDepartmentsByAssetIds.mockResolvedValue([{ departmentID: 'd1' }]);
+      transferRepo.getDepartmentById.mockResolvedValue({ name: 'IT Department' });
       await assetTransfersController.approveTransferFormHandler(req, res);
       expect(res._json.message).toContain('approved');
       expect(createNotificationForApi).toHaveBeenCalledWith(
@@ -382,6 +405,22 @@ describe('assetTransfers.controller', () => {
           data: expect.objectContaining({ form_id: 'f1', form_number: 'TRF-001' }),
         })
       );
+      // Staged flow: requestor is told to generate the return form next.
+      expect(createNotificationForApi).toHaveBeenCalledWith(
+        expect.objectContaining({
+          user_id: 'u1',
+          title: 'You Can Now Request a Return for Condition Checking',
+          data: expect.objectContaining({
+            transfer_form_id: 'f1',
+            actionTarget: 'transfer_approved_generate_return',
+          }),
+        })
+      );
+      // Processors are NOT notified yet — they hear about it after the return is approved.
+      const notifTitles = (createNotificationForApi as jest.Mock).mock.calls.map(
+        (c: any[]) => c[0]?.title
+      );
+      expect(notifTitles).not.toContain('New Asset Transfer Request Received');
     });
   });
 

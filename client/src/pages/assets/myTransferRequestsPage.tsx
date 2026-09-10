@@ -48,6 +48,8 @@ interface TransferRequestRow {
   asset_summary: string;
   /** First rows for card list (same pattern as My Asset Return Requests). */
   asset_lines: { name: string; code: string }[];
+  /** Linked return form (null while the staged return is not yet generated). */
+  returnFormId?: string | null;
 }
 
 function getStatusBadgeClass(status: TransferFormUiStatus): string {
@@ -55,6 +57,8 @@ function getStatusBadgeClass(status: TransferFormUiStatus): string {
     return 'bg-green-100 text-green-800 border-green-200 dark:bg-green-900/30 dark:text-green-200 dark:border-green-800';
   if (status === 'approved')
     return 'bg-blue-100 text-blue-800 border-blue-200 dark:bg-blue-900/30 dark:text-blue-200 dark:border-blue-800';
+  if (status === 'awaiting-return')
+    return 'bg-purple-100 text-purple-800 border-purple-200 dark:bg-purple-900/30 dark:text-purple-200 dark:border-purple-800';
   if (status === 'pending') return 'bg-amber-100 text-amber-800 border-amber-200 dark:bg-amber-900/30 dark:text-amber-200 dark:border-amber-800';
   return 'bg-red-100 text-red-800 border-red-200 dark:bg-red-900/30 dark:text-red-200 dark:border-red-800';
 }
@@ -120,6 +124,7 @@ export default function MyTransferRequestsPage() {
           asset_summary:
             extraAssets > 0 ? `${assetName} +${extraAssets} more` : assetName,
           asset_lines,
+          returnFormId: batch.return_form_id ?? null,
         };
       });
 
@@ -198,6 +203,33 @@ export default function MyTransferRequestsPage() {
             </div>
           </div>
         </PageHeader>
+
+        {(() => {
+          const needsReturn = requests.filter(
+            r => r.status === 'awaiting-return' && !r.returnFormId
+          );
+          if (needsReturn.length === 0) return null;
+          return (
+            <Card className="border-0 bg-purple-50/80 shadow-md">
+              <CardContent className="flex flex-col gap-3 py-4 sm:flex-row sm:items-center sm:justify-between">
+                <p className="text-sm text-purple-900">
+                  {needsReturn.length} approved transfer
+                  {needsReturn.length !== 1 ? 's' : ''} need
+                  {needsReturn.length === 1 ? 's' : ''} a return form before the
+                  transfer can be processed.
+                </p>
+                <Link to="/assets/transfer-request">
+                  <Button
+                    size="sm"
+                    className="rounded-lg bg-gradient-to-r from-red-500 to-red-600 font-semibold text-white shadow-sm hover:from-red-600 hover:to-red-700"
+                  >
+                    Generate Return Form
+                  </Button>
+                </Link>
+              </CardContent>
+            </Card>
+          );
+        })()}
 
         {loading ? (
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">

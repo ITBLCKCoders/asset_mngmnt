@@ -1476,6 +1476,7 @@ export const ReturnFormCard: React.FC<{
                 pendingSignActionRef.current = null;
               }}
               pendingActionRef={pendingSignActionRef}
+              purpose="return"
               title="OTP Email Verification"
               description="OTP Email Verification has been sent to your registered email for return form signing."
               verifyButtonLabel="Verify & Sign Form"
@@ -2046,6 +2047,7 @@ export const TransferFormCard: React.FC<{
                 pendingSignActionRef.current = null;
               }}
               pendingActionRef={pendingSignActionRef}
+              purpose="transfer"
               title="OTP Email Verification"
               description="OTP Email Verification has been sent to your registered email for transfer form signing."
               verifyButtonLabel="Verify & Sign Form"
@@ -2797,6 +2799,8 @@ export interface AssetTransferFormBatch {
   sub_approver_2_position?: string | null;
   /** True when the asset owner is marked absent (processor-initiated hold transfer) */
   owner_absent?: boolean;
+  /** Linked return form; null while the staged (post-approval) return is not yet generated */
+  return_form_id?: string | null;
   /** Intangible assets linked to this transfer form (persisted at creation) */
   intangibleAssets?: Array<{
     id: string;
@@ -4722,6 +4726,7 @@ export default function DocumentsTab({
           pendingClearanceActionRef.current = null;
         }}
         pendingActionRef={pendingClearanceActionRef}
+        purpose="clearance"
         title="OTP Email Verification"
         description="OTP Email Verification has been sent to your registered email for clearance form generation. Once verified, your signature, date and time will appear under Employee Undergoing Clearance."
         verifyButtonLabel="Verify & Generate"

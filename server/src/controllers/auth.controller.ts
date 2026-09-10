@@ -23,6 +23,9 @@ import {
   regenerateBackupCodes,
   verifyOTP,
   sendVerificationOTP,
+  sendSigningOTP,
+  verifySigningOTP,
+  normalizeSigningOtpPurpose,
 } from '../auth/index.js';
 // SMS OTP replaced by email OTP — kept for reference
 // import { checkSmsVerification, sendSmsVerification } from '../auth/sms.js';
@@ -850,10 +853,13 @@ export async function checkInitialsAvailabilityHandler(
   }
 }
 
-// SEND OTP FOR INITIALS VERIFICATION (uses email instead of SMS)
+// SEND OTP FOR SIGNING (uses email instead of SMS)
+// `purpose` selects the email template so recipients see content matching
+// the action being signed (profile initials, assignment, transfer, return, etc.).
 export async function sendInitialsOtpHandler(req: AuthRequest, res: Response) {
   const userId = req.user!.userID;
   const email = req.user!.email;
+  const purpose = normalizeSigningOtpPurpose((req.body as any)?.purpose);
 
   try {
     // SMS OTP replaced by email OTP — kept for reference
@@ -883,7 +889,7 @@ export async function sendInitialsOtpHandler(req: AuthRequest, res: Response) {
     //   return res.status(400).json({ error: smsResult.error });
     // }
 
-    await sendVerificationOTP(userId, email);
+    await sendSigningOTP(userId, email, purpose ?? 'profile_initials');
 
     res.json({ message: 'OTP sent successfully' });
   } catch (error: any) {
@@ -892,7 +898,7 @@ export async function sendInitialsOtpHandler(req: AuthRequest, res: Response) {
   }
 }
 
-// VERIFY OTP FOR INITIALS VERIFICATION (uses email instead of SMS)
+// VERIFY OTP FOR SIGNING (uses email instead of SMS)
 export async function verifyInitialsOtpHandler(req: AuthRequest, res: Response) {
   const { otp } = req.body;
 
@@ -928,7 +934,7 @@ export async function verifyInitialsOtpHandler(req: AuthRequest, res: Response) 
     //   return res.status(400).json({ error: verificationResult.error });
     // }
 
-    const result = await verifyOTP(otp);
+    const result = await verifySigningOTP(otp);
     if ('error' in result) {
       return res.status(400).json({ error: result.error });
     }
