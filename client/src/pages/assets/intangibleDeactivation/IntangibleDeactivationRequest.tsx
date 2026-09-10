@@ -1,6 +1,6 @@
 'use client';
 import { useEffect, useState, useMemo } from 'react';
-import { Package, FileText, CheckCircle2, AlertTriangle, RotateCcw } from 'lucide-react';
+import { Package, FileText, CheckCircle2, RotateCcw } from 'lucide-react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { PageHeader } from '@/components/common/PageHeader';
 import { SearchWithColumnFilter } from '@/components/common/SearchWithColumnFilter';
@@ -392,11 +392,6 @@ export default function IntangibleDeactivationRequest() {
                     placeholder="Reason for deactivation"
                     rows={3}
                   />
-                </div>
-
-                <div className="flex items-center gap-2 text-sm bg-amber-50 border border-amber-200 rounded-lg p-3">
-                  <AlertTriangle className="h-4 w-4 text-amber-600 flex-shrink-0" />
-                  <span>Your request will go to <b>Approver/Sub-Approver</b> → then <b>HR Custodian</b>. On HR approval, the asset(s) will be removed from your accountability.</span>
                 </div>
 
                 <Button

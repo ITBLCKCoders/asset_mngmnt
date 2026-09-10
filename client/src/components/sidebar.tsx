@@ -715,7 +715,7 @@ const Sidebar = memo(function Sidebar({ onLogout, currentPath = '', currentSearc
                                   : 'max-h-0 opacity-0'
                               )}
                             >
-                              <div className="ml-1 space-y-1 border-l border-white/10 pl-3">
+                              <div className="ml-1 space-y-1 pl-3">
                                 {visibleChildren.map(child => (
                                   <SidebarHoverItem
                                     key={child.path}
