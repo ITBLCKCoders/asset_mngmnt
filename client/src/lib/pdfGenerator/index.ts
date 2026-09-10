@@ -34,4 +34,10 @@ export { generateAssetChecklistPDF } from './assetChecklistPdf';
 
 export { generateAccountabilityClearancePDF } from './accountabilityClearancePdf';
 
+export type {
+  IntangibleDeactivationPdfAsset,
+  IntangibleDeactivationPdfData,
+} from './intangibleDeactivationPdf';
+export { generateIntangibleDeactivationPDF } from './intangibleDeactivationPdf';
+
 export { generateDashboardPDF } from './dashboardPdf';

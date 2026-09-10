@@ -3,7 +3,16 @@
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
-import { Eye, FileSignature, User, Package, Calendar, Building2 } from 'lucide-react';
+import {
+  Tabs,
+  TabsContent,
+  TabsList,
+  TabsTrigger,
+  segmentTabsListClassName,
+  segmentTabsTriggerClassName,
+} from '@/components/ui/tabs';
+import { Download, Eye, FileSignature, User, Package, Building2 } from 'lucide-react';
+import { ApprovalTimeline } from '@/components/common/ApprovalTimeline';
 
 export type AccountabilityApprovalFormType =
   | 'admin_copy_signature'
@@ -30,6 +39,15 @@ export interface AccountabilityApprovalBatch {
     serialNo?: string | null;
   }>;
   department_name?: string | null;
+  signed_at?: string | null;
+  approved_at?: string | null;
+  received_copy_201_file_signed_at?: string | null;
+  admin_copy_signer_name?: string | null;
+  dept_head_signed_by_name?: string | null;
+  approved_by_name?: string | null;
+  received_copy_201_file_signed_by_name?: string | null;
+  decline_reason?: string | null;
+  updated_at?: string | null;
 }
 
 function getStatusBadge(batch: AccountabilityApprovalBatch) {
@@ -45,24 +63,18 @@ function getStatusBadge(batch: AccountabilityApprovalBatch) {
   };
 }
 
-function getActionLabel(batch: AccountabilityApprovalBatch): string {
-  if (batch.formType === 'admin_copy_signature') {
-    return 'Sign Copy';
-  }
-  return 'Approve';
-}
 
 export function AccountabilityFormApprovalCard({
   batch,
   onView,
-  onAction,
+  onDownload,
 }: {
   batch: AccountabilityApprovalBatch;
   onView: () => void;
-  onAction: () => void;
+  onDownload: () => void;
 }) {
   const statusBadge = getStatusBadge(batch);
-  const actionLabel = getActionLabel(batch);
+
   const userName =
     `${batch.user_first_name ?? ''} ${batch.user_last_name ?? ''}`.trim() ||
     batch.user_email ||
@@ -70,8 +82,15 @@ export function AccountabilityFormApprovalCard({
   const displayAssets = (batch.assets ?? [])
     .map(a => ({ ...a, label: a.name || a.code || a.id }))
     .filter(a => a.label);
+  const timeline = [
+    { title: 'Form created', done: !!batch.created_at, date: batch.created_at },
+    { title: `${batch.admin_copy_copy_type ?? 'IT/Admin'} copy signed`, done: !!batch.admin_copy_signed_at, date: batch.admin_copy_signed_at, signerName: batch.admin_copy_signer_name },
+    { title: 'Signed by asset owner', done: !!batch.signed_at, date: batch.signed_at, signerName: userName },
+    { title: 'Approved by department head', done: !!batch.approved_at, date: batch.approved_at, signerName: batch.dept_head_signed_by_name ?? batch.approved_by_name },
+    { title: 'Received Copy for 201 File (HR)', done: !!batch.received_copy_201_file_signed_at, date: batch.received_copy_201_file_signed_at, signerName: batch.received_copy_201_file_signed_by_name },
+  ];
   return (
-    <Card className="shadow-md hover:shadow-xl transition-all duration-200 border-slate-200 bg-white flex flex-col overflow-hidden">
+    <Card className="h-full shadow-md hover:shadow-xl transition-all duration-200 border-slate-200 bg-white flex flex-col overflow-hidden">
       <CardHeader className="pb-3">
         <div className="flex items-start justify-between">
           <div className="flex items-center gap-3">
@@ -112,6 +131,12 @@ export function AccountabilityFormApprovalCard({
       </CardHeader>
 
       <CardContent className="flex-1 flex flex-col gap-4">
+        <Tabs defaultValue="details" className="flex h-full flex-col">
+          <TabsList className={`${segmentTabsListClassName} mx-4 mb-2 grid w-[calc(100%-2rem)] grid-cols-2`}>
+            <TabsTrigger value="details" className={segmentTabsTriggerClassName}>Details</TabsTrigger>
+            <TabsTrigger value="timeline" className={segmentTabsTriggerClassName}>Timeline</TabsTrigger>
+          </TabsList>
+          <TabsContent value="details" className="mt-4 space-y-4">
         {/* Employee */}
         <div className="flex items-start gap-3">
           <User className="h-4 w-4 text-gray-400 mt-0.5 flex-shrink-0" />
@@ -161,34 +186,30 @@ export function AccountabilityFormApprovalCard({
           </div>
         )}
 
-        {/* Step hint */}
-        <div className="flex items-start gap-2 text-xs text-gray-600 bg-gray-50 rounded-md p-2">
-          <Calendar className="h-3.5 w-3.5 mt-0.5 shrink-0" />
-          <p>
-            {batch.formType === 'admin_copy_signature'
-              ? `Sign the ${batch.admin_copy_copy_type ?? 'IT'} copy to release this form to the next approver.`
-              : 'Review the form and approve to release it to the new asset owner.'}
-          </p>
+          </TabsContent>
+          <TabsContent value="timeline" className="mt-4">
+        <div className="rounded-md border border-slate-200 bg-slate-50 p-3">
+          <ApprovalTimeline
+            steps={timeline}
+            isDeclined={batch.approval_status === 'declined' || batch.decline_reason === 'Declined'}
+            declinedAt={batch.updated_at}
+            declineReason={batch.decline_reason}
+          />
         </div>
+          </TabsContent>
+        </Tabs>
+      </CardContent>
 
-        <div className="mt-auto flex gap-2 pt-2">
-          <Button
-            variant="outline"
-            className="flex-1"
-            onClick={onView}
-          >
+      <div className="flex flex-col sm:flex-row gap-2 border-t border-slate-100 p-4">
+          <Button variant="outline" size="sm" className="w-full sm:flex-1 bg-red-600 text-white border-red-600 hover:bg-white hover:text-red-600 hover:border-red-600 shadow-sm" onClick={onView}>
             <Eye className="h-4 w-4 mr-2" />
             View
           </Button>
-          <Button
-            className="flex-1 bg-gradient-to-r from-red-500 to-red-600 hover:from-red-600 hover:to-red-700 text-white"
-            onClick={onAction}
-          >
-            <FileSignature className="h-4 w-4 mr-2" />
-            {actionLabel}
+          <Button variant="outline" size="sm" className="w-full sm:flex-1 bg-white text-red-600 border-red-600 hover:bg-red-600 hover:text-white shadow-sm" onClick={onDownload}>
+            <Download className="h-4 w-4 mr-2" />
+            Download
           </Button>
         </div>
-      </CardContent>
     </Card>
   );
 }

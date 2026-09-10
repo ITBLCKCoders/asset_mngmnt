@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useMemo } from 'react';
 import { Button } from '@/components/ui/button';
+import { Badge } from '@/components/ui/badge';
 import { PageHeader } from '@/components/common/PageHeader';
 import {
   CheckSquare,
@@ -40,6 +41,7 @@ import {
   generateAssetTransferPDF,
   generateAssetChecklistPDF,
   generateAssetBorrowingPDF,
+  generateIntangibleDeactivationPDF,
   downloadPDF,
 } from '@/lib/pdfGenerator';
 import {
@@ -57,7 +59,7 @@ import {
   mapIntangibleDeactivationRow,
 } from '@/pages/approvals/IntangibleDeactivationApprovalCard';
 import {
-  AccountabilityFormDetail,
+  generateAccountabilityFormPDF,
   type AccountabilityForm,
 } from '@/pages/assets/accountability/accountabilityForm';
 import { PDFViewer } from '@/components/PDFViewer';
@@ -155,14 +157,23 @@ function mapAccountabilityApiBatch(
     user_last_name: row.last_name ?? null,
     user_email: row.email ?? null,
     admin_copy_copy_type: row.admin_copy_copy_type ?? null,
-    admin_copy_signed_at: row.admin_copy_signed_at ?? null,
     approval_status: row.approval_status ?? null,
-    created_at: row.created_at,
     formOrigin,
     assets,
     // The "new asset owner" is the form's user; their department is what the
     // accountability card should show (matches the form card display).
     department_name: row.user_department_name ?? row.department_name ?? null,
+    created_at: row.created_at ?? null,
+    admin_copy_signed_at: row.admin_copy_signed_at ?? row.adminCopySignedAt ?? null,
+    signed_at: row.signed_at ?? null,
+    approved_at: row.approved_at ?? row.approvedAt ?? null,
+    received_copy_201_file_signed_at: row.received_copy_201_file_signed_at ?? row.receivedCopy201FileSignedAt ?? null,
+    admin_copy_signer_name: row.admin_copy_signer_name ?? row.adminCopySignerName ?? null,
+    dept_head_signed_by_name: row.dept_head_signed_by_name ?? row.deptHeadSignedByName ?? null,
+    approved_by_name: row.approved_by_name ?? row.approvedByName ?? null,
+    received_copy_201_file_signed_by_name: row.received_copy_201_file_signed_by_name ?? row.receivedCopy201FileSignedByName ?? null,
+    decline_reason: row.decline_reason ?? row.declineReason ?? null,
+    updated_at: row.updated_at ?? null,
   };
 }
 
@@ -253,11 +264,17 @@ export default function ApprovalsPage() {
     useState(false);
   const [accountabilityPreviewLoading, setAccountabilityPreviewLoading] =
     useState(false);
+  const [accountabilityPreviewUrl, setAccountabilityPreviewUrl] = useState('');
   const [accountabilityPreviewBatch, setAccountabilityPreviewBatch] =
     useState<AccountabilityApprovalBatch | null>(null);
   const [accountabilityPreviewMode, setAccountabilityPreviewMode] = useState<
     'view' | 'action'
   >('view');
+  const [intangiblePreviewBatch, setIntangiblePreviewBatch] =
+    useState<IntangibleDeactivationBatch | null>(null);
+  const [showIntangiblePreview, setShowIntangiblePreview] = useState(false);
+  const [intangiblePreviewUrl, setIntangiblePreviewUrl] = useState('');
+  const [intangiblePreviewLoading, setIntangiblePreviewLoading] = useState(false);
 
   // ---------- Permissions ----------
   const normalizedRoleName = (currentUser?.role?.name ?? '')
@@ -723,6 +740,44 @@ export default function ApprovalsPage() {
         await downloadChecklistBatch(batch as ChecklistApprovalBatch);
         return;
       }
+      if (batch.formType === 'intangible_deactivation' || batch.formType === 'intangible_deactivation_hr') {
+        const intangible = batch as IntangibleDeactivationBatch;
+        const blob = await generateIntangibleDeactivationPDF({
+          formNumber: intangible.form_number,
+          status: intangible.status,
+          companyName: intangible.company_name,
+          requesterPosition: intangible.requester_position,
+          requesterDepartment: intangible.requester_department,
+          requesterEmployeeId: intangible.requester_employee_id,
+          createdAt: intangible.created_at,
+          requesterName: `${intangible.user_first_name ?? ''} ${intangible.user_last_name ?? ''}`.trim() || intangible.user_email,
+          requesterEmail: intangible.user_email,
+          requesterSignature: intangible.requester_signature,
+          departmentHeadName: intangible.dept_head_approver_name,
+          departmentHeadSignedAt: intangible.dept_head_signed_at,
+          departmentHeadSignature: intangible.dept_head_signature,
+          hrApproverName: intangible.hr_approver_name,
+          hrSignedAt: intangible.hr_signed_at,
+          hrSignature: intangible.hr_signature,
+          declineReason: intangible.decline_reason,
+          remarks: intangible.remarks,
+          assets: intangible.assets,
+        });
+        downloadPDF(blob, `Intangible_Deactivation_Form_${intangible.form_number ?? Date.now()}.pdf`);
+        toast.success('Download started');
+        return;
+      }
+      if (batch.formType === 'admin_copy_signature' || batch.formType === 'accountability_approval') {
+        const response = await api.get<{ form?: AccountabilityForm }>(`/accountability-forms/${(batch as AccountabilityApprovalBatch).formID}`);
+        if (!response?.form) {
+          toast.error('Cannot generate PDF for this form');
+          return;
+        }
+        const blob = await generateAccountabilityFormPDF(response.form, currentUser);
+        downloadPDF(blob, `Accountability_Form_${response.form.formNumber ?? Date.now()}.pdf`);
+        toast.success('Download started');
+        return;
+      }
       if (batch.formType === 'borrow') {
         const data = buildBorrowDataForPDFFromBatch(batch as AssetBorrowFormBatch);
         if (!data) {
@@ -769,6 +824,74 @@ export default function ApprovalsPage() {
     }
   };
 
+  const openIntangiblePreview = async (batch: IntangibleDeactivationBatch) => {
+    setIntangiblePreviewBatch(batch);
+    setShowIntangiblePreview(true);
+    setIntangiblePreviewLoading(true);
+    try {
+      const blob = await generateIntangibleDeactivationPDF({
+        formNumber: batch.form_number,
+        status: batch.status,
+        createdAt: batch.created_at,
+        companyName: batch.company_name,
+        requesterName: `${batch.user_first_name ?? ''} ${batch.user_last_name ?? ''}`.trim() || batch.user_email,
+        requesterEmail: batch.user_email,
+        requesterPosition: batch.requester_position,
+        requesterDepartment: batch.requester_department,
+        requesterEmployeeId: batch.requester_employee_id,
+        requesterSignature: batch.requester_signature,
+        departmentHeadName: batch.dept_head_approver_name,
+        departmentHeadSignedAt: batch.dept_head_signed_at,
+        departmentHeadSignature: batch.dept_head_signature,
+        hrApproverName: batch.hr_approver_name,
+        hrSignedAt: batch.hr_signed_at,
+        hrSignature: batch.hr_signature,
+        declineReason: batch.decline_reason,
+        remarks: batch.remarks,
+        assets: batch.assets,
+      });
+      if (intangiblePreviewUrl) URL.revokeObjectURL(intangiblePreviewUrl);
+      setIntangiblePreviewUrl(URL.createObjectURL(blob));
+    } catch (error) {
+      console.error('Failed to generate intangible deactivation preview:', error);
+      toast.error('Failed to load intangible deactivation preview');
+      setShowIntangiblePreview(false);
+    } finally {
+      setIntangiblePreviewLoading(false);
+    }
+  };
+
+  const closeIntangiblePreview = () => {
+    setShowIntangiblePreview(false);
+    setIntangiblePreviewBatch(null);
+    if (intangiblePreviewUrl) URL.revokeObjectURL(intangiblePreviewUrl);
+    setIntangiblePreviewUrl('');
+  };
+
+  const handleIntangiblePreviewApprove = () => {
+    const batch = intangiblePreviewBatch;
+    if (!batch) return;
+    pendingActionRef.current = async () => {
+      try {
+        setApproving(true);
+        const endpoint = batch.formType === 'intangible_deactivation_hr'
+          ? `/intangible-deactivations/forms/${batch.formID}/hr-approve`
+          : `/intangible-deactivations/forms/${batch.formID}/approve`;
+        const sig = (currentUser as { digitalSignature?: string })?.digitalSignature || '';
+        await api.post(endpoint, { digitalSignature: sig || undefined });
+        toast.success(batch.formType === 'intangible_deactivation_hr' ? 'HR approved' : 'Intangible deactivation approved, forwarded to HR');
+        closeIntangiblePreview();
+        await refreshAll();
+      } catch (error: any) {
+        toast.error(error?.data?.error || error?.message || 'Failed to approve');
+      } finally {
+        setApproving(false);
+      }
+    };
+    setOtpPurpose('approve');
+    setShowOtpDialog(true);
+  };
+
   const openAccountabilityPreview = async (
     formId: string,
     batch?: AccountabilityApprovalBatch,
@@ -786,6 +909,11 @@ export default function ApprovalsPage() {
       );
       const form = response?.form ?? null;
       setAccountabilityPreviewForm(form);
+      if (form) {
+        const blob = await generateAccountabilityFormPDF(form, currentUser);
+        if (accountabilityPreviewUrl) URL.revokeObjectURL(accountabilityPreviewUrl);
+        setAccountabilityPreviewUrl(URL.createObjectURL(blob));
+      }
     } catch (error) {
       console.error('Failed to load accountability form:', error);
       toast.error('Failed to load accountability form preview');
@@ -800,6 +928,8 @@ export default function ApprovalsPage() {
     setAccountabilityPreviewForm(null);
     setAccountabilityPreviewBatch(null);
     setAccountabilityPreviewMode('view');
+    if (accountabilityPreviewUrl) URL.revokeObjectURL(accountabilityPreviewUrl);
+    setAccountabilityPreviewUrl('');
   };
 
   const handleAccountabilityPreviewApprove = () => {
@@ -1391,16 +1521,10 @@ export default function ApprovalsPage() {
                 void openAccountabilityPreview(
                   (batch as AccountabilityApprovalBatch).formID,
                   batch as AccountabilityApprovalBatch,
-                  'view'
-                );
-              }}
-              onAction={() => {
-                void openAccountabilityPreview(
-                  (batch as AccountabilityApprovalBatch).formID,
-                  batch as AccountabilityApprovalBatch,
                   'action'
                 );
               }}
+              onDownload={() => void handleDownload(batch)}
             />
           );
         }
@@ -1410,7 +1534,8 @@ export default function ApprovalsPage() {
             <IntangibleDeactivationApprovalCard
               key={key}
               batch={ib}
-              onView={() => { setDetailSourceTab(sourceTab); setSelectedBatch(batch); setShowDetail(true); }}
+              onView={() => { setDetailSourceTab(sourceTab); void openIntangiblePreview(ib); }}
+              onDownload={() => void handleDownload(batch)}
             />
           );
         }
@@ -1849,30 +1974,165 @@ export default function ApprovalsPage() {
                   onDownload={handleDownloadCurrent}
                   contentOnly
                 />
-              ) : (selectedBatch.formType === 'intangible_deactivation' || selectedBatch.formType === 'intangible_deactivation_hr') ? (
-                <div className="flex min-h-0 flex-1 flex-col gap-3 py-4 overflow-y-auto">
-                  <div className="rounded-lg border bg-slate-50 p-4">
-                    <p className="text-xs uppercase tracking-wider text-gray-500">Form Number</p>
-                    <p className="text-base font-mono font-semibold">{(selectedBatch as any).form_number}</p>
-                    <p className="text-sm mt-1">{(selectedBatch as any).user_first_name} {(selectedBatch as any).user_last_name} — {(selectedBatch as any).user_email}</p>
-                    <p className="text-xs text-muted-foreground">{(selectedBatch as any).status}</p>
-                  </div>
-                  <div className="rounded-lg border p-3">
-                    <p className="text-xs font-semibold mb-2">Assets ({(selectedBatch as any).assets?.length ?? 0})</p>
-                    <ul className="text-sm space-y-1">{((selectedBatch as any).assets ?? []).map((a:any,i:number)=>(<li key={i} className="flex gap-2"><span className="w-1 h-1 bg-gray-400 rounded-full mt-2"/>{a.name} — {a.type}</li>))}</ul>
-                  </div>
-                  <div className="border rounded-lg overflow-hidden text-sm divide-y">
-                    <div className="grid grid-cols-2 divide-x">
-                      <div className="p-3 bg-slate-50"><div className="text-[11px] font-semibold text-muted-foreground uppercase">Requested By</div><div className="font-medium text-xs mt-1">User signature on file</div><div className="text-[11px] text-muted-foreground">{new Date((selectedBatch as any).created_at).toLocaleString()}</div></div>
-                      <div className="p-3"><div className="text-[11px] font-semibold text-muted-foreground uppercase">Department Head</div><div className="text-xs">{(selectedBatch as any).formType === 'intangible_deactivation_hr' ? 'Approved' : 'Pending'}</div></div>
+              ) : (selectedBatch.formType === 'intangible_deactivation' || selectedBatch.formType === 'intangible_deactivation_hr') ? (() => {
+                const intangible = selectedBatch as IntangibleDeactivationBatch;
+                const userName = `${intangible.user_first_name ?? ''} ${intangible.user_last_name ?? ''}`.trim() || intangible.user_email || 'Unknown';
+                const isHrApproval = intangible.formType === 'intangible_deactivation_hr';
+                const departmentHeadStatus = isHrApproval ? 'Approved' : 'Pending';
+                const hrStatus = intangible.status === 'Approved' ? 'Signed' : 'Pending';
+                const timelineSteps = [
+                  {
+                    title: 'Request created',
+                    description: 'The deactivation request was submitted by the requester.',
+                    status: 'Completed',
+                    state: 'done',
+                  },
+                  {
+                    title: 'Department head approval',
+                    description: isHrApproval
+                      ? 'The department head approved this request.'
+                      : 'Awaiting department head review and approval.',
+                    status: departmentHeadStatus,
+                    state: isHrApproval ? 'done' : 'current',
+                  },
+                  {
+                    title: 'HR / custodian finalization',
+                    description: hrStatus === 'Signed'
+                      ? 'HR has finalized the deactivation.'
+                      : 'HR approval finalizes the intangible asset deactivation.',
+                    status: hrStatus,
+                    state: hrStatus === 'Signed' ? 'done' : 'upcoming',
+                  },
+                ] as const;
+                return (
+                  <div className="flex min-h-0 flex-1 flex-col gap-4 py-4 overflow-y-auto">
+                    <div className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
+                      <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+                        <div>
+                          <p className="text-[11px] font-semibold uppercase tracking-wider text-red-600">
+                            Intangible Deactivation Form
+                          </p>
+                          <p className="mt-1 text-xl font-semibold font-mono text-gray-900">
+                            {intangible.form_number}
+                          </p>
+                          <p className="mt-1 text-sm text-gray-500">
+                            Submitted {new Date(intangible.created_at).toLocaleString()}
+                          </p>
+                        </div>
+                        <Badge
+                          variant="secondary"
+                          className={isHrApproval
+                            ? 'w-fit bg-blue-100 text-blue-800 dark:bg-blue-900/30 dark:text-blue-200'
+                            : 'w-fit bg-amber-100 text-amber-800 dark:bg-amber-900/30 dark:text-amber-200'}
+                        >
+                          {isHrApproval ? 'HR Approval' : 'Dept Head Approval'}
+                        </Badge>
+                      </div>
                     </div>
-                    <div className="grid grid-cols-2 divide-x">
-                      <div className="p-3 bg-slate-50"><div className="text-[11px] font-semibold text-muted-foreground uppercase">HR (Custodian Copy)</div><div className="text-xs">{(selectedBatch as any).status === 'Approved' ? 'Signed' : 'Pending'}</div></div>
-                      <div className="p-3 flex items-center text-[11px] text-muted-foreground">HR approval finalizes deactivation</div>
+
+                    <div className="grid gap-4 md:grid-cols-2">
+                      <div className="rounded-xl border border-slate-200 bg-slate-50 p-4">
+                        <p className="text-xs font-semibold uppercase tracking-wider text-gray-500">Requested By</p>
+                        <p className="mt-2 font-medium text-gray-900">{userName}</p>
+                        {intangible.user_email && (
+                          <p className="mt-1 text-sm text-gray-500 break-all">{intangible.user_email}</p>
+                        )}
+                      </div>
+                      <div className="rounded-xl border border-slate-200 bg-slate-50 p-4">
+                        <p className="text-xs font-semibold uppercase tracking-wider text-gray-500">Request Status</p>
+                        <p className="mt-2 font-medium text-gray-900">{intangible.status || 'Pending'}</p>
+                        <p className="mt-1 text-sm text-gray-500">Deactivation workflow</p>
+                      </div>
+                    </div>
+
+                    <div className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
+                      <div className="flex items-center justify-between gap-3 mb-3">
+                        <div>
+                          <p className="text-xs font-semibold uppercase tracking-wider text-gray-500">Intangible Assets</p>
+                          <p className="mt-1 text-sm text-gray-500">Assets included in this deactivation request</p>
+                        </div>
+                        <Badge variant="outline">{intangible.assets?.length ?? 0}</Badge>
+                      </div>
+                      {intangible.assets?.length ? (
+                        <ul className="divide-y rounded-lg border border-slate-200">
+                          {intangible.assets.map(asset => (
+                            <li key={asset.id} className="flex items-start justify-between gap-4 p-3 text-sm">
+                              <span className="font-medium text-gray-900 break-words">{asset.name}</span>
+                              <span className="shrink-0 text-xs text-gray-500">{asset.type || 'Intangible'}</span>
+                            </li>
+                          ))}
+                        </ul>
+                      ) : (
+                        <p className="rounded-lg border border-dashed p-4 text-sm text-gray-500">No assets listed.</p>
+                      )}
+                    </div>
+
+                    <div className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
+                      <div className="mb-4">
+                        <p className="text-xs font-semibold uppercase tracking-wider text-gray-500">Approval Timeline</p>
+                        <p className="mt-1 text-sm text-gray-500">Track the request through each deactivation approval stage.</p>
+                      </div>
+                      <div className="relative">
+                        {timelineSteps.map((step, index) => {
+                          const isDone = step.state === 'done';
+                          const isCurrent = step.state === 'current';
+                          const isLast = index === timelineSteps.length - 1;
+                          return (
+                            <div key={step.title} className="relative flex gap-3">
+                              <div className="flex flex-col items-center">
+                                <div
+                                  className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-full border-2 text-xs font-semibold ${
+                                    isDone
+                                      ? 'border-green-600 bg-green-600 text-white'
+                                      : isCurrent
+                                        ? 'border-blue-600 bg-blue-50 text-blue-700'
+                                        : 'border-slate-300 bg-white text-slate-400'
+                                  }`}
+                                >
+                                  {isDone ? '✓' : index + 1}
+                                </div>
+                                {!isLast && (
+                                  <div className={`my-1 min-h-8 w-0.5 flex-1 ${isDone ? 'bg-green-500' : 'bg-slate-200'}`} />
+                                )}
+                              </div>
+                              <div className={`min-w-0 flex-1 ${isLast ? '' : 'pb-5'}`}>
+                                <div className="flex flex-wrap items-center justify-between gap-2">
+                                  <p className={`text-sm font-semibold ${isCurrent ? 'text-blue-700' : 'text-gray-900'}`}>
+                                    {step.title}
+                                  </p>
+                                  <span
+                                    className={`rounded-full px-2 py-0.5 text-[11px] font-medium ${
+                                      isDone
+                                        ? 'bg-green-100 text-green-700'
+                                        : isCurrent
+                                          ? 'bg-blue-100 text-blue-700'
+                                          : 'bg-slate-100 text-slate-500'
+                                    }`}
+                                  >
+                                    {step.status}
+                                  </span>
+                                </div>
+                                <p className="mt-1 text-xs text-gray-500">{step.description}</p>
+                                {index === 0 && (
+                                  <p className="mt-1 text-[11px] text-gray-400">
+                                    {new Date(intangible.created_at).toLocaleString()}
+                                  </p>
+                                )}
+                              </div>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    </div>
+
+                    <div className="rounded-lg border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900">
+                      {isHrApproval
+                        ? 'Review the department-approved request. HR approval finalizes the intangible asset deactivation.'
+                        : 'Review the request and approve it to forward the deactivation to HR.'}
                     </div>
                   </div>
-                </div>
-              ) : selectedBatch.formType === 'borrow' ? (
+                );
+              })() : selectedBatch.formType === 'borrow' ? (
                 <BorrowFormDetail
                   key={(selectedBatch as BorrowRequestBatch).borrow_request_id}
                   borrowFormBatch={selectedBatch as AssetBorrowFormBatch}
@@ -1994,6 +2254,66 @@ export default function ApprovalsPage() {
           </Dialog>
         )}
 
+        {/* Intangible Deactivation PDF Preview */}
+        <Dialog
+          open={showIntangiblePreview}
+          onOpenChange={open => {
+            if (!open) closeIntangiblePreview();
+          }}
+        >
+          <AppDialogFrame className="max-w-3xl max-h-[90vh] overflow-hidden !flex !flex-col !gap-0 !rounded-lg !p-0">
+            <AppDialogGradientHeader
+              title="Intangible Deactivation Form"
+              description={intangiblePreviewBatch?.form_number ?? ''}
+              showCloseButton={false}
+            />
+            {intangiblePreviewLoading ? (
+              <div className="flex min-h-[420px] flex-1 items-center justify-center text-sm text-muted-foreground">Loading PDF preview...</div>
+            ) : (
+              <div className="min-h-0 flex-1 overflow-hidden bg-slate-50 p-3">
+                <PDFViewer pdfUrl={intangiblePreviewUrl} className="h-full w-full" />
+              </div>
+            )}
+            <AppDialogChromeFooter className="flex-shrink-0 flex-row flex-wrap justify-end gap-3">
+              <Button variant="outline" onClick={closeIntangiblePreview}>Close</Button>
+              {intangiblePreviewBatch &&
+                detailSourceTab !== 'approved' &&
+                (intangiblePreviewBatch.formType === 'intangible_deactivation'
+                  ? canApprove
+                  : canReceive) && (
+                <>
+                  <Button
+                    variant="outline"
+                    onClick={() => {
+                      const batch = intangiblePreviewBatch;
+                      closeIntangiblePreview();
+                      setSelectedBatch(batch);
+                      setDeclineReason('');
+                      setShowDeclineReasonDialog(true);
+                    }}
+                    disabled={declining || approving}
+                    className="border-red-500 text-red-600 hover:bg-red-50"
+                  >
+                    Decline
+                  </Button>
+                  <Button
+                    onClick={handleIntangiblePreviewApprove}
+                    disabled={approving || intangiblePreviewLoading}
+                    className="bg-blue-600 hover:bg-blue-700 text-white"
+                  >
+                    {approving ? 'Working...' : intangiblePreviewBatch.formType === 'intangible_deactivation_hr' ? 'Approve' : 'Approve'}
+                  </Button>
+                </>
+              )}
+              {intangiblePreviewBatch && (
+                <Button onClick={() => void handleDownload(intangiblePreviewBatch)} className="bg-green-600 hover:bg-green-700 text-white">
+                  <Download className="mr-2 h-4 w-4" />Download PDF
+                </Button>
+              )}
+            </AppDialogChromeFooter>
+          </AppDialogFrame>
+        </Dialog>
+
         {/* Accountability Form PDF Preview (View action) */}
         <Dialog
           open={showAccountabilityPreview}
@@ -2003,6 +2323,8 @@ export default function ApprovalsPage() {
               setAccountabilityPreviewForm(null);
               setAccountabilityPreviewBatch(null);
               setAccountabilityPreviewMode('view');
+              if (accountabilityPreviewUrl) URL.revokeObjectURL(accountabilityPreviewUrl);
+              setAccountabilityPreviewUrl('');
             }
           }}
         >
@@ -2021,18 +2343,9 @@ export default function ApprovalsPage() {
                 Loading accountability form...
               </div>
             ) : accountabilityPreviewForm ? (
-              <AccountabilityFormDetail
-                form={accountabilityPreviewForm}
-                onClose={closeAccountabilityPreview}
-                onSign={async () => {
-                  closeAccountabilityPreview();
-                }}
-                headerInParentChrome
-                viewContext="all"
-                readOnly
-                embedded
-                showTimeline={accountabilityPreviewForm.formOrigin !== 'clearance'}
-              />
+              <div className="min-h-0 flex-1 overflow-hidden bg-slate-50 p-3">
+                <PDFViewer pdfUrl={accountabilityPreviewUrl} className="h-full w-full" />
+              </div>
             ) : (
               <div className="flex items-center justify-center py-16 text-sm text-muted-foreground">
                 Form could not be loaded.
@@ -2045,23 +2358,39 @@ export default function ApprovalsPage() {
               {canApprove &&
                 accountabilityPreviewMode === 'action' &&
                 accountabilityPreviewBatch && (
-                  <Button
-                    size="sm"
-                    onClick={handleAccountabilityPreviewApprove}
-                    disabled={
-                      approving ||
-                      accountabilityPreviewLoading ||
-                      !accountabilityPreviewForm
-                    }
-                    className="bg-blue-600 hover:bg-blue-700 text-white"
-                  >
-                    {approving
-                      ? 'Working...'
-                      : accountabilityPreviewBatch.formType ===
-                          'admin_copy_signature'
-                        ? 'Sign Copy'
-                        : 'Approve'}
-                  </Button>
+                  <>
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      onClick={() => {
+                        setSelectedBatch(accountabilityPreviewBatch);
+                        closeAccountabilityPreview();
+                        setDeclineReason('');
+                        setShowDeclineReasonDialog(true);
+                      }}
+                      disabled={approving || accountabilityPreviewLoading}
+                      className="border-red-500 text-red-600 hover:bg-red-50"
+                    >
+                      Decline
+                    </Button>
+                    <Button
+                      size="sm"
+                      onClick={handleAccountabilityPreviewApprove}
+                      disabled={
+                        approving ||
+                        accountabilityPreviewLoading ||
+                        !accountabilityPreviewForm
+                      }
+                      className="bg-blue-600 hover:bg-blue-700 text-white"
+                    >
+                      {approving
+                        ? 'Working...'
+                        : accountabilityPreviewBatch.formType ===
+                            'admin_copy_signature'
+                          ? 'Sign Copy'
+                          : 'Approve'}
+                    </Button>
+                  </>
                 )}
             </AppDialogChromeFooter>
           </AppDialogFrame>

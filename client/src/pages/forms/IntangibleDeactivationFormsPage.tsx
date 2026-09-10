@@ -1,19 +1,23 @@
 'use client';
 import { useEffect, useState, useMemo } from 'react';
-import { FileText, Package, User, Calendar, ChevronLeft, ChevronRight } from 'lucide-react';
+import { FileText, Package, User, Calendar, Download, Eye, ChevronLeft, ChevronRight } from 'lucide-react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { PageHeader } from '@/components/common/PageHeader';
 import { Button } from '@/components/ui/button';
+import { Tabs, TabsContent, TabsList, TabsTrigger, segmentTabsListClassName, segmentTabsTriggerClassName } from '@/components/ui/tabs';
 import { Badge } from '@/components/ui/badge';
 import { Label } from '@/components/ui/label';
 import { SearchWithMultiFilter } from '@/components/common/SearchWithMultiFilter';
 import { Dialog } from '@/components/ui/dialog';
 import { Shimmer } from '@/components/ui/shimmer';
-import { AppDialogFrame, AppDialogGradientHeader, AppDialogBody } from '@/components/common/appDialogChrome';
+import { AppDialogFrame, AppDialogGradientHeader, AppDialogBody, AppDialogChromeFooter } from '@/components/common/appDialogChrome';
 import { api } from '@/lib/api';
 import { toast } from 'sonner';
 import { matchesFormListSearchWithFilters } from '@/utils/formListSearch';
+import { PDFViewer } from '@/components/PDFViewer';
+import { downloadPDF, generateIntangibleDeactivationPDF } from '@/lib/pdfGenerator';
 import { INTANGIBLE_DEACTIVATION_FILTER_OPTIONS } from '@/utils/formSearchFilterOptions';
+import { ApprovalTimeline } from '@/components/common/ApprovalTimeline';
 
 const PAGE_SIZE = 6;
 
@@ -56,11 +60,17 @@ function SignatureTable({ form }: { form: any }) {
   );
 }
 
-function FormCard({ form, onView }: { form: any; onView: (f: any)=>void }) {
+function FormCard({ form, onView, onDownload }: { form: any; onView: (f: any)=>void; onDownload: (f: any)=>void }) {
   const employeeName = `${form.user?.first_name ?? ''} ${form.user?.last_name ?? ''}`.trim() || 'Employee';
   const assetNames = (form.assets ?? []).map((a: any) => a.name).filter(Boolean);
+  const isDeclined = form.status === 'Declined' || !!form.declineReason;
+  const timelineSteps = [
+    { title: 'Request created', done: !!form.created_at, date: form.created_at, signerName: employeeName },
+    { title: 'Approved by department head', done: !!form.deptHeadSignedAt, date: form.deptHeadSignedAt, signerName: form.deptHeadApproverName },
+    { title: 'HR / custodian finalization', done: !!form.hrSignedAt, date: form.hrSignedAt, signerName: form.hrApproverName },
+  ];
   return (
-    <Card className="shadow-md hover:shadow-xl transition-all duration-200 border-slate-200 bg-white flex flex-col overflow-hidden">
+    <Card className="h-full shadow-md hover:shadow-xl transition-all duration-200 border-slate-200 bg-white flex flex-col overflow-hidden">
       <CardHeader className="pb-3">
         <div className="flex items-start justify-between gap-2">
           <div className="flex items-center gap-3 min-w-0">
@@ -77,6 +87,12 @@ function FormCard({ form, onView }: { form: any; onView: (f: any)=>void }) {
           <Badge variant="outline" className={`${statusBadge(form.status)} shrink-0`}>{statusLabel(form.status)}</Badge>
         </div>
       </CardHeader>
+      <Tabs defaultValue="details" className="flex min-h-0 flex-1 flex-col">
+        <TabsList className={`${segmentTabsListClassName} mx-4 mb-2 grid w-[calc(100%-2rem)] grid-cols-2`}>
+          <TabsTrigger value="details" className={segmentTabsTriggerClassName}>Details</TabsTrigger>
+          <TabsTrigger value="timeline" className={segmentTabsTriggerClassName}>Timeline</TabsTrigger>
+        </TabsList>
+        <TabsContent value="details" className="mt-0 flex-1">
       <CardContent className="space-y-4 flex-1 pt-0">
         <div className="flex items-start gap-3">
           <Package className="h-4 w-4 text-gray-400 mt-0.5 flex-shrink-0" />
@@ -110,8 +126,25 @@ function FormCard({ form, onView }: { form: any; onView: (f: any)=>void }) {
           </div>
         )}
       </CardContent>
-      <div className="p-4 pt-0">
-        <Button size="sm" variant="outline" className="w-full" onClick={() => onView(form)}>View</Button>
+        </TabsContent>
+        <TabsContent value="timeline" className="mt-0 flex-1">
+          <CardContent className="flex-1 pt-0">
+            <ApprovalTimeline
+              steps={timelineSteps}
+              isDeclined={isDeclined}
+              declinedAt={form.updated_at}
+              declineReason={form.declineReason}
+            />
+          </CardContent>
+        </TabsContent>
+      </Tabs>
+      <div className="flex gap-2 border-t border-slate-100 p-4">
+        <Button size="sm" variant="outline" className="flex-1 bg-red-600 text-white border-red-600 hover:bg-white hover:text-red-600" onClick={() => onView(form)}>
+          <Eye className="mr-2 h-4 w-4" />View
+        </Button>
+        <Button size="sm" variant="outline" className="flex-1 text-red-600 border-red-600 hover:bg-red-600 hover:text-white" onClick={() => onDownload(form)}>
+          <Download className="mr-2 h-4 w-4" />Download
+        </Button>
       </div>
     </Card>
   );
@@ -132,6 +165,8 @@ export default function IntangibleDeactivationFormsPage() {
   const [searchFilters, setSearchFilters] = useState<string[]>(['all']);
   const [statusFilter, setStatusFilter] = useState<string>('all');
   const [selected, setSelected] = useState<any | null>(null);
+  const [previewUrl, setPreviewUrl] = useState('');
+  const [previewLoading, setPreviewLoading] = useState(false);
   const [currentPage, setCurrentPage] = useState(1);
   const displayLoading = loading;
 
@@ -141,6 +176,64 @@ export default function IntangibleDeactivationFormsPage() {
     finally { setLoading(false); }
   };
   useEffect(()=> { fetchForms(); }, []);
+
+  const buildPdf = async (form: any) => {
+    const blob = await generateIntangibleDeactivationPDF({
+      formNumber: form.formNumber,
+      status: form.status,
+      companyName: form.user?.company?.name,
+      companyLogoUrl: form.user?.company?.logo_url ?? form.user?.companyLogoUrl,
+      requesterPosition: form.user?.position,
+      requesterDepartment: form.user?.department?.name ?? form.department?.name,
+      requesterEmployeeId: form.user?.employeeNumber,
+      createdAt: form.created_at,
+      requesterName: `${form.user?.first_name ?? ''} ${form.user?.last_name ?? ''}`.trim() || form.user?.email,
+      requesterEmail: form.user?.email,
+      requesterSignature: form.requesterSignature,
+      departmentHeadName: form.deptHeadApproverName,
+      departmentHeadSignedAt: form.deptHeadSignedAt,
+      departmentHeadSignature: form.deptHeadSignature,
+      hrApproverName: form.hrApproverName,
+      hrSignedAt: form.hrSignedAt,
+      hrSignature: form.hrSignature,
+      declineReason: form.declineReason,
+      remarks: form.assets_data ? (() => { try { return JSON.parse(form.assets_data)?.remarks ?? null; } catch { return null; } })() : null,
+      assets: form.assets ?? [],
+    });
+    return blob;
+  };
+
+  const handleDownload = async (form: any) => {
+    try {
+      const blob = await buildPdf(form);
+      downloadPDF(blob, `Intangible_Deactivation_Form_${form.formNumber ?? Date.now()}.pdf`);
+      toast.success('Download started');
+    } catch (error) {
+      console.error(error);
+      toast.error('Failed to download PDF');
+    }
+  };
+
+  useEffect(() => {
+    if (!selected) {
+      if (previewUrl) URL.revokeObjectURL(previewUrl);
+      setPreviewUrl('');
+      return;
+    }
+    let cancelled = false;
+    setPreviewLoading(true);
+    void buildPdf(selected).then(blob => {
+      if (cancelled) return;
+      if (previewUrl) URL.revokeObjectURL(previewUrl);
+      setPreviewUrl(URL.createObjectURL(blob));
+    }).catch(error => {
+      console.error(error);
+      toast.error('Failed to load PDF preview');
+    }).finally(() => {
+      if (!cancelled) setPreviewLoading(false);
+    });
+    return () => { cancelled = true; };
+  }, [selected]);
 
   const filtered = useMemo(()=> {
     let list = forms;
@@ -259,7 +352,7 @@ export default function IntangibleDeactivationFormsPage() {
               <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
                 {filtered
                   .slice((currentPage - 1) * PAGE_SIZE, currentPage * PAGE_SIZE)
-                  .map((f: any) => <FormCard key={f.id} form={f} onView={setSelected} />)}
+                  .map((f: any) => <FormCard key={f.id} form={f} onView={setSelected} onDownload={handleDownload} />)}
               </div>
               {filtered.length > PAGE_SIZE && (
                 <div className="flex items-center justify-center gap-4 pt-6">
@@ -295,26 +388,17 @@ export default function IntangibleDeactivationFormsPage() {
       <Dialog open={!!selected} onOpenChange={o=> !o && setSelected(null)}>
         <AppDialogFrame className="max-w-3xl max-h-[90vh] overflow-hidden !flex !flex-col !gap-0 !rounded-lg !p-0">
           <AppDialogGradientHeader title="Intangible Deactivation Form" description={selected?.formNumber ?? ''} showCloseButton={false} className="!px-4 !pb-4 !pt-4" />
-          <AppDialogBody className="flex-1 overflow-auto p-4 space-y-4">
-            {selected && (
-              <>
-                <div className="flex items-center justify-between">
-                  <Badge variant="outline" className={statusBadge(selected.status)}>{statusLabel(selected.status)}</Badge>
-                  <span className="text-xs text-muted-foreground">{new Date(selected.created_at).toLocaleString()}</span>
-                </div>
-                <div className="border rounded-lg p-3">
-                  <div className="text-sm font-semibold mb-2">Assets to Deactivate ({selected.assets?.length ?? 0})</div>
-                  <table className="w-full text-sm">
-                    <thead><tr className="text-xs text-muted-foreground border-b"><th className="text-left py-1">Name</th><th className="text-left">Type</th></tr></thead>
-                    <tbody>{(selected.assets ?? []).map((a:any)=> <tr key={a.id} className="border-b last:border-0"><td className="py-1">{a.name}</td><td>{a.type}</td></tr>)}</tbody>
-                  </table>
-                </div>
-                <SignatureTable form={selected} />
-                {selected.declineReason && <div className="text-sm text-red-600 border border-red-200 bg-red-50 rounded p-2">Declined: {selected.declineReason}</div>}
-                <div className="flex justify-end"><Button variant="outline" onClick={()=> setSelected(null)}>Close</Button></div>
-              </>
+          <AppDialogBody className="min-h-0 flex-1 overflow-hidden bg-slate-50 p-3">
+            {previewLoading || !previewUrl ? (
+              <div className="flex h-full min-h-[320px] items-center justify-center text-sm text-muted-foreground">Loading PDF preview...</div>
+            ) : (
+              <PDFViewer pdfUrl={previewUrl} className="h-full w-full" />
             )}
           </AppDialogBody>
+          <AppDialogChromeFooter className="flex-row justify-end gap-2">
+            <Button variant="outline" onClick={() => setSelected(null)}>Close</Button>
+            {selected && <Button onClick={() => void handleDownload(selected)}><Download className="mr-2 h-4 w-4" />Download PDF</Button>}
+          </AppDialogChromeFooter>
         </AppDialogFrame>
       </Dialog>
     </div>

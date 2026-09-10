@@ -27,16 +27,38 @@ function parseAssetsData(v: unknown): { assets: any[]; intangibleAssetIds: strin
   } catch { return { assets: [], intangibleAssetIds: [] }; }
 }
 
-function mapRow(row: repo.DeactivationFormRow): any {
-  const { assets } = parseAssetsData(row.assets_data);
+async function mapRow(row: repo.DeactivationFormRow): Promise<any> {
+  const { assets, intangibleAssetIds } = parseAssetsData(row.assets_data);
+  const currentAssetDetails = await repo.getIntangibleAssetDetailsByIds(intangibleAssetIds);
+  const currentAssetDetailsById = new Map(
+    currentAssetDetails.map(asset => [String(asset.id), asset])
+  );
+  const enrichedAssets = assets.map(asset => {
+    const current = currentAssetDetailsById.get(String(asset.id));
+    return {
+      ...asset,
+      description: asset.description ?? current?.description ?? null,
+      riskLevel: asset.riskLevel ?? asset.risk_level ?? current?.risk_level_name ?? null,
+    };
+  });
+
   return {
     id: row.formID,
     formNumber: row.form_number,
     status: row.status,
-    user: { id: row.user_id, first_name: row.first_name, last_name: row.last_name, email: row.email, company: row.company_name ? { id: row.company_id, name: row.company_name } : null, department: row.department_name ? { id: row.department_id, name: row.department_name } : null },
+    user: {
+      id: row.user_id,
+      first_name: row.first_name,
+      last_name: row.last_name,
+      email: row.email,
+      employeeNumber: row.employee_number,
+      position: row.position,
+      company: row.company_name ? { id: row.company_id, name: row.company_name } : null,
+      department: row.department_name ? { id: row.department_id, name: row.department_name } : null,
+    },
     department: row.department_id ? { id: row.department_id, name: row.department_name } : null,
     companyId: row.company_id,
-    assets,
+    assets: enrichedAssets,
     assets_data: row.assets_data,
     requesterSignature: row.requester_signature,
     requestedAt: row.requested_at,
@@ -108,7 +130,14 @@ export async function createDeactivationHandler(req: AuthRequest, res: Response)
 
     const assetsSnapshot = intangibleAssetIds.map(id => {
       const r: any = activeMap.get(String(id));
-      return { id: String(id), name: r.name, type: r.type, description: r.description, department: r.department_name };
+      return {
+        id: String(id),
+        name: r.name,
+        type: r.type,
+        description: r.description,
+        department: r.department_name,
+        riskLevel: r.risk_level_name,
+      };
     });
 
     const userInfo = await repo.getUserCompanyAndDept(requesterId);
@@ -172,7 +201,7 @@ export async function listDeactivationsHandler(req: AuthRequest, res: Response) 
     // apply company filter if provided
     let filtered = rows;
     if (companyScope) filtered = filtered.filter(r => r.company_id === companyScope);
-    return res.json({ forms: filtered.map(mapRow) });
+    return res.json({ forms: await Promise.all(filtered.map(mapRow)) });
   } catch (e) { logger.error(e); return res.status(500).json({ error: 'Failed to fetch' }); }
 }
 
@@ -180,7 +209,7 @@ export async function getMyDeactivationsHandler(req: AuthRequest, res: Response)
   try {
     const userId = req.user!.userID;
     const rows = await repo.listForms({ userId });
-    return res.json({ forms: rows.map(mapRow) });
+    return res.json({ forms: await Promise.all(rows.map(mapRow)) });
   } catch (e) { logger.error(e); return res.status(500).json({ error: 'Failed' }); }
 }
 
@@ -189,14 +218,14 @@ export async function getDeactivationByIdHandler(req: AuthRequest, res: Response
     const formId = String((req.params as any).formId ?? '');
     const row = await repo.getFormById(formId);
     if (!row) return res.status(404).json({ error: 'Form not found' });
-    return res.json({ form: mapRow(row) });
+    return res.json({ form: await mapRow(row) });
   } catch (e) { logger.error(e); return res.status(500).json({ error: 'Failed' }); }
 }
 
 export async function getPendingApprovalsHandler(req: AuthRequest, res: Response) {
   try {
     const rows = await repo.listPendingForApprover(req.user!.userID!);
-    return res.json({ forms: rows.map(mapRow) });
+    return res.json({ forms: await Promise.all(rows.map(mapRow)) });
   } catch (e) { logger.error(e); return res.status(500).json({ error:'Failed'}); }
 }
 
@@ -208,14 +237,14 @@ export async function getPendingHrApprovalsHandler(req: AuthRequest, res: Respon
       if (!rows || rows.length===0) return res.status(403).json({ error:'Forbidden' });
     }
     const rows = await repo.listPendingHrApproval();
-    return res.json({ forms: rows.map(mapRow) });
+    return res.json({ forms: await Promise.all(rows.map(mapRow)) });
   } catch (e) { logger.error(e); return res.status(500).json({ error:'Failed'}); }
 }
 
 export async function getApprovedByMeHandler(req: AuthRequest, res: Response) {
   try {
     const rows = await repo.listApprovedByUser(req.user!.userID!);
-    return res.json({ forms: rows.map(mapRow) });
+    return res.json({ forms: await Promise.all(rows.map(mapRow)) });
   } catch (e) { logger.error(e); return res.status(500).json({ error:'Failed'}); }
 }
 

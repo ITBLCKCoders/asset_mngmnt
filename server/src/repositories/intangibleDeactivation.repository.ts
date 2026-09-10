@@ -29,6 +29,8 @@ export interface DeactivationFormRow extends RowDataPacket {
   first_name: string | null;
   last_name: string | null;
   email: string | null;
+  employee_number: string | null;
+  position: string | null;
   department_name: string | null;
   company_name: string | null;
   dept_head_first_name: string | null;
@@ -40,7 +42,7 @@ export interface DeactivationFormRow extends RowDataPacket {
 const FORM_SELECT = `
 SELECT
   f.*,
-  u.first_name, u.last_name, u.email,
+  u.first_name, u.last_name, u.email, u.employee_number, u.position,
   d.name as department_name,
   c.name as company_name,
   dh.first_name as dept_head_first_name, dh.last_name as dept_head_last_name,
@@ -51,6 +53,19 @@ LEFT JOIN asset_mngmnt_departments d ON f.department_id = d.departmentID
 LEFT JOIN companies c ON f.company_id = c.companyID
 LEFT JOIN users dh ON f.dept_head_signed_by = dh.userID
 LEFT JOIN users hr ON f.hr_signed_by = hr.userID`;
+
+export async function getIntangibleAssetDetailsByIds(ids: string[]): Promise<Array<{ id: string; description: string | null; risk_level_name: string | null }>> {
+  if (ids.length === 0) return [];
+  const placeholders = ids.map(() => '?').join(', ');
+  const [rows] = await pool.execute<RowDataPacket[]>(
+    `SELECT ia.id, ia.description, rl.name AS risk_level_name
+     FROM intangible_assets ia
+     LEFT JOIN risk_levels rl ON ia.risk_level_id = rl.id AND rl.deleted_at IS NULL
+     WHERE ia.id IN (${placeholders})`,
+    ids
+  );
+  return rows as Array<{ id: string; description: string | null; risk_level_name: string | null }>;
+}
 
 export async function insertForm(args: {
   formNumber: string;
@@ -165,12 +180,14 @@ export async function getActiveIntangibleAssignmentsForUser(userId: string): Pro
   const [rows] = await pool.execute<RowDataPacket[]>(
     `SELECT iaa.*, ia.name, ia.type, ia.description, ia.company_id,
             iat.department_id as type_department_id, td.name as type_department_name,
-            d.name as department_name
+            d.name as department_name,
+            rl.name as risk_level_name
      FROM intangible_asset_assignments iaa
       JOIN intangible_assets ia ON iaa.intangible_asset_id = ia.id
      LEFT JOIN intangible_asset_types iat ON ia.type = iat.name AND iat.company_id = ia.company_id AND iat.deleted_at IS NULL
      LEFT JOIN asset_mngmnt_departments td ON iat.department_id = td.departmentID AND td.deleted_at IS NULL
      LEFT JOIN asset_mngmnt_departments d ON iaa.department_id = d.departmentID AND d.deleted_at IS NULL
+     LEFT JOIN risk_levels rl ON ia.risk_level_id = rl.id AND rl.deleted_at IS NULL
      WHERE iaa.user_id = ? AND iaa.status='Active' AND iaa.deleted_at IS NULL`, [userId]
   );
   return rows;
@@ -186,11 +203,11 @@ export async function deactivateAssignments(intangibleAssetIds: string[], userId
   );
   // update intangible_assets status if no more active assignments
   for (const id of intangibleAssetIds) {
-    const [remaining] = await (conn ? conn.execute : pool.execute.bind(pool))(
+    const [remaining] = await executor.execute(
       `SELECT 1 FROM intangible_asset_assignments WHERE intangible_asset_id=? AND status='Active' AND deleted_at IS NULL LIMIT 1`, [id]
     ) as any;
     if (!remaining || remaining.length === 0) {
-      await (conn ? conn.execute : pool.execute.bind(pool))(
+      await executor.execute(
         `UPDATE intangible_assets SET status='available', updated_at=NOW() WHERE id=?`, [id]
       ) as any;
     }

@@ -1,5 +1,5 @@
 'use client';
-import { useEffect, useState, useMemo } from 'react';
+import { useEffect, useState, useMemo, useRef } from 'react';
 import { Package, FileText, CheckCircle2, RotateCcw } from 'lucide-react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { PageHeader } from '@/components/common/PageHeader';
@@ -64,6 +64,7 @@ export default function IntangibleDeactivationRequest() {
   const [search, setSearch] = useState('');
   const [searchColumn, setSearchColumn] = useState('all');
   const [showOtp, setShowOtp] = useState(false);
+  const pendingActionRef = useRef<(() => Promise<void>) | null>(null);
   const [myForms, setMyForms] = useState<any[]>([]);
 
   const fetchData = async () => {
@@ -127,19 +128,32 @@ export default function IntangibleDeactivationRequest() {
     }
   };
 
-  const handleSubmit = async (otpVerified?: boolean) => {
-    if (selectedIds.length === 0) { toast.error('Select at least one intangible asset'); return; }
-    if (!currentUser?.digitalSignature) { toast.error('Digital signature not set in profile'); return; }
-    // require OTP gate
-    if (!otpVerified) { setShowOtp(true); return; }
+  const submitDeactivation = async () => {
     setSubmitting(true);
     try {
-      await api.post('/intangible-deactivations', { intangibleAssetIds: selectedIds, digitalSignature: currentUser.digitalSignature, remarks: remarks || undefined });
+      await api.post('/intangible-deactivations', {
+        intangibleAssetIds: selectedIds,
+        digitalSignature: currentUser!.digitalSignature,
+        remarks: remarks || undefined,
+      });
       toast.success(`Deactivation request submitted for ${selectedIds.length} asset(s)`);
-      setSelectedIds([]); setRemarks('');
-      fetchData();
-    } catch (e: any) { toast.error(e?.data?.error || e?.message || 'Failed to submit'); }
-    finally { setSubmitting(false); setShowOtp(false); }
+      setSelectedIds([]);
+      setRemarks('');
+      await fetchData();
+    } catch (e: any) {
+      toast.error(e?.data?.error || e?.message || 'Failed to submit');
+    } finally {
+      setSubmitting(false);
+      setShowOtp(false);
+    }
+  };
+
+  const handleSubmit = () => {
+    if (selectedIds.length === 0) { toast.error('Select at least one intangible asset'); return; }
+    if (!currentUser?.digitalSignature) { toast.error('Digital signature not set in profile'); return; }
+
+    pendingActionRef.current = submitDeactivation;
+    setShowOtp(true);
   };
 
   const historyRows = useMemo<DeactivationHistoryRow[]>(() => {
@@ -321,11 +335,15 @@ export default function IntangibleDeactivationRequest() {
                                     {ia.status}
                                   </Badge>
                                 )}
-                                {ia.risk_level && (
-                                  <Badge variant="outline" className="text-xs border-orange-300 text-orange-700">
-                                    Risk: {ia.risk_level}
-                                  </Badge>
-                                )}
+                                {(() => {
+                                  const risk = ia.risk_level;
+                                  const riskLabel = typeof risk === 'object' ? risk?.name : risk;
+                                  return riskLabel ? (
+                                    <Badge variant="outline" className="text-xs border-orange-300 text-orange-700">
+                                      Risk: {riskLabel}
+                                    </Badge>
+                                  ) : null;
+                                })()}
                               </div>
 
                               <p className="text-sm text-gray-600 line-clamp-2">
@@ -489,7 +507,18 @@ export default function IntangibleDeactivationRequest() {
           </CardContent>
         </Card>
       </main>
-      <SmsOtpDialog isOpen={showOtp} onOpenChange={setShowOtp} onVerified={() => handleSubmit(true)} onCancel={() => setShowOtp(false)} pendingActionRef={{ current: null } as any} title="Verify to submit" description="Enter OTP to confirm deactivation request" />
+      <SmsOtpDialog
+        isOpen={showOtp}
+        onOpenChange={setShowOtp}
+        onVerified={() => undefined}
+        onCancel={() => {
+          pendingActionRef.current = null;
+          setShowOtp(false);
+        }}
+        pendingActionRef={pendingActionRef}
+        title="Verify to submit"
+        description="Enter OTP to confirm deactivation request"
+      />
     </div>
   );
 }
