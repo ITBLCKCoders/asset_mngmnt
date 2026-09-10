@@ -193,7 +193,14 @@ export async function getHrDepartmentCodePrefix(
   const [rows] = await pool.execute<CompanyCodePrefixRow[]>(
     `SELECT code, prefix FROM asset_mngmnt_departments
      WHERE company_id = ? AND deleted_at IS NULL
-       AND LOWER(TRIM(name)) IN ('hr', 'human resources')
+       AND (
+         LOWER(TRIM(name)) = 'hr'
+         OR LOWER(TRIM(name)) LIKE 'hr department%'
+         OR LOWER(TRIM(name)) = 'human resource'
+         OR LOWER(TRIM(name)) LIKE 'human resource department%'
+         OR LOWER(TRIM(name)) = 'human resources'
+         OR LOWER(TRIM(name)) LIKE 'human resources department%'
+       )
      ORDER BY CASE WHEN LOWER(TRIM(name)) = 'hr' THEN 0 ELSE 1 END
      LIMIT 1`,
     [companyId]

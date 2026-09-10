@@ -139,7 +139,8 @@ export function FormsTab({ isActive }: { isActive?: boolean }) {
   const fetchDepartments = async () => {
     try {
       const data = await api.get('/departments');
-      setDepartments(data.departments || []);
+      const departmentRows = data.departments || data.data || [];
+      setDepartments(Array.isArray(departmentRows) ? departmentRows : []);
     } catch (error) {
       console.error('Failed to fetch departments:', error);
     }
@@ -665,6 +666,33 @@ export function FormsTab({ isActive }: { isActive?: boolean }) {
       </TabsContent>
     );
   }
+
+  const hrDepartment = departments.find((department: any) => {
+    const name = String(department.name || '')
+      .trim()
+      .toLowerCase()
+      .replace(/\s+/g, ' ');
+    return (
+      name === 'hr' ||
+      name.startsWith('hr department') ||
+      name === 'human resource' ||
+      name.startsWith('human resource department') ||
+      name === 'human resources' ||
+      name.startsWith('human resources department')
+    );
+  });
+  const formatHrDepartment = (format: 'code' | 'prefix' | 'none') => {
+    if (format === 'none') return '';
+    return format === 'prefix'
+      ? hrDepartment?.prefix || hrDepartment?.code || ''
+      : hrDepartment?.code || hrDepartment?.prefix || '';
+  };
+  const formatCompany = (format: 'code' | 'prefix' | 'none') => {
+    if (format === 'none') return '';
+    return format === 'prefix'
+      ? activeCompany?.prefix || activeCompany?.code || ''
+      : activeCompany?.code || activeCompany?.prefix || '';
+  };
 
   return (
     <TabsContent value="forms" className="mt-0">
@@ -1835,7 +1863,7 @@ export function FormsTab({ isActive }: { isActive?: boolean }) {
                 <div><Label>Month and Year (MMYYYY)</Label><p className="text-xs text-muted-foreground">The four-digit sequence continues through the year and resets to 0001 in January.</p></div>
                 <Switch checked={deactivationFormSettings.includeDate} onCheckedChange={checked => updateDeactivationFormSettings({ includeDate: checked })} disabled={settingsLoading} />
               </div>
-              <div className="p-4 border rounded-xl font-mono text-center text-lg">{activeCompany?.code || 'COMP'}-{deactivationFormSettings.department === 'none' ? '' : 'HR-'}{deactivationFormSettings.formCode || 'IDF'}-{deactivationFormSettings.includeDate ? 'MMYYYY-' : ''}0001</div>
+              <div className="p-4 border rounded-xl font-mono text-center text-lg">{formatCompany(deactivationFormSettings.companyCode)}{formatCompany(deactivationFormSettings.companyCode) ? '-' : ''}{formatHrDepartment(deactivationFormSettings.department) ? `${formatHrDepartment(deactivationFormSettings.department)}-` : ''}{deactivationFormSettings.formCode || 'IDF'}-{deactivationFormSettings.includeDate ? 'MMYYYY-' : ''}0001</div>
             </CardContent>
             {hasUnsavedDeactivationChanges && <CardFooter className="flex justify-end"><Button onClick={handleSaveDeactivationFormSettings} disabled={settingsLoading}>{settingsLoading ? 'Saving...' : 'Save Changes'}</Button></CardFooter>}
           </Card>
@@ -1854,7 +1882,7 @@ export function FormsTab({ isActive }: { isActive?: boolean }) {
                 <div className="space-y-2"><Label>Form Code</Label><Input value={clearanceFormSettings.formCode} onChange={e => updateClearanceFormSettings({ formCode: e.target.value })} placeholder="e.g., CLR" disabled={settingsLoading} /><p className="text-xs text-muted-foreground">Code for accountability clearance forms.</p></div>
               </div>
               <div className="flex items-center justify-between p-4 bg-muted/30 rounded-xl"><div><Label>Month and Year (MMYYYY)</Label><p className="text-xs text-muted-foreground">The clearance sequence resets to 0001 in a new year.</p></div><Switch checked={clearanceFormSettings.includeDate} onCheckedChange={checked => updateClearanceFormSettings({ includeDate: checked })} disabled={settingsLoading} /></div>
-              <div className="p-4 border rounded-xl font-mono text-center text-lg">{activeCompany?.code || 'COMP'}-{clearanceFormSettings.department === 'none' ? '' : 'HR-'}{clearanceFormSettings.formCode || 'CLR'}-{clearanceFormSettings.includeDate ? 'MMYYYY-' : ''}0001</div>
+              <div className="p-4 border rounded-xl font-mono text-center text-lg">{formatCompany(clearanceFormSettings.companyCode)}{formatCompany(clearanceFormSettings.companyCode) ? '-' : ''}{formatHrDepartment(clearanceFormSettings.department) ? `${formatHrDepartment(clearanceFormSettings.department)}-` : ''}{clearanceFormSettings.formCode || 'CLR'}-{clearanceFormSettings.includeDate ? 'MMYYYY-' : ''}0001</div>
             </CardContent>
             {hasUnsavedClearanceChanges && <CardFooter className="flex justify-end"><Button onClick={handleSaveClearanceFormSettings} disabled={settingsLoading}>{settingsLoading ? 'Saving...' : 'Save Changes'}</Button></CardFooter>}
           </Card>

@@ -52,7 +52,8 @@ SET
   clearance_department_format = COALESCE(clearance_department_format, 'code'),
   clearance_include_date = COALESCE(clearance_include_date, 1),
   clearance_date_format = COALESCE(clearance_date_format, 'MMYYYY')
-WHERE deleted_at IS NULL;
+WHERE id <> ''
+  AND deleted_at IS NULL;
 
 -- 3. Back up every existing deactivation form before changing its number.
 CREATE TABLE IF NOT EXISTS intangible_deactivation_forms_backfill_20260910
@@ -105,7 +106,7 @@ LEFT JOIN (
     MIN(prefix) AS prefix
   FROM asset_mngmnt_departments
   WHERE deleted_at IS NULL
-    AND LOWER(TRIM(name)) IN ('hr', 'human resources')
+    AND LOWER(TRIM(name)) IN ('hr', 'hr department', 'human resources', 'human resources department')
   GROUP BY company_id
 ) hr ON hr.company_id = f.company_id
 WHERE f.deleted_at IS NULL
@@ -126,6 +127,7 @@ ORDER BY f.company_id, f.created_at, f.formID;
 UPDATE intangible_deactivation_forms f
 JOIN tmp_intangible_deactivation_form_backfill b ON b.formID = f.formID
 SET f.form_number = b.new_form_number
-WHERE f.deleted_at IS NULL;
+WHERE f.formID <> ''
+  AND f.deleted_at IS NULL;
 
 DROP TEMPORARY TABLE IF EXISTS tmp_intangible_deactivation_form_backfill;
