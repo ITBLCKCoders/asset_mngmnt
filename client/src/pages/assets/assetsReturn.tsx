@@ -2817,7 +2817,7 @@ export default function AssetsReturn() {
           pendingActionRef={pendingReturnActionRef}
           title="OTP Email Verification"
           description="OTP Email Verification has been sent to your registered email for asset return confirmation."
-          verifyButtonLabel="Verify & Process Return"
+          verifyButtonLabel="Verify & Process"
           phoneNumber={
             (currentUser as { contactNumber?: string })?.contactNumber
           }

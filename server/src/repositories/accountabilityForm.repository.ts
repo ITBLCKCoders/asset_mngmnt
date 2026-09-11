@@ -1181,6 +1181,10 @@ export async function listFormsPendingApprovalForApprover(
      WHERE af.deleted_at IS NULL
        AND af.approval_status = 'pending_approval'
        AND af.status IN ('Pending', 'Signed')
+       AND (
+         JSON_UNQUOTE(JSON_EXTRACT(af.assets_data, '$.form_origin')) IS NULL
+         OR JSON_UNQUOTE(JSON_EXTRACT(af.assets_data, '$.form_origin')) <> 'clearance'
+       )
 AND (
           EXISTS (
             SELECT 1 FROM user_approvers ua

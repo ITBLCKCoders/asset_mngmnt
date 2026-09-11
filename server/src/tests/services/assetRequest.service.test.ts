@@ -36,7 +36,7 @@ describe('AssetRequestService', () => {
     it('should return requests for user', async () => {
       const expected = [{ id: 1 }];
       mockModel.getByUserId.mockResolvedValue(expected);
-      const result = await AssetRequestService.getByUserId(1);
+      const result = await AssetRequestService.getByUserId('12345678-1234-1234-1234-123456789012');
       expect(result).toEqual(expected);
     });
   });
@@ -58,7 +58,7 @@ describe('AssetRequestService', () => {
 
   describe('create', () => {
     it('should create request with valid data', async () => {
-      const data = { department_id: 1, category_id: 1, type_id: 1, quantity: 1, user_id: 1 };
+      const data = { department_id: 'department-1', category_id: 'category-1', type_id: 'type-1', quantity: 1, user_id: '12345678-1234-1234-1234-123456789012' };
       mockModel.create.mockResolvedValue(1);
       const result = await AssetRequestService.create(data);
       expect(result).toBe(1);

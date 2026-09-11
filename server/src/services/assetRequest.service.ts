@@ -27,9 +27,9 @@ class AssetRequestService {
   /**
    * Get asset requests by user ID
    */
-  static async getByUserId(userId: number): Promise<AssetRequestWithDetails[]> {
+  static async getByUserId(userId: string): Promise<AssetRequestWithDetails[]> {
     try {
-      if (!userId || userId <= 0) {
+      if (!userId || !userId.trim()) {
         throw new Error('Invalid user ID');
       }
 
@@ -79,15 +79,15 @@ class AssetRequestService {
   ): Promise<number> {
     try {
       // Validate request data
-      if (!requestData.department_id || requestData.department_id <= 0) {
+      if (!requestData.department_id || !String(requestData.department_id).trim()) {
         throw new Error('Department ID is required');
       }
 
-      if (!requestData.category_id || requestData.category_id <= 0) {
+      if (!requestData.category_id || !String(requestData.category_id).trim()) {
         throw new Error('Category ID is required');
       }
 
-      if (!requestData.type_id || requestData.type_id <= 0) {
+      if (!requestData.type_id || !String(requestData.type_id).trim()) {
         throw new Error('Type ID is required');
       }
 
@@ -95,7 +95,7 @@ class AssetRequestService {
         throw new Error('Quantity must be at least 1');
       }
 
-      if (!requestData.user_id || requestData.user_id <= 0) {
+      if (!requestData.user_id || !String(requestData.user_id).trim()) {
         throw new Error('User ID is required');
       }
 

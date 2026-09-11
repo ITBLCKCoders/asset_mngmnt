@@ -466,18 +466,12 @@ export default function Dashboard() {
           api.get<{ assets?: unknown[] }>('/assets/my-assets'),
           api.get<{ requests?: any[] }>('/asset-requests'),
           api.get<unknown>('/asset-borrow-requests/mine'),
-          api.get<{ auditLogs?: AuditLogItem[] }>(
-            `/audit?limit=10&sortBy=created_at&sortOrder=DESC&userId=${user.id}`
-          ),
         ]);
 
-        const [myAssetsResult, myAssetRequestsResult, myBorrowsResult, myActivityResult] =
+        const [myAssetsResult, myAssetRequestsResult, myBorrowsResult] =
           settled;
 
-        const myActivityRes = myActivityResult.status === 'fulfilled' ? myActivityResult.value : null;
-        const employeeActivityLogs =
-          myActivityRes?.auditLogs ?? (myActivityRes as any)?.data?.auditLogs ?? [];
-        setEmployeeActivity(Array.isArray(employeeActivityLogs) ? employeeActivityLogs : []);
+        setEmployeeActivity([]);
 
         const safeValue = <T,>(result: PromiseSettledResult<T>, fallback: T): T =>
           result.status === 'fulfilled' ? result.value : fallback;
@@ -681,17 +675,22 @@ export default function Dashboard() {
         setDashboardData(null);
       }
 
-      // Fetch audit logs separately - failure should not break dashboard
-      try {
+      // Audit logs are restricted to audit-enabled roles; employee dashboards
+      // use the dedicated employee activity data above instead.
+      if (!isEmployee) {
+        try {
         const auditRes = await api.get<{ auditLogs?: AuditLogItem[] }>(
           '/audit?limit=20&sortBy=created_at&sortOrder=DESC&excludeActions=User Login,User Logout,Auto Logout'
         );
         const logs =
           auditRes?.auditLogs ?? (auditRes as any)?.data?.auditLogs ?? [];
         setAuditLogs(Array.isArray(logs) ? logs : []);
-      } catch (auditError) {
-        // Silently fail - user likely doesn't have audit permission
-        console.debug('Audit logs not available (permission denied)');
+        } catch (auditError) {
+          // Silently fail - user likely doesn't have audit permission
+          console.debug('Audit logs not available (permission denied)');
+          setAuditLogs([]);
+        }
+      } else {
         setAuditLogs([]);
       }
     } catch (error) {

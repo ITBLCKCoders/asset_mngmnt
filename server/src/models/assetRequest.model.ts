@@ -2,23 +2,23 @@ import { pool } from '../db.js';
 
 export interface AssetRequest {
   id: number;
-  department_id: number;
-  category_id: number;
-  type_id: number;
+  department_id: string;
+  category_id: string;
+  type_id: string;
   request_date: string;
   status: 'pending' | 'approved' | 'rejected';
   notes: string;
   quantity: number;
-  user_id: number;
+  user_id: string;
   admin_notes: string;
   processed_date?: string;
 }
 
 export interface AssetRequestWithDetails extends AssetRequest {
-  department?: { id: number; name: string };
-  category?: { id: number; name: string };
-  type?: { id: number; name: string };
-  user?: { id: number; username: string; name: string };
+  department?: { id: string; name: string };
+  category?: { id: string; name: string };
+  type?: { id: string; name: string };
+  user?: { id: string; username: string; name: string };
 }
 
 class AssetRequestModel {
@@ -39,20 +39,20 @@ class AssetRequestModel {
         ar.user_id,
         ar.admin_notes,
         ar.processed_date,
-        d.id as department_id,
+        d.departmentID as department_name_id,
         d.name as department_name,
-        c.id as category_id,
+        c.categoryID as category_name_id,
         c.name as category_name,
-        at.id as type_id,
+        at.typeID as type_name_id,
         at.name as type_name,
-        u.id as user_id,
+        u.userID as user_id,
         u.username as user_username,
         u.name as user_name
       FROM asset_requests ar
-      LEFT JOIN departments d ON ar.department_id = d.id
-      LEFT JOIN categories c ON ar.category_id = c.id
-      LEFT JOIN asset_types at ON ar.type_id = at.id
-      LEFT JOIN users u ON ar.user_id = u.id
+      LEFT JOIN asset_mngmnt_departments d ON ar.department_id = d.departmentID
+      LEFT JOIN asset_categories c ON ar.category_id = c.categoryID
+      LEFT JOIN asset_types at ON ar.type_id = at.typeID
+      LEFT JOIN users u ON ar.user_id = u.userID
       ORDER BY ar.request_date DESC
     `);
 
@@ -91,7 +91,7 @@ class AssetRequestModel {
   /**
    * Get asset requests by user ID
    */
-  static async getByUserId(userId: number): Promise<AssetRequestWithDetails[]> {
+  static async getByUserId(userId: string): Promise<AssetRequestWithDetails[]> {
     const [result] = await pool.query(
       `
       SELECT
@@ -106,16 +106,16 @@ class AssetRequestModel {
         ar.user_id,
         ar.admin_notes,
         ar.processed_date,
-        d.id as department_id,
+        d.departmentID as department_name_id,
         d.name as department_name,
-        c.id as category_id,
+        c.categoryID as category_name_id,
         c.name as category_name,
-        at.id as type_id,
+        at.typeID as type_name_id,
         at.name as type_name
       FROM asset_requests ar
-      LEFT JOIN departments d ON ar.department_id = d.id
-      LEFT JOIN categories c ON ar.category_id = c.id
-      LEFT JOIN asset_types at ON ar.type_id = at.id
+      LEFT JOIN asset_mngmnt_departments d ON ar.department_id = d.departmentID
+      LEFT JOIN asset_categories c ON ar.category_id = c.categoryID
+      LEFT JOIN asset_types at ON ar.type_id = at.typeID
       WHERE ar.user_id = ?
       ORDER BY ar.request_date DESC
     `,

@@ -42,6 +42,7 @@ import {
   generateAssetChecklistPDF,
   generateAssetBorrowingPDF,
   generateIntangibleDeactivationPDF,
+  generateAccountabilityClearancePDF,
   downloadPDF,
 } from '@/lib/pdfGenerator';
 import {
@@ -780,14 +781,22 @@ export default function ApprovalsPage() {
         toast.success('Download started');
         return;
       }
-      if (batch.formType === 'admin_copy_signature' || batch.formType === 'accountability_approval') {
+      if (batch.formType === 'admin_copy_signature' ||
+          batch.formType === 'accountability_approval' ||
+          String(batch.formType).startsWith('clearance_')) {
+        const isClearance = String(batch.formType).startsWith('clearance_');
         const response = await api.get<{ form?: AccountabilityForm }>(`/accountability-forms/${(batch as AccountabilityApprovalBatch).formID}`);
         if (!response?.form) {
           toast.error('Cannot generate PDF for this form');
           return;
         }
-        const blob = await generateAccountabilityFormPDF(response.form, currentUser);
-        downloadPDF(blob, `Accountability_Form_${response.form.formNumber ?? Date.now()}.pdf`);
+        const blob = isClearance
+          ? await generateAccountabilityClearancePDF(response.form, currentUser)
+          : await generateAccountabilityFormPDF(response.form, currentUser);
+        downloadPDF(
+          blob,
+          `${isClearance ? 'Accountability_Clearance' : 'Accountability_Form'}_${response.form.formNumber ?? Date.now()}.pdf`
+        );
         toast.success('Download started');
         return;
       }
@@ -923,7 +932,12 @@ export default function ApprovalsPage() {
       const form = response?.form ?? null;
       setAccountabilityPreviewForm(form);
       if (form) {
-        const blob = await generateAccountabilityFormPDF(form, currentUser);
+        const isClearance = form.formOrigin === 'clearance' ||
+          batch?.formOrigin === 'clearance' ||
+          String(batch?.formType).startsWith('clearance_');
+        const blob = isClearance
+          ? await generateAccountabilityClearancePDF(form, currentUser)
+          : await generateAccountabilityFormPDF(form, currentUser);
         if (accountabilityPreviewUrl) URL.revokeObjectURL(accountabilityPreviewUrl);
         setAccountabilityPreviewUrl(URL.createObjectURL(blob));
       }
@@ -1498,7 +1512,8 @@ export default function ApprovalsPage() {
             : batch.formType === 'borrow'
               ? (batch as BorrowRequestBatch).borrow_request_id
               : batch.formType === 'admin_copy_signature' ||
-                  batch.formType === 'accountability_approval'
+                  batch.formType === 'accountability_approval' ||
+                  String(batch.formType).startsWith('clearance_')
                 ? (batch as AccountabilityApprovalBatch).formID
                 : (batch as FormApprovalBatch).formID ??
                     (batch as FormApprovalBatch).return_batch_id ??
@@ -1508,7 +1523,7 @@ export default function ApprovalsPage() {
           const cb = batch as ChecklistApprovalBatch;
           return (
             <ChecklistApprovalCard
-              key={cb.batchKey}
+              key={`checklist:${cb.batchKey}`}
               batch={cb}
               onView={() => {
                 setDetailSourceTab(sourceTab);
@@ -1522,10 +1537,11 @@ export default function ApprovalsPage() {
           );
         }
         if (batch.formType === 'admin_copy_signature' ||
-            batch.formType === 'accountability_approval') {
+            batch.formType === 'accountability_approval' ||
+            String(batch.formType).startsWith('clearance_')) {
           return (
             <AccountabilityFormApprovalCard
-              key={key}
+              key={`${batch.formType}:${key}`}
               batch={batch as AccountabilityApprovalBatch}
               onView={() => {
                 void openAccountabilityPreview(
@@ -1542,7 +1558,7 @@ export default function ApprovalsPage() {
           const ib = batch as IntangibleDeactivationBatch;
           return (
             <IntangibleDeactivationApprovalCard
-              key={key}
+              key={`${batch.formType}:${key}`}
               batch={ib}
               onView={() => { setDetailSourceTab(sourceTab); void openIntangiblePreview(ib); }}
               onDownload={() => void handleDownload(batch)}
@@ -1552,7 +1568,7 @@ export default function ApprovalsPage() {
         if (batch.formType === 'transfer') {
           return (
             <TransferFormCard
-              key={key}
+              key={`${batch.formType}:${key}`}
               batch={batch as AssetTransferFormBatch}
               onView={() => {
                 setDetailSourceTab(sourceTab);
@@ -1567,7 +1583,7 @@ export default function ApprovalsPage() {
         if (batch.formType === 'borrow') {
           return (
             <BorrowRequestCard
-              key={key}
+              key={`${batch.formType}:${key}`}
               batch={batch}
               onView={() => {
                 setDetailSourceTab(sourceTab);
@@ -1579,7 +1595,7 @@ export default function ApprovalsPage() {
         }
         return (
           <ReturnFormCard
-            key={key}
+            key={`${batch.formType}:${key}`}
             batch={batch as AssetReturnFormBatch}
             onView={() => {
               setDetailSourceTab(sourceTab);
@@ -1827,11 +1843,12 @@ export default function ApprovalsPage() {
                             return `${requesterName} — Asset Borrow`;
                           })()
                         : selectedBatch.formType === 'admin_copy_signature' ||
-                            selectedBatch.formType === 'accountability_approval'
+                            selectedBatch.formType === 'accountability_approval' ||
+                            String(selectedBatch.formType).startsWith('clearance_')
                           ? (() => {
                               const ab = selectedBatch as AccountabilityApprovalBatch;
                               const userName = `${ab.user_first_name || ''} ${ab.user_last_name || ''}`.trim() || ab.user_email || 'Employee';
-                              return `${userName} — Accountability Form`;
+                              return `${userName} — ${String(selectedBatch.formType).startsWith('clearance_') ? 'Unified Accountability Clearance' : 'Accountability Form'}`;
                             })()
                           : (selectedBatch as any).formType === 'intangible_deactivation' || (selectedBatch as any).formType === 'intangible_deactivation_hr'
                             ? `${(selectedBatch as any).user_first_name || ''} ${(selectedBatch as any).user_last_name || ''}`.trim() + ' — Intangible Deactivation'
@@ -1846,7 +1863,8 @@ export default function ApprovalsPage() {
                     {selectedBatch.formType !== 'checklist' &&
                       selectedBatch.formType !== 'borrow' &&
                       selectedBatch.formType !== 'admin_copy_signature' &&
-                      selectedBatch.formType !== 'accountability_approval' && (
+                      selectedBatch.formType !== 'accountability_approval' &&
+                      !String(selectedBatch.formType).startsWith('clearance_') && (
                         <>
                           -{' '}
                           {(selectedBatch as FormApprovalBatch).form_number ??
@@ -1854,7 +1872,8 @@ export default function ApprovalsPage() {
                         </>
                       )}
                     {(selectedBatch.formType === 'admin_copy_signature' ||
-                      selectedBatch.formType === 'accountability_approval') && (
+                      selectedBatch.formType === 'accountability_approval' ||
+                      String(selectedBatch.formType).startsWith('clearance_')) && (
                       <>
                         - {(selectedBatch as AccountabilityApprovalBatch).form_number}
                       </>
@@ -1874,7 +1893,9 @@ export default function ApprovalsPage() {
                           ? `Sign ${(selectedBatch as AccountabilityApprovalBatch).admin_copy_copy_type ?? 'IT'} copy of accountability form`
                           : selectedBatch.formType === 'accountability_approval'
                             ? 'Approve accountability form'
-                            : 'Asset Return Form Preview'
+                            : String(selectedBatch.formType).startsWith('clearance_')
+                              ? 'Accountability Clearance Preview'
+                              : 'Asset Return Form Preview'
                 }
               />
               <div className="min-h-0 flex-1 flex flex-col overflow-hidden bg-white px-4 sm:px-6">
@@ -1908,7 +1929,8 @@ export default function ApprovalsPage() {
                   </div>
                 </div>
               ) : selectedBatch.formType === 'admin_copy_signature' ||
-                selectedBatch.formType === 'accountability_approval' ? (
+                selectedBatch.formType === 'accountability_approval' ||
+                String(selectedBatch.formType).startsWith('clearance_') ? (
                 <div className="flex min-h-0 flex-1 flex-col gap-3 py-4 overflow-y-auto">
                   {(() => {
                     const ab = selectedBatch as AccountabilityApprovalBatch;
@@ -2197,7 +2219,8 @@ export default function ApprovalsPage() {
                     ? !(selectedBatch as ChecklistApprovalBatch).dept_head_signed_at &&
                       !(selectedBatch as ChecklistApprovalBatch).sub_approver_1_signed_at
                     : selectedBatch.formType === 'admin_copy_signature' ||
-                        selectedBatch.formType === 'accountability_approval'
+                        selectedBatch.formType === 'accountability_approval' ||
+                        String(selectedBatch.formType).startsWith('clearance_')
                       ? true
                       : !(
                           selectedBatch as {
@@ -2214,7 +2237,8 @@ export default function ApprovalsPage() {
                     <>
                       {selectedBatch.formType !== 'checklist' &&
                         selectedBatch.formType !== 'admin_copy_signature' &&
-                        selectedBatch.formType !== 'accountability_approval' && (
+                        selectedBatch.formType !== 'accountability_approval' &&
+                        !String(selectedBatch.formType).startsWith('clearance_') && (
                           <Button
                             size="sm"
                             variant="outline"
@@ -2232,7 +2256,7 @@ export default function ApprovalsPage() {
                         className="bg-blue-600 hover:bg-blue-700 text-white"
                       >
                         {approving
-                          ? 'Working...'
+                          ? 'Approving...'
                           : selectedBatch.formType === 'admin_copy_signature'
                             ? 'Sign Copy'
                             : selectedBatch.formType === 'accountability_approval'
@@ -2311,7 +2335,7 @@ export default function ApprovalsPage() {
                     disabled={approving || intangiblePreviewLoading}
                     className="bg-blue-600 hover:bg-blue-700 text-white"
                   >
-                    {approving ? 'Working...' : intangiblePreviewBatch.formType === 'intangible_deactivation_hr' ? 'Approve' : 'Approve'}
+                    {approving ? 'Approving...' : intangiblePreviewBatch.formType === 'intangible_deactivation_hr' ? 'Approve' : 'Approve'}
                   </Button>
                 </>
               )}
@@ -2324,7 +2348,7 @@ export default function ApprovalsPage() {
           </AppDialogFrame>
         </Dialog>
 
-        {/* Accountability Form PDF Preview (View action) */}
+        {/* Accountability PDF Preview (View action) */}
         <Dialog
           open={showAccountabilityPreview}
           onOpenChange={open => {
@@ -2345,12 +2369,25 @@ export default function ApprovalsPage() {
             <AppDialogGradientHeader
               showCloseButton={false}
               className="!px-4 !pb-4 !pt-4 sm:!px-5 sm:!pb-5 sm:!pt-5"
-              title="Accountability form"
-              description="View and manage accountability forms"
+              title={
+                accountabilityPreviewForm?.formOrigin === 'clearance' ||
+                String(accountabilityPreviewBatch?.formType).startsWith('clearance_')
+                  ? 'Accountability Clearance'
+                  : 'Accountability Form'
+              }
+              description={
+                accountabilityPreviewForm?.formOrigin === 'clearance' ||
+                String(accountabilityPreviewBatch?.formType).startsWith('clearance_')
+                  ? 'View accountability clearance'
+                  : 'View and manage accountability forms'
+              }
             />
             {accountabilityPreviewLoading ? (
               <div className="flex items-center justify-center py-16 text-sm text-muted-foreground">
-                Loading accountability form...
+                {accountabilityPreviewForm?.formOrigin === 'clearance' ||
+                String(accountabilityPreviewBatch?.formType).startsWith('clearance_')
+                  ? 'Loading accountability clearance...'
+                  : 'Loading accountability form...'}
               </div>
             ) : accountabilityPreviewForm ? (
               <div className="min-h-0 flex-1 overflow-hidden bg-slate-50 p-3">
@@ -2371,20 +2408,6 @@ export default function ApprovalsPage() {
                   <>
                     <Button
                       size="sm"
-                      variant="outline"
-                      onClick={() => {
-                        setSelectedBatch(accountabilityPreviewBatch);
-                        closeAccountabilityPreview();
-                        setDeclineReason('');
-                        setShowDeclineReasonDialog(true);
-                      }}
-                      disabled={approving || accountabilityPreviewLoading}
-                      className="border-red-500 text-red-600 hover:bg-red-50"
-                    >
-                      Decline
-                    </Button>
-                    <Button
-                      size="sm"
                       onClick={handleAccountabilityPreviewApprove}
                       disabled={
                         approving ||
@@ -2394,7 +2417,7 @@ export default function ApprovalsPage() {
                       className="bg-blue-600 hover:bg-blue-700 text-white"
                     >
                       {approving
-                        ? 'Working...'
+                        ? 'Approving...'
                         : accountabilityPreviewBatch.formType ===
                             'admin_copy_signature'
                           ? 'Sign Copy'

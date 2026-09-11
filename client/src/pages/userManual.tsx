@@ -30,6 +30,9 @@ import {
   manualListNumber,
 } from '@/pages/userManual/manualConfig';
 import { PageHeader } from '@/components/common/PageHeader';
+import { useTheme } from '@/hooks/use-theme';
+import logo from '@/assets/Blackcoders-Black.png';
+import logoWhite from '@/assets/Blackcoders - White.png';
 import {
   Card,
   CardContent,
@@ -2314,6 +2317,7 @@ const APPROVAL_RETURN_CONTENT = (
 );
  
 export default function UserManual() {
+  const { theme } = useTheme();
   const [searchParams] = useSearchParams();
   const [currentStep, setCurrentStep] = useState(COVER_STEP);
   const [expandedParents, setExpandedParents] = useState<Set<number>>(() => {
@@ -2709,7 +2713,7 @@ export default function UserManual() {
               ) : currentStep === COVER_STEP ? (
                 <div className="flex-1 flex flex-col items-center justify-center w-full gap-4">
                   <img
-                    src="/Blackcoders-Black.png"
+                    src={theme === 'dark' ? logoWhite : logo}
                     alt="Blackcoders"
                     className="max-w-3xl w-full h-auto object-contain"
                   />

@@ -252,7 +252,11 @@ export function AccountabilityFormPreviewDialog({
               <AppDialogGradientHeader
                 className="shrink-0 px-4 pb-4 pt-4 sm:px-5 sm:pb-5 sm:pt-5"
                 title={`${localForm.user.first_name} ${localForm.user.last_name} - ${localForm.formNumber}`}
-                description="Asset Accountability Form Preview"
+                description={
+                  localForm.formOrigin === 'clearance'
+                    ? 'Accountability Clearance Preview'
+                    : 'Asset Accountability Form Preview'
+                }
               />
               <AccountabilityFormDetail
                 form={localForm}

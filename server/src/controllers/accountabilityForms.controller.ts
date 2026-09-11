@@ -1022,6 +1022,7 @@ async function sendApprovalKickoffNotifications(args: {
   adminCopyCopyType: AdminCopyCopyType | null;
   ownerApproverId: string | null;
   ownerSubApproverId: string | null;
+  formOrigin?: AccountabilityFormOrigin;
   /** Issuer/creator — copy-signer pool is resolved from their designations. */
   issuerUserId?: string | null;
   req: AuthRequest;
@@ -1080,14 +1081,15 @@ async function sendApprovalKickoffNotifications(args: {
       args.ownerSubApproverId,
     ].filter((id): id is string => !!id && id !== args.ownerUserId);
     for (const approverId of recipients) {
+      const isClearance = args.formOrigin === 'clearance';
       await notifyUser({
         userId: approverId,
-        title: `Accountability form ${args.formNumber} needs your approval`,
-        message: `Please review and approve the accountability form for ${args.ownerName} (${args.formNumber}).`,
+        title: `${isClearance ? 'Accountability clearance' : 'Accountability form'} ${args.formNumber} needs your approval`,
+        message: `Please review and approve the ${isClearance ? 'unified accountability clearance' : 'accountability form'} for ${args.ownerName} (${args.formNumber}).`,
         type: 'accountability_form',
         data: {
           route: '/approvals?tab=for-approval',
-          actionTarget: 'accountability_form_approval',
+          actionTarget: isClearance ? 'clearance_approver' : 'accountability_form_approval',
           formId: args.formId,
           formNumber: args.formNumber,
         },
@@ -3793,6 +3795,16 @@ export async function getAccountabilityFormByIdHandler(
       assets: assets,
       assignmentIds: parsedSingle.assignmentIds,
       ...(formOriginSingle ? { formOrigin: formOriginSingle } : {}),
+      ...(parsedSingle.clearanceScope
+        ? { clearanceScope: parsedSingle.clearanceScope }
+        : {}),
+      ...(parsedSingle.clearanceReason
+        ? { clearanceReason: parsedSingle.clearanceReason }
+        : {}),
+      ...(parsedSingle.referenceDisabledFormNumbers
+        ? { referenceDisabledFormNumbers: parsedSingle.referenceDisabledFormNumbers }
+        : {}),
+      ...(parsedSingle.clearedAt ? { clearedAt: parsedSingle.clearedAt } : {}),
       user: {
         id: row.user_id,
         first_name: row.first_name,
@@ -4691,12 +4703,47 @@ export async function createClearanceHandler(req: AuthRequest, res: Response) {
     )) as any[];
     if ((recentClearance as any[]).length>0) return res.status(400).json({ error: `Clearance already pending: ${(recentClearance as any[])[0].form_number}` });
 
-    // Gather disabled form numbers for reference
+    // Keep only the latest disabled accountability form for each asset scope.
+    // Clearance certificates intentionally reference the prior IT/Admin forms,
+    // rather than every historical disabled form.
     const [recentDisabled] = (await pool.execute(
-      `SELECT form_number FROM accountability_forms WHERE user_id=? AND deleted_at IS NULL AND status='Disabled' ORDER BY updated_at DESC LIMIT 20`,
+      `SELECT form_number, assets_data
+       FROM accountability_forms
+       WHERE user_id=? AND deleted_at IS NULL AND status='Disabled'
+         AND (assets_data IS NULL
+           OR JSON_UNQUOTE(JSON_EXTRACT(assets_data, '$.form_origin')) IS NULL
+           OR JSON_UNQUOTE(JSON_EXTRACT(assets_data, '$.form_origin')) <> 'clearance')
+       ORDER BY updated_at DESC, created_at DESC
+       LIMIT 50`,
       [targetUserId]
     )) as any[];
-    const referenceDisabledFormNumbers: string[] = (recentDisabled as any[]).map(r => String(r.form_number));
+    const latestByScope = new Map<AdminCopyCopyType, string>();
+    for (const row of recentDisabled as any[]) {
+      const parsed = parseAccountabilityAssetsData(row.assets_data);
+      const scope = detectFormCopyScope(parsed.assets, parsed.formOrigin, parsed.clearanceScope);
+      if (scope && !latestByScope.has(scope)) {
+        latestByScope.set(scope, String(row.form_number));
+      }
+      if (latestByScope.size === 2) break;
+    }
+
+    // Include the latest approved intangible deactivation as a separate
+    // clearance reference when one exists.
+    const [latestIntangibleDeactivation] = (await pool.execute(
+      `SELECT form_number
+       FROM intangible_deactivation_forms
+       WHERE user_id=? AND deleted_at IS NULL AND status='Approved'
+       ORDER BY updated_at DESC, created_at DESC
+       LIMIT 1`,
+      [targetUserId]
+    )) as any[];
+    const referenceDisabledFormNumbers: string[] = [
+      latestByScope.get('IT'),
+      latestByScope.get('Admin'),
+      (latestIntangibleDeactivation as any[])?.[0]?.form_number
+        ? String((latestIntangibleDeactivation as any[])[0].form_number)
+        : undefined,
+    ].filter((value): value is string => Boolean(value));
 
     // Get user company/company details for form number generation
     const userDetails = await repo.getUserCompanyAndName(targetUserId);
@@ -4829,6 +4876,7 @@ export async function createClearanceHandler(req: AuthRequest, res: Response) {
           adminCopyCopyType: resolvedApprovalParams.adminCopyCopyType,
           ownerApproverId: resolvedApprovalParams.ownerApproverId,
           ownerSubApproverId: resolvedApprovalParams.ownerSubApproverId,
+          formOrigin: 'clearance',
           issuerUserId: requesterId,
           req,
         });

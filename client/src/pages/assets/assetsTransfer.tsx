@@ -3063,7 +3063,7 @@ export default function AssetsTransfer() {
           pendingActionRef={pendingTransferActionRef}
           title="OTP Email Verification"
           description="OTP Email Verification has been sent to your registered email for asset transfer confirmation."
-          verifyButtonLabel="Verify & Process Transfer"
+          verifyButtonLabel="Verify & Process"
           phoneNumber={
             (currentUser as { contactNumber?: string })?.contactNumber
           }

@@ -90,6 +90,12 @@ describe('accountabilityForm.repository', () => {
       await listFormsPendingApprovalForApprover('approver1');
       const [sql, params] = mockPool.execute.mock.calls[0];
       expect(sql).toContain("af.approval_status = 'pending_approval'");
+      expect(sql).toContain(
+        "JSON_UNQUOTE(JSON_EXTRACT(af.assets_data, '$.form_origin')) IS NULL"
+      );
+      expect(sql).toContain(
+        "JSON_UNQUOTE(JSON_EXTRACT(af.assets_data, '$.form_origin')) <> 'clearance'"
+      );
       // A Disabled/Revoked form must not remain in the approver's queue,
       // otherwise its pending approval flow would keep running.
       expect(sql).toContain("af.status IN ('Pending', 'Signed')");

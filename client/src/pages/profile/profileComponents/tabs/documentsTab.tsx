@@ -1050,6 +1050,7 @@ export const ReturnFormCard: React.FC<{
   const [showChecklistPreview, setShowChecklistPreview] = useState(false);
   const [checklistPreviewUrl, setChecklistPreviewUrl] = useState<string>('');
 
+  const returns = Array.isArray(batch.returns) ? batch.returns : [];
   const hasChecklist = checklists.length > 0;
 
   function getChecklistTabKey(checklist: ReturnFormChecklistEntry): string {
@@ -1100,7 +1101,7 @@ export const ReturnFormCard: React.FC<{
     fetchChecklists();
   }, [batch.formID]);
 
-  const first = batch.returns[0];
+  const first = returns[0];
   if (!first?.assignment?.asset) {
     return (
       <Card className="shadow-md hover:shadow-xl transition-all duration-200 border-slate-200 bg-white flex flex-col overflow-hidden">
@@ -1123,7 +1124,7 @@ export const ReturnFormCard: React.FC<{
     first.assignment?.location?.name ??
     first.assignment?.department?.name ??
     '—';
-  const notesFromReturns = batch.returns
+  const notesFromReturns = returns
     .map(r => r.return_notes)
     .filter(Boolean);
   const returnTypeNote =
@@ -1198,13 +1199,13 @@ export const ReturnFormCard: React.FC<{
               <Package className="h-4 w-4 text-gray-400 mt-0.5 flex-shrink-0" />
               <div className="flex-1 min-w-0">
                 <p className="font-medium text-sm">
-                  {batch.returns.length === 0
+                  {returns.length === 0
                     ? 'No assets'
-                    : `${batch.returns.length} asset${batch.returns.length === 1 ? '' : 's'} returned`}
+                    : `${returns.length} asset${returns.length === 1 ? '' : 's'} returned`}
                 </p>
-                {batch.returns.length > 0 && (
+                {returns.length > 0 && (
                   <ul className="max-h-[120px] overflow-y-auto scrollbar-hide text-xs text-gray-600 mt-1 space-y-0.5 list-none">
-                    {batch.returns.map((r, i) => (
+                    {returns.map((r, i) => (
                       <li
                         key={r.return_id ?? `${r.assignment_id}-${i}`}
                         className="flex items-center"
@@ -1732,7 +1733,8 @@ export const TransferFormCard: React.FC<{
     };
   }, [showConfirmDialog, canSign, batch]);
 
-  const first = batch.returns[0];
+  const returns = Array.isArray(batch.returns) ? batch.returns : [];
+  const first = returns[0];
   if (!first?.assignment?.asset) {
     return (
       <Card className="shadow-md hover:shadow-xl transition-all duration-200 border-slate-200 bg-white flex flex-col overflow-hidden">
@@ -1804,13 +1806,13 @@ export const TransferFormCard: React.FC<{
               <Package className="h-4 w-4 text-gray-400 mt-0.5 flex-shrink-0" />
               <div className="flex-1 min-w-0">
                 <p className="font-medium text-sm">
-                  {batch.returns.length === 0
+                  {returns.length === 0
                     ? 'No assets'
-                    : `${batch.returns.length} asset${batch.returns.length === 1 ? '' : 's'} transferred`}
+                    : `${returns.length} asset${returns.length === 1 ? '' : 's'} transferred`}
                 </p>
-                {batch.returns.length > 0 && (
+                {returns.length > 0 && (
                   <ul className="max-h-[120px] overflow-y-auto scrollbar-hide text-xs text-gray-600 mt-1 space-y-0.5 list-none">
-                    {batch.returns.map((r, i) => (
+                    {returns.map((r, i) => (
                       <li
                         key={r.return_id ?? `${r.assignment_id}-${i}`}
                         className="flex items-center"
@@ -4304,7 +4306,7 @@ export default function DocumentsTab({
                       key={
                         batch.formID ??
                         batch.return_batch_id ??
-                        batch.returns[0]?.return_id ??
+                        batch.returns?.[0]?.return_id ??
                         ''
                       }
                       batch={batch}
@@ -4408,7 +4410,7 @@ export default function DocumentsTab({
                 <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
                   {filteredTransferForms.map(batch => (
                     <TransferFormCard
-                      key={batch.formID ?? batch.returns[0]?.return_id ?? ''}
+                      key={batch.formID ?? batch.returns?.[0]?.return_id ?? ''}
                       batch={batch}
                       onView={() => {
                         setSelectedTransferFormBatch(batch);

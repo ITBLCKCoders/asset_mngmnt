@@ -401,7 +401,7 @@ export default function AssetReturnFormsPage() {
                       key={
                         batch.formID ??
                         batch.return_batch_id ??
-                        batch.returns[0]?.return_id ??
+                        batch.returns?.[0]?.return_id ??
                         ''
                       }
                       batch={batch}

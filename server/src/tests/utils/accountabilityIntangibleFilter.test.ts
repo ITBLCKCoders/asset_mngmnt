@@ -39,6 +39,22 @@ describe('accountabilityIntangibleFilter', () => {
       expect(String(rows[0].formID)).toBe('f-pending-copy');
     });
 
+    it('keeps a unified clearance form with no assets visible', async () => {
+      const row = {
+        formID: 'f-clearance',
+        user_id: 'owner-1',
+        approval_status: 'pending_approval',
+        assets_data: JSON.stringify({
+          assets: [],
+          form_origin: 'clearance',
+          clearance_scope: 'Unified',
+        }),
+      };
+      const rows = await stripInactiveIntangiblesFromForms([row]);
+      expect(rows).toHaveLength(1);
+      expect(JSON.parse(String(rows[0].assets_data)).form_origin).toBe('clearance');
+    });
+
     it('prunes an HR-deactivated intangible from a pending-admin-copy replacement form', async () => {
       const row = {
         ...pendingCopyForm(),

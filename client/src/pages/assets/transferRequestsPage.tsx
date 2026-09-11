@@ -1920,7 +1920,7 @@ export default function TransferRequestsPage() {
           pendingActionRef={pendingExecuteActionRef}
           title="OTP Email Verification"
           description="OTP Email Verification has been sent to your registered email for transfer processing confirmation."
-          verifyButtonLabel="Verify & Process Transfer"
+          verifyButtonLabel="Verify & Proces"
           phoneNumber={
             (currentUser as { contactNumber?: string })?.contactNumber
           }

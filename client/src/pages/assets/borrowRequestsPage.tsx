@@ -2047,7 +2047,7 @@ export default function BorrowRequestsPage() {
           pendingActionRef={pendingProcessBorrowActionRef}
           title="Verify Borrow Processing"
           description="Please verify your identity to process this borrow request."
-          verifyButtonLabel="Verify & Process Borrow"
+          verifyButtonLabel="Verify & Process"
           phoneNumber={user?.contactNumber || undefined}
         />
       </main>

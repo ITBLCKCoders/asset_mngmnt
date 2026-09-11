@@ -17,7 +17,11 @@ import { splitDisplayAssets } from '@/pages/assets/accountability/accountability
 
 export type AccountabilityApprovalFormType =
   | 'admin_copy_signature'
-  | 'accountability_approval';
+  | 'accountability_approval'
+  | 'clearance_approver'
+  | 'clearance_it'
+  | 'clearance_admin'
+  | 'clearance_hr';
 
 export interface AccountabilityApprovalBatch {
   formType: AccountabilityApprovalFormType;
@@ -59,6 +63,18 @@ function getStatusBadge(batch: AccountabilityApprovalBatch) {
     return {
       label: 'Awaiting Copy Signature',
       className: 'bg-amber-100 text-amber-800 dark:bg-amber-900/30 dark:text-amber-200',
+    };
+  }
+  const clearanceLabels: Record<string, string> = {
+    clearance_approver: 'Awaiting Department Head Approval',
+    clearance_it: 'Awaiting IT Approval',
+    clearance_admin: 'Awaiting Admin Approval',
+    clearance_hr: 'Awaiting HR Approval',
+  };
+  if (clearanceLabels[batch.formType]) {
+    return {
+      label: clearanceLabels[batch.formType],
+      className: 'bg-emerald-100 text-emerald-800 dark:bg-emerald-900/30 dark:text-emerald-200',
     };
   }
   return {
@@ -120,7 +136,9 @@ export function AccountabilityFormApprovalCard({
             </div>
             <div>
               <p className="text-[11px] font-semibold uppercase tracking-wider text-red-600">
-                Accountability Form
+                {batch.formType.startsWith('clearance_')
+                  ? 'Unified Accountability Clearance'
+                  : 'Accountability Form'}
               </p>
               <CardTitle className="text-lg">
                 {batch.form_number}
@@ -206,7 +224,15 @@ export function AccountabilityFormApprovalCard({
           <TabsContent value="timeline" className="mt-4">
         <div className="rounded-md border border-slate-200 bg-slate-50 p-3">
           <ApprovalTimeline
-            steps={timeline}
+            steps={batch.formType.startsWith('clearance_')
+              ? [
+                  { title: 'Clearance created', done: !!batch.created_at, date: batch.created_at },
+                  { title: 'Department Head approval', done: ['clearance_it', 'clearance_admin', 'clearance_hr'].includes(batch.formType), date: batch.dept_head_signed_by_name ? batch.approved_at : null, signerName: batch.dept_head_signed_by_name },
+                  { title: 'IT approval', done: ['clearance_admin', 'clearance_hr'].includes(batch.formType), date: null },
+                  { title: 'Admin approval', done: batch.formType === 'clearance_hr', date: null },
+                  { title: 'HR approval', done: false, date: null },
+                ]
+              : timeline}
             isDeclined={batch.approval_status === 'declined' || batch.decline_reason === 'Declined'}
             declinedAt={batch.updated_at}
             declineReason={batch.decline_reason}

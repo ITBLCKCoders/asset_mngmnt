@@ -38,7 +38,7 @@ describe('assetRequests.controller', () => {
   beforeEach(() => {
     jest.clearAllMocks();
     req = {
-      user: { userID: '123' },
+      user: { userID: '12345678-1234-1234-1234-123456789012' },
       body: {},
       params: {},
     };
@@ -46,31 +46,33 @@ describe('assetRequests.controller', () => {
   });
 
   describe('getByCurrentUser', () => {
-    it('returns the authenticated user requests using req.user.userID (parsed to number)', async () => {
+    it('returns the authenticated user requests using the UUID user ID', async () => {
+      const userId = '12345678-1234-1234-1234-123456789012';
+      req.user = { userID: userId };
       const requests = [
-        { id: 1, user_id: '123', status: 'pending' },
-        { id: 2, user_id: '123', status: 'approved' },
+        { id: 1, user_id: userId, status: 'pending' },
+        { id: 2, user_id: userId, status: 'approved' },
       ];
       assetRequestService.default.getByUserId.mockResolvedValue(requests);
 
       await AssetRequestsController.getByCurrentUser(req, res);
 
-      // The service signature is `getByUserId(userId: number)` so the
-      // controller calls parseInt on req.user.userID before delegating.
       expect(assetRequestService.default.getByUserId).toHaveBeenCalledWith(
-        123
+        userId
       );
       expect(res.json).toHaveBeenCalledWith({ requests });
     });
 
-    it('returns 400 when req.user.userID cannot be parsed as a number', async () => {
-      req.user = { userID: 'not-a-number' };
+    it('returns 500 when the asset-request query fails', async () => {
+      assetRequestService.default.getByUserId.mockRejectedValue(new Error('Database error'));
 
       await AssetRequestsController.getByCurrentUser(req, res);
 
-      expect(assetRequestService.default.getByUserId).not.toHaveBeenCalled();
-      expect(res._status).toBe(400);
-      expect(res._json).toEqual({ error: 'Invalid user ID' });
+      expect(assetRequestService.default.getByUserId).toHaveBeenCalledWith(
+        '12345678-1234-1234-1234-123456789012'
+      );
+      expect(res._status).toBe(500);
+      expect(res._json).toEqual({ error: 'Failed to fetch asset requests' });
     });
 
     it('returns 401 when no authenticated user is attached', async () => {

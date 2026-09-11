@@ -31,11 +31,7 @@ class AssetRequestsController {
         return res.status(401).json({ error: 'Unauthorized' });
       }
 
-      const userIdNum = parseInt(userId, 10);
-      if (isNaN(userIdNum)) {
-        return res.status(400).json({ error: 'Invalid user ID' });
-      }
-      const requests = await AssetRequestService.getByUserId(userIdNum);
+      const requests = await AssetRequestService.getByUserId(userId);
       res.json({ requests });
     } catch (error) {
       logger.error(
@@ -97,7 +93,7 @@ class AssetRequestsController {
         type_id,
         notes,
         quantity,
-        user_id: parseInt(userId, 10),
+        user_id: userId,
         admin_notes: admin_notes || '',
       });
 

@@ -189,7 +189,11 @@ export async function stripInactiveIntangiblesFromForms(rows: any[]): Promise<an
           const active = activeByUser.get(String((row as any).user_id ?? ''));
           filtered = pruneInactiveIntangibleAssets(filtered, active);
         }
-        if (!filtered.length) continue;
+        // Unified clearance certificates intentionally have no assets. They
+        // are still valid documents and must remain visible in profile
+        // documents after generation.
+        const isClearance = (parsed as any)?.form_origin === 'clearance';
+        if (!filtered.length && !isClearance) continue;
         if (filtered.length === assets.length) { out.push(row); continue; }
         const next = { ...parsed, assets: filtered };
         const raw = (row as any).assets_data;

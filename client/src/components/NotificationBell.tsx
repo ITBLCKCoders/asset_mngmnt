@@ -149,7 +149,11 @@ export default function NotificationBell({ className }: NotificationBellProps) {
     // Must run before the generic accountability_form branch below.
     if (
       (notif.actionTarget === 'accountability_form_admin_copy' ||
-        notif.actionTarget === 'accountability_form_approval') &&
+        notif.actionTarget === 'accountability_form_approval' ||
+        notif.actionTarget === 'clearance_approver' ||
+        notif.actionTarget === 'clearance_it' ||
+        notif.actionTarget === 'clearance_admin' ||
+        notif.actionTarget === 'clearance_hr') &&
       notif.formId
     ) {
       navigate('/approvals?tab=for-approval');
